@@ -1,0 +1,44 @@
+name: Build iOS and Push Changes
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build_swift:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install Rust targets
+        run: |
+          rustup target install aarch64-apple-ios-sim
+          rustup target install aarch64-apple-ios
+          rustup target install x86_64-apple-ios
+
+      - name: Run build script
+        run: |
+          chmod +x ./build_ios.sh
+          ./build_ios.sh
+
+      - name: Update Package.swift
+        run: |
+          sed -i.bak 's|// Release version: .*|// Release version: '"${GITHUB_REF#refs/tags/}"'|' Package.swift && rm Package.swift.bak
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git commit -m "Increment version tag and push changes" -a
+          git push origin HEAD:main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}

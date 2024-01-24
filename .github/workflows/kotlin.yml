@@ -1,0 +1,105 @@
+---
+name: Build Android
+
+on:
+  release:
+    types: [created]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build_kotlin:
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - target: aarch64-linux-android
+          - target: armv7-linux-androideabi
+          - target: x86_64-linux-android
+          - target: i686-linux-android
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43 # v2.7.0
+        with:
+          key: ${{ matrix.settings.target }}-cargo
+
+      - name: Install Cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Clean
+        env:
+          TARGET: ${{ matrix.settings.target }}
+        run: cargo clean
+
+      - name: Build
+        env:
+          TARGET: ${{ matrix.settings.target }}
+        run: cross build -p wallet-kit --release --target=${{ matrix.settings.target }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@a8a3f3ad30e3422c9c7b888a15615d19a852ae32 # v3.1.3
+        with:
+          name: android-${{ matrix.settings.target }}
+          path: ./target/${{ matrix.settings.target }}/release/libwalletkit.so
+          if-no-files-found: error
+
+  combine:
+    runs-on: ubuntu-22.04
+    needs: build_kotlin
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608 # v4.1.0
+        with:
+          fetch-depth: 0
+
+      - name: Install rust
+        uses: dtolnay/rust-toolchain@439cf607258077187679211f12aa6f19af4a0af7 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo registry
+        uses: Swatinem/rust-cache@a95ba195448af2da9b00fb742d14ffaaf3c21f43 # v2.7.0
+        with:
+          key: cargo-combine-cache
+
+      - name: Setup Java
+        uses: actions/setup-java@0ab4596768b603586c0de567f2430c30f5b0d2b0 # v3.13.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v3.0.2
+
+      - name: Move artifacts
+        working-directory: kotlin/sdk/src/main/jniLibs
+        run: |
+          tree -L 3 /home/runner/work
+          mkdir armeabi-v7a arm64-v8a x86 x86_64
+          mv /home/runner/work/wallet-kit/wallet-kit/android-armv7-linux-androideabi/libwalletkit.so ./armeabi-v7a/libwalletkit.so
+          mv /home/runner/work/wallet-kit/wallet-kit/android-aarch64-linux-android/libwalletkit.so ./arm64-v8a/libwalletkit.so
+          mv /home/runner/work/wallet-kit/wallet-kit/android-i686-linux-android/libwalletkit.so ./x86/libwalletkit.so
+          mv /home/runner/work/wallet-kit/wallet-kit/android-x86_64-linux-android/libwalletkit.so ./x86_64/libwalletkit.so
+
+      - name: Generate bindings
+        working-directory: kotlin
+        run: cargo run -p uniffi-bindgen generate ./sdk/src/main/jniLibs/arm64-v8a/libwalletkit.so --library --language kotlin --no-format --out-dir sdk/src/main/java
+
+      - name: Publish
+        working-directory: kotlin
+        run: ./gradlew sdk:publish
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
