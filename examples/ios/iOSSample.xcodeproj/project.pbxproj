@@ -14,7 +14,7 @@
 		2F4FF1B22AD5462D0058B9F5 /* iOSSampleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4FF1B12AD5462D0058B9F5 /* iOSSampleTests.swift */; };
 		2F4FF1BC2AD5462D0058B9F5 /* iOSSampleUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4FF1BB2AD5462D0058B9F5 /* iOSSampleUITests.swift */; };
 		2F4FF1BE2AD5462D0058B9F5 /* iOSSampleUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F4FF1BD2AD5462D0058B9F5 /* iOSSampleUITestsLaunchTests.swift */; };
-		2F5D01362AD5494100DC9903 /* Oxide in Frameworks */ = {isa = PBXBuildFile; productRef = 2F5D01352AD5494100DC9903 /* Oxide */; };
+		2F5D01362AD5494100DC9903 /* WalletKit in Frameworks */ = {isa = PBXBuildFile; productRef = 2F5D01352AD5494100DC9903 /* WalletKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,7 +53,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				2F5D01362AD5494100DC9903 /* Oxide in Frameworks */,
+				2F5D01362AD5494100DC9903 /* WalletKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -148,7 +148,7 @@
 			);
 			name = iOSSample;
 			packageProductDependencies = (
-				2F5D01352AD5494100DC9903 /* Oxide */,
+				2F5D01352AD5494100DC9903 /* WalletKit */,
 			);
 			productName = iOSSample;
 			productReference = 2F4FF19A2AD5462C0058B9F5 /* iOSSample.app */;
@@ -628,9 +628,9 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		2F5D01352AD5494100DC9903 /* Oxide */ = {
+		2F5D01352AD5494100DC9903 /* WalletKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = Oxide;
+			productName = WalletKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
