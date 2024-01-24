@@ -66,5 +66,5 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
-    implementation("com.worldcoin:wallet-kit-android:v0.0.1-SNAPSHOT")
+    implementation("com.worldcoin:walletkit-android:v0.0.1-SNAPSHOT")
 }

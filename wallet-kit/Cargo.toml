@@ -1,11 +1,11 @@
 [package]
-name = "wallet-kit"
+name = "walletkit"
 version = "0.1.1"
 edition = "2021"
 
 [lib]
 crate-type = ["lib", "staticlib", "cdylib"]
-name = "wallet-kit"
+name = "walletkit"
 
 
 [dependencies]

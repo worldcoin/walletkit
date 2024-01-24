@@ -10,7 +10,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven {
-            url = uri("https://maven.pkg.github.com/worldcoin/wallet-kit")
+            url = uri("https://maven.pkg.github.com/worldcoin/walletkit")
             credentials {
                 username = "lukejmann"
                 password = "..."
@@ -23,5 +23,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "wallet-kit-sample"
+rootProject.name = "walletkit-sample"
 include(":app")

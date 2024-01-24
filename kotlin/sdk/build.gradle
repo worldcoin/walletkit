@@ -41,12 +41,12 @@ publishing {
     publications {
         maven(MavenPublication) {
             groupId = 'com.worldcoin'
-            artifactId = 'wallet-kit-android'
+            artifactId = 'walletkit-android'
 
             def getLatestTag = { ->
                 def stdout = new ByteArrayOutputStream()
                 exec {
-                    commandLine 'curl', '-s', '-H', 'Authorization: token ' + System.getenv('GITHUB_TOKEN'), 'https://api.github.com/repos/worldcoin/wallet-kit/releases/latest'
+                    commandLine 'curl', '-s', '-H', 'Authorization: token ' + System.getenv('GITHUB_TOKEN'), 'https://api.github.com/repos/worldcoin/walletkit/releases/latest'
                     standardOutput = stdout
                 }
                 def jsonSlurper = new groovy.json.JsonSlurper()
@@ -64,7 +64,7 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = "https://maven.pkg.github.com/worldcoin/wallet-kit"
+            url = "https://maven.pkg.github.com/worldcoin/walletkit"
             credentials {
                 username = System.getenv("GITHUB_ACTOR")
                 password = System.getenv("GITHUB_TOKEN")
