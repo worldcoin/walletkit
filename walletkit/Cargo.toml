@@ -1,0 +1,13 @@
+[package]
+edition = "2021"
+name = "walletkit"
+version = "0.0.0"
+
+
+[dependencies]
+thiserror = "1.0.56"
+
+
+[profile.release]
+lto = true
+strip = "symbols"

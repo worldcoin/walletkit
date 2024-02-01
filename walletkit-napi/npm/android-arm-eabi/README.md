@@ -1,0 +1,3 @@
+# `@worldcoin/walletkit-android-arm-eabi`
+
+This is the **armv7-linux-androideabi** binary for `@worldcoin/walletkit`

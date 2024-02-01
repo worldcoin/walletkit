@@ -1,0 +1,22 @@
+[package]
+name = "walletkit-uniffi"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+crate-type = ["lib", "staticlib", "cdylib"]
+name = "walletkit"
+
+
+[dependencies]
+thiserror = "1.0.38"
+walletkit = { path = "../walletkit" }
+uniffi = { workspace = true, features = ["build"] }
+napi = { version = "2.12.2", default-features = false, features = ["napi4"] }
+napi-derive = "2.12.2"
+
+[dev-dependencies]
+uniffi = { workspace = true, features = ["bindgen-tests"] }
+
+[profile.release]
+opt-level = "z"

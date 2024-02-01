@@ -1,0 +1,10 @@
+/Users/luke.mann/walletkit/target/release/deps/libnapi_derive-3b79fc0694d1b341.dylib: /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/lib.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/compat_macro.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/expand.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/parser/mod.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/parser/attrs.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/expand/napi.rs
+
+/Users/luke.mann/walletkit/target/release/deps/napi_derive-3b79fc0694d1b341.d: /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/lib.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/compat_macro.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/expand.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/parser/mod.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/parser/attrs.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/expand/napi.rs
+
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/lib.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/compat_macro.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/expand.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/parser/mod.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/parser/attrs.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/napi-derive-2.15.0/src/expand/napi.rs:

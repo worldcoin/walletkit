@@ -1,0 +1,13 @@
+/Users/luke.mann/walletkit/target/debug/deps/libheck-0474e0430a7c5ed7.rmeta: /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/lib.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/kebab.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/lower_camel.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/shouty_kebab.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/shouty_snake.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/snake.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/title.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/train.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/upper_camel.rs
+
+/Users/luke.mann/walletkit/target/debug/deps/heck-0474e0430a7c5ed7.d: /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/lib.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/kebab.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/lower_camel.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/shouty_kebab.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/shouty_snake.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/snake.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/title.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/train.rs /Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/upper_camel.rs
+
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/lib.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/kebab.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/lower_camel.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/shouty_kebab.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/shouty_snake.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/snake.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/title.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/train.rs:
+/Users/luke.mann/.cargo/registry/src/index.crates.io-6f17d22bba15001f/heck-0.4.1/src/upper_camel.rs:

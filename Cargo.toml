@@ -1,0 +1,14 @@
+[workspace]
+members = ["uniffi-bindgen", "walletkit", "walletkit-uniffi", "walletkit-napi"]
+
+[workspace.dependencies]
+uniffi = { git = "https://github.com/mozilla/uniffi-rs", rev = "eb8ab92b53084ddd05fc6658d057b38e31a1c4c7", features = [
+    "build",
+] }
+
+
+[profile.release]
+lto = true
+panic = 'abort'
+codegen-units = 1
+opt-level = "z"
