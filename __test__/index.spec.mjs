@@ -3,6 +3,11 @@ import test from "ava";
 import { Hello } from "../index.js";
 
 test("hello", (t) => {
-  // t.is(sum(1, 2), 3);
-  // Hello.
+  const hello = new Hello();
+  const testAsync = async () => {
+    const out = await hello.echo("hello");
+    t.is(out, "hello");
+  };
+  const out = hello.sayHello();
+  t.is(out, "Hello, World!");
 });

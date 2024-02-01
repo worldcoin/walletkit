@@ -6,7 +6,15 @@ version = "0.0.0"
 
 [dependencies]
 thiserror = "1.0.56"
+tokio = { version = "1.35.1", features = ["full"] }
+napi = { version = "2.12.2", default-features = false, features = [
+    "napi4",
+    "async",
+] }
+napi-derive = "2.12.2"
 
+[build-dependencies]
+napi-build = "2.1.0"
 
 [profile.release]
 lto = true

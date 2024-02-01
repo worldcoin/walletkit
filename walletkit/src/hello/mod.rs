@@ -9,7 +9,8 @@ impl Hello {
 }
 
 impl Hello {
-    pub fn echo(&self, input: String) -> String {
+    pub async fn echo(&self, input: String) -> String {
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         input
     }
     pub fn say_hello(&self) -> WalletKitResult<String> {
