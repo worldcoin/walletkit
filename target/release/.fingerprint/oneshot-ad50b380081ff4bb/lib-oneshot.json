@@ -1,1 +1,0 @@
-{"rustc":1220570051976901944,"features":"[\"async\", \"default\", \"std\"]","target":5857403414369516254,"profile":11012208867427823100,"path":15233307663867190395,"deps":[],"local":[{"CheckDepInfo":{"dep_info":"release/.fingerprint/oneshot-ad50b380081ff4bb/dep-lib-oneshot"}}],"rustflags":[],"metadata":10073488372423123470,"config":2202906307356721367,"compile_kind":0}
