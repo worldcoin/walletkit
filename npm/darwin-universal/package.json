@@ -1,0 +1,15 @@
+{
+  "name": "@worldcoin/walletkit-darwin-universal",
+  "version": "0.0.0",
+  "os": [
+    "darwin"
+  ],
+  "main": "walletkit.darwin-universal.node",
+  "files": [
+    "walletkit.darwin-universal.node"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">= 10"
+  }
+}
