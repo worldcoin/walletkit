@@ -13,14 +13,14 @@ let package = Package(
     products: [
         .library(
             name: "WalletKitCore",
-            targets: ["WalletKitCore", "walletkit_coreFFI"]),
+            targets: ["WalletKitCore"]),
     ],
     dependencies: [],
     targets: [
         .target(
             name: "WalletKitCore",
             dependencies: ["walletkit_coreFFI"],
-            path: "swift/Sources/WalletKitCore",
+            path: "swift/Sources/WalletKitCore"
         ),
         .binaryTarget(name: "walletkit_coreFFI", path: "swift/WalletKitCore.xcframework")
     ]
