@@ -1,0 +1,9 @@
+[workspace]
+members = ["uniffi-bindgen","walletkit-core"]
+resolver = "2"
+
+
+[workspace.dependencies]
+uniffi = { version = "0.28.2", features = [
+    "build",
+] }

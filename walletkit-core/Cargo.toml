@@ -1,0 +1,14 @@
+[package]
+license = "MIT"
+edition = "2021"
+version = "0.0.1"
+name = "walletkit-core"
+readme = "../README.md"
+repository = "https://github.com/worldcoin/walletkit"
+keywords = ["ZKP", "World ID", "World"]
+categories = ["web-programming"]
+description = "Reference implementation for the World ID Protocol. Core functionality to manage and use a World ID."
+rust-version = "1.82"
+
+[dependencies]
+uniffi = { workspace = true, features = ["build"] }
