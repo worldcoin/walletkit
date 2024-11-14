@@ -19,7 +19,8 @@ let package = Package(
     targets: [
         .target(
             name: "WalletKitCore",
-            dependencies: ["walletkit_coreFFI"]
+            dependencies: ["walletkit_coreFFI"],
+            path: "./swift"
         ),
         .binaryTarget(name: "walletkit_coreFFI", path: "swift/WalletKitCore.xcframework")
     ]
