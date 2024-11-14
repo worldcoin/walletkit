@@ -10,5 +10,9 @@ categories = ["web-programming"]
 description = "Reference implementation for the World ID Protocol. Core functionality to manage and use a World ID."
 rust-version = "1.82"
 
+[lib]
+crate-type = ["lib", "staticlib", "cdylib"]
+name = "walletkit_core"
+
 [dependencies]
 uniffi = { workspace = true, features = ["build"] }
