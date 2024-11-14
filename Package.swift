@@ -13,7 +13,7 @@ let package = Package(
     products: [
         .library(
             name: "WalletKitCore",
-            targets: ["WalletKitCore", "walletkit_coreFFI"]),
+            targets: ["WalletKitCore"]),
     ],
     dependencies: [],
     targets: [
