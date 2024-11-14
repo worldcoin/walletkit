@@ -7,3 +7,10 @@ resolver = "2"
 uniffi = { version = "0.28.2", features = [
     "build",
 ] }
+
+[profile.release]
+opt-level = 'z' # Optimize for size.
+lto = true      # Enable Link Time Optimization.
+strip = true    # Automatically strip symbols from the binary.
+panic = "abort"
+debug = false

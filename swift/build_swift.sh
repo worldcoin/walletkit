@@ -3,12 +3,13 @@ set -e
 
 echo "Building WalletKitCore.xcframework"
 
-rm -rf ios_build
-rm -rf WalletKitCore.xcframework
-mkdir ios_build
-mkdir ios_build/bindings
-mkdir -p ios_build/target/universal-ios-sim/release
-mkdir -p ./Sources/WalletKitCore
+BASE_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+rm -rf $BASE_PATH/ios_build
+rm -rf $BASE_PATH/WalletKitCore.xcframework
+mkdir -p $BASE_PATH/ios_build/bindings
+mkdir -p $BASE_PATH/ios_build/target/universal-ios-sim/release
+mkdir -p $BASE_PATH/Sources/WalletKitCore
 
 
 export IPHONEOS_DEPLOYMENT_TARGET="13.0"
@@ -21,7 +22,9 @@ echo "Rust packages built. Combining into a single binary."
 
 lipo -create target/aarch64-apple-ios-sim/release/libwalletkit_core.a \
   target/x86_64-apple-ios/release/libwalletkit_core.a \
-  -output ./ios_build/target/universal-ios-sim/release/libwalletkit_core.a
+  -output $BASE_PATH/ios_build/target/universal-ios-sim/release/libwalletkit_core.a
+
+lipo -info $BASE_PATH/ios_build/target/universal-ios-sim/release/libwalletkit_core.a
 
 echo "Generating Swift bindings."
 
@@ -30,20 +33,20 @@ cargo run -p uniffi-bindgen generate \
   --library \
   --language swift \
   --no-format \
-  --out-dir ios_build/bindings
+  --out-dir $BASE_PATH/ios_build/bindings
 
-mv ./ios_build/bindings/walletkit_core.swift ./Sources/WalletKitCore/
+mv $BASE_PATH/ios_build/bindings/walletkit_core.swift $BASE_PATH/Sources/WalletKitCore/
 
-mkdir ios_build/Headers
-mv ./ios_build/bindings/walletkit_coreFFI.h ./ios_build/Headers/
+mkdir $BASE_PATH/ios_build/Headers
+mv $BASE_PATH/ios_build/bindings/walletkit_coreFFI.h $BASE_PATH/ios_build/Headers/
 
-cat ./ios_build/bindings/walletkit_coreFFI.modulemap > ./ios_build/Headers/module.modulemap
+cat $BASE_PATH/ios_build/bindings/walletkit_coreFFI.modulemap > $BASE_PATH/ios_build/Headers/module.modulemap
+
+echo "Creating xcframework."
 
 xcodebuild -create-xcframework \
-  -library target/aarch64-apple-ios/release/libwalletkit_core.a \
-  -headers ./ios_build/Headers \
-  -library ./ios_build/target/universal-ios-sim/release/libwalletkit_core.a \
-  -headers ./ios_build/Headers \
-  -output ./WalletKitCore.xcframework
+  -library target/aarch64-apple-ios/release/libwalletkit_core.a -headers $BASE_PATH/ios_build/Headers \
+  -library $BASE_PATH/ios_build/target/universal-ios-sim/release/libwalletkit_core.a -headers $BASE_PATH/ios_build/Headers \
+  -output $BASE_PATH/WalletKitCore.xcframework
 
-rm -rf ios_build
+rm -rf $BASE_PATH/ios_build

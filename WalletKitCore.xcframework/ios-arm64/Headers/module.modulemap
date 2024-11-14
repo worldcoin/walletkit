@@ -1,4 +1,0 @@
-module walletkit_coreFFI {
-    header "walletkit_coreFFI.h"
-    export *
-}
