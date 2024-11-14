@@ -21,6 +21,6 @@ let package = Package(
             name: "WalletKitCore",
             dependencies: ["walletkit_coreFFI"]
         ),
-        .binaryTarget(name: "walletkit_coreFFI", path: "WalletKitCore.xcframework")
+        .binaryTarget(name: "walletkit_coreFFI", path: "swift/WalletKitCore.xcframework")
     ]
 )
