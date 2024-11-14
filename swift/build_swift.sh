@@ -40,9 +40,9 @@ mv $BASE_PATH/ios_build/bindings/walletkit_core.swift $BASE_PATH/Sources/WalletK
 mkdir $BASE_PATH/ios_build/Headers
 mv $BASE_PATH/ios_build/bindings/walletkit_coreFFI.h $BASE_PATH/ios_build/Headers/
 
-# Create a subfolder for the modulemap
 mkdir -p $BASE_PATH/ios_build/Headers/WalletKitCore
-mv $BASE_PATH/ios_build/Headers/module.modulemap $BASE_PATH/ios_build/Headers/WalletKitCore/module.modulemap
+
+cat $BASE_PATH/ios_build/bindings/walletkit_coreFFI.modulemap > $BASE_PATH/ios_build/Headers/WalletKitCore/module.modulemap
 
 echo "Creating xcframework."
 
