@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Creates a Swift build of the WalletKitCore library.
+# This script is intended to be run in a GitHub Actions workflow.
+# When a release is created, the output is committed to the github.com/worldcoin/walletkit-swift repo.
+
 echo "Building WalletKitCore.xcframework"
 
 BASE_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
