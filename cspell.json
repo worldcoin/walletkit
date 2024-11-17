@@ -1,0 +1,14 @@
+{
+  "version": "0.2",
+  "language": "en-US",
+  "allowCompoundWords": true,
+  "ignorePaths": ["Cargo.toml"],
+  "words": ["Uniffi", "WalletKit", "Worldcoin", "Zeroize"],
+  "enabledLanguageIds": [
+    "jsonc",
+    "markdown",
+    "plaintext",
+    "rust",
+    "shellscript"
+  ]
+}

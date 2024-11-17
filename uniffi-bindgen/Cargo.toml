@@ -1,0 +1,17 @@
+[package]
+name = "uniffi-bindgen"
+license = "MIT"
+version = "0.0.1"
+edition = "2021"
+description = "Binding generation for WalletKit"
+readme = "../README.md"
+repository = "https://github.com/worldcoin/walletkit"
+keywords = ["ZKP", "World ID", "World"]
+categories = ["web-programming"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "./src/uniffi_bindgen.rs"
+
+[dependencies]
+uniffi = { workspace = true, features = ["cli"] }
