@@ -88,6 +88,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
           git add walletkit-core/Cargo.toml
+          git add Cargo.lock
           git commit -m "Bump crate version to ${{ steps.version.outputs.new_version }}"
           git push
 
@@ -146,7 +147,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
         run: |
           cp -r WalletKitCore.xcframework target-repo/
-          cp -r Sources/ target-repo/
+          cp -r Sources/ target-repo/Sources
           cp Package.swift target-repo/
           cd target-repo
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
