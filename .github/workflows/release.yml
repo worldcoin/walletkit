@@ -1,16 +1,49 @@
 name: Release
 
 on:
-  workflow_dispatch: # TODO: Temporary for testing
   release:
     types: [created]
 
 jobs:
-  # TODO: Implement me
   update-cargo-version:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # TODO: Ensure tag is not repeated or older
+      - name: Validate release tag
+        id: validate-tag
+        run: |
+          TAG=${{ github.ref_name }}
+          SEMVER_REGEX="^[0-9]\.[0-9]{1,2}\.[0-9]{1,2}$"
+
+          if [[ ! $TAG =~ $SEMVER_REGEX ]]; then
+            echo "Tag $TAG does not match semantic versioning (MAJOR.MINOR.PATCH)."
+            exit 1
+          fi
+
+          echo "Tag $TAG is valid."
+          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Set up Rust
+        run: |
+          rustup update stable && rustup default stable
+
+      - name: Install cargo-edit
+        run: cargo install cargo-edit
+
+      - name: Update version
+        run: cargo set-version --package walletkit-core ${{ steps.validate-tag.outputs.release_tag }}
+
+      - name: Commit and Push Changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add walletkit-core/Cargo.toml
+          git commit -m "Bump crate version to ${{ steps.validate-tag.outputs.release_tag }}"
+          git push
 
   build-swift:
     runs-on: macos-latest
@@ -53,7 +86,7 @@ jobs:
           cargo fetch
 
       - name: Build the project (iOS)
-        run: swift/build_swift.sh
+        run: ./build_swift.sh
 
       - name: Checkout swift repo
         uses: actions/checkout@v4
@@ -65,7 +98,6 @@ jobs:
       - name: Commit swift build
         env:
           GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
-        # TODO: Bump relevant version in Package.swift and in commit message
         run: |
           cp -r WalletKitCore.xcframework target-repo/
           cp -r Sources/ target-repo/
@@ -74,5 +106,9 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
           git add .
-          git commit -m "Version release"
+          git commit -m "Release ${{ steps.validate-tag.outputs.release_tag }}"
+
+          # Tag the release
+          git tag ${{ steps.validate-tag.outputs.release_tag }}
           git push
+          git push origin ${{ steps.validate-tag.outputs.release_tag }}

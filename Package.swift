@@ -10,7 +10,6 @@ let package = Package(
     platforms: [
         .iOS(.v13),
     ],
-    version: "0.0.1",
     products: [
         .library(
             name: "WalletKitCore",
