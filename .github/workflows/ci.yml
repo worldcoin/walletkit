@@ -99,7 +99,7 @@ jobs:
           cargo fetch
 
       - name: Build the project (iOS)
-        run: swift/build_swift.sh
+        run: ./build_swift.sh
 
   test:
     name: Tests

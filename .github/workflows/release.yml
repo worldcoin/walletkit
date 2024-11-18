@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  workflow_dispatch: # TODO: Temporary for testing
+  release:
+    types: [created]
+
+jobs:
+  # TODO: Implement me
+  update-cargo-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+  build-swift:
+    runs-on: macos-latest
+    needs: update-cargo-version
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        run: |
+          rustup update stable && rustup default stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache Cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-index-
+
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+
+      - name: Install dependencies
+        run: |
+          cargo fetch
+
+      - name: Build the project (iOS)
+        run: swift/build_swift.sh
+
+      - name: Checkout swift repo
+        uses: actions/checkout@v4
+        with:
+          repository: worldcoin/walletkit-swift
+          token: ${{ secrets.GIT_HUB_TOKEN }}
+          path: target-repo
+
+      - name: Commit swift build
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+        # TODO: Bump relevant version in Package.swift and in commit message
+        run: |
+          cp -r WalletKitCore.xcframework target-repo/
+          cp -r Sources/ target-repo/
+          cp Package.swift target-repo/
+          cd target-repo
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git add .
+          git commit -m "Version release"
+          git push
