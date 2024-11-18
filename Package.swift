@@ -5,8 +5,6 @@
 
 import PackageDescription
 
-// Current version is: 0.0.4
-
 let package = Package(
     name: "WalletKit",
     platforms: [

@@ -147,9 +147,6 @@ jobs:
         run: |
           cp -r WalletKitCore.xcframework target-repo/
           cp -r Sources/ target-repo/
-
-          # Update version number in Package.swift
-          sed -i '' "s/\/\/ Current version is: [0-9]\+\.[0-9]\+\.[0-9]\+/\/\/ Current version is: ${{ github.event.release.tag_name }}/" Package.swift
           cp Package.swift target-repo/
           cd target-repo
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
