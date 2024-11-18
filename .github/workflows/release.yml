@@ -1,38 +1,51 @@
 name: Release
 
 on:
-  release:
-    types: [created]
+  workflow_dispatch:
+    inputs:
+      bump_type:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
   update-cargo-version:
     runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
-      # TODO: Ensure tag is not repeated or older
-      - name: Validate release tag
-        id: validate-tag
+      - name: Calculate new version
+        id: version
         run: |
-          TAG=${{ github.ref_name }}
-          SEMVER_REGEX="^[0-9]\.[0-9]{1,2}\.[0-9]{1,2}$"
-
-          if [[ ! $TAG =~ $SEMVER_REGEX ]]; then
-            echo "Tag $TAG does not match semantic versioning (MAJOR.MINOR.PATCH)."
-            exit 1
-          fi
-
           # Get current version from Cargo.toml
           CURRENT_VERSION=$(grep -m 1 'version = ' walletkit-core/Cargo.toml | cut -d '"' -f 2)
 
-          # Compare versions using sort -V (natural version sort)
-          if echo -e "$CURRENT_VERSION\n$TAG" | sort -V | head -n1 | grep -q "^$TAG$"; then
-            echo "Error: New version $TAG is not greater than current version $CURRENT_VERSION"
-            # exit 1
-          fi
+          # Split version into components
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
-          echo "Tag $TAG is valid and newer than current version $CURRENT_VERSION"
-          echo "release_tag=$TAG" >> $GITHUB_OUTPUT
+          # Calculate new version based on bump type
+          case "${{ github.event.inputs.bump_type }}" in
+            "major")
+              NEW_VERSION="$((MAJOR + 1)).0.0"
+              ;;
+            "minor")
+              NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"
+              ;;
+            "patch")
+              NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+              ;;
+          esac
+
+          echo "New version will be: $NEW_VERSION"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Set up Rust
         run: |
@@ -66,7 +79,7 @@ jobs:
         run: cargo install cargo-edit
 
       - name: Update version
-        run: cargo set-version --package walletkit-core ${{ steps.validate-tag.outputs.release_tag }}
+        run: cargo set-version --package walletkit-core ${{ steps.version.outputs.new_version }}
 
       - name: Commit and Push Changes
         env:
@@ -75,8 +88,8 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
           git add walletkit-core/Cargo.toml
-          git commit -m "Bump crate version to ${{ steps.validate-tag.outputs.release_tag }}"
-          git push origin HEAD:main
+          git commit -m "Bump crate version to ${{ steps.version.outputs.new_version }}"
+          git push
 
   build-swift:
     runs-on: macos-latest
@@ -139,9 +152,23 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
           git add .
-          git commit -m "Release ${{ steps.validate-tag.outputs.release_tag }}"
+          git commit -m "Release ${{ needs.update-cargo-version.outputs.new_version }}"
 
           # Tag the release
-          git tag ${{ steps.validate-tag.outputs.release_tag }}
+          git tag ${{ needs.update-cargo-version.outputs.new_version }}
           git push
-          git push origin ${{ steps.validate-tag.outputs.release_tag }}
+          git push origin ${{ needs.update-cargo-version.outputs.new_version }}
+
+  create-github-release:
+    needs: [update-cargo-version, build-swift]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ needs.update-cargo-version.outputs.new_version }}
+          tag_name: ${{ needs.update-cargo-version.outputs.new_version }}
+          generate_release_notes: true
+          make_latest: true
