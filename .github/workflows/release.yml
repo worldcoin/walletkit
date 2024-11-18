@@ -82,9 +82,8 @@ jobs:
       - name: Update version
         run: cargo set-version --package walletkit-core ${{ steps.version.outputs.new_version }}
 
+      # Commit uses GIT_HUB_TOKEN which has permissions to push (set on actions/checkout)
       - name: Commit and Push Changes
-        env:
-          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
