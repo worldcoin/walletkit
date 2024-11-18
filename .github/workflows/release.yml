@@ -22,12 +22,45 @@ jobs:
             exit 1
           fi
 
-          echo "Tag $TAG is valid."
+          # Get current version from Cargo.toml
+          CURRENT_VERSION=$(grep -m 1 'version = ' walletkit-core/Cargo.toml | cut -d '"' -f 2)
+
+          # Compare versions using sort -V (natural version sort)
+          if echo -e "$CURRENT_VERSION\n$TAG" | sort -V | head -n1 | grep -q "^$TAG$"; then
+            echo "Error: New version $TAG is not greater than current version $CURRENT_VERSION"
+            # exit 1
+          fi
+
+          echo "Tag $TAG is valid and newer than current version $CURRENT_VERSION"
           echo "release_tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Set up Rust
         run: |
           rustup update stable && rustup default stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache Cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-index-
+
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
 
       - name: Install cargo-edit
         run: cargo install cargo-edit
@@ -43,7 +76,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git add walletkit-core/Cargo.toml
           git commit -m "Bump crate version to ${{ steps.validate-tag.outputs.release_tag }}"
-          git push
+          git push origin HEAD:main
 
   build-swift:
     runs-on: macos-latest
