@@ -165,10 +165,22 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Create Release
+      - name: Create Release in main repo
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ needs.update-cargo-version.outputs.new_version }}
           tag_name: ${{ needs.update-cargo-version.outputs.new_version }}
           generate_release_notes: true
+          make_latest: true
+
+      - name: Create Release in swift repo
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: worldcoin/walletkit-swift
+          token: ${{ secrets.GIT_HUB_TOKEN }}
+          name: ${{ needs.update-cargo-version.outputs.new_version }}
+          tag_name: ${{ needs.update-cargo-version.outputs.new_version }}
+          body: |
+            ## Version ${{ needs.update-cargo-version.outputs.new_version }}
+            For full release notes, see the [main repo release](https://github.com/worldcoin/walletkit/releases/tag/${{ needs.update-cargo-version.outputs.new_version }}).
           make_latest: true
