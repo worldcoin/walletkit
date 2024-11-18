@@ -3,12 +3,20 @@
   "language": "en-US",
   "allowCompoundWords": true,
   "ignorePaths": ["Cargo.toml"],
-  "words": ["Uniffi", "WalletKit", "Worldcoin", "Zeroize"],
+  "words": [
+    "aarch",
+    "Uniffi",
+    "WalletKit",
+    "Worldcoin",
+    "xcframework",
+    "Zeroize"
+  ],
   "enabledLanguageIds": [
     "jsonc",
     "markdown",
     "plaintext",
     "rust",
-    "shellscript"
+    "shellscript",
+    "swift"
   ]
 }
