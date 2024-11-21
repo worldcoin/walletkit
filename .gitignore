@@ -6,3 +6,7 @@ target/
 # Swift build outputs are not commited to this repo.
 WalletKitCore.xcframework/
 Sources/
+
+# forge
+cache/
+**/out/build-info

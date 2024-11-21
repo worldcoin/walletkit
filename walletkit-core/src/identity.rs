@@ -17,7 +17,8 @@ impl Identity {
     #[uniffi::constructor]
     pub fn new(secret: &[u8]) -> Self {
         let mut secret_key = secret.to_vec();
-        let identity = semaphore::identity::Identity::from_secret(&mut secret_key, None);
+        let identity =
+            semaphore::identity::Identity::from_secret(&mut secret_key, None);
         Self(identity)
     }
 
