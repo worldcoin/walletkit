@@ -1,7 +1,6 @@
-use ruint::aliases::U256;
 use semaphore::protocol::generate_nullifier_hash;
 
-use crate::proof::Context;
+use crate::{proof::Context, u256::U256Wrapper};
 
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
 pub struct Identity(pub semaphore::identity::Identity);
@@ -25,18 +24,14 @@ impl Identity {
     /// More information can be found [here](https://docs.world.org/world-id/concepts#vocabulary)
     ///
     /// [Protocol Reference](https://docs.semaphore.pse.dev/V2/technical-reference/circuits#nullifier-hash).
-    ///
-    /// # Result
-    /// Outputs a Field element as a `U256` value
     #[must_use]
-    pub fn generate_nullifier_hash(&self, context: &Context) -> U256 {
-        generate_nullifier_hash(&self.0, context.external_nullifier)
+    pub fn generate_nullifier_hash(&self, context: &Context) -> U256Wrapper {
+        generate_nullifier_hash(&self.0, context.external_nullifier).into()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::HexNumber;
 
     use super::*;
     #[test]
