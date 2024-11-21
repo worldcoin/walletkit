@@ -41,5 +41,5 @@ async fn test_compile_contracts() {
         .unwrap()
         ._0;
 
-    assert_eq!(nullifier, context.external_nullifier.as_inner());
+    assert_eq!(nullifier, *context.external_nullifier);
 }
