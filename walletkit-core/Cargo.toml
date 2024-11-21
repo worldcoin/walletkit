@@ -15,4 +15,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 name = "walletkit_core"
 
 [dependencies]
+ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
+semaphore = { git = "https://github.com/worldcoin/semaphore-rs", rev = "accb14b", features = ["depth_30"] }
+thiserror = "2.0.3"
 uniffi = { workspace = true, features = ["build"] }

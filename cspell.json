@@ -5,6 +5,7 @@
   "ignorePaths": ["Cargo.toml"],
   "words": [
     "aarch",
+    "ruint",
     "Uniffi",
     "WalletKit",
     "Worldcoin",
