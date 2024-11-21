@@ -28,7 +28,7 @@ impl Identity {
     /// [Protocol Reference](https://docs.semaphore.pse.dev/V2/technical-reference/circuits#nullifier-hash).
     #[must_use]
     pub fn generate_nullifier_hash(&self, context: &Context) -> U256Wrapper {
-        generate_nullifier_hash(&self.0, context.external_nullifier).into()
+        generate_nullifier_hash(&self.0, *context.external_nullifier).into()
     }
 }
 

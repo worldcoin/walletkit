@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use ruint::aliases::U256;
 
 /// A wrapper around `U256` to represent a field element in the protocol. Wrapper enables FFI interoperability.
@@ -20,13 +22,6 @@ impl U256Wrapper {
     }
 }
 
-impl U256Wrapper {
-    #[must_use]
-    pub const fn as_inner(&self) -> U256 {
-        self.0
-    }
-}
-
 impl From<U256Wrapper> for U256 {
     fn from(val: U256Wrapper) -> Self {
         val.0
@@ -42,6 +37,14 @@ impl From<U256> for U256Wrapper {
 impl std::fmt::Display for U256Wrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_hex_string())
+    }
+}
+
+impl Deref for U256Wrapper {
+    type Target = U256;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
