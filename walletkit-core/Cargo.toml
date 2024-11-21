@@ -15,6 +15,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 name = "walletkit_core"
 
 [dependencies]
+alloy-core = { version = "0.8.12", default-features = false, features = ["sol-types"] }
 hex = "0.4.3"
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 semaphore = { git = "https://github.com/worldcoin/semaphore-rs", rev = "accb14b", features = ["depth_30"] }

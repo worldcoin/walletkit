@@ -5087,6 +5087,7 @@ dependencies = [
 name = "walletkit-core"
 version = "0.0.6"
 dependencies = [
+ "alloy-core",
  "hex",
  "ruint",
  "semaphore",
