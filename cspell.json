@@ -5,6 +5,8 @@
   "ignorePaths": ["Cargo.toml"],
   "words": [
     "aarch",
+    "clippy",
+    "foundryup",
     "ruint",
     "Uniffi",
     "WalletKit",

@@ -11,7 +11,7 @@ use ruint::aliases::U256;
 /// Particularly, when sending proof inputs/outputs as JSON on HTTP requests, the values SHOULD
 /// be represented as padded hex strings from Big Endian bytes.
 #[allow(clippy::module_name_repetitions)]
-#[derive(uniffi::Object, Debug, PartialEq, Eq, Clone)]
+#[derive(uniffi::Object, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct U256Wrapper(pub U256);
 
 #[uniffi::export]

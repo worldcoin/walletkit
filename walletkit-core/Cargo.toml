@@ -15,9 +15,14 @@ crate-type = ["lib", "staticlib", "cdylib"]
 name = "walletkit_core"
 
 [dependencies]
+alloy-core = { version = "0.8.12", default-features = false, features = ["sol-types"] }
 hex = "0.4.3"
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 semaphore = { git = "https://github.com/worldcoin/semaphore-rs", rev = "accb14b", features = ["depth_30"] }
 serde_json = "1.0.133"
 thiserror = "2.0.3"
 uniffi = { workspace = true, features = ["build"] }
+
+[dev-dependencies]
+alloy = { version = "0.6.4", default-features = false, features = ["json", "contract", "node-bindings"] }
+tokio = "1.41.1"
