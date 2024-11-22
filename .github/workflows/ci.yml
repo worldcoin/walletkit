@@ -147,3 +147,13 @@ jobs:
       - name: Run tests
         run: |
           cargo test --all
+
+  deny:
+    name: Cargo deny
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - uses: EmbarkStudios/cargo-deny-action@v1
