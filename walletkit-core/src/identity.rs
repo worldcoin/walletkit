@@ -40,7 +40,7 @@ mod tests {
     #[test]
     fn test() {
         let identity = Identity::new(b"not_a_real_secret");
-        let context = Context::new(b"app_id", None);
+        let context = Context::new("app_id", None);
         let nullifier_hash = identity.generate_nullifier_hash(&context);
         println!("{}", nullifier_hash.to_hex_string());
     }

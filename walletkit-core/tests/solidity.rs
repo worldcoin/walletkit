@@ -13,7 +13,7 @@ sol!(
 );
 
 #[tokio::test]
-async fn test_compile_contracts() {
+async fn test_advanced_external_nullifier_generation_on_chain() {
     let provider = ProviderBuilder::new()
         .with_recommended_fillers()
         .on_anvil_with_wallet();
@@ -31,7 +31,7 @@ async fn test_compile_contracts() {
     let custom_action =
         [addr.abi_encode_packed(), "test_text".abi_encode_packed()].concat();
 
-    let context = Context::new(app_id.as_bytes(), Some(custom_action));
+    let context = Context::new_from_bytes(&app_id, Some(custom_action));
 
     let nullifier = contract
         .generateExternalNullifier("test_text".to_string())

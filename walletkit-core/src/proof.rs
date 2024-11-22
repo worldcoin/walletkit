@@ -26,8 +26,25 @@ impl Context {
     ///
     #[must_use]
     #[uniffi::constructor]
-    pub fn new(app_id: &[u8], action: Option<Vec<u8>>) -> Self {
-        let mut pre_image = hash_to_field(app_id).abi_encode_packed();
+    pub fn new(app_id: &str, action: Option<String>) -> Self {
+        Self::new_from_bytes(app_id, action.map(std::string::String::into_bytes))
+    }
+
+    /// Initializes a `Proof::Context` where the `action` is provided as raw bytes. This is useful for advanced cases
+    /// where the `action` is an already ABI encoded value for on-chain usage.
+    /// See _walletkit-core/tests/solidity.rs_ for an example.
+    ///
+    /// Will compute the relevant external nullifier from the provided `app_id` and `action`.
+    ///
+    /// # Arguments
+    ///
+    /// * `app_id` - The ID of the application requesting proofs. This can be obtained from the Developer Portal.
+    /// * `action` - Optional. Custom incognito action being requested as raw bytes (*must be UTF-8*).
+    ///
+    #[must_use]
+    #[uniffi::constructor]
+    pub fn new_from_bytes(app_id: &str, action: Option<Vec<u8>>) -> Self {
+        let mut pre_image = hash_to_field(app_id.as_bytes()).abi_encode_packed();
 
         if let Some(action) = action {
             pre_image.extend_from_slice(&action);
@@ -47,15 +64,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_external_nullifier_hash_generation_no_action() {
-        let context = Context::new(b"app_369183bd38f1641b6964ab51d7a20434", None);
+    fn test_context_and_external_nullifier_hash_generation() {
+        let context = Context::new("app_369183bd38f1641b6964ab51d7a20434", None);
         assert_eq!(
             context.external_nullifier.to_hex_string(),
             "0x0073e4a6b670e81dc619b1f8703aa7491dc5aaadf75409aba0ac2414014c0227"
         );
 
+        // note the same external nullifier hash is generated for an empty string action
         let context =
-            Context::new(b"app_369183bd38f1641b6964ab51d7a20434", Some(b"".to_vec()));
+            Context::new("app_369183bd38f1641b6964ab51d7a20434", Some(String::new()));
         assert_eq!(
             context.external_nullifier.to_hex_string(),
             "0x0073e4a6b670e81dc619b1f8703aa7491dc5aaadf75409aba0ac2414014c0227"
@@ -67,8 +85,8 @@ mod tests {
     #[test]
     fn test_external_nullifier_hash_generation_string_action_staging() {
         let context = Context::new(
-            b"app_staging_45068dca85829d2fd90e2dd6f0bff997",
-            Some(b"test-action-qli8g".to_vec()),
+            "app_staging_45068dca85829d2fd90e2dd6f0bff997",
+            Some("test-action-qli8g".to_string()),
         );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
@@ -79,20 +97,20 @@ mod tests {
     #[test]
     fn test_external_nullifier_hash_generation_string_action() {
         let context = Context::new(
-            b"app_10eb12bd96d8f7202892ff25f094c803",
-            Some(b"test-123123".to_vec()),
+            "app_10eb12bd96d8f7202892ff25f094c803",
+            Some("test-123123".to_string()),
         );
         assert_eq!(
             context.external_nullifier.0,
-            // cspell:disable-next-line
             uint!(
+                // cspell:disable-next-line
                 0x0065ebab05692ff2e0816cc4c3b83216c33eaa4d906c6495add6323fe0e2dc89_U256
             )
         );
     }
 
     #[test]
-    fn test_external_nullifier_hash_generation_with_complex_abi_encoded_values() {
+    fn test_external_nullifier_hash_generation_with_advanced_abi_encoded_values() {
         let custom_action = [
             address!("541f3cc5772a64f2ba0a47e83236CcE2F089b188").abi_encode_packed(),
             U256::from(1).abi_encode_packed(),
@@ -100,8 +118,10 @@ mod tests {
         ]
         .concat();
 
-        let context =
-            Context::new(b"app_10eb12bd96d8f7202892ff25f094c803", Some(custom_action));
+        let context = Context::new_from_bytes(
+            "app_10eb12bd96d8f7202892ff25f094c803",
+            Some(custom_action),
+        );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
             // expected output obtained from Solidity
@@ -110,8 +130,8 @@ mod tests {
     }
 
     #[test]
-    fn test_external_nullifier_hash_generation_with_complex_abi_encoded_values_staging()
-    {
+    fn test_external_nullifier_hash_generation_with_advanced_abi_encoded_values_staging(
+    ) {
         let custom_action = [
             "world".abi_encode_packed(),
             U256::from(1).abi_encode_packed(),
@@ -119,8 +139,8 @@ mod tests {
         ]
         .concat();
 
-        let context = Context::new(
-            b"app_staging_45068dca85829d2fd90e2dd6f0bff997",
+        let context = Context::new_from_bytes(
+            "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some(custom_action),
         );
         assert_eq!(
