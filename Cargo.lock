@@ -5587,7 +5587,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.0.1"
+version = "0.0.6"
 dependencies = [
  "uniffi",
 ]

@@ -80,14 +80,14 @@ jobs:
         run: cargo install cargo-edit
 
       - name: Update version
-        run: cargo set-version --package walletkit-core ${{ steps.version.outputs.new_version }}
+        run: cargo set-version ${{ steps.version.outputs.new_version }}
 
       # Commit uses GIT_HUB_TOKEN which has permissions to push (set on actions/checkout)
       - name: Commit and Push Changes
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          git add walletkit-core/Cargo.toml
+          git add Cargo.toml
           git add Cargo.lock
           git commit -m "Bump crate version to ${{ steps.version.outputs.new_version }}"
           git push

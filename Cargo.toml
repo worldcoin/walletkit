@@ -2,6 +2,17 @@
 members = ["uniffi-bindgen","walletkit-core"]
 resolver = "2"
 
+[workspace.package]
+version = "0.0.6"
+license = "MIT"
+edition = "2021"
+authors = ["World Contributors"]
+readme = "./README.md"
+homepage = "https://docs.world.org" # TODO: Update to specific WalletKit page
+rust-version = "1.82"
+repository = "https://github.com/worldcoin/walletkit"
+exclude = ["tests/", "uniffi-bindgen/"]
+
 
 [workspace.dependencies]
 uniffi = { version = "0.28.2", features = [
