@@ -1,8 +1,8 @@
 [package]
 name = "walletkit-core"
+description = "Reference implementation for the World ID Protocol. Core functionality to use a World ID."
 keywords = ["ZKP", "World ID", "World"]
 categories = ["API bindings", "Cryptography"]
-description = "Reference implementation for the World ID Protocol. Core functionality to use a World ID."
 
 
 version.workspace = true
