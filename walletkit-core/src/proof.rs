@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use alloy_core::sol_types::SolValue;
 use semaphore::hash_to_field;
 
-use crate::u256::U256Wrapper;
+use crate::{credential_type::CredentialType, u256::U256Wrapper};
 
 /// A `Proof::Context` contains the basic information on the verifier and the specific action a user will be proving.
 ///
@@ -9,6 +11,7 @@ use crate::u256::U256Wrapper;
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
 pub struct Context {
     pub external_nullifier: U256Wrapper,
+    pub credential_type: CredentialType,
 }
 
 #[uniffi::export]
@@ -26,8 +29,16 @@ impl Context {
     ///
     #[must_use]
     #[uniffi::constructor]
-    pub fn new(app_id: &str, action: Option<String>) -> Self {
-        Self::new_from_bytes(app_id, action.map(std::string::String::into_bytes))
+    pub fn new(
+        app_id: &str,
+        action: Option<String>,
+        credential_type: Arc<CredentialType>,
+    ) -> Self {
+        Self::new_from_bytes(
+            app_id,
+            action.map(std::string::String::into_bytes),
+            credential_type,
+        )
     }
 
     /// Initializes a `Proof::Context` where the `action` is provided as raw bytes. This is useful for advanced cases
@@ -43,7 +54,12 @@ impl Context {
     ///
     #[must_use]
     #[uniffi::constructor]
-    pub fn new_from_bytes(app_id: &str, action: Option<Vec<u8>>) -> Self {
+    #[allow(clippy::needless_pass_by_value)]
+    pub fn new_from_bytes(
+        app_id: &str,
+        action: Option<Vec<u8>>,
+        credential_type: Arc<CredentialType>,
+    ) -> Self {
         let mut pre_image = hash_to_field(app_id.as_bytes()).abi_encode_packed();
 
         if let Some(action) = action {
@@ -52,7 +68,10 @@ impl Context {
 
         let external_nullifier = hash_to_field(&pre_image).into();
 
-        Self { external_nullifier }
+        Self {
+            external_nullifier,
+            credential_type: *credential_type,
+        }
     }
 }
 
@@ -65,15 +84,22 @@ mod tests {
 
     #[test]
     fn test_context_and_external_nullifier_hash_generation() {
-        let context = Context::new("app_369183bd38f1641b6964ab51d7a20434", None);
+        let context = Context::new(
+            "app_369183bd38f1641b6964ab51d7a20434",
+            None,
+            Arc::new(CredentialType::Orb),
+        );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
             "0x0073e4a6b670e81dc619b1f8703aa7491dc5aaadf75409aba0ac2414014c0227"
         );
 
         // note the same external nullifier hash is generated for an empty string action
-        let context =
-            Context::new("app_369183bd38f1641b6964ab51d7a20434", Some(String::new()));
+        let context = Context::new(
+            "app_369183bd38f1641b6964ab51d7a20434",
+            Some(String::new()),
+            Arc::new(CredentialType::Orb),
+        );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
             "0x0073e4a6b670e81dc619b1f8703aa7491dc5aaadf75409aba0ac2414014c0227"
@@ -87,6 +113,7 @@ mod tests {
         let context = Context::new(
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some("test-action-qli8g".to_string()),
+            Arc::new(CredentialType::Orb),
         );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
@@ -99,6 +126,7 @@ mod tests {
         let context = Context::new(
             "app_10eb12bd96d8f7202892ff25f094c803",
             Some("test-123123".to_string()),
+            Arc::new(CredentialType::Orb),
         );
         assert_eq!(
             context.external_nullifier.0,
@@ -121,6 +149,7 @@ mod tests {
         let context = Context::new_from_bytes(
             "app_10eb12bd96d8f7202892ff25f094c803",
             Some(custom_action),
+            Arc::new(CredentialType::Orb),
         );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
@@ -142,6 +171,7 @@ mod tests {
         let context = Context::new_from_bytes(
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some(custom_action),
+            Arc::new(CredentialType::Orb),
         );
         assert_eq!(
             context.external_nullifier.to_hex_string(),

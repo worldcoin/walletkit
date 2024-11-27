@@ -913,7 +913,7 @@ dependencies = [
 [[package]]
 name = "ark-zkey"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/semaphore-rs?rev=accb14b#accb14bd6b8f3202d988182c5ef822104d262f39"
+source = "git+https://github.com/worldcoin/semaphore-rs?rev=f266248#f266248b5695c3528a27f800c36d51580ee2dc7e"
 dependencies = [
  "ark-bn254",
  "ark-circom",
@@ -2514,7 +2514,7 @@ dependencies = [
 [[package]]
 name = "hasher"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/semaphore-rs?rev=accb14b#accb14bd6b8f3202d988182c5ef822104d262f39"
+source = "git+https://github.com/worldcoin/semaphore-rs?rev=f266248#f266248b5695c3528a27f800c36d51580ee2dc7e"
 dependencies = [
  "bytemuck",
 ]
@@ -3030,7 +3030,7 @@ dependencies = [
 [[package]]
 name = "keccak"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/semaphore-rs?rev=accb14b#accb14bd6b8f3202d988182c5ef822104d262f39"
+source = "git+https://github.com/worldcoin/semaphore-rs?rev=f266248#f266248b5695c3528a27f800c36d51580ee2dc7e"
 dependencies = [
  "hasher",
  "tiny-keccak",
@@ -3697,7 +3697,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 [[package]]
 name = "poseidon"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/semaphore-rs?rev=accb14b#accb14bd6b8f3202d988182c5ef822104d262f39"
+source = "git+https://github.com/worldcoin/semaphore-rs?rev=f266248#f266248b5695c3528a27f800c36d51580ee2dc7e"
 dependencies = [
  "ark-bn254",
  "ark-ff 0.4.2",
@@ -4534,7 +4534,7 @@ checksum = "d369a96f978623eb3dc28807c4852d6cc617fed53da5d3c400feff1ef34a714a"
 [[package]]
 name = "semaphore"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/semaphore-rs?rev=accb14b#accb14bd6b8f3202d988182c5ef822104d262f39"
+source = "git+https://github.com/worldcoin/semaphore-rs?rev=f266248#f266248b5695c3528a27f800c36d51580ee2dc7e"
 dependencies = [
  "alloy-core",
  "ark-bn254",
@@ -4577,12 +4577,12 @@ dependencies = [
 [[package]]
 name = "semaphore-depth-config"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/semaphore-rs?rev=accb14b#accb14bd6b8f3202d988182c5ef822104d262f39"
+source = "git+https://github.com/worldcoin/semaphore-rs?rev=f266248#f266248b5695c3528a27f800c36d51580ee2dc7e"
 
 [[package]]
 name = "semaphore-depth-macros"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/semaphore-rs?rev=accb14b#accb14bd6b8f3202d988182c5ef822104d262f39"
+source = "git+https://github.com/worldcoin/semaphore-rs?rev=f266248#f266248b5695c3528a27f800c36d51580ee2dc7e"
 dependencies = [
  "itertools 0.13.0",
  "proc-macro2",
@@ -4875,7 +4875,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "storage"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/semaphore-rs?rev=accb14b#accb14bd6b8f3202d988182c5ef822104d262f39"
+source = "git+https://github.com/worldcoin/semaphore-rs?rev=f266248#f266248b5695c3528a27f800c36d51580ee2dc7e"
 dependencies = [
  "bytemuck",
  "color-eyre",
@@ -5458,7 +5458,7 @@ dependencies = [
 [[package]]
 name = "trees"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/semaphore-rs?rev=accb14b#accb14bd6b8f3202d988182c5ef822104d262f39"
+source = "git+https://github.com/worldcoin/semaphore-rs?rev=f266248#f266248b5695c3528a27f800c36d51580ee2dc7e"
 dependencies = [
  "ark-bn254",
  "ark-circom",
@@ -5952,6 +5952,7 @@ dependencies = [
  "ruint",
  "semaphore",
  "serde_json",
+ "strum",
  "thiserror 2.0.3",
  "tokio",
  "uniffi",
