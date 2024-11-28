@@ -12,7 +12,8 @@
     "WalletKit",
     "Worldcoin",
     "xcframework",
-    "Zeroize"
+    "Zeroize",
+    "Zeroizes"
   ],
   "enabledLanguageIds": [
     "jsonc",
