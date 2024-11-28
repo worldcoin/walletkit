@@ -79,7 +79,7 @@ impl Identity {
         } else {
             // When the identity commitment for the non-canonical identity is requested, a new Semaphore identity needs to be initialized.
             let mut secret_hex = self.secret_hex;
-            let identity = semaphore::identity::Identity::from_secret(
+            let identity = semaphore::identity::Identity::from_hashed_secret(
                 &mut secret_hex,
                 Some(credential_type.as_identity_trapdoor()),
             );
@@ -136,9 +136,15 @@ mod tests {
         assert_eq!(
             *secure_passport_commitment,
             uint!(
-                16067026999511589387916925190393290559934977022835489992976401115232782097070_U256
+                4772776030911288417155544975787646998508849894109450205303839917538446765610_U256
             )
         );
+
+        let semaphore_identity = semaphore::identity::Identity::from_secret(
+            &mut b"not_a_real_secret".to_vec(),
+            Some(b"secure_passport"),
+        );
+        assert_eq!(semaphore_identity.commitment(), *secure_passport_commitment);
 
         let device_commitment =
             identity.get_identity_commitment(&CredentialType::Device);
