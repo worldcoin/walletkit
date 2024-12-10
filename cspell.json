@@ -7,6 +7,7 @@
     "aarch",
     "clippy",
     "foundryup",
+    "merkle",
     "ruint",
     "Uniffi",
     "WalletKit",

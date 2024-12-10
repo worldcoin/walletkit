@@ -36,6 +36,7 @@ async fn test_advanced_external_nullifier_generation_on_chain() {
     let context = Context::new_from_bytes(
         &app_id,
         Some(custom_action),
+        None,
         Arc::new(CredentialType::Orb),
     );
 
@@ -48,4 +49,9 @@ async fn test_advanced_external_nullifier_generation_on_chain() {
         ._0;
 
     assert_eq!(nullifier, *context.external_nullifier);
+}
+
+#[tokio::test]
+async fn test_proof_verification_on_chain() {
+    // TODO: implement this test
 }
