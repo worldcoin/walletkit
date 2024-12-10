@@ -88,6 +88,12 @@ impl Context {
     }
 }
 
+/// Represents the complete output of a World ID Proof (i.e. a credential persentation). This output
+/// can be serialized to JSON and can be verified easily with the Developer Portal or Sign up Sequencer.
+///
+/// For on-chain verification, the `proof` (which is packed) should generally be deserialized into `uint256[8]`.
+///
+/// More information on: [On-Chain Verification](https://docs.world.org/world-id/id/on-chain)
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object, Serialize)]
 pub struct Output {
     pub merkle_root: U256Wrapper,

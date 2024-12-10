@@ -65,7 +65,6 @@ impl Deref for U256Wrapper {
     }
 }
 
-// JSON serializing for U256Wrapper
 impl Serialize for U256Wrapper {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

@@ -50,3 +50,8 @@ async fn test_advanced_external_nullifier_generation_on_chain() {
 
     assert_eq!(nullifier, *context.external_nullifier);
 }
+
+#[tokio::test]
+async fn test_proof_verification_on_chain() {
+    // TODO: implement this test
+}
