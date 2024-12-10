@@ -36,6 +36,7 @@ async fn test_advanced_external_nullifier_generation_on_chain() {
     let context = Context::new_from_bytes(
         &app_id,
         Some(custom_action),
+        None,
         Arc::new(CredentialType::Orb),
     );
 

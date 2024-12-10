@@ -23,8 +23,10 @@ name = "walletkit_core"
 [dependencies]
 alloy-core = { version = "0.8.12", default-features = false, features = ["sol-types"] }
 hex = "0.4.3"
+reqwest = { version = "0.12.9", features = ["json", "brotli"] }
 ruint = { version = "1.12.3", default-features = false, features = ["alloc"] }
 semaphore = { git = "https://github.com/worldcoin/semaphore-rs", rev = "f266248", features = ["depth_30"] }
+serde = "1.0.215"
 serde_json = "1.0.133"
 strum = { version = "0.26", features = ["derive"] }
 thiserror = "2.0.3"
@@ -32,4 +34,5 @@ uniffi = { workspace = true, features = ["build"] }
 
 [dev-dependencies]
 alloy = { version = "0.6.4", default-features = false, features = ["json", "contract", "node-bindings"] }
+mockito = "1.6.1"
 tokio = "1.41.1"

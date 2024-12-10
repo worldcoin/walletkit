@@ -1,6 +1,14 @@
+use crate::{error::Error, proof::generate_proof_with_semaphore_identity};
+
 use semaphore::{identity::seed_hex, protocol::generate_nullifier_hash};
 
-use crate::{credential_type::CredentialType, proof::Context, u256::U256Wrapper};
+use crate::{
+    credential_type::CredentialType,
+    merkle_tree::MerkleTreeProof,
+    proof::{Context, Output},
+    u256::U256Wrapper,
+    Environment,
+};
 
 /// A base World ID identity which can be used to generate World ID Proofs for different credentials.
 ///
@@ -19,13 +27,15 @@ pub struct Identity {
     canonical_orb_semaphore_identity: semaphore::identity::Identity,
     /// The hashed World ID secret, cast to 64 bytes (0-padded). Actual hashed secret is 32 bytes.
     secret_hex: [u8; 64],
+    /// The environment in which this identity is running. Generally an app/client will be a single environment.
+    environment: Environment,
 }
 
 #[uniffi::export]
 impl Identity {
     #[must_use]
     #[uniffi::constructor]
-    pub fn new(secret: &[u8]) -> Self {
+    pub fn new(secret: &[u8], environment: &Environment) -> Self {
         let secret_hex = seed_hex(secret);
 
         let mut secret_key = secret.to_vec();
@@ -36,6 +46,7 @@ impl Identity {
         Self {
             canonical_orb_semaphore_identity,
             secret_hex,
+            environment: environment.clone(),
         }
     }
 
@@ -63,6 +74,30 @@ impl Identity {
     ) -> U256Wrapper {
         let identity = self.semaphore_identity_for_credential(credential_type);
         identity.commitment().into()
+    }
+
+    /// Generates a World ID Zero-knowledge proof (ZKP) for a specific context (i.e. app + action) and the identity.
+    /// This is equivalent to the user presenting their credential to a verifying party.
+    ///
+    /// # Errors
+    /// Will error if the Merkle Tree inclusion proof cannot be retrieved from the sign up sequencer or if
+    /// something fails with the proof generation.
+    pub async fn generate_proof(&self, context: &Context) -> Result<Output, Error> {
+        let identity = self.semaphore_identity_for_credential(&context.credential_type);
+        // fetch directly instead of `get_identity_commitment` to avoid duplicate computations
+        let identity_commitment = identity.commitment().into();
+
+        let sequencer_host = context
+            .credential_type
+            .get_sign_up_sequencer_host(&self.environment);
+
+        let merkle_tree_proof = MerkleTreeProof::from_identity_commitment(
+            &identity_commitment,
+            sequencer_host,
+        )
+        .await?;
+
+        generate_proof_with_semaphore_identity(&identity, merkle_tree_proof, context)
     }
 }
 
@@ -97,15 +132,16 @@ mod tests {
     use super::*;
     #[test]
     fn test() {
-        let identity = Identity::new(b"not_a_real_secret");
-        let context = Context::new("app_id", None, Arc::new(CredentialType::Orb));
+        // FIXME: incomplete test
+        let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
+        let context = Context::new("app_id", None, None, Arc::new(CredentialType::Orb));
         let nullifier_hash = identity.generate_nullifier_hash(&context);
         println!("{}", nullifier_hash.to_hex_string());
     }
 
     #[test]
     fn test_secret_hex_generation() {
-        let identity = Identity::new(b"not_a_real_secret");
+        let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
 
         // this is the expected SHA-256 of the secret (computed externally)
         let expected_hash: U256Wrapper = uint!(88026203285206540949013074047154212280150971633012190779810764227609557184952_U256).into();
@@ -120,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_identity_commitment_generation() {
-        let identity = Identity::new(b"not_a_real_secret");
+        let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
         let commitment = identity.get_identity_commitment(&CredentialType::Orb);
 
         assert_eq!(

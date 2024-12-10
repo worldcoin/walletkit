@@ -1,17 +1,26 @@
+use crate::error::Error;
 use std::sync::Arc;
 
 use alloy_core::sol_types::SolValue;
-use semaphore::hash_to_field;
+use semaphore::{
+    hash_to_field, identity,
+    packed_proof::PackedProof,
+    protocol::{generate_nullifier_hash, generate_proof, Proof},
+};
+use serde::Serialize;
 
-use crate::{credential_type::CredentialType, u256::U256Wrapper};
+use crate::{
+    credential_type::CredentialType, merkle_tree::MerkleTreeProof, u256::U256Wrapper,
+};
 
 /// A `Proof::Context` contains the basic information on the verifier and the specific action a user will be proving.
 ///
-/// A `Proof::Context` is required to generate a `Proof` and will generally be initialized from an `app_id` and `action`.
+/// It is required to generate a `Proof` and will generally be initialized from an `app_id` and `action`.
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
 pub struct Context {
     pub external_nullifier: U256Wrapper,
     pub credential_type: CredentialType,
+    pub signal: U256Wrapper,
 }
 
 #[uniffi::export]
@@ -32,11 +41,13 @@ impl Context {
     pub fn new(
         app_id: &str,
         action: Option<String>,
+        signal: Option<String>,
         credential_type: Arc<CredentialType>,
     ) -> Self {
         Self::new_from_bytes(
             app_id,
             action.map(std::string::String::into_bytes),
+            signal.map(std::string::String::into_bytes),
             credential_type,
         )
     }
@@ -58,6 +69,7 @@ impl Context {
     pub fn new_from_bytes(
         app_id: &str,
         action: Option<Vec<u8>>,
+        signal: Option<Vec<u8>>,
         credential_type: Arc<CredentialType>,
     ) -> Self {
         let mut pre_image = hash_to_field(app_id.as_bytes()).abi_encode_packed();
@@ -71,8 +83,49 @@ impl Context {
         Self {
             external_nullifier,
             credential_type: *credential_type,
+            signal: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
         }
     }
+}
+
+#[derive(Clone, PartialEq, Eq, Debug, uniffi::Object, Serialize)]
+pub struct Output {
+    pub merkle_root: U256Wrapper,
+    pub nullifier_hash: U256Wrapper,
+    #[serde(skip_serializing)]
+    pub raw_proof: Proof,
+    pub proof: PackedProof,
+}
+
+/// Generates a Semaphore ZKP for a specific Semaphore identity using the relevant provided context.
+///
+/// # Errors
+/// Returns an error if proof generation fails
+pub fn generate_proof_with_semaphore_identity(
+    identity: &identity::Identity,
+    merkle_tree_proof: MerkleTreeProof,
+    context: &Context,
+) -> Result<Output, Error> {
+    let merkle_root = merkle_tree_proof.merkle_root; // clone the value
+
+    let merkle_proof = semaphore::poseidon_tree::Proof::from(merkle_tree_proof);
+    let external_nullifier_hash = context.external_nullifier.into();
+    let nullifier_hash =
+        generate_nullifier_hash(identity, external_nullifier_hash).into();
+
+    let proof = generate_proof(
+        identity,
+        &merkle_proof,
+        external_nullifier_hash,
+        context.signal.into(),
+    )?;
+
+    Ok(Output {
+        merkle_root,
+        nullifier_hash,
+        raw_proof: proof,
+        proof: PackedProof::from(proof),
+    })
 }
 
 #[cfg(test)]
@@ -87,6 +140,7 @@ mod tests {
         let context = Context::new(
             "app_369183bd38f1641b6964ab51d7a20434",
             None,
+            None,
             Arc::new(CredentialType::Orb),
         );
         assert_eq!(
@@ -98,6 +152,7 @@ mod tests {
         let context = Context::new(
             "app_369183bd38f1641b6964ab51d7a20434",
             Some(String::new()),
+            None,
             Arc::new(CredentialType::Orb),
         );
         assert_eq!(
@@ -113,6 +168,7 @@ mod tests {
         let context = Context::new(
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some("test-action-qli8g".to_string()),
+            None,
             Arc::new(CredentialType::Orb),
         );
         assert_eq!(
@@ -126,6 +182,7 @@ mod tests {
         let context = Context::new(
             "app_10eb12bd96d8f7202892ff25f094c803",
             Some("test-123123".to_string()),
+            None,
             Arc::new(CredentialType::Orb),
         );
         assert_eq!(
@@ -149,6 +206,7 @@ mod tests {
         let context = Context::new_from_bytes(
             "app_10eb12bd96d8f7202892ff25f094c803",
             Some(custom_action),
+            None,
             Arc::new(CredentialType::Orb),
         );
         assert_eq!(
@@ -171,6 +229,7 @@ mod tests {
         let context = Context::new_from_bytes(
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some(custom_action),
+            None,
             Arc::new(CredentialType::Orb),
         );
         assert_eq!(

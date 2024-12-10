@@ -1,5 +1,7 @@
 use strum::EnumString;
 
+use crate::Environment;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Object, EnumString, Hash)]
 #[strum(serialize_all = "snake_case")]
 pub enum CredentialType {
@@ -26,6 +28,33 @@ impl CredentialType {
             Self::Device => b"phone_credential",
             Self::Passport => b"passport",
             Self::SecurePassport => b"secure_passport",
+        }
+    }
+
+    /// Returns the host name for the relevant sign up sequencer to use. The sign up sequencer is used to fetch Merkle inclusion proofs.
+    ///
+    /// [Reference](https://github.com/worldcoin/signup-sequencer)
+    ///
+    /// # Future
+    /// - Support custom sign up sequencer hosts
+    #[must_use]
+    pub fn get_sign_up_sequencer_host(&self, environment: &Environment) -> &str {
+        if environment == &Environment::Staging {
+            match self {
+                Self::Orb => "signup-orb-ethereum.stage-crypto.worldcoin.org",
+                Self::Device => "signup-phone-ethereum.stage-crypto.worldcoin.org",
+                Self::Passport => "signup-document.stage-crypto.worldcoin.org",
+                Self::SecurePassport => {
+                    "signup-document-secure.stage-crypto.worldcoin.org"
+                }
+            }
+        } else {
+            match self {
+                Self::Orb => "signup-orb-ethereum.crypto.worldcoin.org",
+                Self::Device => "signup-phone-ethereum.crypto.worldcoin.org",
+                Self::Passport => "signup-document.crypto.worldcoin.org",
+                Self::SecurePassport => "signup-document-secure.crypto.worldcoin.org",
+            }
         }
     }
 }
