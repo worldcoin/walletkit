@@ -33,8 +33,12 @@ impl Context {
     ///
     /// # Arguments
     ///
-    /// * `app_id` - The ID of the application requesting proofs. This can be obtained from the Developer Portal.
+    /// * `app_id` - The ID of the application requesting proofs.  This can be obtained from the [Developer Portal](https://developer.world.org).
     /// * `action` - Optional. Custom incognito action being requested.
+    /// * `signal` - Optional. The signal is included in the ZKP and is committed to in the proof. When verifying the proof, the
+    ///     same signal must be provided to ensure the proof is valid. The signal can be used to prevent replay attacks, MITM or other cases.
+    ///     More details available in the [docs](https://docs.world.org/world-id/further-reading/zero-knowledge-proofs).
+    /// * `credential_type` - The type of credential being requested.
     ///
     #[must_use]
     #[uniffi::constructor]
@@ -60,8 +64,7 @@ impl Context {
     ///
     /// # Arguments
     ///
-    /// * `app_id` - The ID of the application requesting proofs. This can be obtained from the Developer Portal.
-    /// * `action` - Optional. Custom incognito action being requested as raw bytes (*must be UTF-8*).
+    /// See `Context::new` for reference. The `action` and `signal` need to be provided as raw bytes.
     ///
     #[must_use]
     #[uniffi::constructor]
@@ -96,10 +99,17 @@ impl Context {
 /// More information on: [On-Chain Verification](https://docs.world.org/world-id/id/on-chain)
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object, Serialize)]
 pub struct Output {
+    /// The root hash of the Merkle tree used to prove membership. This root hash should match published hashes in the World ID
+    ///     protocol contract in Ethereum mainnet. See [address book](https://docs.world.org/world-id/reference/address-book).
     pub merkle_root: U256Wrapper,
+    /// Represents the unique identifier for a specific context (app & action) and World ID. A World ID holder will always generate
+    /// the same `nullifier_hash` for the same context.
     pub nullifier_hash: U256Wrapper,
+    /// The raw zero-knowledge proof.
     #[serde(skip_serializing)]
     pub raw_proof: Proof,
+    /// The ABI-encoded zero-knowledge proof represented as a string. This is the format generally used with other libraries and
+    /// can be directly used with the Developer Portal for verification.
     pub proof: PackedProof,
 }
 
