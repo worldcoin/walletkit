@@ -1,7 +1,7 @@
 [package]
-name = "uniffi-bindgen"
-description = "Binding generation for WalletKit"
-publish = false
+name = "walletkit"
+description = "Reference implementation for World ID clients."
+
 
 version.workspace = true
 edition.workspace = true
@@ -16,9 +16,4 @@ readme.keywords = true
 readme.categories = true
 
 
-[[bin]]
-name = "uniffi-bindgen"
-path = "./src/uniffi_bindgen.rs"
-
-[dependencies]
-uniffi = { workspace = true, features = ["cli"] }
+# TODO: Add `walletkit-core` dependency once ready
