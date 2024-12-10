@@ -97,6 +97,13 @@ pub struct Output {
     pub proof: PackedProof,
 }
 
+#[uniffi::export]
+impl Output {
+    fn to_json(&self) -> Result<String, Error> {
+        serde_json::to_string(self).map_err(|_| Error::SerializationError)
+    }
+}
+
 /// Generates a Semaphore ZKP for a specific Semaphore identity using the relevant provided context.
 ///
 /// # Errors
@@ -129,7 +136,7 @@ pub fn generate_proof_with_semaphore_identity(
 }
 
 #[cfg(test)]
-mod tests {
+mod external_nullifier_tests {
     use alloy_core::primitives::address;
     use ruint::{aliases::U256, uint};
 
@@ -237,5 +244,118 @@ mod tests {
             // expected output obtained from Solidity
             "0x005b49f95e822c7c37f4f043421689b11f880e617faa5cd0391803bc9bcc63c0"
         );
+    }
+}
+
+#[cfg(test)]
+mod proof_tests {
+
+    use regex::Regex;
+    use semaphore::protocol::verify_proof;
+    use serde_json::Value;
+
+    use super::*;
+
+    fn helper_load_merkle_proof() -> MerkleTreeProof {
+        let json_merkle: Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/inclusion_proof.json"
+        ))
+        .unwrap();
+        MerkleTreeProof::from_json_proof(
+            &serde_json::to_string(&json_merkle["proof"]).unwrap(),
+            json_merkle["root"].as_str().unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn test_proof_generation() {
+        let context = Context::new(
+            "app_staging_45068dca85829d2fd90e2dd6f0bff997",
+            Some("test-action-89tcf".to_string()),
+            None,
+            CredentialType::Device.into(),
+        );
+
+        let mut secret = b"not_a_real_secret".to_vec();
+
+        let identity = semaphore::identity::Identity::from_secret(
+            &mut secret,
+            Some(context.credential_type.as_identity_trapdoor()),
+        );
+
+        assert_eq!(
+            U256Wrapper::from(identity.commitment()).to_hex_string(),
+            "0x1a060ef75540e13711f074b779a419c126ab5a89d2c2e7d01e64dfd121e44671"
+        );
+
+        // Compute ZKP
+        let zkp = generate_proof_with_semaphore_identity(
+            &identity,
+            helper_load_merkle_proof(),
+            &context,
+        )
+        .unwrap();
+
+        assert_eq!(
+            zkp.merkle_root.to_hex_string(),
+            "0x2f3a95b6df9074a19bf46e2308d7f5696e9dca49e0d64ef49a1425bbf40e0c02"
+        );
+
+        assert_eq!(
+            zkp.nullifier_hash.to_hex_string(),
+            "0x11d194ff98df5c8e239e6b6e33cce7fb1b419344cb13e064350a917970c8fea4"
+        );
+
+        // assert proof verifies locally
+        assert!(verify_proof(
+            *zkp.merkle_root,
+            *zkp.nullifier_hash,
+            hash_to_field(&[]),
+            *context.external_nullifier,
+            &zkp.raw_proof,
+            30
+        )
+        .unwrap());
+    }
+
+    #[test]
+    fn test_proof_json_encoding() {
+        let context = Context::new(
+            "app_staging_45068dca85829d2fd90e2dd6f0bff997",
+            Some("test-action-89tcf".to_string()),
+            None,
+            CredentialType::Device.into(),
+        );
+
+        let mut secret = b"not_a_real_secret".to_vec();
+        let identity = semaphore::identity::Identity::from_secret(
+            &mut secret,
+            Some(context.credential_type.as_identity_trapdoor()),
+        );
+
+        // Compute ZKP
+        let zkp = generate_proof_with_semaphore_identity(
+            &identity,
+            helper_load_merkle_proof(),
+            &context,
+        )
+        .unwrap();
+
+        let parsed_json: Value = serde_json::from_str(&zkp.to_json().unwrap()).unwrap();
+
+        assert_eq!(
+            parsed_json["nullifier_hash"].as_str().unwrap(),
+            "0x11d194ff98df5c8e239e6b6e33cce7fb1b419344cb13e064350a917970c8fea4"
+        );
+        assert_eq!(
+            parsed_json["merkle_root"].as_str().unwrap(),
+            "0x2f3a95b6df9074a19bf46e2308d7f5696e9dca49e0d64ef49a1425bbf40e0c02"
+        );
+
+        // ensure the proof is automatically encoded as packed
+        let packed_proof_pattern = r"^0x[a-f0-9]{400,600}$";
+        let re = Regex::new(packed_proof_pattern).unwrap();
+        assert!(re.is_match(parsed_json["proof"].as_str().unwrap()));
     }
 }

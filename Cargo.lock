@@ -6114,6 +6114,7 @@ dependencies = [
  "alloy-core",
  "hex",
  "mockito",
+ "regex",
  "reqwest 0.12.9",
  "ruint",
  "semaphore",

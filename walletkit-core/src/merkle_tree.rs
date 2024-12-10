@@ -1,4 +1,3 @@
-use ruint::aliases::U256;
 use semaphore::poseidon_tree::Proof;
 use serde::{Deserialize, Serialize};
 
@@ -83,9 +82,8 @@ impl MerkleTreeProof {
 
         Ok(Self {
             poseidon_proof: proof,
-            merkle_root: U256::from_str_radix(merkle_root, 16)
-                .map_err(|_| Error::InvalidInput)?
-                .into(),
+            merkle_root: U256Wrapper::try_from_hex_string(merkle_root)
+                .map_err(|_| Error::InvalidInput)?,
         })
     }
 }

@@ -41,19 +41,23 @@ impl CredentialType {
     pub fn get_sign_up_sequencer_host(&self, environment: &Environment) -> &str {
         if environment == &Environment::Staging {
             match self {
-                Self::Orb => "signup-orb-ethereum.stage-crypto.worldcoin.org",
-                Self::Device => "signup-phone-ethereum.stage-crypto.worldcoin.org",
-                Self::Passport => "signup-document.stage-crypto.worldcoin.org",
+                Self::Orb => "https://signup-orb-ethereum.stage-crypto.worldcoin.org",
+                Self::Device => {
+                    "https://signup-phone-ethereum.stage-crypto.worldcoin.org"
+                }
+                Self::Passport => "https://signup-document.stage-crypto.worldcoin.org",
                 Self::SecurePassport => {
-                    "signup-document-secure.stage-crypto.worldcoin.org"
+                    "https://signup-document-secure.stage-crypto.worldcoin.org"
                 }
             }
         } else {
             match self {
-                Self::Orb => "signup-orb-ethereum.crypto.worldcoin.org",
-                Self::Device => "signup-phone-ethereum.crypto.worldcoin.org",
-                Self::Passport => "signup-document.crypto.worldcoin.org",
-                Self::SecurePassport => "signup-document-secure.crypto.worldcoin.org",
+                Self::Orb => "https://signup-orb-ethereum.crypto.worldcoin.org",
+                Self::Device => "https://signup-phone-ethereum.crypto.worldcoin.org",
+                Self::Passport => "https://signup-document.crypto.worldcoin.org",
+                Self::SecurePassport => {
+                    "https://signup-document-secure.crypto.worldcoin.org"
+                }
             }
         }
     }

@@ -35,4 +35,5 @@ uniffi = { workspace = true, features = ["build"] }
 [dev-dependencies]
 alloy = { version = "0.6.4", default-features = false, features = ["json", "contract", "node-bindings"] }
 mockito = "1.6.1"
+regex = "1.11.1"
 tokio = "1.41.1"
