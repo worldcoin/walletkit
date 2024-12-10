@@ -130,13 +130,34 @@ mod tests {
     use std::sync::Arc;
 
     use super::*;
+
     #[test]
-    fn test() {
-        // FIXME: incomplete test
+    fn test_proof_generation() {
+        // TODO: complete test
         let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
         let context = Context::new("app_id", None, None, Arc::new(CredentialType::Orb));
         let nullifier_hash = identity.generate_nullifier_hash(&context);
         println!("{}", nullifier_hash.to_hex_string());
+    }
+
+    #[test]
+    const fn test_proof_generation_for_alt_credential() {
+        // TODO: implement me
+    }
+
+    #[test]
+    const fn test_proof_generation_with_simple_signal() {
+        // TODO: implement me (string signal)
+    }
+
+    #[test]
+    const fn test_proof_generation_with_complex_signal() {
+        // TODO: implement me (e.g. ABI-encoded wallet address)
+    }
+
+    #[test]
+    const fn test_nullifier_hash_generation() {
+        // TODO: implement me
     }
 
     #[test]

@@ -364,4 +364,21 @@ mod proof_tests {
         let re = Regex::new(packed_proof_pattern).unwrap();
         assert!(re.is_match(parsed_json["proof"].as_str().unwrap()));
     }
+
+    #[test]
+    const fn test_proof_generation_with_local_merkle_tree() {
+        // TODO: implement me
+    }
+
+    #[ignore = "To be run manually as it requires a call to the Sign up Sequencer"]
+    #[test]
+    fn test_proof_verification_with_sign_up_sequencer() {
+        todo!("implement me");
+    }
+
+    #[ignore = "To be run manually as it requires a call to the Developer Portal"]
+    #[test]
+    fn test_proof_verification_with_developer_portal() {
+        todo!("implement me");
+    }
 }
