@@ -12,6 +12,8 @@ homepage = "https://docs.world.org" # TODO: Update to specific WalletKit page
 rust-version = "1.82"
 repository = "https://github.com/worldcoin/walletkit"
 exclude = ["tests/", "uniffi-bindgen/"]
+keywords = ["ZKP", "WorldID", "World", "Identity", "Semaphore"]
+categories = ["api-bindings", "cryptography::cryptocurrencies"]
 
 
 [workspace.dependencies]

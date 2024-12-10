@@ -1,8 +1,6 @@
 [package]
 name = "uniffi-bindgen"
 description = "Binding generation for WalletKit"
-keywords = ["ZKP", "World ID", "World"]
-categories = ["API bindings"]
 publish = false
 
 version.workspace = true
@@ -14,6 +12,8 @@ homepage.workspace = true
 repository.workspace = true
 exclude.workspace = true
 readme.workspace = true
+readme.keywords = true
+readme.categories = true
 
 
 [[bin]]
