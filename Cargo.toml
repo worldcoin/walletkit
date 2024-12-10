@@ -1,5 +1,5 @@
 [workspace]
-members = ["uniffi-bindgen","walletkit-core"]
+members = ["uniffi-bindgen","walletkit-core", "walletkit"]
 resolver = "2"
 
 [workspace.package]
