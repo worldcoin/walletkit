@@ -25,6 +25,8 @@ jobs:
 
       - name: Calculate new version
         id: version
+        env:
+          BUMP_TYPE: ${{ github.event.inputs.bump_type }}
         run: |
           # Get current version from Cargo.toml
           CURRENT_VERSION=$(grep -m 1 'version = ' Cargo.toml | cut -d '"' -f 2)
@@ -39,7 +41,7 @@ jobs:
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
           # Calculate new version based on bump type
-          case "${{ github.event.inputs.bump_type }}" in
+          case "$BUMP_TYPE" in
             "major")
               NEW_VERSION="$((MAJOR + 1)).0.0"
               ;;
