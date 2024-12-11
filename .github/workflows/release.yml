@@ -29,6 +29,12 @@ jobs:
           # Get current version from Cargo.toml
           CURRENT_VERSION=$(grep -m 1 'version = ' Cargo.toml | cut -d '"' -f 2)
 
+          # Ensure CURRENT_VERSION is in semantic versioning format
+          if [[ ! "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "CRITICAL ERROR: CURRENT_VERSION '$CURRENT_VERSION' is not in semantic versioning format (MAJOR.MINOR.PATCH)."
+              exit 1
+          fi
+
           # Split version into components
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
