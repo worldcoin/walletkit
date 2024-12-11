@@ -27,7 +27,7 @@ jobs:
         id: version
         run: |
           # Get current version from Cargo.toml
-          CURRENT_VERSION=$(grep -m 1 'version = ' walletkit-core/Cargo.toml | cut -d '"' -f 2)
+          CURRENT_VERSION=$(grep -m 1 'version = ' Cargo.toml | cut -d '"' -f 2)
 
           # Split version into components
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
