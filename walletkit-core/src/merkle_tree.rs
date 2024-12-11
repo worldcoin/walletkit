@@ -12,22 +12,8 @@ struct SequencerBody {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InclusionProofResponse {
-    #[serde(deserialize_with = "deserialize_merkle_root")]
     root: U256Wrapper,
     proof: Proof,
-}
-
-fn deserialize_merkle_root<'de, D>(deserializer: D) -> Result<U256Wrapper, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-    let merkle_root = U256Wrapper::try_from_hex_string(&s).map_err(|e| {
-        serde::de::Error::custom(format!(
-            "merkle root received is not a valid number: {e}"
-        ))
-    })?;
-    Ok(merkle_root)
 }
 
 #[derive(Debug, uniffi::Object)]
@@ -37,9 +23,11 @@ pub struct MerkleTreeProof {
     pub merkle_root: U256Wrapper,
 }
 
-impl From<MerkleTreeProof> for Proof {
-    fn from(proof: MerkleTreeProof) -> Self {
-        proof.poseidon_proof
+impl MerkleTreeProof {
+    /// Returns the Poseidon proof.
+    #[must_use]
+    pub const fn as_poseidon_proof(&self) -> &Proof {
+        &self.poseidon_proof
     }
 }
 

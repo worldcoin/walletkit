@@ -97,7 +97,7 @@ impl Identity {
         )
         .await?;
 
-        generate_proof_with_semaphore_identity(&identity, merkle_tree_proof, context)
+        generate_proof_with_semaphore_identity(&identity, &merkle_tree_proof, context)
     }
 }
 

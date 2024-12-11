@@ -126,19 +126,18 @@ impl Output {
 /// Returns an error if proof generation fails
 pub fn generate_proof_with_semaphore_identity(
     identity: &identity::Identity,
-    merkle_tree_proof: MerkleTreeProof,
+    merkle_tree_proof: &MerkleTreeProof,
     context: &Context,
 ) -> Result<Output, Error> {
     let merkle_root = merkle_tree_proof.merkle_root; // clone the value
 
-    let merkle_proof = semaphore::poseidon_tree::Proof::from(merkle_tree_proof);
     let external_nullifier_hash = context.external_nullifier.into();
     let nullifier_hash =
         generate_nullifier_hash(identity, external_nullifier_hash).into();
 
     let proof = generate_proof(
         identity,
-        &merkle_proof,
+        merkle_tree_proof.as_poseidon_proof(),
         external_nullifier_hash,
         context.signal.into(),
     )?;
@@ -308,7 +307,7 @@ mod proof_tests {
         // Compute ZKP
         let zkp = generate_proof_with_semaphore_identity(
             &identity,
-            helper_load_merkle_proof(),
+            &helper_load_merkle_proof(),
             &context,
         )
         .unwrap();
@@ -353,7 +352,7 @@ mod proof_tests {
         // Compute ZKP
         let zkp = generate_proof_with_semaphore_identity(
             &identity,
-            helper_load_merkle_proof(),
+            &helper_load_merkle_proof(),
             &context,
         )
         .unwrap();

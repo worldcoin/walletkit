@@ -38,9 +38,9 @@ impl CredentialType {
     /// # Future
     /// - Support custom sign up sequencer hosts
     #[must_use]
-    pub fn get_sign_up_sequencer_host(&self, environment: &Environment) -> &str {
-        if environment == &Environment::Staging {
-            match self {
+    pub const fn get_sign_up_sequencer_host(&self, environment: &Environment) -> &str {
+        match environment {
+            Environment::Production => match self {
                 Self::Orb => "https://signup-orb-ethereum.stage-crypto.worldcoin.org",
                 Self::Device => {
                     "https://signup-phone-ethereum.stage-crypto.worldcoin.org"
@@ -49,16 +49,15 @@ impl CredentialType {
                 Self::SecurePassport => {
                     "https://signup-document-secure.stage-crypto.worldcoin.org"
                 }
-            }
-        } else {
-            match self {
+            },
+            Environment::Staging => match self {
                 Self::Orb => "https://signup-orb-ethereum.crypto.worldcoin.org",
                 Self::Device => "https://signup-phone-ethereum.crypto.worldcoin.org",
                 Self::Passport => "https://signup-document.crypto.worldcoin.org",
                 Self::SecurePassport => {
                     "https://signup-document-secure.crypto.worldcoin.org"
                 }
-            }
+            },
         }
     }
 }
