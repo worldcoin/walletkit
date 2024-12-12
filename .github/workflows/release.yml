@@ -95,9 +95,6 @@ jobs:
         run: |
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          # built binary files are too large for the default buffer
-          git config --global http.postBuffer 157286400
-          git config --global http.version HTTP/1.1
           git add Cargo.toml
           git add Cargo.lock
           git commit -m "Bump crate version to ${{ steps.version.outputs.new_version }}"
@@ -163,6 +160,8 @@ jobs:
           cd target-repo
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
+           # built binary files are too large for the default buffer
+          git config --global http.postBuffer 157286400
           git add .
           git commit -m "Release ${{ needs.update-cargo-version.outputs.new_version }}"
 
