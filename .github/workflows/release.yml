@@ -163,7 +163,9 @@ jobs:
 
           # Initialize Git LFS and track the large files
           git lfs install
-          git lfs track "*.xcframework"
+          git lfs track "*.a"
+
+          git status
 
           git add .
           git commit -m "Release ${{ needs.update-cargo-version.outputs.new_version }}"
