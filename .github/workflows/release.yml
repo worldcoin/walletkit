@@ -160,8 +160,11 @@ jobs:
           cd target-repo
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-           # built binary files are too large for the default buffer
-          git config --global http.postBuffer 157286400
+
+          # Initialize Git LFS and track the large files
+          git lfs install
+          git lfs track "*.xcframework"
+
           git add .
           git commit -m "Release ${{ needs.update-cargo-version.outputs.new_version }}"
 
