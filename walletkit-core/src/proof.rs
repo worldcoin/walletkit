@@ -98,7 +98,8 @@ impl Context {
 ///
 /// More information on: [On-Chain Verification](https://docs.world.org/world-id/id/on-chain)
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object, Serialize)]
-pub struct Output {
+#[allow(clippy::module_name_repetitions)]
+pub struct ProofOutput {
     /// The root hash of the Merkle tree used to prove membership. This root hash should match published hashes in the World ID
     ///     protocol contract in Ethereum mainnet. See [address book](https://docs.world.org/world-id/reference/address-book).
     pub merkle_root: U256Wrapper,
@@ -114,8 +115,8 @@ pub struct Output {
 }
 
 #[uniffi::export]
-impl Output {
-    fn to_json(&self) -> Result<String, Error> {
+impl ProofOutput {
+    pub fn to_json(&self) -> Result<String, Error> {
         serde_json::to_string(self).map_err(|_| Error::SerializationError)
     }
 }
@@ -128,7 +129,7 @@ pub fn generate_proof_with_semaphore_identity(
     identity: &identity::Identity,
     merkle_tree_proof: &MerkleTreeProof,
     context: &Context,
-) -> Result<Output, Error> {
+) -> Result<ProofOutput, Error> {
     let merkle_root = merkle_tree_proof.merkle_root; // clone the value
 
     let external_nullifier_hash = context.external_nullifier.into();
@@ -142,7 +143,7 @@ pub fn generate_proof_with_semaphore_identity(
         context.signal.into(),
     )?;
 
-    Ok(Output {
+    Ok(ProofOutput {
         merkle_root,
         nullifier_hash,
         raw_proof: proof,

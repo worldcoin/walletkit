@@ -6109,6 +6109,9 @@ dependencies = [
 [[package]]
 name = "walletkit"
 version = "0.0.11"
+dependencies = [
+ "walletkit-core",
+]
 
 [[package]]
 name = "walletkit-core"

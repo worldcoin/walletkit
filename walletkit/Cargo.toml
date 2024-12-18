@@ -16,4 +16,5 @@ readme.keywords = true
 readme.categories = true
 
 
-# TODO: Add `walletkit-core` dependency once ready
+[dependencies]
+walletkit-core = { workspace = true }

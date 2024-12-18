@@ -5,7 +5,7 @@ use semaphore::{identity::seed_hex, protocol::generate_nullifier_hash};
 use crate::{
     credential_type::CredentialType,
     merkle_tree::MerkleTreeProof,
-    proof::{Context, Output},
+    proof::{Context, ProofOutput},
     u256::U256Wrapper,
     Environment,
 };
@@ -82,7 +82,10 @@ impl Identity {
     /// # Errors
     /// Will error if the Merkle Tree inclusion proof cannot be retrieved from the sign up sequencer or if
     /// something fails with the proof generation.
-    pub async fn generate_proof(&self, context: &Context) -> Result<Output, Error> {
+    pub async fn generate_proof(
+        &self,
+        context: &Context,
+    ) -> Result<ProofOutput, Error> {
         let identity = self.semaphore_identity_for_credential(&context.credential_type);
         // fetch directly instead of `get_identity_commitment` to avoid duplicate computations
         let identity_commitment = identity.commitment().into();

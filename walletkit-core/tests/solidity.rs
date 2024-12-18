@@ -5,7 +5,7 @@ use alloy::{
     sol,
     sol_types::SolValue,
 };
-use walletkit_core::{credential_type::CredentialType, proof::Context};
+use walletkit_core::{Context, CredentialType};
 
 sol!(
     #[allow(missing_docs)]
