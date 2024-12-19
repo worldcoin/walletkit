@@ -12,8 +12,8 @@ homepage.workspace = true
 repository.workspace = true
 exclude.workspace = true
 readme.workspace = true
-readme.keywords = true
-readme.categories = true
+keywords.workspace = true
+categories.workspace = true
 
 
 [lib]
@@ -37,3 +37,4 @@ alloy = { version = "0.6.4", default-features = false, features = ["json", "cont
 mockito = "1.6.1"
 regex = "1.11.1"
 tokio = "1.41.1"
+tokio-test = "0.4.4"

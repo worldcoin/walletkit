@@ -12,8 +12,9 @@ homepage.workspace = true
 repository.workspace = true
 exclude.workspace = true
 readme.workspace = true
-readme.keywords = true
-readme.categories = true
+keywords.workspace = true
+categories.workspace = true
 
 
-# TODO: Add `walletkit-core` dependency once ready
+[dependencies]
+walletkit-core = { workspace = true }
