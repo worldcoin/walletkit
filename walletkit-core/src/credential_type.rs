@@ -2,12 +2,22 @@ use strum::EnumString;
 
 use crate::Environment;
 
+/// A `CredentialType` represents a specific credential which can be presented by a World ID holder.
+///
+/// For example, if a World ID is Orb-verified, the holder can use their `Orb` credential to prove they have a
+/// valid Orb-verified credential.
+///
+/// More details in `https://docs.world.org/world-id/concepts#proof-of-personhood`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Object, EnumString, Hash)]
 #[strum(serialize_all = "snake_case")]
 pub enum CredentialType {
+    /// Represents persons who have been biometrically verified at an Orb. Highest level of proof of personhood verification.
     Orb,
+    /// Verified biometric passport holder
     Passport,
+    /// Verified biometric passport holder with additional presence check verifications such as Chip Authentication
     SecurePassport,
+    /// Represents a semi-unique device
     Device,
 }
 
@@ -40,7 +50,7 @@ impl CredentialType {
     #[must_use]
     pub const fn get_sign_up_sequencer_host(&self, environment: &Environment) -> &str {
         match environment {
-            Environment::Production => match self {
+            Environment::Staging => match self {
                 Self::Orb => "https://signup-orb-ethereum.stage-crypto.worldcoin.org",
                 Self::Device => {
                     "https://signup-phone-ethereum.stage-crypto.worldcoin.org"
@@ -50,7 +60,7 @@ impl CredentialType {
                     "https://signup-document-secure.stage-crypto.worldcoin.org"
                 }
             },
-            Environment::Staging => match self {
+            Environment::Production => match self {
                 Self::Orb => "https://signup-orb-ethereum.crypto.worldcoin.org",
                 Self::Device => "https://signup-phone-ethereum.crypto.worldcoin.org",
                 Self::Passport => "https://signup-document.crypto.worldcoin.org",

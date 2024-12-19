@@ -33,6 +33,7 @@ pub struct Identity {
 
 #[uniffi::export]
 impl Identity {
+    /// Initializes a new `Identity` from a World ID secret. The identity is initialized for a specific environment.
     #[must_use]
     #[uniffi::constructor]
     pub fn new(secret: &[u8], environment: &Environment) -> Self {
@@ -82,6 +83,21 @@ impl Identity {
     /// # Errors
     /// Will error if the Merkle Tree inclusion proof cannot be retrieved from the sign up sequencer or if
     /// something fails with the proof generation.
+    ///
+    /// # Examples
+    /// // NOTE: This is an integration test. Running this doctest example requires an HTTP connection to the sequencer.
+    /// ```rust
+    /// use walletkit_core::{Context, CredentialType, Environment, Identity};
+    /// use std::sync::Arc;
+
+    /// # tokio_test::block_on(async {
+    ///     let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
+    ///     let context = Context::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, Arc::new(CredentialType::Device));
+    ///     let proof = identity.generate_proof(&context).await.unwrap();
+    ///     assert_eq!(proof.nullifier_hash.to_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
+    /// # })
+    ///
+    /// ```
     pub async fn generate_proof(
         &self,
         context: &Context,
