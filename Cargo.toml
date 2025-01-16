@@ -20,6 +20,7 @@ categories = ["api-bindings", "cryptography::cryptocurrencies"]
 uniffi = { version = "0.28.2", features = [
     "build",
 ] }
+walletkit-core = { path = "walletkit-core" }
 
 [profile.release]
 opt-level = 'z' # Optimize for size.

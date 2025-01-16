@@ -18,8 +18,12 @@ use crate::{
 /// It is required to generate a `Proof` and will generally be initialized from an `app_id` and `action`.
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
 pub struct Context {
+    /// The `external_nullifier` is the computed result of a specific context for which a World ID Proof is generated.
+    /// It is used in the Sempahore ZK circuit and in the computation of the `nullifier_hash` to guarantee uniqueness in a privacy-preserving way.
     pub external_nullifier: U256Wrapper,
+    /// Represents the specific credential to be used for a World ID Proof.
     pub credential_type: CredentialType,
+    /// The signal is included in the ZKP and is committed to in the proof. When verifying the proof, the same signal must be provided.
     pub signal: U256Wrapper,
 }
 
@@ -98,7 +102,8 @@ impl Context {
 ///
 /// More information on: [On-Chain Verification](https://docs.world.org/world-id/id/on-chain)
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object, Serialize)]
-pub struct Output {
+#[allow(clippy::module_name_repetitions)]
+pub struct ProofOutput {
     /// The root hash of the Merkle tree used to prove membership. This root hash should match published hashes in the World ID
     ///     protocol contract in Ethereum mainnet. See [address book](https://docs.world.org/world-id/reference/address-book).
     pub merkle_root: U256Wrapper,
@@ -114,8 +119,12 @@ pub struct Output {
 }
 
 #[uniffi::export]
-impl Output {
-    fn to_json(&self) -> Result<String, Error> {
+impl ProofOutput {
+    /// Converts the entire proof output to a JSON string with standard attribute names.
+    ///
+    /// # Errors
+    /// Will error if serialization fails.
+    pub fn to_json(&self) -> Result<String, Error> {
         serde_json::to_string(self).map_err(|_| Error::SerializationError)
     }
 }
@@ -128,7 +137,7 @@ pub fn generate_proof_with_semaphore_identity(
     identity: &identity::Identity,
     merkle_tree_proof: &MerkleTreeProof,
     context: &Context,
-) -> Result<Output, Error> {
+) -> Result<ProofOutput, Error> {
     let merkle_root = merkle_tree_proof.merkle_root; // clone the value
 
     let external_nullifier_hash = context.external_nullifier.into();
@@ -142,7 +151,7 @@ pub fn generate_proof_with_semaphore_identity(
         context.signal.into(),
     )?;
 
-    Ok(Output {
+    Ok(ProofOutput {
         merkle_root,
         nullifier_hash,
         raw_proof: proof,
