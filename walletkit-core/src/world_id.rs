@@ -91,7 +91,7 @@ impl WorldID {
     /// use std::sync::Arc;
 
     /// # tokio_test::block_on(async {
-    ///     let world_id = Identity::new(b"not_a_real_secret", &Environment::Staging);
+    ///     let world_id = WorldID::new(b"not_a_real_secret", &Environment::Staging);
     ///     let context = Context::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, Arc::new(CredentialType::Device));
     ///     let proof = world_id.generate_proof(&context).await.unwrap();
     ///     assert_eq!(proof.nullifier_hash.to_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
