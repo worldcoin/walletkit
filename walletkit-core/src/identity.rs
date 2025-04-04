@@ -1,6 +1,6 @@
 use crate::{error::Error, proof::generate_proof_with_semaphore_identity};
 
-use semaphore::{identity::seed_hex, protocol::generate_nullifier_hash};
+use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
 
 use crate::{
     credential_type::CredentialType,
@@ -24,7 +24,7 @@ use crate::{
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
 pub struct Identity {
     /// The Semaphore-based identity specifically for the `CredentialType::Orb`
-    canonical_orb_semaphore_identity: semaphore::identity::Identity,
+    canonical_orb_semaphore_identity: semaphore_rs::identity::Identity,
     /// The hashed World ID secret, cast to 64 bytes (0-padded). Actual hashed secret is 32 bytes.
     secret_hex: [u8; 64],
     /// The environment in which this identity is running. Generally an app/client will be a single environment.
@@ -42,7 +42,7 @@ impl Identity {
         let mut secret_key = secret.to_vec();
 
         let canonical_orb_semaphore_identity =
-            semaphore::identity::Identity::from_secret(&mut secret_key, None);
+            semaphore_rs::identity::Identity::from_secret(&mut secret_key, None);
 
         Self {
             canonical_orb_semaphore_identity,
@@ -127,13 +127,13 @@ impl Identity {
     fn semaphore_identity_for_credential(
         &self,
         credential_type: &CredentialType,
-    ) -> semaphore::identity::Identity {
+    ) -> semaphore_rs::identity::Identity {
         if credential_type == &CredentialType::Orb {
             self.canonical_orb_semaphore_identity.clone()
         } else {
             // When the identity commitment for the non-canonical identity is requested, a new Semaphore identity needs to be initialized.
             let mut secret_hex = self.secret_hex;
-            let identity = semaphore::identity::Identity::from_hashed_secret(
+            let identity = semaphore_rs::identity::Identity::from_hashed_secret(
                 &mut secret_hex,
                 Some(credential_type.as_identity_trapdoor()),
             );
@@ -216,7 +216,7 @@ mod tests {
             )
         );
 
-        let semaphore_identity = semaphore::identity::Identity::from_secret(
+        let semaphore_identity = semaphore_rs::identity::Identity::from_secret(
             &mut b"not_a_real_secret".to_vec(),
             Some(b"secure_passport"),
         );
