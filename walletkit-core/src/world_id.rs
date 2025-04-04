@@ -22,7 +22,7 @@ use crate::{
 /// 2. Zeroize does not have good compatibility with `UniFFI` as `UniFFI` may make many copies of the bytes for usage in foreign code
 ///     ([reference](https://github.com/mozilla/uniffi-rs/issues/2080)). This needs to be further explored.
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
-pub struct Identity {
+pub struct WorldID {
     /// The Semaphore-based identity specifically for the `CredentialType::Orb`
     canonical_orb_semaphore_identity: semaphore::identity::Identity,
     /// The hashed World ID secret, cast to 64 bytes (0-padded). Actual hashed secret is 32 bytes.
@@ -32,7 +32,7 @@ pub struct Identity {
 }
 
 #[uniffi::export]
-impl Identity {
+impl WorldID {
     /// Initializes a new `Identity` from a World ID secret. The identity is initialized for a specific environment.
     #[must_use]
     #[uniffi::constructor]
@@ -58,7 +58,7 @@ impl Identity {
     /// [Protocol Reference](https://docs.semaphore.pse.dev/V2/technical-reference/circuits#nullifier-hash).
     #[must_use]
     pub fn generate_nullifier_hash(&self, context: &Context) -> U256Wrapper {
-        let identity = self.semaphore_identity_for_credential(&context.credential_type);
+        let world_id = self.semaphore_identity_for_credential(&context.credential_type);
         generate_nullifier_hash(&identity, *context.external_nullifier).into()
     }
 
@@ -73,8 +73,8 @@ impl Identity {
         &self,
         credential_type: &CredentialType,
     ) -> U256Wrapper {
-        let identity = self.semaphore_identity_for_credential(credential_type);
-        identity.commitment().into()
+        let world_id = self.semaphore_identity_for_credential(credential_type);
+        world_id.commitment().into()
     }
 
     /// Generates a World ID Zero-knowledge proof (ZKP) for a specific context (i.e. app + action) and the identity.
@@ -87,11 +87,11 @@ impl Identity {
     /// # Examples
     /// // NOTE: This is an integration test. Running this doctest example requires an HTTP connection to the sequencer.
     /// ```rust
-    /// use walletkit_core::{Context, CredentialType, Environment, Identity};
+    /// use walletkit_core::{Context, CredentialType, Environment, WorldID};
     /// use std::sync::Arc;
 
     /// # tokio_test::block_on(async {
-    ///     let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
+    ///     let world_id = Identity::new(b"not_a_real_secret", &Environment::Staging);
     ///     let context = Context::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, Arc::new(CredentialType::Device));
     ///     let proof = identity.generate_proof(&context).await.unwrap();
     ///     assert_eq!(proof.nullifier_hash.to_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
@@ -102,9 +102,9 @@ impl Identity {
         &self,
         context: &Context,
     ) -> Result<ProofOutput, Error> {
-        let identity = self.semaphore_identity_for_credential(&context.credential_type);
+        let world_id = self.semaphore_identity_for_credential(&context.credential_type);
         // fetch directly instead of `get_identity_commitment` to avoid duplicate computations
-        let identity_commitment = identity.commitment().into();
+        let identity_commitment = world_id.commitment().into();
 
         let sequencer_host = context
             .credential_type
@@ -116,11 +116,11 @@ impl Identity {
         )
         .await?;
 
-        generate_proof_with_semaphore_identity(&identity, &merkle_tree_proof, context)
+        generate_proof_with_semaphore_identity(&world_id, &merkle_tree_proof, context)
     }
 }
 
-impl Identity {
+impl WorldID {
     /// Retrieves the Semaphore identity for a specific `CredentialType` from memory or by computing it on the spot.
     #[must_use]
     #[allow(clippy::trivially_copy_pass_by_ref)]
@@ -133,11 +133,11 @@ impl Identity {
         } else {
             // When the identity commitment for the non-canonical identity is requested, a new Semaphore identity needs to be initialized.
             let mut secret_hex = self.secret_hex;
-            let identity = semaphore::identity::Identity::from_hashed_secret(
+            let world_id = semaphore::identity::Identity::from_hashed_secret(
                 &mut secret_hex,
                 Some(credential_type.as_identity_trapdoor()),
             );
-            identity
+            world_id
         }
     }
 }
@@ -153,9 +153,9 @@ mod tests {
     #[test]
     fn test_proof_generation() {
         // TODO: complete test
-        let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id = WorldID::new(b"not_a_real_secret", &Environment::Staging);
         let context = Context::new("app_id", None, None, Arc::new(CredentialType::Orb));
-        let nullifier_hash = identity.generate_nullifier_hash(&context);
+        let nullifier_hash = world_id.generate_nullifier_hash(&context);
         println!("{}", nullifier_hash.to_hex_string());
     }
 
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_secret_hex_generation() {
-        let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id = WorldID::new(b"not_a_real_secret", &Environment::Staging);
 
         // this is the expected SHA-256 of the secret (computed externally)
         let expected_hash: U256Wrapper = uint!(88026203285206540949013074047154212280150971633012190779810764227609557184952_U256).into();
@@ -191,13 +191,13 @@ mod tests {
         let mut result = [0_u8; 64];
         result[..].copy_from_slice(&bytes.as_bytes()[2..]); // we slice the first 2 chars to remove the 0x
 
-        assert_eq!(result, identity.secret_hex);
+        assert_eq!(result, world_id.secret_hex);
     }
 
     #[test]
     fn test_identity_commitment_generation() {
-        let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
-        let commitment = identity.get_identity_commitment(&CredentialType::Orb);
+        let world_id = WorldID::new(b"not_a_real_secret", &Environment::Staging);
+        let commitment = world_id.get_identity_commitment(&CredentialType::Orb);
 
         assert_eq!(
             *commitment,
@@ -207,7 +207,7 @@ mod tests {
         );
 
         let secure_passport_commitment =
-            identity.get_identity_commitment(&CredentialType::SecurePassport);
+            world_id.get_identity_commitment(&CredentialType::SecurePassport);
 
         assert_eq!(
             *secure_passport_commitment,
@@ -223,7 +223,7 @@ mod tests {
         assert_eq!(semaphore_identity.commitment(), *secure_passport_commitment);
 
         let device_commitment =
-            identity.get_identity_commitment(&CredentialType::Device);
+            world_id.get_identity_commitment(&CredentialType::Device);
 
         assert!(device_commitment != commitment);
     }
