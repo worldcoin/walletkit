@@ -89,7 +89,7 @@ impl Identity {
     /// ```rust
     /// use walletkit_core::{Context, CredentialType, Environment, Identity};
     /// use std::sync::Arc;
-
+    ///
     /// # tokio_test::block_on(async {
     ///     let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
     ///     let context = Context::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, Arc::new(CredentialType::Device));
