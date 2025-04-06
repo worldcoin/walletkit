@@ -309,7 +309,7 @@ mod proof_tests {
         );
 
         assert_eq!(
-            U256Wrapper::from(world_id.commitment()).to_hex_string(),
+            U256Wrapper::from(identity.commitment()).to_hex_string(),
             "0x1a060ef75540e13711f074b779a419c126ab5a89d2c2e7d01e64dfd121e44671"
         );
 

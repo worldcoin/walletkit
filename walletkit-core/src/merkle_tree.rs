@@ -78,7 +78,7 @@ impl MerkleTreeProof {
 
 #[cfg(test)]
 mod tests {
-    use crate::{credential_type::CredentialType, world_id::WorldID, Environment};
+    use crate::{credential_type::CredentialType, world_id::WorldId, Environment};
 
     use super::*;
 
@@ -93,7 +93,7 @@ mod tests {
             .create_async()
             .await;
 
-        let world_id = WorldID::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
 
         let merkle_proof = MerkleTreeProof::from_identity_commitment(
             &world_id.get_identity_commitment(&CredentialType::Device),
