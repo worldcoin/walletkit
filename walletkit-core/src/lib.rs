@@ -9,7 +9,7 @@ use strum::EnumString;
 /// Each environment uses different sources of truth for the World ID credentials.
 ///
 /// More information on testing for the World ID Protocol can be found in: `https://docs.world.org/world-id/quick-start/testing`
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Object, EnumString)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum, EnumString)]
 #[strum(serialize_all = "lowercase")]
 pub enum Environment {
     /// For testing purposes ONLY.
