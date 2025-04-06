@@ -1,4 +1,4 @@
-use semaphore::poseidon_tree::Proof;
+use semaphore_rs::poseidon_tree::Proof;
 use serde::{Deserialize, Serialize};
 
 use crate::{error::Error, request::Request, u256::U256Wrapper};
