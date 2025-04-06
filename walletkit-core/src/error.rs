@@ -18,5 +18,5 @@ pub enum Error {
     Reqwest(#[from] reqwest::Error),
     /// Unhandled error generating a Zero-Knowledge Proof
     #[error(transparent)]
-    ProofGeneration(#[from] semaphore::protocol::ProofError),
+    ProofGeneration(#[from] semaphore_rs::protocol::ProofError),
 }

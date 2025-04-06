@@ -2,7 +2,7 @@ use crate::error::Error;
 use std::sync::Arc;
 
 use alloy_core::sol_types::SolValue;
-use semaphore::{
+use semaphore_rs::{
     hash_to_field, identity,
     packed_proof::PackedProof,
     protocol::{generate_nullifier_hash, generate_proof, Proof},
@@ -275,7 +275,7 @@ mod external_nullifier_tests {
 mod proof_tests {
 
     use regex::Regex;
-    use semaphore::protocol::verify_proof;
+    use semaphore_rs::protocol::verify_proof;
     use serde_json::Value;
 
     use super::*;
@@ -303,7 +303,7 @@ mod proof_tests {
 
         let mut secret = b"not_a_real_secret".to_vec();
 
-        let world_id = semaphore::identity::Identity::from_secret(
+        let identity = semaphore_rs::identity::Identity::from_secret(
             &mut secret,
             Some(context.credential_type.as_identity_trapdoor()),
         );
@@ -315,7 +315,7 @@ mod proof_tests {
 
         // Compute ZKP
         let zkp = generate_proof_with_semaphore_identity(
-            &world_id,
+            &identity,
             &helper_load_merkle_proof(),
             &context,
         )
@@ -353,14 +353,14 @@ mod proof_tests {
         );
 
         let mut secret = b"not_a_real_secret".to_vec();
-        let world_id = semaphore::identity::Identity::from_secret(
+        let identity = semaphore_rs::identity::Identity::from_secret(
             &mut secret,
             Some(context.credential_type.as_identity_trapdoor()),
         );
 
         // Compute ZKP
         let zkp = generate_proof_with_semaphore_identity(
-            &world_id,
+            &identity,
             &helper_load_merkle_proof(),
             &context,
         )
