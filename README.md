@@ -54,20 +54,20 @@ WalletKit is broken down into separate crates, offering the following functional
 
 ## Getting Started
 
-WalletKit is generally centered around a World ID. The most basic usage requires initializing a World ID `Identity`.
+WalletKit is generally centered around a World ID. The most basic usage requires initializing a `WorldId`.
 
 A World ID can then be used to generate [Zero-Knowledge Proofs](https://docs.world.org/world-id/further-reading/zero-knowledge-proofs).
 
 A ZKP is analogous to _presenting_ a credential.
 
 ```rust
-use walletkit::{Context, CredentialType, Environment, Identity};
+use walletkit::{Context, CredentialType, Environment, WorldId};
 use std::sync::Arc;
 
 async fn example() {
-    let identity = Identity::new(b"not_a_real_secret", &Environment::Staging);
+    let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
     let context = Context::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, Arc::new(CredentialType::Orb));
-    let proof = identity.generate_proof(&context).await.unwrap();
+    let proof = world_id.generate_proof(&context).await.unwrap();
 
     dbg!(proof.to_json()); // the JSON output can be passed to the Developer Portal or other places for verification
 }

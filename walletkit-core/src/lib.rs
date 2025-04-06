@@ -24,8 +24,8 @@ pub use credential_type::*;
 mod error;
 pub use error::*;
 
-mod identity;
-pub use identity::*;
+mod world_id;
+pub use world_id::*;
 
 mod proof;
 pub use proof::*;
