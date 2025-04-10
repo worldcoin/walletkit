@@ -61,7 +61,7 @@ A World ID can then be used to generate [Zero-Knowledge Proofs](https://docs.wor
 A ZKP is analogous to _presenting_ a credential.
 
 ```rust
-use walletkit::{ProofContext, CredentialType, Environment, WorldId};
+use walletkit::{proof::ProofContext, CredentialType, Environment, world_id::WorldId};
 use std::sync::Arc;
 
 async fn example() {

@@ -87,7 +87,7 @@ impl WorldId {
     /// # Examples
     /// // NOTE: This is an integration test. Running this doctest example requires an HTTP connection to the sequencer.
     /// ```rust
-    /// use walletkit_core::{ProofContext, CredentialType, Environment, WorldId};
+    /// use walletkit_core::{proof::ProofContext, CredentialType, Environment, world_id::WorldId};
     /// use std::sync::Arc;
     ///
     /// # tokio_test::block_on(async {
