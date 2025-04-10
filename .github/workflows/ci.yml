@@ -19,7 +19,7 @@ jobs:
 
       - name: Set up Rust
         run: |
-          rustup update stable && rustup default stable
+          rustup update
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -68,7 +68,7 @@ jobs:
 
       - name: Set up Rust
         run: |
-          rustup update stable && rustup default stable
+          rustup update
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -111,7 +111,7 @@ jobs:
 
       - name: Set up Rust
         run: |
-          rustup update stable && rustup default stable
+          rustup update
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
