@@ -3,7 +3,7 @@ use thiserror::Error;
 /// Error outputs from `WalletKit`
 #[derive(Debug, Error, uniffi::Error)]
 #[uniffi(flat_error)]
-pub enum Error {
+pub enum WalletKitError {
     /// The presented input is not valid for the requested operation
     #[error("invalid_input")]
     InvalidInput,

@@ -5,7 +5,7 @@ use alloy::{
     sol,
     sol_types::SolValue,
 };
-use walletkit_core::{Context, CredentialType};
+use walletkit_core::{proof::ProofContext, CredentialType};
 
 sol!(
     #[allow(missing_docs)]
@@ -33,7 +33,7 @@ async fn test_advanced_external_nullifier_generation_on_chain() {
     let custom_action =
         [addr.abi_encode_packed(), "test_text".abi_encode_packed()].concat();
 
-    let context = Context::new_from_bytes(
+    let context = ProofContext::new_from_bytes(
         &app_id,
         Some(custom_action),
         None,

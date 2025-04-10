@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use crate::error::Error;
+use crate::error::WalletKitError;
 use ruint::aliases::U256;
 use serde::{Deserialize, Serialize};
 
@@ -29,11 +29,11 @@ impl U256Wrapper {
     /// # Errors
     /// Will return an `Error::InvalidNumber` if the input is not a valid hex-string-presented number up to 256 bits.
     #[uniffi::constructor]
-    pub fn try_from_hex_string(hex_string: &str) -> Result<Self, Error> {
+    pub fn try_from_hex_string(hex_string: &str) -> Result<Self, WalletKitError> {
         let hex_string = hex_string.trim().trim_start_matches("0x");
 
-        let number =
-            U256::from_str_radix(hex_string, 16).map_err(|_| Error::InvalidNumber)?;
+        let number = U256::from_str_radix(hex_string, 16)
+            .map_err(|_| WalletKitError::InvalidNumber)?;
 
         Ok(Self(number))
     }

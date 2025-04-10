@@ -1,7 +1,7 @@
 use semaphore_rs::poseidon_tree::Proof;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::Error, request::Request, u256::U256Wrapper};
+use crate::{error::WalletKitError, request::Request, u256::U256Wrapper};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,7 +42,7 @@ impl MerkleTreeProof {
     pub async fn from_identity_commitment(
         identity_commitment: &U256Wrapper,
         sequencer_host: &str,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, WalletKitError> {
         let url = format!("{sequencer_host}/inclusionProof");
 
         // TODO: Cache inclusion proof for 10-15 mins
@@ -64,14 +64,17 @@ impl MerkleTreeProof {
     }
 
     #[uniffi::constructor]
-    pub fn from_json_proof(json_proof: &str, merkle_root: &str) -> Result<Self, Error> {
-        let proof: Proof =
-            serde_json::from_str(json_proof).map_err(|_| Error::InvalidInput)?;
+    pub fn from_json_proof(
+        json_proof: &str,
+        merkle_root: &str,
+    ) -> Result<Self, WalletKitError> {
+        let proof: Proof = serde_json::from_str(json_proof)
+            .map_err(|_| WalletKitError::InvalidInput)?;
 
         Ok(Self {
             poseidon_proof: proof,
             merkle_root: U256Wrapper::try_from_hex_string(merkle_root)
-                .map_err(|_| Error::InvalidInput)?,
+                .map_err(|_| WalletKitError::InvalidInput)?,
         })
     }
 }

@@ -1,11 +1,11 @@
-use crate::{error::Error, proof::generate_proof_with_semaphore_identity};
+use crate::{error::WalletKitError, proof::generate_proof_with_semaphore_identity};
 
 use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
 
 use crate::{
     credential_type::CredentialType,
     merkle_tree::MerkleTreeProof,
-    proof::{Context, ProofOutput},
+    proof::{ProofContext, ProofOutput},
     u256::U256Wrapper,
     Environment,
 };
@@ -57,7 +57,7 @@ impl WorldId {
     ///
     /// [Protocol Reference](https://docs.semaphore.pse.dev/V2/technical-reference/circuits#nullifier-hash).
     #[must_use]
-    pub fn generate_nullifier_hash(&self, context: &Context) -> U256Wrapper {
+    pub fn generate_nullifier_hash(&self, context: &ProofContext) -> U256Wrapper {
         let identity = self.semaphore_identity_for_credential(&context.credential_type);
         generate_nullifier_hash(&identity, *context.external_nullifier).into()
     }
@@ -87,12 +87,12 @@ impl WorldId {
     /// # Examples
     /// // NOTE: This is an integration test. Running this doctest example requires an HTTP connection to the sequencer.
     /// ```rust
-    /// use walletkit_core::{Context, CredentialType, Environment, WorldId};
+    /// use walletkit_core::{ProofContext, CredentialType, Environment, WorldId};
     /// use std::sync::Arc;
     ///
     /// # tokio_test::block_on(async {
     ///     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
-    ///     let context = Context::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, Arc::new(CredentialType::Device));
+    ///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, Arc::new(CredentialType::Device));
     ///     let proof = world_id.generate_proof(&context).await.unwrap();
     ///     assert_eq!(proof.nullifier_hash.to_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
     /// # })
@@ -100,8 +100,8 @@ impl WorldId {
     /// ```
     pub async fn generate_proof(
         &self,
-        context: &Context,
-    ) -> Result<ProofOutput, Error> {
+        context: &ProofContext,
+    ) -> Result<ProofOutput, WalletKitError> {
         let identity = self.semaphore_identity_for_credential(&context.credential_type);
         // fetch directly instead of `get_identity_commitment` to avoid duplicate computations
         let identity_commitment = identity.commitment().into();
@@ -154,7 +154,8 @@ mod tests {
     fn test_proof_generation() {
         // TODO: complete test
         let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
-        let context = Context::new("app_id", None, None, Arc::new(CredentialType::Orb));
+        let context =
+            ProofContext::new("app_id", None, None, Arc::new(CredentialType::Orb));
         let nullifier_hash = world_id.generate_nullifier_hash(&context);
         println!("{}", nullifier_hash.to_hex_string());
     }

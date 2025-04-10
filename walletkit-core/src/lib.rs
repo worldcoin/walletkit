@@ -19,21 +19,24 @@ pub enum Environment {
 }
 
 mod credential_type;
-pub use credential_type::*;
+pub use credential_type::CredentialType;
 
-mod error;
-pub use error::*;
+/// Contains error outputs from `WalletKit`
+pub mod error;
 
-mod world_id;
-pub use world_id::*;
+/// Contains all components to interact and use a World ID
+pub mod world_id;
 
-mod proof;
-pub use proof::*;
+/// This module handles World ID proof generation
+pub mod proof;
 
 mod u256;
-pub use u256::*;
+pub use u256::U256Wrapper;
 
-// private modules
+////////////////////////////////////////////////////////////////////////////////
+// Private modules
+////////////////////////////////////////////////////////////////////////////////
+
 mod merkle_tree;
 mod request;
 
