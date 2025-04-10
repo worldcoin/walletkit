@@ -61,12 +61,12 @@ A World ID can then be used to generate [Zero-Knowledge Proofs](https://docs.wor
 A ZKP is analogous to _presenting_ a credential.
 
 ```rust
-use walletkit::{Context, CredentialType, Environment, WorldId};
+use walletkit::{proof::ProofContext, CredentialType, Environment, world_id::WorldId};
 use std::sync::Arc;
 
 async fn example() {
     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
-    let context = Context::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, Arc::new(CredentialType::Orb));
+    let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, Arc::new(CredentialType::Orb));
     let proof = world_id.generate_proof(&context).await.unwrap();
 
     dbg!(proof.to_json()); // the JSON output can be passed to the Developer Portal or other places for verification

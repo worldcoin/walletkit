@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::error::WalletKitError;
 use std::sync::Arc;
 
 use alloy_core::sol_types::SolValue;
@@ -13,11 +13,13 @@ use crate::{
     credential_type::CredentialType, merkle_tree::MerkleTreeProof, u256::U256Wrapper,
 };
 
-/// A `Proof::Context` contains the basic information on the verifier and the specific action a user will be proving.
+/// A `ProofContext` contains the basic information on the verifier and the specific action a user will be proving.
 ///
 /// It is required to generate a `Proof` and will generally be initialized from an `app_id` and `action`.
+///
+/// Note on naming: `ProofContext` is used to make it clear in FFIs which may not respect the module structure.
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
-pub struct Context {
+pub struct ProofContext {
     /// The `external_nullifier` is the computed result of a specific context for which a World ID Proof is generated.
     /// It is used in the Sempahore ZK circuit and in the computation of the `nullifier_hash` to guarantee uniqueness in a privacy-preserving way.
     pub external_nullifier: U256Wrapper,
@@ -28,8 +30,8 @@ pub struct Context {
 }
 
 #[uniffi::export]
-impl Context {
-    /// Initializes a `Proof::Context`.
+impl ProofContext {
+    /// Initializes a `ProofContext`.
     ///
     /// Will compute the relevant external nullifier from the provided `app_id` and `action` as defined by the
     /// World ID Protocol. The external nullifier generation matches the logic in the
@@ -60,7 +62,7 @@ impl Context {
         )
     }
 
-    /// Initializes a `Proof::Context` where the `action` is provided as raw bytes. This is useful for advanced cases
+    /// Initializes a `Proof::ProofContext` where the `action` is provided as raw bytes. This is useful for advanced cases
     /// where the `action` is an already ABI encoded value for on-chain usage.
     /// See _walletkit-core/tests/solidity.rs_ for an example.
     ///
@@ -68,7 +70,7 @@ impl Context {
     ///
     /// # Arguments
     ///
-    /// See `Context::new` for reference. The `action` and `signal` need to be provided as raw bytes.
+    /// See `ProofContext::new` for reference. The `action` and `signal` need to be provided as raw bytes.
     ///
     #[must_use]
     #[uniffi::constructor]
@@ -124,8 +126,8 @@ impl ProofOutput {
     ///
     /// # Errors
     /// Will error if serialization fails.
-    pub fn to_json(&self) -> Result<String, Error> {
-        serde_json::to_string(self).map_err(|_| Error::SerializationError)
+    pub fn to_json(&self) -> Result<String, WalletKitError> {
+        serde_json::to_string(self).map_err(|_| WalletKitError::SerializationError)
     }
 }
 
@@ -136,8 +138,8 @@ impl ProofOutput {
 pub fn generate_proof_with_semaphore_identity(
     identity: &identity::Identity,
     merkle_tree_proof: &MerkleTreeProof,
-    context: &Context,
-) -> Result<ProofOutput, Error> {
+    context: &ProofContext,
+) -> Result<ProofOutput, WalletKitError> {
     let merkle_root = merkle_tree_proof.merkle_root; // clone the value
 
     let external_nullifier_hash = context.external_nullifier.into();
@@ -168,7 +170,7 @@ mod external_nullifier_tests {
 
     #[test]
     fn test_context_and_external_nullifier_hash_generation() {
-        let context = Context::new(
+        let context = ProofContext::new(
             "app_369183bd38f1641b6964ab51d7a20434",
             None,
             None,
@@ -180,7 +182,7 @@ mod external_nullifier_tests {
         );
 
         // note the same external nullifier hash is generated for an empty string action
-        let context = Context::new(
+        let context = ProofContext::new(
             "app_369183bd38f1641b6964ab51d7a20434",
             Some(String::new()),
             None,
@@ -196,7 +198,7 @@ mod external_nullifier_tests {
     /// Reference: <https://github.com/worldcoin/world-id-docs/blob/main/src/pages/world-id/try.tsx>
     #[test]
     fn test_external_nullifier_hash_generation_string_action_staging() {
-        let context = Context::new(
+        let context = ProofContext::new(
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some("test-action-qli8g".to_string()),
             None,
@@ -210,7 +212,7 @@ mod external_nullifier_tests {
 
     #[test]
     fn test_external_nullifier_hash_generation_string_action() {
-        let context = Context::new(
+        let context = ProofContext::new(
             "app_10eb12bd96d8f7202892ff25f094c803",
             Some("test-123123".to_string()),
             None,
@@ -234,7 +236,7 @@ mod external_nullifier_tests {
         ]
         .concat();
 
-        let context = Context::new_from_bytes(
+        let context = ProofContext::new_from_bytes(
             "app_10eb12bd96d8f7202892ff25f094c803",
             Some(custom_action),
             None,
@@ -257,7 +259,7 @@ mod external_nullifier_tests {
         ]
         .concat();
 
-        let context = Context::new_from_bytes(
+        let context = ProofContext::new_from_bytes(
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some(custom_action),
             None,
@@ -294,7 +296,7 @@ mod proof_tests {
 
     #[test]
     fn test_proof_generation() {
-        let context = Context::new(
+        let context = ProofContext::new(
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some("test-action-89tcf".to_string()),
             None,
@@ -345,7 +347,7 @@ mod proof_tests {
 
     #[test]
     fn test_proof_json_encoding() {
-        let context = Context::new(
+        let context = ProofContext::new(
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some("test-action-89tcf".to_string()),
             None,
