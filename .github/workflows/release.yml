@@ -155,4 +155,5 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          cargo publish --token $CARGO_REGISTRY_TOKEN --package walletkit,walletkit-core --locked
+          cargo publish --token $CARGO_REGISTRY_TOKEN --package walletkit --locked
+          cargo publish --token $CARGO_REGISTRY_TOKEN --package walletkit-core --locked
