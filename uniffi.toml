@@ -1,1 +1,5 @@
 [bindings.swift]
+
+
+[bindings.kotlin]
+android = true
