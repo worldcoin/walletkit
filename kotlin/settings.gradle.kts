@@ -6,6 +6,10 @@
  */
 
 plugins {
+    id("com.android.library") version "8.3.0"
+    id("org.jetbrains.kotlin.android") version "1.9.22"
+    id("maven-publish")
+
     // Apply the foojay-resolver plugin to allow automatic download of JDKs
     id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0"
 }
