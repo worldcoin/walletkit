@@ -1,3 +1,5 @@
+import java.io.ByteArrayOutputStream
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
@@ -10,6 +12,8 @@ android {
 
     defaultConfig {
         minSdk = 23
+
+        @Suppress("deprecation")
         targetSdk = 33
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -51,7 +55,7 @@ afterEvaluate {
                     project.property("versionName") as String
                 } else {
                     val stdout = ByteArrayOutputStream()
-                    exec {
+                    project.exec {
                         commandLine = listOf(
                             "curl", "-s", "-H",
                             "Authorization: token ${System.getenv("GITHUB_TOKEN")}",
