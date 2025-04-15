@@ -31,7 +31,7 @@ pub struct WorldId {
     environment: Environment,
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl WorldId {
     /// Initializes a new `Identity` from a World ID secret. The identity is initialized for a specific environment.
     #[must_use]

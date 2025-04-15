@@ -3,7 +3,7 @@ members = ["uniffi-bindgen","walletkit-core", "walletkit"]
 resolver = "2"
 
 [workspace.package]
-version = "0.0.11"
+version = "0.0.12"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -17,8 +17,8 @@ categories = ["api-bindings", "cryptography::cryptocurrencies"]
 
 
 [workspace.dependencies]
-walletkit-core = { path = "walletkit-core" }
-uniffi = { version = "0.28.1", features = ["build"] }
+walletkit-core = { version = "0.0.12", path = "walletkit-core" }
+uniffi = { version = "0.29.1", features = ["build"] }
 openssl-sys = { version = "0.9", features = ["vendored"] } # required for cross builds (kotlin)
 
 [profile.release]
