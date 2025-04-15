@@ -254,7 +254,7 @@ jobs:
 
       - name: Publish
         working-directory: kotlin
-        run: ./gradlew sdk:publish -PversionName=${{ needs.update-cargo-version.outputs.new_version }}
+        run: ./gradlew lib:publish -PversionName=${{ needs.update-cargo-version.outputs.new_version }}
         env:
           GITHUB_ACTOR: wc-cicd
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
