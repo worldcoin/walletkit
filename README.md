@@ -30,7 +30,7 @@ WalletKit's bindings for Kotlin are distributed through GitHub packages.
 ```kotlin
 dependencies {
     /// ...
-    implementation "org.world:walletkit:VERSION-SNAPSHOT"
+    implementation "org.world:walletkit:VERSION"
 }
 ```
 

@@ -4702,6 +4702,8 @@ dependencies = [
 name = "walletkit"
 version = "0.0.11"
 dependencies = [
+ "openssl-sys",
+ "uniffi",
  "walletkit-core",
 ]
 
@@ -4713,7 +4715,6 @@ dependencies = [
  "alloy-core",
  "hex",
  "mockito",
- "openssl-sys",
  "regex",
  "reqwest 0.12.9",
  "ruint",

@@ -18,3 +18,5 @@ categories.workspace = true
 
 [dependencies]
 walletkit-core = { workspace = true }
+uniffi = { workspace = true, features = ["build"] }
+openssl-sys = { workspace = true, features = ["vendored"] } # required for cross builds (kotlin)
