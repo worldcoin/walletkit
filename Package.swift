@@ -12,15 +12,15 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "WalletKitCore",
-            targets: ["WalletKitCore"]),
+            name: "WalletKit",
+            targets: ["WalletKit"]),
     ],
     dependencies: [],
     targets: [
         .target(
-            name: "WalletKitCore",
-            dependencies: ["walletkit_coreFFI"]
+            name: "WalletKit",
+            dependencies: ["walletkit_FFI"]
         ),
-        .binaryTarget(name: "walletkit_coreFFI", path: "WalletKitCore.xcframework")
+        .binaryTarget(name: "walletkit_FFI", path: "WalletKit.xcframework")
     ]
 )

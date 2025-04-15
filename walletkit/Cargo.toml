@@ -15,6 +15,11 @@ readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[lib]
+crate-type = ["lib", "staticlib", "cdylib"]
+name = "walletkit"
 
 [dependencies]
 walletkit-core = { workspace = true }
+uniffi = { workspace = true, features = ["build", "tokio"] }
+openssl-sys = { workspace = true, features = ["vendored"] } # required for cross builds (kotlin)
