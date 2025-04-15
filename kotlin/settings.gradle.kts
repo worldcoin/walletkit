@@ -5,13 +5,23 @@
  * For more detailed information on multi-project builds, please refer to https://docs.gradle.org/8.13/userguide/multi_project_builds.html in the Gradle documentation.
  */
 
-plugins {
-    id("com.android.library") version "8.3.0"
-    id("org.jetbrains.kotlin.android") version "1.9.22"
-    id("maven-publish")
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+    }
+    plugins {
+        id("com.android.library") version "8.3.0"
+        id("org.jetbrains.kotlin.android") version "1.9.22"
+    }
+}
 
-    // Apply the foojay-resolver plugin to allow automatic download of JDKs
-    id("org.gradle.toolchains.foojay-resolver-convention") version "0.9.0"
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+    }
 }
 
 rootProject.name = "walletkit"
