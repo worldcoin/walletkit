@@ -240,8 +240,8 @@ jobs:
           path: .
 
       - name: Move artifacts
-        working-directory: kotlin/lib/src/main/jniLibs
         run: |
+          mkdir -p kotlin/lib/src/main/jniLibs && cd kotlin/lib/src/main/jniLibs
           mkdir armeabi-v7a arm64-v8a x86 x86_64
           mv /home/runner/work/walletkit/walletkit/android-armv7-linux-androideabi/libwalletkit.so ./armeabi-v7a/libwalletkit.so
           mv /home/runner/work/walletkit/walletkit/android-aarch64-linux-android/libwalletkit.so ./arm64-v8a/libwalletkit.so
