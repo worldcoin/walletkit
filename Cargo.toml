@@ -17,8 +17,8 @@ categories = ["api-bindings", "cryptography::cryptocurrencies"]
 
 
 [workspace.dependencies]
-uniffi = { version = "0.28.1", features = [
-    "build",
+uniffi = { version = "0.29.1", features = [
+    "build", "tokio"
 ] }
 walletkit-core = { version = "0.0.12", path = "walletkit-core" }
 
