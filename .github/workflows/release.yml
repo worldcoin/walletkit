@@ -21,9 +21,9 @@ jobs:
       # new_version: ${{ steps.version.outputs.new_version }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: main
-          token: ${{ secrets.GIT_HUB_TOKEN }}
+        # with:
+        #   ref: main
+        #   token: ${{ secrets.GIT_HUB_TOKEN }}
 
       - name: Calculate new version
         id: version
