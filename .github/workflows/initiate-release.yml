@@ -25,7 +25,8 @@ jobs:
       - name: Calculate new version
         id: version
         env:
-          BUMP_TYPE: ${{ github.event.inputs.bump_type }}
+          BUMP_TYPE: patch
+          # BUMP_TYPE: ${{ github.event.inputs.bump_type }}
         run: |
           # Get current version from Cargo.toml
           CURRENT_VERSION=$(grep -m 1 'version = ' Cargo.toml | cut -d '"' -f 2)
