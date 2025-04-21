@@ -1,6 +1,7 @@
 name: Initiate Release
 
 on:
+  pull_request: # FIXME
   workflow_dispatch:
     inputs:
       bump_type:
@@ -12,7 +13,7 @@ on:
           - minor
           - major
 jobs:
-  update-cargo-version:
+  initiate-release:
     runs-on: ubuntu-latest
     outputs:
       new_version: ${{ steps.version.outputs.new_version }}
@@ -54,33 +55,10 @@ jobs:
           echo "New version will be: $NEW_VERSION"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Set up Rust
-        run: |
-          rustup update
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
+      - name: Setup Rust environment
+        uses: ./.github/actions/rust-setup
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-index-
-
-      - name: Cache Cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-build-
+          cache-prefix: "initiate-release"
 
       - name: Install cargo-edit
         run: cargo install cargo-edit
