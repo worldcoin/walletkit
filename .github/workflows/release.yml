@@ -2,13 +2,15 @@ name: Release
 
 on:
   pull_request:
-    types: [closed]
-    branches:
-      - main
+    # FIXME
+    # types: [closed]
+    # branches:
+    #   - main
 
 jobs:
   pre-release-checks:
-    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release') && github.event.pull_request.user.login == 'github-actions[bot]'
+    # FIXME
+    # if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release') && github.event.pull_request.user.login == 'github-actions[bot]'
     runs-on: ubuntu-latest
     outputs:
       new_version: ${{ steps.version.outputs.new_version }}
@@ -69,10 +71,13 @@ jobs:
           cp -r WalletKitCore.xcframework target-repo/
           cp -r Sources/ target-repo/Sources
           cp Package.swift target-repo/
+          echo "// Release version: ${{ needs.pre-release-checks.outputs.new_version }}" >> target-repo/Package.swift
+
           cd target-repo
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
+          # TODO: Move away from Git LFS which doesn't work well with Swift Package Manager
           # Initialize Git LFS and track the large files
           git lfs install
           git lfs track "*.a"
@@ -88,7 +93,7 @@ jobs:
   prepare-kotlin:
     name: Prepare Kotlin
     runs-on: ubuntu-22.04-32core
-    needs: [update-cargo-version]
+    needs: [pre-release-checks]
 
     # Each target is built separately to run in parallel. Running sequentially takes vastly more time.
     strategy:
@@ -127,7 +132,7 @@ jobs:
   publish-kotlin:
     name: Publish Kotlin
     runs-on: ubuntu-latest
-    needs: [update-cargo-version, prepare-kotlin]
+    needs: [pre-release-checks, prepare-kotlin]
 
     steps:
       - name: Checkout code
@@ -164,13 +169,13 @@ jobs:
 
       - name: Publish
         working-directory: kotlin
-        run: ./gradlew lib:publish -PversionName=${{ needs.update-cargo-version.outputs.new_version }}
+        run: ./gradlew lib:publish -PversionName=${{ needs.pre-release-checks.outputs.new_version }}
         env:
           GITHUB_ACTOR: wc-cicd
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   create-github-release:
-    needs: [pre-release-checks, build-swift]
+    needs: [pre-release-checks, publish-kotlin, build-swift]
     runs-on: ubuntu-latest
     permissions:
       contents: write
