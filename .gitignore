@@ -3,8 +3,8 @@ target/
 **/ios_build
 .swiftpm/
 
-# Swift build outputs are not commited to this repo.
-WalletKitCore.xcframework/
+# Swift build outputs are not committed to this repo.
+WalletKit.xcframework/
 Sources/
 
 # forge

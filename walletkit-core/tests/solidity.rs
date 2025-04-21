@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use alloy::{
     providers::{ProviderBuilder, WalletProvider},
     sol,
@@ -37,7 +35,7 @@ async fn test_advanced_external_nullifier_generation_on_chain() {
         &app_id,
         Some(custom_action),
         None,
-        Arc::new(CredentialType::Orb),
+        CredentialType::Orb,
     );
 
     let nullifier = contract

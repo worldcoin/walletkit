@@ -1,5 +1,4 @@
 use crate::error::WalletKitError;
-use std::sync::Arc;
 
 use alloy_core::sol_types::SolValue;
 use semaphore_rs::{
@@ -52,7 +51,7 @@ impl ProofContext {
         app_id: &str,
         action: Option<String>,
         signal: Option<String>,
-        credential_type: Arc<CredentialType>,
+        credential_type: CredentialType,
     ) -> Self {
         Self::new_from_bytes(
             app_id,
@@ -79,7 +78,7 @@ impl ProofContext {
         app_id: &str,
         action: Option<Vec<u8>>,
         signal: Option<Vec<u8>>,
-        credential_type: Arc<CredentialType>,
+        credential_type: CredentialType,
     ) -> Self {
         let mut pre_image = hash_to_field(app_id.as_bytes()).abi_encode_packed();
 
@@ -91,7 +90,7 @@ impl ProofContext {
 
         Self {
             external_nullifier,
-            credential_type: *credential_type,
+            credential_type,
             signal: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
         }
     }
@@ -128,6 +127,24 @@ impl ProofOutput {
     /// Will error if serialization fails.
     pub fn to_json(&self) -> Result<String, WalletKitError> {
         serde_json::to_string(self).map_err(|_| WalletKitError::SerializationError)
+    }
+
+    /// Exposes the nullifier hash to foreign code. Struct fields are not directly exposed to foreign code.
+    #[must_use]
+    pub const fn get_nullifier_hash(&self) -> U256Wrapper {
+        self.nullifier_hash
+    }
+
+    /// Exposes the merkle root to foreign code. Struct fields are not directly exposed to foreign code.
+    #[must_use]
+    pub const fn get_merkle_root(&self) -> U256Wrapper {
+        self.merkle_root
+    }
+
+    /// Exposes the proof as a string to foreign code. Struct fields are not directly exposed to foreign code.
+    #[must_use]
+    pub fn get_proof_as_string(&self) -> String {
+        self.proof.to_string()
     }
 }
 
@@ -174,7 +191,7 @@ mod external_nullifier_tests {
             "app_369183bd38f1641b6964ab51d7a20434",
             None,
             None,
-            Arc::new(CredentialType::Orb),
+            CredentialType::Orb,
         );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
@@ -186,7 +203,7 @@ mod external_nullifier_tests {
             "app_369183bd38f1641b6964ab51d7a20434",
             Some(String::new()),
             None,
-            Arc::new(CredentialType::Orb),
+            CredentialType::Orb,
         );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
@@ -202,7 +219,7 @@ mod external_nullifier_tests {
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some("test-action-qli8g".to_string()),
             None,
-            Arc::new(CredentialType::Orb),
+            CredentialType::Orb,
         );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
@@ -216,7 +233,7 @@ mod external_nullifier_tests {
             "app_10eb12bd96d8f7202892ff25f094c803",
             Some("test-123123".to_string()),
             None,
-            Arc::new(CredentialType::Orb),
+            CredentialType::Orb,
         );
         assert_eq!(
             context.external_nullifier.0,
@@ -240,7 +257,7 @@ mod external_nullifier_tests {
             "app_10eb12bd96d8f7202892ff25f094c803",
             Some(custom_action),
             None,
-            Arc::new(CredentialType::Orb),
+            CredentialType::Orb,
         );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
@@ -263,7 +280,7 @@ mod external_nullifier_tests {
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some(custom_action),
             None,
-            Arc::new(CredentialType::Orb),
+            CredentialType::Orb,
         );
         assert_eq!(
             context.external_nullifier.to_hex_string(),
@@ -300,7 +317,7 @@ mod proof_tests {
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some("test-action-89tcf".to_string()),
             None,
-            CredentialType::Device.into(),
+            CredentialType::Device,
         );
 
         let mut secret = b"not_a_real_secret".to_vec();
@@ -351,7 +368,7 @@ mod proof_tests {
             "app_staging_45068dca85829d2fd90e2dd6f0bff997",
             Some("test-action-89tcf".to_string()),
             None,
-            CredentialType::Device.into(),
+            CredentialType::Device,
         );
 
         let mut secret = b"not_a_real_secret".to_vec();
@@ -383,6 +400,19 @@ mod proof_tests {
         let packed_proof_pattern = r"^0x[a-f0-9]{400,600}$";
         let re = Regex::new(packed_proof_pattern).unwrap();
         assert!(re.is_match(parsed_json["proof"].as_str().unwrap()));
+
+        assert_eq!(
+            zkp.get_nullifier_hash().to_hex_string(),
+            parsed_json["nullifier_hash"].as_str().unwrap()
+        );
+        assert_eq!(
+            zkp.get_merkle_root().to_hex_string(),
+            parsed_json["merkle_root"].as_str().unwrap()
+        );
+        assert_eq!(
+            zkp.get_proof_as_string(),
+            parsed_json["proof"].as_str().unwrap()
+        );
     }
 
     #[test]

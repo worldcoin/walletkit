@@ -30,7 +30,7 @@ serde = "1.0.215"
 serde_json = "1.0.133"
 strum = { version = "0.26", features = ["derive"] }
 thiserror = "2.0.3"
-uniffi = { workspace = true, features = ["build"] }
+uniffi = { workspace = true, features = ["build", "tokio"] }
 
 [dev-dependencies]
 alloy = { version = "0.6.4", default-features = false, features = ["json", "contract", "node-bindings"] }

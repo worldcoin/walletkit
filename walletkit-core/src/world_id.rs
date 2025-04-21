@@ -31,7 +31,7 @@ pub struct WorldId {
     environment: Environment,
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl WorldId {
     /// Initializes a new `Identity` from a World ID secret. The identity is initialized for a specific environment.
     #[must_use]
@@ -92,7 +92,7 @@ impl WorldId {
     ///
     /// # tokio_test::block_on(async {
     ///     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
-    ///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, Arc::new(CredentialType::Device));
+    ///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Device);
     ///     let proof = world_id.generate_proof(&context).await.unwrap();
     ///     assert_eq!(proof.nullifier_hash.to_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
     /// # })
@@ -146,7 +146,6 @@ impl WorldId {
 mod tests {
 
     use ruint::uint;
-    use std::sync::Arc;
 
     use super::*;
 
@@ -154,8 +153,7 @@ mod tests {
     fn test_proof_generation() {
         // TODO: complete test
         let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
-        let context =
-            ProofContext::new("app_id", None, None, Arc::new(CredentialType::Orb));
+        let context = ProofContext::new("app_id", None, None, CredentialType::Orb);
         let nullifier_hash = world_id.generate_nullifier_hash(&context);
         println!("{}", nullifier_hash.to_hex_string());
     }
