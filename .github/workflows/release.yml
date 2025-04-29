@@ -28,7 +28,7 @@ jobs:
       - name: Check latest published version
         id: latest_version
         run: |
-          LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GIT_HUB_TOKEN }}" \
+          LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.WALLETKIT_BOT_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
             jq -r .tag_name | sed 's/^v//')
 
@@ -61,12 +61,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: worldcoin/walletkit-swift
-          token: ${{ secrets.GIT_HUB_TOKEN }}
+          token: ${{ secrets.WALLETKIT_BOT_TOKEN }}
           path: target-repo
 
       - name: Commit swift build
         env:
-          GITHUB_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
         run: |
           cp -r WalletKitCore.xcframework target-repo/
           cp -r Sources/ target-repo/Sources
@@ -192,7 +192,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           repository: worldcoin/walletkit-swift
-          token: ${{ secrets.GIT_HUB_TOKEN }}
+          token: ${{ secrets.WALLETKIT_BOT_TOKEN }}
           name: ${{ needs.pre-release-checks.outputs.new_version }}
           tag_name: ${{ needs.pre-release-checks.outputs.new_version }}
           body: |

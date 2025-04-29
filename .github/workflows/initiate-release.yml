@@ -74,7 +74,7 @@ jobs:
       - name: Generate Release Notes
         id: release_notes
         env:
-          GH_TOKEN: ${{ secrets.GIT_HUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
           NEW_VERSION: ${{ steps.version.outputs.new_version }}
         run: |
