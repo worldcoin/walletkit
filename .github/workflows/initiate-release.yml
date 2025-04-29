@@ -15,6 +15,8 @@ on:
 jobs:
   initiate-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       new_version: ${{ steps.version.outputs.new_version }}
     steps:
@@ -74,7 +76,7 @@ jobs:
       - name: Generate Release Notes
         id: release_notes
         env:
-          GH_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPO: ${{ github.repository }}
           NEW_VERSION: ${{ steps.version.outputs.new_version }}
         run: |

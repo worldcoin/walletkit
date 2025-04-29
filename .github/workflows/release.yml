@@ -27,12 +27,18 @@ jobs:
 
       - name: Check latest published version
         id: latest_version
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          LATEST_RELEASE=$(curl -s -H "Authorization: token ${{ secrets.WALLETKIT_BOT_TOKEN }}" \
+          LATEST_RELEASE=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/releases/latest" | \
             jq -r .tag_name | sed 's/^v//')
 
+          echo "Latest release: $LATEST_RELEASE"
+
           NEW_VERSION="${{ steps.version.outputs.new_version }}"
+
+          echo "New version: $NEW_VERSION"
 
           # Ensure the new version is greater than the latest published version
           if ! { [ "$(printf '%s\n' "$LATEST_RELEASE" "$NEW_VERSION" | sort -V | tail -n1)" = "$NEW_VERSION" ] && \
