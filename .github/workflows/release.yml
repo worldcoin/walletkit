@@ -74,7 +74,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
         run: |
-          cp -r WalletKitCore.xcframework target-repo/
+          cp -r WalletKit.xcframework target-repo/
           cp -r Sources/ target-repo/Sources
           cp Package.swift target-repo/
           echo "// Release version: ${{ needs.pre-release-checks.outputs.new_version }}" >> target-repo/Package.swift
