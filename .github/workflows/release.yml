@@ -80,8 +80,8 @@ jobs:
           echo "// Release version: ${{ needs.pre-release-checks.outputs.new_version }}" >> target-repo/Package.swift
 
           cd target-repo
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
+          # git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # git config --global user.name "github-actions[bot]"
 
           # TODO: Move away from Git LFS which doesn't work well with Swift Package Manager
           # Initialize Git LFS and track the large files
@@ -139,6 +139,9 @@ jobs:
     name: Publish Kotlin
     runs-on: ubuntu-latest
     needs: [pre-release-checks, prepare-kotlin]
+    permissions:
+      contents: write
+      packages: write
 
     steps:
       - name: Checkout code
@@ -177,8 +180,8 @@ jobs:
         working-directory: kotlin
         run: ./gradlew lib:publish -PversionName=${{ needs.pre-release-checks.outputs.new_version }}
         env:
-          GITHUB_ACTOR: wc-cicd
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: wld-walletkit-bot
+          GITHUB_TOKEN: ${{ github.token }}
 
   create-github-release:
     needs: [pre-release-checks, publish-kotlin, build-swift]
