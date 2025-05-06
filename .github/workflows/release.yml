@@ -2,15 +2,13 @@ name: Release
 
 on:
   pull_request:
-    # FIXME
-    # types: [closed]
-    # branches:
-    #   - main
+    types: [closed]
+    branches:
+      - main
 
 jobs:
   pre-release-checks:
-    # FIXME
-    # if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release') && github.event.pull_request.user.login == 'github-actions[bot]'
+    if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release') && github.event.pull_request.user.login == 'github-actions[bot]'
     runs-on: ubuntu-latest
     outputs:
       new_version: ${{ steps.version.outputs.new_version }}
