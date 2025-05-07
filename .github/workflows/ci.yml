@@ -157,3 +157,14 @@ jobs:
         uses: actions/checkout@v4
 
       - uses: EmbarkStudios/cargo-deny-action@v1
+
+  doc:
+    name: Check docs
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -Dwarnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/install@cargo-docs-rs
+      - run: cargo docs-rs
