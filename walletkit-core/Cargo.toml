@@ -37,7 +37,7 @@ uniffi = { workspace = true, features = ["build", "tokio"] }
 semaphore-rs = { version = "0.3", features = ["depth_30"] }
 
 [dev-dependencies]
-alloy = { version = "0.6", default-features = false, features = ["json", "contract", "node-bindings"] }
+alloy = { version = "0.15", default-features = false, features = ["json", "contract", "node-bindings"] }
 mockito = "1.6"
 regex = "1.11"
 tokio = "1.41"
