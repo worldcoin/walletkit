@@ -1,4 +1,4 @@
-#![doc = include_str!("../../README.md")]
+#![doc = include_str!("../README.md")]
 
 extern crate walletkit_core;
 walletkit_core::uniffi_reexport_scaffolding!();
