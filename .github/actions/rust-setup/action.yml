@@ -12,6 +12,14 @@ runs:
     - shell: bash
       run: |
         rustup update
+        rustup target add aarch64-apple-ios-sim
+        rustup target add aarch64-apple-ios
+        rustup target add x86_64-apple-ios
+        rustup target add x86_64-unknown-linux-gnu
+        rustup target add armv7-linux-androideabi
+        rustup target add aarch64-linux-android
+        rustup target add x86_64-linux-android
+        rustup target add i686-linux-android
 
     - shell: bash
       run: cargo fetch
