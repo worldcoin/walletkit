@@ -57,10 +57,9 @@ jobs:
           echo "New version will be: $NEW_VERSION"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Setup Rust environment
-        uses: ./.github/actions/rust-setup
+      - uses: dtolnay/rust-toolchain@master
         with:
-          cache-prefix: "initiate-release"
+          toolchain: stable
 
       - name: Install cargo-edit
         run: cargo install cargo-edit
