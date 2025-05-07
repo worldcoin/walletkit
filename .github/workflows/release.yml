@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       new_version: ${{ steps.version.outputs.new_version }}
+      commit_sha: ${{ github.sha }}
 
     steps:
       - name: Checkout code
@@ -52,6 +53,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
       - name: Setup Rust environment
         uses: ./.github/actions/rust-setup
@@ -112,6 +115,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
       - name: Setup Rust environment
         uses: ./.github/actions/rust-setup
@@ -144,6 +149,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
       - name: Setup Rust environment
         uses: ./.github/actions/rust-setup
@@ -208,13 +215,13 @@ jobs:
           make_latest: true
 
   publish-to-crates-io:
-    needs: [create-github-release]
+    needs: [pre-release-checks, create-github-release]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
       - name: Set up Rust
         run: |
@@ -224,5 +231,5 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
-          cargo publish --token $CARGO_REGISTRY_TOKEN --package walletkit --locked
           cargo publish --token $CARGO_REGISTRY_TOKEN --package walletkit-core --locked
+          cargo publish --token $CARGO_REGISTRY_TOKEN --package walletkit --locked
