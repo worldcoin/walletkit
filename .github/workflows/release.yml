@@ -56,10 +56,10 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - name: Setup Rust environment
-        uses: ./.github/actions/rust-setup
+      - uses: dtolnay/rust-toolchain@master
         with:
-          cache-prefix: "build-swift"
+          toolchain: stable
+          targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
 
       - name: Build the project (iOS)
         run: ./build_swift.sh
@@ -118,10 +118,10 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - name: Setup Rust environment
-        uses: ./.github/actions/rust-setup
+      - uses: dtolnay/rust-toolchain@master
         with:
-          cache-prefix: "prepare-kotlin-${{ matrix.settings.target }}"
+          toolchain: stable
+          targets: ${{ matrix.settings.target }}
 
       - name: Install Cross
         run: |
@@ -152,10 +152,10 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - name: Setup Rust environment
-        uses: ./.github/actions/rust-setup
+      - uses: dtolnay/rust-toolchain@master
         with:
-          cache-prefix: "publish-kotlin"
+          toolchain: stable
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
 
       - name: Setup Java
         uses: actions/setup-java@v3
@@ -223,9 +223,9 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - name: Set up Rust
-        run: |
-          rustup update
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
 
       - name: Publish to crates.io
         env:

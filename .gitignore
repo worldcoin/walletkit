@@ -10,3 +10,5 @@ Sources/
 # forge
 cache/
 **/out/build-info
+
+# NOTE: Cargo.lock is not ignored because it is used for FFI builds (Swift & Kotlin)

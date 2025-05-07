@@ -17,46 +17,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Rust
-        run: |
-          rustup update
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-index-
-
-      - name: Cache Cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-build-
-
-      - name: Install dependencies
-        run: |
-          cargo fetch
+          toolchain: stable
+          components: clippy,rustfmt
 
       - name: Check code formatting
         run: cargo fmt -- --check
 
       - name: Run clippy
-        run: cargo clippy
-
-      - name: Build the project (Linux)
-        run: cargo build --target x86_64-unknown-linux-gnu --release
+        run: cargo clippy --workspace --all-targets --all-features
 
   swift-build:
     name: Test Swift Build
@@ -66,37 +36,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Rust
-        run: |
-          rustup update
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-index-
-
-      - name: Cache Cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-build-
-
-      - name: Install dependencies
-        run: |
-          cargo fetch
+          toolchain: stable
+          targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
 
       - name: Build the project (iOS)
         run: ./build_swift.sh
@@ -105,44 +48,23 @@ jobs:
     name: Tests
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - nightly
+          - 1.82 # MSRV
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Rust
-        run: |
-          rustup update
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-registry-
-
-      - name: Cache Cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-index-
-
-      - name: Cache Cargo target
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-test-
-
-      - name: Install dependencies
-        run: |
-          cargo fetch
 
       - name: Run tests
         run: |
@@ -151,14 +73,24 @@ jobs:
   deny:
     name: Cargo deny
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        checks:
+          - advisories
+          - bans licenses sources
+
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          command: check ${{ matrix.checks }}
+          rust-version: stable
 
-  doc:
+  docs:
     name: Check docs
     runs-on: ubuntu-latest
     env:

@@ -17,10 +17,10 @@ use crate::{
 /// # Security
 /// TODO: Review with Security Team
 /// 1. `sempahore-rs` zeroizes the bytes representing the World ID Secret and stores the trapdoor and nullifier in memory. This doesn't
-///     add too much additional security versus keeping the secret in memory because for the context of Semaphore ZKPs, the nullifier and
-///     trapdoor are what is actually used in the ZK circuit.
+///    add too much additional security versus keeping the secret in memory because for the context of Semaphore ZKPs, the nullifier and
+///    trapdoor are what is actually used in the ZK circuit.
 /// 2. Zeroize does not have good compatibility with `UniFFI` as `UniFFI` may make many copies of the bytes for usage in foreign code
-///     ([reference](https://github.com/mozilla/uniffi-rs/issues/2080)). This needs to be further explored.
+///    ([reference](https://github.com/mozilla/uniffi-rs/issues/2080)). This needs to be further explored.
 #[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
 pub struct WorldId {
     /// The Semaphore-based identity specifically for the `CredentialType::Orb`
