@@ -166,11 +166,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustc, cargo
       - uses: dtolnay/install@cargo-docs-rs
       - run: |
-          cargo docs-rs -p walletkit-core
-          cargo docs-rs -p walletkit
-        env:
-          CARGO_CHANNEL: nightly
+          cargo +nightly docs-rs -p walletkit-core
+          cargo +nightly docs-rs -p walletkit
