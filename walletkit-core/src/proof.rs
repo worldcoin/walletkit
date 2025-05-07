@@ -41,8 +41,8 @@ impl ProofContext {
     /// * `app_id` - The ID of the application requesting proofs.  This can be obtained from the [Developer Portal](https://developer.world.org).
     /// * `action` - Optional. Custom incognito action being requested.
     /// * `signal` - Optional. The signal is included in the ZKP and is committed to in the proof. When verifying the proof, the
-    ///     same signal must be provided to ensure the proof is valid. The signal can be used to prevent replay attacks, MITM or other cases.
-    ///     More details available in the [docs](https://docs.world.org/world-id/further-reading/zero-knowledge-proofs).
+    ///   same signal must be provided to ensure the proof is valid. The signal can be used to prevent replay attacks, MITM or other cases.
+    ///   More details available in the [docs](https://docs.world.org/world-id/further-reading/zero-knowledge-proofs).
     /// * `credential_type` - The type of credential being requested.
     ///
     #[must_use]

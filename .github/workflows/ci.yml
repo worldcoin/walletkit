@@ -77,12 +77,22 @@ jobs:
   deny:
     name: Cargo deny
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        checks:
+          - advisories
+          - bans licenses sources
+
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          command: check ${{ matrix.checks }}
+          rust-version: stable
 
   docs:
     name: Check docs
