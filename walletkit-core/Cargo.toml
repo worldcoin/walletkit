@@ -25,16 +25,12 @@ alloy-core = { version = "0.8", default-features = false, features = ["sol-types
 hex = "0.4"
 reqwest = { version = "0.12", features = ["json", "brotli"] }
 ruint = { version = "1.14", default-features = false, features = ["alloc"] }
-semaphore-rs = { version = "0.3" }
+semaphore-rs = { version = "0.4", features = ["depth_30"] }
 serde = "1.0"
 serde_json = "1.0"
 strum = { version = "0.26", features = ["derive"] }
 thiserror = "2.0"
 uniffi = { workspace = true, features = ["build", "tokio"] }
-
-# docs.rs runs without network access, hence we cannot build semaphore circuits
-[target.'cfg(not(docsrs))'.dependencies]
-semaphore-rs = { version = "0.3", features = ["depth_30"] }
 
 [dev-dependencies]
 alloy = { version = "0.6", default-features = false, features = ["json", "contract", "node-bindings"] }
