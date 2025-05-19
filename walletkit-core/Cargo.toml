@@ -42,3 +42,6 @@ mockito = "1.6"
 regex = "1.11"
 tokio = "1.41"
 tokio-test = "0.4"
+
+[package.metadata.docs.rs]
+rustc-args = ["--cfg", "docsrs"]
