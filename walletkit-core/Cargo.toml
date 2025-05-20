@@ -42,7 +42,7 @@ tokio-test = "0.4"
 [features]
 default = ["ffi", "semaphore"]
 semaphore = ["semaphore-rs/depth_30"]
-ffi = ["dep:uniffi"]
+ffi = ["dep:uniffi", "semaphore"]
 
 [package.metadata.docs.rs]
 no-default-features = true

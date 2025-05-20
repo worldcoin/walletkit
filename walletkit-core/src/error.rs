@@ -20,4 +20,7 @@ pub enum WalletKitError {
     /// Unhandled error generating a Zero-Knowledge Proof
     #[error(transparent)]
     ProofGeneration(#[from] semaphore_rs::protocol::ProofError),
+    /// The `semaphore` feature flag is not enabled
+    #[error("semaphore_not_enabled")]
+    SemaphoreNotEnabled,
 }

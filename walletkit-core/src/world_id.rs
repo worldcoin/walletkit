@@ -1,7 +1,4 @@
-use crate::error::WalletKitError;
-
-#[cfg(feature = "semaphore")]
-use crate::proof::generate_proof_with_semaphore_identity;
+use crate::{error::WalletKitError, proof::generate_proof_with_semaphore_identity};
 
 use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
 
@@ -102,7 +99,6 @@ impl WorldId {
     /// # })
     ///
     /// ```
-    #[cfg(feature = "semaphore")]
     pub async fn generate_proof(
         &self,
         context: &ProofContext,
