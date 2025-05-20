@@ -1,5 +1,16 @@
 //! `walletkit-core` contains the basic primitives for using a World ID.
-//! Enables basic usage of a World ID to generate ZKPs using different credentials.
+//! It enables basic usage of a World ID to generate ZKPs using different credentials.
+//!
+//! # Examples
+//! ```rust
+//! use walletkit::{proof::ProofContext, CredentialType, Environment, world_id::WorldId};
+//! async fn example() {
+//!     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+//!     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Orb);
+//!     let proof = world_id.generate_proof(&context).await.unwrap();
+//!     dbg!(proof.to_json()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
+//! }
+//! ```
 #![deny(clippy::all, clippy::pedantic, clippy::nursery, missing_docs)]
 
 use strum::EnumString;

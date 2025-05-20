@@ -153,7 +153,7 @@ impl ProofOutput {
 
 /// Generates a Semaphore ZKP for a specific Semaphore identity using the relevant provided context.
 ///
-/// Requires the `semaphore` feature flag.
+/// **Requires the `semaphore` feature flag.**
 ///
 /// # Errors
 /// Returns an error if proof generation fails

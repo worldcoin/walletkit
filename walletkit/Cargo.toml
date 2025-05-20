@@ -21,5 +21,14 @@ name = "walletkit"
 
 [dependencies]
 walletkit-core = { workspace = true }
-uniffi = { workspace = true, features = ["build", "tokio"] }
+uniffi = { workspace = true, features = ["build", "tokio"], optional = true }
 openssl-sys = { workspace = true, features = ["vendored"] } # required for cross builds (kotlin)
+
+
+[features]
+default = ["ffi", "semaphore"]
+semaphore = ["walletkit-core/semaphore"]
+ffi = ["dep:uniffi", "semaphore", "walletkit-core/ffi"]
+
+[package.metadata.docs.rs]
+no-default-features = true
