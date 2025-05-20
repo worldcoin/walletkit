@@ -13,10 +13,11 @@ use serde::{Deserialize, Serialize};
 /// Particularly, when sending proof inputs/outputs as JSON on HTTP requests, the values SHOULD
 /// be represented as padded hex strings from Big Endian bytes.
 #[allow(clippy::module_name_repetitions)]
-#[derive(uniffi::Object, Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 pub struct U256Wrapper(pub U256);
 
-#[uniffi::export]
+#[cfg_attr(feature = "ffi", uniffi::export)]
 impl U256Wrapper {
     /// Outputs a hex string representation of the `U256` value padded to 32 bytes (plus two bytes for the `0x` prefix).
     #[must_use]
@@ -28,7 +29,7 @@ impl U256Wrapper {
     ///
     /// # Errors
     /// Will return an `Error::InvalidNumber` if the input is not a valid hex-string-presented number up to 256 bits.
-    #[uniffi::constructor]
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub fn try_from_hex_string(hex_string: &str) -> Result<Self, WalletKitError> {
         let hex_string = hex_string.trim().trim_start_matches("0x");
 

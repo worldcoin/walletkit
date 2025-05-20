@@ -30,7 +30,7 @@ serde = "1.0"
 serde_json = "1.0"
 strum = { version = "0.26", features = ["derive"] }
 thiserror = "2.0"
-uniffi = { workspace = true, features = ["build", "tokio"] }
+uniffi = { workspace = true, optional = true, features = ["build", "tokio"] }
 
 [dev-dependencies]
 alloy = { version = "1.0", default-features = false, features = ["json", "contract", "node-bindings"] }
@@ -40,8 +40,9 @@ tokio = "1.41"
 tokio-test = "0.4"
 
 [features]
-default = ["semaphore"]
+default = ["ffi", "semaphore"]
 semaphore = ["semaphore-rs/depth_30"]
+ffi = ["dep:uniffi"]
 
 [package.metadata.docs.rs]
 no-default-features = true

@@ -2,10 +2,12 @@ use crate::error::WalletKitError;
 
 use alloy_core::sol_types::SolValue;
 use semaphore_rs::{
-    hash_to_field, identity,
-    packed_proof::PackedProof,
-    protocol::{generate_nullifier_hash, generate_proof, Proof},
+    hash_to_field, identity, packed_proof::PackedProof, protocol::Proof,
 };
+
+#[cfg(feature = "semaphore")]
+use semaphore_rs::protocol::{generate_nullifier_hash, generate_proof};
+
 use serde::Serialize;
 
 use crate::{
@@ -17,7 +19,8 @@ use crate::{
 /// It is required to generate a `Proof` and will generally be initialized from an `app_id` and `action`.
 ///
 /// Note on naming: `ProofContext` is used to make it clear in FFIs which may not respect the module structure.
-#[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
+#[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 pub struct ProofContext {
     /// The `external_nullifier` is the computed result of a specific context for which a World ID Proof is generated.
     /// It is used in the Sempahore ZK circuit and in the computation of the `nullifier_hash` to guarantee uniqueness in a privacy-preserving way.
@@ -28,7 +31,7 @@ pub struct ProofContext {
     pub signal: U256Wrapper,
 }
 
-#[uniffi::export]
+#[cfg_attr(feature = "ffi", uniffi::export)]
 impl ProofContext {
     /// Initializes a `ProofContext`.
     ///
@@ -46,7 +49,7 @@ impl ProofContext {
     /// * `credential_type` - The type of credential being requested.
     ///
     #[must_use]
-    #[uniffi::constructor]
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub fn new(
         app_id: &str,
         action: Option<String>,
@@ -72,7 +75,7 @@ impl ProofContext {
     /// See `ProofContext::new` for reference. The `action` and `signal` need to be provided as raw bytes.
     ///
     #[must_use]
-    #[uniffi::constructor]
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn new_from_bytes(
         app_id: &str,
@@ -102,7 +105,8 @@ impl ProofContext {
 /// For on-chain verification, the `proof` (which is packed) should generally be deserialized into `uint256[8]`.
 ///
 /// More information on: [On-Chain Verification](https://docs.world.org/world-id/id/on-chain)
-#[derive(Clone, PartialEq, Eq, Debug, uniffi::Object, Serialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 #[allow(clippy::module_name_repetitions)]
 pub struct ProofOutput {
     /// The root hash of the Merkle tree used to prove membership. This root hash should match published hashes in the World ID
@@ -119,7 +123,7 @@ pub struct ProofOutput {
     pub proof: PackedProof,
 }
 
-#[uniffi::export]
+#[cfg_attr(feature = "ffi", uniffi::export)]
 impl ProofOutput {
     /// Converts the entire proof output to a JSON string with standard attribute names.
     ///
@@ -152,6 +156,7 @@ impl ProofOutput {
 ///
 /// # Errors
 /// Returns an error if proof generation fails
+#[cfg(feature = "semaphore")]
 pub fn generate_proof_with_semaphore_identity(
     identity: &identity::Identity,
     merkle_tree_proof: &MerkleTreeProof,

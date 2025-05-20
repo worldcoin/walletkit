@@ -16,7 +16,8 @@ struct InclusionProofResponse {
     proof: Proof,
 }
 
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 #[allow(clippy::module_name_repetitions)]
 pub struct MerkleTreeProof {
     poseidon_proof: Proof,
@@ -31,14 +32,14 @@ impl MerkleTreeProof {
     }
 }
 
-#[uniffi::export]
+#[cfg_attr(feature = "ffi", uniffi::export)]
 impl MerkleTreeProof {
     /// Retrieves a Merkle inclusion proof from the sign up sequencer for a given identity commitment.
     /// Each credential/environment pair uses a different sign up sequencer.
     ///
     /// # Errors
     /// Will throw an error if the request fails or parsing the response fails.
-    #[uniffi::constructor]
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub async fn from_identity_commitment(
         identity_commitment: &U256Wrapper,
         sequencer_host: &str,
@@ -63,7 +64,7 @@ impl MerkleTreeProof {
         })
     }
 
-    #[uniffi::constructor]
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub fn from_json_proof(
         json_proof: &str,
         merkle_root: &str,

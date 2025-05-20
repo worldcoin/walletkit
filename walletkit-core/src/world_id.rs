@@ -1,4 +1,7 @@
-use crate::{error::WalletKitError, proof::generate_proof_with_semaphore_identity};
+use crate::error::WalletKitError;
+
+#[cfg(feature = "semaphore")]
+use crate::proof::generate_proof_with_semaphore_identity;
 
 use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
 
@@ -21,7 +24,8 @@ use crate::{
 ///    trapdoor are what is actually used in the ZK circuit.
 /// 2. Zeroize does not have good compatibility with `UniFFI` as `UniFFI` may make many copies of the bytes for usage in foreign code
 ///    ([reference](https://github.com/mozilla/uniffi-rs/issues/2080)). This needs to be further explored.
-#[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
+#[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 pub struct WorldId {
     /// The Semaphore-based identity specifically for the `CredentialType::Orb`
     canonical_orb_semaphore_identity: semaphore_rs::identity::Identity,
@@ -31,11 +35,11 @@ pub struct WorldId {
     environment: Environment,
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg_attr(feature = "ffi", uniffi::export(async_runtime = "tokio"))]
 impl WorldId {
     /// Initializes a new `Identity` from a World ID secret. The identity is initialized for a specific environment.
     #[must_use]
-    #[uniffi::constructor]
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub fn new(secret: &[u8], environment: &Environment) -> Self {
         let secret_hex = seed_hex(secret);
 
@@ -98,6 +102,7 @@ impl WorldId {
     /// # })
     ///
     /// ```
+    #[cfg(feature = "semaphore")]
     pub async fn generate_proof(
         &self,
         context: &ProofContext,
