@@ -28,6 +28,7 @@ pub mod error;
 pub mod world_id;
 
 /// This module handles World ID proof generation
+#[cfg(feature = "semaphore")]
 pub mod proof;
 
 mod u256;

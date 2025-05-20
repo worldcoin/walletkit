@@ -14,9 +14,7 @@ sol!(
 
 #[tokio::test]
 async fn test_advanced_external_nullifier_generation_on_chain() {
-    let provider = ProviderBuilder::new()
-        .with_recommended_fillers()
-        .on_anvil_with_wallet();
+    let provider = ProviderBuilder::new().connect_anvil_with_wallet();
 
     let app_id = "app_10eb12bd96d8f7202892ff25f094c803".to_string();
 
@@ -43,8 +41,7 @@ async fn test_advanced_external_nullifier_generation_on_chain() {
         .from(addr)
         .call()
         .await
-        .unwrap()
-        ._0;
+        .unwrap();
 
     assert_eq!(nullifier, *context.external_nullifier);
 }
