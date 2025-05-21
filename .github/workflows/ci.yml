@@ -53,7 +53,7 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.82 # MSRV
+          - 1.86 # MSRV
 
     steps:
       - name: Checkout code
@@ -69,6 +69,10 @@ jobs:
       - name: Run tests
         run: |
           cargo test --all
+
+      - name: Build non-default features
+        run: |
+          cargo build --all --no-default-features
 
   deny:
     name: Cargo deny

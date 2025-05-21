@@ -21,7 +21,8 @@ use crate::{
 ///    trapdoor are what is actually used in the ZK circuit.
 /// 2. Zeroize does not have good compatibility with `UniFFI` as `UniFFI` may make many copies of the bytes for usage in foreign code
 ///    ([reference](https://github.com/mozilla/uniffi-rs/issues/2080)). This needs to be further explored.
-#[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
+#[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 pub struct WorldId {
     /// The Semaphore-based identity specifically for the `CredentialType::Orb`
     canonical_orb_semaphore_identity: semaphore_rs::identity::Identity,
@@ -31,11 +32,11 @@ pub struct WorldId {
     environment: Environment,
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg_attr(feature = "ffi", uniffi::export(async_runtime = "tokio"))]
 impl WorldId {
     /// Initializes a new `Identity` from a World ID secret. The identity is initialized for a specific environment.
     #[must_use]
-    #[uniffi::constructor]
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub fn new(secret: &[u8], environment: &Environment) -> Self {
         let secret_hex = seed_hex(secret);
 
@@ -80,12 +81,13 @@ impl WorldId {
     /// Generates a World ID Zero-knowledge proof (ZKP) for a specific context (i.e. app + action) and the identity.
     /// This is equivalent to the user presenting their credential to a verifying party.
     ///
+    /// **Requires the `semaphore` feature flag.**
+    ///
     /// # Errors
     /// Will error if the Merkle Tree inclusion proof cannot be retrieved from the sign up sequencer or if
     /// something fails with the proof generation.
     ///
-    /// # Examples
-    /// // NOTE: This is an integration test. Running this doctest example requires an HTTP connection to the sequencer.
+    /// # Example
     /// ```rust
     /// use walletkit_core::{proof::ProofContext, CredentialType, Environment, world_id::WorldId};
     /// use std::sync::Arc;
@@ -96,8 +98,8 @@ impl WorldId {
     ///     let proof = world_id.generate_proof(&context).await.unwrap();
     ///     assert_eq!(proof.nullifier_hash.to_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
     /// # })
-    ///
     /// ```
+    /// note: running the doctest example above requires an HTTP connection to the sequencer.
     pub async fn generate_proof(
         &self,
         context: &ProofContext,
