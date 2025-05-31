@@ -130,14 +130,13 @@ impl ProofContext {
     #[must_use]
     #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub fn legacy_new_from_pre_image_external_nullifier(
-        external_nullifier: Vec<u8>,
+        external_nullifier: &[u8],
         credential_type: CredentialType,
         signal: Option<Vec<u8>>,
     ) -> Self {
-        let external_nullifier: U256Wrapper =
-            hash_to_field(external_nullifier.as_slice()).into();
+        let external_nullifier: U256Wrapper = hash_to_field(external_nullifier).into();
         Self {
-            external_nullifier: external_nullifier.clone(),
+            external_nullifier,
             credential_type,
             signal: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
         }
@@ -159,7 +158,10 @@ impl ProofContext {
     /// * `external_nullifier` - The raw external nullifier. Must already be a number in the field. No additional hashing is performed.
     /// * `credential_type` - The type of credential being requested.
     /// * `signal` - Optional. The signal is included in the ZKP and is committed to in the proof.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// - Returns an error if the external nullifier is not a valid number in the field.
     #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub fn legacy_new_from_raw_external_nullifier(
         external_nullifier: &U256Wrapper,
@@ -171,7 +173,7 @@ impl ProofContext {
         }
 
         Ok(Self {
-            external_nullifier: external_nullifier.clone(),
+            external_nullifier: *external_nullifier,
             credential_type,
             signal: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
         })
@@ -507,7 +509,7 @@ mod proof_tests {
     #[test]
     fn test_proof_generation_with_legacy_nullifier_address_book() {
         let context = ProofContext::legacy_new_from_pre_image_external_nullifier(
-            b"internal_addressbook".to_vec(),
+            b"internal_addressbook",
             CredentialType::Device,
             None,
         );
@@ -517,7 +519,7 @@ mod proof_tests {
         let expected = uint!(377593556987874043165400752883455722895901692332643678318174569531027326541_U256);
         assert_eq!(
             context.external_nullifier.to_hex_string(),
-            format!("{:#066x}", expected)
+            format!("{expected:#066x}")
         );
     }
 
@@ -546,7 +548,7 @@ mod proof_tests {
         let expected = uint!(13569385457497991651199724805705614201555076328004753598373935625927319879728_U256);
         assert_eq!(
             context.external_nullifier.to_hex_string(),
-            format!("{:#066x}", expected)
+            format!("{expected:#066x}")
         );
     }
 
