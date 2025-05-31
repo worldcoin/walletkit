@@ -1,0 +1,7 @@
+{
+    "rust-analyzer.cargo.features": [
+        "default",
+        "legacy-nullifiers"
+    ],
+    "rust-analyzer.check.command": "clippy"
+}

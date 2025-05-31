@@ -24,7 +24,7 @@ name = "walletkit_core"
 alloy-core = { version = "1.0", default-features = false, features = ["sol-types"] }
 hex = "0.4"
 reqwest = { version = "0.12", features = ["json", "brotli"] }
-ruint = { version = "1.14", default-features = false, features = ["alloc"] }
+ruint = { version = "1.14", default-features = false, features = ["alloc", "ark-ff-04"] }
 semaphore-rs = { version = "0.4" }
 serde = "1.0"
 serde_json = "1.0"
@@ -43,6 +43,10 @@ tokio-test = "0.4"
 default = ["ffi", "semaphore"]
 semaphore = ["semaphore-rs/depth_30"]
 ffi = ["dep:uniffi", "semaphore"]
+
+# Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
+# This feature flag adds support to operate with such external nullifiers.
+legacy-nullifiers = []
 
 [package.metadata.docs.rs]
 no-default-features = true
