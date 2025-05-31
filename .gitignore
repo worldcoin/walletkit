@@ -11,4 +11,6 @@ Sources/
 cache/
 **/out/build-info
 
+.vscode
+
 # NOTE: Cargo.lock is not ignored because it is used for FFI builds (Swift & Kotlin)
