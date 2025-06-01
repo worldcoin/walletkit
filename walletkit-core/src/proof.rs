@@ -1,4 +1,5 @@
 use crate::error::WalletKitError;
+use ruint::{aliases::U256, uint};
 
 use alloy_core::sol_types::SolValue;
 use semaphore_rs::{
@@ -6,6 +7,15 @@ use semaphore_rs::{
     packed_proof::PackedProof,
     protocol::{generate_nullifier_hash, generate_proof, Proof},
 };
+
+/// The modulus of the BN254 curve.
+///
+/// Reference: <https://docs.rs/ark-bn254/latest/ark_bn254>
+///
+/// TODO: Import from `semaphore-rs` once exported.
+pub const MODULUS: U256 = uint!(
+    21888242871839275222246405745257275088548364400416034343698204186575808495617_U256
+);
 
 use serde::Serialize;
 
@@ -95,6 +105,78 @@ impl ProofContext {
             credential_type,
             signal: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
         }
+    }
+}
+
+#[cfg_attr(feature = "ffi", uniffi::export)]
+#[cfg(feature = "legacy-nullifiers")]
+impl ProofContext {
+    /// LEGACY AND ADVANCED USE ONLY.
+    ///
+    /// Initializes a `ProofContext` from an arbitrary pre-image for an external nullifier.
+    ///
+    /// This is used for legacy nullifiers which were constructed from arbitrary bytes which don't follow
+    /// the `app_id` and `action` standard.
+    ///
+    /// # Usage (Non-exhaustive)
+    ///
+    /// - This is used for the World ID Address Book.
+    ///
+    /// # Arguments
+    ///
+    /// * `external_nullifier` - An arbitrary array of bytes that will be hashed to produce the external nullifier.
+    /// * `credential_type` - The type of credential being requested.
+    /// * `signal` - Optional. The signal is included in the ZKP and is committed to in the proof.
+    #[must_use]
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    pub fn legacy_new_from_pre_image_external_nullifier(
+        external_nullifier: &[u8],
+        credential_type: CredentialType,
+        signal: Option<Vec<u8>>,
+    ) -> Self {
+        let external_nullifier: U256Wrapper = hash_to_field(external_nullifier).into();
+        Self {
+            external_nullifier,
+            credential_type,
+            signal: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
+        }
+    }
+
+    /// LEGACY AND ADVANCED USE ONLY.
+    ///
+    /// Initializes a `ProofContext` from a raw external nullifier.
+    ///
+    /// This is used for legacy nullifiers which were constructed from raw field elements.
+    ///
+    /// # Usage (Non-exhaustive)
+    ///
+    /// - This is used for Recurring Grant Claims (Worldcoin Airdrop).
+    /// - This is used to verify a World App account.
+    ///
+    /// # Arguments
+    ///
+    /// * `external_nullifier` - The raw external nullifier. Must already be a number in the field. No additional hashing is performed.
+    /// * `credential_type` - The type of credential being requested.
+    /// * `signal` - Optional. The signal is included in the ZKP and is committed to in the proof.
+    ///
+    /// # Errors
+    ///
+    /// - Returns an error if the external nullifier is not a valid number in the field.
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    pub fn legacy_new_from_raw_external_nullifier(
+        external_nullifier: &U256Wrapper,
+        credential_type: CredentialType,
+        signal: Option<Vec<u8>>,
+    ) -> Result<Self, WalletKitError> {
+        if external_nullifier.0 > MODULUS {
+            return Err(WalletKitError::InvalidNumber);
+        }
+
+        Ok(Self {
+            external_nullifier: *external_nullifier,
+            credential_type,
+            signal: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
+        })
     }
 }
 
@@ -421,6 +503,65 @@ mod proof_tests {
             zkp.get_proof_as_string(),
             parsed_json["proof"].as_str().unwrap()
         );
+    }
+
+    #[cfg(feature = "legacy-nullifiers")]
+    #[test]
+    fn test_proof_generation_with_legacy_nullifier_address_book() {
+        let context = ProofContext::legacy_new_from_pre_image_external_nullifier(
+            b"internal_addressbook",
+            CredentialType::Device,
+            None,
+        );
+
+        // the expected nullifier hash from the contract
+        // reference: <https://worldchain-mainnet.explorer.alchemy.com/tx/0x974e70f125abe3b6abaa0b3fb9cb067c09cee359b08fa847487d6623377308fd>
+        let expected = uint!(377593556987874043165400752883455722895901692332643678318174569531027326541_U256);
+        assert_eq!(
+            context.external_nullifier.to_hex_string(),
+            format!("{expected:#066x}")
+        );
+    }
+
+    #[cfg(feature = "legacy-nullifiers")]
+    #[test]
+    fn test_proof_generation_with_legacy_nullifier_recurring_grant_drop() {
+        let grant_id = 48;
+
+        // The constant which is added to all the Grant IDs in World Chain.
+        // Reference: <https://github.com/worldcoin/worldcoin-grants-contracts/blob/main/src/RecurringGrantDrop.sol#L22>
+        let worldchain_nullifier_hash_constant = uint!(
+            0x1E00000000000000000000000000000000000000000000000000000000000000_U256
+        );
+        let external_nullifier_hash =
+            worldchain_nullifier_hash_constant + U256::from(grant_id);
+
+        let context = ProofContext::legacy_new_from_raw_external_nullifier(
+            &external_nullifier_hash.into(),
+            CredentialType::Device,
+            None,
+        )
+        .unwrap();
+
+        // the expected nullifier hash from the contract
+        // transaction example for RGD 48: <https://worldscan.org/tx/0xbad696a88c5425a22af18ea6d00efca78ae0f5c5cceade21597adf60126a5fc4>
+        let expected = uint!(13569385457497991651199724805705614201555076328004753598373935625927319879728_U256);
+        assert_eq!(
+            context.external_nullifier.to_hex_string(),
+            format!("{expected:#066x}")
+        );
+    }
+
+    #[cfg(feature = "legacy-nullifiers")]
+    #[test]
+    fn test_ensure_raw_external_nullifiers_are_in_the_field() {
+        let invalid_external_nullifier = MODULUS + U256::from(1);
+        assert!(ProofContext::legacy_new_from_raw_external_nullifier(
+            &invalid_external_nullifier.into(),
+            CredentialType::Device,
+            None,
+        )
+        .is_err());
     }
 
     #[test]
