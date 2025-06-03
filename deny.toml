@@ -41,4 +41,5 @@ allow = [
 ignore = [
     "RUSTSEC-2024-0388",  # Unmaintained `derivative` (2024-11-22)
     "RUSTSEC-2024-0436", # Unmaintained `paste` (2025-04-04)
+    "RUSTSEC-2023-0089", # Unmaintained `atomic-polyfill` (2025-06-03)
 ]
