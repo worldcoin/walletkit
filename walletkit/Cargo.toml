@@ -22,7 +22,6 @@ name = "walletkit"
 [dependencies]
 walletkit-core = { workspace = true }
 uniffi = { workspace = true, features = ["build", "tokio"], optional = true }
-openssl-sys = { workspace = true, features = ["vendored"] } # required for cross builds (kotlin)
 
 
 [features]

@@ -25,7 +25,6 @@ allow = [
     "LicenseRef-ring",                # See https://github.com/briansmith/ring/blob/95948b3977013aed16db92ae32e6b8384496a740/deny.toml#L12
     "MIT",
     "MPL-2.0",                        # Although this is copyleft, it is scoped to modifying the original files
-    # "OpenSSL",
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "Unlicense",
