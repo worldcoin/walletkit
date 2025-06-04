@@ -23,9 +23,9 @@ name = "walletkit_core"
 [dependencies]
 alloy-core = { version = "1.0", default-features = false, features = ["sol-types"] }
 hex = "0.4"
-reqwest = { version = "0.12", features = ["json", "brotli"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "brotli", "rustls-tls"] }
 ruint = { version = "1.15", default-features = false, features = ["alloc", "ark-ff-04"] }
-semaphore-rs = { version = "0.4" }
+semaphore-rs = { version = "0.5" }
 serde = "1.0"
 serde_json = "1.0"
 strum = { version = "0.26", features = ["derive"] }

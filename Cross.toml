@@ -1,7 +1,7 @@
 [build]
 pre-build = [
     "dpkg --add-architecture $CROSS_DEB_ARCH",
-    "apt-get update && apt-get --assume-yes install libssl-dev:$CROSS_DEB_ARCH pkg-config:$CROSS_DEB_ARCH",
+    "apt-get update && apt-get --assume-yes install pkg-config:$CROSS_DEB_ARCH",
     "export PKG_CONFIG_ALLOW_CROSS=1",
     "export PKG_CONFIG_LIBDIR=/usr/lib/$CROSS_DEB_ARCH/pkgconfig:/usr/lib/$CROSS_DEB_ARCH/lib/pkgconfig:/usr/share/pkgconfig",
 ]

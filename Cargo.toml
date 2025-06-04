@@ -19,7 +19,6 @@ categories = ["api-bindings", "cryptography::cryptocurrencies"]
 [workspace.dependencies]
 walletkit-core = { version = "0.0.21", path = "walletkit-core", default-features = false }
 uniffi = { version = "0.29", features = ["build", "tokio"] }
-openssl-sys = { version = "0.9", features = ["vendored"] } # required for cross builds (kotlin)
 
 [profile.release]
 opt-level = 'z' # Optimize for size.
