@@ -11,7 +11,7 @@ use crate::Environment;
 /// More details in `https://docs.world.org/world-id/concepts#proof-of-personhood`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Hash, Display)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
-#[strum(serialize_all = "lowercase")]
+#[strum(serialize_all = "snake_case")]
 pub enum CredentialType {
     /// Represents persons who have been biometrically verified at an Orb. Highest level of proof of personhood verification.
     Orb,
