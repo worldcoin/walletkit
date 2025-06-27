@@ -196,6 +196,8 @@ pub struct ProofOutput {
     /// The ABI-encoded zero-knowledge proof represented as a string. This is the format generally used with other libraries and
     /// can be directly used with the Developer Portal for verification.
     pub proof: PackedProof,
+    /// The credential type used to generate the proof.
+    pub credential_type: CredentialType,
 }
 
 #[cfg_attr(feature = "ffi", uniffi::export)]
@@ -224,6 +226,12 @@ impl ProofOutput {
     #[must_use]
     pub fn get_proof_as_string(&self) -> String {
         self.proof.to_string()
+    }
+
+    /// Exposes the credential type to foreign code. Struct fields are not directly exposed to foreign code.
+    #[must_use]
+    pub const fn get_credential_type(&self) -> CredentialType {
+        self.credential_type
     }
 }
 
@@ -259,6 +267,7 @@ pub fn generate_proof_with_semaphore_identity(
         nullifier_hash,
         raw_proof: proof,
         proof: PackedProof::from(proof),
+        credential_type: context.credential_type,
     })
 }
 

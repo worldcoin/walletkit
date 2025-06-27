@@ -1,3 +1,4 @@
+use serde::Serialize;
 use strum::{Display, EnumString};
 
 use crate::Environment;
@@ -8,7 +9,7 @@ use crate::Environment;
 /// valid Orb-verified credential.
 ///
 /// More details in `https://docs.world.org/world-id/concepts#proof-of-personhood`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Hash, Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Hash, Display, Serialize)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 #[strum(serialize_all = "snake_case")]
 pub enum CredentialType {
