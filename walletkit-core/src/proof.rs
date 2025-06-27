@@ -492,6 +492,8 @@ mod proof_tests {
             "0x2f3a95b6df9074a19bf46e2308d7f5696e9dca49e0d64ef49a1425bbf40e0c02"
         );
 
+        assert_eq!(parsed_json["credential_type"].as_str().unwrap(), "device");
+
         // ensure the proof is automatically encoded as packed
         let packed_proof_pattern = r"^0x[a-f0-9]{400,600}$";
         let re = Regex::new(packed_proof_pattern).unwrap();

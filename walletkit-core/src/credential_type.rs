@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use strum::{Display, EnumString};
 
 use crate::Environment;
@@ -9,18 +9,31 @@ use crate::Environment;
 /// valid Orb-verified credential.
 ///
 /// More details in `https://docs.world.org/world-id/concepts#proof-of-personhood`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Hash, Display, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Hash, Display)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
-#[strum(serialize_all = "snake_case")]
+#[strum(serialize_all = "lowercase")]
 pub enum CredentialType {
     /// Represents persons who have been biometrically verified at an Orb. Highest level of proof of personhood verification.
     Orb,
     /// Verified biometric passport holder
+    #[strum(serialize = "document")]
     Passport,
     /// Verified biometric passport holder with additional presence check verifications such as Chip Authentication
+    /// The identity trapdoor is `secure_passport` but it's serialized as `secure_document` to match `idkit-js` and the Developer Portal.
+    /// Reference: <https://github.com/worldcoin/idkit-js/blob/main/packages/core/src/types/config.ts#L18>
+    #[strum(serialize = "secure_document")]
     SecurePassport,
     /// Represents a semi-unique device
     Device,
+}
+
+impl Serialize for CredentialType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
 }
 
 impl CredentialType {
@@ -71,5 +84,21 @@ impl CredentialType {
                 }
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_credential_type_serialization() {
+        let credential_type = CredentialType::Device;
+        let serialized = serde_json::to_string(&credential_type).unwrap();
+        assert_eq!(serialized, "\"device\"");
+
+        let credential_type = CredentialType::SecurePassport;
+        let serialized = serde_json::to_string(&credential_type).unwrap();
+        assert_eq!(serialized, "\"secure_document\"");
     }
 }
