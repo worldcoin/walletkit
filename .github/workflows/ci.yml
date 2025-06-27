@@ -68,7 +68,7 @@ jobs:
 
       - name: Run tests
         run: |
-          cargo test --all
+          cargo test --all --all-features
 
       - name: Build non-default features
         run: |

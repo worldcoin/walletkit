@@ -128,8 +128,7 @@ impl WorldId {
 mod tests {
 
     use ruint::uint;
-    use semaphore_rs::protocol::{verify_proof, Proof};
-    use serde::Serialize;
+    use semaphore_rs::protocol::verify_proof;
 
     use super::*;
 
@@ -222,64 +221,6 @@ mod tests {
         assert!(verify_result);
     }
 
-    #[ignore = "To be run manually as it requires a call to the Sign up Sequencer"]
-    #[tokio::test]
-    async fn test_proof_verification_with_sign_up_sequencer() {
-        #[derive(Serialize)]
-        #[serde(rename_all = "camelCase")]
-        /// https://github.com/worldcoin/signup-sequencer/blob/main/schemas/openapi-v2.yaml#L273
-        struct VerifyProofRequest {
-            root: String,
-            signal_hash: String,
-            nullifier_hash: String,
-            external_nullifier_hash: String,
-            /// Full unpacked Semaphore proof.
-            /// Reference: <https://github.com/worldcoin/signup-sequencer/blob/main/schemas/openapi-v2.yaml#L225>
-            proof: Proof,
-        }
-
-        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
-        let context = ProofContext::new(
-            "app_id",
-            None,
-            Some("test-signal".to_string()),
-            CredentialType::Device,
-        );
-
-        let proof = world_id.generate_proof(&context).await.unwrap();
-
-        let request = VerifyProofRequest {
-            root: proof.merkle_root.to_hex_string(),
-            signal_hash: context.signal_hash.to_hex_string(),
-            nullifier_hash: proof.nullifier_hash.to_hex_string(),
-            external_nullifier_hash: context.external_nullifier.to_hex_string(),
-            proof: proof.raw_proof,
-        };
-
-        let client = reqwest::Client::new();
-
-        let response = client
-            .post(
-                "https://signup-phone-ethereum.stage-crypto.worldcoin.org/v2/semaphore-proof/verify",
-            )
-            .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&request).unwrap())
-            .send()
-            .await
-            .unwrap();
-
-        assert_eq!(response.status(), 200);
-        assert!(response.json::<serde_json::Value>().await.unwrap()["valid"]
-            .as_bool()
-            .unwrap());
-    }
-
-    #[ignore = "To be run manually as it requires a call to the Developer Portal"]
-    #[test]
-    fn test_proof_verification_with_developer_portal() {
-        todo!("implement me");
-    }
-
     #[test]
     fn test_secret_hex_generation() {
         let world_id: WorldId =
@@ -328,5 +269,120 @@ mod tests {
             world_id.get_identity_commitment(&CredentialType::Device);
 
         assert!(device_commitment != commitment);
+    }
+}
+
+#[cfg(feature = "http_tests")]
+#[cfg(test)]
+/// Integration tests that require HTTP calls to other services.
+mod http_tests {
+    use semaphore_rs::protocol::Proof;
+    use serde::Serialize;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_proof_verification_with_sign_up_sequencer() {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        /// https://github.com/worldcoin/signup-sequencer/blob/main/schemas/openapi-v2.yaml#L273
+        struct VerifyProofRequest {
+            root: String,
+            signal_hash: String,
+            nullifier_hash: String,
+            external_nullifier_hash: String,
+            /// Full unpacked Semaphore proof.
+            /// Reference: <https://github.com/worldcoin/signup-sequencer/blob/main/schemas/openapi-v2.yaml#L225>
+            proof: Proof,
+        }
+
+        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let context = ProofContext::new(
+            "app_id",
+            None,
+            Some("test-signal".to_string()),
+            CredentialType::Device,
+        );
+
+        let proof = world_id.generate_proof(&context).await.unwrap();
+
+        let request = VerifyProofRequest {
+            root: proof.merkle_root.to_hex_string(),
+            signal_hash: context.signal_hash.to_hex_string(),
+            nullifier_hash: proof.nullifier_hash.to_hex_string(),
+            external_nullifier_hash: context.external_nullifier.to_hex_string(),
+            proof: proof.raw_proof,
+        };
+
+        let client = reqwest::Client::new();
+
+        let response = client
+                .post(
+                    "https://signup-phone-ethereum.stage-crypto.worldcoin.org/v2/semaphore-proof/verify",
+                )
+                .header("Content-Type", "application/json")
+                .body(serde_json::to_string(&request).unwrap())
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(response.status(), 200);
+        assert!(response.json::<serde_json::Value>().await.unwrap()["valid"]
+            .as_bool()
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_proof_verification_with_developer_portal() {
+        #[derive(Serialize)]
+        /// https://docs.world.org/world-id/reference/api#verify-proof
+        struct VerifyProofRequest {
+            merkle_root: String,
+            signal_hash: String,
+            nullifier_hash: String,
+            action: String,
+            /// Developer Portal expects the stringified packed proof.
+            proof: String,
+            verification_level: String,
+        }
+
+        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let context = ProofContext::new(
+            "app_staging_509648994ab005fe79c4ddd0449606ca",
+            Some("action-1".to_string()),
+            Some("test-signal".to_string()),
+            CredentialType::Device,
+        );
+
+        let proof = world_id.generate_proof(&context).await.unwrap();
+
+        let request = VerifyProofRequest {
+            merkle_root: proof.merkle_root.to_hex_string(),
+            signal_hash: context.signal_hash.to_hex_string(),
+            nullifier_hash: proof.nullifier_hash.to_hex_string(),
+            action: "action-1".to_string(),
+            proof: proof.get_proof_as_string(),
+            verification_level: CredentialType::Device.to_string(),
+        };
+
+        dbg!(serde_json::to_string(&request).unwrap());
+
+        let client = reqwest::Client::new();
+
+        let response = client
+                .post("https://staging-developer.worldcoin.org/api/v2/verify/app_staging_509648994ab005fe79c4ddd0449606ca")
+                .header("Content-Type", "application/json")
+                .header("User-Agent", format!("walletkit-core/{}", env!("CARGO_PKG_VERSION"))) // Developer Portal requires a User-Agent
+                .body(serde_json::to_string(&request).unwrap())
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(response.status(), 200);
+        assert!(
+            response.json::<serde_json::Value>().await.unwrap()["success"]
+                .as_bool()
+                .unwrap()
+        );
     }
 }

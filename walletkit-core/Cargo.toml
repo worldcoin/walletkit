@@ -44,6 +44,7 @@ tokio-test = "0.4"
 default = ["ffi", "semaphore"]
 semaphore = ["semaphore-rs/depth_30"]
 ffi = ["dep:uniffi", "semaphore"]
+http_tests = []
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
