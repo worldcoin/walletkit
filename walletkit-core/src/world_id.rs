@@ -14,7 +14,7 @@ use crate::{
 /// A base World ID identity which can be used to generate World ID Proofs for different credentials.
 ///
 /// Most essential primitive for World ID.
-#[derive(Clone, PartialEq, Eq, Debug, Zeroize, ZeroizeOnDrop)]
+#[derive(PartialEq, Eq, Debug, Zeroize, ZeroizeOnDrop)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 pub struct WorldId {
     /// The hashed World ID secret, cast to 64 bytes (0-padded). Actual hashed secret is 32 bytes.

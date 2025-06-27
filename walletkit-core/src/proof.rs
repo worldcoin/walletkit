@@ -5,8 +5,10 @@ use semaphore_rs::{
     hash_to_field, identity,
     packed_proof::PackedProof,
     protocol::{generate_nullifier_hash, generate_proof, Proof},
-    MODULUS,
 };
+
+#[cfg(feature = "legacy-nullifiers")]
+use semaphore_rs::MODULUS;
 
 use serde::Serialize;
 
@@ -376,9 +378,11 @@ mod external_nullifier_tests {
 mod proof_tests {
 
     use regex::Regex;
-    use ruint::{aliases::U256, uint};
     use semaphore_rs::protocol::verify_proof;
     use serde_json::Value;
+
+    #[cfg(feature = "legacy-nullifiers")]
+    use ruint::{aliases::U256, uint};
 
     use super::*;
 
