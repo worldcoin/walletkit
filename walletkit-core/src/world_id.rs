@@ -1,6 +1,7 @@
 use crate::{error::WalletKitError, proof::generate_proof_with_semaphore_identity};
 
 use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     credential_type::CredentialType,
@@ -13,22 +14,13 @@ use crate::{
 /// A base World ID identity which can be used to generate World ID Proofs for different credentials.
 ///
 /// Most essential primitive for World ID.
-///
-/// # Security
-/// TODO: Review with Security Team
-/// 1. `sempahore-rs` zeroizes the bytes representing the World ID Secret and stores the trapdoor and nullifier in memory. This doesn't
-///    add too much additional security versus keeping the secret in memory because for the context of Semaphore ZKPs, the nullifier and
-///    trapdoor are what is actually used in the ZK circuit.
-/// 2. Zeroize does not have good compatibility with `UniFFI` as `UniFFI` may make many copies of the bytes for usage in foreign code
-///    ([reference](https://github.com/mozilla/uniffi-rs/issues/2080)). This needs to be further explored.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Zeroize, ZeroizeOnDrop)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 pub struct WorldId {
-    /// The Semaphore-based identity specifically for the `CredentialType::Orb`
-    canonical_orb_semaphore_identity: semaphore_rs::identity::Identity,
     /// The hashed World ID secret, cast to 64 bytes (0-padded). Actual hashed secret is 32 bytes.
     secret_hex: [u8; 64],
     /// The environment in which this identity is running. Generally an app/client will be a single environment.
+    #[zeroize(skip)]
     environment: Environment,
 }
 
@@ -39,14 +31,7 @@ impl WorldId {
     #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub fn new(secret: &[u8], environment: &Environment) -> Self {
         let secret_hex = seed_hex(secret);
-
-        let mut secret_key = secret.to_vec();
-
-        let canonical_orb_semaphore_identity =
-            semaphore_rs::identity::Identity::from_secret(&mut secret_key, None);
-
         Self {
-            canonical_orb_semaphore_identity,
             secret_hex,
             environment: environment.clone(),
         }
@@ -123,24 +108,19 @@ impl WorldId {
 }
 
 impl WorldId {
-    /// Retrieves the Semaphore identity for a specific `CredentialType` from memory or by computing it on the spot.
+    /// Generates the Semaphore identity for a specific `CredentialType`.
     #[must_use]
     #[allow(clippy::trivially_copy_pass_by_ref)]
     fn semaphore_identity_for_credential(
         &self,
         credential_type: &CredentialType,
     ) -> semaphore_rs::identity::Identity {
-        if credential_type == &CredentialType::Orb {
-            self.canonical_orb_semaphore_identity.clone()
-        } else {
-            // When the identity commitment for the non-canonical identity is requested, a new Semaphore identity needs to be initialized.
-            let mut secret_hex = self.secret_hex;
-            let identity = semaphore_rs::identity::Identity::from_hashed_secret(
-                &mut secret_hex,
-                Some(credential_type.as_identity_trapdoor()),
-            );
-            identity
-        }
+        let mut secret_hex = self.secret_hex;
+        let identity = semaphore_rs::identity::Identity::from_hashed_secret(
+            &mut secret_hex,
+            Some(credential_type.as_identity_trapdoor()),
+        );
+        identity
     }
 }
 
