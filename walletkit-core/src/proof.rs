@@ -172,6 +172,49 @@ impl ProofContext {
             signal_hash: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
         })
     }
+
+    /// LEGACY AND ADVANCED USE ONLY.
+    ///
+    /// Initializes a `ProofContext` from an already hashed signal.
+    ///
+    /// # Usage
+    /// This is used for support of legacy `MiniKit` v1 commands in World App where `minikit-js` hashed the signal.
+    ///
+    /// # Arguments
+    ///
+    /// * `app_id` - The ID of the application requesting proofs.  This can be obtained from the [Developer Portal](https://developer.world.org).
+    /// * `action` - Optional. Custom incognito action being requested.
+    /// * `credential_type` - The type of credential being requested.
+    /// * `signal` - The already hashed signal as a field element.
+    ///
+    /// # Errors
+    ///
+    /// - Returns an error if the signal is not a valid number in the field.
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    pub fn legacy_new_from_signal_hash(
+        app_id: &str,
+        action: Option<String>,
+        credential_type: CredentialType,
+        signal: &U256Wrapper,
+    ) -> Result<Self, WalletKitError> {
+        if signal.0 > MODULUS {
+            return Err(WalletKitError::InvalidNumber);
+        }
+
+        let mut pre_image = hash_to_field(app_id.as_bytes()).abi_encode_packed();
+
+        if let Some(action) = action {
+            pre_image.extend_from_slice(action.as_bytes());
+        }
+
+        let external_nullifier = hash_to_field(&pre_image).into();
+
+        Ok(Self {
+            external_nullifier,
+            credential_type,
+            signal_hash: *signal,
+        })
+    }
 }
 
 /// Represents the complete output of a World ID Proof (i.e. a credential persentation). This output
