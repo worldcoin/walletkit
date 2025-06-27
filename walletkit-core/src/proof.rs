@@ -1,21 +1,12 @@
 use crate::error::WalletKitError;
-use ruint::{aliases::U256, uint};
 
 use alloy_core::sol_types::SolValue;
 use semaphore_rs::{
     hash_to_field, identity,
     packed_proof::PackedProof,
     protocol::{generate_nullifier_hash, generate_proof, Proof},
+    MODULUS,
 };
-
-/// The modulus of the BN254 curve.
-///
-/// Reference: <https://docs.rs/ark-bn254/latest/ark_bn254>
-///
-/// TODO: Import from `semaphore-rs` once exported.
-pub const MODULUS: U256 = uint!(
-    21888242871839275222246405745257275088548364400416034343698204186575808495617_U256
-);
 
 use serde::Serialize;
 
@@ -36,8 +27,9 @@ pub struct ProofContext {
     pub external_nullifier: U256Wrapper,
     /// Represents the specific credential to be used for a World ID Proof.
     pub credential_type: CredentialType,
-    /// The signal is included in the ZKP and is committed to in the proof. When verifying the proof, the same signal must be provided.
-    pub signal: U256Wrapper,
+    /// The hashed signal which is included in the ZKP and committed to in the proof.
+    /// When verifying the proof, the same signal must be provided.
+    pub signal_hash: U256Wrapper,
 }
 
 #[cfg_attr(feature = "ffi", uniffi::export)]
@@ -103,7 +95,7 @@ impl ProofContext {
         Self {
             external_nullifier,
             credential_type,
-            signal: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
+            signal_hash: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
         }
     }
 }
@@ -138,7 +130,7 @@ impl ProofContext {
         Self {
             external_nullifier,
             credential_type,
-            signal: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
+            signal_hash: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
         }
     }
 
@@ -175,7 +167,7 @@ impl ProofContext {
         Ok(Self {
             external_nullifier: *external_nullifier,
             credential_type,
-            signal: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
+            signal_hash: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
         })
     }
 }
@@ -257,7 +249,7 @@ pub fn generate_proof_with_semaphore_identity(
         identity,
         merkle_tree_proof.as_poseidon_proof(),
         external_nullifier_hash,
-        context.signal.into(),
+        context.signal_hash.into(),
     )?;
 
     Ok(ProofOutput {
@@ -384,6 +376,7 @@ mod external_nullifier_tests {
 mod proof_tests {
 
     use regex::Regex;
+    use ruint::{aliases::U256, uint};
     use semaphore_rs::protocol::verify_proof;
     use serde_json::Value;
 
@@ -562,22 +555,5 @@ mod proof_tests {
             None,
         )
         .is_err());
-    }
-
-    #[test]
-    const fn test_proof_generation_with_local_merkle_tree() {
-        // TODO: implement me
-    }
-
-    #[ignore = "To be run manually as it requires a call to the Sign up Sequencer"]
-    #[test]
-    fn test_proof_verification_with_sign_up_sequencer() {
-        todo!("implement me");
-    }
-
-    #[ignore = "To be run manually as it requires a call to the Developer Portal"]
-    #[test]
-    fn test_proof_verification_with_developer_portal() {
-        todo!("implement me");
     }
 }

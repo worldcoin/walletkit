@@ -9,9 +9,7 @@ WalletKit can be used as a Rust crate, or directly as a Swift or Android package
 **To use WalletKit in another Rust project:**
 
 ```bash
-cargo install --git https://github.com/worldcoin/walletkit
-# // TODO: installation through crates.io is pending
-# cargo install walletkit
+cargo install walletkit
 ```
 
 **To use WalletKit in an iOS app:**
