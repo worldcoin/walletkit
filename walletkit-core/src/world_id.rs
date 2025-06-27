@@ -365,8 +365,6 @@ mod http_tests {
             verification_level: CredentialType::Device.to_string(),
         };
 
-        dbg!(serde_json::to_string(&request).unwrap());
-
         let client = reqwest::Client::new();
 
         let response = client

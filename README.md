@@ -66,6 +66,6 @@ async fn example() {
     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Orb);
     let proof = world_id.generate_proof(&context).await.unwrap();
 
-    dbg!(proof.to_json()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
+    println!(proof.to_json()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
 }
 ```
