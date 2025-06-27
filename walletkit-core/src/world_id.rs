@@ -1,6 +1,7 @@
 use crate::{error::WalletKitError, proof::generate_proof_with_semaphore_identity};
 
 use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     credential_type::CredentialType,
@@ -13,22 +14,13 @@ use crate::{
 /// A base World ID identity which can be used to generate World ID Proofs for different credentials.
 ///
 /// Most essential primitive for World ID.
-///
-/// # Security
-/// TODO: Review with Security Team
-/// 1. `sempahore-rs` zeroizes the bytes representing the World ID Secret and stores the trapdoor and nullifier in memory. This doesn't
-///    add too much additional security versus keeping the secret in memory because for the context of Semaphore ZKPs, the nullifier and
-///    trapdoor are what is actually used in the ZK circuit.
-/// 2. Zeroize does not have good compatibility with `UniFFI` as `UniFFI` may make many copies of the bytes for usage in foreign code
-///    ([reference](https://github.com/mozilla/uniffi-rs/issues/2080)). This needs to be further explored.
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Zeroize, ZeroizeOnDrop)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 pub struct WorldId {
-    /// The Semaphore-based identity specifically for the `CredentialType::Orb`
-    canonical_orb_semaphore_identity: semaphore_rs::identity::Identity,
     /// The hashed World ID secret, cast to 64 bytes (0-padded). Actual hashed secret is 32 bytes.
     secret_hex: [u8; 64],
     /// The environment in which this identity is running. Generally an app/client will be a single environment.
+    #[zeroize(skip)]
     environment: Environment,
 }
 
@@ -39,14 +31,7 @@ impl WorldId {
     #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub fn new(secret: &[u8], environment: &Environment) -> Self {
         let secret_hex = seed_hex(secret);
-
-        let mut secret_key = secret.to_vec();
-
-        let canonical_orb_semaphore_identity =
-            semaphore_rs::identity::Identity::from_secret(&mut secret_key, None);
-
         Self {
-            canonical_orb_semaphore_identity,
             secret_hex,
             environment: environment.clone(),
         }
@@ -123,24 +108,19 @@ impl WorldId {
 }
 
 impl WorldId {
-    /// Retrieves the Semaphore identity for a specific `CredentialType` from memory or by computing it on the spot.
+    /// Generates the Semaphore identity for a specific `CredentialType`.
     #[must_use]
     #[allow(clippy::trivially_copy_pass_by_ref)]
     fn semaphore_identity_for_credential(
         &self,
         credential_type: &CredentialType,
     ) -> semaphore_rs::identity::Identity {
-        if credential_type == &CredentialType::Orb {
-            self.canonical_orb_semaphore_identity.clone()
-        } else {
-            // When the identity commitment for the non-canonical identity is requested, a new Semaphore identity needs to be initialized.
-            let mut secret_hex = self.secret_hex;
-            let identity = semaphore_rs::identity::Identity::from_hashed_secret(
-                &mut secret_hex,
-                Some(credential_type.as_identity_trapdoor()),
-            );
-            identity
-        }
+        let mut secret_hex = self.secret_hex;
+        let identity = semaphore_rs::identity::Identity::from_hashed_secret(
+            &mut secret_hex,
+            Some(credential_type.as_identity_trapdoor()),
+        );
+        identity
     }
 }
 
@@ -148,36 +128,97 @@ impl WorldId {
 mod tests {
 
     use ruint::uint;
+    use semaphore_rs::protocol::verify_proof;
 
     use super::*;
 
-    #[test]
-    fn test_proof_generation() {
-        // TODO: complete test
+    /// This test covers generating a default World ID ZKP in its simplest form.
+    ///
+    /// Additionally it tests computing the `nullifier_hash` correctly.
+    #[tokio::test]
+    async fn test_proof_generation() {
         let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
         let context = ProofContext::new("app_id", None, None, CredentialType::Orb);
         let nullifier_hash = world_id.generate_nullifier_hash(&context);
-        println!("{}", nullifier_hash.to_hex_string());
+        assert_eq!(
+            nullifier_hash.to_hex_string(),
+            "0x1359a81e3a42dc1c34786cbefbcc672a3d730510dba7a3be9941b207b0cf52fa"
+        );
+
+        assert_eq!(
+            world_id
+                .get_identity_commitment(&CredentialType::Orb)
+                .to_hex_string(),
+            "0x000352340ece4a3509b5a053118e289300e9e9677d135ae1a625219a10923a7e"
+        );
+
+        assert_eq!(
+            context.signal_hash.to_hex_string(),
+            "0x00c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a4"
+        );
+
+        let proof = world_id.generate_proof(&context).await.unwrap();
+        assert_eq!(
+            proof.nullifier_hash.to_hex_string(),
+            "0x1359a81e3a42dc1c34786cbefbcc672a3d730510dba7a3be9941b207b0cf52fa"
+        );
+
+        let verify_result = verify_proof(
+            proof.merkle_root.into(),
+            nullifier_hash.into(),
+            context.signal_hash.into(),
+            context.external_nullifier.into(),
+            &proof.raw_proof,
+            30,
+        )
+        .unwrap();
+
+        assert!(verify_result);
     }
 
-    #[test]
-    const fn test_proof_generation_for_alt_credential() {
-        // TODO: implement me
-    }
+    /// This test also covers using the alternative `CredentialType::Device`.
+    #[tokio::test]
+    async fn test_proof_generation_with_device_credential_and_string_signal() {
+        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let context = ProofContext::new(
+            "app_id",
+            None,
+            Some("test-signal".to_string()),
+            CredentialType::Device,
+        );
 
-    #[test]
-    const fn test_proof_generation_with_simple_signal() {
-        // TODO: implement me (string signal)
-    }
+        assert_eq!(
+            world_id
+                .get_identity_commitment(&CredentialType::Device)
+                .to_hex_string(),
+            // note this identity commitment is different from the `Orb` credential
+            // (deliberate from the identity trapdoor, to maintain privacy between credentials)
+            "0x1a060ef75540e13711f074b779a419c126ab5a89d2c2e7d01e64dfd121e44671"
+        );
 
-    #[test]
-    const fn test_proof_generation_with_complex_signal() {
-        // TODO: implement me (e.g. ABI-encoded wallet address)
-    }
+        assert_eq!(
+            context.signal_hash.to_hex_string(),
+            "0x00109ceebc907a38c59ec1c982a480d7d2373fc7c58b604a5430988fc08e346e"
+        );
 
-    #[test]
-    const fn test_nullifier_hash_generation() {
-        // TODO: implement me
+        let proof = world_id.generate_proof(&context).await.unwrap();
+        assert_eq!(
+            proof.nullifier_hash.to_hex_string(),
+            // nullifier hash is the same as the `Orb` credential to maintain a single representation of the user
+            "0x1359a81e3a42dc1c34786cbefbcc672a3d730510dba7a3be9941b207b0cf52fa"
+        );
+
+        let verify_result = verify_proof(
+            proof.merkle_root.into(),
+            proof.nullifier_hash.into(),
+            context.signal_hash.into(),
+            context.external_nullifier.into(),
+            &proof.raw_proof,
+            30,
+        )
+        .unwrap();
+
+        assert!(verify_result);
     }
 
     #[test]
@@ -228,5 +269,118 @@ mod tests {
             world_id.get_identity_commitment(&CredentialType::Device);
 
         assert!(device_commitment != commitment);
+    }
+}
+
+#[cfg(feature = "http_tests")]
+#[cfg(test)]
+/// Integration tests that require HTTP calls to other services.
+mod http_tests {
+    use semaphore_rs::protocol::Proof;
+    use serde::Serialize;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_proof_verification_with_sign_up_sequencer() {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        /// https://github.com/worldcoin/signup-sequencer/blob/main/schemas/openapi-v2.yaml#L273
+        struct VerifyProofRequest {
+            root: String,
+            signal_hash: String,
+            nullifier_hash: String,
+            external_nullifier_hash: String,
+            /// Full unpacked Semaphore proof.
+            /// Reference: <https://github.com/worldcoin/signup-sequencer/blob/main/schemas/openapi-v2.yaml#L225>
+            proof: Proof,
+        }
+
+        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let context = ProofContext::new(
+            "app_id",
+            None,
+            Some("test-signal".to_string()),
+            CredentialType::Device,
+        );
+
+        let proof = world_id.generate_proof(&context).await.unwrap();
+
+        let request = VerifyProofRequest {
+            root: proof.merkle_root.to_hex_string(),
+            signal_hash: context.signal_hash.to_hex_string(),
+            nullifier_hash: proof.nullifier_hash.to_hex_string(),
+            external_nullifier_hash: context.external_nullifier.to_hex_string(),
+            proof: proof.raw_proof,
+        };
+
+        let client = reqwest::Client::new();
+
+        let response = client
+                .post(
+                    "https://signup-phone-ethereum.stage-crypto.worldcoin.org/v2/semaphore-proof/verify",
+                )
+                .header("Content-Type", "application/json")
+                .body(serde_json::to_string(&request).unwrap())
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(response.status(), 200);
+        assert!(response.json::<serde_json::Value>().await.unwrap()["valid"]
+            .as_bool()
+            .unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_proof_verification_with_developer_portal() {
+        #[derive(Serialize)]
+        /// https://docs.world.org/world-id/reference/api#verify-proof
+        struct VerifyProofRequest {
+            merkle_root: String,
+            signal_hash: String,
+            nullifier_hash: String,
+            action: String,
+            /// Developer Portal expects the stringified packed proof.
+            proof: String,
+            verification_level: String,
+        }
+
+        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let context = ProofContext::new(
+            "app_staging_509648994ab005fe79c4ddd0449606ca",
+            Some("action-1".to_string()),
+            Some("test-signal".to_string()),
+            CredentialType::Device,
+        );
+
+        let proof = world_id.generate_proof(&context).await.unwrap();
+
+        let request = VerifyProofRequest {
+            merkle_root: proof.merkle_root.to_hex_string(),
+            signal_hash: context.signal_hash.to_hex_string(),
+            nullifier_hash: proof.nullifier_hash.to_hex_string(),
+            action: "action-1".to_string(),
+            proof: proof.get_proof_as_string(),
+            verification_level: CredentialType::Device.to_string(),
+        };
+
+        let client = reqwest::Client::new();
+
+        let response = client
+                .post("https://staging-developer.worldcoin.org/api/v2/verify/app_staging_509648994ab005fe79c4ddd0449606ca")
+                .header("Content-Type", "application/json")
+                .header("User-Agent", format!("walletkit-core/{}", env!("CARGO_PKG_VERSION"))) // Developer Portal requires a User-Agent
+                .body(serde_json::to_string(&request).unwrap())
+                .send()
+                .await
+                .unwrap();
+
+        assert_eq!(response.status(), 200);
+        assert!(
+            response.json::<serde_json::Value>().await.unwrap()["success"]
+                .as_bool()
+                .unwrap()
+        );
     }
 }

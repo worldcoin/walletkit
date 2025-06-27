@@ -5149,6 +5149,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "uniffi",
+ "zeroize",
 ]
 
 [[package]]

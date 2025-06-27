@@ -31,6 +31,7 @@ serde_json = "1.0"
 strum = { version = "0.26", features = ["derive"] }
 thiserror = "2.0"
 uniffi = { workspace = true, optional = true, features = ["build", "tokio"] }
+zeroize = "1.8.1"
 
 [dev-dependencies]
 alloy = { version = "1.0", default-features = false, features = ["json", "contract", "node-bindings"] }
@@ -43,6 +44,7 @@ tokio-test = "0.4"
 default = ["ffi", "semaphore"]
 semaphore = ["semaphore-rs/depth_30"]
 ffi = ["dep:uniffi", "semaphore"]
+http_tests = []
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
