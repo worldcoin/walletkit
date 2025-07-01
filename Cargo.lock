@@ -401,7 +401,7 @@ dependencies = [
  "lru",
  "parking_lot",
  "pin-project",
- "reqwest 0.12.18",
+ "reqwest 0.12.22",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -446,7 +446,7 @@ dependencies = [
  "async-stream",
  "futures",
  "pin-project",
- "reqwest 0.12.18",
+ "reqwest 0.12.22",
  "serde",
  "serde_json",
  "tokio",
@@ -647,7 +647,7 @@ checksum = "0d021e5166ffdb26ea7cfc66eeea151d3b73ab3fc2c5a074d54e09f821f04492"
 dependencies = [
  "alloy-json-rpc",
  "alloy-transport",
- "reqwest 0.12.18",
+ "reqwest 0.12.22",
  "serde_json",
  "tower",
  "tracing",
@@ -3320,7 +3320,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3516,9 +3516,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.18"
+version = "0.12.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e98ff6b0dbbe4d5a37318f433d4fc82babd21631f194d370409ceb2e40b2f0b5"
+checksum = "cbc931937e6ca3a06e3b6c0aa7841849b160a90351d6ab467a8b9b9959767531"
 dependencies = [
  "async-compression",
  "base64 0.22.1",
@@ -3531,11 +3531,8 @@ dependencies = [
  "hyper 1.6.0",
  "hyper-rustls 0.27.5",
  "hyper-util",
- "ipnet",
  "js-sys",
  "log",
- "mime",
- "once_cell",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -4765,9 +4762,9 @@ dependencies = [
 
 [[package]]
 name = "tower-http"
-version = "0.6.4"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fdb0c213ca27a9f57ab69ddb290fd80d970922355b83ae380b395d3986b8a2e"
+checksum = "adc82fd73de2a9722ac5da747f12383d2bfdb93591ee6c58486e0097890f05f2"
 dependencies = [
  "bitflags 2.9.0",
  "bytes",
@@ -5139,7 +5136,7 @@ dependencies = [
  "hex",
  "mockito",
  "regex",
- "reqwest 0.12.18",
+ "reqwest 0.12.22",
  "ruint",
  "semaphore-rs",
  "serde",
