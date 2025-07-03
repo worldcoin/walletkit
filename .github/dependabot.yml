@@ -4,7 +4,6 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
-    reviewers:
-      - "pdtfh"
-      - "sevazhidkov"
-      - "andy-t-wang"
+    assignees:
+      - "paolodamico"
+      - "aurel-fr"
