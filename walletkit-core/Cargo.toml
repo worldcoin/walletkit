@@ -21,7 +21,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 name = "walletkit_core"
 
 [dependencies]
-alloy-core = { version = "1.0", default-features = false, features = ["sol-types"] }
+alloy-core = { version = "1.2", default-features = false, features = ["sol-types"] }
 hex = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "brotli", "rustls-tls"] }
 ruint = { version = "1.15", default-features = false, features = ["alloc", "ark-ff-04"] }
