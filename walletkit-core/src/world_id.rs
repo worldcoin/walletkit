@@ -249,11 +249,11 @@ mod tests {
             )
         );
 
-        let secure_passport_commitment =
-            world_id.get_identity_commitment(&CredentialType::SecurePassport);
+        let secure_document_commitment =
+            world_id.get_identity_commitment(&CredentialType::SecureDocument);
 
         assert_eq!(
-            *secure_passport_commitment,
+            *secure_document_commitment,
             uint!(
                 4772776030911288417155544975787646998508849894109450205303839917538446765610_U256
             )
@@ -263,7 +263,7 @@ mod tests {
             &mut b"not_a_real_secret".to_vec(),
             Some(b"secure_passport"),
         );
-        assert_eq!(semaphore_identity.commitment(), *secure_passport_commitment);
+        assert_eq!(semaphore_identity.commitment(), *secure_document_commitment);
 
         let device_commitment =
             world_id.get_identity_commitment(&CredentialType::Device);
