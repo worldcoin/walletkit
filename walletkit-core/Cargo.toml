@@ -43,10 +43,10 @@ tokio = "1.45"
 tokio-test = "0.4"
 
 [features]
-default = ["common_apps", "ffi", "semaphore"]
-common_apps = []
+default = ["common-apps", "ffi", "semaphore"]
+common-apps = []
 ffi = ["dep:uniffi", "semaphore"]
-http_tests = []
+http-tests = []
 semaphore = ["semaphore-rs/depth_30"]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.

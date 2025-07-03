@@ -1,13 +1,17 @@
-use crate::error::WalletKitError;
-use crate::proof::ProofContext;
-use alloy_core::primitives::{Address, U256};
-use alloy_core::sol_types::SolValue;
-use ruint::uint;
-use std::str::FromStr;
+#[cfg(feature = "legacy-nullifiers")]
+use {
+    crate::{error::WalletKitError, proof::ProofContext, CredentialType},
+    alloy_core::primitives::{Address, U256},
+    alloy_core::sol_types::SolValue,
+    ruint::uint,
+    std::str::FromStr,
+};
 
 /// Allows interacting with the `WorldIDAddressBook` contract.
 ///
 /// The address book allows users to verify their Wallet Address as Orb verified for a period of time.
+///
+/// Usage of `AddressBook` requires the `legacy-nullifiers` feature flag.
 ///
 /// The contract of the address book can be found at: `0x57b930d551e677cc36e2fa036ae2fe8fdae0330d`
 #[cfg(feature = "legacy-nullifiers")]
@@ -19,6 +23,7 @@ pub struct AddressBook {}
 /// Matches the argument in the constructor to the contract.
 ///
 /// Reference: <https://worldscan.org/address/0x57b930d551e677cc36e2fa036ae2fe8fdae0330d#code>
+#[cfg(feature = "legacy-nullifiers")]
 const ADDRESS_BOOK_EXTERNAL_NULLIFIER: U256 =
     uint!(0xd5b5db70bda32ef7812459f5edecda296cffb3529141e15fae18751275864d_U256);
 
@@ -50,8 +55,6 @@ impl AddressBook {
         address_to_verify: &str,
         timestamp: u64,
     ) -> Result<ProofContext, WalletKitError> {
-        use crate::CredentialType;
-
         let address_to_verify = Address::from_str(address_to_verify)
             .map_err(|_| WalletKitError::InvalidInput)?;
 
@@ -70,6 +73,7 @@ impl AddressBook {
     }
 }
 
+#[cfg(feature = "legacy-nullifiers")]
 #[cfg(test)]
 mod tests {
     use super::*;

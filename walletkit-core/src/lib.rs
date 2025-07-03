@@ -49,7 +49,7 @@ pub mod world_id;
 pub mod proof;
 
 /// This module exposes helper functions to interact with common apps & contracts related to the World ID Protocol.
-#[cfg(feature = "common_apps")]
+#[cfg(feature = "common-apps")]
 pub mod common_apps;
 
 mod u256;
