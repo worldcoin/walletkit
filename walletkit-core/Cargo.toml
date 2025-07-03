@@ -34,7 +34,7 @@ uniffi = { workspace = true, optional = true, features = ["build", "tokio"] }
 zeroize = "1.8.1"
 
 [dev-dependencies]
-alloy = { version = "1.0", default-features = false, features = ["getrandom", "json", "contract", "node-bindings"] }
+alloy = { version = "1.0", default-features = false, features = ["getrandom", "json", "contract", "node-bindings", "signer-local"] }
 chrono = "0.4.41"
 dotenvy = "0.15.7"
 mockito = "1.6"
