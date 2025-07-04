@@ -272,7 +272,7 @@ mod tests {
     }
 }
 
-#[cfg(feature = "http_tests")]
+#[cfg(feature = "http-tests")]
 #[cfg(test)]
 /// Integration tests that require HTTP calls to other services.
 mod http_tests {

@@ -67,6 +67,8 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
 
       - name: Run tests
+        env:
+          WORLDCHAIN_SEPOLIA_RPC_URL: ${{ secrets.WORLDCHAIN_SEPOLIA_RPC_URL }}
         run: |
           cargo test --all --all-features
 

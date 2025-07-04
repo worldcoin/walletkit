@@ -73,6 +73,8 @@ dependencies = [
  "alloy-node-bindings",
  "alloy-provider",
  "alloy-rpc-client",
+ "alloy-signer",
+ "alloy-signer-local",
  "alloy-transport",
  "alloy-transport-http",
 ]
@@ -355,6 +357,7 @@ dependencies = [
  "const-hex",
  "derive_more",
  "foldhash",
+ "getrandom 0.3.2",
  "hashbrown 0.15.3",
  "indexmap 2.9.0",
  "itoa",
@@ -1361,8 +1364,10 @@ checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -1763,6 +1768,12 @@ dependencies = [
  "quote",
  "syn 2.0.101",
 ]
+
+[[package]]
+name = "dotenvy"
+version = "0.15.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "dunce"
@@ -5133,6 +5144,8 @@ version = "0.0.22"
 dependencies = [
  "alloy",
  "alloy-core",
+ "chrono",
+ "dotenvy",
  "hex",
  "mockito",
  "regex",

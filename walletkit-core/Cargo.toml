@@ -21,7 +21,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 name = "walletkit_core"
 
 [dependencies]
-alloy-core = { version = "1.2", default-features = false, features = ["sol-types"] }
+alloy-core = { workspace = true }
 hex = "0.4"
 reqwest = { version = "0.12", default-features = false, features = ["json", "brotli", "rustls-tls"] }
 ruint = { version = "1.15", default-features = false, features = ["alloc", "ark-ff-04"] }
@@ -34,17 +34,20 @@ uniffi = { workspace = true, optional = true, features = ["build", "tokio"] }
 zeroize = "1.8.1"
 
 [dev-dependencies]
-alloy = { version = "1.0", default-features = false, features = ["json", "contract", "node-bindings"] }
+alloy = { version = "1.0", default-features = false, features = ["getrandom", "json", "contract", "node-bindings", "signer-local"] }
+chrono = "0.4.41"
+dotenvy = "0.15.7"
 mockito = "1.6"
 regex = "1.11"
 tokio = "1.45"
 tokio-test = "0.4"
 
 [features]
-default = ["ffi", "semaphore"]
-semaphore = ["semaphore-rs/depth_30"]
+default = ["common-apps", "ffi", "semaphore"]
+common-apps = []
 ffi = ["dep:uniffi", "semaphore"]
-http_tests = []
+http-tests = []
+semaphore = ["semaphore-rs/depth_30"]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
