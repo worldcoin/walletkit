@@ -7,7 +7,6 @@ use semaphore_rs::{
     protocol::{generate_nullifier_hash, generate_proof, Proof},
 };
 
-#[cfg(feature = "legacy-nullifiers")]
 use semaphore_rs::MODULUS;
 
 use serde::Serialize;
