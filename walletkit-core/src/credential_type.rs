@@ -15,14 +15,16 @@ use crate::Environment;
 pub enum CredentialType {
     /// Represents persons who have been biometrically verified at an Orb. Highest level of proof of personhood verification.
     Orb,
-    /// Verified biometric passport holder
+    /// Verified biometric ICAO-9303 government-issued document holder
     #[strum(serialize = "document")]
-    Passport,
-    /// Verified biometric passport holder with additional presence check verifications such as Chip Authentication
+    Document,
+    /// Verified biometric ICAO-9303 government-issued document holder with additional presence checks
+    /// such as Chip Authentication or Active Authentication.
+    ///
+    ///
     /// The identity trapdoor is `secure_passport` but it's serialized as `secure_document` to match `idkit-js` and the Developer Portal.
     /// Reference: <https://github.com/worldcoin/idkit-js/blob/main/packages/core/src/types/config.ts#L18>
-    #[strum(serialize = "secure_document")]
-    SecurePassport,
+    SecureDocument,
     /// Represents a semi-unique device
     Device,
 }
@@ -44,15 +46,15 @@ impl CredentialType {
     /// For usage reference, review [sempahore-rs](https://github.com/worldcoin/semaphore-rs/blob/main/src/identity.rs#L44).
     ///
     ///  - For `Orb`, it's a fixed legacy default value. Changing this default would break existing verifying apps, hence its explicit specification here.
-    /// - `Passport` (NFC-based check on government-issued passport)
-    /// - `SecurePassport` (NFC-based check on government-issued passport with additional chip authentication checks)
+    /// - `Document` (NFC-based check on government-issued document)
+    /// - `SecureDocument` (NFC-based check on government-issued document with additional presence checks)
     #[must_use]
     pub const fn as_identity_trapdoor(&self) -> &[u8] {
         match self {
             Self::Orb => b"identity_trapdoor",
             Self::Device => b"phone_credential",
-            Self::Passport => b"passport",
-            Self::SecurePassport => b"secure_passport",
+            Self::Document => b"passport",
+            Self::SecureDocument => b"secure_passport",
         }
     }
 
@@ -70,16 +72,16 @@ impl CredentialType {
                 Self::Device => {
                     "https://signup-phone-ethereum.stage-crypto.worldcoin.org"
                 }
-                Self::Passport => "https://signup-document.stage-crypto.worldcoin.org",
-                Self::SecurePassport => {
+                Self::Document => "https://signup-document.stage-crypto.worldcoin.org",
+                Self::SecureDocument => {
                     "https://signup-document-secure.stage-crypto.worldcoin.org"
                 }
             },
             Environment::Production => match self {
                 Self::Orb => "https://signup-orb-ethereum.crypto.worldcoin.org",
                 Self::Device => "https://signup-phone-ethereum.crypto.worldcoin.org",
-                Self::Passport => "https://signup-document.crypto.worldcoin.org",
-                Self::SecurePassport => {
+                Self::Document => "https://signup-document.crypto.worldcoin.org",
+                Self::SecureDocument => {
                     "https://signup-document-secure.crypto.worldcoin.org"
                 }
             },
@@ -97,7 +99,7 @@ mod tests {
         let serialized = serde_json::to_string(&credential_type).unwrap();
         assert_eq!(serialized, "\"device\"");
 
-        let credential_type = CredentialType::SecurePassport;
+        let credential_type = CredentialType::SecureDocument;
         let serialized = serde_json::to_string(&credential_type).unwrap();
         assert_eq!(serialized, "\"secure_document\"");
     }
