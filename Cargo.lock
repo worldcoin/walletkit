@@ -5134,7 +5134,6 @@ dependencies = [
  "alloy",
  "alloy-core",
  "hex",
- "log",
  "mockito",
  "regex",
  "reqwest 0.12.22",
