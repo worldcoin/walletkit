@@ -16,14 +16,14 @@ cargo install walletkit
 
 WalletKit is distributed through a separate repo specifically for Swift bindings. This repo contains all the binaries required and is a mirror of `@worldcoin/walletkit`.
 
-1. Navigate to File > Swift Packages > Add Package Dependency in Xcode.
-2. Enter the WalletKit repo URL (note this is **not** the same repo): `https://github.com/worldcoin/walletkit-swift`
+1. Navigate to File > Swift Packages > Add Package Dependency in Xcode.
+2. Enter the WalletKit repo URL (note this is **not** the same repo): `https://github.com/worldcoin/walletkit-swift`
 
 **To use WalletKit in an Android app:**
 
 WalletKit's bindings for Kotlin are distributed through GitHub packages.
 
-1. Update `build.gradle` (App Level)
+1. Update `build.gradle` (App Level)
 
 ```kotlin
 dependencies {
@@ -32,7 +32,7 @@ dependencies {
 }
 ```
 
-Replace `VERSION` with the desired WalletKit version.
+Replace `VERSION` with the desired WalletKit version.
 
 2. Sync Gradle.
 
@@ -131,10 +131,3 @@ fun setupWalletKitLogger() {
     WalletKit.setLogger(WalletKitLoggerBridge.shared)
 }
 ```
-
-### Features
-
-- **Level-based logging**: Support for Trace, Debug, Info, Warn, and Error levels
-- **Foreign language integration**: Works seamlessly with Swift and Kotlin through UniFFI
-- **Filtered logging**: Debug and Trace messages from non-WalletKit modules are filtered out
-- **Error handling**: Enhanced error types with anyhow integration for better error context
