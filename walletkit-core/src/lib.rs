@@ -11,7 +11,13 @@
 //!     println!("{}", proof.to_json().unwrap()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
 //! }
 //! ```
-#![deny(clippy::all, clippy::pedantic, clippy::nursery, missing_docs)]
+#![deny(
+    clippy::all,
+    clippy::pedantic,
+    clippy::nursery,
+    missing_docs,
+    dead_code
+)]
 
 use strum::EnumString;
 
@@ -41,6 +47,10 @@ pub mod world_id;
 
 /// This module handles World ID proof generation
 pub mod proof;
+
+/// This module exposes helper functions to interact with common apps & contracts related to the World ID Protocol.
+#[cfg(feature = "common-apps")]
+pub mod common_apps;
 
 mod u256;
 pub use u256::U256Wrapper;

@@ -17,9 +17,9 @@ Thank you for your interest in contributing to our project! This document provid
    curl -L https://foundry.paradigm.xyz | bash
    foundryup
    ```
-3. Run tests to ensure everything is working as expected.
+3. Run tests to ensure everything is working as expected. It's important to run with `all-features` as integration tests have dependencies on non-default features.
    ```bash
-   cargo test
+   cargo test --all --all-features
    ```
 
 ## Code of Conduct
