@@ -69,3 +69,72 @@ async fn example() {
     println!(proof.to_json()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
 }
 ```
+
+## 🛠️ Logging
+
+WalletKit includes logging functionality that can be integrated with foreign language bindings. The logging system allows you to capture debug information and operational logs from the library.
+
+### Basic Usage
+
+Implement the `Logger` trait and set it as the global logger:
+
+```rust
+use walletkit_core::logger::{Logger, LogLevel, set_logger};
+use std::sync::Arc;
+
+struct MyLogger;
+
+impl Logger for MyLogger {
+    fn log(&self, level: LogLevel, message: String) {
+        println!("[{:?}] {}", level, message);
+    }
+}
+
+// Set the logger once at application startup
+set_logger(Arc::new(MyLogger));
+```
+
+### Swift Integration
+
+```swift
+class WalletKitLoggerBridge: WalletKit.Logger {
+    static let shared = WalletKitLoggerBridge()
+
+    func log(level: WalletKit.LogLevel, message: String) {
+        // Forward to your app's logging system
+        Log.log(level.toCoreLevel(), message)
+    }
+}
+
+// Set up the logger in your app delegate
+public func setupWalletKitLogger() {
+    WalletKit.setLogger(logger: WalletKitLoggerBridge.shared)
+}
+```
+
+### Kotlin Integration
+
+```kotlin
+class WalletKitLoggerBridge : WalletKit.Logger {
+    companion object {
+        val shared = WalletKitLoggerBridge()
+    }
+
+    override fun log(level: WalletKit.LogLevel, message: String) {
+        // Forward to your app's logging system
+        Log.log(level.toCoreLevel(), message)
+    }
+}
+
+// Set up the logger in your application
+fun setupWalletKitLogger() {
+    WalletKit.setLogger(WalletKitLoggerBridge.shared)
+}
+```
+
+### Features
+
+- **Level-based logging**: Support for Trace, Debug, Info, Warn, and Error levels
+- **Foreign language integration**: Works seamlessly with Swift and Kotlin through UniFFI
+- **Filtered logging**: Debug and Trace messages from non-WalletKit modules are filtered out
+- **Error handling**: Enhanced error types with anyhow integration for better error context

@@ -36,6 +36,9 @@ pub use credential_type::CredentialType;
 /// Contains error outputs from `WalletKit`
 pub mod error;
 
+/// Contains logging functionality that can be integrated with foreign language bindings.
+pub mod logger;
+
 /// Contains all components to interact and use a World ID
 pub mod world_id;
 
