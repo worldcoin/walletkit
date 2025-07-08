@@ -7,7 +7,6 @@ use semaphore_rs::{
     protocol::{generate_nullifier_hash, generate_proof, Proof},
 };
 
-#[cfg(feature = "legacy-nullifiers")]
 use semaphore_rs::MODULUS;
 
 use serde::Serialize;
@@ -86,6 +85,64 @@ impl ProofContext {
         signal: Option<Vec<u8>>,
         credential_type: CredentialType,
     ) -> Self {
+        let signal_hash =
+            U256Wrapper::from(hash_to_field(signal.unwrap_or_default().as_slice()));
+
+        Self::new_from_signal_hash_unchecked(
+            app_id,
+            action,
+            credential_type,
+            &signal_hash,
+        )
+    }
+
+    /// Initializes a `ProofContext` from an already hashed signal.
+    ///
+    /// Please note it is imperative to hash into the Semaphore field. Not all U256 are part of the field.
+    /// Use the `hash_to_field` function to hash into the field.
+    ///
+    /// # Usage
+    /// - This may be used when the hash of the signal is computed externally.
+    /// - For example, this is used for support of legacy `MiniKit` v1 commands in World App where `minikit-js` hashed the signal.
+    ///
+    /// # Arguments
+    ///
+    /// * `app_id` - The ID of the application requesting proofs.  This can be obtained from the [Developer Portal](https://developer.world.org).
+    /// * `action` - Optional. Custom incognito action being requested as bytes.
+    /// * `credential_type` - The type of credential being requested.
+    /// * `signal` - The already hashed signal as a field element.
+    ///
+    /// # Errors
+    ///
+    /// - Returns an error if the signal is not a valid number in the field.
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    pub fn new_from_signal_hash(
+        app_id: &str,
+        action: Option<Vec<u8>>,
+        credential_type: CredentialType,
+        signal_hash: &U256Wrapper,
+    ) -> Result<Self, WalletKitError> {
+        if signal_hash.0 >= MODULUS {
+            return Err(WalletKitError::InvalidNumber);
+        }
+
+        Ok(Self::new_from_signal_hash_unchecked(
+            app_id,
+            action,
+            credential_type,
+            signal_hash,
+        ))
+    }
+}
+
+// This impl block is not exported to foreign bindings.
+impl ProofContext {
+    fn new_from_signal_hash_unchecked(
+        app_id: &str,
+        action: Option<Vec<u8>>,
+        credential_type: CredentialType,
+        signal_hash: &U256Wrapper,
+    ) -> Self {
         let mut pre_image = hash_to_field(app_id.as_bytes()).abi_encode_packed();
 
         if let Some(action) = action {
@@ -97,7 +154,7 @@ impl ProofContext {
         Self {
             external_nullifier,
             credential_type,
-            signal_hash: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
+            signal_hash: *signal_hash,
         }
     }
 }
@@ -162,7 +219,7 @@ impl ProofContext {
         credential_type: CredentialType,
         signal: Option<Vec<u8>>,
     ) -> Result<Self, WalletKitError> {
-        if external_nullifier.0 > MODULUS {
+        if external_nullifier.0 >= MODULUS {
             return Err(WalletKitError::InvalidNumber);
         }
 
@@ -381,6 +438,88 @@ mod external_nullifier_tests {
             "0x005b49f95e822c7c37f4f043421689b11f880e617faa5cd0391803bc9bcc63c0"
         );
     }
+
+    #[cfg(feature = "legacy-nullifiers")]
+    #[test]
+    fn test_proof_generation_with_legacy_nullifier_address_book() {
+        let context = ProofContext::legacy_new_from_pre_image_external_nullifier(
+            b"internal_addressbook",
+            CredentialType::Device,
+            None,
+        );
+
+        // the expected nullifier hash from the contract
+        // reference: <https://worldchain-mainnet.explorer.alchemy.com/tx/0x974e70f125abe3b6abaa0b3fb9cb067c09cee359b08fa847487d6623377308fd>
+        let expected = uint!(377593556987874043165400752883455722895901692332643678318174569531027326541_U256);
+        assert_eq!(
+            context.external_nullifier.to_hex_string(),
+            format!("{expected:#066x}")
+        );
+    }
+
+    #[cfg(feature = "legacy-nullifiers")]
+    #[test]
+    fn test_proof_generation_with_legacy_nullifier_recurring_grant_drop() {
+        let grant_id = 48;
+
+        // The constant which is added to all the Grant IDs in World Chain.
+        // Reference: <https://github.com/worldcoin/worldcoin-grants-contracts/blob/main/src/RecurringGrantDrop.sol#L22>
+        let worldchain_nullifier_hash_constant = uint!(
+            0x1E00000000000000000000000000000000000000000000000000000000000000_U256
+        );
+        let external_nullifier_hash =
+            worldchain_nullifier_hash_constant + U256::from(grant_id);
+
+        let context = ProofContext::legacy_new_from_raw_external_nullifier(
+            &external_nullifier_hash.into(),
+            CredentialType::Device,
+            None,
+        )
+        .unwrap();
+
+        // the expected nullifier hash from the contract
+        // transaction example for RGD 48: <https://worldscan.org/tx/0xbad696a88c5425a22af18ea6d00efca78ae0f5c5cceade21597adf60126a5fc4>
+        let expected = uint!(13569385457497991651199724805705614201555076328004753598373935625927319879728_U256);
+        assert_eq!(
+            context.external_nullifier.to_hex_string(),
+            format!("{expected:#066x}")
+        );
+    }
+
+    #[cfg(feature = "legacy-nullifiers")]
+    #[test]
+    fn test_ensure_raw_external_nullifier_is_in_the_field() {
+        let invalid_external_nullifiers = [MODULUS, MODULUS + U256::from(1)];
+        for external_nullifier in invalid_external_nullifiers {
+            let context = ProofContext::legacy_new_from_raw_external_nullifier(
+                &external_nullifier.into(),
+                CredentialType::Device,
+                None,
+            );
+            assert!(context.is_err());
+        }
+    }
+}
+
+#[cfg(test)]
+mod signal_tests {
+    use ruint::aliases::U256;
+
+    use super::*;
+
+    #[test]
+    fn test_ensure_raw_signal_hash_is_in_the_field() {
+        let invalid_signals = [MODULUS, MODULUS + U256::from(1)];
+        for signal_hash in invalid_signals {
+            let context = ProofContext::new_from_signal_hash(
+                "my_app_id",
+                None,
+                CredentialType::Device,
+                &signal_hash.into(),
+            );
+            assert!(context.is_err());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -389,9 +528,6 @@ mod proof_tests {
     use regex::Regex;
     use semaphore_rs::protocol::verify_proof;
     use serde_json::Value;
-
-    #[cfg(feature = "legacy-nullifiers")]
-    use ruint::{aliases::U256, uint};
 
     use super::*;
 
@@ -511,64 +647,5 @@ mod proof_tests {
             zkp.get_proof_as_string(),
             parsed_json["proof"].as_str().unwrap()
         );
-    }
-
-    #[cfg(feature = "legacy-nullifiers")]
-    #[test]
-    fn test_proof_generation_with_legacy_nullifier_address_book() {
-        let context = ProofContext::legacy_new_from_pre_image_external_nullifier(
-            b"internal_addressbook",
-            CredentialType::Device,
-            None,
-        );
-
-        // the expected nullifier hash from the contract
-        // reference: <https://worldchain-mainnet.explorer.alchemy.com/tx/0x974e70f125abe3b6abaa0b3fb9cb067c09cee359b08fa847487d6623377308fd>
-        let expected = uint!(377593556987874043165400752883455722895901692332643678318174569531027326541_U256);
-        assert_eq!(
-            context.external_nullifier.to_hex_string(),
-            format!("{expected:#066x}")
-        );
-    }
-
-    #[cfg(feature = "legacy-nullifiers")]
-    #[test]
-    fn test_proof_generation_with_legacy_nullifier_recurring_grant_drop() {
-        let grant_id = 48;
-
-        // The constant which is added to all the Grant IDs in World Chain.
-        // Reference: <https://github.com/worldcoin/worldcoin-grants-contracts/blob/main/src/RecurringGrantDrop.sol#L22>
-        let worldchain_nullifier_hash_constant = uint!(
-            0x1E00000000000000000000000000000000000000000000000000000000000000_U256
-        );
-        let external_nullifier_hash =
-            worldchain_nullifier_hash_constant + U256::from(grant_id);
-
-        let context = ProofContext::legacy_new_from_raw_external_nullifier(
-            &external_nullifier_hash.into(),
-            CredentialType::Device,
-            None,
-        )
-        .unwrap();
-
-        // the expected nullifier hash from the contract
-        // transaction example for RGD 48: <https://worldscan.org/tx/0xbad696a88c5425a22af18ea6d00efca78ae0f5c5cceade21597adf60126a5fc4>
-        let expected = uint!(13569385457497991651199724805705614201555076328004753598373935625927319879728_U256);
-        assert_eq!(
-            context.external_nullifier.to_hex_string(),
-            format!("{expected:#066x}")
-        );
-    }
-
-    #[cfg(feature = "legacy-nullifiers")]
-    #[test]
-    fn test_ensure_raw_external_nullifiers_are_in_the_field() {
-        let invalid_external_nullifier = MODULUS + U256::from(1);
-        assert!(ProofContext::legacy_new_from_raw_external_nullifier(
-            &invalid_external_nullifier.into(),
-            CredentialType::Device,
-            None,
-        )
-        .is_err());
     }
 }
