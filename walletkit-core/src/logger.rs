@@ -179,7 +179,9 @@ pub fn set_logger(logger: Arc<dyn Logger>) {
     }
 
     // Initialize the logger system.
-    init_logger().expect("Failed to set logger");
+    if let Err(e) = init_logger() {
+        eprintln!("Failed to set logger: {e}");
+    }
 }
 
 /// Initializes the logger system.
