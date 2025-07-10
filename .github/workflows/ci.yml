@@ -12,6 +12,8 @@ jobs:
   lint:
     name: Format, Clippy & Build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -31,6 +33,8 @@ jobs:
   swift-build:
     name: Test Swift Build
     runs-on: macos-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -47,6 +51,8 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     strategy:
       matrix:
@@ -79,6 +85,8 @@ jobs:
   deny:
     name: Cargo deny
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         checks:
@@ -99,6 +107,8 @@ jobs:
   docs:
     name: Check docs
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       RUSTDOCFLAGS: -Dwarnings
     steps:
