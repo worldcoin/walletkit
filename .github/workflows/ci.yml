@@ -74,7 +74,7 @@ jobs:
 
       - name: Run tests
         env:
-          WORLDCHAIN_SEPOLIA_RPC_URL: ${{ secrets.WORLDCHAIN_SEPOLIA_RPC_URL }}
+          WORLDCHAIN_SEPOLIA_RPC_URL: ${{ secrets.WORLDCHAIN_SEPOLIA_RPC_URL || 'https://worldchain-sepolia.g.alchemy.com/public' }}
         run: |
           cargo test --all --all-features
 
