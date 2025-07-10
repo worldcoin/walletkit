@@ -25,7 +25,7 @@ alloy-core = { version = "1.2", default-features = false, features = [
     "sol-types",
 ] }
 hex = "0.4"
-log = "0.4.22"
+log = "0.4"
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "brotli",
