@@ -16,14 +16,14 @@ cargo install walletkit
 
 WalletKit is distributed through a separate repo specifically for Swift bindings. This repo contains all the binaries required and is a mirror of `@worldcoin/walletkit`.
 
-1. Navigate to File > Swift Packages > Add Package Dependency in Xcode.
-2. Enter the WalletKit repo URL (note this is **not** the same repo): `https://github.com/worldcoin/walletkit-swift`
+1. Navigate to File > Swift Packages > Add Package Dependency in Xcode.
+2. Enter the WalletKit repo URL (note this is **not** the same repo): `https://github.com/worldcoin/walletkit-swift`
 
 **To use WalletKit in an Android app:**
 
 WalletKit's bindings for Kotlin are distributed through GitHub packages.
 
-1. Update `build.gradle` (App Level)
+1. Update `build.gradle` (App Level)
 
 ```kotlin
 dependencies {
@@ -32,7 +32,7 @@ dependencies {
 }
 ```
 
-Replace `VERSION` with the desired WalletKit version.
+Replace `VERSION` with the desired WalletKit version.
 
 2. Sync Gradle.
 
@@ -67,5 +67,67 @@ async fn example() {
     let proof = world_id.generate_proof(&context).await.unwrap();
 
     println!(proof.to_json()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
+}
+```
+
+## 🛠️ Logging
+
+WalletKit includes logging functionality that can be integrated with foreign language bindings. The logging system allows you to capture debug information and operational logs from the library.
+
+### Basic Usage
+
+Implement the `Logger` trait and set it as the global logger:
+
+```rust
+use walletkit_core::logger::{Logger, LogLevel, set_logger};
+use std::sync::Arc;
+
+struct MyLogger;
+
+impl Logger for MyLogger {
+    fn log(&self, level: LogLevel, message: String) {
+        println!("[{:?}] {}", level, message);
+    }
+}
+
+// Set the logger once at application startup
+set_logger(Arc::new(MyLogger));
+```
+
+### Swift Integration
+
+```swift
+class WalletKitLoggerBridge: WalletKit.Logger {
+    static let shared = WalletKitLoggerBridge()
+
+    func log(level: WalletKit.LogLevel, message: String) {
+        // Forward to your app's logging system
+        Log.log(level.toCoreLevel(), message)
+    }
+}
+
+// Set up the logger in your app delegate
+public func setupWalletKitLogger() {
+    WalletKit.setLogger(logger: WalletKitLoggerBridge.shared)
+}
+```
+
+### Kotlin Integration
+
+```kotlin
+class WalletKitLoggerBridge : WalletKit.Logger {
+    companion object {
+        val shared = WalletKitLoggerBridge()
+    }
+
+    override fun log(level: WalletKit.LogLevel, message: String) {
+        // Forward to your app's logging system
+        Log.log(level.toCoreLevel(), message)
+    }
+}
+
+// Set up the logger in your application
+fun setupWalletKitLogger() {
+    WalletKit.setLogger(WalletKitLoggerBridge.shared)
 }
 ```
