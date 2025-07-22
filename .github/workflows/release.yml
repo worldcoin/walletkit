@@ -10,6 +10,8 @@ jobs:
   pre-release-checks:
     if: github.event.pull_request.merged == true && contains(github.event.pull_request.labels.*.name, 'release') && github.event.pull_request.user.login == 'github-actions[bot]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       new_version: ${{ steps.version.outputs.new_version }}
       commit_sha: ${{ github.sha }}
@@ -49,6 +51,8 @@ jobs:
   build-swift:
     runs-on: macos-latest
     needs: pre-release-checks
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -101,6 +105,8 @@ jobs:
     name: Prepare Kotlin
     runs-on: ubuntu-22.04-32core
     needs: [pre-release-checks]
+    permissions:
+      contents: write # to upload artifacts
 
     # Each target is built separately to run in parallel. Running sequentially takes vastly more time.
     strategy:
@@ -217,6 +223,11 @@ jobs:
   publish-to-crates-io:
     needs: [pre-release-checks, create-github-release]
     runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -227,9 +238,12 @@ jobs:
         with:
           toolchain: stable
 
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+          
       - name: Publish to crates.io
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
           cargo publish --token $CARGO_REGISTRY_TOKEN --package walletkit-core --locked
           cargo publish --token $CARGO_REGISTRY_TOKEN --package walletkit --locked
