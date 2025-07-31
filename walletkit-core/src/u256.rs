@@ -38,6 +38,24 @@ impl U256Wrapper {
 
         Ok(Self(number))
     }
+
+    /// Creates a `U256` value from a `u64` value.
+    ///
+    /// Logically this will only support values up to 64 bits. For larger values a different initialization should be used.
+    #[must_use]
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    pub fn from_u64(value: u64) -> Self {
+        Self(U256::from(value))
+    }
+
+    /// Creates a `U256` value from a `u32` value.
+    ///
+    /// Logically this will only support values up to 32 bits. For larger values a different initialization should be used.
+    #[must_use]
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    pub fn from_u32(value: u32) -> Self {
+        Self(U256::from(value))
+    }
 }
 
 impl From<U256Wrapper> for U256 {
@@ -185,5 +203,28 @@ mod tests {
             json,
             "\"0x036b6384b5eca791c62761152d0c79bb0604c104a5fb6f4eb0703f3154bb3db0\""
         );
+    }
+
+    #[test]
+    fn test_from_u64() {
+        assert_eq!(U256Wrapper::from_u64(1).0, uint!(1_U256));
+        assert_eq!(U256Wrapper::from_u64(42).0, uint!(42_U256));
+        assert_eq!(U256Wrapper::from_u64(999_999).0, uint!(999_999_U256));
+
+        assert_eq!(
+            U256Wrapper::from_u64(2).to_hex_string(),
+            "0x0000000000000000000000000000000000000000000000000000000000000002"
+        );
+        assert_eq!(
+            U256Wrapper::from_u64(u64::MAX).to_hex_string(),
+            "0x000000000000000000000000000000000000000000000000ffffffffffffffff"
+        );
+    }
+
+    #[test]
+    fn test_from_u32() {
+        assert_eq!(U256Wrapper::from_u32(1).0, U256::from(1));
+        assert_eq!(U256Wrapper::from_u32(42).0, U256::from(42));
+        assert_eq!(U256Wrapper::from_u32(999_999).0, U256::from(999_999));
     }
 }
