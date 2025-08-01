@@ -56,6 +56,30 @@ impl U256Wrapper {
     pub fn from_u32(value: u32) -> Self {
         Self(U256::from(value))
     }
+
+    /// Creates a `U256` value from an array of 4 `u64` values (little-endian). Least significant limb first.
+    ///
+    /// This is the same as the `U256::from_limbs` method, but exposed to foreign bindings.
+    ///
+    /// # Errors
+    ///
+    /// Will return an `Error::InvalidNumber` if the input is not a valid `U256` value.
+    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    pub fn from_limbs(limbs: Vec<u64>) -> Result<Self, WalletKitError> {
+        let limbs = limbs
+            .try_into()
+            .map_err(|_| WalletKitError::InvalidNumber)?;
+
+        Ok(Self(U256::from_limbs(limbs)))
+    }
+
+    /// Converts the `U256` value into a vector of 4 `u64` values (little-endian). Least significant limb first.
+    ///
+    /// Using a vector as an array cannot be lowered to foreign bindings.
+    #[must_use]
+    pub fn into_limbs(self) -> Vec<u64> {
+        self.0.into_limbs().to_vec()
+    }
 }
 
 impl From<U256Wrapper> for U256 {
@@ -105,6 +129,8 @@ impl<'de> Deserialize<'de> for U256Wrapper {
 
 #[cfg(test)]
 mod tests {
+    #![allow(clippy::unreadable_literal)]
+
     use super::*;
     use ruint::uint;
 
@@ -225,6 +251,35 @@ mod tests {
     fn test_from_u32() {
         assert_eq!(U256Wrapper::from_u32(1).0, U256::from(1));
         assert_eq!(U256Wrapper::from_u32(42).0, U256::from(42));
-        assert_eq!(U256Wrapper::from_u32(999_999).0, U256::from(999_999));
+        assert_eq!(U256Wrapper::from_u32(999999).0, U256::from(999999));
+    }
+
+    #[test]
+    fn test_from_limbs() {
+        assert_eq!(
+            U256Wrapper::from_limbs(vec![1, 0, 0, 0]).unwrap().0,
+            U256::from(1)
+        );
+
+        assert_eq!(
+            U256Wrapper::from_limbs(vec![0, 0, 0, 2161727821137838080])
+                .unwrap()
+                .to_hex_string(),
+            "0x1e00000000000000000000000000000000000000000000000000000000000000"
+        );
+
+        assert_eq!(
+            U256Wrapper::from_limbs(vec![1, 0, 0, 2161727821137838080])
+                .unwrap()
+                .to_hex_string(),
+            "0x1e00000000000000000000000000000000000000000000000000000000000001"
+        );
+    }
+
+    #[test]
+    fn test_from_limbs_invalid_length() {
+        assert!(U256Wrapper::from_limbs(vec![1, 0, 0]).is_err()); // must be padded
+        assert!(U256Wrapper::from_limbs(vec![1, 0, 0, 0, 5]).is_err());
+        assert!(U256Wrapper::from_limbs(vec![1, 0, 0, 0, 0]).is_err());
     }
 }
