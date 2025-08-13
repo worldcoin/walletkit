@@ -285,7 +285,7 @@ mod http_tests {
     async fn test_proof_verification_with_sign_up_sequencer() {
         #[derive(Serialize)]
         #[serde(rename_all = "camelCase")]
-        /// https://github.com/worldcoin/signup-sequencer/blob/main/schemas/openapi-v2.yaml#L273
+        /// Reference: <https://github.com/worldcoin/signup-sequencer/blob/main/schemas/openapi-v2.yaml#L273>
         struct VerifyProofRequest {
             root: String,
             signal_hash: String,
@@ -335,7 +335,7 @@ mod http_tests {
     #[tokio::test]
     async fn test_proof_verification_with_developer_portal() {
         #[derive(Serialize)]
-        /// https://docs.world.org/world-id/reference/api#verify-proof
+        /// Reference: <https://docs.world.org/world-id/reference/api#verify-proof>
         struct VerifyProofRequest {
             merkle_root: String,
             signal_hash: String,
