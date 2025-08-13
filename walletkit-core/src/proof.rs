@@ -547,7 +547,7 @@ mod signal_tests {
             None,
             CredentialType::Orb,
         );
-        
+
         let external_nullifier = context.get_external_nullifier();
         assert_eq!(external_nullifier, context.external_nullifier);
         assert_eq!(
@@ -565,30 +565,21 @@ mod signal_tests {
             Some(signal.clone()),
             CredentialType::Device,
         );
-        
+
         let signal_hash = context.get_signal_hash();
         assert_eq!(signal_hash, context.signal_hash);
-        
+
         let expected_hash = U256Wrapper::from(hash_to_field(signal.as_bytes()));
         assert_eq!(signal_hash, expected_hash);
     }
 
     #[test]
     fn test_get_credential_type() {
-        let orb_context = ProofContext::new(
-            "app_123",
-            None,
-            None,
-            CredentialType::Orb,
-        );
+        let orb_context = ProofContext::new("app_123", None, None, CredentialType::Orb);
         assert_eq!(orb_context.get_credential_type(), CredentialType::Orb);
-        
-        let device_context = ProofContext::new(
-            "app_456",
-            None,
-            None,
-            CredentialType::Device,
-        );
+
+        let device_context =
+            ProofContext::new("app_456", None, None, CredentialType::Device);
         assert_eq!(device_context.get_credential_type(), CredentialType::Device);
     }
 }
