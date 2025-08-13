@@ -133,6 +133,24 @@ impl ProofContext {
             signal_hash,
         ))
     }
+
+    /// Get the raw external nullifier for this context.
+    #[must_use]
+    pub const fn get_external_nullifier(&self) -> U256Wrapper {
+        self.external_nullifier
+    }
+
+    /// Get the signal hash for this context.
+    #[must_use]
+    pub const fn get_signal_hash(&self) -> U256Wrapper {
+        self.signal_hash
+    }
+
+    /// Get the credential type for this context.
+    #[must_use]
+    pub const fn get_credential_type(&self) -> CredentialType {
+        self.credential_type
+    }
 }
 
 // This impl block is not exported to foreign bindings.
