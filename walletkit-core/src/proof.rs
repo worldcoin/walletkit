@@ -133,6 +133,24 @@ impl ProofContext {
             signal_hash,
         ))
     }
+
+    /// Get the raw external nullifier for this context.
+    #[must_use]
+    pub const fn get_external_nullifier(&self) -> U256Wrapper {
+        self.external_nullifier
+    }
+
+    /// Get the signal hash for this context.
+    #[must_use]
+    pub const fn get_signal_hash(&self) -> U256Wrapper {
+        self.signal_hash
+    }
+
+    /// Get the credential type for this context.
+    #[must_use]
+    pub const fn get_credential_type(&self) -> CredentialType {
+        self.credential_type
+    }
 }
 
 // This impl block is not exported to foreign bindings.
@@ -519,6 +537,50 @@ mod signal_tests {
             );
             assert!(context.is_err());
         }
+    }
+
+    #[test]
+    fn test_get_external_nullifier() {
+        let context = ProofContext::new(
+            "app_369183bd38f1641b6964ab51d7a20434",
+            Some("test-action".to_string()),
+            None,
+            CredentialType::Orb,
+        );
+
+        let external_nullifier = context.get_external_nullifier();
+        assert_eq!(external_nullifier, context.external_nullifier);
+        assert_eq!(
+            external_nullifier.to_hex_string(),
+            "0x00dd12b56cebf29593d6d3208a061bbb19e60152c56045f277a15989d25d5215"
+        );
+    }
+
+    #[test]
+    fn test_get_signal_hash() {
+        let signal = "test_signal_123".to_string();
+        let context = ProofContext::new(
+            "app_10eb12bd96d8f7202892ff25f094c803",
+            None,
+            Some(signal.clone()),
+            CredentialType::Device,
+        );
+
+        let signal_hash = context.get_signal_hash();
+        assert_eq!(signal_hash, context.signal_hash);
+
+        let expected_hash = U256Wrapper::from(hash_to_field(signal.as_bytes()));
+        assert_eq!(signal_hash, expected_hash);
+    }
+
+    #[test]
+    fn test_get_credential_type() {
+        let orb_context = ProofContext::new("app_123", None, None, CredentialType::Orb);
+        assert_eq!(orb_context.get_credential_type(), CredentialType::Orb);
+
+        let device_context =
+            ProofContext::new("app_456", None, None, CredentialType::Device);
+        assert_eq!(device_context.get_credential_type(), CredentialType::Device);
     }
 }
 
