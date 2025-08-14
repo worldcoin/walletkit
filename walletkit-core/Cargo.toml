@@ -47,7 +47,7 @@ chrono = "0.4.41"
 dotenvy = "0.15.7"
 mockito = "1.6"
 regex = "1.11"
-tokio = "1.46"
+tokio = "1.47"
 tokio-test = "0.4"
 
 [features]
