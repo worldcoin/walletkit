@@ -127,7 +127,7 @@ mod tests {
             let serialized = serde_json::to_string(&variant).unwrap();
             let deserialized: CredentialType =
                 serde_json::from_str(&serialized).unwrap();
-            assert_eq!(variant, deserialized, "Roundtrip failed for {:?}", variant);
+            assert_eq!(variant, deserialized, "Roundtrip failed for {variant:?}");
         }
     }
 }
