@@ -1,4 +1,4 @@
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use strum::{Display, EnumString};
 
 use crate::Environment;
@@ -9,9 +9,12 @@ use crate::Environment;
 /// valid Orb-verified credential.
 ///
 /// More details in `https://docs.world.org/world-id/concepts#proof-of-personhood`
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Hash, Display)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, EnumString, Hash, Display, Serialize, Deserialize,
+)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 #[strum(serialize_all = "snake_case")]
+#[serde(rename_all = "snake_case")]
 pub enum CredentialType {
     /// Represents persons who have been biometrically verified at an Orb. Highest level of proof of personhood verification.
     Orb,
@@ -27,15 +30,6 @@ pub enum CredentialType {
     SecureDocument,
     /// Represents a semi-unique device
     Device,
-}
-
-impl Serialize for CredentialType {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.to_string())
-    }
 }
 
 impl CredentialType {
@@ -102,5 +96,38 @@ mod tests {
         let credential_type = CredentialType::SecureDocument;
         let serialized = serde_json::to_string(&credential_type).unwrap();
         assert_eq!(serialized, "\"secure_document\"");
+    }
+
+    #[test]
+    fn test_credential_type_deserialization() {
+        let deserialized: CredentialType =
+            serde_json::from_str("\"document\"").unwrap();
+        assert_eq!(deserialized, CredentialType::Document);
+
+        let deserialized: CredentialType =
+            serde_json::from_str("\"secure_document\"").unwrap();
+        assert_eq!(deserialized, CredentialType::SecureDocument);
+
+        // Test invalid credential type
+        let result: Result<CredentialType, _> = serde_json::from_str("\"invalid\"");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_credential_type_roundtrip() {
+        // Test that serialize -> deserialize gives back the original value
+        let variants = vec![
+            CredentialType::Orb,
+            CredentialType::Device,
+            CredentialType::Document,
+            CredentialType::SecureDocument,
+        ];
+
+        for variant in variants {
+            let serialized = serde_json::to_string(&variant).unwrap();
+            let deserialized: CredentialType =
+                serde_json::from_str(&serialized).unwrap();
+            assert_eq!(variant, deserialized, "Roundtrip failed for {variant:?}");
+        }
     }
 }
