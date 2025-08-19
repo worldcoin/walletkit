@@ -16,6 +16,8 @@ struct InclusionProofResponse {
     proof: Proof,
 }
 
+const CREDENTIAL_NOT_ISSUED_RESPONSE: &str = "provided identity commitment not found";
+
 #[derive(Debug)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 #[allow(clippy::module_name_repetitions)]
@@ -52,16 +54,47 @@ impl MerkleTreeProof {
         };
 
         let request = Request::new();
-        let response = request
-            .post(url, body)
-            .await?
-            .json::<InclusionProofResponse>()
-            .await?;
 
-        Ok(Self {
-            poseidon_proof: response.proof,
-            merkle_root: response.root,
-        })
+        // Handle network-level errors explicitly
+        let http_response = match request.post(url.clone(), body).await {
+            Ok(response) => response,
+            Err(err) => {
+                // Create a new error with the network error details and URL
+                return Err(WalletKitError::NetworkError(format!(
+                    "[MerkleTreeProof] Failed to connect to {url}: {err}"
+                )));
+            }
+        };
+
+        let status = http_response.status();
+
+        // Try to get the raw response text first to diagnose issues
+        let response_text = match http_response.text().await {
+            Ok(text) => text,
+            Err(err) => {
+                return Err(WalletKitError::SerializationError(
+                    format!("[MerkleTreeProof] Failed to read response body from {url} with status {status}: {err}")
+                ));
+            }
+        };
+
+        if status == 400 && response_text == CREDENTIAL_NOT_ISSUED_RESPONSE {
+            return Err(WalletKitError::CredentialNotIssued);
+        }
+
+        match serde_json::from_str::<InclusionProofResponse>(&response_text) {
+            Ok(response) => Ok(Self {
+                poseidon_proof: response.proof,
+                merkle_root: response.root,
+            }),
+            Err(parse_err) => {
+                // Return a more detailed error with first 20 characters of the response (only 20 to avoid logging something sensitive)
+                Err(WalletKitError::SerializationError(format!(
+                    "[MerkleTreeProof] Failed to parse response from {url} with status {status}: {parse_err}, received: {}",
+                    response_text.chars().take(20).collect::<String>()
+                )))
+            }
+        }
     }
 
     #[cfg_attr(feature = "ffi", uniffi::constructor)]
@@ -117,5 +150,75 @@ mod tests {
         );
 
         assert_eq!(merkle_proof.poseidon_proof.leaf_index(), 17_029_704);
+    }
+
+    #[tokio::test]
+    async fn test_http_error_handling() {
+        let mut mock_server = mockito::Server::new_async().await;
+
+        // Mock a 404 Not Found response
+        mock_server
+            .mock("POST", "/inclusionProof")
+            .with_status(404)
+            .with_header("Content-Type", "application/json")
+            .with_body(r#"{"error":"Identity commitment not found"}"#)
+            .create_async()
+            .await;
+
+        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+
+        let url = mock_server.url();
+
+        let result = MerkleTreeProof::from_identity_commitment(
+            &world_id.get_identity_commitment(&CredentialType::Device),
+            &url,
+        )
+        .await;
+
+        drop(mock_server);
+
+        assert!(result.is_err());
+        if let Err(err) = result {
+            match err {
+                WalletKitError::SerializationError(msg) => {
+                    assert!(msg.contains("with status 404"));
+                    assert!(msg.contains(&url));
+                }
+                _ => panic!("Expected SerializationError, got: {err:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_credential_not_issued() {
+        let mut mock_server = mockito::Server::new_async().await;
+
+        // Mock a not issued credential response which the sequencer returns as the identity commitment not found in the set
+        mock_server
+            .mock("POST", "/inclusionProof")
+            .with_status(400)
+            .with_body("provided identity commitment not found")
+            .create_async()
+            .await;
+
+        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+
+        let url = mock_server.url();
+
+        let result = MerkleTreeProof::from_identity_commitment(
+            &world_id.get_identity_commitment(&CredentialType::Device),
+            &url,
+        )
+        .await;
+
+        drop(mock_server);
+
+        assert!(result.is_err());
+        if let Err(err) = result {
+            match err {
+                WalletKitError::CredentialNotIssued => {}
+                _ => panic!("Expected CredentialNotIssued, got: {err:?}"),
+            }
+        }
     }
 }

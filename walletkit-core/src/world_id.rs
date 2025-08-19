@@ -376,7 +376,15 @@ mod http_tests {
                 .await
                 .unwrap();
 
-        assert_eq!(response.status(), 200);
+        let status = response.status();
+
+        if status != 200 {
+            println!("received status from developer portal: {status}");
+            let body = response.text().await.unwrap();
+            println!("received body from developer portal: {body}");
+            panic!("test was unsuccessful");
+        }
+
         assert!(
             response.json::<serde_json::Value>().await.unwrap()["success"]
                 .as_bool()

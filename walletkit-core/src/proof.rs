@@ -282,7 +282,11 @@ impl ProofOutput {
     /// # Errors
     /// Will error if serialization fails.
     pub fn to_json(&self) -> Result<String, WalletKitError> {
-        serde_json::to_string(self).map_err(|_| WalletKitError::SerializationError)
+        serde_json::to_string(self).map_err(|e| {
+            WalletKitError::SerializationError(format!(
+                "Failed to serialize proof: {e}"
+            ))
+        })
     }
 
     /// Exposes the nullifier hash to foreign code. Struct fields are not directly exposed to foreign code.
