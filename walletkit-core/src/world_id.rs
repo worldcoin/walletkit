@@ -336,6 +336,7 @@ mod http_tests {
     async fn test_proof_verification_with_developer_portal() {
         #[derive(Serialize)]
         /// Reference: <https://docs.world.org/world-id/reference/api#verify-proof>
+        /// hello
         struct VerifyProofRequest {
             merkle_root: String,
             signal_hash: String,
