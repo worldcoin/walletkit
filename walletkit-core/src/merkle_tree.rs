@@ -16,6 +16,8 @@ struct InclusionProofResponse {
     proof: Proof,
 }
 
+const CREDENTIAL_NOT_ISSUED_RESPONSE: &str = "provided identity commitment not found";
+
 #[derive(Debug)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 #[allow(clippy::module_name_repetitions)]
@@ -63,6 +65,7 @@ impl MerkleTreeProof {
                 )));
             }
         };
+
         let status = http_response.status();
 
         // Try to get the raw response text first to diagnose issues
@@ -74,6 +77,10 @@ impl MerkleTreeProof {
                 ));
             }
         };
+
+        if status == 400 && response_text == CREDENTIAL_NOT_ISSUED_RESPONSE {
+            return Err(WalletKitError::CredentialNotIssued);
+        }
 
         match serde_json::from_str::<InclusionProofResponse>(&response_text) {
             Ok(response) => Ok(Self {
@@ -153,6 +160,7 @@ mod tests {
         mock_server
             .mock("POST", "/inclusionProof")
             .with_status(404)
+            .with_header("Content-Type", "application/json")
             .with_body(r#"{"error":"Identity commitment not found"}"#)
             .create_async()
             .await;
@@ -177,6 +185,39 @@ mod tests {
                     assert!(msg.contains(&url));
                 }
                 _ => panic!("Expected SerializationError, got: {err:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_credential_not_issued() {
+        let mut mock_server = mockito::Server::new_async().await;
+
+        // Mock a not issued credential response which the sequencer returns as the identity commitment not found in the set
+        mock_server
+            .mock("POST", "/inclusionProof")
+            .with_status(400)
+            .with_body("provided identity commitment not found")
+            .create_async()
+            .await;
+
+        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+
+        let url = mock_server.url();
+
+        let result = MerkleTreeProof::from_identity_commitment(
+            &world_id.get_identity_commitment(&CredentialType::Device),
+            &url,
+        )
+        .await;
+
+        drop(mock_server);
+
+        assert!(result.is_err());
+        if let Err(err) = result {
+            match err {
+                WalletKitError::CredentialNotIssued => {}
+                _ => panic!("Expected CredentialNotIssued, got: {err:?}"),
             }
         }
     }

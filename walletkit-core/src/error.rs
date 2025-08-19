@@ -26,4 +26,7 @@ pub enum WalletKitError {
     /// The `semaphore` feature flag is not enabled
     #[error("semaphore_not_enabled")]
     SemaphoreNotEnabled,
+    /// The requested credential is not issued for this World ID
+    #[error("credential_not_issued")]
+    CredentialNotIssued,
 }
