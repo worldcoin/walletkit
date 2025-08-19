@@ -59,7 +59,7 @@ impl MerkleTreeProof {
             Err(err) => {
                 // Create a new error with the network error details and URL
                 return Err(WalletKitError::NetworkError(format!(
-                    "Failed to connect to {url}: {err}"
+                    "[MerkleTreeProof] Failed to connect to {url}: {err}"
                 )));
             }
         };
@@ -70,22 +70,21 @@ impl MerkleTreeProof {
             Ok(text) => text,
             Err(err) => {
                 return Err(WalletKitError::SerializationError(
-                    format!("Failed to read response body from {url} with status {status}: {err}")
+                    format!("[MerkleTreeProof] Failed to read response body from {url} with status {status}: {err}")
                 ));
             }
         };
 
-        // Try to parse the JSON text manually
         match serde_json::from_str::<InclusionProofResponse>(&response_text) {
             Ok(response) => Ok(Self {
                 poseidon_proof: response.proof,
                 merkle_root: response.root,
             }),
             Err(parse_err) => {
-                // Return a more detailed error with the response content
+                // Return a more detailed error with first 20 characters of the response (only 20 to avoid logging something sensitive)
                 Err(WalletKitError::SerializationError(format!(
-                    "Failed to parse response from {url} with status {status}: {parse_err}, received: {}",
-                    response_text.chars().take(100).collect::<String>()
+                    "[MerkleTreeProof] Failed to parse response from {url} with status {status}: {parse_err}, received: {}",
+                    response_text.chars().take(20).collect::<String>()
                 )))
             }
         }
