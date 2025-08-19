@@ -12,8 +12,11 @@ pub enum WalletKitError {
     #[error("invalid_number")]
     InvalidNumber,
     /// Unexpected error serializing information
-    #[error("serialization_error")]
-    SerializationError,
+    #[error("serialization_error: {0}")]
+    SerializationError(String),
+    /// Network connection error with details
+    #[error("network_error: {0}")]
+    NetworkError(String),
     /// HTTP request failure
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
