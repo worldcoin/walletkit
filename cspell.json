@@ -2,7 +2,9 @@
   "version": "0.2",
   "language": "en-US",
   "allowCompoundWords": true,
-  "ignorePaths": ["Cargo.toml"],
+  "ignorePaths": [
+    "Cargo.toml"
+  ],
   "words": [
     "aarch",
     "clippy",
@@ -13,8 +15,7 @@
     "WalletKit",
     "Worldcoin",
     "xcframework",
-    "Zeroize",
-    "Zeroizes"
+    "Zeroize"
   ],
   "enabledLanguageIds": [
     "jsonc",

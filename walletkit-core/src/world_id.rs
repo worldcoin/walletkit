@@ -1,7 +1,8 @@
 use crate::{error::WalletKitError, proof::generate_proof_with_semaphore_identity};
 
+use secrecy::{ExposeSecret, SecretBox};
 use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use subtle::ConstantTimeEq;
 
 use crate::{
     credential_type::CredentialType,
@@ -14,13 +15,13 @@ use crate::{
 /// A base World ID identity which can be used to generate World ID Proofs for different credentials.
 ///
 /// Most essential primitive for World ID.
-#[derive(PartialEq, Eq, Debug, Zeroize, ZeroizeOnDrop)]
+#[derive(Debug)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Object))]
 pub struct WorldId {
-    /// The hashed World ID secret, cast to 64 bytes (0-padded). Actual hashed secret is 32 bytes.
-    secret_hex: [u8; 64],
+    /// The hashed hex-encoded World ID secret (32 byte secret -> 64 byte hex-encoded)
+    /// Note: we need to store this hex-encoded because `semaphore-rs` performs operations on it hex-encoded. Can be improved in the future.
+    hashed_secret_hex: SecretBox<[u8; 64]>,
     /// The environment in which this identity is running. Generally an app/client will be a single environment.
-    #[zeroize(skip)]
     environment: Environment,
 }
 
@@ -30,9 +31,12 @@ impl WorldId {
     #[must_use]
     #[cfg_attr(feature = "ffi", uniffi::constructor)]
     pub fn new(secret: &[u8], environment: &Environment) -> Self {
-        let secret_hex = seed_hex(secret);
+        let hashed_secret_hex: SecretBox<[u8; 64]> =
+            SecretBox::init_with(|| seed_hex(secret));
+        // NOTE: `init_with_mut` cannot be used here because [u8; 64] does not implement Default.
+
         Self {
-            secret_hex,
+            hashed_secret_hex,
             environment: environment.clone(),
         }
     }
@@ -105,6 +109,20 @@ impl WorldId {
 
         generate_proof_with_semaphore_identity(&identity, &merkle_tree_proof, context)
     }
+
+    /// Compares two `WorldId`s for equality.
+    ///
+    /// This function uses constant-time comparison to prevent timing attacks, but should be performant enough.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the two `WorldId`s are equal, `false` otherwise.
+    fn is_equal_to(&self, other: &Self) -> bool {
+        // Use constant-time comparison to prevent timing attacks
+        let self_secret = self.hashed_secret_hex.expose_secret();
+        let other_secret = other.hashed_secret_hex.expose_secret();
+        self_secret.ct_eq(other_secret).into() && self.environment == other.environment
+    }
 }
 
 impl WorldId {
@@ -115,12 +133,19 @@ impl WorldId {
         &self,
         credential_type: &CredentialType,
     ) -> semaphore_rs::identity::Identity {
-        let mut secret_hex = self.secret_hex;
+        // we need to copy the secret because `from_hashed_secret` performs zeroizing on its own
+        let mut secret_hex = *self.hashed_secret_hex.expose_secret();
         let identity = semaphore_rs::identity::Identity::from_hashed_secret(
             &mut secret_hex,
             Some(credential_type.as_identity_trapdoor()),
         );
         identity
+    }
+}
+
+impl PartialEq for WorldId {
+    fn eq(&self, other: &Self) -> bool {
+        self.is_equal_to(other)
     }
 }
 
@@ -234,7 +259,22 @@ mod tests {
         let mut result = [0_u8; 64];
         result[..].copy_from_slice(&bytes.as_bytes()[2..]); // we slice the first 2 chars to remove the 0x
 
-        assert_eq!(result, world_id.secret_hex);
+        assert_eq!(&result, world_id.hashed_secret_hex.expose_secret());
+    }
+
+    #[test]
+    fn test_partial_eq_constant_time() {
+        // Test that WorldId equality works correctly
+        let world_id1 = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id2 = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id3 = WorldId::new(b"different_secret", &Environment::Staging);
+        let world_id4 = WorldId::new(b"not_a_real_secret", &Environment::Production);
+
+        // Same secret, same environment
+        assert_eq!(world_id1, world_id2);
+
+        assert_ne!(world_id1, world_id3); // Different secret, same environment
+        assert_ne!(world_id1, world_id4); // Same secret, different environment
     }
 
     #[test]
