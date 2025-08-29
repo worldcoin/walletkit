@@ -114,10 +114,13 @@ impl WorldId {
     ///
     /// This function uses constant-time comparison to prevent timing attacks, but should be performant enough.
     ///
+    /// Exposed for foreign use. Use `PartialEq` if comparing within Rust.
+    ///
     /// # Returns
     ///
     /// `true` if the two `WorldId`s are equal, `false` otherwise.
-    fn is_equal_to(&self, other: &Self) -> bool {
+    #[must_use]
+    pub fn is_equal_to(&self, other: &Self) -> bool {
         // Use constant-time comparison to prevent timing attacks
         let self_secret = self.hashed_secret_hex.expose_secret();
         let other_secret = other.hashed_secret_hex.expose_secret();
