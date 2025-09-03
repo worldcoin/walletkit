@@ -29,7 +29,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "brotli",
     "rustls-tls",
 ] }
-ruint = { version = "1.15", default-features = false, features = [
+ruint = { version = "1.16", default-features = false, features = [
     "alloc",
     "ark-ff-04",
 ] }
