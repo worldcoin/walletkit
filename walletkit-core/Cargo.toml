@@ -29,17 +29,17 @@ reqwest = { version = "0.12", default-features = false, features = [
     "brotli",
     "rustls-tls",
 ] }
-ruint = { version = "1.15", default-features = false, features = [
+ruint = { version = "1", default-features = false, features = [
     "alloc",
     "ark-ff-04",
 ] }
-secrecy = "0.10.3"
+secrecy = "0.10"
 semaphore-rs = { version = "0.5" }
-serde = "1.0"
-serde_json = "1.0"
-strum = { version = "0.26", features = ["derive"] }
-subtle = "2.6"
-thiserror = "2.0"
+serde = "1"
+serde_json = "1"
+strum = { version = "0.2", features = ["derive"] }
+subtle = "2"
+thiserror = "2"
 uniffi = { workspace = true, optional = true, features = ["build", "tokio"] }
 
 [dev-dependencies]
