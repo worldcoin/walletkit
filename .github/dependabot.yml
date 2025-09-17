@@ -2,6 +2,7 @@ version: 2
 updates:
   - package-ecosystem: "cargo"
     directory: "/"
+    versioning-strategy: "lockfile-only" # this is a library with other dependencies, we want to be explicit when updating base dependencies
     schedule:
       interval: "monthly"
     assignees:
