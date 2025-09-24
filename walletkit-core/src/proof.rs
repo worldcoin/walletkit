@@ -31,6 +31,8 @@ pub struct ProofContext {
     /// The hashed signal which is included in the ZKP and committed to in the proof.
     /// When verifying the proof, the same signal must be provided.
     pub signal_hash: U256Wrapper,
+    /// Whether the request requires a mined on-chain proof.
+    pub require_mined_proof: bool,
 }
 
 #[cfg_attr(feature = "ffi", uniffi::export)]
@@ -173,6 +175,7 @@ impl ProofContext {
             external_nullifier,
             credential_type,
             signal_hash: *signal_hash,
+            require_mined_proof: false,
         }
     }
 }
@@ -202,12 +205,14 @@ impl ProofContext {
         external_nullifier: &[u8],
         credential_type: CredentialType,
         signal: Option<Vec<u8>>,
+        require_mined_proof: bool,
     ) -> Self {
         let external_nullifier: U256Wrapper = hash_to_field(external_nullifier).into();
         Self {
             external_nullifier,
             credential_type,
             signal_hash: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
+            require_mined_proof,
         }
     }
 
@@ -236,6 +241,7 @@ impl ProofContext {
         external_nullifier: &U256Wrapper,
         credential_type: CredentialType,
         signal: Option<Vec<u8>>,
+        require_mined_proof: bool,
     ) -> Result<Self, WalletKitError> {
         if external_nullifier.0 >= MODULUS {
             return Err(WalletKitError::InvalidNumber);
@@ -245,6 +251,7 @@ impl ProofContext {
             external_nullifier: *external_nullifier,
             credential_type,
             signal_hash: hash_to_field(signal.unwrap_or_default().as_slice()).into(),
+            require_mined_proof,
         })
     }
 }
@@ -468,6 +475,7 @@ mod external_nullifier_tests {
             b"internal_addressbook",
             CredentialType::Device,
             None,
+            false,
         );
 
         // the expected nullifier hash from the contract
@@ -496,6 +504,7 @@ mod external_nullifier_tests {
             &external_nullifier_hash.into(),
             CredentialType::Device,
             None,
+            false,
         )
         .unwrap();
 
@@ -517,6 +526,7 @@ mod external_nullifier_tests {
                 &external_nullifier.into(),
                 CredentialType::Device,
                 None,
+                false,
             );
             assert!(context.is_err());
         }

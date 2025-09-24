@@ -104,6 +104,7 @@ impl WorldId {
         let merkle_tree_proof = MerkleTreeProof::from_identity_commitment(
             &identity_commitment,
             sequencer_host,
+            context.require_mined_proof,
         )
         .await?;
 
