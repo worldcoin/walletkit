@@ -29,4 +29,7 @@ pub enum WalletKitError {
     /// The requested credential is not issued for this World ID
     #[error("credential_not_issued")]
     CredentialNotIssued,
+    /// The requested credential has not been submitted on-chain
+    #[error("credential_not_mined")]
+    CredentialNotMined,
 }

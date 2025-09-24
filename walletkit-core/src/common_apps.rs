@@ -67,6 +67,7 @@ impl AddressBook {
             &ADDRESS_BOOK_EXTERNAL_NULLIFIER.into(),
             CredentialType::Orb,
             Some(signal),
+            true, // The address book explicitly requires a mined proof
         )?;
 
         Ok(proof_context)

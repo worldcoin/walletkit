@@ -12,11 +12,13 @@ struct SequencerBody {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InclusionProofResponse {
+    status: String, // we explicitly don't type this to avoid failing on unknown statuses when this wouldn't be an issue
     root: U256Wrapper,
     proof: Proof,
 }
 
 const CREDENTIAL_NOT_ISSUED_RESPONSE: &str = "provided identity commitment not found";
+const MINED_STATUS: &str = "mined"; // https://github.com/worldcoin/signup-sequencer/blob/f6050fbb3131ee6a61b2f44db3813f9150a045f5/schemas/openapi.yaml#L163
 
 #[derive(Debug)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Object))]
@@ -45,6 +47,7 @@ impl MerkleTreeProof {
     pub async fn from_identity_commitment(
         identity_commitment: &U256Wrapper,
         sequencer_host: &str,
+        require_mined_proof: bool,
     ) -> Result<Self, WalletKitError> {
         let url = format!("{sequencer_host}/inclusionProof");
 
@@ -83,10 +86,16 @@ impl MerkleTreeProof {
         }
 
         match serde_json::from_str::<InclusionProofResponse>(&response_text) {
-            Ok(response) => Ok(Self {
-                poseidon_proof: response.proof,
-                merkle_root: response.root,
-            }),
+            Ok(response) => {
+                if require_mined_proof && response.status != MINED_STATUS {
+                    return Err(WalletKitError::CredentialNotMined);
+                }
+
+                Ok(Self {
+                    poseidon_proof: response.proof,
+                    merkle_root: response.root,
+                })
+            }
             Err(parse_err) => {
                 // Return a more detailed error with first 20 characters of the response (only 20 to avoid logging something sensitive)
                 Err(WalletKitError::SerializationError(format!(
@@ -135,6 +144,7 @@ mod tests {
         let merkle_proof = MerkleTreeProof::from_identity_commitment(
             &world_id.get_identity_commitment(&CredentialType::Device),
             &mock_server.url(),
+            false,
         )
         .await
         .unwrap();
@@ -172,6 +182,7 @@ mod tests {
         let result = MerkleTreeProof::from_identity_commitment(
             &world_id.get_identity_commitment(&CredentialType::Device),
             &url,
+            false,
         )
         .await;
 
@@ -208,6 +219,7 @@ mod tests {
         let result = MerkleTreeProof::from_identity_commitment(
             &world_id.get_identity_commitment(&CredentialType::Device),
             &url,
+            false,
         )
         .await;
 
@@ -220,5 +232,34 @@ mod tests {
                 _ => panic!("Expected CredentialNotIssued, got: {err:?}"),
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_fail_when_mined_proof_is_required_and_identity_is_not_ready() {
+        let mut mock_server = mockito::Server::new_async().await;
+
+        let response = include_str!("../tests/fixtures/inclusion_proof.json")
+            .replace("\"mined\"", "\"pending\"");
+
+        mock_server
+            .mock("POST", "/inclusionProof")
+            .with_status(200)
+            .with_body(response.as_bytes())
+            .create_async()
+            .await;
+
+        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+
+        let result = MerkleTreeProof::from_identity_commitment(
+            &world_id.get_identity_commitment(&CredentialType::Device),
+            &mock_server.url(),
+            true,
+        )
+        .await
+        .unwrap_err();
+
+        drop(mock_server);
+
+        assert!(matches!(result, WalletKitError::CredentialNotMined));
     }
 }
