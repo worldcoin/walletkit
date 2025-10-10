@@ -17,7 +17,7 @@ impl Request {
     pub(crate) fn new() -> Self {
         let client = reqwest::Client::new();
         let timeout = Duration::from_secs(5);
-        let max_retries = 3u32; // total attempts = 4
+        let max_retries = 3; // total attempts = 4
         Self {
             client,
             timeout,
@@ -38,7 +38,7 @@ impl Request {
         #[cfg(not(test))]
         assert!(url.starts_with("https"));
 
-        let mut attempt = 0u32;
+        let mut attempt = 0;
 
         loop {
             let result = self
