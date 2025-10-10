@@ -26,7 +26,7 @@ impl Request {
     }
 
     /// Makes a POST request to a given URL with a JSON body. Retries are handled internally for
-    /// transient failures such as timeouts, 5xx responses, and rate limiting (429
+    /// transient failures such as timeouts, 5xx responses, and rate limiting (429)
     pub(crate) async fn post<T>(
         &self,
         url: String,
