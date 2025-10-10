@@ -57,17 +57,7 @@ impl MerkleTreeProof {
         };
 
         let request = Request::new();
-
-        // Handle network-level errors explicitly
-        let http_response = match request.post(url.clone(), body).await {
-            Ok(response) => response,
-            Err(err) => {
-                // Create a new error with the network error details and URL
-                return Err(WalletKitError::NetworkError(format!(
-                    "[MerkleTreeProof] Failed to connect to {url}: {err}"
-                )));
-            }
-        };
+        let http_response = request.post(url.clone(), body).await?;
 
         let status = http_response.status();
 
