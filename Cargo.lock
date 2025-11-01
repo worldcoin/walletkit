@@ -410,7 +410,7 @@ dependencies = [
  "lru",
  "parking_lot",
  "pin-project",
- "reqwest 0.12.22",
+ "reqwest 0.12.24",
  "serde",
  "serde_json",
  "thiserror 2.0.17",
@@ -454,7 +454,7 @@ dependencies = [
  "alloy-transport-http",
  "futures",
  "pin-project",
- "reqwest 0.12.22",
+ "reqwest 0.12.24",
  "serde",
  "serde_json",
  "tokio",
@@ -656,7 +656,7 @@ checksum = "a2f8a6338d594f6c6481292215ee8f2fd7b986c80aba23f3f44e761a8658de78"
 dependencies = [
  "alloy-json-rpc",
  "alloy-transport",
- "reqwest 0.12.22",
+ "reqwest 0.12.24",
  "serde_json",
  "tower",
  "tracing",
@@ -3602,9 +3602,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.22"
+version = "0.12.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbc931937e6ca3a06e3b6c0aa7841849b160a90351d6ab467a8b9b9959767531"
+checksum = "9d0946410b9f7b082a427e4ef5c8ff541a88b357bc6c637c40db3a68ac70a36f"
 dependencies = [
  "async-compression",
  "base64 0.22.1",
@@ -5222,7 +5222,7 @@ dependencies = [
  "log",
  "mockito",
  "regex",
- "reqwest 0.12.22",
+ "reqwest 0.12.24",
  "ruint",
  "secrecy",
  "semaphore-rs",
