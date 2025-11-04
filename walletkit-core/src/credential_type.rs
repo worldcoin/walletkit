@@ -10,9 +10,18 @@ use crate::Environment;
 ///
 /// More details in `https://docs.world.org/world-id/concepts#proof-of-personhood`
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, EnumString, Hash, Display, Serialize, Deserialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    EnumString,
+    Hash,
+    Display,
+    Serialize,
+    Deserialize,
+    uniffi::Enum,
 )]
-#[derive(uniffi::Enum)]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum CredentialType {

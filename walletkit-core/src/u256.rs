@@ -13,8 +13,7 @@ use serde::{Deserialize, Serialize};
 /// Particularly, when sending proof inputs/outputs as JSON on HTTP requests, the values SHOULD
 /// be represented as padded hex strings from Big Endian bytes.
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[derive(uniffi::Object)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, uniffi::Object)]
 pub struct U256Wrapper(pub U256);
 
 #[uniffi::export]

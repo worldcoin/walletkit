@@ -15,8 +15,7 @@ use crate::{
 /// A base World ID identity which can be used to generate World ID Proofs for different credentials.
 ///
 /// Most essential primitive for World ID.
-#[derive(Debug)]
-#[derive(uniffi::Object)]
+#[derive(Debug, uniffi::Object)]
 pub struct WorldId {
     /// The hashed hex-encoded World ID secret (32 byte secret -> 64 byte hex-encoded)
     /// Note: we need to store this hex-encoded because `semaphore-rs` performs operations on it hex-encoded. Can be improved in the future.

@@ -20,8 +20,7 @@ use crate::{
 /// It is required to generate a `Proof` and will generally be initialized from an `app_id` and `action`.
 ///
 /// Note on naming: `ProofContext` is used to make it clear in FFIs which may not respect the module structure.
-#[derive(Clone, PartialEq, Eq, Debug)]
-#[derive(uniffi::Object)]
+#[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
 pub struct ProofContext {
     /// The `external_nullifier` is the computed result of a specific context for which a World ID Proof is generated.
     /// It is used in the Sempahore ZK circuit and in the computation of the `nullifier_hash` to guarantee uniqueness in a privacy-preserving way.
@@ -262,8 +261,7 @@ impl ProofContext {
 /// For on-chain verification, the `proof` (which is packed) should generally be deserialized into `uint256[8]`.
 ///
 /// More information on: [On-Chain Verification](https://docs.world.org/world-id/id/on-chain)
-#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
-#[derive(uniffi::Object)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, uniffi::Object)]
 #[allow(clippy::module_name_repetitions)]
 pub struct ProofOutput {
     /// The root hash of the Merkle tree used to prove membership. This root hash should match published hashes in the World ID

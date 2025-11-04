@@ -20,8 +20,7 @@ struct InclusionProofResponse {
 const CREDENTIAL_NOT_ISSUED_RESPONSE: &str = "provided identity commitment not found";
 const MINED_STATUS: &str = "mined"; // https://github.com/worldcoin/signup-sequencer/blob/f6050fbb3131ee6a61b2f44db3813f9150a045f5/schemas/openapi.yaml#L163
 
-#[derive(Debug)]
-#[derive(uniffi::Object)]
+#[derive(Debug, uniffi::Object)]
 #[allow(clippy::module_name_repetitions)]
 pub struct MerkleTreeProof {
     poseidon_proof: Proof,
