@@ -43,7 +43,7 @@ subtle = "2"
 thiserror = "2"
 tokio = { version = "1.47", features = ["sync"] }
 uniffi = { workspace = true, features = ["build", "tokio"] }
-world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "e631f1a", features = ["authenticator"], optional = true }
+world-id-core = { workspace = true, optional = true }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = ["getrandom", "json", "contract", "node-bindings", "signer-local"] }
@@ -53,6 +53,8 @@ mockito = "1.6"
 regex = "1.11"
 tokio = "1.47"
 tokio-test = "0.4"
+world-id-core = { workspace = true }
+rand = "0.8"
 
 [features]
 default = ["common-apps", "semaphore", "v4"]

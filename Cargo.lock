@@ -5922,6 +5922,7 @@ dependencies = [
  "hex",
  "log",
  "mockito",
+ "rand 0.8.5",
  "regex",
  "reqwest 0.12.22",
  "ruint",

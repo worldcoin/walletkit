@@ -87,7 +87,7 @@ impl Authenticator {
             .0
             .lock()
             .await
-            .packed_account_index()
+            .account_index()
             .await
             .map_err(|e| {
                 let err = e.downcast_ref::<world_id_core::AuthenticatorError>();
@@ -100,6 +100,14 @@ impl Authenticator {
             })?
             .into();
         Ok(index)
+    }
+
+    /// Returns the Authenticator `onchain_address`.
+    ///
+    /// See `world_id_core::Authenticator::onchain_address` for more details.
+    #[must_use]
+    pub async fn onchain_address(&self) -> String {
+        self.0.lock().await.onchain_address().to_string()
     }
 }
 
