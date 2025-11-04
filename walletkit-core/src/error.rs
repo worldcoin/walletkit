@@ -88,6 +88,7 @@ impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     }
 }
 
+#[cfg(feature = "v4")]
 impl From<&world_id_core::AuthenticatorError> for WalletKitError {
     fn from(error: &world_id_core::AuthenticatorError) -> Self {
         match error {

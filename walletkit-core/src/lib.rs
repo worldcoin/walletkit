@@ -52,6 +52,7 @@ mod authenticator;
 #[cfg(feature = "v4")]
 pub use authenticator::Authenticator;
 
+#[cfg(feature = "v4")]
 pub(crate) mod defaults;
 
 ////////////////////////////////////////////////////////////////////////////////
