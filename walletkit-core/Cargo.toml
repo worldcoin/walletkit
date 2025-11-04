@@ -41,8 +41,8 @@ serde_json = "1"
 strum = { version = "0.27", features = ["derive"] }
 subtle = "2"
 thiserror = "2"
-tokio = { version = "1.47", features = ["sync"], optional = true }
-uniffi = { workspace = true, optional = true, features = ["build", "tokio"] }
+tokio = { version = "1.47", features = ["sync"] }
+uniffi = { workspace = true, features = ["build", "tokio"] }
 world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "e631f1a", features = ["authenticator"], optional = true }
 
 [dev-dependencies]
@@ -55,9 +55,8 @@ tokio = "1.47"
 tokio-test = "0.4"
 
 [features]
-default = ["common-apps", "ffi", "semaphore", "v4"]
+default = ["common-apps", "semaphore", "v4"]
 common-apps = []
-ffi = ["dep:uniffi", "dep:tokio", "semaphore"]
 http-tests = []
 semaphore = ["semaphore-rs/depth_30"]
 v4 = ["world-id-core"]

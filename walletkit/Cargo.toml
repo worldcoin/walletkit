@@ -20,14 +20,13 @@ crate-type = ["lib", "staticlib", "cdylib"]
 name = "walletkit"
 
 [dependencies]
-uniffi = { workspace = true, features = ["build", "tokio"], optional = true }
+uniffi = { workspace = true, features = ["build", "tokio"] }
 walletkit-core = { workspace = true }
 
 
 [features]
-default = ["ffi", "semaphore"]
+default = ["semaphore"]
 semaphore = ["walletkit-core/semaphore"]
-ffi = ["dep:uniffi", "semaphore", "walletkit-core/ffi"]
 
 [package.metadata.docs.rs]
 no-default-features = true

@@ -1,25 +1,15 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
 use alloy_primitives::Address;
-use world_id_core::{primitives::Config, Authenticator as CoreAuthenticator};
-
-#[cfg(feature = "ffi")]
 use tokio::sync::Mutex;
+use world_id_core::{primitives::Config, Authenticator as CoreAuthenticator};
 
 use crate::{defaults::DefaultConfig, error::WalletKitError, Environment, U256Wrapper};
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
-#[cfg(feature = "ffi")]
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator(Mutex<CoreAuthenticator>);
 
-/// The Authenticator is the main component with which users interact with the World ID Protocol.
-#[cfg(not(feature = "ffi"))]
-#[derive(Debug)]
-pub struct Authenticator(CoreAuthenticator);
-
-// Implementation for FFI (with interior mutability)
-#[cfg(feature = "ffi")]
 #[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     #[uniffi::constructor]
@@ -97,91 +87,6 @@ impl Authenticator {
             .0
             .lock()
             .await
-            .packed_account_index()
-            .await
-            .map_err(|e| {
-                let err = e.downcast_ref::<world_id_core::AuthenticatorError>();
-                err.map_or_else(
-                    || WalletKitError::AuthenticatorError {
-                        error: (e.to_string()),
-                    },
-                    WalletKitError::from,
-                )
-            })?
-            .into();
-        Ok(index)
-    }
-}
-
-// Implementation for non-FFI (with mutable self)
-#[cfg(not(feature = "ffi"))]
-impl Authenticator {
-    /// Initializes a new Authenticator from a seed and with SDK defaults.
-    ///
-    /// # Errors
-    /// Will error if the provided seed is not valid.
-    pub fn from_seed_with_defaults(
-        seed: &[u8],
-        rpc_url: String,
-        environment: &Environment,
-    ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url);
-        let authenticator = CoreAuthenticator::new(seed, config)
-            .map_err(|_| WalletKitError::InvalidInput)?;
-        Ok(Self(authenticator))
-    }
-
-    /// Initializes a new Authenticator from a seed and config.
-    ///
-    /// # Errors
-    /// Will error if the provided seed is not valid.
-    pub fn from_seed(seed: &[u8], config: &str) -> Result<Self, WalletKitError> {
-        let config =
-            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput)?;
-        let authenticator = CoreAuthenticator::new(seed, config)
-            .map_err(|_| WalletKitError::InvalidInput)?;
-        Ok(Self(authenticator))
-    }
-
-    /// Creates a new account with the specified recovery address.
-    ///
-    /// # Errors
-    /// Will error if the recovery address is invalid or if the account creation fails.
-    pub async fn create_account(
-        &mut self,
-        recovery_address: Option<String>,
-    ) -> Result<(), WalletKitError> {
-        let recovery_address = recovery_address
-            .map(|address| {
-                address
-                    .parse::<Address>()
-                    .map_err(|_| WalletKitError::InvalidInput)
-            })
-            .transpose()?;
-
-        self.0.create_account(recovery_address).await.map_err(|e| {
-            let err = e.downcast_ref::<world_id_core::AuthenticatorError>();
-            err.map_or_else(
-                || WalletKitError::AuthenticatorError {
-                    error: (e.to_string()),
-                },
-                WalletKitError::from,
-            )
-        })?;
-
-        Ok(())
-    }
-
-    /// Returns the full account index for the holder's World ID.
-    ///
-    /// The packed account index is a 256 bit integer which includes the user's account index, their recovery counter,
-    /// and their pubkey id/commitment.
-    ///
-    /// # Errors
-    /// Will error if the provided RPC URL is not valid or if there are RPC call failures.
-    pub async fn account_id(&self) -> Result<U256Wrapper, WalletKitError> {
-        let index = self
-            .0
             .packed_account_index()
             .await
             .map_err(|e| {

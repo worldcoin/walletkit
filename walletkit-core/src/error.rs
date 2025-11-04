@@ -1,8 +1,7 @@
 use thiserror::Error;
 
 /// Error outputs from `WalletKit`
-#[derive(Debug, Error)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Error))]
+#[derive(Debug, Error, uniffi::Error)]
 pub enum WalletKitError {
     /// The presented input is not valid for the requested operation
     #[error("invalid_input")]

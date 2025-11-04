@@ -16,7 +16,7 @@ use crate::{
 ///
 /// Most essential primitive for World ID.
 #[derive(Debug)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
+#[derive(uniffi::Object)]
 pub struct WorldId {
     /// The hashed hex-encoded World ID secret (32 byte secret -> 64 byte hex-encoded)
     /// Note: we need to store this hex-encoded because `semaphore-rs` performs operations on it hex-encoded. Can be improved in the future.
@@ -25,11 +25,11 @@ pub struct WorldId {
     environment: Environment,
 }
 
-#[cfg_attr(feature = "ffi", uniffi::export(async_runtime = "tokio"))]
+#[uniffi::export(async_runtime = "tokio")]
 impl WorldId {
     /// Initializes a new `Identity` from a World ID secret. The identity is initialized for a specific environment.
     #[must_use]
-    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    #[uniffi::constructor]
     pub fn new(secret: &[u8], environment: &Environment) -> Self {
         let hashed_secret_hex: SecretBox<[u8; 64]> =
             SecretBox::init_with(|| seed_hex(secret));

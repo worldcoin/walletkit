@@ -21,7 +21,7 @@ const CREDENTIAL_NOT_ISSUED_RESPONSE: &str = "provided identity commitment not f
 const MINED_STATUS: &str = "mined"; // https://github.com/worldcoin/signup-sequencer/blob/f6050fbb3131ee6a61b2f44db3813f9150a045f5/schemas/openapi.yaml#L163
 
 #[derive(Debug)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
+#[derive(uniffi::Object)]
 #[allow(clippy::module_name_repetitions)]
 pub struct MerkleTreeProof {
     poseidon_proof: Proof,
@@ -36,14 +36,14 @@ impl MerkleTreeProof {
     }
 }
 
-#[cfg_attr(feature = "ffi", uniffi::export)]
+#[uniffi::export]
 impl MerkleTreeProof {
     /// Retrieves a Merkle inclusion proof from the sign up sequencer for a given identity commitment.
     /// Each credential/environment pair uses a different sign up sequencer.
     ///
     /// # Errors
     /// Will throw an error if the request fails or parsing the response fails.
-    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    #[uniffi::constructor]
     pub async fn from_identity_commitment(
         identity_commitment: &U256Wrapper,
         sequencer_host: &str,
@@ -97,7 +97,7 @@ impl MerkleTreeProof {
         }
     }
 
-    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    #[uniffi::constructor]
     pub fn from_json_proof(
         json_proof: &str,
         merkle_root: &str,

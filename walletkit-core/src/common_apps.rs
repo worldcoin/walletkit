@@ -15,7 +15,7 @@ use {
 ///
 /// The contract of the address book can be found at: `0x57b930d551e677cc36e2fa036ae2fe8fdae0330d`
 #[cfg(feature = "legacy-nullifiers")]
-#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
+#[derive(uniffi::Object)]
 pub struct AddressBook {}
 
 /// The external nullifier used in the `WorldIDAddressBook` contract.
@@ -35,10 +35,10 @@ impl Default for AddressBook {
 }
 
 #[cfg(feature = "legacy-nullifiers")]
-#[cfg_attr(feature = "ffi", uniffi::export)]
+#[uniffi::export]
 impl AddressBook {
     /// Initializes a new `AddressBook` instance.
-    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    #[uniffi::constructor]
     #[must_use]
     pub const fn new() -> Self {
         Self {}
