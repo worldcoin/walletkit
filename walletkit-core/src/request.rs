@@ -59,9 +59,13 @@ impl Request {
                     // Retry on 429 and 5xx
                     if status == 429 || (500..600).contains(&status) {
                         if attempt >= self.max_retries {
-                            return Err(WalletKitError::NetworkError(format!(
-                                "request to {url} failed with status {status} after retries"
-                            )));
+                            return Err(WalletKitError::NetworkError {
+                                url,
+                                status: Some(status),
+                                error: format!(
+                                    "request error with bad status code {status}"
+                                ),
+                            });
                         }
                         attempt += 1;
                         // No sleep to keep runtime-agnostic
@@ -74,16 +78,22 @@ impl Request {
                     // Retry on timeouts/connect errors
                     if err.is_timeout() || err.is_connect() {
                         if attempt >= self.max_retries {
-                            return Err(WalletKitError::NetworkError(format!(
-                                "request to {url} failed after retries: {err}"
-                            )));
+                            return Err(WalletKitError::NetworkError {
+                                url,
+                                status: None,
+                                error: format!(
+                                    "request timeout/connect error after all retries: {err}"
+                                ),
+                            });
                         }
                         attempt += 1;
                         continue;
                     }
-                    return Err(WalletKitError::NetworkError(format!(
-                        "request to {url} failed: {err}"
-                    )));
+                    return Err(WalletKitError::NetworkError {
+                        url,
+                        status: None,
+                        error: format!("request failed after all retries: {err}"),
+                    });
                 }
             }
         }

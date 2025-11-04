@@ -45,6 +45,18 @@ pub mod error;
 /// Contains logging functionality that can be integrated with foreign language bindings.
 pub mod logger;
 
+mod u256;
+pub use u256::U256Wrapper;
+
+mod authenticator;
+pub use authenticator::Authenticator;
+
+pub(crate) mod defaults;
+
+////////////////////////////////////////////////////////////////////////////////
+// Legacy modules
+////////////////////////////////////////////////////////////////////////////////
+
 /// Contains all components to interact and use a World ID
 pub mod world_id;
 
@@ -54,9 +66,6 @@ pub mod proof;
 /// This module exposes helper functions to interact with common apps & contracts related to the World ID Protocol.
 #[cfg(feature = "common-apps")]
 pub mod common_apps;
-
-mod u256;
-pub use u256::U256Wrapper;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private modules

@@ -289,10 +289,8 @@ impl ProofOutput {
     /// # Errors
     /// Will error if serialization fails.
     pub fn to_json(&self) -> Result<String, WalletKitError> {
-        serde_json::to_string(self).map_err(|e| {
-            WalletKitError::SerializationError(format!(
-                "Failed to serialize proof: {e}"
-            ))
+        serde_json::to_string(self).map_err(|e| WalletKitError::SerializationError {
+            error: format!("Failed to serialize proof: {e}"),
         })
     }
 

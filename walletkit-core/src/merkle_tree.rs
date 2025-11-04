@@ -65,9 +65,9 @@ impl MerkleTreeProof {
         let response_text = match http_response.text().await {
             Ok(text) => text,
             Err(err) => {
-                return Err(WalletKitError::SerializationError(
-                    format!("[MerkleTreeProof] Failed to read response body from {url} with status {status}: {err}")
-                ));
+                return Err(WalletKitError::SerializationError { error: format!(
+                    "[MerkleTreeProof] Failed to read response body from {url} with status {status}: {err}"
+                ) });
             }
         };
 
@@ -88,10 +88,11 @@ impl MerkleTreeProof {
             }
             Err(parse_err) => {
                 // Return a more detailed error with first 20 characters of the response (only 20 to avoid logging something sensitive)
-                Err(WalletKitError::SerializationError(format!(
-                    "[MerkleTreeProof] Failed to parse response from {url} with status {status}: {parse_err}, received: {}",
-                    response_text.chars().take(20).collect::<String>()
-                )))
+                Err(WalletKitError::SerializationError { error: format!(
+                        "[MerkleTreeProof] Failed to parse response from {url} with status {status}: {parse_err}, received: {}",
+                        response_text.chars().take(20).collect::<String>()
+                    ),
+                })
             }
         }
     }
@@ -181,7 +182,7 @@ mod tests {
         assert!(result.is_err());
         if let Err(err) = result {
             match err {
-                WalletKitError::SerializationError(msg) => {
+                WalletKitError::SerializationError { error: msg } => {
                     assert!(msg.contains("with status 404"));
                     assert!(msg.contains(&url));
                 }
