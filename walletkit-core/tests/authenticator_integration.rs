@@ -66,6 +66,8 @@ async fn test_authenticator_integration() {
 
     tx.get_receipt().await.unwrap();
 
+    assert!(authenticator.is_registered().await.unwrap());
+
     let account_id = authenticator.account_id().await.unwrap();
     println!("Created World ID with account ID: {account_id:?}",);
 }

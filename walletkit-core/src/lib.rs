@@ -47,7 +47,9 @@ pub mod logger;
 mod u256;
 pub use u256::U256Wrapper;
 
+#[cfg(feature = "v4")]
 mod authenticator;
+#[cfg(feature = "v4")]
 pub use authenticator::Authenticator;
 
 pub(crate) mod defaults;

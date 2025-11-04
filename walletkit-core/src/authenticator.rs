@@ -41,6 +41,24 @@ impl Authenticator {
         Ok(Self(Mutex::new(authenticator)))
     }
 
+    /// Checks if the World ID Account has already been registered in the `AccountRegistry`.
+    ///
+    /// # Errors
+    /// Will error if the account information cannot be retrieved.
+    pub async fn is_registered(&self) -> Result<bool, WalletKitError> {
+        if let Err(e) = self.0.lock().await.account_index().await {
+            if let Some(e) = e.downcast_ref::<world_id_core::AuthenticatorError>() {
+                if e == &world_id_core::AuthenticatorError::AccountDoesNotExist {
+                    return Ok(false);
+                }
+            }
+            return Err(WalletKitError::AuthenticatorError {
+                error: (e.to_string()),
+            });
+        }
+        Ok(true)
+    }
+
     /// Creates a new account with the specified recovery address.
     ///
     /// # Errors
