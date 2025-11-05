@@ -12,7 +12,7 @@ use crate::{
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator(CoreAuthenticator);
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -115,6 +115,21 @@ impl Authenticator {
     #[must_use]
     pub fn onchain_address(&self) -> String {
         self.0.onchain_address().to_string()
+    }
+
+    /// Returns the packed account index for the holder's World ID fetching it from the on-chain registry.
+    ///
+    /// # Errors
+    /// Will error if the provided RPC URL is not valid or if there are RPC call failures.
+    pub async fn get_packed_account_index_remote(
+        &self,
+    ) -> Result<U256Wrapper, WalletKitError> {
+        let packed_account_index = CoreAuthenticator::get_packed_account_index(
+            self.0.onchain_address(),
+            &self.0.registry(),
+        )
+        .await?;
+        Ok(packed_account_index.into())
     }
 }
 

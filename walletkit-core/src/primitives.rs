@@ -15,6 +15,7 @@ use crate::error::WalletKitError;
 ///
 /// # Errors
 /// - `PrimitiveError::InvalidInput` if the provided string is not a valid address.
+#[allow(dead_code)]
 pub trait ParseFromForeignBinding {
     fn parse_from_ffi(s: &str, attr: &'static str) -> Result<Self, WalletKitError>
     where

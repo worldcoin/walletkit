@@ -4,7 +4,6 @@ use {
     alloy_core::primitives::{Address, U256},
     alloy_core::sol_types::SolValue,
     ruint::uint,
-    std::str::FromStr,
 };
 
 /// Allows interacting with the `WorldIDAddressBook` contract.
@@ -55,12 +54,10 @@ impl AddressBook {
         address_to_verify: &str,
         timestamp: u64,
     ) -> Result<ProofContext, WalletKitError> {
-        let address_to_verify = Address::from_str(address_to_verify).map_err(|_| {
-            WalletKitError::InvalidInput {
-                attribute: "address_to_verify".to_string(),
-                reason: "Invalid address".to_string(),
-            }
-        })?;
+        use crate::primitives::ParseFromForeignBinding;
+
+        let address_to_verify =
+            Address::parse_from_ffi(address_to_verify, "address_to_verify")?;
 
         let timestamp = U256::from(timestamp);
 
