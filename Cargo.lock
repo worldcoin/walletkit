@@ -1673,9 +1673,9 @@ dependencies = [
 
 [[package]]
 name = "circom-witness-rs"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c64a693d1d64c612611bb6faedec94cdcd28c9c5e5c5dfe30927ed73e1cab350"
+checksum = "f4ffb423ecdfea516ad77c12a0a4b6e7a52b42656fe5b31df151ca2abc44545f"
 dependencies = [
  "ark-bn254 0.5.0",
  "ark-ff 0.5.0",
@@ -3595,7 +3595,7 @@ checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
 [[package]]
 name = "oprf-client"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=e631f1a#e631f1a3097cfa11cfc3d33643ab09ea16b49148"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=8041ac3#8041ac3403eaf3f751b0d0f1871f37b73d1b4207"
 dependencies = [
  "ark-ec 0.5.0",
  "eyre",
@@ -3605,7 +3605,7 @@ dependencies = [
  "oprf-core",
  "oprf-types",
  "oprf-world-types",
- "oprf-zk 0.1.0 (git+https://github.com/worldcoin/world-id-protocol?rev=e631f1a)",
+ "oprf-zk 0.1.0 (git+https://github.com/worldcoin/world-id-protocol?rev=8041ac3)",
  "rand 0.8.5",
  "reqwest 0.12.22",
  "serde_json",
@@ -3657,14 +3657,14 @@ dependencies = [
 [[package]]
 name = "oprf-world-types"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=e631f1a#e631f1a3097cfa11cfc3d33643ab09ea16b49148"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=8041ac3#8041ac3403eaf3f751b0d0f1871f37b73d1b4207"
 dependencies = [
  "alloy",
  "ark-ec 0.5.0",
  "ark-ff 0.5.0",
  "k256",
  "oprf-core",
- "oprf-zk 0.1.0 (git+https://github.com/worldcoin/world-id-protocol?rev=e631f1a)",
+ "oprf-zk 0.1.0 (git+https://github.com/worldcoin/world-id-protocol?rev=8041ac3)",
  "serde",
  "taceo-ark-babyjubjub",
  "taceo-ark-serde-compat",
@@ -3675,7 +3675,7 @@ dependencies = [
 [[package]]
 name = "oprf-zk"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=e631f1a#e631f1a3097cfa11cfc3d33643ab09ea16b49148"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=8041ac3#8041ac3403eaf3f751b0d0f1871f37b73d1b4207"
 dependencies = [
  "ark-bn254 0.5.0",
  "ark-ff 0.5.0",
@@ -6390,7 +6390,7 @@ dependencies = [
 [[package]]
 name = "world-id-core"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=e631f1a#e631f1a3097cfa11cfc3d33643ab09ea16b49148"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=8041ac3#8041ac3403eaf3f751b0d0f1871f37b73d1b4207"
 dependencies = [
  "alloy",
  "anyhow",
@@ -6407,7 +6407,7 @@ dependencies = [
  "oprf-client",
  "oprf-types",
  "oprf-world-types",
- "oprf-zk 0.1.0 (git+https://github.com/worldcoin/world-id-protocol?rev=e631f1a)",
+ "oprf-zk 0.1.0 (git+https://github.com/worldcoin/world-id-protocol?rev=8041ac3)",
  "rand 0.8.5",
  "reqwest 0.12.22",
  "ruint",
@@ -6429,7 +6429,7 @@ dependencies = [
 [[package]]
 name = "world-id-primitives"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=e631f1a#e631f1a3097cfa11cfc3d33643ab09ea16b49148"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=8041ac3#8041ac3403eaf3f751b0d0f1871f37b73d1b4207"
 dependencies = [
  "alloy-primitives",
  "ark-bn254 0.5.0",

@@ -1,11 +1,19 @@
 use thiserror::Error;
 
+#[cfg(feature = "v4")]
+use world_id_core::AuthenticatorError;
+
 /// Error outputs from `WalletKit`
 #[derive(Debug, Error, uniffi::Error)]
 pub enum WalletKitError {
-    /// The presented input is not valid for the requested operation
-    #[error("invalid_input")]
-    InvalidInput,
+    /// Invalid input provided (e.g., incorrect length, format, etc.)
+    #[error("invalid_input_{attribute}")]
+    InvalidInput {
+        /// The attribute that is invalid
+        attribute: String,
+        /// The reason the input is invalid
+        reason: String,
+    },
 
     /// The presented data is not a valid U256 integer
     #[error("invalid_number")]
@@ -19,7 +27,7 @@ pub enum WalletKitError {
     },
 
     /// Network connection error with details
-    #[error("network_error")]
+    #[error("network_error at {url}: {error}")]
     NetworkError {
         /// The URL of the request
         url: String,
@@ -64,10 +72,21 @@ pub enum WalletKitError {
     #[error("Account already exists for this authenticator.")]
     AccountAlreadyExists,
 
+    /// The public key was not found in the batch, i.e. the authenticator is not authorized to sign for this action
+    #[error("unauthorized_authenticator")]
+    UnauthorizedAuthenticator,
+
     /// An unexpected error occurred with the Authenticator
     #[error("unexpected_authenticator_error")]
     AuthenticatorError {
         /// The error message from the authenticator
+        error: String,
+    },
+
+    /// An unexpected error occurred
+    #[error("unexpected_error: {error}")]
+    Generic {
+        /// The details of the error
         error: String,
     },
 }
@@ -89,15 +108,41 @@ impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
 }
 
 #[cfg(feature = "v4")]
-impl From<&world_id_core::AuthenticatorError> for WalletKitError {
-    fn from(error: &world_id_core::AuthenticatorError) -> Self {
+impl From<AuthenticatorError> for WalletKitError {
+    fn from(error: AuthenticatorError) -> Self {
         match error {
-            world_id_core::AuthenticatorError::AccountDoesNotExist => {
-                Self::AccountDoesNotExist
+            AuthenticatorError::AccountDoesNotExist => Self::AccountDoesNotExist,
+            AuthenticatorError::AccountAlreadyExists => Self::AccountAlreadyExists,
+
+            AuthenticatorError::NetworkError(error) => Self::NetworkError {
+                url: error
+                    .url()
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_default(),
+                error: error.to_string(),
+                status: None,
+            },
+            AuthenticatorError::PublicKeyNotFound => Self::UnauthorizedAuthenticator,
+            AuthenticatorError::GatewayError { status, body } => Self::NetworkError {
+                url: "gateway".to_string(),
+                error: body,
+                status: Some(status),
+            },
+            AuthenticatorError::PrimitiveError(error) => {
+                use world_id_core::primitives::PrimitiveError;
+                match error {
+                    PrimitiveError::InvalidInput { attribute, reason } => {
+                        Self::InvalidInput { attribute, reason }
+                    }
+                    _ => Self::Generic {
+                        error: error.to_string(),
+                    },
+                }
             }
-            world_id_core::AuthenticatorError::AccountAlreadyExists => {
-                Self::AccountAlreadyExists
-            }
+
+            _ => Self::AuthenticatorError {
+                error: error.to_string(),
+            },
         }
     }
 }

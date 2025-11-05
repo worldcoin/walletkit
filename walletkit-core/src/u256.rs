@@ -24,6 +24,12 @@ impl U256Wrapper {
         format!("{:#066x}", self.0)
     }
 
+    /// Outputs the decimal string representation of the `U256` value.
+    #[must_use]
+    pub fn to_decimal_string(&self) -> String {
+        self.0.to_string()
+    }
+
     /// Attempts to parse a hex string as a `U256` value (wrapped).
     ///
     /// # Errors

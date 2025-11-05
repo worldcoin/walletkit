@@ -101,13 +101,20 @@ impl MerkleTreeProof {
         json_proof: &str,
         merkle_root: &str,
     ) -> Result<Self, WalletKitError> {
-        let proof: Proof = serde_json::from_str(json_proof)
-            .map_err(|_| WalletKitError::InvalidInput)?;
+        let proof: Proof = serde_json::from_str(json_proof).map_err(|_| {
+            WalletKitError::SerializationError {
+                error: "Failed to parse JSON proof".to_string(),
+            }
+        })?;
 
         Ok(Self {
             poseidon_proof: proof,
-            merkle_root: U256Wrapper::try_from_hex_string(merkle_root)
-                .map_err(|_| WalletKitError::InvalidInput)?,
+            merkle_root: U256Wrapper::try_from_hex_string(merkle_root).map_err(
+                |_| WalletKitError::InvalidInput {
+                    attribute: "merkle_root".to_string(),
+                    reason: "Invalid hex encoded number".to_string(),
+                },
+            )?,
         })
     }
 }

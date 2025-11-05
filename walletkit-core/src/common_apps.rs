@@ -55,8 +55,12 @@ impl AddressBook {
         address_to_verify: &str,
         timestamp: u64,
     ) -> Result<ProofContext, WalletKitError> {
-        let address_to_verify = Address::from_str(address_to_verify)
-            .map_err(|_| WalletKitError::InvalidInput)?;
+        let address_to_verify = Address::from_str(address_to_verify).map_err(|_| {
+            WalletKitError::InvalidInput {
+                attribute: "address_to_verify".to_string(),
+                reason: "Invalid address".to_string(),
+            }
+        })?;
 
         let timestamp = U256::from(timestamp);
 
