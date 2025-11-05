@@ -42,7 +42,7 @@ use std::sync::{Arc, OnceLock};
 /// ```swift
 /// setupWalletKitLogger() // Call this only once!!!
 /// ```
-#[cfg_attr(feature = "ffi", uniffi::export(with_foreign))]
+#[uniffi::export(with_foreign)]
 pub trait Logger: Sync + Send {
     /// Logs a message at the specified log level.
     ///
@@ -56,8 +56,7 @@ pub trait Logger: Sync + Send {
 /// Enumeration of possible log levels.
 ///
 /// This enum represents the severity levels that can be used when logging messages.
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+#[derive(Debug, Clone, uniffi::Enum)]
 pub enum LogLevel {
     /// Designates very low priority, often extremely detailed messages.
     Trace,
@@ -171,7 +170,7 @@ static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
 /// # Note
 ///
 /// If the logger has already been set, this function will print a message and do nothing.
-#[cfg_attr(feature = "ffi", uniffi::export)]
+#[uniffi::export]
 pub fn set_logger(logger: Arc<dyn Logger>) {
     match LOGGER_INSTANCE.set(logger) {
         Ok(()) => (),

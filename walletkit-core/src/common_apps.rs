@@ -4,7 +4,6 @@ use {
     alloy_core::primitives::{Address, U256},
     alloy_core::sol_types::SolValue,
     ruint::uint,
-    std::str::FromStr,
 };
 
 /// Allows interacting with the `WorldIDAddressBook` contract.
@@ -15,7 +14,7 @@ use {
 ///
 /// The contract of the address book can be found at: `0x57b930d551e677cc36e2fa036ae2fe8fdae0330d`
 #[cfg(feature = "legacy-nullifiers")]
-#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
+#[derive(uniffi::Object)]
 pub struct AddressBook {}
 
 /// The external nullifier used in the `WorldIDAddressBook` contract.
@@ -35,10 +34,10 @@ impl Default for AddressBook {
 }
 
 #[cfg(feature = "legacy-nullifiers")]
-#[cfg_attr(feature = "ffi", uniffi::export)]
+#[uniffi::export]
 impl AddressBook {
     /// Initializes a new `AddressBook` instance.
-    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    #[uniffi::constructor]
     #[must_use]
     pub const fn new() -> Self {
         Self {}
@@ -55,8 +54,10 @@ impl AddressBook {
         address_to_verify: &str,
         timestamp: u64,
     ) -> Result<ProofContext, WalletKitError> {
-        let address_to_verify = Address::from_str(address_to_verify)
-            .map_err(|_| WalletKitError::InvalidInput)?;
+        use crate::primitives::ParseFromForeignBinding;
+
+        let address_to_verify =
+            Address::parse_from_ffi(address_to_verify, "address_to_verify")?;
 
         let timestamp = U256::from(timestamp);
 

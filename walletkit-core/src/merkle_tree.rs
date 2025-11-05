@@ -20,8 +20,7 @@ struct InclusionProofResponse {
 const CREDENTIAL_NOT_ISSUED_RESPONSE: &str = "provided identity commitment not found";
 const MINED_STATUS: &str = "mined"; // https://github.com/worldcoin/signup-sequencer/blob/f6050fbb3131ee6a61b2f44db3813f9150a045f5/schemas/openapi.yaml#L163
 
-#[derive(Debug)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Object))]
+#[derive(Debug, uniffi::Object)]
 #[allow(clippy::module_name_repetitions)]
 pub struct MerkleTreeProof {
     poseidon_proof: Proof,
@@ -36,14 +35,14 @@ impl MerkleTreeProof {
     }
 }
 
-#[cfg_attr(feature = "ffi", uniffi::export)]
+#[uniffi::export]
 impl MerkleTreeProof {
     /// Retrieves a Merkle inclusion proof from the sign up sequencer for a given identity commitment.
     /// Each credential/environment pair uses a different sign up sequencer.
     ///
     /// # Errors
     /// Will throw an error if the request fails or parsing the response fails.
-    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    #[uniffi::constructor]
     pub async fn from_identity_commitment(
         identity_commitment: &U256Wrapper,
         sequencer_host: &str,
@@ -65,9 +64,9 @@ impl MerkleTreeProof {
         let response_text = match http_response.text().await {
             Ok(text) => text,
             Err(err) => {
-                return Err(WalletKitError::SerializationError(
-                    format!("[MerkleTreeProof] Failed to read response body from {url} with status {status}: {err}")
-                ));
+                return Err(WalletKitError::SerializationError { error: format!(
+                    "[MerkleTreeProof] Failed to read response body from {url} with status {status}: {err}"
+                ) });
             }
         };
 
@@ -88,26 +87,34 @@ impl MerkleTreeProof {
             }
             Err(parse_err) => {
                 // Return a more detailed error with first 20 characters of the response (only 20 to avoid logging something sensitive)
-                Err(WalletKitError::SerializationError(format!(
-                    "[MerkleTreeProof] Failed to parse response from {url} with status {status}: {parse_err}, received: {}",
-                    response_text.chars().take(20).collect::<String>()
-                )))
+                Err(WalletKitError::SerializationError { error: format!(
+                        "[MerkleTreeProof] Failed to parse response from {url} with status {status}: {parse_err}, received: {}",
+                        response_text.chars().take(20).collect::<String>()
+                    ),
+                })
             }
         }
     }
 
-    #[cfg_attr(feature = "ffi", uniffi::constructor)]
+    #[uniffi::constructor]
     pub fn from_json_proof(
         json_proof: &str,
         merkle_root: &str,
     ) -> Result<Self, WalletKitError> {
-        let proof: Proof = serde_json::from_str(json_proof)
-            .map_err(|_| WalletKitError::InvalidInput)?;
+        let proof: Proof = serde_json::from_str(json_proof).map_err(|_| {
+            WalletKitError::SerializationError {
+                error: "Failed to parse JSON proof".to_string(),
+            }
+        })?;
 
         Ok(Self {
             poseidon_proof: proof,
-            merkle_root: U256Wrapper::try_from_hex_string(merkle_root)
-                .map_err(|_| WalletKitError::InvalidInput)?,
+            merkle_root: U256Wrapper::try_from_hex_string(merkle_root).map_err(
+                |_| WalletKitError::InvalidInput {
+                    attribute: "merkle_root".to_string(),
+                    reason: "Invalid hex encoded number".to_string(),
+                },
+            )?,
         })
     }
 }
@@ -181,7 +188,7 @@ mod tests {
         assert!(result.is_err());
         if let Err(err) = result {
             match err {
-                WalletKitError::SerializationError(msg) => {
+                WalletKitError::SerializationError { error: msg } => {
                     assert!(msg.contains("with status 404"));
                     assert!(msg.contains(&url));
                 }
