@@ -33,10 +33,7 @@ impl Authenticator {
     /// # Errors
     /// Will error if the provided seed is not valid or if the config is not valid.
     #[uniffi::constructor]
-    pub async fn init_with_config(
-        seed: &[u8],
-        config: &str,
-    ) -> Result<Self, WalletKitError> {
+    pub async fn init(seed: &[u8], config: &str) -> Result<Self, WalletKitError> {
         let config =
             Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
@@ -84,7 +81,7 @@ impl Authenticator {
     /// # Errors
     /// See `CoreAuthenticator::init_or_create_blocking` for potential errors.
     #[uniffi::constructor]
-    pub async fn init_or_create_blocking_with_config(
+    pub async fn init_or_create_blocking(
         seed: &[u8],
         config: &str,
         recovery_address: Option<String>,
@@ -140,17 +137,34 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_with_config() {
+        let mut mock_server = mockito::Server::new_async().await;
+
+        // Mock eth_call to return account data indicating account exists
+        mock_server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
         let seed = [2u8; 32];
         let config = Config::new(
-            "ws://localhost:8545".to_string(),
+            mock_server.url(),
             address!("0xd66aFbf92d684B4404B1ed3e9aDA85353c178dE2"),
             "https://world-id-indexer.stage-crypto.worldcoin.org".to_string(),
             "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
             vec![],
         );
         let config = serde_json::to_string(&config).unwrap();
-        Authenticator::init_with_config(&seed, &config)
-            .await
-            .unwrap();
+        Authenticator::init(&seed, &config).await.unwrap();
+        drop(mock_server);
     }
 }

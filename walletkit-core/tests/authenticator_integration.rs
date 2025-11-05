@@ -2,8 +2,7 @@ use alloy::node_bindings::AnvilInstance;
 use alloy::primitives::{address, U256};
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
-use alloy_primitives::Address;
-use rand::Rng;
+use walletkit_core::error::WalletKitError;
 use walletkit_core::{Authenticator, Environment};
 use world_id_core::account_registry::AccountRegistry;
 
@@ -28,18 +27,20 @@ fn setup_anvil() -> AnvilInstance {
 async fn test_authenticator_integration() {
     let anvil = setup_anvil();
 
-    let mut rng = rand::thread_rng();
+    let authenticator_seeder = PrivateKeySigner::random();
 
-    // Create authenticator with custom config that points to our mock gateway
-    let authenticator = Authenticator::from_seed_with_defaults(
-        &rng.gen::<[u8; 32]>(),
+    // When account doesn't exist, this should fail
+    let authenticator = Authenticator::init_with_defaults(
+        authenticator_seeder.to_bytes().as_slice(),
         anvil.endpoint(),
         &Environment::Staging,
     )
-    .unwrap();
+    .await
+    .unwrap_err();
+    assert!(matches!(authenticator, WalletKitError::AccountDoesNotExist));
 
-    // We don't create the account with `authenticator.create_account` because it uses the gateway,
-    // instead for this test we create the account directly on the Anvil fork
+    // We don't create the account with the internal to avoid having to mock the gateway,
+    // we simply call the createAccount function directly on the AccountRegistry
 
     let signer: PrivateKeySigner = anvil.keys()[0].clone().into();
     let provider = ProviderBuilder::new()
@@ -51,12 +52,7 @@ async fn test_authenticator_integration() {
     let tx = registry
         .createAccount(
             address!("0x0000000000000000000000000000000000000001"), // recovery address
-            // authenticator addresses
-            vec![authenticator
-                .onchain_address()
-                .await
-                .parse::<Address>()
-                .unwrap()],
+            vec![authenticator_seeder.address()],
             vec![U256::from(1)], // pubkeys
             U256::from(1),       // commitment
         )
@@ -66,8 +62,14 @@ async fn test_authenticator_integration() {
 
     tx.get_receipt().await.unwrap();
 
-    assert!(authenticator.is_registered().await.unwrap());
-
-    let account_id = authenticator.account_id().await.unwrap();
+    // now the authenticator exists
+    let authenticator = Authenticator::init_with_defaults(
+        authenticator_seeder.to_bytes().as_slice(),
+        anvil.endpoint(),
+        &Environment::Staging,
+    )
+    .await
+    .unwrap();
+    let account_id = authenticator.account_id();
     println!("Created World ID with account ID: {account_id:?}",);
 }
