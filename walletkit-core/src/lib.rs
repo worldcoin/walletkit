@@ -35,6 +35,8 @@ pub enum Environment {
     Production,
 }
 
+pub(crate) mod primitives;
+
 mod credential_type;
 pub use credential_type::CredentialType;
 

@@ -1,11 +1,12 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
-use std::str::FromStr;
-
 use alloy_primitives::Address;
 use world_id_core::{primitives::Config, Authenticator as CoreAuthenticator};
 
-use crate::{defaults::DefaultConfig, error::WalletKitError, Environment, U256Wrapper};
+use crate::{
+    defaults::DefaultConfig, error::WalletKitError,
+    primitives::ParseFromForeignBinding, Environment, U256Wrapper,
+};
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
@@ -56,14 +57,8 @@ impl Authenticator {
         environment: &Environment,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
-        let recovery_address = recovery_address
-            .map(|address| {
-                Address::from_str(&address).map_err(|_e| WalletKitError::InvalidInput {
-                    attribute: "recovery_address".to_string(),
-                    reason: "Invalid address".to_string(),
-                })
-            })
-            .transpose()?;
+        let recovery_address =
+            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
         let config = Config::from_environment(environment, rpc_url);
 
@@ -86,14 +81,8 @@ impl Authenticator {
         config: &str,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
-        let recovery_address = recovery_address
-            .map(|address| {
-                Address::from_str(&address).map_err(|_e| WalletKitError::InvalidInput {
-                    attribute: "recovery_address".to_string(),
-                    reason: "Invalid address".to_string(),
-                })
-            })
-            .transpose()?;
+        let recovery_address =
+            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
         let config =
             Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
