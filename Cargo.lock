@@ -1472,7 +1472,7 @@ version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde0e0ec90c9dfb3b4b1a0891a7dcd0e2bffde2f7efed5fe7c9bb00e5bfb915e"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1925,7 +1925,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3406,7 +3406,7 @@ dependencies = [
  "once_cell",
  "socket2 0.5.9",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3755,7 +3755,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4242,6 +4242,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_spanned"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e24345aa0fe688594e73770a5f6d1b216508b4f93484c0026d521acd30134392"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "serde_urlencoded"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4581,7 +4590,7 @@ dependencies = [
  "getrandom 0.3.2",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4816,11 +4825,17 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.5.11"
+version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234"
+checksum = "ae2a4cf385da23d1d53bc15cdfa5c2109e93d8d362393c801e87da2f72f0e201"
 dependencies = [
- "serde",
+ "indexmap 2.9.0",
+ "serde_core",
+ "serde_spanned",
+ "toml_datetime 0.7.3",
+ "toml_parser",
+ "toml_writer",
+ "winnow",
 ]
 
 [[package]]
@@ -4830,15 +4845,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3da5db5a963e24bc68be8b17b6fa82814bb22ee8660f192bb182771d498f09a3"
 
 [[package]]
+name = "toml_datetime"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2cdb639ebbc97961c51720f858597f7f24c4fc295327923af55b74c3c724533"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "toml_edit"
 version = "0.22.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "310068873db2c5b3e7659d2cc35d21855dbafa50d1ce336397c666e3cb08137e"
 dependencies = [
  "indexmap 2.9.0",
- "toml_datetime",
+ "toml_datetime 0.6.9",
  "winnow",
 ]
+
+[[package]]
+name = "toml_parser"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b551886f449aa90d4fe2bdaa9f4a2577ad2dde302c61ecf262d80b116db95c10"
+dependencies = [
+ "winnow",
+]
+
+[[package]]
+name = "toml_writer"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df8b2b54733674ad286d16267dcfc7a71ed5c776e4ac7aa3c3e2561f7c637bf2"
 
 [[package]]
 name = "tower"
@@ -5003,9 +5042,9 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "uniffi"
-version = "0.29.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dcd1d240101ba3b9d7532ae86d9cb64d9a7ff63e13a2b7b9e94a32a601d8233"
+checksum = "c866f627c3f04c3df068b68bb2d725492caaa539dd313e2a9d26bb85b1a32f4e"
 dependencies = [
  "anyhow",
  "camino",
@@ -5027,9 +5066,9 @@ dependencies = [
 
 [[package]]
 name = "uniffi_bindgen"
-version = "0.29.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d0525f06d749ea80d8049dc0bb038bb87941e3d909eefa76b6f0a5589b59ac5"
+checksum = "7c8ca600167641ebe7c8ba9254af40492dda3397c528cc3b2f511bd23e8541a5"
 dependencies = [
  "anyhow",
  "askama",
@@ -5053,9 +5092,9 @@ dependencies = [
 
 [[package]]
 name = "uniffi_build"
-version = "0.29.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aed2f0204e942bb9c11c9f11a323b4abf70cf11b2e5957d60b3f2728430f6c6f"
+checksum = "3e55c05228f4858bb258f651d21d743fcc1fe5a2ec20d3c0f9daefddb105ee4d"
 dependencies = [
  "anyhow",
  "camino",
@@ -5064,9 +5103,9 @@ dependencies = [
 
 [[package]]
 name = "uniffi_core"
-version = "0.29.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3fa8eb4d825b4ed095cb13483cba6927c3002b9eb603cef9b7688758cc3772e"
+checksum = "7e7a5a038ebffe8f4cf91416b154ef3c2468b18e828b7009e01b1b99938089f9"
 dependencies = [
  "anyhow",
  "async-compat",
@@ -5077,9 +5116,9 @@ dependencies = [
 
 [[package]]
 name = "uniffi_internal_macros"
-version = "0.29.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83b547d69d699e52f2129fde4b57ae0d00b5216e59ed5b56097c95c86ba06095"
+checksum = "e3c2a6f93e7b73726e2015696ece25ca0ac5a5f1cf8d6a7ab5214dd0a01d2edf"
 dependencies = [
  "anyhow",
  "indexmap 2.9.0",
@@ -5090,9 +5129,9 @@ dependencies = [
 
 [[package]]
 name = "uniffi_macros"
-version = "0.29.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00f1de72edc8cb9201c7d650e3678840d143e4499004571aac49e6cb1b17da43"
+checksum = "64c6309fc36c7992afc03bc0c5b059c656bccbef3f2a4bc362980017f8936141"
 dependencies = [
  "camino",
  "fs-err",
@@ -5107,9 +5146,9 @@ dependencies = [
 
 [[package]]
 name = "uniffi_meta"
-version = "0.29.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3acc9204632f6a555b2cba7c8852c5523bc1aa5f3eff605c64af5054ea28b72e"
+checksum = "0a138823392dba19b0aa494872689f97d0ee157de5852e2bec157ce6de9cdc22"
 dependencies = [
  "anyhow",
  "siphasher",
@@ -5119,9 +5158,9 @@ dependencies = [
 
 [[package]]
 name = "uniffi_pipeline"
-version = "0.29.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "54b5336a9a925b358183837d31541d12590b7fcec373256d3770de02dff24c69"
+checksum = "8c27c4b515d25f8e53cc918e238c39a79c3144a40eaf2e51c4a7958973422c29"
 dependencies = [
  "anyhow",
  "heck",
@@ -5132,9 +5171,9 @@ dependencies = [
 
 [[package]]
 name = "uniffi_udl"
-version = "0.29.2"
+version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f95e73373d85f04736bc51997d3e6855721144ec4384cae9ca8513c80615e129"
+checksum = "d0adacdd848aeed7af4f5af7d2f621d5e82531325d405e29463482becfdeafca"
 dependencies = [
  "anyhow",
  "textwrap",
@@ -5410,7 +5449,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
