@@ -8,21 +8,15 @@
  * Ensure `wasm-pack` artifacts exist in `walletkit/wasm/pkg` first.
  */
 
-import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgDir = join(__dirname, "pkg");
 
-const { default: init, Authenticator, Environment } = await import(
-  join(pkgDir, "walletkit_wasm.js")
-);
-
-console.log("Loading WASM...");
-const wasmBuffer = await readFile(join(pkgDir, "walletkit_wasm_bg.wasm"));
-await init(wasmBuffer);
-console.log("✓ WASM ready\n");
+const mod = await import(join(pkgDir, "walletkit_wasm.js"));
+const { Authenticator, Environment } = mod;
+console.log("✓ WASM module loaded\n");
 
 console.log("Environment constants:");
 console.log("  staging:", Environment.Staging().toString());

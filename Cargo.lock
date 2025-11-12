@@ -5707,7 +5707,6 @@ checksum = "4dcd1d240101ba3b9d7532ae86d9cb64d9a7ff63e13a2b7b9e94a32a601d8233"
 dependencies = [
  "anyhow",
  "camino",
- "cargo_metadata",
  "clap",
  "uniffi_bindgen",
  "uniffi_build",
@@ -5957,7 +5956,6 @@ dependencies = [
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
- "walletkit-core",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",

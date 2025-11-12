@@ -36,12 +36,12 @@ serde_json = "1"
 strum = { version = "0.27", features = ["derive"] }
 subtle = "2"
 thiserror = "2"
-tokio = { version = "1", features = ["sync"] }
 world-id-core = { workspace = true, optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 uniffi = { workspace = true, default-features = false }
+tokio = { version = "1", default-features = false, features = ["sync"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = [
@@ -50,6 +50,13 @@ reqwest = { version = "0.12", default-features = false, features = [
     "rustls-tls",
 ] }
 uniffi = { workspace = true, features = ["build", "tokio"] }
+tokio = { version = "1", features = [
+    "sync",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+    "time",
+] }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [

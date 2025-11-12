@@ -14,9 +14,6 @@ wasm-opt = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-walletkit-core = { path = "../walletkit-core", default-features = false, features = [
-    "v4",
-] }
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
