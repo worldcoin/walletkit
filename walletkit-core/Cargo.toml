@@ -30,7 +30,8 @@ ruint = { version = "1.17", default-features = false, features = [
     "ark-ff-04",
 ] }
 secrecy = "0.10"
-semaphore-rs = { version = "0.5" }
+# semaphore-rs uses mmap which doesn't compile on wasm; make it optional and gate on semaphore feature.
+semaphore-rs = { version = "0.5", optional = true }
 serde = "1"
 serde_json = "1"
 strum = { version = "0.27", features = ["derive"] }
@@ -78,7 +79,8 @@ rand = "0.8"
 default = ["common-apps", "semaphore", "v4"]
 common-apps = []
 http-tests = []
-semaphore = ["semaphore-rs/depth_30"]
+# Semaphore proof generation pulls mmap-rs (not wasm-compatible); require explicit opt-in.
+semaphore = ["dep:semaphore-rs", "semaphore-rs/depth_30"]
 v4 = ["world-id-core"]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.

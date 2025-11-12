@@ -100,6 +100,7 @@ impl From<reqwest::Error> for WalletKitError {
     }
 }
 
+#[cfg(feature = "semaphore")]
 impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     fn from(error: semaphore_rs::protocol::ProofError) -> Self {
         Self::ProofGeneration {

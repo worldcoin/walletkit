@@ -20,8 +20,8 @@ use crate::Environment;
     Display,
     Serialize,
     Deserialize,
-    uniffi::Enum,
 )]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]
 pub enum CredentialType {
