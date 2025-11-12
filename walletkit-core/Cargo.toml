@@ -25,11 +25,6 @@ alloy-core = { workspace = true }
 alloy-primitives = { workspace = true }
 hex = "0.4"
 log = "0.4"
-reqwest = { version = "0.12", default-features = false, features = [
-    "json",
-    "brotli",
-    "rustls-tls",
-] }
 ruint = { version = "1.17", default-features = false, features = [
     "alloc",
     "ark-ff-04",
@@ -42,11 +37,28 @@ strum = { version = "0.27", features = ["derive"] }
 subtle = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["sync"] }
-uniffi = { workspace = true, features = ["build", "tokio"] }
 world-id-core = { workspace = true, optional = true }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+uniffi = { workspace = true, default-features = false }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "brotli",
+    "rustls-tls",
+] }
+uniffi = { workspace = true, features = ["build", "tokio"] }
+
 [dev-dependencies]
-alloy = { version = "1", default-features = false, features = ["getrandom", "json", "contract", "node-bindings", "signer-local"] }
+alloy = { version = "1", default-features = false, features = [
+    "getrandom",
+    "json",
+    "contract",
+    "node-bindings",
+    "signer-local",
+] }
 chrono = "0.4.41"
 dotenvy = "0.15.7"
 mockito = "1.6"

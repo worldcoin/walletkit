@@ -4,7 +4,8 @@ use thiserror::Error;
 use world_id_core::AuthenticatorError;
 
 /// Error outputs from `WalletKit`
-#[derive(Debug, Error, uniffi::Error)]
+#[derive(Debug, Error)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Error))]
 pub enum WalletKitError {
     /// Invalid input provided (e.g., incorrect length, format, etc.)
     #[error("invalid_input_{attribute}")]

@@ -26,7 +26,8 @@ use strum::EnumString;
 /// Each environment uses different sources of truth for the World ID credentials.
 ///
 /// More information on testing for the World ID Protocol can be found in: `https://docs.world.org/world-id/quick-start/testing`
-#[derive(Debug, Clone, PartialEq, Eq, EnumString, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumString)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
 #[strum(serialize_all = "lowercase")]
 pub enum Environment {
     /// For testing purposes ONLY.
@@ -78,4 +79,5 @@ pub mod common_apps;
 mod merkle_tree;
 mod request;
 
+#[cfg(not(target_arch = "wasm32"))]
 uniffi::setup_scaffolding!("walletkit_core");
