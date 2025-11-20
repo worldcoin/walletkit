@@ -13,10 +13,11 @@ use serde::{Deserialize, Serialize};
 /// Particularly, when sending proof inputs/outputs as JSON on HTTP requests, the values SHOULD
 /// be represented as padded hex strings from Big Endian bytes.
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, uniffi::Object)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct U256Wrapper(pub U256);
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 impl U256Wrapper {
     /// Outputs a hex string representation of the `U256` value padded to 32 bytes (plus two bytes for the `0x` prefix).
     #[must_use]
@@ -48,7 +49,7 @@ impl U256Wrapper {
     ///
     /// Logically this will only support values up to 64 bits. For larger values a different initialization should be used.
     #[must_use]
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn from_u64(value: u64) -> Self {
         Self(U256::from(value))
     }
@@ -57,7 +58,7 @@ impl U256Wrapper {
     ///
     /// Logically this will only support values up to 32 bits. For larger values a different initialization should be used.
     #[must_use]
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn from_u32(value: u32) -> Self {
         Self(U256::from(value))
     }
@@ -69,7 +70,7 @@ impl U256Wrapper {
     /// # Errors
     ///
     /// Will return an `Error::InvalidNumber` if the input is not a valid `U256` value.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn from_limbs(limbs: Vec<u64>) -> Result<Self, WalletKitError> {
         let limbs = limbs
             .try_into()

@@ -9,10 +9,11 @@ use crate::{
 };
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct Authenticator(CoreAuthenticator);
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(async_runtime = "tokio"))]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///

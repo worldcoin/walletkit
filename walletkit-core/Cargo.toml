@@ -25,28 +25,48 @@ alloy-core = { workspace = true }
 alloy-primitives = { workspace = true }
 hex = "0.4"
 log = "0.4"
-reqwest = { version = "0.12", default-features = false, features = [
-    "json",
-    "brotli",
-    "rustls-tls",
-] }
 ruint = { version = "1.17", default-features = false, features = [
     "alloc",
     "ark-ff-04",
 ] }
 secrecy = "0.10"
-semaphore-rs = { version = "0.5" }
+# semaphore-rs uses mmap which doesn't compile on wasm; make it optional and gate on semaphore feature.
+semaphore-rs = { version = "0.5", optional = true }
 serde = "1"
 serde_json = "1"
 strum = { version = "0.27", features = ["derive"] }
 subtle = "2"
 thiserror = "2"
-tokio = { version = "1", features = ["sync"] }
-uniffi = { workspace = true, features = ["build", "tokio"] }
 world-id-core = { workspace = true, optional = true }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+uniffi = { workspace = true, default-features = false }
+tokio = { version = "1", default-features = false, features = ["sync"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "brotli",
+    "rustls-tls",
+] }
+uniffi = { workspace = true, features = ["build", "tokio"] }
+tokio = { version = "1", features = [
+    "sync",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+    "time",
+] }
+
 [dev-dependencies]
-alloy = { version = "1", default-features = false, features = ["getrandom", "json", "contract", "node-bindings", "signer-local"] }
+alloy = { version = "1", default-features = false, features = [
+    "getrandom",
+    "json",
+    "contract",
+    "node-bindings",
+    "signer-local",
+] }
 chrono = "0.4.41"
 dotenvy = "0.15.7"
 mockito = "1.6"
@@ -59,7 +79,8 @@ rand = "0.8"
 default = ["common-apps", "semaphore", "v4"]
 common-apps = []
 http-tests = []
-semaphore = ["semaphore-rs/depth_30"]
+# Semaphore proof generation pulls mmap-rs (not wasm-compatible); require explicit opt-in.
+semaphore = ["dep:semaphore-rs", "semaphore-rs/depth_30"]
 v4 = ["world-id-core"]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.

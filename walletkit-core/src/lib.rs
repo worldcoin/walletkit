@@ -26,7 +26,8 @@ use strum::EnumString;
 /// Each environment uses different sources of truth for the World ID credentials.
 ///
 /// More information on testing for the World ID Protocol can be found in: `https://docs.world.org/world-id/quick-start/testing`
-#[derive(Debug, Clone, PartialEq, Eq, EnumString, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumString)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
 #[strum(serialize_all = "lowercase")]
 pub enum Environment {
     /// For testing purposes ONLY.
@@ -58,13 +59,15 @@ pub use authenticator::Authenticator;
 pub(crate) mod defaults;
 
 ////////////////////////////////////////////////////////////////////////////////
-// Legacy modules
+// Legacy modules (require semaphore feature for proof generation)
 ////////////////////////////////////////////////////////////////////////////////
 
 /// Contains all components to interact and use a World ID
+#[cfg(feature = "semaphore")]
 pub mod world_id;
 
 /// This module handles World ID proof generation
+#[cfg(feature = "semaphore")]
 pub mod proof;
 
 /// This module exposes helper functions to interact with common apps & contracts related to the World ID Protocol.
@@ -75,7 +78,10 @@ pub mod common_apps;
 // Private modules
 ////////////////////////////////////////////////////////////////////////////////
 
+#[cfg(feature = "semaphore")]
 mod merkle_tree;
+#[cfg(feature = "semaphore")]
 mod request;
 
+#[cfg(not(target_arch = "wasm32"))]
 uniffi::setup_scaffolding!("walletkit_core");
