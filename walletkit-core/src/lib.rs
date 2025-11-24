@@ -26,8 +26,7 @@ use strum::EnumString;
 /// Each environment uses different sources of truth for the World ID credentials.
 ///
 /// More information on testing for the World ID Protocol can be found in: `https://docs.world.org/world-id/quick-start/testing`
-#[derive(Debug, Clone, PartialEq, Eq, EnumString)]
-#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+#[derive(Debug, Clone, PartialEq, Eq, EnumString, uniffi::Enum)]
 #[strum(serialize_all = "lowercase")]
 pub enum Environment {
     /// For testing purposes ONLY.
@@ -35,6 +34,8 @@ pub enum Environment {
     /// Live production environment. World ID Tree: `id.worldcoin.eth`
     Production,
 }
+
+pub(crate) mod primitives;
 
 mod credential_type;
 pub use credential_type::CredentialType;
@@ -44,6 +45,21 @@ pub mod error;
 
 /// Contains logging functionality that can be integrated with foreign language bindings.
 pub mod logger;
+
+mod u256;
+pub use u256::U256Wrapper;
+
+#[cfg(feature = "v4")]
+mod authenticator;
+#[cfg(feature = "v4")]
+pub use authenticator::Authenticator;
+
+#[cfg(feature = "v4")]
+pub(crate) mod defaults;
+
+////////////////////////////////////////////////////////////////////////////////
+// Legacy modules
+////////////////////////////////////////////////////////////////////////////////
 
 /// Contains all components to interact and use a World ID
 pub mod world_id;
@@ -55,9 +71,6 @@ pub mod proof;
 #[cfg(feature = "common-apps")]
 pub mod common_apps;
 
-mod u256;
-pub use u256::U256Wrapper;
-
 ////////////////////////////////////////////////////////////////////////////////
 // Private modules
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,5 +78,4 @@ pub use u256::U256Wrapper;
 mod merkle_tree;
 mod request;
 
-#[cfg(feature = "ffi")]
 uniffi::setup_scaffolding!("walletkit_core");

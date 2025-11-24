@@ -22,6 +22,7 @@ name = "walletkit_core"
 
 [dependencies]
 alloy-core = { workspace = true }
+alloy-primitives = { workspace = true }
 hex = "0.4"
 log = "0.4"
 reqwest = { version = "0.12", default-features = false, features = [
@@ -29,7 +30,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "brotli",
     "rustls-tls",
 ] }
-ruint = { version = "1", default-features = false, features = [
+ruint = { version = "1.17", default-features = false, features = [
     "alloc",
     "ark-ff-04",
 ] }
@@ -40,7 +41,9 @@ serde_json = "1"
 strum = { version = "0.27", features = ["derive"] }
 subtle = "2"
 thiserror = "2"
-uniffi = { workspace = true, optional = true, features = ["build", "tokio"] }
+tokio = { version = "1", features = ["sync"] }
+uniffi = { workspace = true, features = ["build", "tokio"] }
+world-id-core = { workspace = true, optional = true }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = ["getrandom", "json", "contract", "node-bindings", "signer-local"] }
@@ -48,15 +51,16 @@ chrono = "0.4.41"
 dotenvy = "0.15.7"
 mockito = "1.6"
 regex = "1.11"
-tokio = "1.47"
 tokio-test = "0.4"
+world-id-core = { workspace = true }
+rand = "0.8"
 
 [features]
-default = ["common-apps", "ffi", "semaphore"]
+default = ["common-apps", "semaphore", "v4"]
 common-apps = []
-ffi = ["dep:uniffi", "semaphore"]
 http-tests = []
 semaphore = ["semaphore-rs/depth_30"]
+v4 = ["world-id-core"]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
