@@ -21,10 +21,10 @@ impl Authenticator {
     #[uniffi::constructor]
     pub async fn init_with_defaults(
         seed: &[u8],
-        rpc_url: String,
+        rpc_url: Option<String>,
         environment: &Environment,
     ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url);
+        let config = Config::from_environment(environment, rpc_url)?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         Ok(Self(authenticator))
     }
@@ -53,14 +53,14 @@ impl Authenticator {
     #[uniffi::constructor]
     pub async fn init_or_create_blocking_with_defaults(
         seed: &[u8],
-        rpc_url: String,
+        rpc_url: Option<String>,
         environment: &Environment,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = Config::from_environment(environment, rpc_url);
+        let config = Config::from_environment(environment, rpc_url)?;
 
         let authenticator =
             CoreAuthenticator::init_or_create_blocking(seed, config, recovery_address)
@@ -124,9 +124,12 @@ impl Authenticator {
     pub async fn get_packed_account_index_remote(
         &self,
     ) -> Result<U256Wrapper, WalletKitError> {
+        let client = reqwest::Client::new(); // TODO: reuse client
         let packed_account_index = CoreAuthenticator::get_packed_account_index(
             self.0.onchain_address(),
-            &self.0.registry(),
+            self.0.registry().as_deref(),
+            &self.0.config,
+            &client,
         )
         .await?;
         Ok(packed_account_index.into())
@@ -161,12 +164,15 @@ mod tests {
 
         let seed = [2u8; 32];
         let config = Config::new(
-            mock_server.url(),
+            Some(mock_server.url()),
+            480,
             address!("0xd66aFbf92d684B4404B1ed3e9aDA85353c178dE2"),
             "https://world-id-indexer.stage-crypto.worldcoin.org".to_string(),
             "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
             vec![],
-        );
+            2,
+        )
+        .unwrap();
         let config = serde_json::to_string(&config).unwrap();
         Authenticator::init(&seed, &config).await.unwrap();
         drop(mock_server);

@@ -32,7 +32,7 @@ async fn test_authenticator_integration() {
     // When account doesn't exist, this should fail
     let authenticator = Authenticator::init_with_defaults(
         authenticator_seeder.to_bytes().as_slice(),
-        anvil.endpoint(),
+        Some(anvil.endpoint()),
         &Environment::Staging,
     )
     .await
@@ -65,7 +65,7 @@ async fn test_authenticator_integration() {
     // now the authenticator exists
     let authenticator = Authenticator::init_with_defaults(
         authenticator_seeder.to_bytes().as_slice(),
-        anvil.endpoint(),
+        Some(anvil.endpoint()),
         &Environment::Staging,
     )
     .await
