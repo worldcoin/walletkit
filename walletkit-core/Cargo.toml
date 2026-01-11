@@ -55,6 +55,11 @@ x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 hkdf = "0.12"
 rand_core = "0.6"
 
+# iOS platform dependencies (optional)
+security-framework = { version = "3.2", optional = true }
+fs2 = { version = "0.4", optional = true }
+libc = "0.2"
+
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [
     "getrandom",
@@ -70,6 +75,7 @@ regex = "1.11"
 tokio-test = "0.4"
 world-id-core = { workspace = true }
 rand = "0.8"
+tempfile = "3.14"
 
 [features]
 default = ["common-apps", "semaphore", "v4"]
@@ -81,6 +87,13 @@ v4 = ["world-id-core"]
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
 legacy-nullifiers = []
+
+# Platform-specific implementations for credential storage
+platform-ios = ["security-framework", "fs2"]
+platform-android = [] # Future: Android Keystore implementation
+platform-desktop = [
+    "fs2",
+] # Future: Desktop implementation (macOS/Windows/Linux)
 
 [package.metadata.docs.rs]
 no-default-features = true

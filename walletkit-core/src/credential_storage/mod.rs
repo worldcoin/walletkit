@@ -84,6 +84,10 @@ pub mod transfer;
 mod types;
 pub mod vault;
 
+// FFI bindings for mobile platforms
+#[cfg(feature = "platform-ios")]
+pub mod ffi;
+
 pub use error::StorageError;
 pub use types::*;
 
@@ -101,6 +105,11 @@ pub use provisioning::{DeviceKeyPair, ProvisioningPayload};
 
 // Re-export key transfer types for convenience
 pub use transfer::{ImportDecision, TransferPayload, TRANSFER_VERSION};
+
+// Note: FFI types are available via the `ffi` submodule when platform-ios is enabled.
+// They are intentionally not re-exported at this level to avoid naming conflicts
+// with internal types. Rust users should use the internal types directly.
+// FFI types are designed for Swift/Kotlin consumers via UniFFI.
 
 /// Result type alias for credential storage operations.
 pub type StorageResult<T> = Result<T, StorageError>;

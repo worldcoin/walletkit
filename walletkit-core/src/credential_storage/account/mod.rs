@@ -45,4 +45,4 @@ pub use derivation::{
 };
 pub use handle::AccountHandle;
 pub use state::{load_account_state, save_account_state, wrap_vault_key, unwrap_vault_key};
-pub use store::WorldIdStore;
+pub use store::{PlatformBundle, WorldIdStore};

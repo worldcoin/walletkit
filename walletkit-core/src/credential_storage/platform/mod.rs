@@ -55,3 +55,12 @@ pub use vault_store::VaultFileStore;
 
 // Re-export memory implementations for testing
 pub use memory::MemoryPlatform;
+
+// Platform-specific implementations
+
+/// iOS platform implementation using Keychain and file system.
+#[cfg(feature = "platform-ios")]
+pub mod ios;
+
+#[cfg(feature = "platform-ios")]
+pub use ios::{IosBlobStore, IosKeystore, IosLockManager, IosPlatform, IosVaultStore};
