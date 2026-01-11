@@ -25,6 +25,17 @@
 //! - [`VaultFileStore`] — Random-access file operations for the vault container
 //! - [`AccountLockManager`] — Per-account locking for serialized writes
 //!
+//! # Vault Engine
+//!
+//! The vault engine provides crash-safe storage with the following guarantees:
+//!
+//! - **Atomic transactions**: All mutations occur within a transaction
+//! - **Crash safety**: Interrupted transactions have no effect
+//! - **Append-only**: Records are only appended, never modified in place
+//! - **Dual superblocks**: A/B superblock scheme for atomic root updates
+//!
+//! See the [`vault`] module for details.
+//!
 //! [`DeviceKeystore`]: platform::DeviceKeystore
 //! [`AtomicBlobStore`]: platform::AtomicBlobStore
 //! [`VaultFileStore`]: platform::VaultFileStore
@@ -33,9 +44,13 @@
 mod error;
 pub mod platform;
 mod types;
+pub mod vault;
 
 pub use error::StorageError;
 pub use types::*;
+
+// Re-export key vault types for convenience
+pub use vault::{VaultFile, VaultKey, VaultTxn};
 
 /// Result type alias for credential storage operations.
 pub type StorageResult<T> = Result<T, StorageError>;
