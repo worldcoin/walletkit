@@ -204,9 +204,8 @@ pub fn load_account_state(
     device_id: &[u8; 16],
 ) -> StorageResult<Option<AccountState>> {
     // Read the encrypted blob
-    let ciphertext = match blob_store.read(ACCOUNT_STATE_FILENAME)? {
-        Some(data) => data,
-        None => return Ok(None),
+    let Some(ciphertext) = blob_store.read(ACCOUNT_STATE_FILENAME)? else {
+        return Ok(None);
     };
 
     // Build associated data

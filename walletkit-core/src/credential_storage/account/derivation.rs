@@ -204,7 +204,7 @@ pub fn compute_request_id(signed_request_bytes: &[u8]) -> [u8; 32] {
 ///
 /// # Returns
 ///
-/// A tuple of (issuer_blind_seed, session_blind_seed).
+/// A tuple of (`issuer_blind_seed`, `session_blind_seed`).
 ///
 /// # Panics
 ///
@@ -287,23 +287,23 @@ fn hmac_sha256(key: &[u8; 32], message: &[u8]) -> [u8; 32] {
     }
 
     // Compute inner and outer padded keys
-    let mut k_ipad = [0x36u8; BLOCK_SIZE];
-    let mut k_opad = [0x5cu8; BLOCK_SIZE];
+    let mut inner_pad = [0x36u8; BLOCK_SIZE];
+    let mut outer_pad = [0x5cu8; BLOCK_SIZE];
     for i in 0..BLOCK_SIZE {
-        k_ipad[i] ^= k_padded[i];
-        k_opad[i] ^= k_padded[i];
+        inner_pad[i] ^= k_padded[i];
+        outer_pad[i] ^= k_padded[i];
     }
 
     // Inner hash: H(K XOR ipad || message)
     let mut inner_hasher = Sha256::new();
-    inner_hasher.update(&k_ipad);
+    inner_hasher.update(inner_pad);
     inner_hasher.update(message);
     let inner_hash = inner_hasher.finalize();
 
     // Outer hash: H(K XOR opad || inner_hash)
     let mut outer_hasher = Sha256::new();
-    outer_hasher.update(&k_opad);
-    outer_hasher.update(&inner_hash);
+    outer_hasher.update(outer_pad);
+    outer_hasher.update(inner_hash);
     let outer_hash = outer_hasher.finalize();
 
     let mut result = [0u8; 32];

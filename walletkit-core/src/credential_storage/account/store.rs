@@ -106,7 +106,7 @@ where
     /// * `platform` - Platform bundle for creating stores
     /// * `lock_manager` - Lock manager for serialization
     #[must_use]
-    pub fn new(keystore: Arc<K>, platform: Arc<P>, lock_manager: Arc<L>) -> Self {
+    pub const fn new(keystore: Arc<K>, platform: Arc<P>, lock_manager: Arc<L>) -> Self {
         Self {
             keystore,
             platform,
@@ -169,7 +169,7 @@ where
 
         // Load account state
         let state = load_account_state(&*blob_store, &*self.keystore, account_id, &device_id)?
-            .ok_or_else(|| StorageError::AccountNotFound {
+            .ok_or(StorageError::AccountNotFound {
                 account_id: *account_id,
             })?;
 
@@ -303,6 +303,7 @@ where
     }
 
     /// Saves the device ID.
+    #[allow(clippy::unused_self)] // Kept for API consistency with load_or_create_device_id
     fn save_device_id(
         &self,
         blob_store: &dyn AtomicBlobStore,

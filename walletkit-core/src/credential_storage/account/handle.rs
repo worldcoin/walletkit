@@ -84,7 +84,7 @@ where
     ///
     /// This is typically called by `WorldIdStore` when opening or creating
     /// an account, not directly by users.
-    pub(crate) fn new(
+    pub(crate) const fn new(
         state: AccountState,
         vault: VaultFile<V>,
         blob_store: Arc<B>,
@@ -132,8 +132,7 @@ where
     /// # Errors
     ///
     /// This method doesn't fail - errors are only possible in `set_leaf_index_cache`.
-    #[must_use]
-    pub fn get_leaf_index_cache(&self) -> StorageResult<Option<u64>> {
+    pub const fn get_leaf_index_cache(&self) -> StorageResult<Option<u64>> {
         Ok(self.state.leaf_index_cache)
     }
 
@@ -231,7 +230,7 @@ where
     ///     Ok(())
     /// })?;
     /// ```
-    pub fn vault_mut(&mut self) -> &mut VaultFile<V> {
+    pub const fn vault_mut(&mut self) -> &mut VaultFile<V> {
         &mut self.vault
     }
 
