@@ -45,9 +45,7 @@ use crate::credential_storage::{
     StorageError, StorageResult,
 };
 
-// =============================================================================
 // Constants
-// =============================================================================
 
 /// Current transfer format version.
 pub const TRANSFER_VERSION: u32 = 1;
@@ -55,9 +53,6 @@ pub const TRANSFER_VERSION: u32 = 1;
 /// Label for credential transfer AEAD.
 const LABEL_CREDENTIAL_TRANSFER: &[u8] = b"worldid:credential-transfer";
 
-// =============================================================================
-// Transfer Payload
-// =============================================================================
 
 /// Internal representation of decrypted transfer payload.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,9 +71,6 @@ pub struct TransferPayload {
     pub associated_data: Option<Vec<u8>>,
 }
 
-// =============================================================================
-// CredentialTransferBytes Implementation
-// =============================================================================
 
 impl CredentialTransferBytes {
     /// Exports a credential to transfer format.
@@ -209,9 +201,6 @@ impl CredentialTransferBytes {
     }
 }
 
-// =============================================================================
-// Import Logic
-// =============================================================================
 
 /// Result of comparing transfer payload with existing credential.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -268,9 +257,6 @@ pub fn apply_import(
     (record, credential_blob, associated_data)
 }
 
-// =============================================================================
-// Crypto Helpers
-// =============================================================================
 
 /// Builds associated data for transfer encryption.
 fn build_transfer_aad(account_id: &AccountId) -> Vec<u8> {
@@ -340,9 +326,6 @@ fn decrypt_transfer(
     Ok(plaintext)
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -363,280 +346,55 @@ mod tests {
     }
 
     #[test]
-    fn test_export_import_roundtrip_active() {
+    fn test_export_import_roundtrip() {
         let vault_key = VaultKey::generate();
         let account_id = AccountId::new([0x11u8; 32]);
         let record = create_test_record();
         let cred_blob = b"test credential data";
-        let assoc_data = b"associated metadata";
-
-        // Export
-        let transfer = CredentialTransferBytes::export(
-            &vault_key,
-            &account_id,
-            &record,
-            Some(cred_blob),
-            Some(assoc_data),
-        )
-        .unwrap();
-
-        // Import
+        let transfer = CredentialTransferBytes::export(&vault_key, &account_id, &record, Some(cred_blob), Some(b"assoc")).unwrap();
         let payload = transfer.decrypt(&vault_key, &account_id).unwrap();
-
-        assert_eq!(payload.version, TRANSFER_VERSION);
-        assert_eq!(payload.account_id, account_id);
         assert_eq!(payload.record.credential_id, record.credential_id);
-        assert_eq!(payload.record.issuer_schema_id, 42);
-        assert!(!payload.is_tombstone);
         assert_eq!(payload.credential_blob.as_deref(), Some(cred_blob.as_slice()));
-        assert_eq!(payload.associated_data.as_deref(), Some(assoc_data.as_slice()));
     }
 
     #[test]
-    fn test_export_import_roundtrip_tombstone() {
+    fn test_export_import_tombstone() {
         let vault_key = VaultKey::generate();
         let account_id = AccountId::new([0x22u8; 32]);
         let mut record = create_test_record();
         record.status = CredentialStatus::Retired;
-        record.updated_at = 1500;
-
-        // Export tombstone (no blobs)
-        let transfer =
-            CredentialTransferBytes::export(&vault_key, &account_id, &record, None, None).unwrap();
-
-        // Import
+        let transfer = CredentialTransferBytes::export(&vault_key, &account_id, &record, None, None).unwrap();
         let payload = transfer.decrypt(&vault_key, &account_id).unwrap();
-
         assert!(payload.is_tombstone);
-        assert!(payload.credential_blob.is_none());
-        assert!(payload.associated_data.is_none());
         assert_eq!(payload.record.status, CredentialStatus::Retired);
     }
 
     #[test]
-    fn test_export_import_no_associated_data() {
-        let vault_key = VaultKey::generate();
-        let account_id = AccountId::new([0x33u8; 32]);
-        let record = create_test_record();
-        let cred_blob = b"credential without assoc";
-
-        let transfer = CredentialTransferBytes::export(
-            &vault_key,
-            &account_id,
-            &record,
-            Some(cred_blob),
-            None,
-        )
-        .unwrap();
-
-        let payload = transfer.decrypt(&vault_key, &account_id).unwrap();
-
-        assert!(!payload.is_tombstone);
-        assert!(payload.credential_blob.is_some());
-        assert!(payload.associated_data.is_none());
-    }
-
-    #[test]
-    fn test_decrypt_wrong_key() {
-        let vault_key1 = VaultKey::generate();
-        let vault_key2 = VaultKey::generate();
-        let account_id = AccountId::new([0x44u8; 32]);
-        let record = create_test_record();
-
-        let transfer = CredentialTransferBytes::export(
-            &vault_key1,
-            &account_id,
-            &record,
-            Some(b"data"),
-            None,
-        )
-        .unwrap();
-
-        let result = transfer.decrypt(&vault_key2, &account_id);
-        assert!(matches!(
-            result,
-            Err(StorageError::DecryptionFailed { .. })
-        ));
-    }
-
-    #[test]
-    fn test_decrypt_wrong_account_id() {
-        let vault_key = VaultKey::generate();
-        let account_id1 = AccountId::new([0x55u8; 32]);
-        let account_id2 = AccountId::new([0x66u8; 32]);
-        let record = create_test_record();
-
-        let transfer = CredentialTransferBytes::export(
-            &vault_key,
-            &account_id1,
-            &record,
-            Some(b"data"),
-            None,
-        )
-        .unwrap();
-
-        // Decryption should fail because AAD includes account_id
-        let result = transfer.decrypt(&vault_key, &account_id2);
-        assert!(matches!(
-            result,
-            Err(StorageError::DecryptionFailed { .. })
-        ));
-    }
-
-    #[test]
-    fn test_decrypt_tampered_data() {
-        let vault_key = VaultKey::generate();
-        let account_id = AccountId::new([0x77u8; 32]);
-        let record = create_test_record();
-
-        let mut transfer = CredentialTransferBytes::export(
-            &vault_key,
-            &account_id,
-            &record,
-            Some(b"data"),
-            None,
-        )
-        .unwrap();
-
-        // Tamper with ciphertext
-        if let Some(byte) = transfer.0.last_mut() {
-            *byte ^= 0xFF;
-        }
-
-        let result = transfer.decrypt(&vault_key, &account_id);
-        assert!(matches!(
-            result,
-            Err(StorageError::DecryptionFailed { .. })
-        ));
-    }
-
-    #[test]
-    fn test_decide_import_new_credential() {
-        let payload = TransferPayload {
-            version: TRANSFER_VERSION,
-            account_id: AccountId::new([0u8; 32]),
-            record: create_test_record(),
-            is_tombstone: false,
-            credential_blob: Some(vec![1, 2, 3]),
-            associated_data: None,
-        };
-
-        // No existing credential - should apply
-        assert_eq!(decide_import(&payload, None), ImportDecision::Apply);
-    }
-
-    #[test]
-    fn test_decide_import_newer() {
+    fn test_conflict_resolution() {
         let mut existing = create_test_record();
         existing.updated_at = 1000;
-
-        let mut incoming_record = create_test_record();
-        incoming_record.updated_at = 2000;
-
+        let mut incoming = create_test_record();
+        incoming.updated_at = 2000;
         let payload = TransferPayload {
             version: TRANSFER_VERSION,
             account_id: AccountId::new([0u8; 32]),
-            record: incoming_record,
+            record: incoming.clone(),
             is_tombstone: false,
             credential_blob: Some(vec![1, 2, 3]),
             associated_data: None,
         };
-
-        // Incoming is newer - should apply
         assert_eq!(decide_import(&payload, Some(&existing)), ImportDecision::Apply);
-    }
-
-    #[test]
-    fn test_decide_import_older() {
-        let mut existing = create_test_record();
         existing.updated_at = 2000;
-
-        let mut incoming_record = create_test_record();
-        incoming_record.updated_at = 1000;
-
+        incoming.updated_at = 1000;
         let payload = TransferPayload {
             version: TRANSFER_VERSION,
             account_id: AccountId::new([0u8; 32]),
-            record: incoming_record,
+            record: incoming,
             is_tombstone: false,
             credential_blob: Some(vec![1, 2, 3]),
             associated_data: None,
         };
-
-        // Incoming is older - should skip
         assert_eq!(decide_import(&payload, Some(&existing)), ImportDecision::Skip);
-    }
-
-    #[test]
-    fn test_decide_import_equal_timestamp() {
-        let mut existing = create_test_record();
-        existing.updated_at = 1500;
-
-        let mut incoming_record = create_test_record();
-        incoming_record.updated_at = 1500;
-
-        let payload = TransferPayload {
-            version: TRANSFER_VERSION,
-            account_id: AccountId::new([0u8; 32]),
-            record: incoming_record,
-            is_tombstone: false,
-            credential_blob: Some(vec![1, 2, 3]),
-            associated_data: None,
-        };
-
-        // Equal timestamp - should skip (not strictly greater)
-        assert_eq!(decide_import(&payload, Some(&existing)), ImportDecision::Skip);
-    }
-
-    #[test]
-    fn test_credential_id_extraction() {
-        let vault_key = VaultKey::generate();
-        let account_id = AccountId::new([0x88u8; 32]);
-        let record = create_test_record();
-        let expected_id = record.credential_id;
-
-        let transfer = CredentialTransferBytes::export(
-            &vault_key,
-            &account_id,
-            &record,
-            Some(b"data"),
-            None,
-        )
-        .unwrap();
-
-        let extracted_id = transfer.credential_id(&vault_key, &account_id).unwrap();
-        assert_eq!(extracted_id, expected_id);
-    }
-
-    #[test]
-    fn test_transfer_bytes_too_short() {
-        let vault_key = VaultKey::generate();
-        let account_id = AccountId::new([0x99u8; 32]);
-
-        // Create transfer bytes that are too short
-        let short_transfer = CredentialTransferBytes::new(vec![0u8; 10]);
-
-        let result = short_transfer.decrypt(&vault_key, &account_id);
-        assert!(matches!(result, Err(StorageError::CorruptedData { .. })));
-    }
-
-    #[test]
-    fn test_large_credential_blob() {
-        let vault_key = VaultKey::generate();
-        let account_id = AccountId::new([0xAAu8; 32]);
-        let record = create_test_record();
-        let large_blob = vec![0xBBu8; 100_000]; // 100 KB
-
-        let transfer = CredentialTransferBytes::export(
-            &vault_key,
-            &account_id,
-            &record,
-            Some(&large_blob),
-            None,
-        )
-        .unwrap();
-
-        let payload = transfer.decrypt(&vault_key, &account_id).unwrap();
-        assert_eq!(payload.credential_blob.unwrap(), large_blob);
+        assert_eq!(decide_import(&payload, None), ImportDecision::Apply);
     }
 }

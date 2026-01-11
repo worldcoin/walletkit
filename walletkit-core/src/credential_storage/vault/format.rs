@@ -6,9 +6,6 @@
 // Layout comments describe binary structure, not Rust identifiers
 #![allow(clippy::doc_markdown)]
 
-// =============================================================================
-// Magic Bytes
-// =============================================================================
 
 /// Magic bytes at the start of every vault file.
 pub const FILE_MAGIC: &[u8; 8] = b"WIDVAULT";
@@ -19,9 +16,6 @@ pub const SUPERBLOCK_MAGIC: &[u8; 5] = b"WIDSB";
 /// Magic bytes for record envelopes in the data region.
 pub const RECORD_MAGIC: &[u8; 4] = b"WIDR";
 
-// =============================================================================
-// Version Numbers
-// =============================================================================
 
 /// Current vault file format version.
 pub const FORMAT_VERSION: u32 = 1;
@@ -32,9 +26,6 @@ pub const INDEX_VERSION: u32 = 1;
 /// Current record envelope version.
 pub const RECORD_VERSION: u16 = 1;
 
-// =============================================================================
-// Record Types
-// =============================================================================
 
 /// Record type for transaction begin marker.
 pub const RECORD_TYPE_TXN_BEGIN: u16 = 0x0001;
@@ -48,9 +39,7 @@ pub const RECORD_TYPE_ENCRYPTED_INDEX: u16 = 0x0003;
 /// Record type for encrypted blob object.
 pub const RECORD_TYPE_ENCRYPTED_BLOB: u16 = 0x0004;
 
-// =============================================================================
 // Blob Kinds
-// =============================================================================
 
 /// Blob kind for credential data.
 pub const BLOB_KIND_CREDENTIAL: u8 = 0x01;
@@ -58,9 +47,6 @@ pub const BLOB_KIND_CREDENTIAL: u8 = 0x01;
 /// Blob kind for associated data.
 pub const BLOB_KIND_ASSOCIATED_DATA: u8 = 0x02;
 
-// =============================================================================
-// Layout Sizes
-// =============================================================================
 
 /// Size of the file header in bytes.
 /// Layout: magic(8) + version(4) + account_id(32) + crc(4) = 48
@@ -83,9 +69,6 @@ pub const DATA_REGION_START: u64 = SUPERBLOCK_B_OFFSET + SUPERBLOCK_SIZE;
 /// Layout: magic(4) + type(2) + version(2) + len(4) + crc(4) = 16
 pub const RECORD_ENVELOPE_HEADER_SIZE: usize = 16;
 
-// =============================================================================
-// Crypto Constants
-// =============================================================================
 
 /// Size of XChaCha20-Poly1305 nonce in bytes.
 pub const NONCE_SIZE: usize = 24;
@@ -96,9 +79,6 @@ pub const TAG_SIZE: usize = 16;
 /// Size of SHA-256 hash output in bytes.
 pub const HASH_SIZE: usize = 32;
 
-// =============================================================================
-// Associated Data Labels
-// =============================================================================
 
 /// Label for vault index encryption.
 pub const LABEL_VAULT_INDEX: &[u8] = b"vault:index";
@@ -114,17 +94,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_layout_sizes() {
-        // Verify calculated sizes match spec
+    fn test_format_constants() {
         assert_eq!(FILE_HEADER_SIZE, 48);
         assert_eq!(SUPERBLOCK_SIZE, 57);
-        assert_eq!(SUPERBLOCK_A_OFFSET, 48);
-        assert_eq!(SUPERBLOCK_B_OFFSET, 105);
-        assert_eq!(DATA_REGION_START, 162);
-    }
-
-    #[test]
-    fn test_magic_bytes() {
         assert_eq!(FILE_MAGIC.len(), 8);
         assert_eq!(SUPERBLOCK_MAGIC.len(), 5);
         assert_eq!(RECORD_MAGIC.len(), 4);

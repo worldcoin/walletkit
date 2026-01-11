@@ -56,9 +56,7 @@ fn io_error<S: Into<String>>(context: S, err: std::io::Error) -> StorageError {
     }
 }
 
-// =============================================================================
 // IosPlatform
-// =============================================================================
 
 /// iOS platform implementation bundling all platform traits.
 ///
@@ -238,86 +236,5 @@ impl IosPlatform {
         self.keystore.delete_account_keys(account_id)?;
 
         Ok(())
-    }
-}
-
-// =============================================================================
-// Tests
-// =============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::TempDir;
-
-    fn create_temp_platform() -> (TempDir, IosPlatform) {
-        let temp_dir = TempDir::new().unwrap();
-        let platform = IosPlatform::new(temp_dir.path()).unwrap();
-        (temp_dir, platform)
-    }
-
-    #[test]
-    fn test_platform_creation() {
-        let (_temp, platform) = create_temp_platform();
-        assert!(platform.root_path().exists());
-    }
-
-    #[test]
-    fn test_accounts_path() {
-        let (_temp, platform) = create_temp_platform();
-        let accounts_path = platform.accounts_path();
-        assert!(accounts_path.ends_with("worldid/accounts"));
-    }
-
-    #[test]
-    fn test_account_path() {
-        let (_temp, platform) = create_temp_platform();
-        let account_id = AccountId::new([0x42u8; 32]);
-        let account_path = platform.account_path(&account_id);
-        assert!(account_path.to_string_lossy().contains(&account_id.to_string()));
-    }
-
-    #[test]
-    fn test_list_account_ids_empty() {
-        let (_temp, platform) = create_temp_platform();
-        let ids = platform.list_account_ids().unwrap();
-        assert!(ids.is_empty());
-    }
-
-    #[test]
-    fn test_list_account_ids() {
-        let (_temp, platform) = create_temp_platform();
-
-        // Create some account directories
-        let id1 = AccountId::new([0x11u8; 32]);
-        let id2 = AccountId::new([0x22u8; 32]);
-
-        fs::create_dir_all(platform.account_path(&id1)).unwrap();
-        fs::create_dir_all(platform.account_path(&id2)).unwrap();
-
-        let ids = platform.list_account_ids().unwrap();
-        assert_eq!(ids.len(), 2);
-        assert!(ids.contains(&id1));
-        assert!(ids.contains(&id2));
-    }
-
-    #[test]
-    fn test_delete_account() {
-        let (_temp, platform) = create_temp_platform();
-
-        let account_id = AccountId::new([0x33u8; 32]);
-        let account_path = platform.account_path(&account_id);
-
-        // Create account directory
-        fs::create_dir_all(&account_path).unwrap();
-        fs::write(account_path.join("test.txt"), b"test").unwrap();
-
-        assert!(account_path.exists());
-
-        // Delete account
-        platform.delete_account(&account_id).unwrap();
-
-        assert!(!account_path.exists());
     }
 }

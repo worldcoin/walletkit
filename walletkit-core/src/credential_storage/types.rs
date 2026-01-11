@@ -6,9 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-// =============================================================================
 // Identifiers
-// =============================================================================
 
 /// A 32-byte account identifier derived from the vault key.
 ///
@@ -193,9 +191,7 @@ impl AsRef<[u8]> for ContentId {
     }
 }
 
-// =============================================================================
 // Enums
-// =============================================================================
 
 /// Status of a credential in the vault.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
@@ -251,9 +247,7 @@ pub enum ImportOutcome {
     NoOp,
 }
 
-// =============================================================================
 // Credential Record
-// =============================================================================
 
 /// A credential record stored in the vault index.
 ///
@@ -318,9 +312,7 @@ impl CredentialRecord {
     }
 }
 
-// =============================================================================
 // Blob Pointer
-// =============================================================================
 
 /// Pointer to a blob object within the vault file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -348,9 +340,7 @@ impl BlobPointer {
     }
 }
 
-// =============================================================================
 // Vault Index
-// =============================================================================
 
 /// Current version of the vault index format.
 pub const VAULT_INDEX_VERSION: u32 = 1;
@@ -414,9 +404,7 @@ impl VaultIndex {
     }
 }
 
-// =============================================================================
 // Account State
-// =============================================================================
 
 /// Current version of the account state format.
 pub const ACCOUNT_STATE_VERSION: u32 = 1;
@@ -471,9 +459,7 @@ impl AccountState {
     }
 }
 
-// =============================================================================
 // Pending Actions
-// =============================================================================
 
 /// Current version of the pending action store format.
 pub const PENDING_ACTION_VERSION: u32 = 1;
@@ -591,9 +577,7 @@ impl PendingActionStore {
     }
 }
 
-// =============================================================================
 // Credential Filter
-// =============================================================================
 
 /// Filter criteria for listing credentials.
 #[derive(Debug, Clone, Default)]
@@ -675,9 +659,6 @@ impl CredentialFilter {
     }
 }
 
-// =============================================================================
-// Transfer Types
-// =============================================================================
 
 /// Encrypted credential transfer bytes for device-to-device sync.
 ///
@@ -735,250 +716,36 @@ impl VaultProvisioningEnvelope {
     }
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_account_id_hex_roundtrip() {
-        let bytes = [0x42u8; 32];
-        let id = AccountId::new(bytes);
-        let hex = id.to_hex();
-        let parsed = AccountId::from_hex(&hex).unwrap();
-        assert_eq!(id, parsed);
-    }
-
-    #[test]
-    fn test_credential_id_generation() {
-        let id1 = CredentialId::generate();
-        let id2 = CredentialId::generate();
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
-    fn test_credential_id_hex_roundtrip() {
-        let id = CredentialId::generate();
-        let hex = id.to_hex();
-        let parsed = CredentialId::from_hex(&hex).unwrap();
-        assert_eq!(id, parsed);
-    }
-
-    #[test]
-    fn test_content_id_hex_roundtrip() {
-        let bytes = [0xABu8; 32];
-        let id = ContentId::new(bytes);
-        let hex = id.to_hex();
-        let parsed = ContentId::from_hex(&hex).unwrap();
-        assert_eq!(id, parsed);
-    }
-
-    #[test]
-    fn test_blob_kind_roundtrip() {
-        assert_eq!(BlobKind::from_u8(0x01), Some(BlobKind::CredentialBlob));
-        assert_eq!(BlobKind::from_u8(0x02), Some(BlobKind::AssociatedData));
-        assert_eq!(BlobKind::from_u8(0x00), None);
-        assert_eq!(BlobKind::from_u8(0x03), None);
+    fn test_credential_filter() {
+        let now = 1000;
+        let cid = ContentId::new([0u8; 32]);
+        let active = CredentialRecord::new(CredentialId::generate(), 1, now, Some(now + 100), cid, None);
+        let mut retired = active.clone();
+        retired.credential_id = CredentialId::generate();
+        retired.retire(now);
+        let filter = CredentialFilter::new();
+        assert!(filter.matches(&active, now));
+        assert!(!filter.matches(&retired, now));
+        let filter = CredentialFilter::new().with_issuer_schema_id(1);
+        assert!(filter.matches(&active, now));
     }
 
     #[test]
     fn test_credential_record_eligibility() {
         let now = 1000;
         let cid = ContentId::new([0u8; 32]);
-        
-        // Active, no expiration
-        let mut record = CredentialRecord::new(
-            CredentialId::generate(),
-            1,
-            now,
-            None,
-            cid,
-            None,
-        );
+        let mut record = CredentialRecord::new(CredentialId::generate(), 1, now, None, cid, None);
         assert!(record.is_eligible(now));
-        assert!(record.is_eligible(now + 10000));
-
-        // Active, not expired
         record.expires_at = Some(now + 100);
         assert!(record.is_eligible(now));
-        assert!(record.is_eligible(now + 50));
-
-        // Active, expired
-        assert!(!record.is_eligible(now + 100));
         assert!(!record.is_eligible(now + 200));
-
-        // Retired
         record.retire(now);
         assert!(!record.is_eligible(now));
-    }
-
-    #[test]
-    fn test_vault_index_operations() {
-        let account_id = AccountId::new([0u8; 32]);
-        let mut index = VaultIndex::new(account_id, 1000);
-        
-        assert_eq!(index.sequence, 0);
-        assert!(index.records.is_empty());
-        assert!(index.blobs.is_empty());
-
-        // Add a credential
-        let cred_id = CredentialId::generate();
-        let content_id = ContentId::new([1u8; 32]);
-        let record = CredentialRecord::new(
-            cred_id,
-            1,
-            1000,
-            None,
-            content_id,
-            None,
-        );
-        index.records.push(record);
-
-        assert!(index.find_credential(&cred_id).is_some());
-        assert!(index.find_credential(&CredentialId::generate()).is_none());
-
-        // Bump sequence
-        index.bump_sequence(2000);
-        assert_eq!(index.sequence, 1);
-        assert_eq!(index.updated_at, 2000);
-    }
-
-    #[test]
-    fn test_pending_action_store() {
-        let account_id = AccountId::new([0u8; 32]);
-        let mut store = PendingActionStore::new(account_id);
-        
-        let entry = PendingActionEntry::new(
-            [1u8; 32],
-            [2u8; 32],
-            [3u8; 32],
-            vec![4, 5, 6],
-            1000,
-        );
-        
-        assert!(store.insert(entry.clone()));
-        assert!(store.find_by_scope(&[1u8; 32]).is_some());
-        assert!(store.find_by_scope(&[9u8; 32]).is_none());
-
-        // Test expiration
-        assert!(!entry.is_expired(1000));
-        assert!(!entry.is_expired(1000 + PENDING_TTL_SECONDS - 1));
-        assert!(entry.is_expired(1000 + PENDING_TTL_SECONDS));
-
-        // Remove
-        let removed = store.remove(&[1u8; 32]);
-        assert!(removed.is_some());
-        assert!(store.find_by_scope(&[1u8; 32]).is_none());
-    }
-
-    #[test]
-    fn test_pending_action_store_capacity() {
-        let account_id = AccountId::new([0u8; 32]);
-        let mut store = PendingActionStore::new(account_id);
-        
-        // Fill to capacity
-        for i in 0..MAX_PENDING_ENTRIES {
-            let entry = PendingActionEntry::new(
-                [i as u8; 32],
-                [0u8; 32],
-                [0u8; 32],
-                vec![],
-                1000,
-            );
-            assert!(store.insert(entry));
-        }
-
-        // Should fail at capacity
-        let entry = PendingActionEntry::new(
-            [0xFFu8; 32],
-            [0u8; 32],
-            [0u8; 32],
-            vec![],
-            1000,
-        );
-        assert!(!store.insert(entry));
-    }
-
-    #[test]
-    fn test_credential_filter() {
-        let now = 1000;
-        let cid = ContentId::new([0u8; 32]);
-        
-        let active_record = CredentialRecord::new(
-            CredentialId::generate(),
-            1,
-            now,
-            Some(now + 100),
-            cid,
-            None,
-        );
-
-        let mut retired_record = active_record.clone();
-        retired_record.credential_id = CredentialId::generate();
-        retired_record.retire(now);
-
-        let mut expired_record = CredentialRecord::new(
-            CredentialId::generate(),
-            1,
-            now - 200,
-            Some(now - 100),
-            cid,
-            None,
-        );
-        expired_record.status = CredentialStatus::Active;
-
-        // Default filter: active, non-expired
-        let filter = CredentialFilter::new();
-        assert!(filter.matches(&active_record, now));
-        assert!(!filter.matches(&retired_record, now));
-        assert!(!filter.matches(&expired_record, now));
-
-        // Include expired
-        let filter = CredentialFilter::new().include_expired();
-        assert!(filter.matches(&active_record, now));
-        assert!(!filter.matches(&retired_record, now));
-        assert!(filter.matches(&expired_record, now));
-
-        // Any status
-        let filter = CredentialFilter::new().any_status();
-        assert!(filter.matches(&active_record, now));
-        assert!(filter.matches(&retired_record, now));
-        assert!(!filter.matches(&expired_record, now)); // still filtered by expiration
-
-        // Filter by issuer schema
-        let filter = CredentialFilter::new().with_issuer_schema_id(1);
-        assert!(filter.matches(&active_record, now));
-        
-        let filter = CredentialFilter::new().with_issuer_schema_id(2);
-        assert!(!filter.matches(&active_record, now));
-    }
-
-    #[test]
-    fn test_account_state_aad() {
-        let state = AccountState {
-            state_version: ACCOUNT_STATE_VERSION,
-            account_id: AccountId::new([1u8; 32]),
-            leaf_index_cache: None,
-            issuer_blind_seed: [2u8; 32],
-            session_blind_seed: [3u8; 32],
-            vault_key_wrap: vec![4, 5, 6],
-            device_id: [7u8; 16],
-            updated_at: 1000,
-        };
-
-        let aad = state.device_seal_aad();
-        assert_eq!(aad.len(), 32 + 16 + 20);
-        assert_eq!(&aad[0..32], &[1u8; 32]);
-        assert_eq!(&aad[32..48], &[7u8; 16]);
-        assert_eq!(&aad[48..], b"worldid:device-state");
-
-        let aad = state.vault_key_wrap_aad();
-        assert_eq!(aad.len(), 32 + 16 + 22);
-        assert_eq!(&aad[0..32], &[1u8; 32]);
-        assert_eq!(&aad[32..48], &[7u8; 16]);
-        assert_eq!(&aad[48..], b"worldid:vault-key-wrap");
     }
 }

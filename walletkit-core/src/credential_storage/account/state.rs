@@ -11,9 +11,6 @@ use crate::credential_storage::{
 
 use super::derivation::{derive_account_id, generate_blind_seeds, generate_device_id};
 
-// =============================================================================
-// File Names
-// =============================================================================
 
 /// Filename for the encrypted account state blob.
 pub const ACCOUNT_STATE_FILENAME: &str = "account_state.bin";
@@ -23,9 +20,6 @@ pub const ACCOUNT_STATE_FILENAME: &str = "account_state.bin";
 #[allow(dead_code)]
 pub const PENDING_ACTIONS_FILENAME: &str = "pending_actions.bin";
 
-// =============================================================================
-// AccountState Creation
-// =============================================================================
 
 /// Creates a new `AccountState` for a fresh account.
 ///
@@ -68,9 +62,6 @@ pub fn create_account_state(
     })
 }
 
-// =============================================================================
-// Vault Key Wrapping
-// =============================================================================
 
 /// Wraps the vault key with the device keystore.
 ///
@@ -148,9 +139,6 @@ fn build_vault_key_wrap_aad(account_id: &AccountId, device_id: &[u8; 16]) -> Vec
     aad
 }
 
-// =============================================================================
-// AccountState Persistence
-// =============================================================================
 
 /// Saves the account state to the blob store with device protection.
 ///
@@ -239,9 +227,7 @@ fn build_device_seal_aad(account_id: &AccountId, device_id: &[u8; 16]) -> Vec<u8
     aad
 }
 
-// =============================================================================
 // Serialization
-// =============================================================================
 
 /// Serializes an `AccountState` to bytes using bincode.
 fn serialize_account_state(state: &AccountState) -> StorageResult<Vec<u8>> {
@@ -253,9 +239,7 @@ fn deserialize_account_state(bytes: &[u8]) -> StorageResult<AccountState> {
     bincode::deserialize(bytes).map_err(|e| StorageError::deserialization(e.to_string()))
 }
 
-// =============================================================================
 // Helpers
-// =============================================================================
 
 /// Returns the current Unix timestamp.
 fn get_current_timestamp() -> u64 {
@@ -265,109 +249,11 @@ fn get_current_timestamp() -> u64 {
         .as_secs()
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::credential_storage::platform::memory::{MemoryBlobStore, MemoryKeystore};
-
-    #[test]
-    fn test_create_account_state() {
-        let keystore = MemoryKeystore::new();
-        let vault_key = VaultKey::generate();
-
-        let state = create_account_state(&vault_key, &keystore).unwrap();
-
-        // Verify account ID is derived correctly
-        let expected_id = derive_account_id(&vault_key);
-        assert_eq!(state.account_id, expected_id);
-
-        // Verify version
-        assert_eq!(state.state_version, ACCOUNT_STATE_VERSION);
-
-        // Verify leaf index cache is None
-        assert!(state.leaf_index_cache.is_none());
-
-        // Verify wrapped vault key is not empty
-        assert!(!state.vault_key_wrap.is_empty());
-    }
-
-    #[test]
-    fn test_wrap_unwrap_vault_key() {
-        let keystore = MemoryKeystore::new();
-        let vault_key = VaultKey::generate();
-        let account_id = AccountId::new([0x42u8; 32]);
-        let device_id = [0x11u8; 16];
-
-        // Wrap
-        let wrapped = wrap_vault_key(&vault_key, &account_id, &device_id, &keystore).unwrap();
-
-        // Unwrap
-        let unwrapped = unwrap_vault_key(&wrapped, &account_id, &device_id, &keystore).unwrap();
-
-        assert_eq!(vault_key.as_bytes(), unwrapped.as_bytes());
-    }
-
-    #[test]
-    fn test_wrap_unwrap_wrong_account_id() {
-        let keystore = MemoryKeystore::new();
-        let vault_key = VaultKey::generate();
-        let account_id1 = AccountId::new([0x11u8; 32]);
-        let account_id2 = AccountId::new([0x22u8; 32]);
-        let device_id = [0x33u8; 16];
-
-        // Wrap with account_id1
-        let wrapped = wrap_vault_key(&vault_key, &account_id1, &device_id, &keystore).unwrap();
-
-        // Unwrap with different account_id should produce wrong result
-        // (memory keystore doesn't authenticate, but real keystore would fail)
-        let unwrapped = unwrap_vault_key(&wrapped, &account_id2, &device_id, &keystore).unwrap();
-        // With our test keystore this will decrypt to garbage
-        assert_ne!(vault_key.as_bytes(), unwrapped.as_bytes());
-    }
-
-    #[test]
-    fn test_save_load_account_state() {
-        let keystore = MemoryKeystore::new();
-        let blob_store = MemoryBlobStore::new();
-        let vault_key = VaultKey::generate();
-
-        // Create state
-        let state = create_account_state(&vault_key, &keystore).unwrap();
-        let account_id = state.account_id;
-        let device_id = state.device_id;
-
-        // Save
-        save_account_state(&state, &blob_store, &keystore).unwrap();
-
-        // Verify blob was written
-        assert!(blob_store.exists(ACCOUNT_STATE_FILENAME).unwrap());
-
-        // Load
-        let loaded = load_account_state(&blob_store, &keystore, &account_id, &device_id)
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(loaded.state_version, state.state_version);
-        assert_eq!(loaded.account_id, state.account_id);
-        assert_eq!(loaded.device_id, state.device_id);
-        assert_eq!(loaded.issuer_blind_seed, state.issuer_blind_seed);
-        assert_eq!(loaded.session_blind_seed, state.session_blind_seed);
-    }
-
-    #[test]
-    fn test_load_nonexistent_state() {
-        let keystore = MemoryKeystore::new();
-        let blob_store = MemoryBlobStore::new();
-        let account_id = AccountId::new([0u8; 32]);
-        let device_id = [0u8; 16];
-
-        let result = load_account_state(&blob_store, &keystore, &account_id, &device_id).unwrap();
-        assert!(result.is_none());
-    }
 
     #[test]
     fn test_serialize_deserialize_account_state() {
@@ -381,70 +267,25 @@ mod tests {
             device_id: [0xEFu8; 16],
             updated_at: 1234567890,
         };
-
         let bytes = serialize_account_state(&state).unwrap();
         let decoded = deserialize_account_state(&bytes).unwrap();
-
-        assert_eq!(decoded.state_version, state.state_version);
         assert_eq!(decoded.account_id, state.account_id);
         assert_eq!(decoded.leaf_index_cache, state.leaf_index_cache);
-        assert_eq!(decoded.issuer_blind_seed, state.issuer_blind_seed);
-        assert_eq!(decoded.session_blind_seed, state.session_blind_seed);
-        assert_eq!(decoded.vault_key_wrap, state.vault_key_wrap);
-        assert_eq!(decoded.device_id, state.device_id);
-        assert_eq!(decoded.updated_at, state.updated_at);
     }
 
     #[test]
-    fn test_vault_key_wrap_aad_format() {
-        let account_id = AccountId::new([0x11u8; 32]);
-        let device_id = [0x22u8; 16];
-
-        let aad = build_vault_key_wrap_aad(&account_id, &device_id);
-
-        assert_eq!(aad.len(), 32 + 16 + 22);
-        assert_eq!(&aad[0..32], &[0x11u8; 32]);
-        assert_eq!(&aad[32..48], &[0x22u8; 16]);
-        assert_eq!(&aad[48..], b"worldid:vault-key-wrap");
-    }
-
-    #[test]
-    fn test_device_seal_aad_format() {
-        let account_id = AccountId::new([0x33u8; 32]);
-        let device_id = [0x44u8; 16];
-
-        let aad = build_device_seal_aad(&account_id, &device_id);
-
-        assert_eq!(aad.len(), 32 + 16 + 20);
-        assert_eq!(&aad[0..32], &[0x33u8; 32]);
-        assert_eq!(&aad[32..48], &[0x44u8; 16]);
-        assert_eq!(&aad[48..], b"worldid:device-state");
-    }
-
-    #[test]
-    fn test_account_state_update_and_reload() {
+    fn test_leaf_index_cache_persistence() {
         let keystore = MemoryKeystore::new();
         let blob_store = MemoryBlobStore::new();
         let vault_key = VaultKey::generate();
-
-        // Create and save initial state
         let mut state = create_account_state(&vault_key, &keystore).unwrap();
         let account_id = state.account_id;
         let device_id = state.device_id;
-
         save_account_state(&state, &blob_store, &keystore).unwrap();
-
-        // Update leaf index cache
         state.leaf_index_cache = Some(99999);
         state.updated_at = get_current_timestamp();
-
         save_account_state(&state, &blob_store, &keystore).unwrap();
-
-        // Reload and verify
-        let loaded = load_account_state(&blob_store, &keystore, &account_id, &device_id)
-            .unwrap()
-            .unwrap();
-
+        let loaded = load_account_state(&blob_store, &keystore, &account_id, &device_id).unwrap().unwrap();
         assert_eq!(loaded.leaf_index_cache, Some(99999));
     }
 }

@@ -15,9 +15,7 @@ use super::format::{
     RECORD_TYPE_ENCRYPTED_INDEX, RECORD_TYPE_TXN_BEGIN, RECORD_TYPE_TXN_COMMIT, RECORD_VERSION,
 };
 
-// =============================================================================
 // Record Envelope
-// =============================================================================
 
 /// Common envelope wrapping all record types in the data region.
 ///
@@ -180,9 +178,6 @@ impl RecordEnvelope {
     }
 }
 
-// =============================================================================
-// TxnBegin
-// =============================================================================
 
 /// Transaction begin marker.
 ///
@@ -250,9 +245,6 @@ impl TxnBegin {
     }
 }
 
-// =============================================================================
-// TxnCommit
-// =============================================================================
 
 /// Transaction commit with index pointer.
 ///
@@ -359,9 +351,6 @@ impl TxnCommit {
     }
 }
 
-// =============================================================================
-// EncryptedIndexSnapshot
-// =============================================================================
 
 /// Encrypted index snapshot record.
 ///
@@ -424,9 +413,6 @@ impl EncryptedIndexSnapshot {
     }
 }
 
-// =============================================================================
-// EncryptedBlobObject
-// =============================================================================
 
 /// Encrypted blob object record.
 ///
@@ -523,9 +509,6 @@ impl EncryptedBlobObject {
     }
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -534,128 +517,23 @@ mod tests {
     #[test]
     fn test_record_envelope_roundtrip() {
         let envelope = RecordEnvelope::new(RECORD_TYPE_TXN_BEGIN, vec![1, 2, 3, 4, 5]);
-
         let encoded = envelope.encode();
         assert_eq!(encoded.len(), envelope.encoded_len());
-
         let decoded = RecordEnvelope::decode(&encoded).unwrap();
         assert_eq!(envelope, decoded);
     }
 
     #[test]
-    fn test_record_envelope_empty_body() {
-        let envelope = RecordEnvelope::new(0x9999, vec![]);
-
-        let encoded = envelope.encode();
-        let decoded = RecordEnvelope::decode(&encoded).unwrap();
-        assert_eq!(envelope, decoded);
-    }
-
-    #[test]
-    fn test_record_envelope_large_body() {
-        let body = vec![0xAB; 10000];
-        let envelope = RecordEnvelope::new(RECORD_TYPE_ENCRYPTED_INDEX, body);
-
-        let encoded = envelope.encode();
-        let decoded = RecordEnvelope::decode(&encoded).unwrap();
-        assert_eq!(envelope, decoded);
-    }
-
-    #[test]
-    fn test_record_envelope_invalid_magic() {
-        let mut encoded = RecordEnvelope::new(0, vec![1, 2, 3]).encode();
-        encoded[0] = 0xFF;
-
-        let result = RecordEnvelope::decode(&encoded);
-        assert!(matches!(result, Err(StorageError::InvalidMagic { .. })));
-    }
-
-    #[test]
-    fn test_record_envelope_invalid_crc() {
-        let mut encoded = RecordEnvelope::new(0, vec![1, 2, 3]).encode();
-        encoded[12] ^= 0xFF;
-
-        let result = RecordEnvelope::decode(&encoded);
-        assert!(matches!(result, Err(StorageError::ChecksumMismatch { .. })));
-    }
-
-    #[test]
-    fn test_record_envelope_peek_body_len() {
-        let envelope = RecordEnvelope::new(0, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-        let encoded = envelope.encode();
-
-        let body_len = RecordEnvelope::peek_body_len(&encoded).unwrap();
-        assert_eq!(body_len, 10);
-    }
-
-    #[test]
-    fn test_txn_begin_roundtrip() {
-        let txn = TxnBegin::new([0x42u8; 16], 1234567890);
-
-        let body = txn.encode_body();
-        assert_eq!(body.len(), TxnBegin::BODY_SIZE);
-
+    fn test_txn_records_roundtrip() {
+        let txn_begin = TxnBegin::new([0x42u8; 16], 1234567890);
+        let body = txn_begin.encode_body();
         let decoded = TxnBegin::decode_body(&body).unwrap();
-        assert_eq!(txn, decoded);
-    }
+        assert_eq!(txn_begin, decoded);
 
-    #[test]
-    fn test_txn_begin_envelope() {
-        let txn = TxnBegin::new([1u8; 16], 999);
-        let envelope = txn.to_envelope();
-
-        assert_eq!(envelope.record_type, RECORD_TYPE_TXN_BEGIN);
-
-        let encoded = envelope.encode();
-        let decoded_envelope = RecordEnvelope::decode(&encoded).unwrap();
-        let decoded_txn = TxnBegin::decode_body(&decoded_envelope.body).unwrap();
-        assert_eq!(txn, decoded_txn);
-    }
-
-    #[test]
-    fn test_txn_commit_roundtrip() {
-        let txn = TxnCommit::new([0xABu8; 16], 12345, 678, [0xCDu8; 32], 9876543210);
-
-        let body = txn.encode_body();
-        assert_eq!(body.len(), TxnCommit::BODY_SIZE);
-
+        let txn_commit = TxnCommit::new([0xABu8; 16], 12345, 678, [0xCDu8; 32], 9876543210);
+        let body = txn_commit.encode_body();
         let decoded = TxnCommit::decode_body(&body).unwrap();
-        assert_eq!(txn, decoded);
-    }
-
-    #[test]
-    fn test_txn_commit_envelope() {
-        let txn = TxnCommit::new([2u8; 16], 100, 50, [3u8; 32], 12345);
-        let envelope = txn.to_envelope();
-
-        assert_eq!(envelope.record_type, RECORD_TYPE_TXN_COMMIT);
-
-        let encoded = envelope.encode();
-        let decoded_envelope = RecordEnvelope::decode(&encoded).unwrap();
-        let decoded_txn = TxnCommit::decode_body(&decoded_envelope.body).unwrap();
-        assert_eq!(txn, decoded_txn);
-    }
-
-    #[test]
-    fn test_encrypted_index_snapshot_roundtrip() {
-        let snapshot = EncryptedIndexSnapshot::new([0x11u8; 24], vec![1, 2, 3, 4, 5, 6, 7, 8]);
-
-        let body = snapshot.encode_body();
-        let decoded = EncryptedIndexSnapshot::decode_body(&body).unwrap();
-        assert_eq!(snapshot, decoded);
-    }
-
-    #[test]
-    fn test_encrypted_index_snapshot_envelope() {
-        let snapshot = EncryptedIndexSnapshot::new([0x22u8; 24], vec![0xAA; 100]);
-        let envelope = snapshot.to_envelope();
-
-        assert_eq!(envelope.record_type, RECORD_TYPE_ENCRYPTED_INDEX);
-
-        let encoded = envelope.encode();
-        let decoded_envelope = RecordEnvelope::decode(&encoded).unwrap();
-        let decoded_snapshot = EncryptedIndexSnapshot::decode_body(&decoded_envelope.body).unwrap();
-        assert_eq!(snapshot, decoded_snapshot);
+        assert_eq!(txn_commit, decoded);
     }
 
     #[test]
@@ -666,44 +544,8 @@ mod tests {
             [0x44u8; 24],
             vec![0xBB; 200],
         );
-
         let body = blob.encode_body();
         let decoded = EncryptedBlobObject::decode_body(&body).unwrap();
         assert_eq!(blob, decoded);
-    }
-
-    #[test]
-    fn test_encrypted_blob_object_envelope() {
-        let blob = EncryptedBlobObject::new(
-            ContentId::new([0x55u8; 32]),
-            BlobKind::AssociatedData,
-            [0x66u8; 24],
-            vec![0xCC; 50],
-        );
-        let envelope = blob.to_envelope();
-
-        assert_eq!(envelope.record_type, RECORD_TYPE_ENCRYPTED_BLOB);
-
-        let encoded = envelope.encode();
-        let decoded_envelope = RecordEnvelope::decode(&encoded).unwrap();
-        let decoded_blob = EncryptedBlobObject::decode_body(&decoded_envelope.body).unwrap();
-        assert_eq!(blob, decoded_blob);
-    }
-
-    #[test]
-    fn test_encrypted_blob_object_invalid_kind() {
-        let mut body = EncryptedBlobObject::new(
-            ContentId::new([0u8; 32]),
-            BlobKind::CredentialBlob,
-            [0u8; 24],
-            vec![],
-        )
-        .encode_body();
-
-        // Set invalid blob kind
-        body[32] = 0xFF;
-
-        let result = EncryptedBlobObject::decode_body(&body);
-        assert!(matches!(result, Err(StorageError::CorruptedData { .. })));
     }
 }

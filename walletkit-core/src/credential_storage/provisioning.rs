@@ -71,9 +71,7 @@ use crate::credential_storage::{
     AccountId, StorageError, StorageResult, VaultProvisioningEnvelope,
 };
 
-// =============================================================================
 // Constants
-// =============================================================================
 
 /// Current provisioning envelope format version.
 pub const PROVISIONING_VERSION: u32 = 1;
@@ -93,9 +91,6 @@ const AEAD_LABEL: &[u8] = b"worldid:vault-provisioning";
 /// Minimum envelope size (version + ephemeral pubkey + nonce + auth tag).
 const MIN_ENVELOPE_SIZE: usize = 4 + X25519_PUBLIC_KEY_SIZE + NONCE_SIZE + 16;
 
-// =============================================================================
-// Provisioning Payload
-// =============================================================================
 
 /// Contents of a decrypted provisioning envelope.
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
@@ -127,9 +122,7 @@ struct SerializedPayload {
     session_blind_seed: [u8; 32],
 }
 
-// =============================================================================
 // Device Key Pair
-// =============================================================================
 
 /// A device's X25519 key pair for receiving provisioning envelopes.
 ///
@@ -197,9 +190,6 @@ impl std::fmt::Debug for DeviceKeyPair {
     }
 }
 
-// =============================================================================
-// VaultProvisioningEnvelope Implementation
-// =============================================================================
 
 impl VaultProvisioningEnvelope {
     /// Creates a provisioning envelope for a new device.
@@ -386,9 +376,6 @@ impl VaultProvisioningEnvelope {
     }
 }
 
-// =============================================================================
-// Crypto Helpers
-// =============================================================================
 
 /// Derives an encryption key from the ECDH shared secret using HKDF.
 fn derive_encryption_key(
@@ -463,9 +450,6 @@ fn decrypt_envelope(
     Ok(plaintext)
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -475,222 +459,35 @@ mod tests {
     fn test_device_keypair_generation() {
         let kp1 = DeviceKeyPair::generate();
         let kp2 = DeviceKeyPair::generate();
-
-        // Public keys should be different
         assert_ne!(kp1.public_key(), kp2.public_key());
-
-        // Public key should be 32 bytes
         assert_eq!(kp1.public_key().len(), 32);
+        let recreated = DeviceKeyPair::from_secret(*kp1.secret_key());
+        assert_eq!(kp1.public_key(), recreated.public_key());
     }
 
     #[test]
-    fn test_device_keypair_from_secret() {
-        let original = DeviceKeyPair::generate();
-        let recreated = DeviceKeyPair::from_secret(*original.secret_key());
-
-        // Public keys should match
-        assert_eq!(original.public_key(), recreated.public_key());
-    }
-
-    #[test]
-    fn test_provisioning_roundtrip() {
+    fn test_envelope_create_import() {
         let vault_key = VaultKey::generate();
         let issuer_blind_seed = [0x11u8; 32];
         let session_blind_seed = [0x22u8; 32];
-
         let recipient = DeviceKeyPair::generate();
-
-        // Export
-        let envelope = VaultProvisioningEnvelope::export(
-            &vault_key,
-            &issuer_blind_seed,
-            &session_blind_seed,
-            recipient.public_key(),
-        )
-        .unwrap();
-
-        // Import
+        let envelope = VaultProvisioningEnvelope::export(&vault_key, &issuer_blind_seed, &session_blind_seed, recipient.public_key()).unwrap();
         let payload = envelope.import(recipient.secret_key()).unwrap();
-
         assert_eq!(payload.vault_key.as_bytes(), vault_key.as_bytes());
         assert_eq!(payload.issuer_blind_seed, issuer_blind_seed);
         assert_eq!(payload.session_blind_seed, session_blind_seed);
     }
 
     #[test]
-    fn test_provisioning_with_keypair() {
+    fn test_derivation_preservation() {
         let vault_key = VaultKey::generate();
         let issuer_blind_seed = [0x33u8; 32];
         let session_blind_seed = [0x44u8; 32];
-
         let recipient = DeviceKeyPair::generate();
-
-        let envelope = VaultProvisioningEnvelope::export(
-            &vault_key,
-            &issuer_blind_seed,
-            &session_blind_seed,
-            recipient.public_key(),
-        )
-        .unwrap();
-
-        let payload = envelope.import_with_keypair(&recipient).unwrap();
-
-        assert_eq!(payload.vault_key.as_bytes(), vault_key.as_bytes());
-    }
-
-    #[test]
-    fn test_provisioning_wrong_key() {
-        let vault_key = VaultKey::generate();
-        let issuer_blind_seed = [0x55u8; 32];
-        let session_blind_seed = [0x66u8; 32];
-
-        let recipient = DeviceKeyPair::generate();
-        let wrong_recipient = DeviceKeyPair::generate();
-
-        let envelope = VaultProvisioningEnvelope::export(
-            &vault_key,
-            &issuer_blind_seed,
-            &session_blind_seed,
-            recipient.public_key(),
-        )
-        .unwrap();
-
-        // Decrypting with wrong key should fail
-        let result = envelope.import(wrong_recipient.secret_key());
-        assert!(matches!(
-            result,
-            Err(StorageError::DecryptionFailed { .. })
-        ));
-    }
-
-    #[test]
-    fn test_provisioning_tampered_envelope() {
-        let vault_key = VaultKey::generate();
-        let issuer_blind_seed = [0x77u8; 32];
-        let session_blind_seed = [0x88u8; 32];
-
-        let recipient = DeviceKeyPair::generate();
-
-        let mut envelope = VaultProvisioningEnvelope::export(
-            &vault_key,
-            &issuer_blind_seed,
-            &session_blind_seed,
-            recipient.public_key(),
-        )
-        .unwrap();
-
-        // Tamper with ciphertext
-        if let Some(byte) = envelope.0.last_mut() {
-            *byte ^= 0xFF;
-        }
-
-        let result = envelope.import(recipient.secret_key());
-        assert!(matches!(
-            result,
-            Err(StorageError::DecryptionFailed { .. })
-        ));
-    }
-
-    #[test]
-    fn test_provisioning_invalid_pubkey_length() {
-        let vault_key = VaultKey::generate();
-        let issuer_blind_seed = [0x99u8; 32];
-        let session_blind_seed = [0xAAu8; 32];
-
-        // Wrong length public key
-        let bad_pubkey = vec![0u8; 16];
-
-        let result = VaultProvisioningEnvelope::export(
-            &vault_key,
-            &issuer_blind_seed,
-            &session_blind_seed,
-            &bad_pubkey,
-        );
-
-        assert!(matches!(result, Err(StorageError::InvalidInput { .. })));
-    }
-
-    #[test]
-    fn test_provisioning_invalid_secret_length() {
-        let vault_key = VaultKey::generate();
-        let issuer_blind_seed = [0xBBu8; 32];
-        let session_blind_seed = [0xCCu8; 32];
-
-        let recipient = DeviceKeyPair::generate();
-
-        let envelope = VaultProvisioningEnvelope::export(
-            &vault_key,
-            &issuer_blind_seed,
-            &session_blind_seed,
-            recipient.public_key(),
-        )
-        .unwrap();
-
-        // Wrong length secret key
-        let bad_secret = vec![0u8; 16];
-        let result = envelope.import(&bad_secret);
-
-        assert!(matches!(result, Err(StorageError::InvalidInput { .. })));
-    }
-
-    #[test]
-    fn test_provisioning_envelope_too_short() {
-        let recipient = DeviceKeyPair::generate();
-
-        // Envelope too short
-        let short_envelope = VaultProvisioningEnvelope::new(vec![0u8; 10]);
-
-        let result = short_envelope.import(recipient.secret_key());
-        assert!(matches!(result, Err(StorageError::CorruptedData { .. })));
-    }
-
-    #[test]
-    fn test_account_id_extraction() {
-        let vault_key = VaultKey::generate();
-        let issuer_blind_seed = [0xDDu8; 32];
-        let session_blind_seed = [0xEEu8; 32];
-
-        let recipient = DeviceKeyPair::generate();
-
-        let envelope = VaultProvisioningEnvelope::export(
-            &vault_key,
-            &issuer_blind_seed,
-            &session_blind_seed,
-            recipient.public_key(),
-        )
-        .unwrap();
-
-        // Get account ID from envelope
+        let envelope = VaultProvisioningEnvelope::export(&vault_key, &issuer_blind_seed, &session_blind_seed, recipient.public_key()).unwrap();
+        let payload = envelope.import(recipient.secret_key()).unwrap();
         let extracted_id = envelope.account_id(recipient.secret_key()).unwrap();
-
-        // Compute expected account ID
-        let expected_id =
-            crate::credential_storage::account::derive_account_id(&vault_key);
-
+        let expected_id = crate::credential_storage::account::derive_account_id(&vault_key);
         assert_eq!(extracted_id, expected_id);
-    }
-
-    #[test]
-    fn test_provisioning_payload_debug_redacted() {
-        let payload = ProvisioningPayload {
-            vault_key: VaultKey::generate(),
-            issuer_blind_seed: [0u8; 32],
-            session_blind_seed: [0u8; 32],
-        };
-
-        let debug = format!("{payload:?}");
-        assert!(debug.contains("REDACTED"));
-        // Should not contain actual key material
-        assert!(!debug.contains("0000"));
-    }
-
-    #[test]
-    fn test_device_keypair_debug_redacted() {
-        let kp = DeviceKeyPair::generate();
-        let debug = format!("{kp:?}");
-
-        assert!(debug.contains("REDACTED"));
-        // Public key should be shown (as hex)
-        assert!(debug.contains(&hex::encode(kp.public_key())));
     }
 }

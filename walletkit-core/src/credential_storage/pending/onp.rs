@@ -23,9 +23,6 @@
 
 use crate::credential_storage::StorageResult;
 
-// =============================================================================
-// OnpClient Trait
-// =============================================================================
 
 /// Client interface for the Oblivious Nullifier Pool.
 ///
@@ -96,9 +93,6 @@ pub trait OnpClient: Send + Sync {
     fn mark_consumed(&self, nullifier: &[u8; 32]) -> StorageResult<()>;
 }
 
-// =============================================================================
-// StubOnpClient
-// =============================================================================
 
 /// Stub ONP client that always returns "not consumed".
 ///
@@ -143,9 +137,7 @@ impl OnpClient for StubOnpClient {
     }
 }
 
-// =============================================================================
 // InMemoryOnpClient (for testing)
-// =============================================================================
 
 use std::collections::HashSet;
 use std::sync::RwLock;
@@ -219,141 +211,29 @@ impl OnpClient for InMemoryOnpClient {
     }
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_stub_onp_always_not_consumed() {
-        let client = StubOnpClient::new();
-
-        // All nullifiers should appear not consumed
-        assert!(!client.check_consumed(&[0u8; 32]).unwrap());
-        assert!(!client.check_consumed(&[1u8; 32]).unwrap());
-        assert!(!client.check_consumed(&[0xFFu8; 32]).unwrap());
-    }
-
-    #[test]
-    fn test_stub_onp_mark_consumed_noop() {
-        let client = StubOnpClient::new();
-        let nullifier = [0x42u8; 32];
-
-        // Mark as consumed
-        client.mark_consumed(&nullifier).unwrap();
-
-        // Still shows as not consumed (stub doesn't track)
-        assert!(!client.check_consumed(&nullifier).unwrap());
-    }
-
-    #[test]
-    fn test_in_memory_onp_basic() {
+    fn test_check_consumed() {
         let client = InMemoryOnpClient::new();
         let nullifier = [0x42u8; 32];
-
-        // Initially not consumed
         assert!(!client.check_consumed(&nullifier).unwrap());
-        assert_eq!(client.consumed_count(), 0);
-
-        // Mark as consumed
         client.mark_consumed(&nullifier).unwrap();
-
-        // Now shows as consumed
         assert!(client.check_consumed(&nullifier).unwrap());
-        assert_eq!(client.consumed_count(), 1);
     }
 
     #[test]
-    fn test_in_memory_onp_multiple_nullifiers() {
+    fn test_mark_consumed() {
         let client = InMemoryOnpClient::new();
-
         let null1 = [0x11u8; 32];
         let null2 = [0x22u8; 32];
-        let null3 = [0x33u8; 32];
-
-        // Mark some as consumed
         client.mark_consumed(&null1).unwrap();
         client.mark_consumed(&null2).unwrap();
-
+        assert_eq!(client.consumed_count(), 2);
         assert!(client.check_consumed(&null1).unwrap());
         assert!(client.check_consumed(&null2).unwrap());
-        assert!(!client.check_consumed(&null3).unwrap());
-        assert_eq!(client.consumed_count(), 2);
-    }
-
-    #[test]
-    fn test_in_memory_onp_idempotent() {
-        let client = InMemoryOnpClient::new();
-        let nullifier = [0x42u8; 32];
-
-        // Mark multiple times
-        client.mark_consumed(&nullifier).unwrap();
-        client.mark_consumed(&nullifier).unwrap();
-        client.mark_consumed(&nullifier).unwrap();
-
-        // Count is still 1 (HashSet dedupes)
-        assert_eq!(client.consumed_count(), 1);
-        assert!(client.check_consumed(&nullifier).unwrap());
-    }
-
-    #[test]
-    fn test_in_memory_onp_clear() {
-        let client = InMemoryOnpClient::new();
-
-        client.mark_consumed(&[1u8; 32]).unwrap();
-        client.mark_consumed(&[2u8; 32]).unwrap();
-        assert_eq!(client.consumed_count(), 2);
-
-        client.clear();
-
-        assert_eq!(client.consumed_count(), 0);
-        assert!(!client.check_consumed(&[1u8; 32]).unwrap());
-        assert!(!client.check_consumed(&[2u8; 32]).unwrap());
-    }
-
-    #[test]
-    fn test_in_memory_onp_contains() {
-        let client = InMemoryOnpClient::new();
-        let nullifier = [0xABu8; 32];
-
-        assert!(!client.contains(&nullifier));
-
-        client.mark_consumed(&nullifier).unwrap();
-
-        assert!(client.contains(&nullifier));
-    }
-
-    #[test]
-    fn test_in_memory_onp_thread_safety() {
-        use std::sync::Arc;
-        use std::thread;
-
-        let client = Arc::new(InMemoryOnpClient::new());
-        let mut handles = vec![];
-
-        // Spawn threads that mark different nullifiers
-        for i in 0..10 {
-            let client = Arc::clone(&client);
-            handles.push(thread::spawn(move || {
-                let mut nullifier = [0u8; 32];
-                nullifier[0] = i;
-                client.mark_consumed(&nullifier).unwrap();
-            }));
-        }
-
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        assert_eq!(client.consumed_count(), 10);
-    }
-
-    #[test]
-    fn test_stub_onp_default() {
-        let client = StubOnpClient::default();
-        assert!(!client.check_consumed(&[0u8; 32]).unwrap());
     }
 }

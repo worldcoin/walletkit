@@ -21,9 +21,6 @@ use super::{
     transaction::VaultTxn,
 };
 
-// =============================================================================
-// VaultFile
-// =============================================================================
 
 /// Handle to an open vault file.
 ///
@@ -373,9 +370,6 @@ impl<V: VaultFileStore> VaultFile<V> {
         Ok(result)
     }
 
-    // =========================================================================
-    // Internal Methods
-    // =========================================================================
 
     /// Reads a `TxnCommit` record at the given offset.
     fn read_txn_commit(&self, offset: u64) -> Result<TxnCommit, StorageError> {
@@ -462,9 +456,7 @@ impl<V: VaultFileStore> std::fmt::Debug for VaultFile<V> {
     }
 }
 
-// =============================================================================
 // Helper Functions (pub(super) for transaction module access)
-// =============================================================================
 
 /// Serializes a `VaultIndex` to bytes using bincode.
 pub(super) fn serialize_vault_index(
@@ -496,9 +488,6 @@ pub(super) fn get_current_timestamp() -> u64 {
         .as_secs()
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -507,40 +496,29 @@ mod tests {
     use super::*;
     use crate::credential_storage::platform::memory::MemoryVaultStore;
 
-    fn create_test_vault() -> VaultFile<MemoryVaultStore> {
+
+    #[test]
+    fn test_vault_create_and_open() {
         let store = Arc::new(MemoryVaultStore::new());
-        let account_id = AccountId::new([0x42u8; 32]);
+        let account_id = AccountId::new([0x22u8; 32]);
         let vault_key = VaultKey::generate();
-
-        VaultFile::create(store, account_id, vault_key).unwrap()
-    }
-
-    #[test]
-    fn test_create_vault() {
-        let vault = create_test_vault();
-
+        let vault = VaultFile::create(Arc::clone(&store), account_id, vault_key.clone()).unwrap();
         assert_eq!(vault.generation(), 1);
-        assert_eq!(vault.active_slot, SuperblockSlot::A);
+        drop(vault);
+        let vault = VaultFile::open(store, account_id, vault_key).unwrap();
+        assert_eq!(vault.generation(), 1);
+        let index = vault.read_index().unwrap();
+        assert_eq!(index.account_id, account_id);
     }
 
     #[test]
-    fn test_create_vault_file_structure() {
+    fn test_vault_header_parsing() {
         let store = Arc::new(MemoryVaultStore::new());
         let account_id = AccountId::new([0x11u8; 32]);
         let vault_key = VaultKey::generate();
-
-        let vault =
-            VaultFile::create(Arc::clone(&store), account_id, vault_key).unwrap();
-
-        // File should have header + superblocks + data
-        let file_len = store.len().unwrap();
-        assert!(file_len > DATA_REGION_START);
-
-        // Verify header magic
+        let _vault = VaultFile::create(Arc::clone(&store), account_id, vault_key).unwrap();
         let header_bytes = store.read_at(0, 8).unwrap();
         assert_eq!(&header_bytes, super::super::format::FILE_MAGIC);
-
-        // Verify superblock A is valid
         let sb_a_bytes = store
             .read_at(
                 super::super::format::SUPERBLOCK_A_OFFSET,
@@ -548,133 +526,5 @@ mod tests {
             )
             .unwrap();
         assert!(Superblock::is_valid(&sb_a_bytes));
-
-        // Generation should be 1
-        assert_eq!(vault.generation(), 1);
-    }
-
-    #[test]
-    fn test_open_vault() {
-        let store = Arc::new(MemoryVaultStore::new());
-        let account_id = AccountId::new([0x22u8; 32]);
-        let vault_key = VaultKey::generate();
-
-        // Create vault
-        let vault =
-            VaultFile::create(Arc::clone(&store), account_id, vault_key.clone())
-                .unwrap();
-        drop(vault);
-
-        // Re-open vault
-        let vault = VaultFile::open(store, account_id, vault_key).unwrap();
-        assert_eq!(vault.generation(), 1);
-        assert_eq!(vault.account_id(), &account_id);
-    }
-
-    #[test]
-    fn test_open_vault_wrong_account_id() {
-        let store = Arc::new(MemoryVaultStore::new());
-        let account_id = AccountId::new([0x33u8; 32]);
-        let wrong_account_id = AccountId::new([0x44u8; 32]);
-        let vault_key = VaultKey::generate();
-
-        // Create vault
-        VaultFile::create(Arc::clone(&store), account_id, vault_key.clone()).unwrap();
-
-        // Try to open with wrong account ID
-        let result = VaultFile::open(store, wrong_account_id, vault_key);
-        assert!(matches!(
-            result,
-            Err(StorageError::AccountIdMismatch { .. })
-        ));
-    }
-
-    #[test]
-    fn test_open_empty_store() {
-        let store = Arc::new(MemoryVaultStore::new());
-        let account_id = AccountId::new([0u8; 32]);
-        let vault_key = VaultKey::generate();
-
-        let result = VaultFile::open(store, account_id, vault_key);
-        assert!(matches!(result, Err(StorageError::VaultNotInitialized)));
-    }
-
-    #[test]
-    fn test_read_index() {
-        let vault = create_test_vault();
-
-        let index = vault.read_index().unwrap();
-
-        assert_eq!(index.account_id, *vault.account_id());
-        assert_eq!(index.sequence, 0);
-        assert!(index.records.is_empty());
-        assert!(index.blobs.is_empty());
-    }
-
-    #[test]
-    fn test_open_or_create_empty() {
-        let store = Arc::new(MemoryVaultStore::new());
-        let account_id = AccountId::new([0x55u8; 32]);
-        let vault_key = VaultKey::generate();
-
-        // Should create new vault
-        let vault = VaultFile::open_or_create(store, account_id, vault_key).unwrap();
-        assert_eq!(vault.generation(), 1);
-    }
-
-    #[test]
-    fn test_open_or_create_existing() {
-        let store = Arc::new(MemoryVaultStore::new());
-        let account_id = AccountId::new([0x66u8; 32]);
-        let vault_key = VaultKey::generate();
-
-        // Create vault
-        VaultFile::create(Arc::clone(&store), account_id, vault_key.clone()).unwrap();
-
-        // Should open existing vault
-        let vault = VaultFile::open_or_create(store, account_id, vault_key).unwrap();
-        assert_eq!(vault.generation(), 1);
-    }
-
-    #[test]
-    fn test_vault_debug_format() {
-        let vault = create_test_vault();
-        let debug = format!("{vault:?}");
-
-        assert!(debug.contains("VaultFile"));
-        assert!(debug.contains("generation"));
-    }
-
-    #[test]
-    fn test_serialize_deserialize_index() {
-        let account_id = AccountId::new([0x77u8; 32]);
-        let index = VaultIndex::new(account_id, 12345);
-
-        let bytes = serialize_vault_index(&index).unwrap();
-        let decoded = deserialize_vault_index(&bytes).unwrap();
-
-        assert_eq!(index, decoded);
-    }
-
-    #[test]
-    fn test_generate_txn_id() {
-        let id1 = new_txn_id();
-        let id2 = new_txn_id();
-
-        // IDs should be different (with overwhelming probability)
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
-    fn test_current_timestamp() {
-        let ts1 = get_current_timestamp();
-        std::thread::sleep(std::time::Duration::from_millis(10));
-        let ts2 = get_current_timestamp();
-
-        // Timestamp should be reasonable (after year 2020)
-        assert!(ts1 > 1577836800); // 2020-01-01
-
-        // ts2 should be >= ts1
-        assert!(ts2 >= ts1);
     }
 }

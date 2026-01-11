@@ -16,10 +16,6 @@ use crate::credential_storage::{
     CredentialTransferBytes, VaultProvisioningEnvelope,
 };
 
-// =============================================================================
-// Platform Configuration (iOS)
-// =============================================================================
-
 #[cfg(feature = "platform-ios")]
 use crate::credential_storage::platform::ios::{
     IosBlobStore, IosKeystore, IosLockManager, IosPlatform, IosVaultStore,
@@ -39,10 +35,6 @@ type Platform = IosPlatform;
 // Fallback for when no platform is configured (compilation only, not functional)
 #[cfg(not(any(feature = "platform-ios")))]
 compile_error!("A platform feature must be enabled (e.g., platform-ios)");
-
-// =============================================================================
-// WorldIdStore
-// =============================================================================
 
 /// World ID credential store.
 ///
@@ -159,10 +151,6 @@ impl WorldIdStore {
     }
 }
 
-// =============================================================================
-// AccountHandle
-// =============================================================================
-
 /// Handle to a World ID account.
 ///
 /// This provides all operations for a specific account including:
@@ -213,10 +201,6 @@ impl AccountHandle {
 #[cfg(feature = "platform-ios")]
 #[uniffi::export]
 impl AccountHandle {
-    // =========================================================================
-    // Account Info
-    // =========================================================================
-
     /// Returns the account ID.
     pub fn account_id(&self) -> AccountId {
         let inner = self.inner.lock().unwrap();
@@ -228,10 +212,6 @@ impl AccountHandle {
         let inner = self.inner.lock().unwrap();
         inner.device_id().to_vec()
     }
-
-    // =========================================================================
-    // Credential Operations
-    // =========================================================================
 
     /// Stores a credential.
     ///
@@ -360,10 +340,6 @@ impl AccountHandle {
             .map_err(StorageError::from)
     }
 
-    // =========================================================================
-    // Key Derivation
-    // =========================================================================
-
     /// Derives the issuer blinding factor for a schema.
     ///
     /// This is deterministic - the same input always produces the same output.
@@ -400,10 +376,6 @@ impl AccountHandle {
         let inner = self.inner.lock().unwrap();
         Ok(inner.derive_session_r(&rp_arr, &action_arr).to_vec())
     }
-
-    // =========================================================================
-    // Credential Transfer
-    // =========================================================================
 
     /// Exports a credential for transfer to another device.
     pub fn export_credential(&self, credential_id: CredentialId) -> Result<CredentialTransfer> {
@@ -473,10 +445,6 @@ impl AccountHandle {
         Ok(outcomes.into_iter().map(ImportOutcome::from).collect())
     }
 
-    // =========================================================================
-    // Provisioning
-    // =========================================================================
-
     /// Exports a provisioning envelope for a new device.
     ///
     /// # Arguments
@@ -497,10 +465,6 @@ impl AccountHandle {
             .map(ProvisioningEnvelope::from)
             .map_err(StorageError::from)
     }
-
-    // =========================================================================
-    // Nullifier Protection (using stub ONP for now)
-    // =========================================================================
 
     /// Begins action disclosure (nullifier protection).
     ///
@@ -629,10 +593,6 @@ impl AccountHandle {
 
         Ok(actions.into_iter().map(PendingAction::from).collect())
     }
-
-    // =========================================================================
-    // Leaf Index Cache
-    // =========================================================================
 
     /// Gets the cached leaf index.
     pub fn get_leaf_index_cache(&self) -> Result<Option<u64>> {

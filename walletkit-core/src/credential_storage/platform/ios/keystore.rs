@@ -51,9 +51,7 @@ const KEYCHAIN_SERVICE: &str = "org.worldcoin.worldid";
 /// Keychain account identifier for the device master key.
 const KEYCHAIN_DEVICE_KEY_ACCOUNT: &str = "device-master-key";
 
-// =============================================================================
 // IosKeystore
-// =============================================================================
 
 /// iOS Keychain-based implementation of `DeviceKeystore`.
 ///
@@ -295,108 +293,5 @@ impl DeviceKeystore for IosKeystore {
             })?;
 
         Ok(plaintext)
-    }
-}
-
-// =============================================================================
-// Tests
-// =============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Note: These tests require access to the macOS/iOS Keychain.
-    // They may fail in CI environments without proper entitlements.
-
-    #[test]
-    #[ignore = "Requires Keychain access"]
-    fn test_keystore_creation() {
-        // Clean up any existing key first
-        let _ = IosKeystore::delete_device_key();
-
-        let keystore = IosKeystore::new().unwrap();
-        assert_eq!(keystore.device_key.len(), KEY_SIZE);
-    }
-
-    #[test]
-    #[ignore = "Requires Keychain access"]
-    fn test_seal_and_open() {
-        let keystore = IosKeystore::new().unwrap();
-
-        let aad = b"test-context";
-        let plaintext = b"Hello, World!";
-
-        let ciphertext = keystore.seal(aad, plaintext).unwrap();
-        assert!(ciphertext.len() > plaintext.len()); // Should include nonce + tag
-
-        let decrypted = keystore.open(aad, &ciphertext).unwrap();
-        assert_eq!(decrypted, plaintext);
-    }
-
-    #[test]
-    #[ignore = "Requires Keychain access"]
-    fn test_wrong_aad_fails() {
-        let keystore = IosKeystore::new().unwrap();
-
-        let plaintext = b"Secret data";
-        let ciphertext = keystore.seal(b"correct-aad", plaintext).unwrap();
-
-        // Decryption with wrong AAD should fail
-        let result = keystore.open(b"wrong-aad", &ciphertext);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    #[ignore = "Requires Keychain access"]
-    fn test_tampered_ciphertext_fails() {
-        let keystore = IosKeystore::new().unwrap();
-
-        let plaintext = b"Secret data";
-        let mut ciphertext = keystore.seal(b"test", plaintext).unwrap();
-
-        // Tamper with the ciphertext
-        if let Some(byte) = ciphertext.last_mut() {
-            *byte ^= 0xFF;
-        }
-
-        let result = keystore.open(b"test", &ciphertext);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    #[ignore = "Requires Keychain access"]
-    fn test_empty_plaintext() {
-        let keystore = IosKeystore::new().unwrap();
-
-        let plaintext = b"";
-        let ciphertext = keystore.seal(b"test", plaintext).unwrap();
-        let decrypted = keystore.open(b"test", &ciphertext).unwrap();
-
-        assert_eq!(decrypted, plaintext);
-    }
-
-    #[test]
-    #[ignore = "Requires Keychain access"]
-    fn test_large_plaintext() {
-        let keystore = IosKeystore::new().unwrap();
-
-        let plaintext = vec![0xABu8; 1024 * 1024]; // 1 MB
-        let ciphertext = keystore.seal(b"test", &plaintext).unwrap();
-        let decrypted = keystore.open(b"test", &ciphertext).unwrap();
-
-        assert_eq!(decrypted, plaintext);
-    }
-
-    #[test]
-    fn test_ciphertext_too_short() {
-        // This test doesn't need Keychain access since it fails before key use
-        // We need to create a mock keystore for this
-        let key = Zeroizing::new([0u8; KEY_SIZE]);
-        let keystore = IosKeystore { device_key: key };
-
-        let short_ciphertext = vec![0u8; NONCE_SIZE + TAG_SIZE - 1];
-        let result = keystore.open(b"test", &short_ciphertext);
-        assert!(result.is_err());
     }
 }

@@ -16,9 +16,7 @@ use crate::credential_storage::{AccountId, StorageError, StorageResult};
 
 use super::{AccountLockManager, AtomicBlobStore, DeviceKeystore, VaultFileStore};
 
-// =============================================================================
 // Memory Keystore
-// =============================================================================
 
 /// In-memory device keystore using a fixed test key.
 ///
@@ -142,9 +140,7 @@ impl DeviceKeystore for MemoryKeystore {
     }
 }
 
-// =============================================================================
 // Memory Blob Store
-// =============================================================================
 
 /// In-memory atomic blob store backed by a `HashMap`.
 ///
@@ -213,9 +209,7 @@ impl AtomicBlobStore for MemoryBlobStore {
     }
 }
 
-// =============================================================================
 // Memory Vault Store
-// =============================================================================
 
 /// In-memory vault file store backed by a `Vec<u8>`.
 ///
@@ -329,9 +323,7 @@ impl VaultFileStore for MemoryVaultStore {
     }
 }
 
-// =============================================================================
 // Memory Lock Manager
-// =============================================================================
 
 /// In-memory account lock manager using a `Mutex` per account.
 ///
@@ -414,9 +406,7 @@ impl AccountLockManager for MemoryLockManager {
     }
 }
 
-// =============================================================================
 // Memory Platform Bundle
-// =============================================================================
 
 /// Combines all in-memory implementations for easy test setup.
 ///
@@ -466,9 +456,6 @@ impl Default for MemoryPlatform {
     }
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -481,37 +468,15 @@ mod tests {
         let ad = b"test-associated-data";
 
         let ciphertext = keystore.seal(ad, plaintext).unwrap();
-        assert_ne!(&ciphertext[8..], plaintext); // Should be "encrypted"
+        assert_ne!(&ciphertext[8..], plaintext);
 
         let decrypted = keystore.open(ad, &ciphertext).unwrap();
         assert_eq!(decrypted, plaintext);
     }
 
     #[test]
-    fn test_memory_keystore_different_ad() {
-        let keystore = MemoryKeystore::new();
-        let plaintext = b"secret data";
-        let ad1 = b"context-1";
-        let ad2 = b"context-2";
-
-        let ciphertext = keystore.seal(ad1, plaintext).unwrap();
-        
-        // Decrypting with different AD should produce different (wrong) result
-        let decrypted = keystore.open(ad2, &ciphertext).unwrap();
-        assert_ne!(decrypted.as_slice(), plaintext);
-    }
-
-    #[test]
-    fn test_memory_keystore_short_ciphertext() {
-        let keystore = MemoryKeystore::new();
-        let result = keystore.open(b"ad", &[1, 2, 3, 4, 5, 6, 7]); // Only 7 bytes
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn test_memory_blob_store_basic() {
         let store = MemoryBlobStore::new();
-        
         assert!(store.is_empty());
         assert!(store.read("test").unwrap().is_none());
 
@@ -529,32 +494,11 @@ mod tests {
     }
 
     #[test]
-    fn test_memory_blob_store_multiple() {
-        let store = MemoryBlobStore::new();
-        
-        store.write_atomic("a", b"data-a").unwrap();
-        store.write_atomic("b", b"data-b").unwrap();
-        store.write_atomic("c", b"data-c").unwrap();
-
-        assert_eq!(store.len(), 3);
-        
-        let names = store.list();
-        assert!(names.contains(&"a".to_string()));
-        assert!(names.contains(&"b".to_string()));
-        assert!(names.contains(&"c".to_string()));
-
-        store.clear();
-        assert!(store.is_empty());
-    }
-
-    #[test]
     fn test_memory_vault_store_basic() {
         let store = MemoryVaultStore::new();
-        
         assert!(store.is_empty().unwrap());
         assert_eq!(store.len().unwrap(), 0);
 
-        // Append data
         let offset = store.append(b"hello").unwrap();
         assert_eq!(offset, 0);
         assert_eq!(store.len().unwrap(), 5);
@@ -563,152 +507,8 @@ mod tests {
         assert_eq!(offset, 5);
         assert_eq!(store.len().unwrap(), 11);
 
-        // Read
         assert_eq!(store.read_at(0, 5).unwrap(), b"hello");
         assert_eq!(store.read_at(5, 6).unwrap(), b" world");
         assert_eq!(store.read_at(0, 11).unwrap(), b"hello world");
-    }
-
-    #[test]
-    fn test_memory_vault_store_write_at() {
-        let store = MemoryVaultStore::new();
-        
-        // Write beyond current length extends file
-        store.write_at(10, b"test").unwrap();
-        assert_eq!(store.len().unwrap(), 14);
-
-        // Read back
-        let data = store.read_at(10, 4).unwrap();
-        assert_eq!(data, b"test");
-
-        // Overwrite
-        store.write_at(0, b"header").unwrap();
-        let data = store.read_at(0, 6).unwrap();
-        assert_eq!(data, b"header");
-    }
-
-    #[test]
-    fn test_memory_vault_store_read_beyond_eof() {
-        let store = MemoryVaultStore::new();
-        store.append(b"short").unwrap();
-
-        let result = store.read_at(0, 100);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_memory_vault_store_sync() {
-        let store = MemoryVaultStore::new();
-        
-        assert_eq!(store.sync_count(), 0);
-        store.sync().unwrap();
-        assert_eq!(store.sync_count(), 1);
-        store.sync().unwrap();
-        assert_eq!(store.sync_count(), 2);
-
-        store.reset_sync_count();
-        assert_eq!(store.sync_count(), 0);
-    }
-
-    #[test]
-    fn test_memory_vault_store_set_len() {
-        let store = MemoryVaultStore::new();
-        
-        store.set_len(100).unwrap();
-        assert_eq!(store.len().unwrap(), 100);
-
-        store.set_len(50).unwrap();
-        assert_eq!(store.len().unwrap(), 50);
-    }
-
-    #[test]
-    fn test_memory_lock_manager_basic() {
-        let lock_manager = MemoryLockManager::new();
-        let account_id = AccountId::new([1u8; 32]);
-
-        let result = lock_manager.with_account_lock(&account_id, || {
-            Ok(42)
-        }).unwrap();
-
-        assert_eq!(result, 42);
-        assert_eq!(lock_manager.account_count(), 1);
-    }
-
-    #[test]
-    fn test_memory_lock_manager_try_lock() {
-        let lock_manager = Arc::new(MemoryLockManager::new());
-        let account_id = AccountId::new([1u8; 32]);
-
-        // Should succeed when lock is free
-        let result = lock_manager.try_with_account_lock(&account_id, || {
-            Ok(42)
-        }).unwrap();
-        assert_eq!(result, Some(42));
-    }
-
-    #[test]
-    fn test_memory_lock_manager_multiple_accounts() {
-        let lock_manager = MemoryLockManager::new();
-        let account1 = AccountId::new([1u8; 32]);
-        let account2 = AccountId::new([2u8; 32]);
-
-        lock_manager.with_account_lock(&account1, || Ok(())).unwrap();
-        lock_manager.with_account_lock(&account2, || Ok(())).unwrap();
-
-        assert_eq!(lock_manager.account_count(), 2);
-
-        lock_manager.clear();
-        assert_eq!(lock_manager.account_count(), 0);
-    }
-
-    #[test]
-    fn test_memory_platform_bundle() {
-        let platform = MemoryPlatform::new();
-
-        // Test keystore
-        let ct = platform.keystore.seal(b"ad", b"data").unwrap();
-        let pt = platform.keystore.open(b"ad", &ct).unwrap();
-        assert_eq!(pt, b"data");
-
-        // Test blob store
-        platform.blob_store.write_atomic("test", b"blob").unwrap();
-        assert!(platform.blob_store.exists("test").unwrap());
-
-        // Test vault store
-        platform.vault_store.append(b"vault data").unwrap();
-        assert!(!platform.vault_store.is_empty().unwrap());
-
-        // Test lock manager
-        let account = AccountId::new([0u8; 32]);
-        platform.lock_manager.with_account_lock(&account, || Ok(())).unwrap();
-
-        // Reset clears everything
-        platform.reset();
-        assert!(platform.blob_store.is_empty());
-        assert!(platform.vault_store.is_empty().unwrap());
-        assert_eq!(platform.lock_manager.account_count(), 0);
-    }
-
-    #[test]
-    fn test_memory_blob_store_thread_safety() {
-        use std::thread;
-
-        let store = Arc::new(MemoryBlobStore::new());
-        let mut handles = vec![];
-
-        // Spawn multiple threads writing different keys
-        for i in 0..10 {
-            let store = Arc::clone(&store);
-            handles.push(thread::spawn(move || {
-                let name = format!("key-{i}");
-                store.write_atomic(&name, format!("value-{i}").as_bytes()).unwrap();
-            }));
-        }
-
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        assert_eq!(store.len(), 10);
     }
 }

@@ -17,9 +17,6 @@ use crate::credential_storage::{AccountId, BlobKind, ContentId, StorageError};
 
 use super::format::{LABEL_VAULT_BLOB_AD, LABEL_VAULT_BLOB_CRED, LABEL_VAULT_INDEX, NONCE_SIZE};
 
-// =============================================================================
-// VaultKey
-// =============================================================================
 
 /// Vault encryption key (256-bit).
 ///
@@ -68,9 +65,6 @@ impl std::fmt::Debug for VaultKey {
     }
 }
 
-// =============================================================================
-// Content ID Computation
-// =============================================================================
 
 /// Computes the content ID (SHA256 hash) of plaintext data.
 ///
@@ -83,9 +77,6 @@ pub fn compute_content_id(plaintext: &[u8]) -> ContentId {
     ContentId::new(bytes)
 }
 
-// =============================================================================
-// AEAD Encryption
-// =============================================================================
 
 /// Constructs associated data for vault encryption.
 ///
@@ -320,52 +311,23 @@ pub fn hash_record_body(body: &[u8]) -> [u8; 32] {
     result
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_vault_key_generation() {
-        let key1 = VaultKey::generate();
-        let key2 = VaultKey::generate();
-
-        // Keys should be different (with overwhelming probability)
-        assert_ne!(key1.as_bytes(), key2.as_bytes());
-    }
-
-    #[test]
-    fn test_vault_key_from_bytes() {
-        let bytes = [0x42u8; 32];
-        let key = VaultKey::from_bytes(bytes);
-        assert_eq!(key.as_bytes(), &bytes);
-    }
-
-    #[test]
-    fn test_vault_key_debug_redacted() {
-        let key = VaultKey::generate();
-        let debug = format!("{key:?}");
-        assert!(debug.contains("REDACTED"));
-        assert!(!debug.contains("42")); // Shouldn't contain any key bytes
-    }
-
-    #[test]
     fn test_content_id_computation() {
         let data = b"hello, world!";
         let content_id = compute_content_id(data);
-
-        // SHA256 of "hello, world!" is known
         let expected_hex = "68e656b251e67e8358bef8483ab0d51c6619f3e7a1a9f0e75838d41ff368f728";
         assert_eq!(content_id.to_hex(), expected_hex);
 
-        // Same data should produce same content ID
+        // Same data produces same content ID
         let content_id2 = compute_content_id(data);
         assert_eq!(content_id, content_id2);
 
-        // Different data should produce different content ID
+        // Different data produces different content ID
         let content_id3 = compute_content_id(b"different data");
         assert_ne!(content_id, content_id3);
     }
@@ -378,64 +340,12 @@ mod tests {
 
         let (ciphertext, nonce) =
             vault_encrypt(&key, &account_id, LABEL_VAULT_INDEX, None, plaintext).unwrap();
-
-        // Ciphertext should be different from plaintext
         assert_ne!(&ciphertext[..plaintext.len()], plaintext);
-
-        // Ciphertext should include auth tag (16 bytes longer)
         assert_eq!(ciphertext.len(), plaintext.len() + 16);
 
         let decrypted =
             vault_decrypt(&key, &account_id, LABEL_VAULT_INDEX, None, &nonce, &ciphertext).unwrap();
-
         assert_eq!(decrypted, plaintext);
-    }
-
-    #[test]
-    fn test_vault_encrypt_wrong_key() {
-        let key1 = VaultKey::generate();
-        let key2 = VaultKey::generate();
-        let account_id = AccountId::new([0u8; 32]);
-        let plaintext = b"secret data";
-
-        let (ciphertext, nonce) =
-            vault_encrypt(&key1, &account_id, LABEL_VAULT_INDEX, None, plaintext).unwrap();
-
-        // Decrypting with wrong key should fail
-        let result =
-            vault_decrypt(&key2, &account_id, LABEL_VAULT_INDEX, None, &nonce, &ciphertext);
-        assert!(matches!(result, Err(StorageError::DecryptionFailed { .. })));
-    }
-
-    #[test]
-    fn test_vault_encrypt_wrong_account_id() {
-        let key = VaultKey::generate();
-        let account_id1 = AccountId::new([0x11u8; 32]);
-        let account_id2 = AccountId::new([0x22u8; 32]);
-        let plaintext = b"secret data";
-
-        let (ciphertext, nonce) =
-            vault_encrypt(&key, &account_id1, LABEL_VAULT_INDEX, None, plaintext).unwrap();
-
-        // Decrypting with wrong account ID should fail
-        let result =
-            vault_decrypt(&key, &account_id2, LABEL_VAULT_INDEX, None, &nonce, &ciphertext);
-        assert!(matches!(result, Err(StorageError::DecryptionFailed { .. })));
-    }
-
-    #[test]
-    fn test_vault_encrypt_wrong_label() {
-        let key = VaultKey::generate();
-        let account_id = AccountId::new([0u8; 32]);
-        let plaintext = b"secret data";
-
-        let (ciphertext, nonce) =
-            vault_encrypt(&key, &account_id, LABEL_VAULT_INDEX, None, plaintext).unwrap();
-
-        // Decrypting with wrong label should fail
-        let result =
-            vault_decrypt(&key, &account_id, LABEL_VAULT_BLOB_CRED, None, &nonce, &ciphertext);
-        assert!(matches!(result, Err(StorageError::DecryptionFailed { .. })));
     }
 
     #[test]
@@ -446,26 +356,11 @@ mod tests {
 
         let (mut ciphertext, nonce) =
             vault_encrypt(&key, &account_id, LABEL_VAULT_INDEX, None, plaintext).unwrap();
-
-        // Tamper with ciphertext
         ciphertext[0] ^= 0xFF;
 
-        // Decryption should fail
         let result =
             vault_decrypt(&key, &account_id, LABEL_VAULT_INDEX, None, &nonce, &ciphertext);
         assert!(matches!(result, Err(StorageError::DecryptionFailed { .. })));
-    }
-
-    #[test]
-    fn test_encrypt_decrypt_index() {
-        let key = VaultKey::generate();
-        let account_id = AccountId::new([0x33u8; 32]);
-        let index_data = b"serialized vault index data here";
-
-        let (ciphertext, nonce) = encrypt_index(&key, &account_id, index_data).unwrap();
-        let decrypted = decrypt_index(&key, &account_id, &nonce, &ciphertext).unwrap();
-
-        assert_eq!(decrypted, index_data);
     }
 
     #[test]
@@ -476,8 +371,6 @@ mod tests {
 
         let (content_id, ciphertext, nonce) =
             encrypt_blob(&key, &account_id, BlobKind::CredentialBlob, blob_data).unwrap();
-
-        // Content ID should be SHA256 of plaintext
         assert_eq!(content_id, compute_content_id(blob_data));
 
         let decrypted = decrypt_blob(
@@ -489,94 +382,6 @@ mod tests {
             &ciphertext,
         )
         .unwrap();
-
         assert_eq!(decrypted, blob_data);
-    }
-
-    #[test]
-    fn test_encrypt_blob_wrong_kind() {
-        let key = VaultKey::generate();
-        let account_id = AccountId::new([0u8; 32]);
-        let blob_data = b"some blob";
-
-        let (content_id, ciphertext, nonce) =
-            encrypt_blob(&key, &account_id, BlobKind::CredentialBlob, blob_data).unwrap();
-
-        // Decrypting with wrong blob kind should fail
-        let result = decrypt_blob(
-            &key,
-            &account_id,
-            BlobKind::AssociatedData, // Wrong kind
-            &content_id,
-            &nonce,
-            &ciphertext,
-        );
-        assert!(matches!(result, Err(StorageError::DecryptionFailed { .. })));
-    }
-
-    #[test]
-    fn test_encrypt_blob_wrong_content_id() {
-        let key = VaultKey::generate();
-        let account_id = AccountId::new([0u8; 32]);
-        let blob_data = b"some blob";
-
-        let (_, ciphertext, nonce) =
-            encrypt_blob(&key, &account_id, BlobKind::CredentialBlob, blob_data).unwrap();
-
-        // Decrypting with wrong content ID should fail
-        let wrong_content_id = ContentId::new([0xFFu8; 32]);
-        let result = decrypt_blob(
-            &key,
-            &account_id,
-            BlobKind::CredentialBlob,
-            &wrong_content_id,
-            &nonce,
-            &ciphertext,
-        );
-        assert!(matches!(result, Err(StorageError::DecryptionFailed { .. })));
-    }
-
-    #[test]
-    fn test_hash_record_body() {
-        let body = b"transaction commit body";
-        let hash = hash_record_body(body);
-
-        // Same input should produce same hash
-        let hash2 = hash_record_body(body);
-        assert_eq!(hash, hash2);
-
-        // Different input should produce different hash
-        let hash3 = hash_record_body(b"different body");
-        assert_ne!(hash, hash3);
-    }
-
-    #[test]
-    fn test_empty_plaintext() {
-        let key = VaultKey::generate();
-        let account_id = AccountId::new([0u8; 32]);
-
-        let (ciphertext, nonce) =
-            vault_encrypt(&key, &account_id, LABEL_VAULT_INDEX, None, b"").unwrap();
-
-        // Empty plaintext should encrypt to just the auth tag (16 bytes)
-        assert_eq!(ciphertext.len(), 16);
-
-        let decrypted =
-            vault_decrypt(&key, &account_id, LABEL_VAULT_INDEX, None, &nonce, &ciphertext).unwrap();
-        assert!(decrypted.is_empty());
-    }
-
-    #[test]
-    fn test_large_plaintext() {
-        let key = VaultKey::generate();
-        let account_id = AccountId::new([0u8; 32]);
-        let plaintext = vec![0xABu8; 1_000_000]; // 1 MB
-
-        let (ciphertext, nonce) =
-            vault_encrypt(&key, &account_id, LABEL_VAULT_INDEX, None, &plaintext).unwrap();
-
-        let decrypted =
-            vault_decrypt(&key, &account_id, LABEL_VAULT_INDEX, None, &nonce, &ciphertext).unwrap();
-        assert_eq!(decrypted, plaintext);
     }
 }

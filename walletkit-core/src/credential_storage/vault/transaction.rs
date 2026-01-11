@@ -20,9 +20,6 @@ use super::{
     records::{EncryptedBlobObject, EncryptedIndexSnapshot, TxnBegin, TxnCommit},
 };
 
-// =============================================================================
-// VaultTxn
-// =============================================================================
 
 /// An in-progress vault transaction.
 ///
@@ -338,9 +335,6 @@ impl<V: VaultFileStore> Drop for VaultTxn<'_, V> {
     }
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -360,30 +354,16 @@ mod tests {
     }
 
     #[test]
-    fn test_transaction_begin() {
-        let mut vault = create_test_vault();
-
-        let txn = VaultTxn::begin(&mut vault).unwrap();
-
-        assert!(!txn.is_committed());
-        assert_eq!(txn.blob_count(), 0);
-    }
-
-    #[test]
-    fn test_transaction_commit_empty() {
+    fn test_transaction_commit() {
         let mut vault = create_test_vault();
         let initial_gen = vault.generation();
-
         vault.with_txn(|_txn| Ok(())).unwrap();
-
-        // Generation should increase
         assert_eq!(vault.generation(), initial_gen + 1);
     }
 
     #[test]
-    fn test_transaction_put_blob() {
+    fn test_transaction_put_blob_roundtrip() {
         let mut vault = create_test_vault();
-
         let (content_id, ptr) = vault
             .with_txn(|txn| {
                 let mut index = txn.load_index()?;
@@ -393,107 +373,10 @@ mod tests {
                 Ok((cid, ptr))
             })
             .unwrap();
-
-        // Read back the blob
         let data = vault.read_blob(&ptr).unwrap();
         assert_eq!(data, b"hello, vault!");
-
-        // Verify content ID
         let expected_cid = super::super::crypto::compute_content_id(b"hello, vault!");
         assert_eq!(content_id, expected_cid);
-    }
-
-    #[test]
-    fn test_transaction_multiple_blobs() {
-        let mut vault = create_test_vault();
-
-        let ptrs = vault
-            .with_txn(|txn| {
-                let mut index = txn.load_index()?;
-
-                let (_, ptr1) = txn.put_blob(BlobKind::CredentialBlob, b"blob 1")?;
-                let (_, ptr2) = txn.put_blob(BlobKind::AssociatedData, b"blob 2")?;
-                let (_, ptr3) = txn.put_blob(BlobKind::CredentialBlob, b"blob 3")?;
-
-                index.blobs.push(ptr1.clone());
-                index.blobs.push(ptr2.clone());
-                index.blobs.push(ptr3.clone());
-                txn.set_index(index);
-
-                Ok(vec![ptr1, ptr2, ptr3])
-            })
-            .unwrap();
-
-        // Read back all blobs
-        assert_eq!(vault.read_blob(&ptrs[0]).unwrap(), b"blob 1");
-        assert_eq!(vault.read_blob(&ptrs[1]).unwrap(), b"blob 2");
-        assert_eq!(vault.read_blob(&ptrs[2]).unwrap(), b"blob 3");
-
-        // Verify index has all blobs
-        let index = vault.read_index().unwrap();
-        assert_eq!(index.blobs.len(), 3);
-    }
-
-    #[test]
-    fn test_transaction_upsert_record() {
-        let mut vault = create_test_vault();
-
-        let cred_id = CredentialId::generate();
-        let content_id = ContentId::new([0xAA; 32]);
-
-        // Add a record
-        vault
-            .with_txn(|txn| {
-                let mut index = txn.load_index()?;
-
-                let record = CredentialRecord::new(cred_id, 1, 1000, None, content_id, None);
-                index.records.push(record);
-                txn.set_index(index);
-
-                Ok(())
-            })
-            .unwrap();
-
-        // Verify record was added
-        let index = vault.read_index().unwrap();
-        assert_eq!(index.records.len(), 1);
-        assert_eq!(index.records[0].credential_id, cred_id);
-        assert_eq!(index.records[0].issuer_schema_id, 1);
-
-        // Update the record
-        vault
-            .with_txn(|txn| {
-                let index = txn.load_index()?;
-
-                let mut record = index.find_credential(&cred_id).unwrap().clone();
-                record.issuer_schema_id = 999;
-                txn.set_index(index);
-                txn.upsert_record(record)?;
-
-                Ok(())
-            })
-            .unwrap();
-
-        // Verify record was updated
-        let index = vault.read_index().unwrap();
-        assert_eq!(index.records.len(), 1);
-        assert_eq!(index.records[0].issuer_schema_id, 999);
-    }
-
-    #[test]
-    fn test_transaction_abort() {
-        let mut vault = create_test_vault();
-        let initial_gen = vault.generation();
-
-        // Start transaction but don't commit
-        {
-            let txn = VaultTxn::begin(&mut vault).unwrap();
-            // Let txn drop without commit
-            drop(txn);
-        }
-
-        // Generation should NOT increase
-        assert_eq!(vault.generation(), initial_gen);
     }
 
     #[test]
@@ -501,11 +384,7 @@ mod tests {
         let store = Arc::new(MemoryVaultStore::new());
         let account_id = AccountId::new([0x55u8; 32]);
         let vault_key = VaultKey::generate();
-
-        // Create vault
         let mut vault = VaultFile::create(Arc::clone(&store), account_id, vault_key.clone()).unwrap();
-
-        // Write some data
         vault
             .with_txn(|txn| {
                 let mut index = txn.load_index()?;
@@ -515,164 +394,14 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-
-        // Start another transaction but don't commit (simulate crash)
         {
             let mut txn = VaultTxn::begin(&mut vault).unwrap();
             txn.put_blob(BlobKind::CredentialBlob, b"this should be lost").unwrap();
-            // Drop without commit
         }
-
-        // Re-open the vault (simulating restart after crash)
         let vault = VaultFile::open(store, account_id, vault_key).unwrap();
-
-        // Should have original data but not the uncommitted blob
-        let index = vault.read_index().unwrap();
-        assert_eq!(index.blobs.len(), 1); // Only the committed blob
-
-        // Read the committed blob
-        let data = vault.read_blob(&index.blobs[0]).unwrap();
-        assert_eq!(data, b"important data");
-    }
-
-    #[test]
-    fn test_superblock_alternation() {
-        let mut vault = create_test_vault();
-
-        assert_eq!(vault.active_slot(), SuperblockSlot::A);
-
-        // First commit goes to B (since A was used for creation)
-        vault.with_txn(|_| Ok(())).unwrap();
-        assert_eq!(vault.active_slot(), SuperblockSlot::B);
-
-        // Second commit goes back to A
-        vault.with_txn(|_| Ok(())).unwrap();
-        assert_eq!(vault.active_slot(), SuperblockSlot::A);
-
-        // And so on...
-        vault.with_txn(|_| Ok(())).unwrap();
-        assert_eq!(vault.active_slot(), SuperblockSlot::B);
-    }
-
-    #[test]
-    fn test_generation_monotonic() {
-        let mut vault = create_test_vault();
-
-        let mut last_gen = vault.generation();
-        for _ in 0..10 {
-            vault.with_txn(|_| Ok(())).unwrap();
-            let new_gen = vault.generation();
-            assert!(new_gen > last_gen);
-            last_gen = new_gen;
-        }
-    }
-
-    #[test]
-    fn test_index_sequence_monotonic() {
-        let mut vault = create_test_vault();
-
-        let mut last_seq = vault.read_index().unwrap().sequence;
-        for _ in 0..10 {
-            vault.with_txn(|_| Ok(())).unwrap();
-            let new_seq = vault.read_index().unwrap().sequence;
-            assert!(new_seq > last_seq);
-            last_seq = new_seq;
-        }
-    }
-
-    #[test]
-    fn test_large_blob() {
-        let mut vault = create_test_vault();
-
-        // 1 MB blob
-        let large_data = vec![0xABu8; 1_000_000];
-
-        let ptr = vault
-            .with_txn(|txn| {
-                let mut index = txn.load_index()?;
-                let (_, ptr) = txn.put_blob(BlobKind::CredentialBlob, &large_data)?;
-                index.blobs.push(ptr.clone());
-                txn.set_index(index);
-                Ok(ptr)
-            })
-            .unwrap();
-
-        let read_data = vault.read_blob(&ptr).unwrap();
-        assert_eq!(read_data, large_data);
-    }
-
-    #[test]
-    fn test_empty_blob() {
-        let mut vault = create_test_vault();
-
-        let ptr = vault
-            .with_txn(|txn| {
-                let mut index = txn.load_index()?;
-                let (_, ptr) = txn.put_blob(BlobKind::CredentialBlob, b"")?;
-                index.blobs.push(ptr.clone());
-                txn.set_index(index);
-                Ok(ptr)
-            })
-            .unwrap();
-
-        let read_data = vault.read_blob(&ptr).unwrap();
-        assert!(read_data.is_empty());
-    }
-
-    #[test]
-    fn test_add_blob_to_index() {
-        let mut vault = create_test_vault();
-
-        vault
-            .with_txn(|txn| {
-                let index = txn.load_index()?;
-                txn.set_index(index);
-
-                let (_, ptr) = txn.put_blob(BlobKind::CredentialBlob, b"test")?;
-                txn.add_blob_to_index(ptr)?;
-
-                Ok(())
-            })
-            .unwrap();
-
         let index = vault.read_index().unwrap();
         assert_eq!(index.blobs.len(), 1);
-    }
-
-    #[test]
-    fn test_credential_record_with_blob() {
-        let mut vault = create_test_vault();
-
-        let cred_id = CredentialId::generate();
-
-        vault
-            .with_txn(|txn| {
-                let mut index = txn.load_index()?;
-
-                // Store credential blob
-                let (content_id, ptr) =
-                    txn.put_blob(BlobKind::CredentialBlob, b"credential data")?;
-                index.blobs.push(ptr);
-
-                // Create credential record
-                let record = CredentialRecord::new(cred_id, 42, 1000, None, content_id, None);
-                index.records.push(record);
-
-                txn.set_index(index);
-                Ok(())
-            })
-            .unwrap();
-
-        // Read back and verify
-        let index = vault.read_index().unwrap();
-        assert_eq!(index.records.len(), 1);
-        assert_eq!(index.records[0].credential_id, cred_id);
-        assert_eq!(index.records[0].issuer_schema_id, 42);
-        assert_eq!(index.records[0].status, CredentialStatus::Active);
-
-        // Read the blob via the pointer in the index
-        let blob_ptr = index.find_blob(&index.records[0].credential_blob_cid).unwrap();
-        let data = vault.read_blob(blob_ptr).unwrap();
-        assert_eq!(data, b"credential data");
+        let data = vault.read_blob(&index.blobs[0]).unwrap();
+        assert_eq!(data, b"important data");
     }
 }

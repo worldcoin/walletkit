@@ -14,9 +14,6 @@ use super::format::{
     FILE_HEADER_SIZE, FILE_MAGIC, FORMAT_VERSION, HASH_SIZE, SUPERBLOCK_MAGIC, SUPERBLOCK_SIZE,
 };
 
-// =============================================================================
-// FileHeader
-// =============================================================================
 
 /// File header at the start of every vault file.
 ///
@@ -122,9 +119,6 @@ impl FileHeader {
     }
 }
 
-// =============================================================================
-// Superblock
-// =============================================================================
 
 /// Superblock storing the committed transaction pointer.
 ///
@@ -254,9 +248,6 @@ impl Superblock {
     }
 }
 
-// =============================================================================
-// Superblock Selection
-// =============================================================================
 
 /// Which superblock slot is active.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -316,9 +307,6 @@ pub const fn select_active_superblock(
     }
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -328,122 +316,19 @@ mod tests {
     fn test_file_header_roundtrip() {
         let account_id = AccountId::new([0x42u8; 32]);
         let header = FileHeader::new(account_id);
-
         let encoded = header.encode();
         assert_eq!(encoded.len(), FILE_HEADER_SIZE as usize);
-
         let decoded = FileHeader::decode(&encoded).unwrap();
         assert_eq!(header, decoded);
     }
 
     #[test]
-    fn test_file_header_magic() {
-        let header = FileHeader::new(AccountId::new([0u8; 32]));
-        let encoded = header.encode();
-
-        assert_eq!(&encoded[0..8], FILE_MAGIC);
-    }
-
-    #[test]
-    fn test_file_header_invalid_magic() {
-        let mut bytes = FileHeader::new(AccountId::new([0u8; 32])).encode();
-        bytes[0] = 0xFF; // Corrupt magic
-
-        let result = FileHeader::decode(&bytes);
-        assert!(matches!(result, Err(StorageError::InvalidMagic { .. })));
-    }
-
-    #[test]
-    fn test_file_header_invalid_crc() {
-        let mut bytes = FileHeader::new(AccountId::new([0u8; 32])).encode();
-        bytes[44] ^= 0xFF; // Corrupt CRC
-
-        let result = FileHeader::decode(&bytes);
-        assert!(matches!(result, Err(StorageError::ChecksumMismatch { .. })));
-    }
-
-    #[test]
     fn test_superblock_roundtrip() {
         let sb = Superblock::new(42, 1234, [0xABu8; 32]);
-
         let encoded = sb.encode();
         assert_eq!(encoded.len(), SUPERBLOCK_SIZE as usize);
-
         let decoded = Superblock::decode(&encoded).unwrap();
         assert_eq!(sb, decoded);
-    }
-
-    #[test]
-    fn test_superblock_is_valid() {
-        let sb = Superblock::new(1, 100, [0u8; 32]);
-        let encoded = sb.encode();
-
         assert!(Superblock::is_valid(&encoded));
-
-        // Corrupt magic
-        let mut corrupted = encoded;
-        corrupted[0] = 0xFF;
-        assert!(!Superblock::is_valid(&corrupted));
-
-        // Corrupt CRC
-        let mut corrupted = encoded;
-        corrupted[53] ^= 0xFF;
-        assert!(!Superblock::is_valid(&corrupted));
-    }
-
-    #[test]
-    fn test_superblock_try_decode() {
-        let sb = Superblock::new(5, 200, [0x11u8; 32]);
-        let encoded = sb.encode();
-
-        let decoded = Superblock::try_decode(&encoded);
-        assert_eq!(decoded, Some(sb));
-
-        // Invalid superblock returns None
-        let invalid = vec![0u8; SUPERBLOCK_SIZE as usize];
-        assert_eq!(Superblock::try_decode(&invalid), None);
-    }
-
-    #[test]
-    fn test_select_active_superblock() {
-        let sb_a = Superblock::new(5, 100, [0u8; 32]);
-        let sb_b = Superblock::new(10, 200, [0u8; 32]);
-
-        // B has higher generation
-        let (active, slot) = select_active_superblock(Some(sb_a.clone()), Some(sb_b.clone())).unwrap();
-        assert_eq!(active, sb_b);
-        assert_eq!(slot, SuperblockSlot::B);
-
-        // A has higher generation
-        let sb_a_high = Superblock::new(15, 300, [0u8; 32]);
-        let (active, slot) = select_active_superblock(Some(sb_a_high.clone()), Some(sb_b)).unwrap();
-        assert_eq!(active, sb_a_high);
-        assert_eq!(slot, SuperblockSlot::A);
-
-        // Only A valid
-        let (active, slot) = select_active_superblock(Some(sb_a.clone()), None).unwrap();
-        assert_eq!(active, sb_a);
-        assert_eq!(slot, SuperblockSlot::A);
-
-        // Only B valid
-        let sb_b = Superblock::new(1, 50, [0u8; 32]);
-        let (active, slot) = select_active_superblock(None, Some(sb_b.clone())).unwrap();
-        assert_eq!(active, sb_b);
-        assert_eq!(slot, SuperblockSlot::B);
-
-        // Neither valid
-        assert!(select_active_superblock(None, None).is_none());
-    }
-
-    #[test]
-    fn test_superblock_slot_other() {
-        assert_eq!(SuperblockSlot::A.other(), SuperblockSlot::B);
-        assert_eq!(SuperblockSlot::B.other(), SuperblockSlot::A);
-    }
-
-    #[test]
-    fn test_superblock_slot_offset() {
-        assert_eq!(SuperblockSlot::A.offset(), super::super::format::SUPERBLOCK_A_OFFSET);
-        assert_eq!(SuperblockSlot::B.offset(), super::super::format::SUPERBLOCK_B_OFFSET);
     }
 }

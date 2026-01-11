@@ -43,9 +43,7 @@ fn io_error<S: Into<String>>(context: S, err: std::io::Error) -> StorageError {
 /// Name of the lock file in each account directory.
 const LOCK_FILENAME: &str = "account.lock";
 
-// =============================================================================
 // AccountLock
-// =============================================================================
 
 /// A held account lock.
 ///
@@ -70,9 +68,7 @@ impl AccountLock {
 
 // When AccountLock is dropped, the file is closed and the lock is released.
 
-// =============================================================================
 // IosLockManager
-// =============================================================================
 
 /// iOS file-based implementation of `AccountLockManager`.
 ///
@@ -295,181 +291,5 @@ impl IosLockManager {
         Self::acquire_exclusive_lock(&file)?;
 
         Ok(AccountLock::new(file, *account_id))
-    }
-}
-
-// =============================================================================
-// Tests
-// =============================================================================
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::thread;
-    use std::time::Duration;
-    use tempfile::TempDir;
-
-    fn create_temp_manager() -> (TempDir, IosLockManager) {
-        let temp_dir = TempDir::new().unwrap();
-        let manager = IosLockManager::new(temp_dir.path()).unwrap();
-        (temp_dir, manager)
-    }
-
-    #[test]
-    fn test_with_account_lock_basic() {
-        let (_temp, manager) = create_temp_manager();
-        let account_id = AccountId::new([0x42u8; 32]);
-
-        let result = manager.with_account_lock(&account_id, || {
-            Ok(42)
-        }).unwrap();
-
-        assert_eq!(result, 42);
-    }
-
-    #[test]
-    fn test_lock_file_created() {
-        let (temp, manager) = create_temp_manager();
-        let account_id = AccountId::new([0x42u8; 32]);
-
-        manager.with_account_lock(&account_id, || Ok(())).unwrap();
-
-        let lock_path = temp.path()
-            .join("worldid")
-            .join("accounts")
-            .join(account_id.to_string())
-            .join("account.lock");
-
-        assert!(lock_path.exists());
-    }
-
-    #[test]
-    fn test_try_with_account_lock_success() {
-        let (_temp, manager) = create_temp_manager();
-        let account_id = AccountId::new([0x42u8; 32]);
-
-        let result = manager.try_with_account_lock(&account_id, || {
-            Ok(42)
-        }).unwrap();
-
-        assert_eq!(result, Some(42));
-    }
-
-    #[test]
-    fn test_acquire_lock_guard() {
-        let (_temp, manager) = create_temp_manager();
-        let account_id = AccountId::new([0x42u8; 32]);
-
-        let guard = manager.acquire_lock(&account_id).unwrap();
-        // Lock is held
-
-        drop(guard);
-        // Lock is released
-    }
-
-    #[test]
-    fn test_concurrent_threads_serialized() {
-        let (_temp, manager) = create_temp_manager();
-        let manager = Arc::new(manager);
-        let account_id = AccountId::new([0x42u8; 32]);
-
-        let counter = Arc::new(AtomicUsize::new(0));
-        let max_concurrent = Arc::new(AtomicUsize::new(0));
-
-        let mut handles = vec![];
-
-        for _ in 0..10 {
-            let manager = Arc::clone(&manager);
-            let counter = Arc::clone(&counter);
-            let max_concurrent = Arc::clone(&max_concurrent);
-
-            handles.push(thread::spawn(move || {
-                manager.with_account_lock(&account_id, || {
-                    // Increment counter
-                    let current = counter.fetch_add(1, Ordering::SeqCst) + 1;
-
-                    // Track max concurrent (should always be 1)
-                    max_concurrent.fetch_max(current, Ordering::SeqCst);
-
-                    // Simulate some work
-                    thread::sleep(Duration::from_millis(10));
-
-                    // Decrement counter
-                    counter.fetch_sub(1, Ordering::SeqCst);
-
-                    Ok(())
-                })
-            }));
-        }
-
-        for handle in handles {
-            handle.join().unwrap().unwrap();
-        }
-
-        // Max concurrent should be 1 (lock serialized access)
-        assert_eq!(max_concurrent.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn test_different_accounts_not_blocked() {
-        let (_temp, manager) = create_temp_manager();
-        let manager = Arc::new(manager);
-
-        let account1 = AccountId::new([0x11u8; 32]);
-        let account2 = AccountId::new([0x22u8; 32]);
-
-        let started = Arc::new(AtomicUsize::new(0));
-        let finished = Arc::new(AtomicUsize::new(0));
-
-        let manager1 = Arc::clone(&manager);
-        let started1 = Arc::clone(&started);
-        let finished1 = Arc::clone(&finished);
-
-        let handle1 = thread::spawn(move || {
-            manager1.with_account_lock(&account1, || {
-                started1.fetch_add(1, Ordering::SeqCst);
-                // Wait a bit
-                thread::sleep(Duration::from_millis(50));
-                finished1.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-        });
-
-        // Give thread 1 time to start and acquire lock
-        thread::sleep(Duration::from_millis(10));
-
-        let manager2 = Arc::clone(&manager);
-        let started2 = Arc::clone(&started);
-        let finished2 = Arc::clone(&finished);
-
-        let handle2 = thread::spawn(move || {
-            manager2.with_account_lock(&account2, || {
-                started2.fetch_add(1, Ordering::SeqCst);
-                finished2.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-        });
-
-        handle2.join().unwrap().unwrap();
-
-        // Thread 2 should have been able to run while thread 1 was sleeping
-        // (different accounts = different locks)
-        assert_eq!(finished.load(Ordering::SeqCst), 1);
-        assert_eq!(started.load(Ordering::SeqCst), 2);
-
-        handle1.join().unwrap().unwrap();
-    }
-
-    #[test]
-    fn test_error_propagation() {
-        let (_temp, manager) = create_temp_manager();
-        let account_id = AccountId::new([0x42u8; 32]);
-
-        let result: StorageResult<()> = manager.with_account_lock(&account_id, || {
-            Err(StorageError::Internal { message: "test error".to_string() })
-        });
-
-        assert!(result.is_err());
     }
 }

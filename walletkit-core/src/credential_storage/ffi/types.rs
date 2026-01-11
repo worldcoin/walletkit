@@ -11,9 +11,7 @@ use crate::credential_storage::{
     ImportOutcome as InternalImportOutcome, PendingActionEntry, VaultProvisioningEnvelope,
 };
 
-// =============================================================================
 // Account ID
-// =============================================================================
 
 /// Account identifier (32-byte hex string).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, uniffi::Record)]
@@ -57,9 +55,7 @@ impl From<&InternalAccountId> for AccountId {
     }
 }
 
-// =============================================================================
 // Credential ID
-// =============================================================================
 
 /// Credential identifier (16-byte hex string).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, uniffi::Record)]
@@ -109,9 +105,7 @@ impl From<&InternalCredentialId> for CredentialId {
     }
 }
 
-// =============================================================================
 // Credential Status
-// =============================================================================
 
 /// Credential status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -140,9 +134,7 @@ impl From<CredentialStatus> for InternalCredentialStatus {
     }
 }
 
-// =============================================================================
 // Credential Record
-// =============================================================================
 
 /// Credential record (metadata without blob data).
 #[derive(Debug, Clone, uniffi::Record)]
@@ -187,9 +179,7 @@ impl From<&InternalCredentialRecord> for CredentialRecord {
     }
 }
 
-// =============================================================================
 // Credential Filter
-// =============================================================================
 
 /// Credential filter for listing credentials.
 #[derive(Debug, Clone, Default, uniffi::Record)]
@@ -222,9 +212,7 @@ impl From<CredentialFilter> for InternalCredentialFilter {
     }
 }
 
-// =============================================================================
 // Import Outcome
-// =============================================================================
 
 /// Import outcome.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -244,9 +232,7 @@ impl From<InternalImportOutcome> for ImportOutcome {
     }
 }
 
-// =============================================================================
 // Credential Transfer
-// =============================================================================
 
 /// Credential transfer bytes.
 ///
@@ -272,9 +258,7 @@ impl From<CredentialTransfer> for CredentialTransferBytes {
     }
 }
 
-// =============================================================================
 // Provisioning Envelope
-// =============================================================================
 
 /// Vault provisioning envelope.
 ///
@@ -300,9 +284,7 @@ impl From<ProvisioningEnvelope> for VaultProvisioningEnvelope {
     }
 }
 
-// =============================================================================
 // Pending Action
-// =============================================================================
 
 /// Pending action entry.
 #[derive(Debug, Clone, uniffi::Record)]
@@ -343,9 +325,7 @@ impl From<&PendingActionEntry> for PendingAction {
     }
 }
 
-// =============================================================================
 // Credential Data
-// =============================================================================
 
 /// Credential data (blob and optional associated data).
 ///
@@ -359,9 +339,7 @@ pub struct CredentialData {
     pub associated_data: Option<Vec<u8>>,
 }
 
-// =============================================================================
 // Device Key Pair
-// =============================================================================
 
 /// Device key pair for provisioning.
 ///

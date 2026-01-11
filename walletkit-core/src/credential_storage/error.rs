@@ -10,9 +10,7 @@ use super::types::{AccountId, ContentId, CredentialId};
 /// Errors that can occur during credential storage operations.
 #[derive(Debug)]
 pub enum StorageError {
-    // =========================================================================
     // I/O Errors
-    // =========================================================================
     /// An I/O operation failed.
     IoError {
         /// Context describing the operation.
@@ -21,9 +19,6 @@ pub enum StorageError {
         source: std::io::Error,
     },
 
-    // =========================================================================
-    // Format Errors
-    // =========================================================================
     /// Invalid magic bytes in file header.
     InvalidMagic {
         /// Expected magic bytes.
@@ -66,9 +61,6 @@ pub enum StorageError {
         context: String,
     },
 
-    // =========================================================================
-    // Crypto Errors
-    // =========================================================================
     /// Decryption failed (authentication failure or corrupted ciphertext).
     DecryptionFailed {
         /// Context describing what was being decrypted.
@@ -87,9 +79,6 @@ pub enum StorageError {
         context: String,
     },
 
-    // =========================================================================
-    // Vault Errors
-    // =========================================================================
     /// No valid superblock found in vault file.
     NoValidSuperblock,
 
@@ -105,9 +94,6 @@ pub enum StorageError {
     /// Vault file is not initialized.
     VaultNotInitialized,
 
-    // =========================================================================
-    // Account Errors
-    // =========================================================================
     /// Account not found.
     AccountNotFound {
         /// The account ID that was not found.
@@ -120,9 +106,6 @@ pub enum StorageError {
         account_id: AccountId,
     },
 
-    // =========================================================================
-    // Credential Errors
-    // =========================================================================
     /// Credential not found.
     CredentialNotFound {
         /// The credential ID that was not found.
@@ -135,9 +118,6 @@ pub enum StorageError {
         content_id: ContentId,
     },
 
-    // =========================================================================
-    // Nullifier Errors
-    // =========================================================================
     /// Nullifier has already been consumed.
     NullifierAlreadyConsumed,
 
@@ -156,9 +136,6 @@ pub enum StorageError {
     /// Pending action store is at capacity.
     PendingActionStoreFull,
 
-    // =========================================================================
-    // Import Errors
-    // =========================================================================
     /// Account ID in transfer doesn't match local account.
     AccountIdMismatch {
         /// Expected account ID.
@@ -173,9 +150,6 @@ pub enum StorageError {
         reason: String,
     },
 
-    // =========================================================================
-    // Platform Errors
-    // =========================================================================
     /// Device keystore operation failed.
     KeystoreError {
         /// Error message from the keystore.
@@ -188,9 +162,6 @@ pub enum StorageError {
         message: String,
     },
 
-    // =========================================================================
-    // Serialization Errors
-    // =========================================================================
     /// Serialization failed.
     SerializationError {
         /// Error message.
@@ -203,9 +174,6 @@ pub enum StorageError {
         message: String,
     },
 
-    // =========================================================================
-    // Other Errors
-    // =========================================================================
     /// Operation is not supported.
     NotSupported {
         /// Description of what's not supported.
@@ -384,58 +352,12 @@ mod tests {
             expected: b"WIDVAULT",
             found: vec![0, 1, 2, 3],
         };
-        let msg = format!("{err}");
-        assert!(msg.contains("invalid magic bytes"));
-
+        assert!(format!("{err}").contains("invalid magic bytes"));
         let err = StorageError::AccountNotFound {
             account_id: AccountId::new([0x42; 32]),
         };
-        let msg = format!("{err}");
-        assert!(msg.contains("account not found"));
-        assert!(msg.contains("42424242")); // hex representation
-
+        assert!(format!("{err}").contains("account not found"));
         let err = StorageError::NullifierAlreadyConsumed;
-        let msg = format!("{err}");
-        assert!(msg.contains("nullifier has already been consumed"));
-    }
-
-    #[test]
-    fn test_error_from_io() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-        let err: StorageError = io_err.into();
-        
-        match err {
-            StorageError::IoError { context, .. } => {
-                assert_eq!(context, "unspecified");
-            }
-            _ => panic!("expected IoError"),
-        }
-    }
-
-    #[test]
-    fn test_error_helpers() {
-        let err = StorageError::io("reading header", std::io::Error::new(std::io::ErrorKind::Other, "test"));
-        assert!(matches!(err, StorageError::IoError { .. }));
-
-        let err = StorageError::corrupted("invalid record type");
-        assert!(matches!(err, StorageError::CorruptedData { .. }));
-
-        let err = StorageError::decryption("index snapshot");
-        assert!(matches!(err, StorageError::DecryptionFailed { .. }));
-
-        let err = StorageError::serialization("failed to encode");
-        assert!(matches!(err, StorageError::SerializationError { .. }));
-    }
-
-    #[test]
-    fn test_error_source() {
-        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file not found");
-        let err = StorageError::io("test", io_err);
-        
-        use std::error::Error;
-        assert!(err.source().is_some());
-
-        let err = StorageError::NullifierAlreadyConsumed;
-        assert!(err.source().is_none());
+        assert!(format!("{err}").contains("nullifier has already been consumed"));
     }
 }

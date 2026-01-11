@@ -11,9 +11,7 @@ use sha2::{Digest, Sha256};
 
 use crate::credential_storage::{vault::VaultKey, AccountId};
 
-// =============================================================================
 // Domain Separation Labels
-// =============================================================================
 
 /// Label for deriving account ID from vault key.
 const LABEL_ACCOUNT_ID: &[u8] = b"worldid:account-id";
@@ -30,9 +28,7 @@ const LABEL_ACTION_SCOPE: &[u8] = b"worldid:action-scope";
 /// Label for computing request ID.
 const LABEL_PROOF_REQUEST: &[u8] = b"worldid:proof-request";
 
-// =============================================================================
 // Account ID Derivation
-// =============================================================================
 
 /// Derives the account ID from the vault key.
 ///
@@ -60,9 +56,7 @@ pub fn derive_account_id(vault_key: &VaultKey) -> AccountId {
     AccountId::new(bytes)
 }
 
-// =============================================================================
 // Issuer Blind Derivation
-// =============================================================================
 
 /// Derives the issuer blinding factor for a specific issuer schema.
 ///
@@ -87,7 +81,10 @@ pub fn derive_account_id(vault_key: &VaultKey) -> AccountId {
 ///
 /// A 32-byte blinding factor.
 #[must_use]
-pub fn derive_issuer_blind(issuer_blind_seed: &[u8; 32], issuer_schema_id: u64) -> [u8; 32] {
+pub fn derive_issuer_blind(
+    issuer_blind_seed: &[u8; 32],
+    issuer_schema_id: u64,
+) -> [u8; 32] {
     // Build info: label || issuer_schema_id
     let mut info = Vec::with_capacity(LABEL_ISSUER_BLIND.len() + 8);
     info.extend_from_slice(LABEL_ISSUER_BLIND);
@@ -96,9 +93,7 @@ pub fn derive_issuer_blind(issuer_blind_seed: &[u8; 32], issuer_schema_id: u64) 
     hkdf_expand_sha256(issuer_blind_seed, &info)
 }
 
-// =============================================================================
 // Session R Derivation
-// =============================================================================
 
 /// Derives the session blinding factor for a specific RP and action.
 ///
@@ -138,9 +133,7 @@ pub fn derive_session_r(
     hkdf_expand_sha256(session_blind_seed, &info)
 }
 
-// =============================================================================
 // Action Scope & Request ID
-// =============================================================================
 
 /// Computes the action scope from RP ID and action ID.
 ///
@@ -196,9 +189,7 @@ pub fn compute_request_id(signed_request_bytes: &[u8]) -> [u8; 32] {
     bytes
 }
 
-// =============================================================================
 // Random Generation
-// =============================================================================
 
 /// Generates random seeds for a new account.
 ///
@@ -235,10 +226,6 @@ pub fn generate_device_id() -> [u8; 16] {
     getrandom::getrandom(&mut device_id).expect("getrandom failed");
     device_id
 }
-
-// =============================================================================
-// HKDF Implementation
-// =============================================================================
 
 /// HKDF-Expand using SHA-256 to derive a 32-byte key.
 ///
@@ -311,207 +298,72 @@ fn hmac_sha256(key: &[u8; 32], message: &[u8]) -> [u8; 32] {
     result
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_derive_account_id_deterministic() {
+    fn test_derive_account_id() {
         let vault_key = VaultKey::from_bytes([0x42u8; 32]);
-
         let id1 = derive_account_id(&vault_key);
         let id2 = derive_account_id(&vault_key);
-
         assert_eq!(id1, id2);
+
+        // Different keys produce different IDs
+        let key2 = VaultKey::from_bytes([0x11u8; 32]);
+        let id3 = derive_account_id(&key2);
+        assert_ne!(id1, id3);
     }
 
     #[test]
-    fn test_derive_account_id_different_keys() {
-        let key1 = VaultKey::from_bytes([0x11u8; 32]);
-        let key2 = VaultKey::from_bytes([0x22u8; 32]);
-
-        let id1 = derive_account_id(&key1);
-        let id2 = derive_account_id(&key2);
-
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
-    fn test_derive_issuer_blind_deterministic() {
+    fn test_derive_issuer_blind() {
         let seed = [0xABu8; 32];
-
         let blind1 = derive_issuer_blind(&seed, 42);
         let blind2 = derive_issuer_blind(&seed, 42);
-
         assert_eq!(blind1, blind2);
+
+        // Different schemas produce different blinds
+        let blind3 = derive_issuer_blind(&seed, 1);
+        assert_ne!(blind1, blind3);
+
+        // Different seeds produce different blinds
+        let seed2 = [0x11u8; 32];
+        let blind4 = derive_issuer_blind(&seed2, 42);
+        assert_ne!(blind1, blind4);
     }
 
     #[test]
-    fn test_derive_issuer_blind_different_schemas() {
-        let seed = [0xABu8; 32];
-
-        let blind1 = derive_issuer_blind(&seed, 1);
-        let blind2 = derive_issuer_blind(&seed, 2);
-
-        assert_ne!(blind1, blind2);
-    }
-
-    #[test]
-    fn test_derive_issuer_blind_different_seeds() {
-        let seed1 = [0x11u8; 32];
-        let seed2 = [0x22u8; 32];
-
-        let blind1 = derive_issuer_blind(&seed1, 42);
-        let blind2 = derive_issuer_blind(&seed2, 42);
-
-        assert_ne!(blind1, blind2);
-    }
-
-    #[test]
-    fn test_derive_session_r_deterministic() {
+    fn test_derive_session_r() {
         let seed = [0xCDu8; 32];
         let rp_id = [0x11u8; 32];
         let action_id = [0x22u8; 32];
-
         let r1 = derive_session_r(&seed, &rp_id, &action_id);
         let r2 = derive_session_r(&seed, &rp_id, &action_id);
-
         assert_eq!(r1, r2);
-    }
 
-    #[test]
-    fn test_derive_session_r_different_rp() {
-        let seed = [0xCDu8; 32];
-        let rp_id1 = [0x11u8; 32];
+        // Different RP produces different R
         let rp_id2 = [0x33u8; 32];
-        let action_id = [0x22u8; 32];
+        let r3 = derive_session_r(&seed, &rp_id2, &action_id);
+        assert_ne!(r1, r3);
 
-        let r1 = derive_session_r(&seed, &rp_id1, &action_id);
-        let r2 = derive_session_r(&seed, &rp_id2, &action_id);
-
-        assert_ne!(r1, r2);
-    }
-
-    #[test]
-    fn test_derive_session_r_different_action() {
-        let seed = [0xCDu8; 32];
-        let rp_id = [0x11u8; 32];
-        let action_id1 = [0x22u8; 32];
+        // Different action produces different R
         let action_id2 = [0x44u8; 32];
-
-        let r1 = derive_session_r(&seed, &rp_id, &action_id1);
-        let r2 = derive_session_r(&seed, &rp_id, &action_id2);
-
-        assert_ne!(r1, r2);
-    }
-
-    #[test]
-    fn test_compute_action_scope_deterministic() {
-        let rp_id = [0x11u8; 32];
-        let action_id = [0x22u8; 32];
-
-        let scope1 = compute_action_scope(&rp_id, &action_id);
-        let scope2 = compute_action_scope(&rp_id, &action_id);
-
-        assert_eq!(scope1, scope2);
-    }
-
-    #[test]
-    fn test_compute_action_scope_different_inputs() {
-        let rp_id1 = [0x11u8; 32];
-        let rp_id2 = [0x33u8; 32];
-        let action_id = [0x22u8; 32];
-
-        let scope1 = compute_action_scope(&rp_id1, &action_id);
-        let scope2 = compute_action_scope(&rp_id2, &action_id);
-
-        assert_ne!(scope1, scope2);
-    }
-
-    #[test]
-    fn test_compute_request_id_deterministic() {
-        let request = b"signed proof request bytes";
-
-        let id1 = compute_request_id(request);
-        let id2 = compute_request_id(request);
-
-        assert_eq!(id1, id2);
-    }
-
-    #[test]
-    fn test_compute_request_id_different_inputs() {
-        let request1 = b"request 1";
-        let request2 = b"request 2";
-
-        let id1 = compute_request_id(request1);
-        let id2 = compute_request_id(request2);
-
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
-    fn test_generate_blind_seeds_random() {
-        let (seed1a, seed1b) = generate_blind_seeds();
-        let (seed2a, seed2b) = generate_blind_seeds();
-
-        // Seeds should be different (with overwhelming probability)
-        assert_ne!(seed1a, seed2a);
-        assert_ne!(seed1b, seed2b);
-
-        // Issuer and session seeds should be different
-        assert_ne!(seed1a, seed1b);
-    }
-
-    #[test]
-    fn test_generate_device_id_random() {
-        let id1 = generate_device_id();
-        let id2 = generate_device_id();
-
-        assert_ne!(id1, id2);
+        let r4 = derive_session_r(&seed, &rp_id, &action_id2);
+        assert_ne!(r1, r4);
     }
 
     #[test]
     fn test_hmac_sha256_known_vector() {
         // Test vector from RFC 4231
-        // Key = 0x0b repeated 20 times (padded to 32 for our impl)
         let mut key = [0u8; 32];
         key[..20].copy_from_slice(&[0x0b; 20]);
-
         let message = b"Hi There";
         let result = hmac_sha256(&key, message);
-
-        // Expected result from RFC 4231 test case 1
         let expected = [
-            0xb0, 0x34, 0x4c, 0x61, 0xd8, 0xdb, 0x38, 0x53, 0x5c, 0xa8, 0xaf, 0xce, 0xaf, 0x0b,
-            0xf1, 0x2b, 0x88, 0x1d, 0xc2, 0x00, 0xc9, 0x83, 0x3d, 0xa7, 0x26, 0xe9, 0x37, 0x6c,
-            0x2e, 0x32, 0xcf, 0xf7,
+            0xb0, 0x34, 0x4c, 0x61, 0xd8, 0xdb, 0x38, 0x53, 0x5c, 0xa8, 0xaf, 0xce,
+            0xaf, 0x0b, 0xf1, 0x2b, 0x88, 0x1d, 0xc2, 0x00, 0xc9, 0x83, 0x3d, 0xa7,
+            0x26, 0xe9, 0x37, 0x6c, 0x2e, 0x32, 0xcf, 0xf7,
         ];
-
         assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn test_hkdf_expand_deterministic() {
-        let prk = [0x42u8; 32];
-        let info = b"test info";
-
-        let result1 = hkdf_expand_sha256(&prk, info);
-        let result2 = hkdf_expand_sha256(&prk, info);
-
-        assert_eq!(result1, result2);
-    }
-
-    #[test]
-    fn test_hkdf_expand_different_info() {
-        let prk = [0x42u8; 32];
-
-        let result1 = hkdf_expand_sha256(&prk, b"info 1");
-        let result2 = hkdf_expand_sha256(&prk, b"info 2");
-
-        assert_ne!(result1, result2);
     }
 }

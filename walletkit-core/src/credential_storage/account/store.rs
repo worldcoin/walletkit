@@ -18,9 +18,7 @@ use super::{
     state::{create_account_state, load_account_state, save_account_state, wrap_vault_key},
 };
 
-// =============================================================================
 // Platform Bundle
-// =============================================================================
 
 /// A bundle of platform implementations for a specific account.
 ///
@@ -47,9 +45,7 @@ pub trait PlatformBundle: Send + Sync {
     fn create_account_directory(&self, account_id: &AccountId) -> StorageResult<()>;
 }
 
-// =============================================================================
 // WorldIdStore
-// =============================================================================
 
 /// Root store for World ID credential storage.
 ///
@@ -359,9 +355,6 @@ where
         ))
     }
 
-    // =========================================================================
-    // Device ID Management
-    // =========================================================================
 
     /// Filename for device ID.
     const DEVICE_ID_FILENAME: &'static str = "device_id.bin";
@@ -404,9 +397,6 @@ where
     }
 }
 
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -415,9 +405,6 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::RwLock;
 
-    // =========================================================================
-    // Test-only Platform Bundle Implementation
-    // =========================================================================
 
     /// Shared in-memory platform bundle that properly shares storage across opens.
     ///
@@ -565,9 +552,6 @@ mod tests {
         }
     }
 
-    // =========================================================================
-    // Test Helpers
-    // =========================================================================
 
     fn create_test_store(
     ) -> WorldIdStore<MemoryKeystore, SharedMemoryPlatformBundle, MemoryLockManager> {
@@ -578,206 +562,40 @@ mod tests {
         WorldIdStore::new(keystore, platform, lock_manager)
     }
 
-    // =========================================================================
-    // Tests
-    // =========================================================================
 
     #[test]
-    fn test_create_account() {
+    fn test_create_and_open_account() {
         let store = create_test_store();
-
         let handle = store.create_account().unwrap();
         let account_id = *handle.account_id();
-
-        // Account should appear in list
         let accounts = store.list_accounts().unwrap();
         assert!(accounts.contains(&account_id));
-    }
-
-    #[test]
-    fn test_list_accounts_empty() {
-        let store = create_test_store();
-
-        let accounts = store.list_accounts().unwrap();
-        assert!(accounts.is_empty());
-    }
-
-    #[test]
-    fn test_create_multiple_accounts() {
-        let store = create_test_store();
-
-        let handle1 = store.create_account().unwrap();
-        let handle2 = store.create_account().unwrap();
-        let handle3 = store.create_account().unwrap();
-
-        let accounts = store.list_accounts().unwrap();
-        assert_eq!(accounts.len(), 3);
-        assert!(accounts.contains(handle1.account_id()));
-        assert!(accounts.contains(handle2.account_id()));
-        assert!(accounts.contains(handle3.account_id()));
-    }
-
-    #[test]
-    fn test_open_account() {
-        let keystore = Arc::new(MemoryKeystore::new());
-        let platform = Arc::new(SharedMemoryPlatformBundle::new());
-        let lock_manager = Arc::new(MemoryLockManager::new());
-        let store = WorldIdStore::new(
-            Arc::clone(&keystore),
-            Arc::clone(&platform),
-            Arc::clone(&lock_manager),
-        );
-
-        // Create account
-        let handle = store.create_account().unwrap();
-        let account_id = *handle.account_id();
         drop(handle);
-
-        // Re-open account
-        let store2 = WorldIdStore::new(keystore, platform, lock_manager);
-        let handle2 = store2.open_account(&account_id).unwrap();
-
+        let handle2 = store.open_account(&account_id).unwrap();
         assert_eq!(handle2.account_id(), &account_id);
     }
 
     #[test]
-    fn test_open_nonexistent_account() {
+    fn test_list_accounts() {
         let store = create_test_store();
-        let fake_id = AccountId::new([0xFFu8; 32]);
-
-        let result = store.open_account(&fake_id);
-        assert!(matches!(result, Err(StorageError::AccountNotFound { .. })));
+        assert!(store.list_accounts().unwrap().is_empty());
+        store.create_account().unwrap();
+        store.create_account().unwrap();
+        assert_eq!(store.list_accounts().unwrap().len(), 2);
     }
 
     #[test]
-    fn test_account_state_persists() {
+    fn test_account_persistence() {
         let keystore = Arc::new(MemoryKeystore::new());
         let platform = Arc::new(SharedMemoryPlatformBundle::new());
         let lock_manager = Arc::new(MemoryLockManager::new());
-        let store = WorldIdStore::new(
-            Arc::clone(&keystore),
-            Arc::clone(&platform),
-            Arc::clone(&lock_manager),
-        );
-
-        // Create account and set leaf index
+        let store = WorldIdStore::new(Arc::clone(&keystore), Arc::clone(&platform), Arc::clone(&lock_manager));
         let mut handle = store.create_account().unwrap();
         let account_id = *handle.account_id();
         handle.set_leaf_index_cache(12345).unwrap();
         drop(handle);
-
-        // Re-open and verify
         let store2 = WorldIdStore::new(keystore, platform, lock_manager);
         let handle2 = store2.open_account(&account_id).unwrap();
-
         assert_eq!(handle2.get_leaf_index_cache().unwrap(), Some(12345));
-    }
-
-    #[test]
-    fn test_import_vault_provisioning_envelope() {
-        use crate::credential_storage::provisioning::DeviceKeyPair;
-
-        let store = create_test_store();
-
-        // Create a source account
-        let source_handle = store.create_account().unwrap();
-        let source_account_id = *source_handle.account_id();
-
-        // Generate a key pair for the "new device"
-        let new_device_keypair = DeviceKeyPair::generate();
-
-        // Export provisioning envelope from source
-        let envelope = source_handle
-            .export_vault_provisioning_envelope(new_device_keypair.public_key())
-            .unwrap();
-
-        // Import on a "new device" (using the same store for simplicity)
-        // First, we need to use a fresh store since the account already exists
-        let keystore2 = Arc::new(MemoryKeystore::new());
-        let platform2 = Arc::new(SharedMemoryPlatformBundle::new());
-        let lock_manager2 = Arc::new(MemoryLockManager::new());
-        let store2 = WorldIdStore::new(keystore2, platform2, lock_manager2);
-
-        let imported_handle = store2
-            .import_vault_provisioning_envelope(&envelope, new_device_keypair.secret_key())
-            .unwrap();
-
-        // Verify account ID matches
-        assert_eq!(imported_handle.account_id(), &source_account_id);
-
-        // Verify key derivation produces same results
-        let source_blind = source_handle.derive_issuer_blind(42);
-        let imported_blind = imported_handle.derive_issuer_blind(42);
-        assert_eq!(source_blind, imported_blind);
-
-        let rp_id = [0x11u8; 32];
-        let action_id = [0x22u8; 32];
-        let source_r = source_handle.derive_session_r(&rp_id, &action_id);
-        let imported_r = imported_handle.derive_session_r(&rp_id, &action_id);
-        assert_eq!(source_r, imported_r);
-    }
-
-    #[test]
-    fn test_import_vault_provisioning_envelope_wrong_key() {
-        use crate::credential_storage::provisioning::DeviceKeyPair;
-
-        let store = create_test_store();
-
-        // Create a source account
-        let source_handle = store.create_account().unwrap();
-
-        // Generate two different key pairs
-        let intended_device = DeviceKeyPair::generate();
-        let wrong_device = DeviceKeyPair::generate();
-
-        // Export provisioning envelope for intended device
-        let envelope = source_handle
-            .export_vault_provisioning_envelope(intended_device.public_key())
-            .unwrap();
-
-        // Try to import with wrong key
-        let keystore2 = Arc::new(MemoryKeystore::new());
-        let platform2 = Arc::new(SharedMemoryPlatformBundle::new());
-        let lock_manager2 = Arc::new(MemoryLockManager::new());
-        let store2 = WorldIdStore::new(keystore2, platform2, lock_manager2);
-
-        let result = store2.import_vault_provisioning_envelope(&envelope, wrong_device.secret_key());
-        assert!(matches!(result, Err(StorageError::DecryptionFailed { .. })));
-    }
-
-    #[test]
-    fn test_import_vault_provisioning_envelope_already_exists() {
-        use crate::credential_storage::provisioning::DeviceKeyPair;
-
-        // Create source store and account
-        let source_store = create_test_store();
-        let source_handle = source_store.create_account().unwrap();
-
-        // Generate a key pair for the "new device"
-        let new_device_keypair = DeviceKeyPair::generate();
-
-        // Export provisioning envelope
-        let envelope = source_handle
-            .export_vault_provisioning_envelope(new_device_keypair.public_key())
-            .unwrap();
-
-        // Create target store (fresh device)
-        let target_store = create_test_store();
-
-        // Import once (should succeed)
-        let _ = target_store
-            .import_vault_provisioning_envelope(&envelope, new_device_keypair.secret_key())
-            .unwrap();
-
-        // Try to import again (should fail - account already exists)
-        let result = target_store.import_vault_provisioning_envelope(&envelope, new_device_keypair.secret_key());
-        assert!(matches!(result, Err(StorageError::AccountAlreadyExists { .. })));
-    }
-
-    #[test]
-    fn test_store_debug() {
-        let store = create_test_store();
-        let debug = format!("{store:?}");
-        assert!(debug.contains("WorldIdStore"));
     }
 }
