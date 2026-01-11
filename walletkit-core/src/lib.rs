@@ -78,4 +78,10 @@ pub mod common_apps;
 mod merkle_tree;
 mod request;
 
+/// Credential storage system for World ID v4.0.
+///
+/// This module provides secure, crash-safe storage for World ID credentials
+/// with support for multi-device sync and privacy-preserving nullifier handling.
+pub mod credential_storage;
+
 uniffi::setup_scaffolding!("walletkit_core");

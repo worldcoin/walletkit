@@ -5883,6 +5883,7 @@ dependencies = [
  "alloy-primitives",
  "chrono",
  "dotenvy",
+ "getrandom 0.2.16",
  "hex",
  "log",
  "mockito",
