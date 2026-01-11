@@ -8,7 +8,8 @@ use std::sync::Arc;
 use crate::credential_storage::{
     platform::{AccountLockManager, AtomicBlobStore, DeviceKeystore, VaultFileStore},
     vault::VaultFile,
-    AccountId, AccountState, StorageResult,
+    AccountId, AccountState, BlobKind, CredentialFilter, CredentialId, CredentialRecord,
+    CredentialStatus, StorageError, StorageResult,
 };
 
 use super::{
@@ -232,6 +233,295 @@ where
     /// ```
     pub fn vault_mut(&mut self) -> &mut VaultFile<V> {
         &mut self.vault
+    }
+
+    // =========================================================================
+    // Credential Operations
+    // =========================================================================
+
+    /// Stores or updates a credential and its associated blobs.
+    ///
+    /// This atomically writes the credential blob (and optional associated data)
+    /// to the vault and updates the credential index.
+    ///
+    /// # Arguments
+    ///
+    /// * `credential_id` - Unique identifier for this credential
+    /// * `issuer_schema_id` - Schema identifier from the Credential Schema Issuer Registry
+    /// * `expires_at` - Optional Unix timestamp when the credential expires
+    /// * `credential_blob` - The main credential data
+    /// * `associated_data` - Optional associated data (metadata, auxiliary info)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Writing blobs to the vault fails
+    /// - Updating the index fails
+    /// - The transaction cannot be committed
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let cred_id = CredentialId::generate();
+    /// handle.put_credential(
+    ///     cred_id,
+    ///     42, // issuer_schema_id
+    ///     Some(now + 86400 * 365), // expires in 1 year
+    ///     b"credential data",
+    ///     Some(b"metadata"),
+    /// )?;
+    /// ```
+    pub fn put_credential(
+        &mut self,
+        credential_id: CredentialId,
+        issuer_schema_id: u64,
+        expires_at: Option<u64>,
+        credential_blob: &[u8],
+        associated_data: Option<&[u8]>,
+    ) -> StorageResult<()> {
+        let now = get_current_timestamp();
+
+        self.vault.with_txn(|txn| {
+            // Load current index
+            let mut index = txn.load_index()?;
+
+            // Write credential blob
+            let (cred_cid, cred_ptr) = txn.put_blob(BlobKind::CredentialBlob, credential_blob)?;
+            index.blobs.push(cred_ptr);
+
+            // Write associated data if provided
+            let assoc_cid = if let Some(data) = associated_data {
+                let (cid, ptr) = txn.put_blob(BlobKind::AssociatedData, data)?;
+                index.blobs.push(ptr);
+                Some(cid)
+            } else {
+                None
+            };
+
+            // Check if credential already exists (update case)
+            if let Some(existing) = index.find_credential_mut(&credential_id) {
+                // Update existing record
+                existing.issuer_schema_id = issuer_schema_id;
+                existing.expires_at = expires_at;
+                existing.credential_blob_cid = cred_cid;
+                existing.associated_data_cid = assoc_cid;
+                existing.updated_at = now;
+                // Keep existing status and created_at
+            } else {
+                // Create new record
+                let record = CredentialRecord::new(
+                    credential_id,
+                    issuer_schema_id,
+                    now,
+                    expires_at,
+                    cred_cid,
+                    assoc_cid,
+                );
+                index.records.push(record);
+            }
+
+            txn.set_index(index);
+            Ok(())
+        })
+    }
+
+    /// Retrieves a credential's blobs by ID.
+    ///
+    /// Returns the credential blob and optional associated data.
+    ///
+    /// # Arguments
+    ///
+    /// * `credential_id` - The credential ID to retrieve
+    ///
+    /// # Returns
+    ///
+    /// A tuple of `(credential_blob, associated_data)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The credential is not found
+    /// - Reading blobs from the vault fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let (cred_blob, assoc_data) = handle.get_credential(cred_id)?;
+    /// println!("Credential: {} bytes", cred_blob.len());
+    /// if let Some(data) = assoc_data {
+    ///     println!("Associated data: {} bytes", data.len());
+    /// }
+    /// ```
+    pub fn get_credential(
+        &self,
+        credential_id: CredentialId,
+    ) -> StorageResult<(Vec<u8>, Option<Vec<u8>>)> {
+        // Read the current index
+        let index = self.vault.read_index()?;
+
+        // Find the credential record
+        let record = index
+            .find_credential(&credential_id)
+            .ok_or(StorageError::CredentialNotFound { credential_id })?;
+
+        // Find and read the credential blob
+        let cred_ptr = index
+            .find_blob(&record.credential_blob_cid)
+            .ok_or_else(|| {
+                StorageError::corrupted(format!(
+                    "credential blob not found for content_id: {}",
+                    record.credential_blob_cid
+                ))
+            })?;
+        let cred_blob = self.vault.read_blob(cred_ptr)?;
+
+        // Read associated data if present
+        let assoc_blob = if let Some(ref assoc_cid) = record.associated_data_cid {
+            let assoc_ptr = index.find_blob(assoc_cid).ok_or_else(|| {
+                StorageError::corrupted(format!(
+                    "associated data blob not found for content_id: {assoc_cid}"
+                ))
+            })?;
+            Some(self.vault.read_blob(assoc_ptr)?)
+        } else {
+            None
+        };
+
+        Ok((cred_blob, assoc_blob))
+    }
+
+    /// Lists credentials matching an optional filter.
+    ///
+    /// Returns credential records (metadata only, not blob contents).
+    /// Use `get_credential()` to retrieve the actual blob data.
+    ///
+    /// # Arguments
+    ///
+    /// * `filter` - Optional filter criteria. If `None`, returns all credentials.
+    ///
+    /// # Returns
+    ///
+    /// A vector of matching `CredentialRecord`s.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading the vault index fails.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // List all active, non-expired credentials
+    /// let active = handle.list_credentials(Some(CredentialFilter::new()))?;
+    ///
+    /// // List all credentials for a specific issuer
+    /// let filter = CredentialFilter::new()
+    ///     .with_issuer_schema_id(42)
+    ///     .any_status()
+    ///     .include_expired();
+    /// let issuer_creds = handle.list_credentials(Some(filter))?;
+    ///
+    /// // List all credentials (no filter)
+    /// let all = handle.list_credentials(None)?;
+    /// ```
+    pub fn list_credentials(
+        &self,
+        filter: Option<CredentialFilter>,
+    ) -> StorageResult<Vec<CredentialRecord>> {
+        let index = self.vault.read_index()?;
+        let now = get_current_timestamp();
+
+        let credentials = if let Some(f) = filter {
+            index
+                .records
+                .iter()
+                .filter(|record| f.matches(record, now))
+                .cloned()
+                .collect()
+        } else {
+            // No filter - return all credentials
+            index.records
+        };
+
+        Ok(credentials)
+    }
+
+    /// Marks a credential as retired (soft-delete).
+    ///
+    /// Retired credentials are not eligible for use in proofs but remain
+    /// in the vault for audit purposes. They can be filtered out using
+    /// `CredentialFilter::with_status(CredentialStatus::Active)`.
+    ///
+    /// # Arguments
+    ///
+    /// * `credential_id` - The credential ID to retire
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The credential is not found
+    /// - Updating the vault fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Retire a credential
+    /// handle.retire_credential(cred_id)?;
+    ///
+    /// // It will no longer appear in default listings
+    /// let active = handle.list_credentials(Some(CredentialFilter::new()))?;
+    /// assert!(!active.iter().any(|r| r.credential_id == cred_id));
+    ///
+    /// // But can still be retrieved explicitly
+    /// let (blob, _) = handle.get_credential(cred_id)?;
+    /// ```
+    pub fn retire_credential(&mut self, credential_id: CredentialId) -> StorageResult<()> {
+        let now = get_current_timestamp();
+
+        self.vault.with_txn(|txn| {
+            // Load current index
+            let mut index = txn.load_index()?;
+
+            // Find the credential record
+            let record = index
+                .find_credential_mut(&credential_id)
+                .ok_or(StorageError::CredentialNotFound { credential_id })?;
+
+            // Update status
+            record.status = CredentialStatus::Retired;
+            record.updated_at = now;
+
+            txn.set_index(index);
+            Ok(())
+        })
+    }
+
+    /// Gets a credential record (metadata) by ID without reading blobs.
+    ///
+    /// This is more efficient than `get_credential()` when you only need
+    /// the metadata (status, timestamps, etc.) and not the actual blob data.
+    ///
+    /// # Arguments
+    ///
+    /// * `credential_id` - The credential ID to look up
+    ///
+    /// # Returns
+    ///
+    /// The `CredentialRecord` if found.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The credential is not found
+    /// - Reading the vault index fails
+    pub fn get_credential_record(
+        &self,
+        credential_id: CredentialId,
+    ) -> StorageResult<CredentialRecord> {
+        let index = self.vault.read_index()?;
+        index
+            .find_credential(&credential_id)
+            .cloned()
+            .ok_or(StorageError::CredentialNotFound { credential_id })
     }
 
     // =========================================================================
@@ -653,5 +943,360 @@ mod tests {
         let derived = derive_session_r(seed, &rp_id, &action_id);
         let via_handle = handle.derive_session_r(&rp_id, &action_id);
         assert_eq!(derived, via_handle);
+    }
+
+    // =========================================================================
+    // Credential Operations Tests
+    // =========================================================================
+
+    #[test]
+    fn test_put_and_get_credential() {
+        let mut handle = create_test_handle();
+
+        let cred_id = crate::credential_storage::CredentialId::generate();
+        let cred_blob = b"test credential data";
+        let assoc_data = b"associated metadata";
+
+        // Put credential with associated data
+        handle
+            .put_credential(cred_id, 42, None, cred_blob, Some(assoc_data))
+            .unwrap();
+
+        // Get credential
+        let (retrieved_cred, retrieved_assoc) = handle.get_credential(cred_id).unwrap();
+
+        assert_eq!(retrieved_cred, cred_blob);
+        assert_eq!(retrieved_assoc, Some(assoc_data.to_vec()));
+    }
+
+    #[test]
+    fn test_put_credential_without_associated_data() {
+        let mut handle = create_test_handle();
+
+        let cred_id = crate::credential_storage::CredentialId::generate();
+        let cred_blob = b"credential without assoc data";
+
+        // Put credential without associated data
+        handle.put_credential(cred_id, 1, None, cred_blob, None).unwrap();
+
+        // Get credential
+        let (retrieved_cred, retrieved_assoc) = handle.get_credential(cred_id).unwrap();
+
+        assert_eq!(retrieved_cred, cred_blob);
+        assert!(retrieved_assoc.is_none());
+    }
+
+    #[test]
+    fn test_put_credential_update() {
+        let mut handle = create_test_handle();
+
+        let cred_id = crate::credential_storage::CredentialId::generate();
+        let original_blob = b"original data";
+        let updated_blob = b"updated data";
+
+        // Put original credential
+        handle.put_credential(cred_id, 1, None, original_blob, None).unwrap();
+
+        // Verify original
+        let (blob, _) = handle.get_credential(cred_id).unwrap();
+        assert_eq!(blob, original_blob);
+
+        // Update credential
+        handle.put_credential(cred_id, 2, Some(9999), updated_blob, Some(b"new assoc")).unwrap();
+
+        // Verify updated
+        let (blob, assoc) = handle.get_credential(cred_id).unwrap();
+        assert_eq!(blob, updated_blob);
+        assert_eq!(assoc, Some(b"new assoc".to_vec()));
+
+        // Verify record metadata was updated
+        let record = handle.get_credential_record(cred_id).unwrap();
+        assert_eq!(record.issuer_schema_id, 2);
+        assert_eq!(record.expires_at, Some(9999));
+        // Status should still be Active after update
+        assert_eq!(record.status, crate::credential_storage::CredentialStatus::Active);
+    }
+
+    #[test]
+    fn test_get_credential_not_found() {
+        let handle = create_test_handle();
+
+        let non_existent_id = crate::credential_storage::CredentialId::generate();
+        let result = handle.get_credential(non_existent_id);
+
+        assert!(matches!(
+            result,
+            Err(crate::credential_storage::StorageError::CredentialNotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn test_list_credentials_empty() {
+        let handle = create_test_handle();
+
+        let creds = handle.list_credentials(None).unwrap();
+        assert!(creds.is_empty());
+    }
+
+    #[test]
+    fn test_list_credentials_all() {
+        let mut handle = create_test_handle();
+
+        // Add multiple credentials
+        let cred1 = crate::credential_storage::CredentialId::generate();
+        let cred2 = crate::credential_storage::CredentialId::generate();
+        let cred3 = crate::credential_storage::CredentialId::generate();
+
+        handle.put_credential(cred1, 1, None, b"cred1", None).unwrap();
+        handle.put_credential(cred2, 2, None, b"cred2", None).unwrap();
+        handle.put_credential(cred3, 1, None, b"cred3", None).unwrap();
+
+        // List all (no filter)
+        let all = handle.list_credentials(None).unwrap();
+        assert_eq!(all.len(), 3);
+    }
+
+    #[test]
+    fn test_list_credentials_filter_by_schema() {
+        let mut handle = create_test_handle();
+
+        let cred1 = crate::credential_storage::CredentialId::generate();
+        let cred2 = crate::credential_storage::CredentialId::generate();
+        let cred3 = crate::credential_storage::CredentialId::generate();
+
+        handle.put_credential(cred1, 1, None, b"cred1", None).unwrap();
+        handle.put_credential(cred2, 2, None, b"cred2", None).unwrap();
+        handle.put_credential(cred3, 1, None, b"cred3", None).unwrap();
+
+        // Filter by schema ID 1
+        let filter = crate::credential_storage::CredentialFilter::new()
+            .with_issuer_schema_id(1);
+        let filtered = handle.list_credentials(Some(filter)).unwrap();
+
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.iter().all(|r| r.issuer_schema_id == 1));
+    }
+
+    #[test]
+    fn test_list_credentials_filter_by_status() {
+        let mut handle = create_test_handle();
+
+        let cred1 = crate::credential_storage::CredentialId::generate();
+        let cred2 = crate::credential_storage::CredentialId::generate();
+
+        handle.put_credential(cred1, 1, None, b"cred1", None).unwrap();
+        handle.put_credential(cred2, 1, None, b"cred2", None).unwrap();
+
+        // Retire cred2
+        handle.retire_credential(cred2).unwrap();
+
+        // Default filter (Active only)
+        let active = handle.list_credentials(Some(crate::credential_storage::CredentialFilter::new())).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].credential_id, cred1);
+
+        // Filter for Retired
+        let retired = handle.list_credentials(Some(
+            crate::credential_storage::CredentialFilter::new()
+                .with_status(crate::credential_storage::CredentialStatus::Retired)
+        )).unwrap();
+        assert_eq!(retired.len(), 1);
+        assert_eq!(retired[0].credential_id, cred2);
+
+        // Any status
+        let all = handle.list_credentials(Some(
+            crate::credential_storage::CredentialFilter::new().any_status()
+        )).unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_list_credentials_filter_expired() {
+        let mut handle = create_test_handle();
+
+        let now = super::get_current_timestamp();
+
+        let cred_valid = crate::credential_storage::CredentialId::generate();
+        let cred_expired = crate::credential_storage::CredentialId::generate();
+
+        // Valid credential (expires in future)
+        handle.put_credential(cred_valid, 1, Some(now + 3600), b"valid", None).unwrap();
+        // Expired credential
+        handle.put_credential(cred_expired, 1, Some(now - 3600), b"expired", None).unwrap();
+
+        // Default filter excludes expired
+        let non_expired = handle.list_credentials(Some(crate::credential_storage::CredentialFilter::new())).unwrap();
+        assert_eq!(non_expired.len(), 1);
+        assert_eq!(non_expired[0].credential_id, cred_valid);
+
+        // Include expired
+        let with_expired = handle.list_credentials(Some(
+            crate::credential_storage::CredentialFilter::new().include_expired()
+        )).unwrap();
+        assert_eq!(with_expired.len(), 2);
+    }
+
+    #[test]
+    fn test_retire_credential() {
+        let mut handle = create_test_handle();
+
+        let cred_id = crate::credential_storage::CredentialId::generate();
+        handle.put_credential(cred_id, 1, None, b"test", None).unwrap();
+
+        // Verify initially active
+        let record = handle.get_credential_record(cred_id).unwrap();
+        assert_eq!(record.status, crate::credential_storage::CredentialStatus::Active);
+
+        // Retire
+        handle.retire_credential(cred_id).unwrap();
+
+        // Verify retired
+        let record = handle.get_credential_record(cred_id).unwrap();
+        assert_eq!(record.status, crate::credential_storage::CredentialStatus::Retired);
+
+        // Can still get the credential data
+        let (blob, _) = handle.get_credential(cred_id).unwrap();
+        assert_eq!(blob, b"test");
+    }
+
+    #[test]
+    fn test_retire_credential_not_found() {
+        let mut handle = create_test_handle();
+
+        let non_existent = crate::credential_storage::CredentialId::generate();
+        let result = handle.retire_credential(non_existent);
+
+        assert!(matches!(
+            result,
+            Err(crate::credential_storage::StorageError::CredentialNotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn test_get_credential_record() {
+        let mut handle = create_test_handle();
+
+        let now = super::get_current_timestamp();
+        let cred_id = crate::credential_storage::CredentialId::generate();
+
+        handle.put_credential(cred_id, 42, Some(now + 1000), b"data", None).unwrap();
+
+        let record = handle.get_credential_record(cred_id).unwrap();
+
+        assert_eq!(record.credential_id, cred_id);
+        assert_eq!(record.issuer_schema_id, 42);
+        assert_eq!(record.expires_at, Some(now + 1000));
+        assert_eq!(record.status, crate::credential_storage::CredentialStatus::Active);
+        assert!(record.created_at >= now);
+        assert!(record.updated_at >= now);
+    }
+
+    #[test]
+    fn test_get_credential_record_not_found() {
+        let handle = create_test_handle();
+
+        let non_existent = crate::credential_storage::CredentialId::generate();
+        let result = handle.get_credential_record(non_existent);
+
+        assert!(matches!(
+            result,
+            Err(crate::credential_storage::StorageError::CredentialNotFound { .. })
+        ));
+    }
+
+    #[test]
+    fn test_multiple_credentials_with_large_blobs() {
+        let mut handle = create_test_handle();
+
+        // Create credentials with various sizes
+        let small_cred = crate::credential_storage::CredentialId::generate();
+        let medium_cred = crate::credential_storage::CredentialId::generate();
+        let large_cred = crate::credential_storage::CredentialId::generate();
+
+        let small_data = vec![0xAA; 100];
+        let medium_data = vec![0xBB; 10_000];
+        let large_data = vec![0xCC; 100_000];
+
+        handle.put_credential(small_cred, 1, None, &small_data, None).unwrap();
+        handle.put_credential(medium_cred, 2, None, &medium_data, Some(&small_data)).unwrap();
+        handle.put_credential(large_cred, 3, None, &large_data, Some(&medium_data)).unwrap();
+
+        // Verify all can be read back
+        let (s, _) = handle.get_credential(small_cred).unwrap();
+        assert_eq!(s, small_data);
+
+        let (m, ma) = handle.get_credential(medium_cred).unwrap();
+        assert_eq!(m, medium_data);
+        assert_eq!(ma, Some(small_data.clone()));
+
+        let (l, la) = handle.get_credential(large_cred).unwrap();
+        assert_eq!(l, large_data);
+        assert_eq!(la, Some(medium_data));
+
+        // List should show all 3
+        let all = handle.list_credentials(None).unwrap();
+        assert_eq!(all.len(), 3);
+    }
+
+    #[test]
+    fn test_credential_eligibility() {
+        let mut handle = create_test_handle();
+
+        let now = super::get_current_timestamp();
+
+        // Active, non-expired
+        let cred1 = crate::credential_storage::CredentialId::generate();
+        handle.put_credential(cred1, 1, Some(now + 3600), b"1", None).unwrap();
+
+        // Active, no expiration
+        let cred2 = crate::credential_storage::CredentialId::generate();
+        handle.put_credential(cred2, 1, None, b"2", None).unwrap();
+
+        // Active, expired
+        let cred3 = crate::credential_storage::CredentialId::generate();
+        handle.put_credential(cred3, 1, Some(now - 3600), b"3", None).unwrap();
+
+        let record1 = handle.get_credential_record(cred1).unwrap();
+        let record2 = handle.get_credential_record(cred2).unwrap();
+        let record3 = handle.get_credential_record(cred3).unwrap();
+
+        assert!(record1.is_eligible(now));
+        assert!(record2.is_eligible(now));
+        assert!(!record3.is_eligible(now)); // expired
+
+        // Retire cred1
+        handle.retire_credential(cred1).unwrap();
+        let record1 = handle.get_credential_record(cred1).unwrap();
+        assert!(!record1.is_eligible(now)); // retired
+    }
+
+    #[test]
+    fn test_credentials_persist_across_reopen() {
+        // This test verifies credentials survive vault reopen
+        let keystore = Arc::new(MemoryKeystore::new());
+        let platform = Arc::new(SharedMemoryPlatformBundle::new());
+        let lock_manager = Arc::new(MemoryLockManager::new());
+        let store = WorldIdStore::new(Arc::clone(&keystore), Arc::clone(&platform), Arc::clone(&lock_manager));
+
+        let cred_id = crate::credential_storage::CredentialId::generate();
+
+        // Create account and add credential
+        let account_id = {
+            let mut handle = store.create_account().unwrap();
+            handle.put_credential(cred_id, 99, None, b"persistent data", Some(b"persistent assoc")).unwrap();
+            *handle.account_id()
+        };
+
+        // Re-open the account
+        let handle = store.open_account(&account_id).unwrap();
+
+        // Verify credential is still there
+        let (blob, assoc) = handle.get_credential(cred_id).unwrap();
+        assert_eq!(blob, b"persistent data");
+        assert_eq!(assoc, Some(b"persistent assoc".to_vec()));
+
+        let record = handle.get_credential_record(cred_id).unwrap();
+        assert_eq!(record.issuer_schema_id, 99);
+        assert_eq!(record.status, crate::credential_storage::CredentialStatus::Active);
     }
 }
