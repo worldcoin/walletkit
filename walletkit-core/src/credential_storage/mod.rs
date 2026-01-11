@@ -77,6 +77,7 @@
 
 pub mod account;
 mod error;
+pub mod pending;
 pub mod platform;
 mod types;
 pub mod vault;
@@ -89,6 +90,9 @@ pub use vault::{VaultFile, VaultKey, VaultTxn};
 
 // Re-export key account types for convenience
 pub use account::{AccountHandle, WorldIdStore};
+
+// Re-export key pending types for convenience
+pub use pending::{OnpClient, StubOnpClient};
 
 /// Result type alias for credential storage operations.
 pub type StorageResult<T> = Result<T, StorageError>;

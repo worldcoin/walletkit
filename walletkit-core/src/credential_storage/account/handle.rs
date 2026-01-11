@@ -6,14 +6,15 @@
 use std::sync::Arc;
 
 use crate::credential_storage::{
+    pending::{load_pending_actions, save_pending_actions, OnpClient},
     platform::{AccountLockManager, AtomicBlobStore, DeviceKeystore, VaultFileStore},
     vault::VaultFile,
     AccountId, AccountState, BlobKind, CredentialFilter, CredentialId, CredentialRecord,
-    CredentialStatus, StorageError, StorageResult,
+    CredentialStatus, PendingActionEntry, StorageError, StorageResult,
 };
 
 use super::{
-    derivation::{derive_issuer_blind, derive_session_r},
+    derivation::{compute_action_scope, compute_request_id, derive_issuer_blind, derive_session_r},
     state::save_account_state,
 };
 
@@ -521,6 +522,275 @@ where
             .find_credential(&credential_id)
             .cloned()
             .ok_or(StorageError::CredentialNotFound { credential_id })
+    }
+
+    // =========================================================================
+    // Nullifier Protection (ONP Integration)
+    // =========================================================================
+
+    /// Begins nullifier disclosure for an action.
+    ///
+    /// This method implements the nullifier single-use invariant by:
+    /// 1. Checking for existing pending actions (idempotent replay)
+    /// 2. Verifying the nullifier hasn't been consumed via ONP
+    /// 3. Storing the pending action for crash recovery
+    ///
+    /// # Arguments
+    ///
+    /// * `rp_id` - The 32-byte relying party identifier
+    /// * `action_id` - The 32-byte action identifier
+    /// * `signed_request_bytes` - The signed proof request (for request_id computation)
+    /// * `nullifier` - The 32-byte nullifier being disclosed
+    /// * `proof_package` - The complete proof package bytes to return to RP
+    /// * `onp` - The ONP client for nullifier consumption checks
+    ///
+    /// # Returns
+    ///
+    /// The proof package bytes (either newly stored or from idempotent replay).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - An action is already pending for this scope with a different request
+    /// - The nullifier has already been consumed (from ONP)
+    /// - The pending action store is at capacity
+    /// - Storage operations fail
+    ///
+    /// # Idempotent Replay
+    ///
+    /// If called again with the same `(rp_id, action_id, signed_request_bytes)`,
+    /// returns the stored `proof_package` without error. This allows retrying
+    /// after transient failures.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let proof_package = handle.begin_action_disclosure(
+    ///     &rp_id,
+    ///     &action_id,
+    ///     &signed_request,
+    ///     &nullifier,
+    ///     &proof_bytes,
+    ///     &onp_client,
+    /// )?;
+    /// // Send proof_package to RP...
+    /// ```
+    pub fn begin_action_disclosure(
+        &self,
+        rp_id: &[u8; 32],
+        action_id: &[u8; 32],
+        signed_request_bytes: &[u8],
+        nullifier: &[u8; 32],
+        proof_package: &[u8],
+        onp: &dyn OnpClient,
+    ) -> StorageResult<Vec<u8>> {
+        let action_scope = compute_action_scope(rp_id, action_id);
+        let request_id = compute_request_id(signed_request_bytes);
+        let now = get_current_timestamp();
+
+        // Load and prune pending store
+        let mut pending = load_pending_actions(
+            &*self.blob_store,
+            &*self.keystore,
+            &self.state.account_id,
+            &self.state.device_id,
+        )?;
+        pending.prune_expired(now);
+
+        // Check for existing entry
+        if let Some(entry) = pending.find_by_scope(&action_scope) {
+            if entry.request_id == request_id {
+                // Idempotent replay - return stored proof
+                return Ok(entry.proof_package.clone());
+            } else if !entry.is_expired(now) {
+                // Different request for same action still pending
+                return Err(StorageError::ActionAlreadyPending { action_scope });
+            }
+            // Entry exists but is expired - will be replaced
+        }
+
+        // Check ONP for nullifier consumption
+        if onp.check_consumed(nullifier)? {
+            return Err(StorageError::NullifierAlreadyConsumed);
+        }
+
+        // Remove any expired entry for this scope before inserting
+        pending.remove(&action_scope);
+
+        // Store pending entry
+        let entry = PendingActionEntry::new(
+            action_scope,
+            request_id,
+            *nullifier,
+            proof_package.to_vec(),
+            now,
+        );
+
+        if !pending.insert(entry) {
+            return Err(StorageError::PendingActionStoreFull);
+        }
+
+        // Save pending store
+        save_pending_actions(&pending, &*self.blob_store, &*self.keystore, &self.state.device_id)?;
+
+        Ok(proof_package.to_vec())
+    }
+
+    /// Commits an action, marking the nullifier as consumed.
+    ///
+    /// This method should be called after the RP has successfully verified
+    /// the proof. It:
+    /// 1. Retrieves the pending action entry
+    /// 2. Marks the nullifier as consumed in ONP
+    /// 3. Removes the pending entry
+    ///
+    /// # Arguments
+    ///
+    /// * `rp_id` - The 32-byte relying party identifier
+    /// * `action_id` - The 32-byte action identifier
+    /// * `onp` - The ONP client for marking nullifier as consumed
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No pending action found for this scope
+    /// - ONP fails to mark the nullifier as consumed
+    /// - Storage operations fail
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // After RP confirms proof verification...
+    /// handle.commit_action(&rp_id, &action_id, &onp_client)?;
+    /// ```
+    pub fn commit_action(
+        &self,
+        rp_id: &[u8; 32],
+        action_id: &[u8; 32],
+        onp: &dyn OnpClient,
+    ) -> StorageResult<()> {
+        let action_scope = compute_action_scope(rp_id, action_id);
+
+        // Load pending store
+        let mut pending = load_pending_actions(
+            &*self.blob_store,
+            &*self.keystore,
+            &self.state.account_id,
+            &self.state.device_id,
+        )?;
+
+        // Find and remove the entry
+        let entry = pending.remove(&action_scope).ok_or(StorageError::PendingActionNotFound {
+            action_scope,
+        })?;
+
+        // Mark nullifier as consumed in ONP
+        onp.mark_consumed(&entry.nullifier)?;
+
+        // Save pending store (with entry removed)
+        save_pending_actions(&pending, &*self.blob_store, &*self.keystore, &self.state.device_id)?;
+
+        Ok(())
+    }
+
+    /// Cancels an action without consuming the nullifier.
+    ///
+    /// This method should be called when the proof disclosure is abandoned
+    /// (e.g., user cancels, RP rejects, timeout). It removes the pending
+    /// entry without interacting with ONP, allowing the nullifier to be
+    /// reused in a future action.
+    ///
+    /// # Arguments
+    ///
+    /// * `rp_id` - The 32-byte relying party identifier
+    /// * `action_id` - The 32-byte action identifier
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if storage operations fail.
+    /// Does NOT error if no pending action exists (idempotent).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // User cancelled the proof request
+    /// handle.cancel_action(&rp_id, &action_id)?;
+    /// ```
+    pub fn cancel_action(&self, rp_id: &[u8; 32], action_id: &[u8; 32]) -> StorageResult<()> {
+        let action_scope = compute_action_scope(rp_id, action_id);
+
+        // Load pending store
+        let mut pending = load_pending_actions(
+            &*self.blob_store,
+            &*self.keystore,
+            &self.state.account_id,
+            &self.state.device_id,
+        )?;
+
+        // Remove entry if exists (no error if not found - idempotent)
+        pending.remove(&action_scope);
+
+        // Save pending store
+        save_pending_actions(&pending, &*self.blob_store, &*self.keystore, &self.state.device_id)?;
+
+        Ok(())
+    }
+
+    /// Gets the pending action entry for a specific scope.
+    ///
+    /// This is primarily for debugging and testing purposes.
+    ///
+    /// # Arguments
+    ///
+    /// * `rp_id` - The 32-byte relying party identifier
+    /// * `action_id` - The 32-byte action identifier
+    ///
+    /// # Returns
+    ///
+    /// The pending action entry if one exists.
+    pub fn get_pending_action(
+        &self,
+        rp_id: &[u8; 32],
+        action_id: &[u8; 32],
+    ) -> StorageResult<Option<PendingActionEntry>> {
+        let action_scope = compute_action_scope(rp_id, action_id);
+
+        let pending = load_pending_actions(
+            &*self.blob_store,
+            &*self.keystore,
+            &self.state.account_id,
+            &self.state.device_id,
+        )?;
+
+        Ok(pending.find_by_scope(&action_scope).cloned())
+    }
+
+    /// Lists all pending actions for this account.
+    ///
+    /// This is primarily for debugging and testing purposes.
+    ///
+    /// # Arguments
+    ///
+    /// * `prune_expired` - If true, removes expired entries before returning
+    ///
+    /// # Returns
+    ///
+    /// A vector of all pending action entries.
+    pub fn list_pending_actions(&self, prune_expired: bool) -> StorageResult<Vec<PendingActionEntry>> {
+        let mut pending = load_pending_actions(
+            &*self.blob_store,
+            &*self.keystore,
+            &self.state.account_id,
+            &self.state.device_id,
+        )?;
+
+        if prune_expired {
+            let now = get_current_timestamp();
+            pending.prune_expired(now);
+            save_pending_actions(&pending, &*self.blob_store, &*self.keystore, &self.state.device_id)?;
+        }
+
+        Ok(pending.entries)
     }
 
     // =========================================================================
@@ -1297,5 +1567,422 @@ mod tests {
         let record = handle.get_credential_record(cred_id).unwrap();
         assert_eq!(record.issuer_schema_id, 99);
         assert_eq!(record.status, crate::credential_storage::CredentialStatus::Active);
+    }
+
+    // =========================================================================
+    // Nullifier Protection Tests
+    // =========================================================================
+
+    mod onp_tests {
+        use super::*;
+        use crate::credential_storage::pending::{InMemoryOnpClient, StubOnpClient};
+
+        #[test]
+        fn test_begin_action_disclosure_basic() {
+            let handle = create_test_handle();
+            let onp = StubOnpClient::new();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+            let request = b"signed request bytes";
+            let nullifier = [0x33u8; 32];
+            let proof = b"proof package bytes";
+
+            let result = handle
+                .begin_action_disclosure(&rp_id, &action_id, request, &nullifier, proof, &onp)
+                .unwrap();
+
+            assert_eq!(result, proof);
+
+            // Verify pending action was stored
+            let pending = handle.get_pending_action(&rp_id, &action_id).unwrap();
+            assert!(pending.is_some());
+            let entry = pending.unwrap();
+            assert_eq!(entry.nullifier, nullifier);
+            assert_eq!(entry.proof_package, proof);
+        }
+
+        #[test]
+        fn test_begin_action_disclosure_idempotent_replay() {
+            let handle = create_test_handle();
+            let onp = StubOnpClient::new();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+            let request = b"same request bytes";
+            let nullifier = [0x33u8; 32];
+            let proof = b"proof package";
+
+            // First call
+            let result1 = handle
+                .begin_action_disclosure(&rp_id, &action_id, request, &nullifier, proof, &onp)
+                .unwrap();
+
+            // Second call with same parameters (idempotent replay)
+            let result2 = handle
+                .begin_action_disclosure(&rp_id, &action_id, request, &nullifier, proof, &onp)
+                .unwrap();
+
+            assert_eq!(result1, result2);
+            assert_eq!(result2, proof);
+
+            // Should still only have one pending action
+            let pending = handle.list_pending_actions(false).unwrap();
+            assert_eq!(pending.len(), 1);
+        }
+
+        #[test]
+        fn test_begin_action_disclosure_different_request_fails() {
+            let handle = create_test_handle();
+            let onp = StubOnpClient::new();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+            let request1 = b"first request";
+            let request2 = b"different request";
+            let nullifier = [0x33u8; 32];
+            let proof = b"proof";
+
+            // First call succeeds
+            handle
+                .begin_action_disclosure(&rp_id, &action_id, request1, &nullifier, proof, &onp)
+                .unwrap();
+
+            // Second call with different request should fail
+            let result = handle.begin_action_disclosure(
+                &rp_id,
+                &action_id,
+                request2,
+                &nullifier,
+                proof,
+                &onp,
+            );
+
+            assert!(matches!(
+                result,
+                Err(crate::credential_storage::StorageError::ActionAlreadyPending { .. })
+            ));
+        }
+
+        #[test]
+        fn test_begin_action_disclosure_nullifier_consumed() {
+            let handle = create_test_handle();
+            let onp = InMemoryOnpClient::new();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+            let request = b"request";
+            let nullifier = [0x33u8; 32];
+            let proof = b"proof";
+
+            // Pre-mark nullifier as consumed
+            onp.mark_consumed(&nullifier).unwrap();
+
+            // Should fail because nullifier is already consumed
+            let result = handle.begin_action_disclosure(
+                &rp_id,
+                &action_id,
+                request,
+                &nullifier,
+                proof,
+                &onp,
+            );
+
+            assert!(matches!(
+                result,
+                Err(crate::credential_storage::StorageError::NullifierAlreadyConsumed)
+            ));
+        }
+
+        #[test]
+        fn test_commit_action_basic() {
+            let handle = create_test_handle();
+            let onp = InMemoryOnpClient::new();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+            let request = b"request";
+            let nullifier = [0x33u8; 32];
+            let proof = b"proof";
+
+            // Begin disclosure
+            handle
+                .begin_action_disclosure(&rp_id, &action_id, request, &nullifier, proof, &onp)
+                .unwrap();
+
+            // Verify nullifier is NOT consumed yet
+            assert!(!onp.check_consumed(&nullifier).unwrap());
+
+            // Commit action
+            handle.commit_action(&rp_id, &action_id, &onp).unwrap();
+
+            // Verify nullifier IS now consumed
+            assert!(onp.check_consumed(&nullifier).unwrap());
+
+            // Verify pending action was removed
+            let pending = handle.get_pending_action(&rp_id, &action_id).unwrap();
+            assert!(pending.is_none());
+        }
+
+        #[test]
+        fn test_commit_action_not_found() {
+            let handle = create_test_handle();
+            let onp = StubOnpClient::new();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+
+            // Try to commit without begin
+            let result = handle.commit_action(&rp_id, &action_id, &onp);
+
+            assert!(matches!(
+                result,
+                Err(crate::credential_storage::StorageError::PendingActionNotFound { .. })
+            ));
+        }
+
+        #[test]
+        fn test_cancel_action_basic() {
+            let handle = create_test_handle();
+            let onp = InMemoryOnpClient::new();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+            let request = b"request";
+            let nullifier = [0x33u8; 32];
+            let proof = b"proof";
+
+            // Begin disclosure
+            handle
+                .begin_action_disclosure(&rp_id, &action_id, request, &nullifier, proof, &onp)
+                .unwrap();
+
+            // Cancel action
+            handle.cancel_action(&rp_id, &action_id).unwrap();
+
+            // Verify pending action was removed
+            let pending = handle.get_pending_action(&rp_id, &action_id).unwrap();
+            assert!(pending.is_none());
+
+            // Verify nullifier was NOT consumed
+            assert!(!onp.check_consumed(&nullifier).unwrap());
+        }
+
+        #[test]
+        fn test_cancel_action_idempotent() {
+            let handle = create_test_handle();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+
+            // Cancel without any pending action (should not error)
+            handle.cancel_action(&rp_id, &action_id).unwrap();
+
+            // Cancel again (still should not error)
+            handle.cancel_action(&rp_id, &action_id).unwrap();
+        }
+
+        #[test]
+        fn test_cancel_allows_reuse() {
+            let handle = create_test_handle();
+            let onp = InMemoryOnpClient::new();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+            let request1 = b"request 1";
+            let request2 = b"request 2";
+            let nullifier = [0x33u8; 32];
+            let proof1 = b"proof 1";
+            let proof2 = b"proof 2";
+
+            // Begin first disclosure
+            handle
+                .begin_action_disclosure(&rp_id, &action_id, request1, &nullifier, proof1, &onp)
+                .unwrap();
+
+            // Cancel
+            handle.cancel_action(&rp_id, &action_id).unwrap();
+
+            // Begin new disclosure with different request (should succeed)
+            let result = handle
+                .begin_action_disclosure(&rp_id, &action_id, request2, &nullifier, proof2, &onp)
+                .unwrap();
+
+            assert_eq!(result, proof2);
+        }
+
+        #[test]
+        fn test_full_disclosure_flow() {
+            let handle = create_test_handle();
+            let onp = InMemoryOnpClient::new();
+
+            let rp_id = [0xAAu8; 32];
+            let action_id = [0xBBu8; 32];
+            let request = b"full flow request";
+            let nullifier = [0xCCu8; 32];
+            let proof = b"full flow proof package";
+
+            // 1. Begin disclosure
+            let returned_proof = handle
+                .begin_action_disclosure(&rp_id, &action_id, request, &nullifier, proof, &onp)
+                .unwrap();
+            assert_eq!(returned_proof, proof);
+
+            // 2. Verify pending
+            let pending = handle.get_pending_action(&rp_id, &action_id).unwrap();
+            assert!(pending.is_some());
+
+            // 3. Commit (simulating RP verification success)
+            handle.commit_action(&rp_id, &action_id, &onp).unwrap();
+
+            // 4. Verify nullifier consumed
+            assert!(onp.check_consumed(&nullifier).unwrap());
+
+            // 5. Verify no pending action
+            assert!(handle.get_pending_action(&rp_id, &action_id).unwrap().is_none());
+
+            // 6. Try to use same nullifier again - should fail
+            let result = handle.begin_action_disclosure(
+                &rp_id,
+                &[0xDDu8; 32], // different action
+                b"new request",
+                &nullifier, // same nullifier
+                b"new proof",
+                &onp,
+            );
+            assert!(matches!(
+                result,
+                Err(crate::credential_storage::StorageError::NullifierAlreadyConsumed)
+            ));
+        }
+
+        #[test]
+        fn test_multiple_concurrent_actions() {
+            let handle = create_test_handle();
+            let onp = StubOnpClient::new();
+
+            // Start multiple actions for different RP/action pairs
+            for i in 0..5u8 {
+                let rp_id = [i; 32];
+                let action_id = [i + 100; 32];
+                let request = format!("request {i}");
+                let nullifier = [i + 200; 32];
+                let proof = format!("proof {i}");
+
+                handle
+                    .begin_action_disclosure(
+                        &rp_id,
+                        &action_id,
+                        request.as_bytes(),
+                        &nullifier,
+                        proof.as_bytes(),
+                        &onp,
+                    )
+                    .unwrap();
+            }
+
+            // List all pending
+            let pending = handle.list_pending_actions(false).unwrap();
+            assert_eq!(pending.len(), 5);
+        }
+
+        #[test]
+        fn test_list_pending_actions_prune() {
+            let handle = create_test_handle();
+            let onp = StubOnpClient::new();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+            let request = b"request";
+            let nullifier = [0x33u8; 32];
+            let proof = b"proof";
+
+            // Begin disclosure
+            handle
+                .begin_action_disclosure(&rp_id, &action_id, request, &nullifier, proof, &onp)
+                .unwrap();
+
+            // List without pruning
+            let pending = handle.list_pending_actions(false).unwrap();
+            assert_eq!(pending.len(), 1);
+
+            // List with pruning (entry not expired yet, so still there)
+            let pending = handle.list_pending_actions(true).unwrap();
+            assert_eq!(pending.len(), 1);
+        }
+
+        #[test]
+        fn test_different_actions_same_nullifier() {
+            // Two different RP/action combinations can't use the same nullifier
+            // (once one commits)
+            let handle = create_test_handle();
+            let onp = InMemoryOnpClient::new();
+
+            let rp1 = [0x11u8; 32];
+            let action1 = [0x22u8; 32];
+            let rp2 = [0x33u8; 32];
+            let action2 = [0x44u8; 32];
+            let nullifier = [0x55u8; 32]; // Same nullifier
+
+            // First action begins and commits
+            handle
+                .begin_action_disclosure(&rp1, &action1, b"req1", &nullifier, b"proof1", &onp)
+                .unwrap();
+            handle.commit_action(&rp1, &action1, &onp).unwrap();
+
+            // Second action tries to use same nullifier - should fail
+            let result =
+                handle.begin_action_disclosure(&rp2, &action2, b"req2", &nullifier, b"proof2", &onp);
+
+            assert!(matches!(
+                result,
+                Err(crate::credential_storage::StorageError::NullifierAlreadyConsumed)
+            ));
+        }
+
+        #[test]
+        fn test_pending_actions_persist_across_reopen() {
+            let keystore = Arc::new(MemoryKeystore::new());
+            let platform = Arc::new(SharedMemoryPlatformBundle::new());
+            let lock_manager = Arc::new(MemoryLockManager::new());
+            let store = WorldIdStore::new(
+                Arc::clone(&keystore),
+                Arc::clone(&platform),
+                Arc::clone(&lock_manager),
+            );
+            let onp = StubOnpClient::new();
+
+            let rp_id = [0x11u8; 32];
+            let action_id = [0x22u8; 32];
+            let request = b"persistent request";
+            let nullifier = [0x33u8; 32];
+            let proof = b"persistent proof";
+
+            // Create account and begin disclosure
+            let account_id = {
+                let handle = store.create_account().unwrap();
+                handle
+                    .begin_action_disclosure(&rp_id, &action_id, request, &nullifier, proof, &onp)
+                    .unwrap();
+                *handle.account_id()
+            };
+
+            // Re-open account
+            let handle = store.open_account(&account_id).unwrap();
+
+            // Verify pending action still exists
+            let pending = handle.get_pending_action(&rp_id, &action_id).unwrap();
+            assert!(pending.is_some());
+            let entry = pending.unwrap();
+            assert_eq!(entry.nullifier, nullifier);
+            assert_eq!(entry.proof_package, proof);
+
+            // Can still commit
+            handle.commit_action(&rp_id, &action_id, &onp).unwrap();
+
+            // Now it's gone
+            let pending = handle.get_pending_action(&rp_id, &action_id).unwrap();
+            assert!(pending.is_none());
+        }
     }
 }
