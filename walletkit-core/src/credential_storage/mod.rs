@@ -25,6 +25,13 @@
 //! - [`VaultFileStore`] — Random-access file operations for the vault container
 //! - [`AccountLockManager`] — Per-account locking for serialized writes
 //!
+//! # Account Management
+//!
+//! The account module provides high-level APIs for managing World ID accounts:
+//!
+//! - [`WorldIdStore`] — Root store managing multiple accounts on a device
+//! - [`AccountHandle`] — Handle to an open account for credential operations
+//!
 //! # Vault Engine
 //!
 //! The vault engine provides crash-safe storage with the following guarantees:
@@ -36,11 +43,39 @@
 //!
 //! See the [`vault`] module for details.
 //!
+//! # Example
+//!
+//! ```ignore
+//! use walletkit_core::credential_storage::{
+//!     WorldIdStore, AccountHandle, platform::MemoryPlatform,
+//! };
+//!
+//! // Create a store with in-memory platform (for testing)
+//! let store = WorldIdStore::new(keystore, platform, lock_manager);
+//!
+//! // Create a new account
+//! let handle = store.create_account()?;
+//! let account_id = handle.account_id();
+//!
+//! // Derive keys for credential operations
+//! let issuer_blind = handle.derive_issuer_blind(schema_id);
+//! let session_r = handle.derive_session_r(&rp_id, &action_id);
+//!
+//! // Access vault for credential storage
+//! handle.vault_mut().with_txn(|txn| {
+//!     // Store credentials...
+//!     Ok(())
+//! })?;
+//! ```
+//!
 //! [`DeviceKeystore`]: platform::DeviceKeystore
 //! [`AtomicBlobStore`]: platform::AtomicBlobStore
 //! [`VaultFileStore`]: platform::VaultFileStore
 //! [`AccountLockManager`]: platform::AccountLockManager
+//! [`WorldIdStore`]: account::WorldIdStore
+//! [`AccountHandle`]: account::AccountHandle
 
+pub mod account;
 mod error;
 pub mod platform;
 mod types;
@@ -51,6 +86,9 @@ pub use types::*;
 
 // Re-export key vault types for convenience
 pub use vault::{VaultFile, VaultKey, VaultTxn};
+
+// Re-export key account types for convenience
+pub use account::{AccountHandle, WorldIdStore};
 
 /// Result type alias for credential storage operations.
 pub type StorageResult<T> = Result<T, StorageError>;
