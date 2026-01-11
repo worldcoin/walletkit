@@ -8,13 +8,14 @@ use std::sync::Arc;
 use crate::credential_storage::{
     platform::{AccountLockManager, AtomicBlobStore, DeviceKeystore, VaultFileStore},
     vault::{VaultFile, VaultKey},
-    AccountId, StorageError, StorageResult,
+    AccountId, AccountState, StorageError, StorageResult, VaultProvisioningEnvelope,
+    types::ACCOUNT_STATE_VERSION,
 };
 
 use super::{
-    derivation::derive_account_id,
+    derivation::{derive_account_id, generate_device_id},
     handle::AccountHandle,
-    state::{create_account_state, load_account_state, save_account_state},
+    state::{create_account_state, load_account_state, save_account_state, wrap_vault_key},
 };
 
 // =============================================================================
@@ -256,27 +257,106 @@ where
     ///
     /// # Arguments
     ///
-    /// * `envelope` - The provisioning envelope bytes
+    /// * `envelope` - The provisioning envelope
+    /// * `device_secret_key` - The device's X25519 private key (32 bytes)
     ///
     /// # Returns
     ///
     /// A handle to the imported account.
     ///
-    /// # Note
-    ///
-    /// This is a placeholder implementation. Full provisioning envelope
-    /// support will be added in Phase 6 (Sync & Provisioning).
-    ///
     /// # Errors
     ///
-    /// Returns an error if import fails.
+    /// Returns an error if:
+    /// - Decryption fails
+    /// - The account already exists on this device
+    /// - Creating the vault fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // On new device, generate a key pair
+    /// let device_keypair = DeviceKeyPair::generate();
+    ///
+    /// // Receive envelope from existing device
+    /// let envelope = receive_envelope_from_existing_device(&device_keypair.public_key());
+    ///
+    /// // Import the account
+    /// let handle = store.import_vault_provisioning_envelope(
+    ///     &envelope,
+    ///     device_keypair.secret_key(),
+    /// )?;
+    /// ```
     pub fn import_vault_provisioning_envelope(
         &self,
-        _envelope: &[u8],
+        envelope: &VaultProvisioningEnvelope,
+        device_secret_key: &[u8],
     ) -> StorageResult<AccountHandle<K, P::BlobStore, P::VaultStore, L>> {
-        Err(StorageError::NotSupported {
-            operation: "import_vault_provisioning_envelope (Phase 6)".to_string(),
-        })
+        // Decrypt the envelope
+        let payload = envelope.import(device_secret_key)?;
+
+        // Derive account ID from the vault key
+        let account_id = derive_account_id(&payload.vault_key);
+
+        // Check if account already exists
+        if self.platform.account_exists(&account_id)? {
+            return Err(StorageError::AccountAlreadyExists { account_id });
+        }
+
+        // Create account directory
+        self.platform.create_account_directory(&account_id)?;
+
+        // Create platform components
+        let blob_store = Arc::new(self.platform.create_blob_store(&account_id));
+        let vault_store = Arc::new(self.platform.create_vault_store(&account_id));
+
+        // Generate a new device ID for this device
+        let device_id = generate_device_id();
+
+        // Wrap the vault key with the device keystore
+        let vault_key_wrap = wrap_vault_key(
+            &payload.vault_key,
+            &account_id,
+            &device_id,
+            &*self.keystore,
+        )?;
+
+        // Create account state with the imported seeds
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time before Unix epoch")
+            .as_secs();
+
+        let state = AccountState {
+            state_version: ACCOUNT_STATE_VERSION,
+            account_id,
+            leaf_index_cache: None,
+            issuer_blind_seed: payload.issuer_blind_seed,
+            session_blind_seed: payload.session_blind_seed,
+            vault_key_wrap,
+            device_id,
+            updated_at: now,
+        };
+
+        // Save device ID for future opens
+        self.save_device_id(&*blob_store, &device_id)?;
+
+        // Save account state
+        save_account_state(&state, &*blob_store, &*self.keystore)?;
+
+        // Create or open vault
+        // If this is the first device being provisioned after account creation,
+        // the vault might not exist yet. If it's an additional device, we need
+        // to sync the vault from an existing device.
+        // For now, we create a new vault - credentials will be synced separately.
+        let vault = VaultFile::open_or_create(vault_store, account_id, payload.vault_key.clone())?;
+
+        Ok(AccountHandle::new(
+            state,
+            vault,
+            blob_store,
+            Arc::clone(&self.keystore),
+            Arc::clone(&self.lock_manager),
+        ))
     }
 
     // =========================================================================
@@ -594,11 +674,104 @@ mod tests {
     }
 
     #[test]
-    fn test_import_envelope_not_supported_yet() {
+    fn test_import_vault_provisioning_envelope() {
+        use crate::credential_storage::provisioning::DeviceKeyPair;
+
         let store = create_test_store();
 
-        let result = store.import_vault_provisioning_envelope(&[1, 2, 3]);
-        assert!(matches!(result, Err(StorageError::NotSupported { .. })));
+        // Create a source account
+        let source_handle = store.create_account().unwrap();
+        let source_account_id = *source_handle.account_id();
+
+        // Generate a key pair for the "new device"
+        let new_device_keypair = DeviceKeyPair::generate();
+
+        // Export provisioning envelope from source
+        let envelope = source_handle
+            .export_vault_provisioning_envelope(new_device_keypair.public_key())
+            .unwrap();
+
+        // Import on a "new device" (using the same store for simplicity)
+        // First, we need to use a fresh store since the account already exists
+        let keystore2 = Arc::new(MemoryKeystore::new());
+        let platform2 = Arc::new(SharedMemoryPlatformBundle::new());
+        let lock_manager2 = Arc::new(MemoryLockManager::new());
+        let store2 = WorldIdStore::new(keystore2, platform2, lock_manager2);
+
+        let imported_handle = store2
+            .import_vault_provisioning_envelope(&envelope, new_device_keypair.secret_key())
+            .unwrap();
+
+        // Verify account ID matches
+        assert_eq!(imported_handle.account_id(), &source_account_id);
+
+        // Verify key derivation produces same results
+        let source_blind = source_handle.derive_issuer_blind(42);
+        let imported_blind = imported_handle.derive_issuer_blind(42);
+        assert_eq!(source_blind, imported_blind);
+
+        let rp_id = [0x11u8; 32];
+        let action_id = [0x22u8; 32];
+        let source_r = source_handle.derive_session_r(&rp_id, &action_id);
+        let imported_r = imported_handle.derive_session_r(&rp_id, &action_id);
+        assert_eq!(source_r, imported_r);
+    }
+
+    #[test]
+    fn test_import_vault_provisioning_envelope_wrong_key() {
+        use crate::credential_storage::provisioning::DeviceKeyPair;
+
+        let store = create_test_store();
+
+        // Create a source account
+        let source_handle = store.create_account().unwrap();
+
+        // Generate two different key pairs
+        let intended_device = DeviceKeyPair::generate();
+        let wrong_device = DeviceKeyPair::generate();
+
+        // Export provisioning envelope for intended device
+        let envelope = source_handle
+            .export_vault_provisioning_envelope(intended_device.public_key())
+            .unwrap();
+
+        // Try to import with wrong key
+        let keystore2 = Arc::new(MemoryKeystore::new());
+        let platform2 = Arc::new(SharedMemoryPlatformBundle::new());
+        let lock_manager2 = Arc::new(MemoryLockManager::new());
+        let store2 = WorldIdStore::new(keystore2, platform2, lock_manager2);
+
+        let result = store2.import_vault_provisioning_envelope(&envelope, wrong_device.secret_key());
+        assert!(matches!(result, Err(StorageError::DecryptionFailed { .. })));
+    }
+
+    #[test]
+    fn test_import_vault_provisioning_envelope_already_exists() {
+        use crate::credential_storage::provisioning::DeviceKeyPair;
+
+        // Create source store and account
+        let source_store = create_test_store();
+        let source_handle = source_store.create_account().unwrap();
+
+        // Generate a key pair for the "new device"
+        let new_device_keypair = DeviceKeyPair::generate();
+
+        // Export provisioning envelope
+        let envelope = source_handle
+            .export_vault_provisioning_envelope(new_device_keypair.public_key())
+            .unwrap();
+
+        // Create target store (fresh device)
+        let target_store = create_test_store();
+
+        // Import once (should succeed)
+        let _ = target_store
+            .import_vault_provisioning_envelope(&envelope, new_device_keypair.secret_key())
+            .unwrap();
+
+        // Try to import again (should fail - account already exists)
+        let result = target_store.import_vault_provisioning_envelope(&envelope, new_device_keypair.secret_key());
+        assert!(matches!(result, Err(StorageError::AccountAlreadyExists { .. })));
     }
 
     #[test]

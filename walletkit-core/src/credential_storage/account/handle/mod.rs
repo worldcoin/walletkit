@@ -5,6 +5,7 @@
 
 mod credentials;
 mod nullifier;
+mod sync;
 
 #[cfg(test)]
 mod tests;

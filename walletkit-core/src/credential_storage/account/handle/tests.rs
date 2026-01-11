@@ -1173,3 +1173,340 @@ mod onp_tests {
         assert!(pending.is_none());
     }
 }
+
+// =============================================================================
+// Sync / Transfer Tests
+// =============================================================================
+
+mod sync_tests {
+    use super::*;
+    use crate::credential_storage::{provisioning::DeviceKeyPair, ImportOutcome};
+
+    #[test]
+    fn test_export_import_credential_roundtrip() {
+        // Device A: create account and credential
+        let keystore_a = Arc::new(MemoryKeystore::new());
+        let platform_a = Arc::new(SharedMemoryPlatformBundle::new());
+        let lock_manager_a = Arc::new(MemoryLockManager::new());
+        let store_a = WorldIdStore::new(
+            Arc::clone(&keystore_a),
+            Arc::clone(&platform_a),
+            Arc::clone(&lock_manager_a),
+        );
+
+        let mut handle_a = store_a.create_account().unwrap();
+        let cred_id = crate::credential_storage::CredentialId::generate();
+        let cred_blob = b"test credential data for sync";
+        let assoc_data = b"associated metadata";
+
+        handle_a
+            .put_credential(cred_id, 42, None, cred_blob, Some(assoc_data))
+            .unwrap();
+
+        // Export credential from Device A
+        let transfer = handle_a.export_credential(cred_id).unwrap();
+
+        // Device B: provision with same vault key
+        let device_b_keypair = DeviceKeyPair::generate();
+        let envelope = handle_a
+            .export_vault_provisioning_envelope(device_b_keypair.public_key())
+            .unwrap();
+
+        let keystore_b = Arc::new(MemoryKeystore::new());
+        let platform_b = Arc::new(SharedMemoryPlatformBundle::new());
+        let lock_manager_b = Arc::new(MemoryLockManager::new());
+        let store_b = WorldIdStore::new(
+            Arc::clone(&keystore_b),
+            Arc::clone(&platform_b),
+            Arc::clone(&lock_manager_b),
+        );
+
+        let mut handle_b = store_b
+            .import_vault_provisioning_envelope(&envelope, device_b_keypair.secret_key())
+            .unwrap();
+
+        // Import credential on Device B
+        let outcome = handle_b.import_credential(&transfer).unwrap();
+        assert_eq!(outcome, ImportOutcome::Applied);
+
+        // Verify credential on Device B
+        let (blob_b, assoc_b) = handle_b.get_credential(cred_id).unwrap();
+        assert_eq!(blob_b, cred_blob);
+        assert_eq!(assoc_b.as_deref(), Some(assoc_data.as_slice()));
+    }
+
+    #[test]
+    fn test_export_import_tombstone() {
+        // Device A: create and retire a credential
+        let mut handle_a = create_test_handle();
+        let cred_id = crate::credential_storage::CredentialId::generate();
+
+        handle_a
+            .put_credential(cred_id, 1, None, b"data", None)
+            .unwrap();
+        handle_a.retire_credential(cred_id).unwrap();
+
+        // Export tombstone
+        let transfer = handle_a.export_credential_tombstone(cred_id).unwrap();
+
+        // Device B: provision and import
+        let device_b_keypair = DeviceKeyPair::generate();
+        let envelope = handle_a
+            .export_vault_provisioning_envelope(device_b_keypair.public_key())
+            .unwrap();
+
+        let keystore_b = Arc::new(MemoryKeystore::new());
+        let platform_b = Arc::new(SharedMemoryPlatformBundle::new());
+        let lock_manager_b = Arc::new(MemoryLockManager::new());
+        let store_b = WorldIdStore::new(
+            Arc::clone(&keystore_b),
+            Arc::clone(&platform_b),
+            Arc::clone(&lock_manager_b),
+        );
+
+        let mut handle_b = store_b
+            .import_vault_provisioning_envelope(&envelope, device_b_keypair.secret_key())
+            .unwrap();
+
+        // Import tombstone
+        let outcome = handle_b.import_credential(&transfer).unwrap();
+        assert_eq!(outcome, ImportOutcome::Applied);
+
+        // Verify credential is retired on Device B
+        let record = handle_b.get_credential_record(cred_id).unwrap();
+        assert_eq!(
+            record.status,
+            crate::credential_storage::CredentialStatus::Retired
+        );
+    }
+
+    #[test]
+    fn test_import_idempotent() {
+        let mut handle = create_test_handle();
+        let cred_id = crate::credential_storage::CredentialId::generate();
+
+        handle
+            .put_credential(cred_id, 1, None, b"data", None)
+            .unwrap();
+
+        // Export
+        let transfer = handle.export_credential(cred_id).unwrap();
+
+        // Import first time - should be NoOp because we already have it with same timestamp
+        let outcome = handle.import_credential(&transfer).unwrap();
+        assert_eq!(outcome, ImportOutcome::NoOp);
+    }
+
+    #[test]
+    fn test_import_conflict_resolution() {
+        // This test verifies conflict resolution logic
+        // Instead of relying on real timestamps, we test directly with the transfer module
+        use crate::credential_storage::transfer::{decide_import, ImportDecision, TransferPayload};
+        use crate::credential_storage::{AccountId, ContentId, CredentialRecord, CredentialStatus};
+
+        let account_id = AccountId::new([0u8; 32]);
+        let cred_id = crate::credential_storage::CredentialId::generate();
+
+        // Create existing record with timestamp 1000
+        let existing_record = CredentialRecord {
+            credential_id: cred_id,
+            issuer_schema_id: 1,
+            created_at: 1000,
+            updated_at: 1000,
+            expires_at: None,
+            credential_blob_cid: ContentId::new([1u8; 32]),
+            associated_data_cid: None,
+            status: CredentialStatus::Active,
+        };
+
+        // Create incoming payload with older timestamp - should skip
+        let older_payload = TransferPayload {
+            version: 1,
+            account_id,
+            record: CredentialRecord {
+                credential_id: cred_id,
+                issuer_schema_id: 1,
+                created_at: 500,
+                updated_at: 500, // older
+                expires_at: None,
+                credential_blob_cid: ContentId::new([2u8; 32]),
+                associated_data_cid: None,
+                status: CredentialStatus::Active,
+            },
+            is_tombstone: false,
+            credential_blob: Some(b"older".to_vec()),
+            associated_data: None,
+        };
+
+        assert_eq!(
+            decide_import(&older_payload, Some(&existing_record)),
+            ImportDecision::Skip
+        );
+
+        // Create incoming payload with newer timestamp - should apply
+        let newer_payload = TransferPayload {
+            version: 1,
+            account_id,
+            record: CredentialRecord {
+                credential_id: cred_id,
+                issuer_schema_id: 1,
+                created_at: 1500,
+                updated_at: 1500, // newer
+                expires_at: None,
+                credential_blob_cid: ContentId::new([3u8; 32]),
+                associated_data_cid: None,
+                status: CredentialStatus::Active,
+            },
+            is_tombstone: false,
+            credential_blob: Some(b"newer".to_vec()),
+            associated_data: None,
+        };
+
+        assert_eq!(
+            decide_import(&newer_payload, Some(&existing_record)),
+            ImportDecision::Apply
+        );
+
+        // Create incoming payload for non-existent credential - should apply
+        let new_cred_id = crate::credential_storage::CredentialId::generate();
+        let new_payload = TransferPayload {
+            version: 1,
+            account_id,
+            record: CredentialRecord {
+                credential_id: new_cred_id,
+                issuer_schema_id: 1,
+                created_at: 100,
+                updated_at: 100,
+                expires_at: None,
+                credential_blob_cid: ContentId::new([4u8; 32]),
+                associated_data_cid: None,
+                status: CredentialStatus::Active,
+            },
+            is_tombstone: false,
+            credential_blob: Some(b"new".to_vec()),
+            associated_data: None,
+        };
+
+        assert_eq!(decide_import(&new_payload, None), ImportDecision::Apply);
+    }
+
+    #[test]
+    fn test_export_retired_fails() {
+        let mut handle = create_test_handle();
+        let cred_id = crate::credential_storage::CredentialId::generate();
+
+        handle
+            .put_credential(cred_id, 1, None, b"data", None)
+            .unwrap();
+        handle.retire_credential(cred_id).unwrap();
+
+        // Exporting retired credential should fail
+        let result = handle.export_credential(cred_id);
+        assert!(matches!(
+            result,
+            Err(crate::credential_storage::StorageError::InvalidInput { .. })
+        ));
+    }
+
+    #[test]
+    fn test_export_all_credentials() {
+        let mut handle = create_test_handle();
+
+        // Create multiple credentials
+        let cred1 = crate::credential_storage::CredentialId::generate();
+        let cred2 = crate::credential_storage::CredentialId::generate();
+        let cred3 = crate::credential_storage::CredentialId::generate();
+
+        handle.put_credential(cred1, 1, None, b"c1", None).unwrap();
+        handle.put_credential(cred2, 2, None, b"c2", None).unwrap();
+        handle.put_credential(cred3, 3, None, b"c3", None).unwrap();
+
+        // Retire one
+        handle.retire_credential(cred2).unwrap();
+
+        // Export all
+        let transfers = handle.export_all_credentials().unwrap();
+        assert_eq!(transfers.len(), 3);
+    }
+
+    #[test]
+    fn test_import_credentials_batch() {
+        // Device A
+        let mut handle_a = create_test_handle();
+
+        let cred1 = crate::credential_storage::CredentialId::generate();
+        let cred2 = crate::credential_storage::CredentialId::generate();
+
+        handle_a.put_credential(cred1, 1, None, b"c1", None).unwrap();
+        handle_a.put_credential(cred2, 2, None, b"c2", None).unwrap();
+
+        // Device B
+        let device_b_keypair = DeviceKeyPair::generate();
+        let envelope = handle_a
+            .export_vault_provisioning_envelope(device_b_keypair.public_key())
+            .unwrap();
+
+        let keystore_b = Arc::new(MemoryKeystore::new());
+        let platform_b = Arc::new(SharedMemoryPlatformBundle::new());
+        let lock_manager_b = Arc::new(MemoryLockManager::new());
+        let store_b = WorldIdStore::new(
+            Arc::clone(&keystore_b),
+            Arc::clone(&platform_b),
+            Arc::clone(&lock_manager_b),
+        );
+
+        let mut handle_b = store_b
+            .import_vault_provisioning_envelope(&envelope, device_b_keypair.secret_key())
+            .unwrap();
+
+        // Export all from A
+        let transfers = handle_a.export_all_credentials().unwrap();
+
+        // Import all to B
+        let outcomes = handle_b.import_credentials(&transfers).unwrap();
+
+        assert_eq!(outcomes.len(), 2);
+        assert!(outcomes.iter().all(|o| *o == ImportOutcome::Applied));
+
+        // Verify B has both
+        let _ = handle_b.get_credential(cred1).unwrap();
+        let _ = handle_b.get_credential(cred2).unwrap();
+    }
+
+    #[test]
+    fn test_provisioning_preserves_derivation() {
+        let handle_a = create_test_handle();
+
+        // Derive some values
+        let issuer_blind_a = handle_a.derive_issuer_blind(42);
+        let rp_id = [0x11u8; 32];
+        let action_id = [0x22u8; 32];
+        let session_r_a = handle_a.derive_session_r(&rp_id, &action_id);
+
+        // Provision Device B
+        let device_b_keypair = DeviceKeyPair::generate();
+        let envelope = handle_a
+            .export_vault_provisioning_envelope(device_b_keypair.public_key())
+            .unwrap();
+
+        let keystore_b = Arc::new(MemoryKeystore::new());
+        let platform_b = Arc::new(SharedMemoryPlatformBundle::new());
+        let lock_manager_b = Arc::new(MemoryLockManager::new());
+        let store_b = WorldIdStore::new(
+            Arc::clone(&keystore_b),
+            Arc::clone(&platform_b),
+            Arc::clone(&lock_manager_b),
+        );
+
+        let handle_b = store_b
+            .import_vault_provisioning_envelope(&envelope, device_b_keypair.secret_key())
+            .unwrap();
+
+        // Derive same values on B - should match
+        let issuer_blind_b = handle_b.derive_issuer_blind(42);
+        let session_r_b = handle_b.derive_session_r(&rp_id, &action_id);
+
+        assert_eq!(issuer_blind_a, issuer_blind_b);
+        assert_eq!(session_r_a, session_r_b);
+    }
+}

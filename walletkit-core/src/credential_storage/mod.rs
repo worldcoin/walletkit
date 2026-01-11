@@ -79,6 +79,8 @@ pub mod account;
 mod error;
 pub mod pending;
 pub mod platform;
+pub mod provisioning;
+pub mod transfer;
 mod types;
 pub mod vault;
 
@@ -93,6 +95,12 @@ pub use account::{AccountHandle, WorldIdStore};
 
 // Re-export key pending types for convenience
 pub use pending::{OnpClient, StubOnpClient};
+
+// Re-export key provisioning types for convenience
+pub use provisioning::{DeviceKeyPair, ProvisioningPayload};
+
+// Re-export key transfer types for convenience
+pub use transfer::{ImportDecision, TransferPayload, TRANSFER_VERSION};
 
 /// Result type alias for credential storage operations.
 pub type StorageResult<T> = Result<T, StorageError>;

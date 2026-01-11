@@ -52,6 +52,14 @@ pub enum StorageError {
         context: String,
     },
 
+    /// Invalid input parameter.
+    InvalidInput {
+        /// Name of the invalid parameter.
+        parameter: String,
+        /// Description of the issue.
+        reason: String,
+    },
+
     /// Unexpected end of data while parsing.
     UnexpectedEof {
         /// Context describing what was being parsed.
@@ -224,6 +232,9 @@ impl fmt::Display for StorageError {
             }
             Self::ChecksumMismatch { context } => write!(f, "checksum mismatch: {context}"),
             Self::CorruptedData { context } => write!(f, "corrupted data: {context}"),
+            Self::InvalidInput { parameter, reason } => {
+                write!(f, "invalid input '{parameter}': {reason}")
+            }
             Self::UnexpectedEof { context } => write!(f, "unexpected end of data: {context}"),
             Self::DecryptionFailed { context } => write!(f, "decryption failed: {context}"),
             Self::EncryptionFailed { context } => write!(f, "encryption failed: {context}"),
@@ -295,6 +306,14 @@ impl StorageError {
     pub fn corrupted<S: Into<String>>(context: S) -> Self {
         Self::CorruptedData {
             context: context.into(),
+        }
+    }
+
+    /// Creates an invalid input error.
+    pub fn invalid_input<P: Into<String>, R: Into<String>>(parameter: P, reason: R) -> Self {
+        Self::InvalidInput {
+            parameter: parameter.into(),
+            reason: reason.into(),
         }
     }
 
