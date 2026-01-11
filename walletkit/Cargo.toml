@@ -27,6 +27,7 @@ walletkit-core = { workspace = true }
 [features]
 default = ["semaphore"]
 semaphore = ["walletkit-core/semaphore"]
+platform-ios = ["walletkit-core/platform-ios"]
 
 [package.metadata.docs.rs]
 no-default-features = true

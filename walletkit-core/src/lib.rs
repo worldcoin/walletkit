@@ -78,4 +78,31 @@ pub mod common_apps;
 mod merkle_tree;
 mod request;
 
+/// Credential storage system for World ID v4.0.
+///
+/// This module provides secure, crash-safe storage for World ID credentials
+/// with support for multi-device sync and privacy-preserving nullifier handling.
+pub mod credential_storage;
+
+// Re-export FFI types at crate root for UniFFI discovery.
+// These are exported to Swift/Kotlin with clean names (no "Ffi" prefix).
+#[cfg(feature = "platform-ios")]
+pub use credential_storage::ffi::{
+    generate_credential_id, generate_device_key_pair,
+    AccountHandle as FfiAccountHandle,
+    AccountId as FfiAccountId,
+    CredentialData as FfiCredentialData,
+    CredentialFilter as FfiCredentialFilter,
+    CredentialId as FfiCredentialId,
+    CredentialRecord as FfiCredentialRecord,
+    CredentialStatus as FfiCredentialStatus,
+    CredentialTransfer as FfiCredentialTransfer,
+    DeviceKeyPair as FfiDeviceKeyPair,
+    ImportOutcome as FfiImportOutcome,
+    PendingAction as FfiPendingAction,
+    ProvisioningEnvelope as FfiProvisioningEnvelope,
+    StorageError as FfiStorageError,
+    WorldIdStore as FfiWorldIdStore,
+};
+
 uniffi::setup_scaffolding!("walletkit_core");
