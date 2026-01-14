@@ -19,14 +19,20 @@ use super::{
 /// In-memory account keys derived from the account key envelope.
 ///
 /// Keys are held in memory for the lifetime of the storage handle.
+#[allow(clippy::struct_field_names)]
 pub struct StorageKeys {
-    k_intermediate: [u8; 32],
-    k_vault: [u8; 32],
-    k_cache: [u8; 32],
+    intermediate_key: [u8; 32],
+    vault_key: [u8; 32],
+    cache_key: [u8; 32],
 }
 
 impl StorageKeys {
     /// Initializes storage keys by opening or creating the account key envelope.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the envelope cannot be read, decrypted, or parsed,
+    /// or if persistence to the blob store fails.
     pub fn init(
         keystore: &dyn DeviceKeystore,
         blob_store: &dyn AtomicBlobStore,
@@ -36,15 +42,13 @@ impl StorageKeys {
             let envelope = AccountKeyEnvelope::deserialize(&bytes)?;
             let k_intermediate_bytes = keystore
                 .open(ACCOUNT_KEY_ENVELOPE_AD, &envelope.wrapped_k_intermediate)?;
-            let k_intermediate =
-                parse_key_32(&k_intermediate_bytes, "K_intermediate")?;
-            let k_vault =
-                unwrap_vault_key(&k_intermediate, &envelope.wrapped_k_vault)?;
+            let k_intermediate = parse_key_32(&k_intermediate_bytes, "K_intermediate")?;
+            let k_vault = unwrap_vault_key(&k_intermediate, &envelope.wrapped_k_vault)?;
             let k_cache = derive_cache_key(&k_intermediate)?;
             Ok(Self {
-                k_intermediate,
-                k_vault,
-                k_cache,
+                intermediate_key: k_intermediate,
+                vault_key: k_vault,
+                cache_key: k_cache,
             })
         } else {
             let k_intermediate = random_key();
@@ -52,35 +56,35 @@ impl StorageKeys {
             let wrapped_k_intermediate =
                 keystore.seal(ACCOUNT_KEY_ENVELOPE_AD, &k_intermediate)?;
             let wrapped_k_vault = wrap_vault_key(&k_intermediate, &k_vault)?;
-            let envelope = AccountKeyEnvelope::new(
-                wrapped_k_intermediate,
-                wrapped_k_vault,
-                now,
-            );
+            let envelope =
+                AccountKeyEnvelope::new(wrapped_k_intermediate, wrapped_k_vault, now);
             let bytes = envelope.serialize()?;
             blob_store.write_atomic(ACCOUNT_KEYS_FILENAME, &bytes)?;
             let k_cache = derive_cache_key(&k_intermediate)?;
             Ok(Self {
-                k_intermediate,
-                k_vault,
-                k_cache,
+                intermediate_key: k_intermediate,
+                vault_key: k_vault,
+                cache_key: k_cache,
             })
         }
     }
 
     /// Returns the vault key used for the encrypted vault database.
-    pub fn vault_key(&self) -> [u8; 32] {
-        self.k_vault
+    #[must_use]
+    pub const fn vault_key(&self) -> [u8; 32] {
+        self.vault_key
     }
 
     /// Returns the cache key derived from the intermediate key.
-    pub fn cache_key(&self) -> [u8; 32] {
-        self.k_cache
+    #[must_use]
+    pub const fn cache_key(&self) -> [u8; 32] {
+        self.cache_key
     }
 
     /// Returns the intermediate key. Treat this as sensitive material.
-    pub fn intermediate_key(&self) -> [u8; 32] {
-        self.k_intermediate
+    #[must_use]
+    pub const fn intermediate_key(&self) -> [u8; 32] {
+        self.intermediate_key
     }
 }
 
@@ -164,14 +168,12 @@ mod tests {
     fn test_storage_keys_round_trip() {
         let keystore = InMemoryKeystore::new();
         let blob_store = InMemoryBlobStore::new();
-        let keys_first = StorageKeys::init(&keystore, &blob_store, 100)
-            .expect("init");
-        let keys_second = StorageKeys::init(&keystore, &blob_store, 200)
-            .expect("init");
+        let keys_first = StorageKeys::init(&keystore, &blob_store, 100).expect("init");
+        let keys_second = StorageKeys::init(&keystore, &blob_store, 200).expect("init");
 
-        assert_eq!(keys_first.k_intermediate, keys_second.k_intermediate);
-        assert_eq!(keys_first.k_vault, keys_second.k_vault);
-        assert_eq!(keys_first.k_cache, keys_second.k_cache);
+        assert_eq!(keys_first.intermediate_key, keys_second.intermediate_key);
+        assert_eq!(keys_first.vault_key, keys_second.vault_key);
+        assert_eq!(keys_first.cache_key, keys_second.cache_key);
     }
 
     #[test]
@@ -182,9 +184,11 @@ mod tests {
 
         let other_keystore = InMemoryKeystore::new();
         match StorageKeys::init(&other_keystore, &blob_store, 456) {
-            Err(StorageError::Crypto(_))
-            | Err(StorageError::InvalidEnvelope(_))
-            | Err(StorageError::Keystore(_)) => {}
+            Err(
+                StorageError::Crypto(_)
+                | StorageError::InvalidEnvelope(_)
+                | StorageError::Keystore(_),
+            ) => {}
             Err(err) => panic!("unexpected error: {err}"),
             Ok(_) => panic!("expected error"),
         }
@@ -206,9 +210,11 @@ mod tests {
             .expect("write");
 
         match StorageKeys::init(&keystore, &blob_store, 456) {
-            Err(StorageError::Serialization(_))
-            | Err(StorageError::Crypto(_))
-            | Err(StorageError::UnsupportedEnvelopeVersion(_)) => {}
+            Err(
+                StorageError::Serialization(_)
+                | StorageError::Crypto(_)
+                | StorageError::UnsupportedEnvelopeVersion(_),
+            ) => {}
             Err(err) => panic!("unexpected error: {err}"),
             Ok(_) => panic!("expected error"),
         }

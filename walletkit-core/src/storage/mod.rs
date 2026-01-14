@@ -121,20 +121,18 @@ pub(super) mod test_support {
         }
 
         fn write_atomic(&self, path: &str, bytes: &[u8]) -> Result<(), StorageError> {
-            let mut guard = self
-                .blobs
+            self.blobs
                 .lock()
-                .map_err(|_| StorageError::BlobStore("mutex poisoned".to_string()))?;
-            guard.insert(path.to_string(), bytes.to_vec());
+                .map_err(|_| StorageError::BlobStore("mutex poisoned".to_string()))?
+                .insert(path.to_string(), bytes.to_vec());
             Ok(())
         }
 
         fn delete(&self, path: &str) -> Result<(), StorageError> {
-            let mut guard = self
-                .blobs
+            self.blobs
                 .lock()
-                .map_err(|_| StorageError::BlobStore("mutex poisoned".to_string()))?;
-            guard.remove(path);
+                .map_err(|_| StorageError::BlobStore("mutex poisoned".to_string()))?
+                .remove(path);
             Ok(())
         }
     }
