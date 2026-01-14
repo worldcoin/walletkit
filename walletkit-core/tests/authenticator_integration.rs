@@ -70,6 +70,6 @@ async fn test_authenticator_integration() {
     )
     .await
     .unwrap();
-    let account_id = authenticator.account_id();
-    println!("Created World ID with account ID: {account_id:?}",);
+    let packed_account_data = authenticator.packed_account_data();
+    println!("Created World ID with packed account data: {packed_account_data:?}",);
 }
