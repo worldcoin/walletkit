@@ -6124,6 +6124,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.22",
  "ruint",
+ "rustls 0.23.27",
  "secrecy",
  "semaphore-rs",
  "serde",

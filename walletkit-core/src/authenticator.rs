@@ -1,7 +1,10 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
 use alloy_primitives::Address;
-use world_id_core::{primitives::Config, Authenticator as CoreAuthenticator};
+use world_id_core::{
+    primitives::Config, Authenticator as CoreAuthenticator,
+    InitializingAuthenticator as CoreInitializingAuthenticator,
+};
 
 use crate::{
     defaults::DefaultConfig, error::WalletKitError,
@@ -15,6 +18,9 @@ pub struct Authenticator(CoreAuthenticator);
 #[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
+    ///
+    /// The user's World ID must already be registered in the `WorldIDRegistry`,
+    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
     ///
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
@@ -30,6 +36,9 @@ impl Authenticator {
     }
 
     /// Initializes a new Authenticator from a seed and config.
+    ///
+    /// The user's World ID must already be registered in the `WorldIDRegistry`,
+    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
     ///
     /// # Errors
     /// Will error if the provided seed is not valid or if the config is not valid.
@@ -97,6 +106,59 @@ impl Authenticator {
         Ok(Self(authenticator))
     }
 
+    /// Registers a new World ID with SDK defaults.
+    ///
+    /// This returns immediately and does not wait for registration to complete.
+    /// The returned `InitializingAuthenticator` can be used to poll the registration status.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::register` for potential errors.
+    #[uniffi::constructor]
+    pub async fn register_with_defaults(
+        seed: &[u8],
+        rpc_url: Option<String>,
+        environment: &Environment,
+        recovery_address: Option<String>,
+    ) -> Result<InitializingAuthenticator, WalletKitError> {
+        let recovery_address =
+            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
+
+        let config = Config::from_environment(environment, rpc_url)?;
+
+        let initializing_authenticator =
+            CoreAuthenticator::register(seed, config, recovery_address).await?;
+
+        Ok(InitializingAuthenticator(initializing_authenticator))
+    }
+
+    /// Registers a new World ID.
+    ///
+    /// This returns immediately and does not wait for registration to complete.
+    /// The returned `InitializingAuthenticator` can be used to poll the registration status.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::register` for potential errors.
+    #[uniffi::constructor]
+    pub async fn register(
+        seed: &[u8],
+        config: &str,
+        recovery_address: Option<String>,
+    ) -> Result<InitializingAuthenticator, WalletKitError> {
+        let recovery_address =
+            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
+
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+                attribute: "config".to_string(),
+                reason: "Invalid config".to_string(),
+            })?;
+
+        let initializing_authenticator =
+            CoreAuthenticator::register(seed, config, recovery_address).await?;
+
+        Ok(InitializingAuthenticator(initializing_authenticator))
+    }
+
     /// Returns the packed account data for the holder's World ID.
     ///
     /// The packed account data is a 256 bit integer which includes the user's leaf index, their recovery counter,
@@ -104,6 +166,15 @@ impl Authenticator {
     #[must_use]
     pub fn packed_account_data(&self) -> U256Wrapper {
         self.0.packed_account_data.into()
+    }
+
+    /// Returns the leaf index for the holder's World ID.
+    ///
+    /// This is the index in the Merkle tree where the holder's World ID account is registered. It
+    /// should only be used inside the authenticator and never shared.
+    #[must_use]
+    pub fn leaf_index(&self) -> U256Wrapper {
+        self.0.leaf_index().into()
     }
 
     /// Returns the Authenticator's `onchain_address`.
@@ -133,6 +204,14 @@ impl Authenticator {
     }
 }
 
+/// Represents an Authenticator in the process of being initialized.
+///
+/// The account is not yet registered in the `WorldIDRegistry` contract.
+/// Use this for non-blocking registration flows where you want to poll the status yourself.
+#[derive(uniffi::Object)]
+#[allow(dead_code)]
+pub struct InitializingAuthenticator(CoreInitializingAuthenticator);
+
 #[cfg(test)]
 mod tests {
     use alloy::primitives::address;
@@ -141,6 +220,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_with_config() {
+        // Install default crypto provider for rustls
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let mut mock_server = mockito::Server::new_async().await;
 
         // Mock eth_call to return account data indicating account exists
