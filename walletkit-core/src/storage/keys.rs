@@ -162,7 +162,7 @@ fn derive_cache_key(k_intermediate: &[u8; 32]) -> StorageResult<[u8; 32]> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::test_support::{InMemoryBlobStore, InMemoryKeystore};
+    use crate::storage::tests_utils::{InMemoryBlobStore, InMemoryKeystore};
 
     #[test]
     fn test_storage_keys_round_trip() {
