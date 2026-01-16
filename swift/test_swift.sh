@@ -27,7 +27,8 @@ SOURCES_PATH_NAME="/Sources/WalletKit/"
 
 echo -e "${BLUE}🔨 Step 1: Building Swift bindings${NC}"
 # Run the build_swift.sh script from parent directory
-bash "$BASE_PATH/../build_swift.sh"
+# Must cd to the repository root first because build script expects to run from there
+cd "$BASE_PATH/.." && bash ./build_swift.sh
 
 # Check if the XCFramework was created
 if [ ! -d "$BASE_PATH/../WalletKit.xcframework" ]; then
