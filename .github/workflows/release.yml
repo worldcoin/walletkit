@@ -89,13 +89,13 @@ jobs:
           make_latest: false
           draft: true
           fail_on_unmatched_files: true
-          files: Walletit.xcframework.zip
+          files: WalletKit.xcframework.zip
           token: ${{ secrets.WALLETKIT_BOT_TOKEN }}
 
       - name: Get metadata
         id: meta
         run: |
-          ASSET_URL="${{ fromJSON(steps.release.outputs.assets)[0].url }}.zip"
+          ASSET_URL="${{ fromJSON(steps.release.outputs.assets)[0].browser_download_url }}"
           echo "asset_url=${ASSET_URL}" >> $GITHUB_OUTPUT
 
           CHECKSUM=$(swift package compute-checksum WalletKit.xcframework.zip)
