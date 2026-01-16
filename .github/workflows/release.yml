@@ -70,7 +70,7 @@ jobs:
 
       - name: Compress XCFramework binary
         run: |
-          zip -r WalletKit.xcframework.zip
+          zip -r WalletKit.xcframework.zip WalletKit.xcframework
 
       - name: Checkout swift repo
         uses: actions/checkout@v4
@@ -89,17 +89,17 @@ jobs:
           make_latest: false
           draft: true
           fail_on_unmatched_files: true
-          files: WalletKit.xcframework.zip
+          files: Walletit.xcframework.zip
           token: ${{ secrets.WALLETKIT_BOT_TOKEN }}
 
       - name: Get metadata
         id: meta
         run: |
+          ASSET_URL="${{ fromJSON(steps.release.outputs.assets)[0].url }}.zip"
+          echo "asset_url=${ASSET_URL}" >> $GITHUB_OUTPUT
+
           CHECKSUM=$(swift package compute-checksum WalletKit.xcframework.zip)
-          echo "checksum=$CHECKSUM" >> $GITHUB_OUTPUT
-        outputs:
-          asset_url: ${{ fromJSON(steps.release.outputs.assets)[0].browser_download_url }}
-          checksum: ${{ steps.meta.outputs.checksum }}
+          echo "checksum=${CHECKSUM}" >> $GITHUB_OUTPUT
 
       - name: Commit swift build
         env:
