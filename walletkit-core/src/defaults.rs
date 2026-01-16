@@ -3,8 +3,8 @@ use world_id_core::primitives::{Config, PrimitiveError};
 
 use crate::{error::WalletKitError, Environment};
 
-pub static ACCOUNT_REGISTRY: Address =
-    address!("0xd66aFbf92d684B4404B1ed3e9aDA85353c178dE2");
+pub static WORLD_ID_REGISTRY: Address =
+    address!("0xb64a1F443C9a18Cd3865C3c9Be871946617C0d75");
 
 pub trait DefaultConfig {
     fn from_environment(
@@ -34,7 +34,7 @@ impl DefaultConfig for Config {
             Environment::Staging => Self::new(
                 rpc_url,
                 480, // Staging also runs on World Chain Mainnet by default
-                ACCOUNT_REGISTRY,
+                WORLD_ID_REGISTRY,
                 "https://world-id-indexer.stage-crypto.worldcoin.org".to_string(),
                 "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
                 vec![],
@@ -45,7 +45,7 @@ impl DefaultConfig for Config {
             Environment::Production => Self::new(
                 rpc_url,
                 480,
-                ACCOUNT_REGISTRY,
+                WORLD_ID_REGISTRY,
                 "https://world-id-indexer.crypto.worldcoin.org".to_string(),
                 "https://world-id-gateway.crypto.worldcoin.org".to_string(),
                 vec![],
