@@ -2,7 +2,7 @@
 
 use alloy_primitives::Address;
 use world_id_core::{
-    primitives::Config, Authenticator as CoreAuthenticator,
+    primitives::Config, types::GatewayRequestState, Authenticator as CoreAuthenticator,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
@@ -204,13 +204,59 @@ impl Authenticator {
     }
 }
 
+/// Registration status for a World ID being created through the gateway.
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum RegistrationStatus {
+    /// Request queued but not yet batched.
+    Queued,
+    /// Request currently being batched.
+    Batching,
+    /// Request submitted on-chain.
+    Submitted,
+    /// Request finalized on-chain. The World ID is now registered.
+    Finalized,
+    /// Request failed during processing.
+    Failed {
+        /// Error message returned by the gateway.
+        error: String,
+        /// Specific error code, if available.
+        error_code: Option<String>,
+    },
+}
+
+impl From<GatewayRequestState> for RegistrationStatus {
+    fn from(state: GatewayRequestState) -> Self {
+        match state {
+            GatewayRequestState::Queued => Self::Queued,
+            GatewayRequestState::Batching => Self::Batching,
+            GatewayRequestState::Submitted { .. } => Self::Submitted,
+            GatewayRequestState::Finalized { .. } => Self::Finalized,
+            GatewayRequestState::Failed { error, error_code } => Self::Failed {
+                error,
+                error_code: error_code.map(|c| c.to_string()),
+            },
+        }
+    }
+}
+
 /// Represents an Authenticator in the process of being initialized.
 ///
 /// The account is not yet registered in the `WorldIDRegistry` contract.
 /// Use this for non-blocking registration flows where you want to poll the status yourself.
 #[derive(uniffi::Object)]
-#[allow(dead_code)]
 pub struct InitializingAuthenticator(CoreInitializingAuthenticator);
+
+#[uniffi::export(async_runtime = "tokio")]
+impl InitializingAuthenticator {
+    /// Polls the registration status from the gateway.
+    ///
+    /// # Errors
+    /// Will error if the network request fails or the gateway returns an error.
+    pub async fn poll_status(&self) -> Result<RegistrationStatus, WalletKitError> {
+        let status = self.0.poll_status().await?;
+        Ok(status.into())
+    }
+}
 
 #[cfg(test)]
 mod tests {
