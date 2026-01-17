@@ -95,7 +95,7 @@ jobs:
       - name: Get metadata
         id: meta
         run: |
-          ASSET_URL="${{ fromJSON(steps.release.outputs.assets)[0].browser_download_url }}"
+          ASSET_URL="${{ fromJSON(steps.release.outputs.assets)[0].url }}.zip"
           echo "asset_url=${ASSET_URL}" >> $GITHUB_OUTPUT
 
           CHECKSUM=$(swift package compute-checksum WalletKit.xcframework.zip)
