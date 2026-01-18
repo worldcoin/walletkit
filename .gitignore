@@ -3,6 +3,12 @@ target/
 **/ios_build
 .swiftpm/
 
+# IDE
+.idea
+*.iml
+.vscode
+*/settings.json
+
 # Swift build outputs are not committed to this repo.
 WalletKit.xcframework/
 Sources/

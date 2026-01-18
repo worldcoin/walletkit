@@ -8,13 +8,10 @@ plugins {
 
 android {
     namespace = "org.world.walletkit"
-    compileSdk = 33
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 23
-
-        @Suppress("deprecation")
-        targetSdk = 33
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
