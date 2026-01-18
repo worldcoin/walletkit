@@ -61,7 +61,7 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.86 # MSRV
+          - 1.92.0 # MSRV
 
     steps:
       - name: Checkout code
@@ -70,7 +70,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
+          toolchain: ${{ matrix.rust }}
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
