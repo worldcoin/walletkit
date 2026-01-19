@@ -60,10 +60,12 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
+          components: rustfmt
 
       - name: Build the project (iOS)
         run: ./build_swift.sh
@@ -152,10 +154,12 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
           targets: ${{ matrix.settings.target }}
+          components: rustfmt
 
       - name: Install Cross
         run: |
@@ -186,10 +190,12 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          components: rustfmt
 
       - name: Setup Java
         uses: actions/setup-java@v3
@@ -262,9 +268,10 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
 
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
