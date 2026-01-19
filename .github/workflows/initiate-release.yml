@@ -57,9 +57,10 @@ jobs:
           echo "New version will be: $NEW_VERSION"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
 
       - name: Install cargo-edit
         run: cargo install cargo-edit
