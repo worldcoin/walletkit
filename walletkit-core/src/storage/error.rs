@@ -31,4 +31,25 @@ pub enum StorageError {
     /// Unsupported envelope version.
     #[error("unsupported envelope version: {0}")]
     UnsupportedEnvelopeVersion(u32),
+
+    /// Errors coming from the vault database.
+    #[error("vault db error: {0}")]
+    VaultDb(String),
+
+    /// Leaf index mismatch during initialization.
+    #[error("leaf index mismatch: expected {expected}, got {provided}")]
+    InvalidLeafIndex {
+        /// Leaf index stored in the vault.
+        expected: u64,
+        /// Leaf index provided by the caller.
+        provided: u64,
+    },
+
+    /// Vault database integrity check failed.
+    #[error("vault integrity check failed: {0}")]
+    CorruptedVault(String),
+
+    /// Credential not found in the vault.
+    #[error("credential not found")]
+    CredentialNotFound,
 }
