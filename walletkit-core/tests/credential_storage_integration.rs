@@ -1,12 +1,173 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+use chacha20poly1305::{
+    aead::{Aead, KeyInit, Payload},
+    Key, XChaCha20Poly1305, XNonce,
+};
+use rand::{rngs::OsRng, RngCore};
 use uuid::Uuid;
 
-use walletkit_core::storage::tests_utils::InMemoryStorageProvider;
 use walletkit_core::storage::{
-    CredentialStorage, CredentialStore, CredentialStatus, ProofDisclosureResult,
-    StoragePaths,
+    AtomicBlobStore, CredentialStorage, CredentialStore, CredentialStatus,
+    DeviceKeystore, ProofDisclosureResult, StoragePaths, StorageProvider,
 };
+
+struct InMemoryKeystore {
+    key: [u8; 32],
+}
+
+impl InMemoryKeystore {
+    fn new() -> Self {
+        let mut key = [0u8; 32];
+        OsRng.fill_bytes(&mut key);
+        Self { key }
+    }
+}
+
+impl DeviceKeystore for InMemoryKeystore {
+    fn seal(
+        &self,
+        associated_data: &[u8],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, walletkit_core::storage::StorageError> {
+        let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.key));
+        let mut nonce_bytes = [0u8; 24];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let ciphertext = cipher
+            .encrypt(
+                XNonce::from_slice(&nonce_bytes),
+                Payload {
+                    msg: plaintext,
+                    aad: associated_data,
+                },
+            )
+            .map_err(|err| {
+                walletkit_core::storage::StorageError::Crypto(err.to_string())
+            })?;
+        let mut out = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
+        out.extend_from_slice(&nonce_bytes);
+        out.extend_from_slice(&ciphertext);
+        Ok(out)
+    }
+
+    fn open(
+        &self,
+        associated_data: &[u8],
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, walletkit_core::storage::StorageError> {
+        if ciphertext.len() < 24 {
+            return Err(walletkit_core::storage::StorageError::InvalidEnvelope(
+                "keystore ciphertext too short".to_string(),
+            ));
+        }
+        let (nonce_bytes, payload) = ciphertext.split_at(24);
+        let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.key));
+        cipher
+            .decrypt(
+                XNonce::from_slice(nonce_bytes),
+                Payload {
+                    msg: payload,
+                    aad: associated_data,
+                },
+            )
+            .map_err(|err| {
+                walletkit_core::storage::StorageError::Crypto(err.to_string())
+            })
+    }
+}
+
+struct InMemoryBlobStore {
+    blobs: Mutex<HashMap<String, Vec<u8>>>,
+}
+
+impl InMemoryBlobStore {
+    fn new() -> Self {
+        Self {
+            blobs: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+impl AtomicBlobStore for InMemoryBlobStore {
+    fn read(
+        &self,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>, walletkit_core::storage::StorageError> {
+        let guard = self
+            .blobs
+            .lock()
+            .map_err(|_| {
+                walletkit_core::storage::StorageError::BlobStore(
+                    "mutex poisoned".to_string(),
+                )
+            })?;
+        Ok(guard.get(path).cloned())
+    }
+
+    fn write_atomic(
+        &self,
+        path: &str,
+        bytes: &[u8],
+    ) -> Result<(), walletkit_core::storage::StorageError> {
+        self.blobs
+            .lock()
+            .map_err(|_| {
+                walletkit_core::storage::StorageError::BlobStore(
+                    "mutex poisoned".to_string(),
+                )
+            })?
+            .insert(path.to_string(), bytes.to_vec());
+        Ok(())
+    }
+
+    fn delete(
+        &self,
+        path: &str,
+    ) -> Result<(), walletkit_core::storage::StorageError> {
+        self.blobs
+            .lock()
+            .map_err(|_| {
+                walletkit_core::storage::StorageError::BlobStore(
+                    "mutex poisoned".to_string(),
+                )
+            })?
+            .remove(path);
+        Ok(())
+    }
+}
+
+struct InMemoryStorageProvider {
+    keystore: Arc<InMemoryKeystore>,
+    blob_store: Arc<InMemoryBlobStore>,
+    paths: StoragePaths,
+}
+
+impl InMemoryStorageProvider {
+    fn new(root: impl AsRef<Path>) -> Self {
+        Self {
+            keystore: Arc::new(InMemoryKeystore::new()),
+            blob_store: Arc::new(InMemoryBlobStore::new()),
+            paths: StoragePaths::new(root),
+        }
+    }
+}
+
+impl StorageProvider for InMemoryStorageProvider {
+    fn keystore(&self) -> Arc<dyn DeviceKeystore> {
+        self.keystore.clone()
+    }
+
+    fn blob_store(&self) -> Arc<dyn AtomicBlobStore> {
+        self.blob_store.clone()
+    }
+
+    fn paths(&self) -> StoragePaths {
+        self.paths.clone()
+    }
+}
 
 fn temp_root() -> PathBuf {
     let mut path = std::env::temp_dir();

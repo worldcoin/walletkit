@@ -1,10 +1,8 @@
 use std::convert::TryFrom;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
-use world_id_core::primitives::merkle::{
-    AccountInclusionProof, MerkleInclusionProof,
-};
+use world_id_core::primitives::merkle::MerkleInclusionProof;
 use world_id_core::primitives::TREE_DEPTH;
 use world_id_core::{types::RpRequest, Credential, FieldElement};
 
@@ -58,10 +56,10 @@ impl Authenticator {
         }
 
         let (proof, key_set) = self.0.fetch_inclusion_proof().await?;
-        let payload = AccountInclusionProof::new(proof.clone(), key_set.clone())
-            .map_err(|err| WalletKitError::Generic {
-                error: err.to_string(),
-            })?;
+        let payload = CachedInclusionProof {
+            proof: proof.clone(),
+            authenticator_pubkeys: key_set.clone(),
+        };
         let payload_bytes = serialize_inclusion_proof(&payload)?;
         let proof_root = field_element_to_bytes(proof.root);
         storage.merkle_cache_put(
@@ -101,8 +99,14 @@ impl Authenticator {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedInclusionProof {
+    proof: MerkleInclusionProof<TREE_DEPTH>,
+    authenticator_pubkeys: AuthenticatorPublicKeySet,
+}
+
 fn serialize_inclusion_proof(
-    payload: &AccountInclusionProof<TREE_DEPTH>,
+    payload: &CachedInclusionProof,
 ) -> Result<Vec<u8>, WalletKitError> {
     bincode::serialize(payload).map_err(|err| WalletKitError::SerializationError {
         error: err.to_string(),
@@ -111,7 +115,7 @@ fn serialize_inclusion_proof(
 
 fn deserialize_inclusion_proof(
     bytes: &[u8],
-) -> Option<AccountInclusionProof<TREE_DEPTH>> {
+) -> Option<CachedInclusionProof> {
     bincode::deserialize(bytes).ok()
 }
 
@@ -172,8 +176,10 @@ mod tests {
         let root_fe = FieldElement::from(123u64);
         let proof = MerkleInclusionProof::new(root_fe, 42, siblings);
         let key_set = AuthenticatorPublicKeySet::new(None).expect("key set");
-        let payload =
-            AccountInclusionProof::new(proof.clone(), key_set).expect("payload");
+        let payload = CachedInclusionProof {
+            proof: proof.clone(),
+            authenticator_pubkeys: key_set,
+        };
         let payload_bytes = serialize_inclusion_proof(&payload).expect("serialize");
         let root_bytes = field_element_to_bytes(proof.root);
 

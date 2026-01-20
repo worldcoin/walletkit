@@ -80,14 +80,23 @@ pub type Nullifier = [u8; 32];
 /// In-memory representation of a stored credential.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredentialRecord {
+    /// Credential identifier.
     pub credential_id: CredentialId,
+    /// Issuer schema identifier.
     pub issuer_schema_id: u64,
+    /// Current credential status.
     pub status: CredentialStatus,
+    /// Subject blinding factor tied to the credential subject.
     pub subject_blinding_factor: [u8; 32],
+    /// Genesis issuance timestamp (seconds).
     pub genesis_issued_at: u64,
+    /// Optional expiry timestamp (seconds).
     pub expires_at: Option<u64>,
+    /// Last updated timestamp (seconds).
     pub updated_at: u64,
+    /// Raw credential blob bytes.
     pub credential_blob: Vec<u8>,
+    /// Optional associated data blob bytes.
     pub associated_data: Option<Vec<u8>>,
 }
 
