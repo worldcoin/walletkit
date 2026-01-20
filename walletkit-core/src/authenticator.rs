@@ -106,59 +106,6 @@ impl Authenticator {
         Ok(Self(authenticator))
     }
 
-    /// Registers a new World ID with SDK defaults.
-    ///
-    /// This returns immediately and does not wait for registration to complete.
-    /// The returned `InitializingAuthenticator` can be used to poll the registration status.
-    ///
-    /// # Errors
-    /// See `CoreAuthenticator::register` for potential errors.
-    #[uniffi::constructor]
-    pub async fn register_with_defaults(
-        seed: &[u8],
-        rpc_url: Option<String>,
-        environment: &Environment,
-        recovery_address: Option<String>,
-    ) -> Result<InitializingAuthenticator, WalletKitError> {
-        let recovery_address =
-            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
-
-        let config = Config::from_environment(environment, rpc_url)?;
-
-        let initializing_authenticator =
-            CoreAuthenticator::register(seed, config, recovery_address).await?;
-
-        Ok(InitializingAuthenticator(initializing_authenticator))
-    }
-
-    /// Registers a new World ID.
-    ///
-    /// This returns immediately and does not wait for registration to complete.
-    /// The returned `InitializingAuthenticator` can be used to poll the registration status.
-    ///
-    /// # Errors
-    /// See `CoreAuthenticator::register` for potential errors.
-    #[uniffi::constructor]
-    pub async fn register(
-        seed: &[u8],
-        config: &str,
-        recovery_address: Option<String>,
-    ) -> Result<InitializingAuthenticator, WalletKitError> {
-        let recovery_address =
-            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
-
-        let config =
-            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
-                attribute: "config".to_string(),
-                reason: "Invalid config".to_string(),
-            })?;
-
-        let initializing_authenticator =
-            CoreAuthenticator::register(seed, config, recovery_address).await?;
-
-        Ok(InitializingAuthenticator(initializing_authenticator))
-    }
-
     /// Returns the packed account data for the holder's World ID.
     ///
     /// The packed account data is a 256 bit integer which includes the user's leaf index, their recovery counter,
@@ -248,6 +195,59 @@ pub struct InitializingAuthenticator(CoreInitializingAuthenticator);
 
 #[uniffi::export(async_runtime = "tokio")]
 impl InitializingAuthenticator {
+    /// Registers a new World ID with SDK defaults.
+    ///
+    /// This returns immediately and does not wait for registration to complete.
+    /// The returned `InitializingAuthenticator` can be used to poll the registration status.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::register` for potential errors.
+    #[uniffi::constructor]
+    pub async fn register_with_defaults(
+        seed: &[u8],
+        rpc_url: Option<String>,
+        environment: &Environment,
+        recovery_address: Option<String>,
+    ) -> Result<Self, WalletKitError> {
+        let recovery_address =
+            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
+
+        let config = Config::from_environment(environment, rpc_url)?;
+
+        let initializing_authenticator =
+            CoreAuthenticator::register(seed, config, recovery_address).await?;
+
+        Ok(Self(initializing_authenticator))
+    }
+
+    /// Registers a new World ID.
+    ///
+    /// This returns immediately and does not wait for registration to complete.
+    /// The returned `InitializingAuthenticator` can be used to poll the registration status.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::register` for potential errors.
+    #[uniffi::constructor]
+    pub async fn register(
+        seed: &[u8],
+        config: &str,
+        recovery_address: Option<String>,
+    ) -> Result<Self, WalletKitError> {
+        let recovery_address =
+            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
+
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+                attribute: "config".to_string(),
+                reason: "Invalid config".to_string(),
+            })?;
+
+        let initializing_authenticator =
+            CoreAuthenticator::register(seed, config, recovery_address).await?;
+
+        Ok(Self(initializing_authenticator))
+    }
+
     /// Polls the registration status from the gateway.
     ///
     /// # Errors

@@ -8,16 +8,16 @@ mkdir -p ./lib/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64,x86}
 
 # Build for all Android architectures
 echo "Building for aarch64-linux-android..."
-cross build -p walletkit --release --target=aarch64-linux-android
+cross build -p walletkit --release --target=aarch64-linux-android --features v4
 
 echo "Building for armv7-linux-androideabi..."
-cross build -p walletkit --release --target=armv7-linux-androideabi
+cross build -p walletkit --release --target=armv7-linux-androideabi --features v4
 
 echo "Building for x86_64-linux-android..."
-cross build -p walletkit --release --target=x86_64-linux-android
+cross build -p walletkit --release --target=x86_64-linux-android --features v4
 
 echo "Building for i686-linux-android..."
-cross build -p walletkit --release --target=i686-linux-android
+cross build -p walletkit --release --target=i686-linux-android --features v4
 
 # Move .so files to jniLibs
 echo "Moving native libraries..."
