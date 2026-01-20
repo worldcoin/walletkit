@@ -1,3 +1,10 @@
+[build.env]
+passthrough = [
+    "CARGO_NET_GIT_FETCH_WITH_CLI=true", # to force cargo to use git cli with config --global in homedir
+    "HOME",                              # set $HOME to shared dir where we put .gitconfig
+    "RUSTUP_HOME",                       # override rustup home to prevent host permission issues
+    "CARGO_HOME",                        # override cargo home to prevent host permission issues
+]
 # max-page-size=16384:
 # Android 15 (API 35) introduces support for 16KB page sizes to improve performance on devices with larger RAM.
 # Apps with native libraries MUST be compiled with 16KB ELF alignment or they will crash on startup

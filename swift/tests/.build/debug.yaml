@@ -1,0 +1,115 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "PackageStructure": ["<PackageStructure>"]
+  "WalletKit-arm64-apple-macosx15.0-debug.module": ["<WalletKit-arm64-apple-macosx15.0-debug.module>"]
+  "WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.module": ["<WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.module>"]
+  "WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.test": ["<WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.test>"]
+  "WalletKitTests-arm64-apple-macosx15.0-debug.module": ["<WalletKitTests-arm64-apple-macosx15.0-debug.module>"]
+  "main": ["<WalletKit-arm64-apple-macosx15.0-debug.module>"]
+  "test": ["<WalletKit-arm64-apple-macosx15.0-debug.module>","<WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.test>","<WalletKitTests-arm64-apple-macosx15.0-debug.module>"]
+default: "main"
+nodes:
+  "/Users/thomas.waite/Documents/tfh/walletkit/walletkit/WalletKit.xcframework/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/Sources/WalletKit/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/WalletKitTests/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+commands:
+  "/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/Sources/WalletKit/walletkit.swift"]
+    outputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/sources"]
+    description: "Write auxiliary file /Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/sources"
+
+  "/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.derived/runner.swift"]
+    outputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/sources"]
+    description: "Write auxiliary file /Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/sources"
+
+  "/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.derived/runner.swift":
+    tool: test-entry-point-tool
+    inputs: []
+    outputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.derived/runner.swift"]
+
+  "/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/walletkit.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/runner.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitTests.build/AuthenticatorTests.swift.o"]
+    outputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.product/Objects.LinkFileList"
+
+  "/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitTests.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/WalletKitTests/AuthenticatorTests.swift"]
+    outputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitTests.build/sources"]
+    description: "Write auxiliary file /Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitTests.build/sources"
+
+  "/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"]
+    outputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+
+  "<WalletKit-arm64-apple-macosx15.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/walletkit.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKit.swiftmodule"]
+    outputs: ["<WalletKit-arm64-apple-macosx15.0-debug.module>"]
+
+  "<WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/runner.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKitForeignTestPackagePackageTests.swiftmodule"]
+    outputs: ["<WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.module>"]
+
+  "<WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.test>":
+    tool: phony
+    inputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.xctest/Contents/MacOS/WalletKitForeignTestPackagePackageTests"]
+    outputs: ["<WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.test>"]
+
+  "<WalletKitTests-arm64-apple-macosx15.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitTests.build/AuthenticatorTests.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKitTests.swiftmodule"]
+    outputs: ["<WalletKitTests-arm64-apple-macosx15.0-debug.module>"]
+
+  "C.WalletKit-arm64-apple-macosx15.0-debug.module":
+    tool: shell
+    inputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/Sources/WalletKit/walletkit.swift","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/sources"]
+    outputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/walletkit.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKit.swiftmodule"]
+    description: "Compiling Swift Module 'WalletKit' (1 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","WalletKit","-emit-dependencies","-emit-module","-emit-module-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKit.swiftmodule","-output-file-map","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/output-file-map.json","-parse-as-library","-incremental","-c","@/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/sources","-I","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx12.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j14","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/include/WalletKit-Swift.h","-swift-version","5","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-Xcc","-fPIC","-Xcc","-g"]
+
+  "C.WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.module":
+    tool: shell
+    inputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.derived/runner.swift","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKitTests.swiftmodule","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/sources"]
+    outputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/runner.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKitForeignTestPackagePackageTests.swiftmodule"]
+    description: "Compiling Swift Module 'WalletKitForeignTestPackagePackageTests' (1 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","WalletKitForeignTestPackagePackageTests","-emit-dependencies","-emit-module","-emit-module-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKitForeignTestPackagePackageTests.swiftmodule","-output-file-map","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/output-file-map.json","-parse-as-library","-incremental","-c","@/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/sources","-I","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx12.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-Xfrontend","-enable-cross-import-overlays","-j14","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-parse-as-library","-emit-objc-header","-emit-objc-header-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/include/WalletKitForeignTestPackagePackageTests-Swift.h","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-Xcc","-fPIC","-Xcc","-g"]
+
+  "C.WalletKitForeignTestPackagePackageTests-arm64-apple-macosx15.0-debug.test":
+    tool: shell
+    inputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/walletkit.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.build/runner.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitTests.build/AuthenticatorTests.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.product/Objects.LinkFileList"]
+    outputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.xctest/Contents/MacOS/WalletKitForeignTestPackagePackageTests"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.xctest/Contents/MacOS/WalletKitForeignTestPackagePackageTests"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-L","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug","-o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.xctest/Contents/MacOS/WalletKitForeignTestPackagePackageTests","-module-name","WalletKitForeignTestPackagePackageTests","-Xlinker","-no_warn_duplicate_libraries","-Xlinker","-bundle","-Xlinker","-rpath","-Xlinker","@loader_path/../../../","@/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitForeignTestPackagePackageTests.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx14.0","-Xlinker","-add_ast_path","-Xlinker","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKit.swiftmodule","-Xlinker","-add_ast_path","-Xlinker","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKitForeignTestPackagePackageTests.swiftmodule","-Xlinker","-add_ast_path","-Xlinker","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKitTests.swiftmodule","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g"]
+
+  "C.WalletKitTests-arm64-apple-macosx15.0-debug.module":
+    tool: shell
+    inputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/WalletKitTests/AuthenticatorTests.swift","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKit.swiftmodule","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitTests.build/sources"]
+    outputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitTests.build/AuthenticatorTests.swift.o","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKitTests.swiftmodule"]
+    description: "Compiling Swift Module 'WalletKitTests' (1 sources)"
+    args: ["/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc","-module-name","WalletKitTests","-emit-dependencies","-emit-module","-emit-module-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules/WalletKitTests.swiftmodule","-output-file-map","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitTests.build/output-file-map.json","-parse-as-library","-incremental","-c","@/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKitTests.build/sources","-I","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx14.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-Xfrontend","-enable-cross-import-overlays","-j14","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-parse-as-library","-swift-version","5","-plugin-path","/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing","-sdk","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-F","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-I","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-L","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib","-g","-Xcc","-isysroot","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks","-Xcc","-F","-Xcc","/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks","-Xcc","-fPIC","-Xcc","-g"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/thomas.waite/Documents/tfh/walletkit/walletkit/WalletKit.xcframework/","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/Sources/WalletKit/","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/WalletKitTests/","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/Package.swift","/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+

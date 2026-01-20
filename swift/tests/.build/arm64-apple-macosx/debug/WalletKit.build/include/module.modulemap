@@ -1,0 +1,3 @@
+module WalletKit {
+    header "/Users/thomas.waite/Documents/tfh/walletkit/walletkit/swift/tests/.build/arm64-apple-macosx/debug/WalletKit.build/include/WalletKit-Swift.h"
+}

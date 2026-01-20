@@ -18,6 +18,9 @@ mkdir -p $BASE_PATH/Sources/WalletKit
 
 export IPHONEOS_DEPLOYMENT_TARGET="13.0"
 export RUSTFLAGS="-C link-arg=-Wl,-application_extension"
+cargo build --package walletkit-core --target aarch64-apple-ios-sim --release
+cargo build --package walletkit-core --target aarch64-apple-ios --release
+cargo build --package walletkit-core --target x86_64-apple-ios --release
 cargo build --package walletkit --target aarch64-apple-ios-sim --release
 cargo build --package walletkit --target aarch64-apple-ios --release
 cargo build --package walletkit --target x86_64-apple-ios --release
@@ -32,6 +35,7 @@ lipo -info $BASE_PATH/ios_build/target/universal-ios-sim/release/libwalletkit.a
 
 echo "Generating Swift bindings."
 
+# Generate bindings from walletkit (which includes walletkit-core symbols)
 cargo run -p uniffi-bindgen generate \
   target/aarch64-apple-ios-sim/release/libwalletkit.dylib \
   --library \
@@ -40,13 +44,18 @@ cargo run -p uniffi-bindgen generate \
   --out-dir $BASE_PATH/ios_build/bindings
 
 mv $BASE_PATH/ios_build/bindings/walletkit.swift $BASE_PATH/Sources/WalletKit/
+mv $BASE_PATH/ios_build/bindings/walletkit_core.swift $BASE_PATH/Sources/WalletKit/
 
 mkdir $BASE_PATH/ios_build/Headers
 mkdir -p $BASE_PATH/ios_build/Headers/WalletKit
 
 mv $BASE_PATH/ios_build/bindings/walletkitFFI.h $BASE_PATH/ios_build/Headers/WalletKit
+mv $BASE_PATH/ios_build/bindings/walletkit_coreFFI.h $BASE_PATH/ios_build/Headers/WalletKit
 
+# Combine both modulemaps into one
 cat $BASE_PATH/ios_build/bindings/walletkitFFI.modulemap > $BASE_PATH/ios_build/Headers/WalletKit/module.modulemap
+echo "" >> $BASE_PATH/ios_build/Headers/WalletKit/module.modulemap
+cat $BASE_PATH/ios_build/bindings/walletkit_coreFFI.modulemap >> $BASE_PATH/ios_build/Headers/WalletKit/module.modulemap
 
 echo "Creating xcframework."
 

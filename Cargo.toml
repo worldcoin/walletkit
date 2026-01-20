@@ -3,13 +3,13 @@ members = ["uniffi-bindgen","walletkit-core", "walletkit"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.1"
+version = "0.3.1"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
 readme = "./README.md"
 homepage = "https://docs.world.org" # TODO: Update to specific WalletKit page
-rust-version = "1.86" # MSRV
+rust-version = "1.91" # MSRV
 repository = "https://github.com/worldcoin/walletkit"
 exclude = ["tests/", "uniffi-bindgen/"]
 keywords = ["ZKP", "WorldID", "World", "Identity", "Semaphore"]
@@ -19,13 +19,12 @@ categories = ["api-bindings", "cryptography::cryptocurrencies"]
 [workspace.dependencies]
 alloy-core = { version = "1", default-features = false, features = ["sol-types"] }
 alloy-primitives = { version = "1", default-features = false }
-walletkit-core = { version = "0.2.1", path = "walletkit-core", default-features = false }
+walletkit-core = { version = "0.3.1", path = "walletkit-core", default-features = false }
 uniffi = { version = "0.29", features = ["build", "tokio"] }
 world-id-core = { version = "0.3", default-features = false, features = ["authenticator", "embed-zkeys"] }
 
 [profile.release]
 opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.
-strip = true    # Automatically strip symbols from the binary.
 panic = "abort"
 debug = false
