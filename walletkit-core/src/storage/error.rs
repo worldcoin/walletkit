@@ -16,6 +16,10 @@ pub enum StorageError {
     #[error("blob store error: {0}")]
     BlobStore(String),
 
+    /// Errors coming from the storage lock.
+    #[error("storage lock error: {0}")]
+    Lock(String),
+
     /// Serialization/deserialization failures.
     #[error("serialization error: {0}")]
     Serialization(String),

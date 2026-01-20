@@ -3,6 +3,7 @@
 pub mod envelope;
 pub mod error;
 pub mod keys;
+pub mod lock;
 pub mod types;
 pub mod traits;
 pub mod vault;
@@ -11,6 +12,7 @@ pub(crate) mod sqlcipher;
 
 pub use error::{StorageError, StorageResult};
 pub use keys::StorageKeys;
+pub use lock::{StorageLock, StorageLockGuard};
 pub use types::{
     BlobKind, ContentId, CredentialId, CredentialRecord, CredentialStatus,
     Nullifier, ProofDisclosureResult, RequestId,

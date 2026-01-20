@@ -5,6 +5,7 @@ use rand::{rngs::OsRng, RngCore};
 use super::{
     envelope::AccountKeyEnvelope,
     error::{StorageError, StorageResult},
+    lock::StorageLockGuard,
     traits::{AtomicBlobStore, DeviceKeystore},
     ACCOUNT_KEYS_FILENAME, ACCOUNT_KEY_ENVELOPE_AD,
 };
@@ -27,6 +28,7 @@ impl StorageKeys {
     pub fn init(
         keystore: &dyn DeviceKeystore,
         blob_store: &dyn AtomicBlobStore,
+        _lock: &StorageLockGuard,
         now: u64,
     ) -> StorageResult<Self> {
         if let Some(bytes) = blob_store.read(ACCOUNT_KEYS_FILENAME)? {
@@ -78,26 +80,43 @@ fn parse_key_32(bytes: &[u8], label: &str) -> StorageResult<[u8; 32]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::lock::StorageLock;
     use crate::storage::tests_utils::{InMemoryBlobStore, InMemoryKeystore};
+    use uuid::Uuid;
+
+    fn temp_lock_path() -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("walletkit-keys-lock-{}.lock", Uuid::new_v4()));
+        path
+    }
 
     #[test]
     fn test_storage_keys_round_trip() {
         let keystore = InMemoryKeystore::new();
         let blob_store = InMemoryBlobStore::new();
-        let keys_first = StorageKeys::init(&keystore, &blob_store, 100).expect("init");
-        let keys_second = StorageKeys::init(&keystore, &blob_store, 200).expect("init");
+        let lock_path = temp_lock_path();
+        let lock = StorageLock::open(&lock_path).expect("open lock");
+        let guard = lock.lock().expect("lock");
+        let keys_first =
+            StorageKeys::init(&keystore, &blob_store, &guard, 100).expect("init");
+        let keys_second =
+            StorageKeys::init(&keystore, &blob_store, &guard, 200).expect("init");
 
         assert_eq!(keys_first.intermediate_key, keys_second.intermediate_key);
+        let _ = std::fs::remove_file(lock_path);
     }
 
     #[test]
     fn test_storage_keys_keystore_mismatch_fails() {
         let keystore = InMemoryKeystore::new();
         let blob_store = InMemoryBlobStore::new();
-        StorageKeys::init(&keystore, &blob_store, 123).expect("init");
+        let lock_path = temp_lock_path();
+        let lock = StorageLock::open(&lock_path).expect("open lock");
+        let guard = lock.lock().expect("lock");
+        StorageKeys::init(&keystore, &blob_store, &guard, 123).expect("init");
 
         let other_keystore = InMemoryKeystore::new();
-        match StorageKeys::init(&other_keystore, &blob_store, 456) {
+        match StorageKeys::init(&other_keystore, &blob_store, &guard, 456) {
             Err(
                 StorageError::Crypto(_)
                 | StorageError::InvalidEnvelope(_)
@@ -106,13 +125,17 @@ mod tests {
             Err(err) => panic!("unexpected error: {err}"),
             Ok(_) => panic!("expected error"),
         }
+        let _ = std::fs::remove_file(lock_path);
     }
 
     #[test]
     fn test_storage_keys_tampered_envelope_fails() {
         let keystore = InMemoryKeystore::new();
         let blob_store = InMemoryBlobStore::new();
-        StorageKeys::init(&keystore, &blob_store, 123).expect("init");
+        let lock_path = temp_lock_path();
+        let lock = StorageLock::open(&lock_path).expect("open lock");
+        let guard = lock.lock().expect("lock");
+        StorageKeys::init(&keystore, &blob_store, &guard, 123).expect("init");
 
         let mut bytes = blob_store
             .read(ACCOUNT_KEYS_FILENAME)
@@ -123,7 +146,7 @@ mod tests {
             .write_atomic(ACCOUNT_KEYS_FILENAME, &bytes)
             .expect("write");
 
-        match StorageKeys::init(&keystore, &blob_store, 456) {
+        match StorageKeys::init(&keystore, &blob_store, &guard, 456) {
             Err(
                 StorageError::Serialization(_)
                 | StorageError::Crypto(_)
@@ -132,6 +155,7 @@ mod tests {
             Err(err) => panic!("unexpected error: {err}"),
             Ok(_) => panic!("expected error"),
         }
+        let _ = std::fs::remove_file(lock_path);
     }
 
 }
