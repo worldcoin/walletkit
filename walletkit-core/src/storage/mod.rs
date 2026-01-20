@@ -18,8 +18,9 @@ pub use paths::StoragePaths;
 pub use keys::StorageKeys;
 pub use lock::{StorageLock, StorageLockGuard};
 pub use types::{
-    BlobKind, ContentId, CredentialId, CredentialRecord, CredentialStatus,
-    Nullifier, ProofDisclosureResult, RequestId,
+    BlobKind, ContentId, CredentialId, CredentialRecord, CredentialRecordFfi,
+    CredentialStatus, Nullifier, ProofDisclosureKind, ProofDisclosureResult,
+    ProofDisclosureResultFfi, RequestId,
 };
 pub use traits::{AtomicBlobStore, DeviceKeystore, StorageProvider};
 pub use vault::VaultDb;

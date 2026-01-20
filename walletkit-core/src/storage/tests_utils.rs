@@ -38,8 +38,8 @@ impl Default for InMemoryKeystore {
 impl DeviceKeystore for InMemoryKeystore {
     fn seal(
         &self,
-        associated_data: &[u8],
-        plaintext: &[u8],
+        associated_data: Vec<u8>,
+        plaintext: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
         let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.key));
         let mut nonce_bytes = [0u8; 24];
@@ -48,8 +48,8 @@ impl DeviceKeystore for InMemoryKeystore {
             .encrypt(
                 XNonce::from_slice(&nonce_bytes),
                 Payload {
-                    msg: plaintext,
-                    aad: associated_data,
+                    msg: &plaintext,
+                    aad: &associated_data,
                 },
             )
             .map_err(|err| StorageError::Crypto(err.to_string()))?;
@@ -59,10 +59,10 @@ impl DeviceKeystore for InMemoryKeystore {
         Ok(out)
     }
 
-    fn open(
+    fn open_sealed(
         &self,
-        associated_data: &[u8],
-        ciphertext: &[u8],
+        associated_data: Vec<u8>,
+        ciphertext: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
         if ciphertext.len() < 24 {
             return Err(StorageError::InvalidEnvelope(
@@ -76,7 +76,7 @@ impl DeviceKeystore for InMemoryKeystore {
                 XNonce::from_slice(nonce_bytes),
                 Payload {
                     msg: payload,
-                    aad: associated_data,
+                    aad: &associated_data,
                 },
             )
             .map_err(|err| StorageError::Crypto(err.to_string()))
@@ -102,27 +102,27 @@ impl Default for InMemoryBlobStore {
 }
 
 impl AtomicBlobStore for InMemoryBlobStore {
-    fn read(&self, path: &str) -> Result<Option<Vec<u8>>, StorageError> {
+    fn read(&self, path: String) -> Result<Option<Vec<u8>>, StorageError> {
         let guard = self
             .blobs
             .lock()
             .map_err(|_| StorageError::BlobStore("mutex poisoned".to_string()))?;
-        Ok(guard.get(path).cloned())
+        Ok(guard.get(&path).cloned())
     }
 
-    fn write_atomic(&self, path: &str, bytes: &[u8]) -> Result<(), StorageError> {
+    fn write_atomic(&self, path: String, bytes: Vec<u8>) -> Result<(), StorageError> {
         self.blobs
             .lock()
             .map_err(|_| StorageError::BlobStore("mutex poisoned".to_string()))?
-            .insert(path.to_string(), bytes.to_vec());
+            .insert(path, bytes);
         Ok(())
     }
 
-    fn delete(&self, path: &str) -> Result<(), StorageError> {
+    fn delete(&self, path: String) -> Result<(), StorageError> {
         self.blobs
             .lock()
             .map_err(|_| StorageError::BlobStore("mutex poisoned".to_string()))?
-            .remove(path);
+            .remove(&path);
         Ok(())
     }
 }
@@ -130,7 +130,7 @@ impl AtomicBlobStore for InMemoryBlobStore {
 pub struct InMemoryStorageProvider {
     keystore: Arc<InMemoryKeystore>,
     blob_store: Arc<InMemoryBlobStore>,
-    paths: StoragePaths,
+    paths: Arc<StoragePaths>,
 }
 
 impl InMemoryStorageProvider {
@@ -138,7 +138,7 @@ impl InMemoryStorageProvider {
         Self {
             keystore: Arc::new(InMemoryKeystore::new()),
             blob_store: Arc::new(InMemoryBlobStore::new()),
-            paths: StoragePaths::new(root),
+            paths: Arc::new(StoragePaths::new(root)),
         }
     }
 }
@@ -152,7 +152,7 @@ impl StorageProvider for InMemoryStorageProvider {
         self.blob_store.clone()
     }
 
-    fn paths(&self) -> StoragePaths {
-        self.paths.clone()
+    fn paths(&self) -> Arc<StoragePaths> {
+        Arc::clone(&self.paths)
     }
 }

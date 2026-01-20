@@ -30,8 +30,8 @@ impl InMemoryKeystore {
 impl DeviceKeystore for InMemoryKeystore {
     fn seal(
         &self,
-        associated_data: &[u8],
-        plaintext: &[u8],
+        associated_data: Vec<u8>,
+        plaintext: Vec<u8>,
     ) -> Result<Vec<u8>, walletkit_core::storage::StorageError> {
         let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.key));
         let mut nonce_bytes = [0u8; 24];
@@ -40,8 +40,8 @@ impl DeviceKeystore for InMemoryKeystore {
             .encrypt(
                 XNonce::from_slice(&nonce_bytes),
                 Payload {
-                    msg: plaintext,
-                    aad: associated_data,
+                    msg: &plaintext,
+                    aad: &associated_data,
                 },
             )
             .map_err(|err| {
@@ -53,10 +53,10 @@ impl DeviceKeystore for InMemoryKeystore {
         Ok(out)
     }
 
-    fn open(
+    fn open_sealed(
         &self,
-        associated_data: &[u8],
-        ciphertext: &[u8],
+        associated_data: Vec<u8>,
+        ciphertext: Vec<u8>,
     ) -> Result<Vec<u8>, walletkit_core::storage::StorageError> {
         if ciphertext.len() < 24 {
             return Err(walletkit_core::storage::StorageError::InvalidEnvelope(
@@ -70,7 +70,7 @@ impl DeviceKeystore for InMemoryKeystore {
                 XNonce::from_slice(nonce_bytes),
                 Payload {
                     msg: payload,
-                    aad: associated_data,
+                    aad: &associated_data,
                 },
             )
             .map_err(|err| {
@@ -94,7 +94,7 @@ impl InMemoryBlobStore {
 impl AtomicBlobStore for InMemoryBlobStore {
     fn read(
         &self,
-        path: &str,
+        path: String,
     ) -> Result<Option<Vec<u8>>, walletkit_core::storage::StorageError> {
         let guard = self
             .blobs
@@ -104,13 +104,13 @@ impl AtomicBlobStore for InMemoryBlobStore {
                     "mutex poisoned".to_string(),
                 )
             })?;
-        Ok(guard.get(path).cloned())
+        Ok(guard.get(&path).cloned())
     }
 
     fn write_atomic(
         &self,
-        path: &str,
-        bytes: &[u8],
+        path: String,
+        bytes: Vec<u8>,
     ) -> Result<(), walletkit_core::storage::StorageError> {
         self.blobs
             .lock()
@@ -119,13 +119,13 @@ impl AtomicBlobStore for InMemoryBlobStore {
                     "mutex poisoned".to_string(),
                 )
             })?
-            .insert(path.to_string(), bytes.to_vec());
+            .insert(path, bytes);
         Ok(())
     }
 
     fn delete(
         &self,
-        path: &str,
+        path: String,
     ) -> Result<(), walletkit_core::storage::StorageError> {
         self.blobs
             .lock()
@@ -134,7 +134,7 @@ impl AtomicBlobStore for InMemoryBlobStore {
                     "mutex poisoned".to_string(),
                 )
             })?
-            .remove(path);
+            .remove(&path);
         Ok(())
     }
 }
@@ -142,7 +142,7 @@ impl AtomicBlobStore for InMemoryBlobStore {
 struct InMemoryStorageProvider {
     keystore: Arc<InMemoryKeystore>,
     blob_store: Arc<InMemoryBlobStore>,
-    paths: StoragePaths,
+    paths: Arc<StoragePaths>,
 }
 
 impl InMemoryStorageProvider {
@@ -150,7 +150,7 @@ impl InMemoryStorageProvider {
         Self {
             keystore: Arc::new(InMemoryKeystore::new()),
             blob_store: Arc::new(InMemoryBlobStore::new()),
-            paths: StoragePaths::new(root),
+            paths: Arc::new(StoragePaths::new(root)),
         }
     }
 }
@@ -164,8 +164,8 @@ impl StorageProvider for InMemoryStorageProvider {
         self.blob_store.clone()
     }
 
-    fn paths(&self) -> StoragePaths {
-        self.paths.clone()
+    fn paths(&self) -> Arc<StoragePaths> {
+        Arc::clone(&self.paths)
     }
 }
 
@@ -199,20 +199,21 @@ fn test_storage_flow_end_to_end() {
 
     store.init(42, 100).expect("init");
 
-    let credential_id = store
-        .store_credential(
-            7,
-            CredentialStatus::Active,
-            [0x11u8; 32],
-            1_700_000_000,
-            Some(1_800_000_000),
-            vec![1, 2, 3],
-            Some(vec![4, 5, 6]),
-            100,
-        )
-        .expect("store credential");
+    let credential_id = CredentialStorage::store_credential(
+        &mut store,
+        7,
+        CredentialStatus::Active,
+        [0x11u8; 32],
+        1_700_000_000,
+        Some(1_800_000_000),
+        vec![1, 2, 3],
+        Some(vec![4, 5, 6]),
+        100,
+    )
+    .expect("store credential");
 
-    let records = store.list_credentials(None, 101).expect("list credentials");
+    let records =
+        CredentialStorage::list_credentials(&store, None, 101).expect("list credentials");
     assert_eq!(records.len(), 1);
     let record = &records[0];
     assert_eq!(record.credential_id, credential_id);
@@ -222,27 +223,36 @@ fn test_storage_flow_end_to_end() {
     assert_eq!(record.associated_data.as_deref(), Some(&[4, 5, 6][..]));
 
     let root_bytes = [0xAAu8; 32];
-    store
-        .merkle_cache_put(1, root_bytes, vec![9, 9], 100, 10)
+    CredentialStorage::merkle_cache_put(&mut store, 1, root_bytes, vec![9, 9], 100, 10)
         .expect("cache put");
-    let hit = store
-        .merkle_cache_get(1, root_bytes, 105)
+    let hit = CredentialStorage::merkle_cache_get(&store, 1, root_bytes, 105)
         .expect("cache get");
     assert_eq!(hit, Some(vec![9, 9]));
-    let miss = store
-        .merkle_cache_get(1, root_bytes, 111)
+    let miss = CredentialStorage::merkle_cache_get(&store, 1, root_bytes, 111)
         .expect("cache get");
     assert!(miss.is_none());
 
     let request_id = [0xABu8; 32];
     let nullifier = [0xCDu8; 32];
-    let fresh = store
-        .begin_proof_disclosure(request_id, nullifier, vec![1, 2], 200, 50)
-        .expect("disclose");
+    let fresh = CredentialStorage::begin_proof_disclosure(
+        &mut store,
+        request_id,
+        nullifier,
+        vec![1, 2],
+        200,
+        50,
+    )
+    .expect("disclose");
     assert_eq!(fresh, ProofDisclosureResult::Fresh(vec![1, 2]));
-    let replay = store
-        .begin_proof_disclosure(request_id, nullifier, vec![9, 9], 201, 50)
-        .expect("replay");
+    let replay = CredentialStorage::begin_proof_disclosure(
+        &mut store,
+        request_id,
+        nullifier,
+        vec![9, 9],
+        201,
+        50,
+    )
+    .expect("replay");
     assert_eq!(replay, ProofDisclosureResult::Replay(vec![1, 2]));
 
     cleanup_storage(&root);

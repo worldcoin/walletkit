@@ -6,6 +6,12 @@ target/
 # Swift build outputs are not committed to this repo.
 WalletKit.xcframework/
 Sources/
+swift/WalletKit.xcframework/
+swift/Sources/
+swift/ios_build/
+swift/local_build/
+swift/tests/Sources/
+swift/tests/.build/
 
 .env
 

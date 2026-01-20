@@ -1,6 +1,6 @@
 //! Storage facade implementing the credential storage API.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
@@ -9,8 +9,8 @@ use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{
-    CredentialId, CredentialRecord, CredentialStatus, Nullifier, ProofDisclosureResult,
-    RequestId,
+    CredentialId, CredentialRecord, CredentialRecordFfi, CredentialStatus,
+    Nullifier, ProofDisclosureResult, ProofDisclosureResultFfi, RequestId,
 };
 use super::{CacheDb, VaultDb};
 
@@ -70,7 +70,12 @@ pub trait CredentialStorage {
 }
 
 /// Concrete storage implementation backed by SQLCipher databases.
+#[derive(uniffi::Object)]
 pub struct CredentialStore {
+    inner: Mutex<CredentialStoreInner>,
+}
+
+struct CredentialStoreInner {
     lock: StorageLock,
     keystore: Arc<dyn DeviceKeystore>,
     blob_store: Arc<dyn AtomicBlobStore>,
@@ -86,14 +91,15 @@ struct StorageState {
     leaf_index: u64,
 }
 
-impl CredentialStore {
+impl CredentialStoreInner {
     /// Creates a new storage handle from a platform provider.
     ///
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
     pub fn from_provider(provider: &dyn StorageProvider) -> StorageResult<Self> {
-        Self::new(provider.paths(), provider.keystore(), provider.blob_store())
+        let paths = provider.paths();
+        Self::new(paths.as_ref().clone(), provider.keystore(), provider.blob_store())
     }
 
     /// Creates a new storage handle from explicit components.
@@ -116,12 +122,6 @@ impl CredentialStore {
         })
     }
 
-    /// Returns the storage paths used by this handle.
-    #[must_use]
-    pub fn paths(&self) -> &StoragePaths {
-        &self.paths
-    }
-
     fn guard(&self) -> StorageResult<StorageLockGuard> {
         self.lock.lock()
     }
@@ -135,7 +135,178 @@ impl CredentialStore {
     }
 }
 
-impl CredentialStorage for CredentialStore {
+#[uniffi::export]
+impl CredentialStore {
+    /// Creates a new storage handle from explicit components.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage lock cannot be opened.
+    #[uniffi::constructor]
+    pub fn new_with_components(
+        paths: Arc<StoragePaths>,
+        keystore: Arc<dyn DeviceKeystore>,
+        blob_store: Arc<dyn AtomicBlobStore>,
+    ) -> StorageResult<Self> {
+        let inner = CredentialStoreInner::new(
+            paths.as_ref().clone(),
+            keystore,
+            blob_store,
+        )?;
+        Ok(Self {
+            inner: Mutex::new(inner),
+        })
+    }
+
+    /// Creates a new storage handle from a platform provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage lock cannot be opened.
+    #[uniffi::constructor]
+    pub fn from_provider_arc(
+        provider: Arc<dyn StorageProvider>,
+    ) -> StorageResult<Self> {
+        let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
+        Ok(Self {
+            inner: Mutex::new(inner),
+        })
+    }
+
+    /// Returns the storage paths used by this handle.
+    #[must_use]
+    pub fn storage_paths(&self) -> StorageResult<Arc<StoragePaths>> {
+        self.lock_inner().map(|inner| Arc::new(inner.paths.clone()))
+    }
+
+    /// Initializes storage and validates the account leaf index.
+    pub fn init(&self, leaf_index: u64, now: u64) -> StorageResult<()> {
+        let mut inner = self.lock_inner()?;
+        inner.init(leaf_index, now)
+    }
+
+    /// Lists active credentials, optionally filtered by issuer schema ID.
+    pub fn list_credentials(
+        &self,
+        issuer_schema_id: Option<u64>,
+        now: u64,
+    ) -> StorageResult<Vec<CredentialRecordFfi>> {
+        let inner = self.lock_inner()?;
+        let records = inner.list_credentials(issuer_schema_id, now)?;
+        Ok(records.into_iter().map(CredentialRecordFfi::from).collect())
+    }
+
+    /// Stores a credential and optional associated data.
+    #[allow(clippy::too_many_arguments)]
+    pub fn store_credential(
+        &self,
+        issuer_schema_id: u64,
+        status: CredentialStatus,
+        subject_blinding_factor: Vec<u8>,
+        genesis_issued_at: u64,
+        expires_at: Option<u64>,
+        credential_blob: Vec<u8>,
+        associated_data: Option<Vec<u8>>,
+        now: u64,
+    ) -> StorageResult<Vec<u8>> {
+        let mut inner = self.lock_inner()?;
+        let subject_blinding_factor =
+            parse_fixed_bytes::<32>(subject_blinding_factor, "subject_blinding_factor")?;
+        let credential_id =
+            inner.store_credential(
+                issuer_schema_id,
+                status,
+                subject_blinding_factor,
+                genesis_issued_at,
+                expires_at,
+                credential_blob,
+                associated_data,
+                now,
+            )?;
+        Ok(credential_id.to_vec())
+    }
+
+    /// Fetches a cached Merkle proof if available.
+    pub fn merkle_cache_get(
+        &self,
+        registry_kind: u8,
+        root: Vec<u8>,
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        let inner = self.lock_inner()?;
+        let root = parse_fixed_bytes::<32>(root, "root")?;
+        inner.merkle_cache_get(registry_kind, root, now)
+    }
+
+    /// Inserts a cached Merkle proof with a TTL.
+    pub fn merkle_cache_put(
+        &self,
+        registry_kind: u8,
+        root: Vec<u8>,
+        proof_bytes: Vec<u8>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<()> {
+        let mut inner = self.lock_inner()?;
+        let root = parse_fixed_bytes::<32>(root, "root")?;
+        inner.merkle_cache_put(
+            registry_kind,
+            root,
+            proof_bytes,
+            now,
+            ttl_seconds,
+        )
+    }
+
+    /// Enforces replay safety for proof disclosure.
+    pub fn begin_proof_disclosure(
+        &self,
+        request_id: Vec<u8>,
+        nullifier: Vec<u8>,
+        proof_bytes: Vec<u8>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<ProofDisclosureResultFfi> {
+        let mut inner = self.lock_inner()?;
+        let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
+        let nullifier = parse_fixed_bytes::<32>(nullifier, "nullifier")?;
+        let result = inner.begin_proof_disclosure(
+            request_id,
+            nullifier,
+            proof_bytes,
+            now,
+            ttl_seconds,
+        )?;
+        Ok(ProofDisclosureResultFfi::from(result))
+    }
+}
+
+fn parse_fixed_bytes<const N: usize>(
+    bytes: Vec<u8>,
+    label: &str,
+) -> StorageResult<[u8; N]> {
+    if bytes.len() != N {
+        return Err(StorageError::Serialization(format!(
+            "{label} length mismatch: expected {N}, got {}",
+            bytes.len()
+        )));
+    }
+    let mut out = [0u8; N];
+    out.copy_from_slice(&bytes);
+    Ok(out)
+}
+
+impl CredentialStore {
+    fn lock_inner(
+        &self,
+    ) -> StorageResult<std::sync::MutexGuard<'_, CredentialStoreInner>> {
+        self.inner
+            .lock()
+            .map_err(|_| StorageError::Lock("storage mutex poisoned".to_string()))
+    }
+}
+
+impl CredentialStorage for CredentialStoreInner {
     fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
         let guard = self.guard()?;
         if let Some(state) = &mut self.state {
@@ -245,6 +416,129 @@ impl CredentialStorage for CredentialStore {
         let state = self.state_mut()?;
         state.cache.begin_proof_disclosure(
             &guard,
+            request_id,
+            nullifier,
+            proof_bytes,
+            now,
+            ttl_seconds,
+        )
+    }
+}
+
+impl CredentialStore {
+    /// Creates a new storage handle from a platform provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage lock cannot be opened.
+    pub fn from_provider(provider: &dyn StorageProvider) -> StorageResult<Self> {
+        let inner = CredentialStoreInner::from_provider(provider)?;
+        Ok(Self {
+            inner: Mutex::new(inner),
+        })
+    }
+
+    /// Creates a new storage handle from explicit components.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage lock cannot be opened.
+    pub fn new(
+        paths: StoragePaths,
+        keystore: Arc<dyn DeviceKeystore>,
+        blob_store: Arc<dyn AtomicBlobStore>,
+    ) -> StorageResult<Self> {
+        let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
+        Ok(Self {
+            inner: Mutex::new(inner),
+        })
+    }
+
+    /// Returns the storage paths used by this handle.
+    #[must_use]
+    pub fn paths(&self) -> StorageResult<StoragePaths> {
+        self.lock_inner().map(|inner| inner.paths.clone())
+    }
+}
+
+impl CredentialStorage for CredentialStore {
+    fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
+        let mut inner = self.lock_inner()?;
+        inner.init(leaf_index, now)
+    }
+
+    fn list_credentials(
+        &self,
+        issuer_schema_id: Option<u64>,
+        now: u64,
+    ) -> StorageResult<Vec<CredentialRecord>> {
+        let inner = self.lock_inner()?;
+        inner.list_credentials(issuer_schema_id, now)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn store_credential(
+        &mut self,
+        issuer_schema_id: u64,
+        status: CredentialStatus,
+        subject_blinding_factor: [u8; 32],
+        genesis_issued_at: u64,
+        expires_at: Option<u64>,
+        credential_blob: Vec<u8>,
+        associated_data: Option<Vec<u8>>,
+        now: u64,
+    ) -> StorageResult<CredentialId> {
+        let mut inner = self.lock_inner()?;
+        inner.store_credential(
+            issuer_schema_id,
+            status,
+            subject_blinding_factor,
+            genesis_issued_at,
+            expires_at,
+            credential_blob,
+            associated_data,
+            now,
+        )
+    }
+
+    fn merkle_cache_get(
+        &self,
+        registry_kind: u8,
+        root: [u8; 32],
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        let inner = self.lock_inner()?;
+        inner.merkle_cache_get(registry_kind, root, now)
+    }
+
+    fn merkle_cache_put(
+        &mut self,
+        registry_kind: u8,
+        root: [u8; 32],
+        proof_bytes: Vec<u8>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<()> {
+        let mut inner = self.lock_inner()?;
+        inner.merkle_cache_put(
+            registry_kind,
+            root,
+            proof_bytes,
+            now,
+            ttl_seconds,
+        )
+    }
+
+    fn begin_proof_disclosure(
+        &mut self,
+        request_id: RequestId,
+        nullifier: Nullifier,
+        proof_bytes: Vec<u8>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<ProofDisclosureResult> {
+        let mut inner = self.lock_inner()?;
+        inner.begin_proof_disclosure(
             request_id,
             nullifier,
             proof_bytes,

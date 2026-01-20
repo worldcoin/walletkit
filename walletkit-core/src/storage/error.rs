@@ -6,7 +6,7 @@ use thiserror::Error;
 pub type StorageResult<T> = Result<T, StorageError>;
 
 /// Errors raised by credential storage primitives.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, uniffi::Error)]
 pub enum StorageError {
     /// Errors coming from the device keystore.
     #[error("keystore error: {0}")]
@@ -68,4 +68,14 @@ pub enum StorageError {
     /// Credential not found in the vault.
     #[error("credential not found")]
     CredentialNotFound,
+
+    /// Unexpected UniFFI callback error.
+    #[error("unexpected uniffi callback error: {0}")]
+    UnexpectedUniFFICallbackError(String),
+}
+
+impl From<uniffi::UnexpectedUniFFICallbackError> for StorageError {
+    fn from(error: uniffi::UnexpectedUniFFICallbackError) -> Self {
+        Self::UnexpectedUniFFICallbackError(error.reason)
+    }
 }

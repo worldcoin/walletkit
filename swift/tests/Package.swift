@@ -1,27 +1,32 @@
 // swift-tools-version: 5.7
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
-// The package must be installed from github.com/worldcoin/walletkit-swift
-
 import PackageDescription
 
 let package = Package(
-    name: "WalletKit",
+    name: "WalletKitForeignTestPackage",
     platforms: [
-        .iOS(.v13),
+        .iOS(.v13)
     ],
     products: [
         .library(
             name: "WalletKit",
-            targets: ["WalletKit"]),
+            targets: ["WalletKit"])
     ],
-    dependencies: [],
     targets: [
         .target(
             name: "WalletKit",
             dependencies: ["walletkit_coreFFI"],
-            path: "swift/Sources/WalletKit"
+            path: "Sources/WalletKit"
         ),
-        .binaryTarget(name: "walletkit_coreFFI", path: "swift/WalletKit.xcframework")
+        .binaryTarget(
+            name: "walletkit_coreFFI",
+            path: "../WalletKit.xcframework"
+        ),
+        .testTarget(
+            name: "WalletKitTests",
+            dependencies: ["WalletKit"],
+            path: "WalletKitTests"
+        )
     ]
 )

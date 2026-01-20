@@ -31,10 +31,14 @@ impl StorageKeys {
         _lock: &StorageLockGuard,
         now: u64,
     ) -> StorageResult<Self> {
-        if let Some(bytes) = blob_store.read(ACCOUNT_KEYS_FILENAME)? {
+        if let Some(bytes) =
+            blob_store.read(ACCOUNT_KEYS_FILENAME.to_string())?
+        {
             let envelope = AccountKeyEnvelope::deserialize(&bytes)?;
-            let k_intermediate_bytes = keystore
-                .open(ACCOUNT_KEY_ENVELOPE_AD, &envelope.wrapped_k_intermediate)?;
+            let k_intermediate_bytes = keystore.open_sealed(
+                ACCOUNT_KEY_ENVELOPE_AD.to_vec(),
+                envelope.wrapped_k_intermediate,
+            )?;
             let k_intermediate = parse_key_32(&k_intermediate_bytes, "K_intermediate")?;
             Ok(Self {
                 intermediate_key: k_intermediate,
@@ -42,10 +46,10 @@ impl StorageKeys {
         } else {
             let k_intermediate = random_key();
             let wrapped_k_intermediate =
-                keystore.seal(ACCOUNT_KEY_ENVELOPE_AD, &k_intermediate)?;
+                keystore.seal(ACCOUNT_KEY_ENVELOPE_AD.to_vec(), k_intermediate.to_vec())?;
             let envelope = AccountKeyEnvelope::new(wrapped_k_intermediate, now);
             let bytes = envelope.serialize()?;
-            blob_store.write_atomic(ACCOUNT_KEYS_FILENAME, &bytes)?;
+            blob_store.write_atomic(ACCOUNT_KEYS_FILENAME.to_string(), bytes)?;
             Ok(Self {
                 intermediate_key: k_intermediate,
             })
@@ -138,12 +142,12 @@ mod tests {
         StorageKeys::init(&keystore, &blob_store, &guard, 123).expect("init");
 
         let mut bytes = blob_store
-            .read(ACCOUNT_KEYS_FILENAME)
+            .read(ACCOUNT_KEYS_FILENAME.to_string())
             .expect("read")
             .expect("present");
         bytes[0] ^= 0xFF;
         blob_store
-            .write_atomic(ACCOUNT_KEYS_FILENAME, &bytes)
+            .write_atomic(ACCOUNT_KEYS_FILENAME.to_string(), bytes)
             .expect("write");
 
         match StorageKeys::init(&keystore, &blob_store, &guard, 456) {
