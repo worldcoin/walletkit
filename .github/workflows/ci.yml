@@ -31,8 +31,8 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features
 
-  swift-build:
-    name: Test Swift Build
+  swift-build-and-test:
+    name: Swift Build & Foreign Binding Tests
     runs-on: macos-latest
     permissions:
       contents: read
@@ -47,8 +47,11 @@ jobs:
           toolchain: 1.92.0
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
 
-      - name: Build the project (iOS)
-        run: ./build_swift.sh
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
+
+      - name: Run Swift foreign binding tests
+        run: ./swift/test_swift.sh
 
   test:
     name: Tests
