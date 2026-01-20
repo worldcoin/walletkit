@@ -4,8 +4,6 @@ use std::fs::{self, File, OpenOptions};
 use std::path::Path;
 use std::sync::Arc;
 
-use fs2::FileExt;
-
 use super::error::{StorageError, StorageResult};
 
 /// A file-backed lock that serializes storage mutations across processes.
@@ -41,10 +39,25 @@ impl StorageLock {
     ///
     /// Returns an error if the lock cannot be acquired.
     pub fn lock(&self) -> StorageResult<StorageLockGuard> {
-        self.file.lock_exclusive().map_err(map_io_err)?;
+        lock_exclusive(&self.file).map_err(map_io_err)?;
         Ok(StorageLockGuard {
             file: Arc::clone(&self.file),
         })
+    }
+
+    /// Attempts to acquire the exclusive lock without blocking.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the lock attempt fails for reasons other than
+    /// the lock being held by another process.
+    pub fn try_lock(&self) -> StorageResult<Option<StorageLockGuard>> {
+        match try_lock_exclusive(&self.file).map_err(map_io_err)? {
+            true => Ok(Some(StorageLockGuard {
+                file: Arc::clone(&self.file),
+            })),
+            false => Ok(None),
+        }
     }
 }
 
@@ -56,12 +69,156 @@ pub struct StorageLockGuard {
 
 impl Drop for StorageLockGuard {
     fn drop(&mut self) {
-        let _ = self.file.unlock();
+        let _ = unlock(&self.file);
     }
 }
 
 fn map_io_err(err: std::io::Error) -> StorageError {
     StorageError::Lock(err.to_string())
+}
+
+#[cfg(unix)]
+fn lock_exclusive(file: &File) -> std::io::Result<()> {
+    let fd = std::os::unix::io::AsRawFd::as_raw_fd(file);
+    let result = unsafe { flock(fd, LOCK_EX) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
+fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
+    let fd = std::os::unix::io::AsRawFd::as_raw_fd(file);
+    let result = unsafe { flock(fd, LOCK_EX | LOCK_NB) };
+    if result == 0 {
+        Ok(true)
+    } else {
+        let err = std::io::Error::last_os_error();
+        if err.kind() == std::io::ErrorKind::WouldBlock {
+            Ok(false)
+        } else {
+            Err(err)
+        }
+    }
+}
+
+#[cfg(unix)]
+fn unlock(file: &File) -> std::io::Result<()> {
+    let fd = std::os::unix::io::AsRawFd::as_raw_fd(file);
+    let result = unsafe { flock(fd, LOCK_UN) };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(unix)]
+use std::os::raw::c_int;
+
+#[cfg(unix)]
+const LOCK_EX: c_int = 2;
+#[cfg(unix)]
+const LOCK_NB: c_int = 4;
+#[cfg(unix)]
+const LOCK_UN: c_int = 8;
+
+#[cfg(unix)]
+extern "C" {
+    fn flock(fd: c_int, operation: c_int) -> c_int;
+}
+
+#[cfg(windows)]
+fn lock_exclusive(file: &File) -> std::io::Result<()> {
+    lock_file(file, 0)
+}
+
+#[cfg(windows)]
+fn try_lock_exclusive(file: &File) -> std::io::Result<bool> {
+    match lock_file(file, LOCKFILE_FAIL_IMMEDIATELY) {
+        Ok(()) => Ok(true),
+        Err(err) => {
+            if err.raw_os_error() == Some(ERROR_LOCK_VIOLATION) {
+                Ok(false)
+            } else {
+                Err(err)
+            }
+        }
+    }
+}
+
+#[cfg(windows)]
+fn unlock(file: &File) -> std::io::Result<()> {
+    let handle = std::os::windows::io::AsRawHandle::as_raw_handle(file) as HANDLE;
+    let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+    let result = unsafe { UnlockFileEx(handle, 0, 1, 0, &mut overlapped) };
+    if result != 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(windows)]
+fn lock_file(file: &File, flags: u32) -> std::io::Result<()> {
+    let handle = std::os::windows::io::AsRawHandle::as_raw_handle(file) as HANDLE;
+    let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
+    let result = unsafe {
+        LockFileEx(
+            handle,
+            LOCKFILE_EXCLUSIVE_LOCK | flags,
+            0,
+            1,
+            0,
+            &mut overlapped,
+        )
+    };
+    if result != 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(windows)]
+type HANDLE = *mut std::ffi::c_void;
+
+#[cfg(windows)]
+#[repr(C)]
+struct OVERLAPPED {
+    internal: usize,
+    internal_high: usize,
+    offset: u32,
+    offset_high: u32,
+    h_event: HANDLE,
+}
+
+#[cfg(windows)]
+const LOCKFILE_EXCLUSIVE_LOCK: u32 = 0x2;
+#[cfg(windows)]
+const LOCKFILE_FAIL_IMMEDIATELY: u32 = 0x1;
+#[cfg(windows)]
+const ERROR_LOCK_VIOLATION: i32 = 33;
+
+#[cfg(windows)]
+extern "system" {
+    fn LockFileEx(
+        h_file: HANDLE,
+        flags: u32,
+        reserved: u32,
+        bytes_to_lock_low: u32,
+        bytes_to_lock_high: u32,
+        overlapped: *mut OVERLAPPED,
+    ) -> i32;
+    fn UnlockFileEx(
+        h_file: HANDLE,
+        reserved: u32,
+        bytes_to_unlock_low: u32,
+        bytes_to_unlock_high: u32,
+        overlapped: *mut OVERLAPPED,
+    ) -> i32;
 }
 
 #[cfg(test)]
@@ -82,17 +239,12 @@ mod tests {
         let _guard = lock_a.lock().expect("acquire lock");
 
         let lock_b = StorageLock::open(&path).expect("open lock");
-        lock_b
-            .file
-            .try_lock_exclusive()
-            .expect_err("lock should be held");
+        let blocked = lock_b.try_lock().expect("try lock");
+        assert!(blocked.is_none());
 
         drop(_guard);
-        lock_b
-            .file
-            .try_lock_exclusive()
-            .expect("lock available after release");
-        lock_b.file.unlock().expect("unlock");
+        let guard = lock_b.try_lock().expect("try lock");
+        assert!(guard.is_some());
 
         let _ = std::fs::remove_file(path);
     }
@@ -119,19 +271,14 @@ mod tests {
 
         locked_rx.recv().expect("wait locked");
         let lock_b = StorageLock::open(&path).expect("open lock");
-        lock_b
-            .file
-            .try_lock_exclusive()
-            .expect_err("lock should be held");
+        let blocked = lock_b.try_lock().expect("try lock");
+        assert!(blocked.is_none());
 
         release_tx.send(()).expect("release");
         released_rx.recv().expect("wait released");
 
-        lock_b
-            .file
-            .try_lock_exclusive()
-            .expect("lock available after release");
-        lock_b.file.unlock().expect("unlock");
+        let guard = lock_b.try_lock().expect("try lock");
+        assert!(guard.is_some());
 
         thread_a.join().expect("thread join");
     }
