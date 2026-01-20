@@ -53,6 +53,10 @@ pub enum StorageError {
     #[error("vault integrity check failed: {0}")]
     CorruptedVault(String),
 
+    /// Nullifier already disclosed for a different request.
+    #[error("nullifier already disclosed")]
+    NullifierAlreadyDisclosed,
+
     /// Credential not found in the vault.
     #[error("credential not found")]
     CredentialNotFound,

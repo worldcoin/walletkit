@@ -71,6 +71,12 @@ pub type ContentId = [u8; 32];
 /// Credential identifier.
 pub type CredentialId = [u8; 16];
 
+/// Request identifier for proof disclosure.
+pub type RequestId = [u8; 32];
+
+/// Nullifier identifier used for replay safety.
+pub type Nullifier = [u8; 32];
+
 /// In-memory representation of a stored credential.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredentialRecord {
@@ -83,4 +89,13 @@ pub struct CredentialRecord {
     pub updated_at: u64,
     pub credential_blob: Vec<u8>,
     pub associated_data: Option<Vec<u8>>,
+}
+
+/// Result of proof disclosure enforcement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProofDisclosureResult {
+    /// Stored bytes for the first disclosure of a request.
+    Fresh(Vec<u8>),
+    /// Stored bytes replayed for an existing request.
+    Replay(Vec<u8>),
 }

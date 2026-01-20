@@ -11,7 +11,10 @@ pub(crate) mod sqlcipher;
 
 pub use error::{StorageError, StorageResult};
 pub use keys::StorageKeys;
-pub use types::{BlobKind, ContentId, CredentialId, CredentialRecord, CredentialStatus};
+pub use types::{
+    BlobKind, ContentId, CredentialId, CredentialRecord, CredentialStatus,
+    Nullifier, ProofDisclosureResult, RequestId,
+};
 pub use traits::{AtomicBlobStore, DeviceKeystore};
 pub use vault::VaultDb;
 pub use cache::CacheDb;
