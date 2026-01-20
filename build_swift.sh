@@ -40,13 +40,18 @@ cargo run -p uniffi-bindgen generate \
   --out-dir $BASE_PATH/ios_build/bindings
 
 mv $BASE_PATH/ios_build/bindings/walletkit.swift $BASE_PATH/Sources/WalletKit/
+mv $BASE_PATH/ios_build/bindings/walletkit_core.swift $BASE_PATH/Sources/WalletKit/
 
 mkdir $BASE_PATH/ios_build/Headers
 mkdir -p $BASE_PATH/ios_build/Headers/WalletKit
 
 mv $BASE_PATH/ios_build/bindings/walletkitFFI.h $BASE_PATH/ios_build/Headers/WalletKit
+mv $BASE_PATH/ios_build/bindings/walletkit_coreFFI.h $BASE_PATH/ios_build/Headers/WalletKit
 
+# Combine both modulemaps into one
 cat $BASE_PATH/ios_build/bindings/walletkitFFI.modulemap > $BASE_PATH/ios_build/Headers/WalletKit/module.modulemap
+echo "" >> $BASE_PATH/ios_build/Headers/WalletKit/module.modulemap
+cat $BASE_PATH/ios_build/bindings/walletkit_coreFFI.modulemap >> $BASE_PATH/ios_build/Headers/WalletKit/module.modulemap
 
 echo "Creating xcframework."
 
