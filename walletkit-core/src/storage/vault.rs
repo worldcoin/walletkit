@@ -15,6 +15,7 @@ const VAULT_SCHEMA_VERSION: i64 = 1;
 const CONTENT_ID_PREFIX: &[u8] = b"worldid:blob";
 
 /// Encrypted vault database wrapper.
+#[derive(Debug)]
 pub struct VaultDb {
     conn: Connection,
 }
@@ -25,9 +26,9 @@ impl VaultDb {
     /// # Errors
     ///
     /// Returns an error if the database cannot be opened, keyed, or initialized.
-    pub fn new(path: &Path, vault_key: [u8; 32]) -> StorageResult<Self> {
+    pub fn new(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Self> {
         let conn = open_connection(path)?;
-        apply_key(&conn, vault_key)?;
+        apply_key(&conn, k_intermediate)?;
         configure_connection(&conn)?;
         ensure_schema(&conn)?;
         let db = Self { conn };
@@ -115,8 +116,9 @@ impl VaultDb {
         now: u64,
     ) -> StorageResult<CredentialId> {
         let credential_id = *Uuid::new_v4().as_bytes();
-        let credential_cid = compute_content_id(BlobKind::CredentialBlob, &credential_blob);
-        let associated_cid = associated_data
+        let credential_blob_id =
+            compute_content_id(BlobKind::CredentialBlob, &credential_blob);
+        let associated_data_id = associated_data
             .as_ref()
             .map(|bytes| compute_content_id(BlobKind::AssociatedData, bytes));
 
@@ -125,7 +127,7 @@ impl VaultDb {
             "INSERT OR IGNORE INTO blob_objects (content_id, blob_kind, created_at, bytes)
              VALUES (?1, ?2, ?3, ?4)",
             params![
-                credential_cid.as_ref(),
+                credential_blob_id.as_ref(),
                 BlobKind::CredentialBlob.as_i64(),
                 now as i64,
                 credential_blob
@@ -134,7 +136,7 @@ impl VaultDb {
         .map_err(map_db_err)?;
 
         if let Some(data) = associated_data {
-            let cid = associated_cid
+            let cid = associated_data_id
                 .as_ref()
                 .expect("associated data CID must be present");
             tx.execute(
@@ -170,8 +172,8 @@ impl VaultDb {
                 expires_at.map(|value| value as i64),
                 status.as_i64(),
                 now as i64,
-                credential_cid.as_ref(),
-                associated_cid
+                credential_blob_id.as_ref(),
+                associated_data_id
                     .as_ref()
                     .map(|cid| cid.as_ref())
             ],
@@ -218,11 +220,11 @@ impl VaultDb {
                      ORDER BY cr.updated_at DESC",
                 )
                 .map_err(map_db_err)?;
-            let rows = stmt
-                .query_map(params![status, expires, issuer_schema_id as i64], map_record)
+            let mut rows = stmt
+                .query(params![status, expires, issuer_schema_id as i64])
                 .map_err(map_db_err)?;
-            for record in rows {
-                records.push(record?);
+            while let Some(row) = rows.next().map_err(map_db_err)? {
+                records.push(map_record(row)?);
             }
         } else {
             let mut stmt = self
@@ -246,11 +248,11 @@ impl VaultDb {
                      ORDER BY cr.updated_at DESC",
                 )
                 .map_err(map_db_err)?;
-            let rows = stmt
-                .query_map(params![status, expires], map_record)
+            let mut rows = stmt
+                .query(params![status, expires])
                 .map_err(map_db_err)?;
-            for record in rows {
-                records.push(record?);
+            while let Some(row) = rows.next().map_err(map_db_err)? {
+                records.push(map_record(row)?);
             }
         }
         Ok(records)
@@ -277,8 +279,8 @@ fn open_connection(path: &Path) -> StorageResult<Connection> {
     Connection::open_with_flags(path, flags).map_err(map_db_err)
 }
 
-fn apply_key(conn: &Connection, vault_key: [u8; 32]) -> StorageResult<()> {
-    let key_hex = hex::encode(vault_key);
+fn apply_key(conn: &Connection, k_intermediate: [u8; 32]) -> StorageResult<()> {
+    let key_hex = hex::encode(k_intermediate);
     let pragma = format!("PRAGMA key = \"x'{key_hex}'\";");
     conn.execute_batch(&pragma).map_err(map_db_err)?;
     let cipher_version: String = conn
@@ -353,24 +355,23 @@ fn compute_content_id(blob_kind: BlobKind, plaintext: &[u8]) -> ContentId {
     out
 }
 
-fn map_record(row: &rusqlite::Row<'_>) -> rusqlite::Result<CredentialRecord> {
-    let credential_id_bytes: Vec<u8> = row.get(0)?;
-    let issuer_schema_id: i64 = row.get(1)?;
-    let status_raw: i64 = row.get(2)?;
-    let subject_blinding_factor_bytes: Vec<u8> = row.get(3)?;
-    let genesis_issued_at: i64 = row.get(4)?;
-    let expires_at: Option<i64> = row.get(5)?;
-    let updated_at: i64 = row.get(6)?;
-    let credential_blob: Vec<u8> = row.get(7)?;
-    let associated_data: Option<Vec<u8>> = row.get(8)?;
+fn map_record(row: &rusqlite::Row<'_>) -> StorageResult<CredentialRecord> {
+    let credential_id_bytes: Vec<u8> = row.get(0).map_err(map_db_err)?;
+    let issuer_schema_id: i64 = row.get(1).map_err(map_db_err)?;
+    let status_raw: i64 = row.get(2).map_err(map_db_err)?;
+    let subject_blinding_factor_bytes: Vec<u8> = row.get(3).map_err(map_db_err)?;
+    let genesis_issued_at: i64 = row.get(4).map_err(map_db_err)?;
+    let expires_at: Option<i64> = row.get(5).map_err(map_db_err)?;
+    let updated_at: i64 = row.get(6).map_err(map_db_err)?;
+    let credential_blob: Vec<u8> = row.get(7).map_err(map_db_err)?;
+    let associated_data: Option<Vec<u8>> = row.get(8).map_err(map_db_err)?;
 
-    let credential_id = parse_fixed_bytes::<16>(&credential_id_bytes, "credential_id")
-        .map_err(|err| rusqlite::Error::UserFunctionError(Box::new(err)))?;
-    let subject_blinding_factor =
-        parse_fixed_bytes::<32>(&subject_blinding_factor_bytes, "subject_blinding_factor")
-            .map_err(|err| rusqlite::Error::UserFunctionError(Box::new(err)))?;
-    let status = CredentialStatus::try_from(status_raw)
-        .map_err(|err| rusqlite::Error::UserFunctionError(Box::new(err)))?;
+    let credential_id = parse_fixed_bytes::<16>(&credential_id_bytes, "credential_id")?;
+    let subject_blinding_factor = parse_fixed_bytes::<32>(
+        &subject_blinding_factor_bytes,
+        "subject_blinding_factor",
+    )?;
+    let status = CredentialStatus::try_from(status_raw)?;
 
     Ok(CredentialRecord {
         credential_id,

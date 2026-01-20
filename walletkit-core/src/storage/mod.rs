@@ -15,9 +15,6 @@ pub use vault::VaultDb;
 
 pub(crate) const ACCOUNT_KEYS_FILENAME: &str = "account_keys.bin";
 pub(crate) const ACCOUNT_KEY_ENVELOPE_AD: &[u8] = b"worldid:account-key-envelope";
-pub(crate) const VAULT_KEY_AD: &[u8] = b"worldid:vault-key";
-pub(crate) const CACHE_SALT: &[u8] = b"worldid:account-cache:salt";
-pub(crate) const CACHE_INFO: &[u8] = b"worldid:account-cache";
 
 #[cfg(test)]
 pub(crate) mod tests_utils;
