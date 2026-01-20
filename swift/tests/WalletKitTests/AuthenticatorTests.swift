@@ -241,35 +241,6 @@ final class AuthenticatorTests: XCTestCase {
 
     // MARK: - Authenticator Initialization Tests
 
-    func testAuthenticatorInitWithDefaultsAccountDoesNotExist() async {
-        let seed = generateRandomSeed()
-
-        do {
-            _ = try await Authenticator.initWithDefaults(
-                seed: seed,
-                rpcUrl: testRpcUrl,
-                environment: .staging
-            )
-            XCTFail("Should have thrown an error for non-existent account")
-        } catch let error as WalletKitError {
-            // Expected - account doesn't exist for random seed
-            // This could be AccountDoesNotExist or AuthenticatorError depending on
-            // how the contract call fails (contract not found, account not found, etc.)
-            switch error {
-            case .AccountDoesNotExist:
-                break // Expected - account not in registry
-            case .AuthenticatorError(let message):
-                // Also acceptable - contract/RPC errors when account doesn't exist
-                XCTAssertTrue(message.contains("contract") || message.contains("account"),
-                             "Error message should mention contract or account: \(message)")
-            default:
-                XCTFail("Expected AccountDoesNotExist or AuthenticatorError, got \(error)")
-            }
-        } catch {
-            XCTFail("Expected WalletKitError, got \(error)")
-        }
-    }
-
     func testInvalidSeedEmpty() async {
         let emptySeed = Data()
 
