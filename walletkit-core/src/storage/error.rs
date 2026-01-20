@@ -57,6 +57,10 @@ pub enum StorageError {
     #[error("vault integrity check failed: {0}")]
     CorruptedVault(String),
 
+    /// Storage has not been initialized yet.
+    #[error("storage not initialized")]
+    NotInitialized,
+
     /// Nullifier already disclosed for a different request.
     #[error("nullifier already disclosed")]
     NullifierAlreadyDisclosed,

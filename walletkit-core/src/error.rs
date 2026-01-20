@@ -2,6 +2,7 @@ use thiserror::Error;
 
 #[cfg(feature = "v4")]
 use world_id_core::AuthenticatorError;
+use crate::storage::StorageError;
 
 /// Error outputs from `WalletKit`
 #[derive(Debug, Error, uniffi::Error)]
@@ -102,6 +103,14 @@ impl From<reqwest::Error> for WalletKitError {
 impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     fn from(error: semaphore_rs::protocol::ProofError) -> Self {
         Self::ProofGeneration {
+            error: error.to_string(),
+        }
+    }
+}
+
+impl From<StorageError> for WalletKitError {
+    fn from(error: StorageError) -> Self {
+        Self::Generic {
             error: error.to_string(),
         }
     }

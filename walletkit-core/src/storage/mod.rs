@@ -2,6 +2,8 @@
 
 pub mod envelope;
 pub mod error;
+pub mod credential_storage;
+pub mod paths;
 pub mod keys;
 pub mod lock;
 pub mod types;
@@ -11,13 +13,15 @@ pub mod cache;
 pub(crate) mod sqlcipher;
 
 pub use error::{StorageError, StorageResult};
+pub use credential_storage::{CredentialStorage, CredentialStore};
+pub use paths::StoragePaths;
 pub use keys::StorageKeys;
 pub use lock::{StorageLock, StorageLockGuard};
 pub use types::{
     BlobKind, ContentId, CredentialId, CredentialRecord, CredentialStatus,
     Nullifier, ProofDisclosureResult, RequestId,
 };
-pub use traits::{AtomicBlobStore, DeviceKeystore};
+pub use traits::{AtomicBlobStore, DeviceKeystore, StorageProvider};
 pub use vault::VaultDb;
 pub use cache::CacheDb;
 

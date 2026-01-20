@@ -1,6 +1,9 @@
 //! Platform interfaces for credential storage.
 
+use std::sync::Arc;
+
 use super::error::StorageResult;
+use super::paths::StoragePaths;
 
 /// Device keystore interface used to seal and open account keys.
 pub trait DeviceKeystore: Send + Sync {
@@ -42,4 +45,16 @@ pub trait AtomicBlobStore: Send + Sync {
     ///
     /// Returns an error if the delete fails.
     fn delete(&self, path: &str) -> StorageResult<()>;
+}
+
+/// Provider responsible for platform-specific storage components and paths.
+pub trait StorageProvider: Send + Sync {
+    /// Returns the device keystore implementation.
+    fn keystore(&self) -> Arc<dyn DeviceKeystore>;
+
+    /// Returns the blob store implementation.
+    fn blob_store(&self) -> Arc<dyn AtomicBlobStore>;
+
+    /// Returns the storage paths selected by the platform.
+    fn paths(&self) -> StoragePaths;
 }

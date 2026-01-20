@@ -1,6 +1,6 @@
 //! Test helpers for credential storage.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 
 use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
@@ -8,7 +8,14 @@ use chacha20poly1305::{
 };
 use rand::{rngs::OsRng, RngCore};
 
-use super::{error::StorageError, traits::DeviceKeystore, AtomicBlobStore};
+use std::path::Path;
+
+use super::{
+    error::StorageError,
+    paths::StoragePaths,
+    traits::{DeviceKeystore, StorageProvider},
+    AtomicBlobStore,
+};
 
 pub struct InMemoryKeystore {
     key: [u8; 32],
@@ -117,5 +124,35 @@ impl AtomicBlobStore for InMemoryBlobStore {
             .map_err(|_| StorageError::BlobStore("mutex poisoned".to_string()))?
             .remove(path);
         Ok(())
+    }
+}
+
+pub struct InMemoryStorageProvider {
+    keystore: Arc<InMemoryKeystore>,
+    blob_store: Arc<InMemoryBlobStore>,
+    paths: StoragePaths,
+}
+
+impl InMemoryStorageProvider {
+    pub fn new(root: impl AsRef<Path>) -> Self {
+        Self {
+            keystore: Arc::new(InMemoryKeystore::new()),
+            blob_store: Arc::new(InMemoryBlobStore::new()),
+            paths: StoragePaths::new(root),
+        }
+    }
+}
+
+impl StorageProvider for InMemoryStorageProvider {
+    fn keystore(&self) -> Arc<dyn DeviceKeystore> {
+        self.keystore.clone()
+    }
+
+    fn blob_store(&self) -> Arc<dyn AtomicBlobStore> {
+        self.blob_store.clone()
+    }
+
+    fn paths(&self) -> StoragePaths {
+        self.paths.clone()
     }
 }
