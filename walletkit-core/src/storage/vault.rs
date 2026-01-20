@@ -2,11 +2,12 @@
 
 use std::path::Path;
 
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use super::error::{StorageError, StorageResult};
+use super::sqlcipher::{self, SqlcipherError};
 use super::types::{
     BlobKind, ContentId, CredentialId, CredentialRecord, CredentialStatus,
 };
@@ -27,9 +28,9 @@ impl VaultDb {
     ///
     /// Returns an error if the database cannot be opened, keyed, or initialized.
     pub fn new(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Self> {
-        let conn = open_connection(path)?;
-        apply_key(&conn, k_intermediate)?;
-        configure_connection(&conn)?;
+        let conn = sqlcipher::open_connection(path).map_err(map_sqlcipher_err)?;
+        sqlcipher::apply_key(&conn, k_intermediate).map_err(map_sqlcipher_err)?;
+        sqlcipher::configure_connection(&conn).map_err(map_sqlcipher_err)?;
         ensure_schema(&conn)?;
         let db = Self { conn };
         if !db.check_integrity()? {
@@ -264,44 +265,8 @@ impl VaultDb {
     ///
     /// Returns an error if the check cannot be executed.
     pub fn check_integrity(&self) -> StorageResult<bool> {
-        let result: String = self
-            .conn
-            .query_row("PRAGMA integrity_check;", [], |row| row.get(0))
-            .map_err(map_db_err)?;
-        Ok(result.trim() == "ok")
+        sqlcipher::integrity_check(&self.conn).map_err(map_sqlcipher_err)
     }
-}
-
-fn open_connection(path: &Path) -> StorageResult<Connection> {
-    let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
-        | OpenFlags::SQLITE_OPEN_CREATE
-        | OpenFlags::SQLITE_OPEN_FULL_MUTEX;
-    Connection::open_with_flags(path, flags).map_err(map_db_err)
-}
-
-fn apply_key(conn: &Connection, k_intermediate: [u8; 32]) -> StorageResult<()> {
-    let key_hex = hex::encode(k_intermediate);
-    let pragma = format!("PRAGMA key = \"x'{key_hex}'\";");
-    conn.execute_batch(&pragma).map_err(map_db_err)?;
-    let cipher_version: String = conn
-        .query_row("PRAGMA cipher_version;", [], |row| row.get(0))
-        .map_err(map_db_err)?;
-    if cipher_version.trim().is_empty() {
-        return Err(StorageError::VaultDb(
-            "sqlcipher not available".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-fn configure_connection(conn: &Connection) -> StorageResult<()> {
-    conn.execute_batch(
-        "PRAGMA foreign_keys = ON;
-         PRAGMA journal_mode = WAL;
-         PRAGMA synchronous = FULL;",
-    )
-    .map_err(map_db_err)?;
-    Ok(())
 }
 
 fn ensure_schema(conn: &Connection) -> StorageResult<()> {
@@ -403,6 +368,15 @@ fn parse_fixed_bytes<const N: usize>(
 
 fn map_db_err(err: rusqlite::Error) -> StorageError {
     StorageError::VaultDb(err.to_string())
+}
+
+fn map_sqlcipher_err(err: SqlcipherError) -> StorageError {
+    match err {
+        SqlcipherError::Sqlite(err) => StorageError::VaultDb(err.to_string()),
+        SqlcipherError::CipherUnavailable => {
+            StorageError::VaultDb(err.to_string())
+        }
+    }
 }
 
 #[cfg(test)]

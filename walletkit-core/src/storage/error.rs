@@ -36,6 +36,10 @@ pub enum StorageError {
     #[error("vault db error: {0}")]
     VaultDb(String),
 
+    /// Errors coming from the cache database.
+    #[error("cache db error: {0}")]
+    CacheDb(String),
+
     /// Leaf index mismatch during initialization.
     #[error("leaf index mismatch: expected {expected}, got {provided}")]
     InvalidLeafIndex {
