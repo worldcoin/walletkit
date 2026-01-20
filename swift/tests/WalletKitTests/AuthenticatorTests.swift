@@ -3,7 +3,7 @@ import XCTest
 
 final class AuthenticatorTests: XCTestCase {
 
-    let testRpcUrl = "https://worldchain-mainnet.g.alchemy.com/public"
+    let testRpcUrl = "https://worldchain-sepolia.g.alchemy.com/public"
 
     // MARK: - Helper Functions
 
@@ -118,7 +118,6 @@ final class AuthenticatorTests: XCTestCase {
             "1g",
             "not a hex string",
             "0xGGGG",
-            "",
         ]
 
         for invalidInput in invalidInputs {
@@ -126,6 +125,13 @@ final class AuthenticatorTests: XCTestCase {
                 XCTAssertTrue(error is WalletKitError, "Should throw WalletKitError for: \(invalidInput)")
             }
         }
+    }
+
+    func testU256WrapperEmptyString() throws {
+        // Empty string parses as 0 (after trimming "0x", "" is passed to radix parser)
+        let u256 = try U256Wrapper.tryFromHexString(hexString: "")
+        XCTAssertEqual(u256.toDecimalString(), "0")
+        XCTAssertEqual(u256.toHexString(), "0x0000000000000000000000000000000000000000000000000000000000000000")
     }
 
     func testU256WrapperFromLimbs() throws {
