@@ -32,7 +32,6 @@ lipo -info $BASE_PATH/ios_build/target/universal-ios-sim/release/libwalletkit.a
 
 echo "Generating Swift bindings."
 
-# Generate bindings from walletkit (which includes walletkit-core symbols)
 cargo run -p uniffi-bindgen generate \
   target/aarch64-apple-ios-sim/release/libwalletkit.dylib \
   --library \
