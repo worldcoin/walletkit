@@ -68,11 +68,11 @@ jobs:
           components: rustfmt
 
       - name: Build the project (iOS)
-        run: ./build_swift.sh
+        run: ./swift/build_swift.sh
 
       - name: Compress XCFramework binary
         run: |
-          zip -r WalletKit.xcframework.zip WalletKit.xcframework
+          zip -r WalletKit.xcframework.zip swift/WalletKit.xcframework
 
       - name: Checkout swift repo
         uses: actions/checkout@v4
@@ -112,11 +112,11 @@ jobs:
 
         run: |
           # Copy non-binary source files
-          cp -r Sources/ target-repo/Sources
+          cp -r swift/Sources/ target-repo/Sources
 
           # Prepare Package.swift
           brew install swiftlint
-          ./archive_swift.sh --asset-url "$ASSET_URL" --checksum "$CHECKSUM" --release-version "$NEW_VERSION"
+          ./swift/archive_swift.sh --asset-url "$ASSET_URL" --checksum "$CHECKSUM" --release-version "$NEW_VERSION"
           cp Package.swift target-repo/
 
           # Commit changes
@@ -210,7 +210,7 @@ jobs:
 
       - name: Move artifacts
         run: |
-          mkdir -p kotlin/lib/src/main/jniLibs && cd kotlin/lib/src/main/jniLibs
+          mkdir -p kotlin/walletkit-android/src/main/jniLibs && cd kotlin/walletkit-android/src/main/jniLibs
           mkdir armeabi-v7a arm64-v8a x86 x86_64
           mv /home/runner/work/walletkit/walletkit/android-armv7-linux-androideabi/libwalletkit.so ./armeabi-v7a/libwalletkit.so
           mv /home/runner/work/walletkit/walletkit/android-aarch64-linux-android/libwalletkit.so ./arm64-v8a/libwalletkit.so
@@ -219,11 +219,11 @@ jobs:
 
       - name: Generate bindings
         working-directory: kotlin
-        run: cargo run -p uniffi-bindgen generate ./lib/src/main/jniLibs/arm64-v8a/libwalletkit.so --library --language kotlin --no-format --out-dir lib/src/main/java
+        run: cargo run -p uniffi-bindgen generate ./walletkit-android/src/main/jniLibs/arm64-v8a/libwalletkit.so --library --language kotlin --no-format --out-dir walletkit-android/src/main/java
 
       - name: Publish
         working-directory: kotlin
-        run: ./gradlew lib:publish -PversionName=${{ needs.pre-release-checks.outputs.new_version }}
+        run: ./gradlew walletkit-android:publish
         env:
           GITHUB_ACTOR: wld-walletkit-bot
           GITHUB_TOKEN: ${{ github.token }}
@@ -243,16 +243,13 @@ jobs:
           make_latest: true
 
       - name: Create Release in swift repo
-        uses: softprops/action-gh-release@v2
-        with:
-          repository: worldcoin/walletkit-swift
-          token: ${{ secrets.WALLETKIT_BOT_TOKEN }}
-          name: ${{ needs.pre-release-checks.outputs.new_version }}
-          tag_name: ${{ needs.pre-release-checks.outputs.new_version }}
-          body: |
-            ## Version ${{ needs.pre-release-checks.outputs.new_version }}
-            For full release notes, see the [main repo release](https://github.com/worldcoin/walletkit/releases/tag/${{ needs.pre-release-checks.outputs.new_version }}).
-          make_latest: true
+        env:
+          GH_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
+        run: |
+          gh release edit ${{ needs.pre-release-checks.outputs.new_version }} \
+            --repo worldcoin/walletkit-swift \
+            --draft=false \
+            --latest
 
   publish-to-crates-io:
     needs: [pre-release-checks, create-github-release]

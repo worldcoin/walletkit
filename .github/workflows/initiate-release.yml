@@ -29,14 +29,16 @@ jobs:
         env:
           BUMP_TYPE: ${{ github.event.inputs.bump_type }}
         run: |
-          # Get current version from Cargo.toml
-          CURRENT_VERSION=$(grep -m 1 'version = ' Cargo.toml | cut -d '"' -f 2)
+          # Get current version from workspace package in Cargo.toml
+          CURRENT_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.workspace_members[0]' | cut -d '#' -f2)
 
           # Ensure CURRENT_VERSION is in semantic versioning format
           if [[ ! "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "CRITICAL ERROR: CURRENT_VERSION '$CURRENT_VERSION' is not in semantic versioning format (MAJOR.MINOR.PATCH)."
               exit 1
           fi
+
+          cargo metadata --no-deps --format-version 1 | jq -r '.workspace_members'
 
           # Split version into components
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
