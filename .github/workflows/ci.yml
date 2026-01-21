@@ -1,5 +1,10 @@
 name: CI
 
+# Unless we are on the main branch, the workflow should stop and yield to a new run if new code is pushed.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ !contains(github.ref, 'main')}}
+
 on:
   push:
     branches: [main]
@@ -55,6 +60,41 @@ jobs:
 
       - name: Run Swift foreign binding tests
         run: ./swift/test_swift.sh
+
+      - name: Install SwiftLint
+        run: |
+          brew install swiftlint
+
+      - name: Lint Swift Tests
+        run: swiftlint swift/tests
+
+  kotlin-build-and-test:
+    name: Kotlin Build & Foreign Binding Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.92.0
+
+      - name: Build and test Kotlin bindings
+        run: ./kotlin/test_kotlin.sh
+
+      - name: Install ktlint
+        run: |
+          curl -sSLO https://github.com/pinterest/ktlint/releases/latest/download/ktlint &&
+          chmod a+x ktlint &&
+          sudo mv ktlint /usr/local/bin/
+
+      - name: Lint Kotlin Tests
+        run: |
+          ktlint kotlin/walletkit-tests/src/test/kotlin
 
   test:
     name: Tests
@@ -112,7 +152,7 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check ${{ matrix.checks }}
-          rust-version: stable
+          rust-version: 1.92.0
 
   docs:
     name: Check docs
