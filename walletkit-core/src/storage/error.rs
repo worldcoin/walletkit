@@ -69,7 +69,7 @@ pub enum StorageError {
     #[error("credential not found")]
     CredentialNotFound,
 
-    /// Unexpected UniFFI callback error.
+    /// Unexpected `UniFFI` callback error.
     #[error("unexpected uniffi callback error: {0}")]
     UnexpectedUniFFICallbackError(String),
 }

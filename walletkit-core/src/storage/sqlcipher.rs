@@ -1,16 +1,16 @@
-//! Shared SQLCipher helpers for storage databases.
+//! Shared `SQLCipher` helpers for storage databases.
 
 use std::fmt;
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags};
 
-/// SQLCipher helper errors.
+/// `SQLCipher` helper errors.
 #[derive(Debug)]
 pub enum SqlcipherError {
-    /// SQLite error.
+    /// `SQLite` error.
     Sqlite(rusqlite::Error),
-    /// SQLCipher is unavailable in the current build.
+    /// `SQLCipher` is unavailable in the current build.
     CipherUnavailable,
 }
 
@@ -29,19 +29,19 @@ impl From<rusqlite::Error> for SqlcipherError {
     }
 }
 
-/// Result type for SQLCipher helper operations.
+/// Result type for `SQLCipher` helper operations.
 pub type SqlcipherResult<T> = Result<T, SqlcipherError>;
 
-/// Opens a SQLite connection with consistent flags.
-pub(crate) fn open_connection(path: &Path) -> SqlcipherResult<Connection> {
+/// Opens a `SQLite` connection with consistent flags.
+pub(super) fn open_connection(path: &Path) -> SqlcipherResult<Connection> {
     let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
         | OpenFlags::SQLITE_OPEN_CREATE
         | OpenFlags::SQLITE_OPEN_FULL_MUTEX;
     Ok(Connection::open_with_flags(path, flags)?)
 }
 
-/// Applies SQLCipher keying and validates cipher availability.
-pub(crate) fn apply_key(
+/// Applies `SQLCipher` keying and validates cipher availability.
+pub(super) fn apply_key(
     conn: &Connection,
     k_intermediate: [u8; 32],
 ) -> SqlcipherResult<()> {
@@ -57,7 +57,7 @@ pub(crate) fn apply_key(
 }
 
 /// Configures durable WAL settings.
-pub(crate) fn configure_connection(conn: &Connection) -> SqlcipherResult<()> {
+pub(super) fn configure_connection(conn: &Connection) -> SqlcipherResult<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
          PRAGMA journal_mode = WAL;
@@ -67,7 +67,7 @@ pub(crate) fn configure_connection(conn: &Connection) -> SqlcipherResult<()> {
 }
 
 /// Runs an integrity check.
-pub(crate) fn integrity_check(conn: &Connection) -> SqlcipherResult<bool> {
+pub(super) fn integrity_check(conn: &Connection) -> SqlcipherResult<bool> {
     let result: String =
         conn.query_row("PRAGMA integrity_check;", [], |row| row.get(0))?;
     Ok(result.trim() == "ok")

@@ -14,12 +14,20 @@ use super::types::{
 };
 use super::{CacheDb, VaultDb};
 
-/// Public-facing storage API used by WalletKit v4 flows.
+/// Public-facing storage API used by `WalletKit` v4 flows.
 pub trait CredentialStorage {
     /// Initializes storage and validates the account leaf index.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if storage initialization fails or the leaf index is invalid.
     fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()>;
 
     /// Lists active credentials, optionally filtered by issuer schema ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the credential query fails.
     fn list_credentials(
         &self,
         issuer_schema_id: Option<u64>,
@@ -27,6 +35,10 @@ pub trait CredentialStorage {
     ) -> StorageResult<Vec<CredentialRecord>>;
 
     /// Stores a credential and optional associated data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the credential cannot be stored.
     #[allow(clippy::too_many_arguments)]
     fn store_credential(
         &mut self,
@@ -41,6 +53,10 @@ pub trait CredentialStorage {
     ) -> StorageResult<CredentialId>;
 
     /// Fetches a cached Merkle proof if available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache lookup fails.
     fn merkle_cache_get(
         &self,
         registry_kind: u8,
@@ -49,6 +65,10 @@ pub trait CredentialStorage {
     ) -> StorageResult<Option<Vec<u8>>>;
 
     /// Inserts a cached Merkle proof with a TTL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache insert fails.
     fn merkle_cache_put(
         &mut self,
         registry_kind: u8,
@@ -59,6 +79,11 @@ pub trait CredentialStorage {
     ) -> StorageResult<()>;
 
     /// Enforces replay safety for proof disclosure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the nullifier is already disclosed or the cache
+    /// operation fails.
     fn begin_proof_disclosure(
         &mut self,
         request_id: RequestId,
@@ -69,7 +94,7 @@ pub trait CredentialStorage {
     ) -> StorageResult<ProofDisclosureResult>;
 }
 
-/// Concrete storage implementation backed by SQLCipher databases.
+/// Concrete storage implementation backed by `SQLCipher` databases.
 #[derive(uniffi::Object)]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
@@ -152,8 +177,8 @@ impl CredentialStore {
         keystore: Arc<dyn DeviceKeystore>,
         blob_store: Arc<dyn AtomicBlobStore>,
     ) -> StorageResult<Self> {
-        let inner =
-            CredentialStoreInner::new(paths.as_ref().clone(), keystore, blob_store)?;
+        let paths = Arc::try_unwrap(paths).unwrap_or_else(|arc| (*arc).clone());
+        let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
         })
@@ -165,6 +190,7 @@ impl CredentialStore {
     ///
     /// Returns an error if the storage lock cannot be opened.
     #[uniffi::constructor]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn from_provider_arc(
         provider: Arc<dyn StorageProvider>,
     ) -> StorageResult<Self> {
@@ -175,29 +201,45 @@ impl CredentialStore {
     }
 
     /// Returns the storage paths used by this handle.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage mutex is poisoned.
     pub fn storage_paths(&self) -> StorageResult<Arc<StoragePaths>> {
         self.lock_inner().map(|inner| Arc::new(inner.paths.clone()))
     }
 
     /// Initializes storage and validates the account leaf index.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if initialization fails or the leaf index mismatches.
     pub fn init(&self, leaf_index: u64, now: u64) -> StorageResult<()> {
         let mut inner = self.lock_inner()?;
         inner.init(leaf_index, now)
     }
 
     /// Lists active credentials, optionally filtered by issuer schema ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the credential query fails.
     pub fn list_credentials(
         &self,
         issuer_schema_id: Option<u64>,
         now: u64,
     ) -> StorageResult<Vec<CredentialRecordFfi>> {
-        let inner = self.lock_inner()?;
-        let records = inner.list_credentials(issuer_schema_id, now)?;
+        let records = self
+            .lock_inner()?
+            .list_credentials(issuer_schema_id, now)?;
         Ok(records.into_iter().map(CredentialRecordFfi::from).collect())
     }
 
     /// Stores a credential and optional associated data.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the credential cannot be stored.
     #[allow(clippy::too_many_arguments)]
     pub fn store_credential(
         &self,
@@ -210,12 +252,9 @@ impl CredentialStore {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<Vec<u8>> {
-        let mut inner = self.lock_inner()?;
-        let subject_blinding_factor = parse_fixed_bytes::<32>(
-            subject_blinding_factor,
-            "subject_blinding_factor",
-        )?;
-        let credential_id = inner.store_credential(
+        let subject_blinding_factor =
+            parse_fixed_bytes::<32>(subject_blinding_factor, "subject_blinding_factor")?;
+        let credential_id = self.lock_inner()?.store_credential(
             issuer_schema_id,
             status,
             subject_blinding_factor,
@@ -229,18 +268,25 @@ impl CredentialStore {
     }
 
     /// Fetches a cached Merkle proof if available.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache lookup fails.
     pub fn merkle_cache_get(
         &self,
         registry_kind: u8,
         root: Vec<u8>,
         now: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
-        let inner = self.lock_inner()?;
         let root = parse_fixed_bytes::<32>(root, "root")?;
-        inner.merkle_cache_get(registry_kind, root, now)
+        self.lock_inner()?.merkle_cache_get(registry_kind, root, now)
     }
 
     /// Inserts a cached Merkle proof with a TTL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache insert fails.
     pub fn merkle_cache_put(
         &self,
         registry_kind: u8,
@@ -249,12 +295,16 @@ impl CredentialStore {
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        let mut inner = self.lock_inner()?;
         let root = parse_fixed_bytes::<32>(root, "root")?;
-        inner.merkle_cache_put(registry_kind, root, proof_bytes, now, ttl_seconds)
+        self.lock_inner()?
+            .merkle_cache_put(registry_kind, root, proof_bytes, now, ttl_seconds)
     }
 
     /// Enforces replay safety for proof disclosure.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the disclosure conflicts or storage fails.
     pub fn begin_proof_disclosure(
         &self,
         request_id: Vec<u8>,
@@ -263,10 +313,9 @@ impl CredentialStore {
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<ProofDisclosureResultFfi> {
-        let mut inner = self.lock_inner()?;
         let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
         let nullifier = parse_fixed_bytes::<32>(nullifier, "nullifier")?;
-        let result = inner.begin_proof_disclosure(
+        let result = self.lock_inner()?.begin_proof_disclosure(
             request_id,
             nullifier,
             proof_bytes,
@@ -281,15 +330,12 @@ fn parse_fixed_bytes<const N: usize>(
     bytes: Vec<u8>,
     label: &str,
 ) -> StorageResult<[u8; N]> {
-    if bytes.len() != N {
-        return Err(StorageError::Serialization(format!(
+    bytes.try_into().map_err(|bytes: Vec<u8>| {
+        StorageError::Serialization(format!(
             "{label} length mismatch: expected {N}, got {}",
             bytes.len()
-        )));
-    }
-    let mut out = [0u8; N];
-    out.copy_from_slice(&bytes);
-    Ok(out)
+        ))
+    })
 }
 
 impl CredentialStore {
@@ -451,7 +497,10 @@ impl CredentialStore {
     }
 
     /// Returns the storage paths used by this handle.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage mutex is poisoned.
     pub fn paths(&self) -> StorageResult<StoragePaths> {
         self.lock_inner().map(|inner| inner.paths.clone())
     }

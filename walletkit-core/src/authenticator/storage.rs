@@ -13,6 +13,10 @@ use super::Authenticator;
 
 impl Authenticator {
     /// Initializes storage using the authenticator's leaf index.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the leaf index is invalid or storage initialization fails.
     pub fn init_storage(
         &self,
         storage: &mut dyn CredentialStorage,
@@ -31,6 +35,11 @@ impl Authenticator {
     ///
     /// The cached payload uses `AccountInclusionProof` serialization and is keyed by
     /// (`registry_kind`, `root`, `leaf_index`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if fetching or caching the proof fails.
+    #[allow(clippy::future_not_send)]
     pub async fn fetch_inclusion_proof_cached(
         &self,
         storage: &mut dyn CredentialStorage,
@@ -66,7 +75,12 @@ impl Authenticator {
     }
 
     /// Generates a proof and enforces replay safety via storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the proof generation or storage update fails.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::future_not_send)]
     pub async fn generate_proof_with_disclosure(
         &self,
         storage: &mut dyn CredentialStorage,

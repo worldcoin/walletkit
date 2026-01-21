@@ -57,6 +57,7 @@ impl StoragePaths {
 impl StoragePaths {
     /// Builds storage paths rooted at `root`.
     #[uniffi::constructor]
+    #[must_use]
     pub fn from_root(root: String) -> Self {
         Self::new(PathBuf::from(root))
     }

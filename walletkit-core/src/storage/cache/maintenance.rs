@@ -27,11 +27,7 @@ pub(super) fn open_or_rebuild(
             }
         }
         Err(err) => {
-            if let Ok(conn) = rebuild(path, k_intermediate) {
-                Ok(conn)
-            } else {
-                Err(err)
-            }
+            rebuild(path, k_intermediate).map_or_else(|_| Err(err), Ok)
         }
     }
 }
@@ -60,6 +56,6 @@ fn delete_if_exists(path: &Path) -> StorageResult<()> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(map_io_err(err)),
+        Err(err) => Err(map_io_err(&err)),
     }
 }

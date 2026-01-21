@@ -51,18 +51,18 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
         CREATE INDEX IF NOT EXISTS idx_session_keys_expiry
         ON session_keys (expires_at);",
     )
-    .map_err(map_db_err)?;
+    .map_err(|err| map_db_err(&err))?;
 
     let existing: i64 = conn
         .query_row("SELECT COUNT(*) FROM cache_meta;", [], |row| row.get(0))
-        .map_err(map_db_err)?;
+        .map_err(|err| map_db_err(&err))?;
     if existing == 0 {
         conn.execute(
             "INSERT INTO cache_meta (schema_version, created_at, updated_at)
              VALUES (?1, strftime('%s','now'), strftime('%s','now'))",
             [CACHE_SCHEMA_VERSION],
         )
-        .map_err(map_db_err)?;
+        .map_err(|err| map_db_err(&err))?;
     }
 
     Ok(())

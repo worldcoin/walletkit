@@ -56,6 +56,8 @@ impl CacheDb {
     /// # Errors
     ///
     /// Returns an error if the insert fails.
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn merkle_cache_put(
         &mut self,
         _lock: &StorageLockGuard,
@@ -71,7 +73,7 @@ impl CacheDb {
             registry_kind,
             root,
             leaf_index,
-            proof_bytes,
+            proof_bytes.as_ref(),
             now,
             ttl_seconds,
         )

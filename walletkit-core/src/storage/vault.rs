@@ -57,13 +57,15 @@ impl VaultDb {
         leaf_index: u64,
         now: u64,
     ) -> StorageResult<()> {
-        let tx = self.conn.transaction().map_err(map_db_err)?;
+        let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
+        let now_i64 = to_i64(now, "now")?;
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
         let existing = tx
             .query_row("SELECT leaf_index FROM vault_meta LIMIT 1", [], |row| {
                 row.get::<_, Option<i64>>(0)
             })
             .optional()
-            .map_err(map_db_err)?;
+            .map_err(|err| map_db_err(&err))?;
         match existing {
             None => {
                 tx.execute(
@@ -71,35 +73,36 @@ impl VaultDb {
                      VALUES (?1, ?2, ?3, ?4)",
                     params![
                         VAULT_SCHEMA_VERSION,
-                        leaf_index as i64,
-                        now as i64,
-                        now as i64
+                        leaf_index_i64,
+                        now_i64,
+                        now_i64
                     ],
                 )
-                .map_err(map_db_err)?;
+                .map_err(|err| map_db_err(&err))?;
             }
             Some(None) => {
                 tx.execute(
                     "UPDATE vault_meta SET leaf_index = ?1, updated_at = ?2",
-                    params![leaf_index as i64, now as i64],
+                    params![leaf_index_i64, now_i64],
                 )
-                .map_err(map_db_err)?;
+                .map_err(|err| map_db_err(&err))?;
             }
             Some(Some(stored)) => {
-                if stored != leaf_index as i64 {
+                if stored != leaf_index_i64 {
+                    let expected = to_u64(stored, "leaf_index")?;
                     return Err(StorageError::InvalidLeafIndex {
-                        expected: stored as u64,
+                        expected,
                         provided: leaf_index,
                     });
                 }
                 tx.execute(
                     "UPDATE vault_meta SET updated_at = ?1",
-                    params![now as i64],
+                    params![now_i64],
                 )
-                .map_err(map_db_err)?;
+                .map_err(|err| map_db_err(&err))?;
             }
         }
-        tx.commit().map_err(map_db_err)?;
+        tx.commit().map_err(|err| map_db_err(&err))?;
         Ok(())
     }
 
@@ -109,6 +112,7 @@ impl VaultDb {
     ///
     /// Returns an error if any insert fails.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn store_credential(
         &mut self,
         _lock: &StorageLockGuard,
@@ -127,35 +131,44 @@ impl VaultDb {
         let associated_data_id = associated_data
             .as_ref()
             .map(|bytes| compute_content_id(BlobKind::AssociatedData, bytes));
+        let now_i64 = to_i64(now, "now")?;
+        let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
+        let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
+        let expires_at_i64 =
+            expires_at.map(|value| to_i64(value, "expires_at")).transpose()?;
 
-        let tx = self.conn.transaction().map_err(map_db_err)?;
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
         tx.execute(
             "INSERT OR IGNORE INTO blob_objects (content_id, blob_kind, created_at, bytes)
              VALUES (?1, ?2, ?3, ?4)",
             params![
                 credential_blob_id.as_ref(),
                 BlobKind::CredentialBlob.as_i64(),
-                now as i64,
+                now_i64,
                 credential_blob
             ],
         )
-        .map_err(map_db_err)?;
+        .map_err(|err| map_db_err(&err))?;
 
         if let Some(data) = associated_data {
             let cid = associated_data_id
                 .as_ref()
-                .expect("associated data CID must be present");
+                .ok_or_else(|| {
+                    StorageError::VaultDb(
+                        "associated data CID must be present".to_string(),
+                    )
+                })?;
             tx.execute(
                 "INSERT OR IGNORE INTO blob_objects (content_id, blob_kind, created_at, bytes)
                  VALUES (?1, ?2, ?3, ?4)",
                 params![
                     cid.as_ref(),
                     BlobKind::AssociatedData.as_i64(),
-                    now as i64,
+                    now_i64,
                     data
                 ],
             )
-            .map_err(map_db_err)?;
+            .map_err(|err| map_db_err(&err))?;
         }
 
         tx.execute(
@@ -172,19 +185,19 @@ impl VaultDb {
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 credential_id.as_ref(),
-                issuer_schema_id as i64,
+                issuer_schema_id_i64,
                 subject_blinding_factor.as_ref(),
-                genesis_issued_at as i64,
-                expires_at.map(|value| value as i64),
+                genesis_issued_at_i64,
+                expires_at_i64,
                 status.as_i64(),
-                now as i64,
+                now_i64,
                 credential_blob_id.as_ref(),
-                associated_data_id.as_ref().map(|cid| cid.as_ref())
+                associated_data_id.as_ref().map(AsRef::as_ref)
             ],
         )
-        .map_err(map_db_err)?;
+        .map_err(|err| map_db_err(&err))?;
 
-        tx.commit().map_err(map_db_err)?;
+        tx.commit().map_err(|err| map_db_err(&err))?;
         Ok(credential_id)
     }
 
@@ -200,8 +213,10 @@ impl VaultDb {
     ) -> StorageResult<Vec<CredentialRecord>> {
         let mut records = Vec::new();
         let status = CredentialStatus::Active.as_i64();
-        let expires = now as i64;
+        let expires = to_i64(now, "now")?;
         if let Some(issuer_schema_id) = issuer_schema_id {
+            let issuer_schema_id_i64 =
+                to_i64(issuer_schema_id, "issuer_schema_id")?;
             let mut stmt = self
                 .conn
                 .prepare(
@@ -223,11 +238,11 @@ impl VaultDb {
                        AND cr.issuer_schema_id = ?3
                      ORDER BY cr.updated_at DESC",
                 )
-                .map_err(map_db_err)?;
+                .map_err(|err| map_db_err(&err))?;
             let mut rows = stmt
-                .query(params![status, expires, issuer_schema_id as i64])
-                .map_err(map_db_err)?;
-            while let Some(row) = rows.next().map_err(map_db_err)? {
+                .query(params![status, expires, issuer_schema_id_i64])
+                .map_err(|err| map_db_err(&err))?;
+            while let Some(row) = rows.next().map_err(|err| map_db_err(&err))? {
                 records.push(map_record(row)?);
             }
         } else {
@@ -251,9 +266,11 @@ impl VaultDb {
                        AND (cr.expires_at IS NULL OR cr.expires_at > ?2)
                      ORDER BY cr.updated_at DESC",
                 )
-                .map_err(map_db_err)?;
-            let mut rows = stmt.query(params![status, expires]).map_err(map_db_err)?;
-            while let Some(row) = rows.next().map_err(map_db_err)? {
+                .map_err(|err| map_db_err(&err))?;
+            let mut rows = stmt
+                .query(params![status, expires])
+                .map_err(|err| map_db_err(&err))?;
+            while let Some(row) = rows.next().map_err(|err| map_db_err(&err))? {
                 records.push(map_record(row)?);
             }
         }
@@ -306,7 +323,7 @@ fn ensure_schema(conn: &Connection) -> StorageResult<()> {
             PRIMARY KEY (content_id)
         );",
     )
-    .map_err(map_db_err)?;
+    .map_err(|err| map_db_err(&err))?;
     Ok(())
 }
 
@@ -322,15 +339,17 @@ fn compute_content_id(blob_kind: BlobKind, plaintext: &[u8]) -> ContentId {
 }
 
 fn map_record(row: &rusqlite::Row<'_>) -> StorageResult<CredentialRecord> {
-    let credential_id_bytes: Vec<u8> = row.get(0).map_err(map_db_err)?;
-    let issuer_schema_id: i64 = row.get(1).map_err(map_db_err)?;
-    let status_raw: i64 = row.get(2).map_err(map_db_err)?;
-    let subject_blinding_factor_bytes: Vec<u8> = row.get(3).map_err(map_db_err)?;
-    let genesis_issued_at: i64 = row.get(4).map_err(map_db_err)?;
-    let expires_at: Option<i64> = row.get(5).map_err(map_db_err)?;
-    let updated_at: i64 = row.get(6).map_err(map_db_err)?;
-    let credential_blob: Vec<u8> = row.get(7).map_err(map_db_err)?;
-    let associated_data: Option<Vec<u8>> = row.get(8).map_err(map_db_err)?;
+    let credential_id_bytes: Vec<u8> = row.get(0).map_err(|err| map_db_err(&err))?;
+    let issuer_schema_id: i64 = row.get(1).map_err(|err| map_db_err(&err))?;
+    let status_raw: i64 = row.get(2).map_err(|err| map_db_err(&err))?;
+    let subject_blinding_factor_bytes: Vec<u8> =
+        row.get(3).map_err(|err| map_db_err(&err))?;
+    let genesis_issued_at: i64 = row.get(4).map_err(|err| map_db_err(&err))?;
+    let expires_at: Option<i64> = row.get(5).map_err(|err| map_db_err(&err))?;
+    let updated_at: i64 = row.get(6).map_err(|err| map_db_err(&err))?;
+    let credential_blob: Vec<u8> = row.get(7).map_err(|err| map_db_err(&err))?;
+    let associated_data: Option<Vec<u8>> =
+        row.get(8).map_err(|err| map_db_err(&err))?;
 
     let credential_id = parse_fixed_bytes::<16>(&credential_id_bytes, "credential_id")?;
     let subject_blinding_factor = parse_fixed_bytes::<32>(
@@ -341,12 +360,14 @@ fn map_record(row: &rusqlite::Row<'_>) -> StorageResult<CredentialRecord> {
 
     Ok(CredentialRecord {
         credential_id,
-        issuer_schema_id: issuer_schema_id as u64,
+        issuer_schema_id: to_u64(issuer_schema_id, "issuer_schema_id")?,
         status,
         subject_blinding_factor,
-        genesis_issued_at: genesis_issued_at as u64,
-        expires_at: expires_at.map(|value| value as u64),
-        updated_at: updated_at as u64,
+        genesis_issued_at: to_u64(genesis_issued_at, "genesis_issued_at")?,
+        expires_at: expires_at
+            .map(|value| to_u64(value, "expires_at"))
+            .transpose()?,
+        updated_at: to_u64(updated_at, "updated_at")?,
         credential_blob,
         associated_data,
     })
@@ -367,7 +388,17 @@ fn parse_fixed_bytes<const N: usize>(
     Ok(out)
 }
 
-fn map_db_err(err: rusqlite::Error) -> StorageError {
+fn to_i64(value: u64, label: &str) -> StorageResult<i64> {
+    i64::try_from(value)
+        .map_err(|_| StorageError::VaultDb(format!("{label} out of range for i64: {value}")))
+}
+
+fn to_u64(value: i64, label: &str) -> StorageResult<u64> {
+    u64::try_from(value)
+        .map_err(|_| StorageError::VaultDb(format!("{label} out of range for u64: {value}")))
+}
+
+fn map_db_err(err: &rusqlite::Error) -> StorageError {
     StorageError::VaultDb(err.to_string())
 }
 
@@ -574,7 +605,7 @@ mod tests {
         let count: i64 = db
             .conn
             .query_row("SELECT COUNT(*) FROM blob_objects", [], |row| row.get(0))
-            .map_err(map_db_err)
+            .map_err(|err| map_db_err(&err))
             .expect("count blobs");
         assert_eq!(count, 1);
         cleanup_vault_files(&path);

@@ -4,24 +4,25 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::storage::error::StorageResult;
 
-use super::util::{expiry_timestamp, map_db_err, parse_fixed_bytes};
+use super::util::{expiry_timestamp, map_db_err, parse_fixed_bytes, to_i64};
 
 pub(super) fn get(
     conn: &Connection,
     rp_id: [u8; 32],
     now: u64,
 ) -> StorageResult<Option<[u8; 32]>> {
+    let now_i64 = to_i64(now, "now")?;
     let raw: Option<Vec<u8>> = conn
         .query_row(
             "SELECT k_session
              FROM session_keys
              WHERE rp_id = ?1
                AND expires_at > ?2",
-            params![rp_id.as_ref(), now as i64],
+            params![rp_id.as_ref(), now_i64],
             |row| row.get(0),
         )
         .optional()
-        .map_err(map_db_err)?;
+        .map_err(|err| map_db_err(&err))?;
     match raw {
         Some(bytes) => Ok(Some(parse_fixed_bytes::<32>(&bytes, "k_session")?)),
         None => Ok(None),
@@ -37,23 +38,25 @@ pub(super) fn put(
 ) -> StorageResult<()> {
     prune_expired(conn, now)?;
     let expires_at = expiry_timestamp(now, ttl_seconds);
+    let expires_at_i64 = to_i64(expires_at, "expires_at")?;
     conn.execute(
         "INSERT OR REPLACE INTO session_keys (
             rp_id,
             k_session,
             expires_at
          ) VALUES (?1, ?2, ?3)",
-        params![rp_id.as_ref(), k_session.as_ref(), expires_at as i64],
+        params![rp_id.as_ref(), k_session.as_ref(), expires_at_i64],
     )
-    .map_err(map_db_err)?;
+    .map_err(|err| map_db_err(&err))?;
     Ok(())
 }
 
 fn prune_expired(conn: &Connection, now: u64) -> StorageResult<()> {
+    let now_i64 = to_i64(now, "now")?;
     conn.execute(
         "DELETE FROM session_keys WHERE expires_at <= ?1",
-        params![now as i64],
+        params![now_i64],
     )
-    .map_err(map_db_err)?;
+    .map_err(|err| map_db_err(&err))?;
     Ok(())
 }

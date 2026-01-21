@@ -20,14 +20,15 @@ impl StorageLock {
     /// Returns an error if the file cannot be opened or created.
     pub fn open(path: &Path) -> StorageResult<Self> {
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(map_io_err)?;
+            fs::create_dir_all(parent).map_err(|err| map_io_err(&err))?;
         }
         let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
+            .truncate(false)
             .open(path)
-            .map_err(map_io_err)?;
+            .map_err(|err| map_io_err(&err))?;
         Ok(Self {
             file: Arc::new(file),
         })
@@ -39,7 +40,7 @@ impl StorageLock {
     ///
     /// Returns an error if the lock cannot be acquired.
     pub fn lock(&self) -> StorageResult<StorageLockGuard> {
-        lock_exclusive(&self.file).map_err(map_io_err)?;
+        lock_exclusive(&self.file).map_err(|err| map_io_err(&err))?;
         Ok(StorageLockGuard {
             file: Arc::clone(&self.file),
         })
@@ -52,11 +53,12 @@ impl StorageLock {
     /// Returns an error if the lock attempt fails for reasons other than
     /// the lock being held by another process.
     pub fn try_lock(&self) -> StorageResult<Option<StorageLockGuard>> {
-        match try_lock_exclusive(&self.file).map_err(map_io_err)? {
-            true => Ok(Some(StorageLockGuard {
+        if try_lock_exclusive(&self.file).map_err(|err| map_io_err(&err))? {
+            Ok(Some(StorageLockGuard {
                 file: Arc::clone(&self.file),
-            })),
-            false => Ok(None),
+            }))
+        } else {
+            Ok(None)
         }
     }
 }
@@ -73,7 +75,7 @@ impl Drop for StorageLockGuard {
     }
 }
 
-fn map_io_err(err: std::io::Error) -> StorageError {
+fn map_io_err(err: &std::io::Error) -> StorageError {
     StorageError::Lock(err.to_string())
 }
 
@@ -236,13 +238,13 @@ mod tests {
     fn test_lock_is_exclusive() {
         let path = temp_lock_path();
         let lock_a = StorageLock::open(&path).expect("open lock");
-        let _guard = lock_a.lock().expect("acquire lock");
+        let guard = lock_a.lock().expect("acquire lock");
 
         let lock_b = StorageLock::open(&path).expect("open lock");
         let blocked = lock_b.try_lock().expect("try lock");
         assert!(blocked.is_none());
 
-        drop(_guard);
+        drop(guard);
         let guard = lock_b.try_lock().expect("try lock");
         assert!(guard.is_some());
 
@@ -258,13 +260,12 @@ mod tests {
         let (release_tx, release_rx) = std::sync::mpsc::channel();
         let (released_tx, released_rx) = std::sync::mpsc::channel();
 
-        let lock_clone = lock.clone();
         let path_clone = path.clone();
         let thread_a = std::thread::spawn(move || {
-            let _guard = lock_clone.lock().expect("lock in thread");
+            let guard = lock.lock().expect("lock in thread");
             locked_tx.send(()).expect("signal locked");
             release_rx.recv().expect("wait release");
-            drop(_guard);
+            drop(guard);
             released_tx.send(()).expect("signal released");
             let _ = std::fs::remove_file(path_clone);
         });
