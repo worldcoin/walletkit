@@ -26,12 +26,11 @@ TESTS_PATH="$BASE_PATH/tests"
 SOURCES_PATH_NAME="/Sources/WalletKit/"
 
 echo -e "${BLUE}🔨 Step 1: Building Swift bindings${NC}"
-# Run the build_swift.sh script from parent directory
-# Must cd to the repository root first because build script expects to run from there
-cd "$BASE_PATH/.." && bash ./build_swift.sh
+# Run the build_swift.sh script
+bash "$BASE_PATH/build_swift.sh"
 
 # Check if the XCFramework was created
-if [ ! -d "$BASE_PATH/../WalletKit.xcframework" ]; then
+if [ ! -d "$BASE_PATH/WalletKit.xcframework" ]; then
     echo -e "${RED}✗ Failed to build XCFramework${NC}"
     exit 1
 fi
@@ -41,20 +40,13 @@ echo -e "${BLUE}📦 Step 2: Copying generated Swift files to test package${NC}"
 # Ensure the destination directory exists
 mkdir -p "$TESTS_PATH/$SOURCES_PATH_NAME"
 
-# Copy the generated Swift files to the test package
-if [ -f "$BASE_PATH/../Sources/WalletKit/walletkit.swift" ]; then
-    cp "$BASE_PATH/../Sources/WalletKit/walletkit.swift" "$TESTS_PATH/$SOURCES_PATH_NAME"
-    echo -e "${GREEN}✅ walletkit.swift copied to test package${NC}"
+# Copy the generated Swift file + supporting Swift sources to the test package
+if [ -f "$BASE_PATH/$SOURCES_PATH_NAME/walletkit.swift" ]; then
+    cp "$BASE_PATH/$SOURCES_PATH_NAME/walletkit.swift" "$TESTS_PATH/$SOURCES_PATH_NAME"
+    rsync -a "$BASE_PATH/$SOURCES_PATH_NAME"/*.swift "$TESTS_PATH/$SOURCES_PATH_NAME"/
+    echo -e "${GREEN}✅ Swift bindings copied to test package${NC}"
 else
-    echo -e "${RED}✗ Could not find generated Swift bindings at: $BASE_PATH/../Sources/WalletKit/walletkit.swift${NC}"
-    exit 1
-fi
-
-if [ -f "$BASE_PATH/../Sources/WalletKit/walletkit_core.swift" ]; then
-    cp "$BASE_PATH/../Sources/WalletKit/walletkit_core.swift" "$TESTS_PATH/$SOURCES_PATH_NAME"
-    echo -e "${GREEN}✅ walletkit_core.swift copied to test package${NC}"
-else
-    echo -e "${RED}✗ Could not find generated Swift bindings at: $BASE_PATH/../Sources/WalletKit/walletkit_core.swift${NC}"
+    echo -e "${RED}✗ Could not find generated Swift bindings at: $BASE_PATH/$SOURCES_PATH_NAME/walletkit.swift${NC}"
     exit 1
 fi
 
@@ -120,7 +112,6 @@ TEST_SUITES_FAILED=0
 
 if [ -f test_output.log ]; then
     echo "✅ Test results found in: test_output.log"
-
     # Count test cases - ensure we get valid integers
     TOTAL_TESTS=$(grep -c "Test Case.*started" test_output.log 2>/dev/null || echo "0")
     TOTAL_TESTS=${TOTAL_TESTS%%[^0-9]*}  # Remove any non-numeric characters
@@ -133,7 +124,6 @@ if [ -f test_output.log ]; then
     FAILED_TESTS=$(grep -c "Test Case.*failed" test_output.log 2>/dev/null || echo "0")
     FAILED_TESTS=${FAILED_TESTS%%[^0-9]*}
     FAILED_TESTS=${FAILED_TESTS:-0}
-
     # Count test suites - ensure we get valid integers
     TEST_SUITES_PASSED=$(grep -c "Test Suite.*passed" test_output.log 2>/dev/null || echo "0")
     TEST_SUITES_PASSED=${TEST_SUITES_PASSED%%[^0-9]*}
@@ -142,12 +132,10 @@ if [ -f test_output.log ]; then
     TEST_SUITES_FAILED=$(grep -c "Test Suite.*failed" test_output.log 2>/dev/null || echo "0")
     TEST_SUITES_FAILED=${TEST_SUITES_FAILED%%[^0-9]*}
     TEST_SUITES_FAILED=${TEST_SUITES_FAILED:-0}
-
     echo "📋 Total test cases: $TOTAL_TESTS"
     echo "✅ Tests passed: $PASSED_TESTS"
     echo "❌ Tests failed: $FAILED_TESTS"
     echo "⚠️  Test errors: 0"
-
     if [ "$TEST_SUITES_FAILED" -gt 0 ]; then
         echo "📦 Test suites failed: $TEST_SUITES_FAILED"
     fi
