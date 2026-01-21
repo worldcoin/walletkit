@@ -58,9 +58,7 @@ impl TryFrom<i64> for BlobKind {
         match value {
             1 => Ok(Self::CredentialBlob),
             2 => Ok(Self::AssociatedData),
-            _ => Err(StorageError::VaultDb(format!(
-                "invalid blob kind {value}"
-            ))),
+            _ => Err(StorageError::VaultDb(format!("invalid blob kind {value}"))),
         }
     }
 }

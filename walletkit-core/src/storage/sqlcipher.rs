@@ -68,6 +68,7 @@ pub(crate) fn configure_connection(conn: &Connection) -> SqlcipherResult<()> {
 
 /// Runs an integrity check.
 pub(crate) fn integrity_check(conn: &Connection) -> SqlcipherResult<bool> {
-    let result: String = conn.query_row("PRAGMA integrity_check;", [], |row| row.get(0))?;
+    let result: String =
+        conn.query_row("PRAGMA integrity_check;", [], |row| row.get(0))?;
     Ok(result.trim() == "ok")
 }

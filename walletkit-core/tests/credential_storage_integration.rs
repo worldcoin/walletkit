@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use chacha20poly1305::{
@@ -11,7 +11,7 @@ use rand::{rngs::OsRng, RngCore};
 use uuid::Uuid;
 
 use walletkit_core::storage::{
-    AtomicBlobStore, CredentialStorage, CredentialStore, CredentialStatus,
+    AtomicBlobStore, CredentialStatus, CredentialStorage, CredentialStore,
     DeviceKeystore, ProofDisclosureResult, StoragePaths, StorageProvider,
 };
 
@@ -96,14 +96,11 @@ impl AtomicBlobStore for InMemoryBlobStore {
         &self,
         path: String,
     ) -> Result<Option<Vec<u8>>, walletkit_core::storage::StorageError> {
-        let guard = self
-            .blobs
-            .lock()
-            .map_err(|_| {
-                walletkit_core::storage::StorageError::BlobStore(
-                    "mutex poisoned".to_string(),
-                )
-            })?;
+        let guard = self.blobs.lock().map_err(|_| {
+            walletkit_core::storage::StorageError::BlobStore(
+                "mutex poisoned".to_string(),
+            )
+        })?;
         Ok(guard.get(&path).cloned())
     }
 
@@ -212,8 +209,8 @@ fn test_storage_flow_end_to_end() {
     )
     .expect("store credential");
 
-    let records =
-        CredentialStorage::list_credentials(&store, None, 101).expect("list credentials");
+    let records = CredentialStorage::list_credentials(&store, None, 101)
+        .expect("list credentials");
     assert_eq!(records.len(), 1);
     let record = &records[0];
     assert_eq!(record.credential_id, credential_id);

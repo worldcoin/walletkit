@@ -31,9 +31,7 @@ impl StorageKeys {
         _lock: &StorageLockGuard,
         now: u64,
     ) -> StorageResult<Self> {
-        if let Some(bytes) =
-            blob_store.read(ACCOUNT_KEYS_FILENAME.to_string())?
-        {
+        if let Some(bytes) = blob_store.read(ACCOUNT_KEYS_FILENAME.to_string())? {
             let envelope = AccountKeyEnvelope::deserialize(&bytes)?;
             let k_intermediate_bytes = keystore.open_sealed(
                 ACCOUNT_KEY_ENVELOPE_AD.to_vec(),
@@ -45,8 +43,8 @@ impl StorageKeys {
             })
         } else {
             let k_intermediate = random_key();
-            let wrapped_k_intermediate =
-                keystore.seal(ACCOUNT_KEY_ENVELOPE_AD.to_vec(), k_intermediate.to_vec())?;
+            let wrapped_k_intermediate = keystore
+                .seal(ACCOUNT_KEY_ENVELOPE_AD.to_vec(), k_intermediate.to_vec())?;
             let envelope = AccountKeyEnvelope::new(wrapped_k_intermediate, now);
             let bytes = envelope.serialize()?;
             blob_store.write_atomic(ACCOUNT_KEYS_FILENAME.to_string(), bytes)?;
@@ -161,5 +159,4 @@ mod tests {
         }
         let _ = std::fs::remove_file(lock_path);
     }
-
 }

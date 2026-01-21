@@ -1,8 +1,8 @@
 use thiserror::Error;
 
+use crate::storage::StorageError;
 #[cfg(feature = "v4")]
 use world_id_core::AuthenticatorError;
-use crate::storage::StorageError;
 
 /// Error outputs from `WalletKit`
 #[derive(Debug, Error, uniffi::Error)]

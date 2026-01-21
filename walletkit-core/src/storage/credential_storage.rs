@@ -9,8 +9,8 @@ use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{
-    CredentialId, CredentialRecord, CredentialRecordFfi, CredentialStatus,
-    Nullifier, ProofDisclosureResult, ProofDisclosureResultFfi, RequestId,
+    CredentialId, CredentialRecord, CredentialRecordFfi, CredentialStatus, Nullifier,
+    ProofDisclosureResult, ProofDisclosureResultFfi, RequestId,
 };
 use super::{CacheDb, VaultDb};
 
@@ -99,7 +99,11 @@ impl CredentialStoreInner {
     /// Returns an error if the storage lock cannot be opened.
     pub fn from_provider(provider: &dyn StorageProvider) -> StorageResult<Self> {
         let paths = provider.paths();
-        Self::new(paths.as_ref().clone(), provider.keystore(), provider.blob_store())
+        Self::new(
+            paths.as_ref().clone(),
+            provider.keystore(),
+            provider.blob_store(),
+        )
     }
 
     /// Creates a new storage handle from explicit components.
@@ -148,11 +152,8 @@ impl CredentialStore {
         keystore: Arc<dyn DeviceKeystore>,
         blob_store: Arc<dyn AtomicBlobStore>,
     ) -> StorageResult<Self> {
-        let inner = CredentialStoreInner::new(
-            paths.as_ref().clone(),
-            keystore,
-            blob_store,
-        )?;
+        let inner =
+            CredentialStoreInner::new(paths.as_ref().clone(), keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
         })
@@ -210,19 +211,20 @@ impl CredentialStore {
         now: u64,
     ) -> StorageResult<Vec<u8>> {
         let mut inner = self.lock_inner()?;
-        let subject_blinding_factor =
-            parse_fixed_bytes::<32>(subject_blinding_factor, "subject_blinding_factor")?;
-        let credential_id =
-            inner.store_credential(
-                issuer_schema_id,
-                status,
-                subject_blinding_factor,
-                genesis_issued_at,
-                expires_at,
-                credential_blob,
-                associated_data,
-                now,
-            )?;
+        let subject_blinding_factor = parse_fixed_bytes::<32>(
+            subject_blinding_factor,
+            "subject_blinding_factor",
+        )?;
+        let credential_id = inner.store_credential(
+            issuer_schema_id,
+            status,
+            subject_blinding_factor,
+            genesis_issued_at,
+            expires_at,
+            credential_blob,
+            associated_data,
+            now,
+        )?;
         Ok(credential_id.to_vec())
     }
 
@@ -249,13 +251,7 @@ impl CredentialStore {
     ) -> StorageResult<()> {
         let mut inner = self.lock_inner()?;
         let root = parse_fixed_bytes::<32>(root, "root")?;
-        inner.merkle_cache_put(
-            registry_kind,
-            root,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
+        inner.merkle_cache_put(registry_kind, root, proof_bytes, now, ttl_seconds)
     }
 
     /// Enforces replay safety for proof disclosure.
@@ -520,13 +516,7 @@ impl CredentialStorage for CredentialStore {
         ttl_seconds: u64,
     ) -> StorageResult<()> {
         let mut inner = self.lock_inner()?;
-        inner.merkle_cache_put(
-            registry_kind,
-            root,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
+        inner.merkle_cache_put(registry_kind, root, proof_bytes, now, ttl_seconds)
     }
 
     fn begin_proof_disclosure(

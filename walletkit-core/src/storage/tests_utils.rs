@@ -1,6 +1,9 @@
 //! Test helpers for credential storage.
 
-use std::{collections::HashMap, sync::{Arc, Mutex}};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},

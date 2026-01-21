@@ -47,8 +47,10 @@ impl Authenticator {
         root: [u8; 32],
         now: u64,
         ttl_seconds: u64,
-    ) -> Result<(MerkleInclusionProof<TREE_DEPTH>, AuthenticatorPublicKeySet), WalletKitError>
-    {
+    ) -> Result<
+        (MerkleInclusionProof<TREE_DEPTH>, AuthenticatorPublicKeySet),
+        WalletKitError,
+    > {
         if let Some(bytes) = storage.merkle_cache_get(registry_kind, root, now)? {
             if let Some(cached) = deserialize_inclusion_proof(&bytes) {
                 return Ok((cached.proof, cached.authenticator_pubkeys));
@@ -84,18 +86,21 @@ impl Authenticator {
         now: u64,
         ttl_seconds: u64,
     ) -> Result<ProofDisclosureResult, WalletKitError> {
-        let (proof, nullifier) =
-            self.0.generate_proof(message_hash, rp_request, credential).await?;
+        let (proof, nullifier) = self
+            .0
+            .generate_proof(message_hash, rp_request, credential)
+            .await?;
         let proof_bytes = serialize_proof_package(&proof, nullifier)?;
         let nullifier_bytes = field_element_to_bytes(nullifier);
-        storage.begin_proof_disclosure(
-            request_id,
-            nullifier_bytes,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
-        .map_err(WalletKitError::from)
+        storage
+            .begin_proof_disclosure(
+                request_id,
+                nullifier_bytes,
+                proof_bytes,
+                now,
+                ttl_seconds,
+            )
+            .map_err(WalletKitError::from)
     }
 }
 
@@ -113,9 +118,7 @@ fn serialize_inclusion_proof(
     })
 }
 
-fn deserialize_inclusion_proof(
-    bytes: &[u8],
-) -> Option<CachedInclusionProof> {
+fn deserialize_inclusion_proof(bytes: &[u8]) -> Option<CachedInclusionProof> {
     bincode::deserialize(bytes).ok()
 }
 
@@ -138,7 +141,7 @@ fn serialize_proof_package(
 mod tests {
     use super::*;
     use crate::storage::tests_utils::InMemoryStorageProvider;
-    use crate::storage::{CredentialStore, CredentialStorage};
+    use crate::storage::{CredentialStorage, CredentialStore};
     use std::fs;
     use std::path::{Path, PathBuf};
     use uuid::Uuid;
