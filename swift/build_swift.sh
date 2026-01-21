@@ -12,6 +12,7 @@ BASE_PATH="$PROJECT_ROOT_PATH/swift" # The base path for the Swift build
 PACKAGE_NAME="walletkit"
 TARGET_DIR="$PROJECT_ROOT_PATH/target"
 FEATURES="v4"
+SUPPORT_SOURCES_DIR="$BASE_PATH/support"
 
 # Default values
 OUTPUT_DIR="$BASE_PATH" # Default to BASE_PATH if not provided
@@ -102,6 +103,11 @@ cargo run -p uniffi-bindgen --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" \
 
 # Move generated Swift file to Sources directory
 mv $BASE_PATH/ios_build/bindings/walletkit_core.swift ${SWIFT_SOURCES_DIR}/walletkit.swift
+
+# Copy support Swift sources for the WalletKit module.
+if [ -d "$SUPPORT_SOURCES_DIR" ]; then
+    rsync -a "$SUPPORT_SOURCES_DIR"/ "$SWIFT_SOURCES_DIR"/
+fi
 
 # Move headers
 mv $BASE_PATH/ios_build/bindings/walletkit_coreFFI.h $SWIFT_HEADERS_DIR/
