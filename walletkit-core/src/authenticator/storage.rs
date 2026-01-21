@@ -22,11 +22,12 @@ impl Authenticator {
         storage: &mut dyn CredentialStorage,
         now: u64,
     ) -> Result<(), WalletKitError> {
-        let leaf_index =
-            u64::try_from(self.leaf_index().0).map_err(|_| WalletKitError::InvalidInput {
+        let leaf_index = u64::try_from(self.leaf_index().0).map_err(|_| {
+            WalletKitError::InvalidInput {
                 attribute: "leaf_index".to_string(),
                 reason: "leaf index does not fit in u64".to_string(),
-            })?;
+            }
+        })?;
         storage.init(leaf_index, now)?;
         Ok(())
     }

@@ -10,6 +10,8 @@ set -e
 PROJECT_ROOT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_PATH="$PROJECT_ROOT_PATH/swift" # The base path for the Swift build
 PACKAGE_NAME="walletkit"
+TARGET_DIR="$PROJECT_ROOT_PATH/target"
+FEATURES="v4"
 
 # Default values
 OUTPUT_DIR="$BASE_PATH" # Default to BASE_PATH if not provided
@@ -67,15 +69,21 @@ export IPHONEOS_DEPLOYMENT_TARGET="13.0"
 export RUSTFLAGS="-C link-arg=-Wl,-application_extension"
 
 # Build for all iOS targets
-cargo build --package $PACKAGE_NAME --target aarch64-apple-ios-sim --release
-cargo build --package $PACKAGE_NAME --target aarch64-apple-ios --release
-cargo build --package $PACKAGE_NAME --target x86_64-apple-ios --release
+cargo build --package $PACKAGE_NAME --target aarch64-apple-ios-sim --release \
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
+  --features "$FEATURES"
+cargo build --package $PACKAGE_NAME --target aarch64-apple-ios --release \
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
+  --features "$FEATURES"
+cargo build --package $PACKAGE_NAME --target x86_64-apple-ios --release \
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
+  --features "$FEATURES"
 
 echo "Rust packages built. Combining simulator targets into universal binary..."
 
 # Create universal binary for simulators
-lipo -create target/aarch64-apple-ios-sim/release/lib${PACKAGE_NAME}.a \
-  target/x86_64-apple-ios/release/lib${PACKAGE_NAME}.a \
+lipo -create "$TARGET_DIR/aarch64-apple-ios-sim/release/lib${PACKAGE_NAME}.a" \
+  "$TARGET_DIR/x86_64-apple-ios/release/lib${PACKAGE_NAME}.a" \
   -output $BASE_PATH/ios_build/target/universal-ios-sim/release/lib${PACKAGE_NAME}.a
 
 lipo -info $BASE_PATH/ios_build/target/universal-ios-sim/release/lib${PACKAGE_NAME}.a
@@ -83,8 +91,9 @@ lipo -info $BASE_PATH/ios_build/target/universal-ios-sim/release/lib${PACKAGE_NA
 echo "Generating Swift bindings..."
 
 # Generate Swift bindings using uniffi
-cargo run -p uniffi-bindgen generate \
-  target/aarch64-apple-ios-sim/release/lib${PACKAGE_NAME}.dylib \
+cargo run -p uniffi-bindgen --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" \
+  --target-dir "$TARGET_DIR" -- generate \
+  "$TARGET_DIR/aarch64-apple-ios-sim/release/lib${PACKAGE_NAME}.dylib" \
   --library \
   --crate walletkit_core \
   --language swift \
@@ -102,7 +111,7 @@ echo "Creating XCFramework..."
 
 # Create XCFramework
 xcodebuild -create-xcframework \
-  -library target/aarch64-apple-ios/release/lib${PACKAGE_NAME}.a -headers $BASE_PATH/ios_build/Headers \
+  -library "$TARGET_DIR/aarch64-apple-ios/release/lib${PACKAGE_NAME}.a" -headers $BASE_PATH/ios_build/Headers \
   -library $BASE_PATH/ios_build/target/universal-ios-sim/release/lib${PACKAGE_NAME}.a -headers $BASE_PATH/ios_build/Headers \
   -output $FRAMEWORK_OUTPUT
 

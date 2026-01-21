@@ -26,9 +26,7 @@ pub(super) fn open_or_rebuild(
                 rebuild(path, k_intermediate)
             }
         }
-        Err(err) => {
-            rebuild(path, k_intermediate).map_or_else(|_| Err(err), Ok)
-        }
+        Err(err) => rebuild(path, k_intermediate).map_or_else(|_| Err(err), Ok),
     }
 }
 

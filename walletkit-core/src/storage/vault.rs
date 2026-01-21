@@ -95,11 +95,8 @@ impl VaultDb {
                         provided: leaf_index,
                     });
                 }
-                tx.execute(
-                    "UPDATE vault_meta SET updated_at = ?1",
-                    params![now_i64],
-                )
-                .map_err(|err| map_db_err(&err))?;
+                tx.execute("UPDATE vault_meta SET updated_at = ?1", params![now_i64])
+                    .map_err(|err| map_db_err(&err))?;
             }
         }
         tx.commit().map_err(|err| map_db_err(&err))?;
@@ -134,8 +131,9 @@ impl VaultDb {
         let now_i64 = to_i64(now, "now")?;
         let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
         let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
-        let expires_at_i64 =
-            expires_at.map(|value| to_i64(value, "expires_at")).transpose()?;
+        let expires_at_i64 = expires_at
+            .map(|value| to_i64(value, "expires_at"))
+            .transpose()?;
 
         let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
         tx.execute(
@@ -151,13 +149,9 @@ impl VaultDb {
         .map_err(|err| map_db_err(&err))?;
 
         if let Some(data) = associated_data {
-            let cid = associated_data_id
-                .as_ref()
-                .ok_or_else(|| {
-                    StorageError::VaultDb(
-                        "associated data CID must be present".to_string(),
-                    )
-                })?;
+            let cid = associated_data_id.as_ref().ok_or_else(|| {
+                StorageError::VaultDb("associated data CID must be present".to_string())
+            })?;
             tx.execute(
                 "INSERT OR IGNORE INTO blob_objects (content_id, blob_kind, created_at, bytes)
                  VALUES (?1, ?2, ?3, ?4)",
@@ -215,8 +209,7 @@ impl VaultDb {
         let status = CredentialStatus::Active.as_i64();
         let expires = to_i64(now, "now")?;
         if let Some(issuer_schema_id) = issuer_schema_id {
-            let issuer_schema_id_i64 =
-                to_i64(issuer_schema_id, "issuer_schema_id")?;
+            let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
             let mut stmt = self
                 .conn
                 .prepare(
@@ -389,13 +382,15 @@ fn parse_fixed_bytes<const N: usize>(
 }
 
 fn to_i64(value: u64, label: &str) -> StorageResult<i64> {
-    i64::try_from(value)
-        .map_err(|_| StorageError::VaultDb(format!("{label} out of range for i64: {value}")))
+    i64::try_from(value).map_err(|_| {
+        StorageError::VaultDb(format!("{label} out of range for i64: {value}"))
+    })
 }
 
 fn to_u64(value: i64, label: &str) -> StorageResult<u64> {
-    u64::try_from(value)
-        .map_err(|_| StorageError::VaultDb(format!("{label} out of range for u64: {value}")))
+    u64::try_from(value).map_err(|_| {
+        StorageError::VaultDb(format!("{label} out of range for u64: {value}"))
+    })
 }
 
 fn map_db_err(err: &rusqlite::Error) -> StorageError {

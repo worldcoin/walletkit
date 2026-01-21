@@ -229,9 +229,7 @@ impl CredentialStore {
         issuer_schema_id: Option<u64>,
         now: u64,
     ) -> StorageResult<Vec<CredentialRecordFfi>> {
-        let records = self
-            .lock_inner()?
-            .list_credentials(issuer_schema_id, now)?;
+        let records = self.lock_inner()?.list_credentials(issuer_schema_id, now)?;
         Ok(records.into_iter().map(CredentialRecordFfi::from).collect())
     }
 
@@ -252,8 +250,10 @@ impl CredentialStore {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<Vec<u8>> {
-        let subject_blinding_factor =
-            parse_fixed_bytes::<32>(subject_blinding_factor, "subject_blinding_factor")?;
+        let subject_blinding_factor = parse_fixed_bytes::<32>(
+            subject_blinding_factor,
+            "subject_blinding_factor",
+        )?;
         let credential_id = self.lock_inner()?.store_credential(
             issuer_schema_id,
             status,
@@ -279,7 +279,8 @@ impl CredentialStore {
         now: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
         let root = parse_fixed_bytes::<32>(root, "root")?;
-        self.lock_inner()?.merkle_cache_get(registry_kind, root, now)
+        self.lock_inner()?
+            .merkle_cache_get(registry_kind, root, now)
     }
 
     /// Inserts a cached Merkle proof with a TTL.
@@ -296,8 +297,13 @@ impl CredentialStore {
         ttl_seconds: u64,
     ) -> StorageResult<()> {
         let root = parse_fixed_bytes::<32>(root, "root")?;
-        self.lock_inner()?
-            .merkle_cache_put(registry_kind, root, proof_bytes, now, ttl_seconds)
+        self.lock_inner()?.merkle_cache_put(
+            registry_kind,
+            root,
+            proof_bytes,
+            now,
+            ttl_seconds,
+        )
     }
 
     /// Enforces replay safety for proof disclosure.
