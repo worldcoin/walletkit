@@ -12,6 +12,17 @@ target/
 # Swift build outputs are not committed to this repo.
 WalletKit.xcframework/
 Sources/
+swift/WalletKit.xcframework/
+swift/Sources/
+swift/ios_build/
+swift/local_build/
+swift/tests/Sources/
+swift/tests/.build/
+
+# Kotlin bindings and native libs
+kotlin/libs/
+kotlin/walletkit-android/src/main/java/uniffi/
+kotlin/walletkit-tests/build/
 
 .build/
 
@@ -20,5 +31,9 @@ Sources/
 # forge
 cache/
 **/out/build-info
+
+# Allow storage cache module sources.
+!walletkit-core/src/storage/cache/
+!walletkit-core/src/storage/cache/**
 
 # NOTE: Cargo.lock is not ignored because it is used for FFI builds (Swift & Kotlin)
