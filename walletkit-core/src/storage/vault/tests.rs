@@ -1,5 +1,5 @@
-use super::*;
 use super::helpers::{compute_content_id, map_db_err};
+use super::*;
 use crate::storage::lock::StorageLock;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -54,8 +54,7 @@ fn test_vault_wrong_key_fails() {
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
     VaultDb::new(&path, key, &guard).expect("create vault");
-    let err = VaultDb::new(&path, [0x02u8; 32], &guard)
-        .expect_err("wrong key");
+    let err = VaultDb::new(&path, [0x02u8; 32], &guard).expect_err("wrong key");
     match err {
         StorageError::VaultDb(_) | StorageError::CorruptedVault(_) => {}
         _ => panic!("unexpected error: {err}"),
@@ -70,8 +69,7 @@ fn test_leaf_index_set_once() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x03u8; 32], &guard)
-        .expect("create vault");
+    let mut db = VaultDb::new(&path, [0x03u8; 32], &guard).expect("create vault");
     db.init_leaf_index(&guard, 42, 100)
         .expect("init leaf index");
     db.init_leaf_index(&guard, 42, 200)
@@ -86,8 +84,7 @@ fn test_leaf_index_immutable() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x04u8; 32], &guard)
-        .expect("create vault");
+    let mut db = VaultDb::new(&path, [0x04u8; 32], &guard).expect("create vault");
     db.init_leaf_index(&guard, 7, 100).expect("init leaf index");
     let err = db.init_leaf_index(&guard, 8, 200).expect_err("mismatch");
     match err {
@@ -104,8 +101,7 @@ fn test_store_credential_without_associated_data() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x05u8; 32], &guard)
-        .expect("create vault");
+    let mut db = VaultDb::new(&path, [0x05u8; 32], &guard).expect("create vault");
     let credential_id = db
         .store_credential(
             &guard,
@@ -133,8 +129,7 @@ fn test_store_credential_with_associated_data() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x06u8; 32], &guard)
-        .expect("create vault");
+    let mut db = VaultDb::new(&path, [0x06u8; 32], &guard).expect("create vault");
     db.store_credential(
         &guard,
         11,
@@ -170,8 +165,7 @@ fn test_content_id_deduplication() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x07u8; 32], &guard)
-        .expect("create vault");
+    let mut db = VaultDb::new(&path, [0x07u8; 32], &guard).expect("create vault");
     db.store_credential(
         &guard,
         12,
@@ -212,8 +206,7 @@ fn test_list_credentials_by_issuer() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x08u8; 32], &guard)
-        .expect("create vault");
+    let mut db = VaultDb::new(&path, [0x08u8; 32], &guard).expect("create vault");
     db.store_credential(
         &guard,
         100,
@@ -253,8 +246,7 @@ fn test_list_credentials_excludes_expired() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x09u8; 32], &guard)
-        .expect("create vault");
+    let mut db = VaultDb::new(&path, [0x09u8; 32], &guard).expect("create vault");
     db.store_credential(
         &guard,
         300,
@@ -279,8 +271,7 @@ fn test_vault_integrity_check() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let db = VaultDb::new(&path, [0x0Au8; 32], &guard)
-        .expect("create vault");
+    let db = VaultDb::new(&path, [0x0Au8; 32], &guard).expect("create vault");
     assert!(db.check_integrity().expect("integrity"));
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);

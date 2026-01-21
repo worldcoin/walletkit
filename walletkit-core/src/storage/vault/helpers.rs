@@ -3,16 +3,11 @@ use sha2::{Digest, Sha256};
 
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::sqlcipher::SqlcipherError;
-use crate::storage::types::{
-    BlobKind, ContentId, CredentialRecord, CredentialStatus,
-};
+use crate::storage::types::{BlobKind, ContentId, CredentialRecord, CredentialStatus};
 
 const CONTENT_ID_PREFIX: &[u8] = b"worldid:blob";
 
-pub(super) fn compute_content_id(
-    blob_kind: BlobKind,
-    plaintext: &[u8],
-) -> ContentId {
+pub(super) fn compute_content_id(blob_kind: BlobKind, plaintext: &[u8]) -> ContentId {
     let mut hasher = Sha256::new();
     hasher.update(CONTENT_ID_PREFIX);
     hasher.update([blob_kind as u8]);
@@ -23,30 +18,20 @@ pub(super) fn compute_content_id(
     out
 }
 
-pub(super) fn map_record(
-    row: &Row<'_>,
-) -> StorageResult<CredentialRecord> {
-    let credential_id_bytes: Vec<u8> =
-        row.get(0).map_err(|err| map_db_err(&err))?;
-    let issuer_schema_id: i64 =
-        row.get(1).map_err(|err| map_db_err(&err))?;
-    let status_raw: i64 =
-        row.get(2).map_err(|err| map_db_err(&err))?;
+pub(super) fn map_record(row: &Row<'_>) -> StorageResult<CredentialRecord> {
+    let credential_id_bytes: Vec<u8> = row.get(0).map_err(|err| map_db_err(&err))?;
+    let issuer_schema_id: i64 = row.get(1).map_err(|err| map_db_err(&err))?;
+    let status_raw: i64 = row.get(2).map_err(|err| map_db_err(&err))?;
     let subject_blinding_factor_bytes: Vec<u8> =
         row.get(3).map_err(|err| map_db_err(&err))?;
-    let genesis_issued_at: i64 =
-        row.get(4).map_err(|err| map_db_err(&err))?;
-    let expires_at: Option<i64> =
-        row.get(5).map_err(|err| map_db_err(&err))?;
-    let updated_at: i64 =
-        row.get(6).map_err(|err| map_db_err(&err))?;
-    let credential_blob: Vec<u8> =
-        row.get(7).map_err(|err| map_db_err(&err))?;
+    let genesis_issued_at: i64 = row.get(4).map_err(|err| map_db_err(&err))?;
+    let expires_at: Option<i64> = row.get(5).map_err(|err| map_db_err(&err))?;
+    let updated_at: i64 = row.get(6).map_err(|err| map_db_err(&err))?;
+    let credential_blob: Vec<u8> = row.get(7).map_err(|err| map_db_err(&err))?;
     let associated_data: Option<Vec<u8>> =
         row.get(8).map_err(|err| map_db_err(&err))?;
 
-    let credential_id =
-        parse_fixed_bytes::<16>(&credential_id_bytes, "credential_id")?;
+    let credential_id = parse_fixed_bytes::<16>(&credential_id_bytes, "credential_id")?;
     let subject_blinding_factor = parse_fixed_bytes::<32>(
         &subject_blinding_factor_bytes,
         "subject_blinding_factor",

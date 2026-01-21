@@ -15,8 +15,7 @@ use super::lock::StorageLockGuard;
 use super::sqlcipher;
 use super::types::{BlobKind, CredentialId, CredentialRecord, CredentialStatus};
 use helpers::{
-    compute_content_id, map_db_err, map_record, map_sqlcipher_err, to_i64,
-    to_u64,
+    compute_content_id, map_db_err, map_record, map_sqlcipher_err, to_i64, to_u64,
 };
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 
@@ -134,8 +133,7 @@ impl VaultDb {
             .map(|bytes| compute_content_id(BlobKind::AssociatedData, bytes));
         let now_i64 = to_i64(now, "now")?;
         let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
-        let genesis_issued_at_i64 =
-            to_i64(genesis_issued_at, "genesis_issued_at")?;
+        let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
         let expires_at_i64 = expires_at
             .map(|value| to_i64(value, "expires_at"))
             .transpose()?;
@@ -155,9 +153,7 @@ impl VaultDb {
 
         if let Some(data) = associated_data {
             let cid = associated_data_id.as_ref().ok_or_else(|| {
-                StorageError::VaultDb(
-                    "associated data CID must be present".to_string(),
-                )
+                StorageError::VaultDb("associated data CID must be present".to_string())
             })?;
             tx.execute(
                 "INSERT OR IGNORE INTO blob_objects (content_id, blob_kind, created_at, bytes)
@@ -216,8 +212,7 @@ impl VaultDb {
         let status = CredentialStatus::Active.as_i64();
         let expires = to_i64(now, "now")?;
         if let Some(issuer_schema_id) = issuer_schema_id {
-            let issuer_schema_id_i64 =
-                to_i64(issuer_schema_id, "issuer_schema_id")?;
+            let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
             let mut stmt = self
                 .conn
                 .prepare(

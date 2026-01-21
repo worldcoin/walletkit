@@ -1,3 +1,5 @@
+#[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
+use alloy::primitives::Address;
 use alloy::{
     node_bindings::AnvilInstance,
     primitives::{address, U256},
@@ -7,14 +9,12 @@ use alloy::{
     sol_types::SolValue,
 };
 #[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
-use alloy::primitives::Address;
-#[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
 use chrono::{Days, Utc};
+#[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
+use walletkit_core::common_apps::AddressBook;
 use walletkit_core::{
     proof::ProofContext, world_id::WorldId, CredentialType, Environment,
 };
-#[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
-use walletkit_core::common_apps::AddressBook;
 
 sol!(
     #[allow(missing_docs)]
