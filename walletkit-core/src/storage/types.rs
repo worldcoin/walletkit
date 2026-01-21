@@ -121,29 +121,29 @@ pub struct CredentialRecordFfi {
     pub associated_data: Option<Vec<u8>>,
 }
 
-/// Result of proof disclosure enforcement.
+/// Result of replay guard enforcement.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProofDisclosureResult {
+pub enum ReplayGuardResult {
     /// Stored bytes for the first disclosure of a request.
     Fresh(Vec<u8>),
     /// Stored bytes replayed for an existing request.
     Replay(Vec<u8>),
 }
 
-/// FFI-friendly proof disclosure result kind.
+/// FFI-friendly replay guard result kind.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
-pub enum ProofDisclosureKind {
+pub enum ReplayGuardKind {
     /// Stored bytes for the first disclosure of a request.
     Fresh,
     /// Stored bytes replayed for an existing request.
     Replay,
 }
 
-/// FFI-friendly proof disclosure result.
+/// FFI-friendly replay guard result.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct ProofDisclosureResultFfi {
+pub struct ReplayGuardResultFfi {
     /// Result kind.
-    pub kind: ProofDisclosureKind,
+    pub kind: ReplayGuardKind,
     /// Stored proof package bytes.
     pub bytes: Vec<u8>,
 }
@@ -164,15 +164,15 @@ impl From<CredentialRecord> for CredentialRecordFfi {
     }
 }
 
-impl From<ProofDisclosureResult> for ProofDisclosureResultFfi {
-    fn from(result: ProofDisclosureResult) -> Self {
+impl From<ReplayGuardResult> for ReplayGuardResultFfi {
+    fn from(result: ReplayGuardResult) -> Self {
         match result {
-            ProofDisclosureResult::Fresh(bytes) => Self {
-                kind: ProofDisclosureKind::Fresh,
+            ReplayGuardResult::Fresh(bytes) => Self {
+                kind: ReplayGuardKind::Fresh,
                 bytes,
             },
-            ProofDisclosureResult::Replay(bytes) => Self {
-                kind: ProofDisclosureKind::Replay,
+            ReplayGuardResult::Replay(bytes) => Self {
+                kind: ReplayGuardKind::Replay,
                 bytes,
             },
         }

@@ -10,7 +10,7 @@ use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{
     CredentialId, CredentialRecord, CredentialRecordFfi, CredentialStatus, Nullifier,
-    ProofDisclosureResult, ProofDisclosureResultFfi, RequestId,
+    ReplayGuardResult, ReplayGuardResultFfi, RequestId,
 };
 use super::{CacheDb, VaultDb};
 
@@ -78,12 +78,12 @@ pub trait CredentialStorage {
         ttl_seconds: u64,
     ) -> StorageResult<()>;
 
-    /// Checks for a prior disclosure by request id.
+    /// Checks for a prior replay guard entry by request id.
     ///
     /// # Errors
     ///
     /// Returns an error if the cache lookup fails.
-    fn proof_disclosure_get(
+    fn replay_guard_get(
         &self,
         request_id: RequestId,
         now: u64,
@@ -95,14 +95,14 @@ pub trait CredentialStorage {
     ///
     /// Returns an error if the nullifier is already disclosed or the cache
     /// operation fails.
-    fn begin_proof_disclosure(
+    fn begin_replay_guard(
         &mut self,
         request_id: RequestId,
         nullifier: Nullifier,
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
-    ) -> StorageResult<ProofDisclosureResult>;
+    ) -> StorageResult<ReplayGuardResult>;
 }
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
@@ -317,18 +317,18 @@ impl CredentialStore {
         )
     }
 
-    /// Checks for a prior disclosure by request id.
+    /// Checks for a prior replay guard entry by request id.
     ///
     /// # Errors
     ///
     /// Returns an error if the cache lookup fails.
-    pub fn proof_disclosure_get(
+    pub fn replay_guard_get(
         &self,
         request_id: Vec<u8>,
         now: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
         let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
-        self.lock_inner()?.proof_disclosure_get(request_id, now)
+        self.lock_inner()?.replay_guard_get(request_id, now)
     }
 
     /// Enforces replay safety for proof disclosure.
@@ -336,24 +336,24 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the disclosure conflicts or storage fails.
-    pub fn begin_proof_disclosure(
+    pub fn begin_replay_guard(
         &self,
         request_id: Vec<u8>,
         nullifier: Vec<u8>,
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
-    ) -> StorageResult<ProofDisclosureResultFfi> {
+    ) -> StorageResult<ReplayGuardResultFfi> {
         let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
         let nullifier = parse_fixed_bytes::<32>(nullifier, "nullifier")?;
-        let result = self.lock_inner()?.begin_proof_disclosure(
+        let result = self.lock_inner()?.begin_replay_guard(
             request_id,
             nullifier,
             proof_bytes,
             now,
             ttl_seconds,
         )?;
-        Ok(ProofDisclosureResultFfi::from(result))
+        Ok(ReplayGuardResultFfi::from(result))
     }
 }
 
@@ -477,26 +477,26 @@ impl CredentialStorage for CredentialStoreInner {
         )
     }
 
-    fn proof_disclosure_get(
+    fn replay_guard_get(
         &self,
         request_id: RequestId,
         now: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
         let state = self.state()?;
-        state.cache.proof_disclosure_get(request_id, now)
+        state.cache.replay_guard_get(request_id, now)
     }
 
-    fn begin_proof_disclosure(
+    fn begin_replay_guard(
         &mut self,
         request_id: RequestId,
         nullifier: Nullifier,
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
-    ) -> StorageResult<ProofDisclosureResult> {
+    ) -> StorageResult<ReplayGuardResult> {
         let guard = self.guard()?;
         let state = self.state_mut()?;
-        state.cache.begin_proof_disclosure(
+        state.cache.begin_replay_guard(
             &guard,
             request_id,
             nullifier,
@@ -608,25 +608,25 @@ impl CredentialStorage for CredentialStore {
         inner.merkle_cache_put(registry_kind, root, proof_bytes, now, ttl_seconds)
     }
 
-    fn proof_disclosure_get(
+    fn replay_guard_get(
         &self,
         request_id: RequestId,
         now: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
         let inner = self.lock_inner()?;
-        inner.proof_disclosure_get(request_id, now)
+        inner.replay_guard_get(request_id, now)
     }
 
-    fn begin_proof_disclosure(
+    fn begin_replay_guard(
         &mut self,
         request_id: RequestId,
         nullifier: Nullifier,
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
-    ) -> StorageResult<ProofDisclosureResult> {
+    ) -> StorageResult<ReplayGuardResult> {
         let mut inner = self.lock_inner()?;
-        inner.begin_proof_disclosure(
+        inner.begin_replay_guard(
             request_id,
             nullifier,
             proof_bytes,

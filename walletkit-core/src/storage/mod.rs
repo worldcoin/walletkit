@@ -21,8 +21,8 @@ pub use paths::StoragePaths;
 pub use traits::{AtomicBlobStore, DeviceKeystore, StorageProvider};
 pub use types::{
     BlobKind, ContentId, CredentialId, CredentialRecord, CredentialRecordFfi,
-    CredentialStatus, Nullifier, ProofDisclosureKind, ProofDisclosureResult,
-    ProofDisclosureResultFfi, RequestId,
+    CredentialStatus, Nullifier, ReplayGuardKind, ReplayGuardResult,
+    ReplayGuardResultFfi, RequestId,
 };
 pub use vault::VaultDb;
 

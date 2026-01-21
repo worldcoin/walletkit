@@ -6,7 +6,7 @@ use rusqlite::Connection;
 
 use crate::storage::error::StorageResult;
 use crate::storage::lock::StorageLockGuard;
-use crate::storage::types::ProofDisclosureResult;
+use crate::storage::types::ReplayGuardResult;
 
 mod maintenance;
 mod merkle;
@@ -113,12 +113,12 @@ impl CacheDb {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub fn proof_disclosure_get(
+    pub fn replay_guard_get(
         &self,
         request_id: [u8; 32],
         now: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
-        nullifiers::proof_bytes_for_request_id(&self.conn, request_id, now)
+        nullifiers::replay_guard_bytes_for_request_id(&self.conn, request_id, now)
     }
 
     /// Enforces replay safety for proof disclosure.
@@ -126,7 +126,7 @@ impl CacheDb {
     /// # Errors
     ///
     /// Returns an error if the disclosure conflicts with an existing nullifier.
-    pub fn begin_proof_disclosure(
+    pub fn begin_replay_guard(
         &mut self,
         _lock: &StorageLockGuard,
         request_id: [u8; 32],
@@ -134,8 +134,8 @@ impl CacheDb {
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
-    ) -> StorageResult<ProofDisclosureResult> {
-        nullifiers::begin_proof_disclosure(
+    ) -> StorageResult<ReplayGuardResult> {
+        nullifiers::begin_replay_guard(
             &mut self.conn,
             request_id,
             nullifier,
@@ -260,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn test_disclosure_replay_returns_original_bytes() {
+    fn test_replay_guard_replay_returns_original_bytes() {
         let path = temp_cache_path();
         let key = [0x77u8; 32];
         let lock_path = temp_lock_path();
@@ -273,7 +273,7 @@ mod tests {
         let second = vec![9, 9, 9];
 
         let fresh = db
-            .begin_proof_disclosure(
+            .begin_replay_guard(
                 &guard,
                 request_id,
                 nullifier,
@@ -282,18 +282,18 @@ mod tests {
                 1000,
             )
             .expect("first disclosure");
-        assert_eq!(fresh, ProofDisclosureResult::Fresh(first.clone()));
+        assert_eq!(fresh, ReplayGuardResult::Fresh(first.clone()));
 
         let replay = db
-            .begin_proof_disclosure(&guard, request_id, nullifier, second, 101, 1000)
+            .begin_replay_guard(&guard, request_id, nullifier, second, 101, 1000)
             .expect("replay disclosure");
-        assert_eq!(replay, ProofDisclosureResult::Replay(first));
+        assert_eq!(replay, ReplayGuardResult::Replay(first));
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }
 
     #[test]
-    fn test_disclosure_request_id_lookup() {
+    fn test_replay_guard_request_id_lookup() {
         let path = temp_cache_path();
         let key = [0x66u8; 32];
         let lock_path = temp_lock_path();
@@ -304,16 +304,16 @@ mod tests {
         let nullifier = [0x44u8; 32];
         let payload = vec![4, 5, 6];
 
-        db.begin_proof_disclosure(&guard, request_id, nullifier, payload.clone(), 100, 10)
+        db.begin_replay_guard(&guard, request_id, nullifier, payload.clone(), 100, 10)
             .expect("disclosure");
 
         let hit = db
-            .proof_disclosure_get(request_id, 105)
+            .replay_guard_get(request_id, 105)
             .expect("lookup");
         assert_eq!(hit, Some(payload));
 
         let miss = db
-            .proof_disclosure_get(request_id, 111)
+            .replay_guard_get(request_id, 111)
             .expect("lookup");
         assert!(miss.is_none());
         cleanup_cache_files(&path);
@@ -321,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn test_disclosure_nullifier_conflict_errors() {
+    fn test_replay_guard_nullifier_conflict_errors() {
         let path = temp_cache_path();
         let key = [0x88u8; 32];
         let lock_path = temp_lock_path();
@@ -332,11 +332,11 @@ mod tests {
         let request_id_b = [0x02u8; 32];
         let nullifier = [0x03u8; 32];
 
-        db.begin_proof_disclosure(&guard, request_id_a, nullifier, vec![4], 100, 1000)
+        db.begin_replay_guard(&guard, request_id_a, nullifier, vec![4], 100, 1000)
             .expect("first disclosure");
 
         let err = db
-            .begin_proof_disclosure(&guard, request_id_b, nullifier, vec![5], 101, 1000)
+            .begin_replay_guard(&guard, request_id_b, nullifier, vec![5], 101, 1000)
             .expect_err("nullifier conflict");
         match err {
             StorageError::NullifierAlreadyDisclosed => {}
@@ -347,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    fn test_disclosure_expiry_allows_new_insert() {
+    fn test_replay_guard_expiry_allows_new_insert() {
         let path = temp_cache_path();
         let key = [0x99u8; 32];
         let lock_path = temp_lock_path();
@@ -358,13 +358,13 @@ mod tests {
         let request_id_b = [0x0Bu8; 32];
         let nullifier = [0x0Cu8; 32];
 
-        db.begin_proof_disclosure(&guard, request_id_a, nullifier, vec![7], 100, 10)
+        db.begin_replay_guard(&guard, request_id_a, nullifier, vec![7], 100, 10)
             .expect("first disclosure");
 
         let fresh = db
-            .begin_proof_disclosure(&guard, request_id_b, nullifier, vec![8], 111, 10)
+            .begin_replay_guard(&guard, request_id_b, nullifier, vec![8], 111, 10)
             .expect("second disclosure after expiry");
-        assert_eq!(fresh, ProofDisclosureResult::Fresh(vec![8]));
+        assert_eq!(fresh, ReplayGuardResult::Fresh(vec![8]));
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }
