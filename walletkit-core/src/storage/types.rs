@@ -69,7 +69,7 @@ pub type ContentId = [u8; 32];
 /// Credential identifier.
 pub type CredentialId = [u8; 16];
 
-/// Request identifier for proof disclosure.
+/// Request identifier for replay guard.
 pub type RequestId = [u8; 32];
 
 /// Nullifier identifier used for replay safety.

@@ -121,7 +121,7 @@ impl CacheDb {
         nullifiers::replay_guard_bytes_for_request_id(&self.conn, request_id, now)
     }
 
-    /// Enforces replay safety for proof disclosure.
+    /// Enforces replay safety for replay guard.
     ///
     /// # Errors
     ///

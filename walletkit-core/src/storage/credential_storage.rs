@@ -89,7 +89,7 @@ pub trait CredentialStorage {
         now: u64,
     ) -> StorageResult<Option<Vec<u8>>>;
 
-    /// Enforces replay safety for proof disclosure.
+    /// Enforces replay safety for replay guard.
     ///
     /// # Errors
     ///
@@ -331,7 +331,7 @@ impl CredentialStore {
         self.lock_inner()?.replay_guard_get(request_id, now)
     }
 
-    /// Enforces replay safety for proof disclosure.
+    /// Enforces replay safety for replay guard.
     ///
     /// # Errors
     ///
