@@ -2,7 +2,7 @@
 // Note this is separate from the build.gradle used for building and publishing the actual library.
 
 plugins {
-    kotlin("jvm") version "1.9.22"
+    kotlin("jvm")
 }
 
 repositories {
