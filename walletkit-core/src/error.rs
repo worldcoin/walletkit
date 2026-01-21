@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::storage::StorageError;
 #[cfg(feature = "v4")]
 use world_id_core::AuthenticatorError;
 
@@ -102,6 +103,14 @@ impl From<reqwest::Error> for WalletKitError {
 impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     fn from(error: semaphore_rs::protocol::ProofError) -> Self {
         Self::ProofGeneration {
+            error: error.to_string(),
+        }
+    }
+}
+
+impl From<StorageError> for WalletKitError {
+    fn from(error: StorageError) -> Self {
+        Self::Generic {
             error: error.to_string(),
         }
     }
