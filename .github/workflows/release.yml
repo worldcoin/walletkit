@@ -52,7 +52,7 @@ jobs:
     runs-on: macos-latest
     needs: pre-release-checks
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout code
@@ -60,13 +60,19 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
+          components: rustfmt
 
       - name: Build the project (iOS)
         run: ./build_swift.sh
+
+      - name: Compress XCFramework binary
+        run: |
+          zip -r WalletKit.xcframework.zip WalletKit.xcframework
 
       - name: Checkout swift repo
         uses: actions/checkout@v4
@@ -75,31 +81,55 @@ jobs:
           token: ${{ secrets.WALLETKIT_BOT_TOKEN }}
           path: target-repo
 
+      - name: Create draft release in walletkit-swift & upload binaries
+        uses: softprops/action-gh-release@v2
+        id: release
+        with:
+          repository: worldcoin/walletkit-swift
+          name: ${{ needs.pre-release-checks.outputs.new_version }}
+          tag_name: ${{ needs.pre-release-checks.outputs.new_version }}
+          make_latest: false
+          draft: true
+          fail_on_unmatched_files: true
+          files: WalletKit.xcframework.zip
+          token: ${{ secrets.WALLETKIT_BOT_TOKEN }}
+
+      - name: Get metadata
+        id: meta
+        run: |
+          ASSET_URL="${{ fromJSON(steps.release.outputs.assets)[0].url }}.zip"
+          echo "asset_url=${ASSET_URL}" >> $GITHUB_OUTPUT
+
+          CHECKSUM=$(swift package compute-checksum WalletKit.xcframework.zip)
+          echo "checksum=${CHECKSUM}" >> $GITHUB_OUTPUT
+
       - name: Commit swift build
         env:
           GITHUB_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
-        run: |
-          cp -r WalletKit.xcframework target-repo/
-          cp -r Sources/ target-repo/Sources
-          cp Package.swift target-repo/
-          echo "// Release version: ${{ needs.pre-release-checks.outputs.new_version }}" >> target-repo/Package.swift
+          ASSET_URL: ${{ steps.meta.outputs.asset_url }}
+          CHECKSUM: ${{ steps.meta.outputs.checksum }}
+          NEW_VERSION: ${{ needs.pre-release-checks.outputs.new_version }}
 
+        run: |
+          # Copy non-binary source files
+          cp -r Sources/ target-repo/Sources
+
+          # Prepare Package.swift
+          brew install swiftlint
+          ./archive_swift.sh --asset-url "$ASSET_URL" --checksum "$CHECKSUM" --release-version "$NEW_VERSION"
+          cp Package.swift target-repo/
+
+          # Commit changes
           cd target-repo
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-
-          # TODO: Move away from Git LFS which doesn't work well with Swift Package Manager
-          # Initialize Git LFS and track the large files
-          git lfs install
-          git lfs track "*.a"
-
           git add .
-          git commit -m "Release ${{ needs.pre-release-checks.outputs.new_version }}"
+          git commit -m "Release $NEW_VERSION"
 
           # Tag the release
-          git tag ${{ needs.pre-release-checks.outputs.new_version }}
+          git tag $NEW_VERSION
           git push
-          git push origin ${{ needs.pre-release-checks.outputs.new_version }}
+          git push origin $NEW_VERSION
 
   prepare-kotlin:
     name: Prepare Kotlin
@@ -124,10 +154,12 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
           targets: ${{ matrix.settings.target }}
+          components: rustfmt
 
       - name: Install Cross
         run: |
@@ -158,10 +190,12 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
+          components: rustfmt
 
       - name: Setup Java
         uses: actions/setup-java@v3
@@ -234,9 +268,10 @@ jobs:
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
 
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth

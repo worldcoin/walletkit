@@ -3,6 +3,12 @@ target/
 **/ios_build
 .swiftpm/
 
+# IDE
+.idea
+*.iml
+.vscode
+*/settings.json
+
 # Swift build outputs are not committed to this repo.
 WalletKit.xcframework/
 Sources/
@@ -16,6 +22,8 @@ swift/tests/.build/
 # Kotlin bindings and native libs
 kotlin/libs/
 kotlin/walletkit-android/src/main/java/uniffi/
+
+.build/
 
 .env
 

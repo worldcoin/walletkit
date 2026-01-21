@@ -1,3 +1,17 @@
+[build.env]
+passthrough = [
+    "CARGO_NET_GIT_FETCH_WITH_CLI=true", # to force cargo to use git cli with config --global in homedir
+    "HOME",                              # set $HOME to shared dir where we put .gitconfig
+    "RUSTUP_HOME",                       # override rustup home to prevent host permission issues
+    "CARGO_HOME",                        # override cargo home to prevent host permission issues
+]
+# max-page-size=16384:
+# Android 15 (API 35) introduces support for 16KB page sizes to improve performance on devices with larger RAM.
+# Apps with native libraries MUST be compiled with 16KB ELF alignment or they will crash on startup
+# on devices configured with 16KB page sizes. This flag ensures proper alignment for both 32-bit and 64-bit targets.
+# Reference: https://developer.android.com/guide/practices/page-sizes
+RUSTFLAGS = "-C link-arg=-Wl,-z,max-page-size=16384"
+
 [build]
 pre-build = [
     "dpkg --add-architecture $CROSS_DEB_ARCH",

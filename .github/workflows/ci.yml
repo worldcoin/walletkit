@@ -19,9 +19,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
           components: clippy,rustfmt
 
       - name: Check code formatting
@@ -30,9 +31,9 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features
 
-  swift-build:
-    name: Test Swift Build
-    runs-on: macos-latest
+  swift-build-and-test:
+    name: Swift Build & Foreign Binding Tests
+    runs-on: macos-14
     permissions:
       contents: read
 
@@ -40,13 +41,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.92.0
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
 
-      - name: Build the project (iOS)
-        run: ./build_swift.sh
+      # Ensure a specific Xcode version is selected to match available simulators
+      - name: Select Xcode 16.2
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.2"
+
+      - name: Run Swift foreign binding tests
+        run: ./swift/test_swift.sh
 
   test:
     name: Tests
@@ -59,15 +67,16 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.86 # MSRV
+          - 1.92.0 # MSRV
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: ${{ matrix.rust }}
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
@@ -100,7 +109,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - uses: EmbarkStudios/cargo-deny-action@v1
+      - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check ${{ matrix.checks }}
           rust-version: stable

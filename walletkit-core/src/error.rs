@@ -135,7 +135,7 @@ impl From<AuthenticatorError> for WalletKitError {
             AuthenticatorError::GatewayError { status, body } => Self::NetworkError {
                 url: "gateway".to_string(),
                 error: body,
-                status: Some(status),
+                status: Some(status.as_u16()),
             },
             AuthenticatorError::PrimitiveError(error) => {
                 use world_id_core::primitives::PrimitiveError;

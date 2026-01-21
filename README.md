@@ -28,13 +28,51 @@ WalletKit's bindings for Kotlin are distributed through GitHub packages.
 ```kotlin
 dependencies {
     /// ...
-    implementation "org.world:walletkit:VERSION"
+    implementation "org.world:walletkit-android:VERSION"
 }
 ```
 
 Replace `VERSION` with the desired WalletKit version.
 
 2. Sync Gradle.
+
+## Local development (Android/Kotlin)
+
+### Prerequisites
+
+1. **Docker Desktop**: Required for cross-compilation
+   - The build uses [`cross`](https://github.com/cross-rs/cross) which runs builds in Docker containers with all necessary toolchains
+   - Install via Homebrew:
+     ```bash
+     brew install --cask docker
+     ```
+   - Launch Docker Desktop and ensure it's running before building
+
+2. **Android SDK + NDK**: Required for Gradle Android tasks
+   - Install via Android Studio > Settings > Android SDK (ensure the NDK is installed)
+   - Set `sdk.dir` (and `ndk.dir` if needed) in `kotlin/local.properties`
+
+3. **Protocol Buffers compiler**:
+   ```bash
+   brew install protobuf
+   ```
+
+### Building and publishing
+
+To test local changes before publishing a release, use the build script to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
+
+```bash
+./build_android_local.sh 0.3.1-SNAPSHOT
+```
+
+> **Note**: The script sets `RUSTUP_HOME` and `CARGO_HOME` to `/tmp` by default to avoid Docker permission issues when using `cross`. You can override them by exporting your own values.
+
+This will:
+1. Build the Rust library for all Android architectures (arm64-v8a, armeabi-v7a, x86_64, x86)
+2. Generate Kotlin UniFFI bindings
+3. Publish to `~/.m2/repository/org/world/walletkit-android/`
+
+In your consuming project, ensure `mavenLocal()` is included in your repositories and update your dependency version to the SNAPSHOT version (e.g., `0.3.1-SNAPSHOT`).
 
 ## Overview
 

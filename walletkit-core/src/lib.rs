@@ -55,7 +55,7 @@ pub mod storage;
 #[cfg(feature = "v4")]
 mod authenticator;
 #[cfg(feature = "v4")]
-pub use authenticator::Authenticator;
+pub use authenticator::{Authenticator, InitializingAuthenticator, RegistrationStatus};
 
 #[cfg(feature = "v4")]
 pub(crate) mod defaults;

@@ -59,11 +59,11 @@ rm -rf .build
 rm -rf ~/Library/Developer/Xcode/DerivedData/WalletKitForeignTestPackage-*
 
 # Find an available iPhone simulator
-SIMULATOR_ID=$(xcrun simctl list devices available | grep "iPhone 16" | head -1 | grep -o "[0-9A-F\\-]*" | tail -1)
+SIMULATOR_ID=$(xcrun simctl list devices available | grep "iPhone 16" | head -1 | grep -o "[0-9A-F\-]*" | tail -1)
 
 if [ -z "$SIMULATOR_ID" ]; then
     # Try any available iPhone
-    SIMULATOR_ID=$(xcrun simctl list devices available | grep "iPhone" | head -1 | grep -o "[0-9A-F\\-]*" | tail -1)
+    SIMULATOR_ID=$(xcrun simctl list devices available | grep "iPhone" | head -1 | grep -o "[0-9A-F\-]*" | tail -1)
 fi
 
 if [ -z "$SIMULATOR_ID" ]; then
@@ -112,34 +112,30 @@ TEST_SUITES_FAILED=0
 
 if [ -f test_output.log ]; then
     echo "✅ Test results found in: test_output.log"
-    
     # Count test cases - ensure we get valid integers
     TOTAL_TESTS=$(grep -c "Test Case.*started" test_output.log 2>/dev/null || echo "0")
     TOTAL_TESTS=${TOTAL_TESTS%%[^0-9]*}  # Remove any non-numeric characters
     TOTAL_TESTS=${TOTAL_TESTS:-0}        # Default to 0 if empty
-    
+
     PASSED_TESTS=$(grep -c "Test Case.*passed" test_output.log 2>/dev/null || echo "0")
     PASSED_TESTS=${PASSED_TESTS%%[^0-9]*}
     PASSED_TESTS=${PASSED_TESTS:-0}
-    
+
     FAILED_TESTS=$(grep -c "Test Case.*failed" test_output.log 2>/dev/null || echo "0")
     FAILED_TESTS=${FAILED_TESTS%%[^0-9]*}
     FAILED_TESTS=${FAILED_TESTS:-0}
-    
     # Count test suites - ensure we get valid integers
     TEST_SUITES_PASSED=$(grep -c "Test Suite.*passed" test_output.log 2>/dev/null || echo "0")
     TEST_SUITES_PASSED=${TEST_SUITES_PASSED%%[^0-9]*}
     TEST_SUITES_PASSED=${TEST_SUITES_PASSED:-0}
-    
+
     TEST_SUITES_FAILED=$(grep -c "Test Suite.*failed" test_output.log 2>/dev/null || echo "0")
     TEST_SUITES_FAILED=${TEST_SUITES_FAILED%%[^0-9]*}
     TEST_SUITES_FAILED=${TEST_SUITES_FAILED:-0}
-    
     echo "📋 Total test cases: $TOTAL_TESTS"
     echo "✅ Tests passed: $PASSED_TESTS"
     echo "❌ Tests failed: $FAILED_TESTS"
     echo "⚠️  Test errors: 0"
-    
     if [ "$TEST_SUITES_FAILED" -gt 0 ]; then
         echo "📦 Test suites failed: $TEST_SUITES_FAILED"
     fi
