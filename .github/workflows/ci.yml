@@ -152,7 +152,7 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check ${{ matrix.checks }}
-          rust-version: stable
+          rust-version: 1.92.0
 
   docs:
     name: Check docs
