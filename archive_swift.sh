@@ -77,11 +77,11 @@ let package = Package(
     targets: [
         .target(
             name: "WalletKit",
-            dependencies: ["walletkit_FFI"],
+            dependencies: ["walletkit_coreFFI"],
             path: "Sources/WalletKit"
         ),
         .binaryTarget(
-            name: "walletkit_FFI",
+            name: "walletkit_coreFFI",
             url: "$ASSET_URL",
             checksum: "$CHECKSUM"
         )

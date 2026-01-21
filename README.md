@@ -4,6 +4,18 @@ Part of the [World ID SDK](https://docs.world.org/world-id).
 
 WalletKit can be used as a Rust crate, or directly as a Swift or Android package. WalletKit includes foreign bindings for direct usage in Swift/Kotlin through [UniFFI](https://github.com/mozilla/uniffi-rs).
 
+## 🧱 Local Development & Contributing
+
+Review our [CONTRIBUTING](CONTRIBUTING.md) guide. Including details on how to run this project locally.
+
+## 🐦‍🔥 Swift Bindings
+
+WalletKit ships with foreign bindings for native Swift. All details can be found in the [/swift](./swift/README.md) folder.
+
+## 🧬 Kotlin Bindings
+
+WalletKit ships with foreign bindings for native Kotlin. All details can be found in the [/kotlin](./kotlin/README.md) folder.
+
 ## Installation
 
 **To use WalletKit in another Rust project:**
@@ -57,7 +69,19 @@ Replace `VERSION` with the desired WalletKit version.
    brew install protobuf
    ```
 
-### Building and publishing
+### Build Kotlin bindings
+
+```bash
+./kotlin/build_kotlin.sh
+```
+
+### Run foreign tests
+
+```bash
+./kotlin/test_kotlin.sh
+```
+
+### Publishing Android locally
 
 To test local changes before publishing a release, use the build script to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
 
