@@ -9,8 +9,8 @@ final class AuthenticatorTests: XCTestCase {
 
     func generateRandomSeed() -> Data {
         var bytes = [UInt8](repeating: 0, count: 32)
-        for i in 0..<32 {
-            bytes[i] = UInt8.random(in: 0...255)
+        for index in 0..<32 {
+            bytes[index] = UInt8.random(in: 0...255)
         }
         return Data(bytes)
     }
