@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
 use world_id_core::primitives::merkle::MerkleInclusionProof;
 use world_id_core::primitives::TREE_DEPTH;
-use world_id_core::{types::RpRequest, Credential, FieldElement};
+use world_id_core::{requests::ProofRequest, Credential, FieldElement};
 
 use crate::error::WalletKitError;
 use crate::storage::{CredentialStorage, ProofDisclosureResult, RequestId};
@@ -12,26 +12,17 @@ use crate::storage::{CredentialStorage, ProofDisclosureResult, RequestId};
 use super::Authenticator;
 
 impl Authenticator {
-    /// Returns the leaf index for the holder's World ID account.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the leaf index does not fit in a `u64`.
-    pub fn leaf_index(&self) -> Result<u64, WalletKitError> {
-        let value = self.0.account_id();
-        u64::try_from(value).map_err(|_| WalletKitError::InvalidInput {
-            attribute: "leaf_index".to_string(),
-            reason: "leaf index does not fit in u64".to_string(),
-        })
-    }
-
     /// Initializes storage using the authenticator's leaf index.
     pub fn init_storage(
         &self,
         storage: &mut dyn CredentialStorage,
         now: u64,
     ) -> Result<(), WalletKitError> {
-        let leaf_index = self.leaf_index()?;
+        let leaf_index =
+            u64::try_from(self.leaf_index().0).map_err(|_| WalletKitError::InvalidInput {
+                attribute: "leaf_index".to_string(),
+                reason: "leaf index does not fit in u64".to_string(),
+            })?;
         storage.init(leaf_index, now)?;
         Ok(())
     }
@@ -79,16 +70,16 @@ impl Authenticator {
     pub async fn generate_proof_with_disclosure(
         &self,
         storage: &mut dyn CredentialStorage,
-        message_hash: FieldElement,
-        rp_request: RpRequest,
+        proof_request: ProofRequest,
         credential: Credential,
+        credential_sub_blinding_factor: FieldElement,
         request_id: RequestId,
         now: u64,
         ttl_seconds: u64,
     ) -> Result<ProofDisclosureResult, WalletKitError> {
         let (proof, nullifier) = self
             .0
-            .generate_proof(message_hash, rp_request, credential)
+            .generate_proof(proof_request, credential, credential_sub_blinding_factor)
             .await?;
         let proof_bytes = serialize_proof_package(&proof, nullifier)?;
         let nullifier_bytes = field_element_to_bytes(nullifier);
@@ -141,7 +132,7 @@ fn serialize_proof_package(
 mod tests {
     use super::*;
     use crate::storage::tests_utils::InMemoryStorageProvider;
-    use crate::storage::{CredentialStorage, CredentialStore};
+    use crate::storage::CredentialStore;
     use std::fs;
     use std::path::{Path, PathBuf};
     use uuid::Uuid;
@@ -172,7 +163,7 @@ mod tests {
     fn test_cached_inclusion_round_trip() {
         let root = temp_root();
         let provider = InMemoryStorageProvider::new(&root);
-        let mut store = CredentialStore::from_provider(&provider).expect("store");
+        let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
 
         let siblings = [FieldElement::from(0u64); TREE_DEPTH];
@@ -187,14 +178,14 @@ mod tests {
         let root_bytes = field_element_to_bytes(proof.root);
 
         store
-            .merkle_cache_put(1, root_bytes, payload_bytes, 100, 60)
+            .merkle_cache_put(1, root_bytes.to_vec(), payload_bytes, 100, 60)
             .expect("cache put");
         let cached = store
-            .merkle_cache_get(1, root_bytes, 110)
+            .merkle_cache_get(1, root_bytes.to_vec(), 110)
             .expect("cache get")
             .expect("cache hit");
         let decoded = deserialize_inclusion_proof(&cached).expect("decode");
-        assert_eq!(decoded.proof.account_id, 42);
+        assert_eq!(decoded.proof.leaf_index, 42);
         assert_eq!(decoded.proof.root, root_fe);
         assert_eq!(decoded.authenticator_pubkeys.len(), 0);
         cleanup_storage(&root);
