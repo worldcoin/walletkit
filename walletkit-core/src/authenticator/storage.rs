@@ -92,6 +92,12 @@ impl Authenticator {
         now: u64,
         ttl_seconds: u64,
     ) -> Result<ProofDisclosureResult, WalletKitError> {
+        if let Some(bytes) = storage
+            .proof_disclosure_get(request_id, now)
+            .map_err(WalletKitError::from)?
+        {
+            return Ok(ProofDisclosureResult::Replay(bytes));
+        }
         let (proof, nullifier) = self
             .0
             .generate_proof(proof_request, credential, credential_sub_blinding_factor)

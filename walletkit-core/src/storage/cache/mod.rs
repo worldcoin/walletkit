@@ -108,6 +108,19 @@ impl CacheDb {
         session::put(&self.conn, rp_id, k_session, now, ttl_seconds)
     }
 
+    /// Checks for a prior disclosure by request id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn proof_disclosure_get(
+        &self,
+        request_id: [u8; 32],
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        nullifiers::proof_bytes_for_request_id(&self.conn, request_id, now)
+    }
+
     /// Enforces replay safety for proof disclosure.
     ///
     /// # Errors
@@ -275,6 +288,34 @@ mod tests {
             .begin_proof_disclosure(&guard, request_id, nullifier, second, 101, 1000)
             .expect("replay disclosure");
         assert_eq!(replay, ProofDisclosureResult::Replay(first));
+        cleanup_cache_files(&path);
+        cleanup_lock_file(&lock_path);
+    }
+
+    #[test]
+    fn test_disclosure_request_id_lookup() {
+        let path = temp_cache_path();
+        let key = [0x66u8; 32];
+        let lock_path = temp_lock_path();
+        let lock = StorageLock::open(&lock_path).expect("open lock");
+        let guard = lock.lock().expect("lock");
+        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
+        let request_id = [0x55u8; 32];
+        let nullifier = [0x44u8; 32];
+        let payload = vec![4, 5, 6];
+
+        db.begin_proof_disclosure(&guard, request_id, nullifier, payload.clone(), 100, 10)
+            .expect("disclosure");
+
+        let hit = db
+            .proof_disclosure_get(request_id, 105)
+            .expect("lookup");
+        assert_eq!(hit, Some(payload));
+
+        let miss = db
+            .proof_disclosure_get(request_id, 111)
+            .expect("lookup");
+        assert!(miss.is_none());
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }

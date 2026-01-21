@@ -241,6 +241,9 @@ fn test_storage_flow_end_to_end() {
     )
     .expect("disclose");
     assert_eq!(fresh, ProofDisclosureResult::Fresh(vec![1, 2]));
+    let cached = CredentialStorage::proof_disclosure_get(&store, request_id, 210)
+        .expect("disclosure lookup");
+    assert_eq!(cached, Some(vec![1, 2]));
     let replay = CredentialStorage::begin_proof_disclosure(
         &mut store,
         request_id,

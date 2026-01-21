@@ -78,6 +78,17 @@ pub trait CredentialStorage {
         ttl_seconds: u64,
     ) -> StorageResult<()>;
 
+    /// Checks for a prior disclosure by request id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache lookup fails.
+    fn proof_disclosure_get(
+        &self,
+        request_id: RequestId,
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>>;
+
     /// Enforces replay safety for proof disclosure.
     ///
     /// # Errors
@@ -306,6 +317,20 @@ impl CredentialStore {
         )
     }
 
+    /// Checks for a prior disclosure by request id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache lookup fails.
+    pub fn proof_disclosure_get(
+        &self,
+        request_id: Vec<u8>,
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
+        self.lock_inner()?.proof_disclosure_get(request_id, now)
+    }
+
     /// Enforces replay safety for proof disclosure.
     ///
     /// # Errors
@@ -452,6 +477,15 @@ impl CredentialStorage for CredentialStoreInner {
         )
     }
 
+    fn proof_disclosure_get(
+        &self,
+        request_id: RequestId,
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        let state = self.state()?;
+        state.cache.proof_disclosure_get(request_id, now)
+    }
+
     fn begin_proof_disclosure(
         &mut self,
         request_id: RequestId,
@@ -572,6 +606,15 @@ impl CredentialStorage for CredentialStore {
     ) -> StorageResult<()> {
         let mut inner = self.lock_inner()?;
         inner.merkle_cache_put(registry_kind, root, proof_bytes, now, ttl_seconds)
+    }
+
+    fn proof_disclosure_get(
+        &self,
+        request_id: RequestId,
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        let inner = self.lock_inner()?;
+        inner.proof_disclosure_get(request_id, now)
     }
 
     fn begin_proof_disclosure(

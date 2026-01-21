@@ -7,6 +7,24 @@ use crate::storage::types::ProofDisclosureResult;
 
 use super::util::{expiry_timestamp, map_db_err, to_i64};
 
+pub(super) fn proof_bytes_for_request_id(
+    conn: &Connection,
+    request_id: [u8; 32],
+    now: u64,
+) -> StorageResult<Option<Vec<u8>>> {
+    let now_i64 = to_i64(now, "now")?;
+    conn.query_row(
+        "SELECT proof_bytes
+         FROM used_nullifiers
+         WHERE request_id = ?1
+           AND expires_at > ?2",
+        params![request_id.as_ref(), now_i64],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|err| map_db_err(&err))
+}
+
 pub(super) fn begin_proof_disclosure(
     conn: &mut Connection,
     request_id: [u8; 32],
