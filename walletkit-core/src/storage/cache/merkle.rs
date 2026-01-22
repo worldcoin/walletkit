@@ -11,10 +11,10 @@ pub(super) fn get(
     registry_kind: u8,
     root: [u8; 32],
     leaf_index: u64,
-    now: u64,
+    valid_before: u64,
 ) -> StorageResult<Option<Vec<u8>>> {
     let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
-    let now_i64 = to_i64(now, "now")?;
+    let valid_before_i64 = to_i64(valid_before, "valid_before")?;
     let proof = conn
         .query_row(
             "SELECT proof_bytes
@@ -27,7 +27,7 @@ pub(super) fn get(
                 i64::from(registry_kind),
                 root.as_ref(),
                 leaf_index_i64,
-                now_i64
+                valid_before_i64
             ],
             |row| row.get(0),
         )

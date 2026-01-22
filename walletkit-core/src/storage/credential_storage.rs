@@ -52,7 +52,7 @@ pub trait CredentialStorage {
         now: u64,
     ) -> StorageResult<CredentialId>;
 
-    /// Fetches a cached Merkle proof if available.
+    /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
     ///
     /// # Errors
     ///
@@ -61,7 +61,7 @@ pub trait CredentialStorage {
         &self,
         registry_kind: u8,
         root: [u8; 32],
-        now: u64,
+        valid_before: u64,
     ) -> StorageResult<Option<Vec<u8>>>;
 
     /// Inserts a cached Merkle proof with a TTL.
@@ -278,7 +278,7 @@ impl CredentialStore {
         Ok(credential_id.to_vec())
     }
 
-    /// Fetches a cached Merkle proof if available.
+    /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
     ///
     /// # Errors
     ///
@@ -287,11 +287,11 @@ impl CredentialStore {
         &self,
         registry_kind: u8,
         root: Vec<u8>,
-        now: u64,
+        valid_before: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
         let root = parse_fixed_bytes::<32>(root, "root")?;
         self.lock_inner()?
-            .merkle_cache_get(registry_kind, root, now)
+            .merkle_cache_get(registry_kind, root, valid_before)
     }
 
     /// Inserts a cached Merkle proof with a TTL.
@@ -448,12 +448,12 @@ impl CredentialStorage for CredentialStoreInner {
         &self,
         registry_kind: u8,
         root: [u8; 32],
-        now: u64,
+        valid_before: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
         let state = self.state()?;
         state
             .cache
-            .merkle_cache_get(registry_kind, root, state.leaf_index, now)
+            .merkle_cache_get(registry_kind, root, state.leaf_index, valid_before)
     }
 
     fn merkle_cache_put(
@@ -590,10 +590,10 @@ impl CredentialStorage for CredentialStore {
         &self,
         registry_kind: u8,
         root: [u8; 32],
-        now: u64,
+        valid_before: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
         let inner = self.lock_inner()?;
-        inner.merkle_cache_get(registry_kind, root, now)
+        inner.merkle_cache_get(registry_kind, root, valid_before)
     }
 
     fn merkle_cache_put(

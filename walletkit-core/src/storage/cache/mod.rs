@@ -36,7 +36,7 @@ impl CacheDb {
         Ok(Self { conn })
     }
 
-    /// Fetches a cached Merkle proof if available.
+    /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
     ///
     /// # Errors
     ///
@@ -46,9 +46,9 @@ impl CacheDb {
         registry_kind: u8,
         root: [u8; 32],
         leaf_index: u64,
-        now: u64,
+        valid_before: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
-        merkle::get(&self.conn, registry_kind, root, leaf_index, now)
+        merkle::get(&self.conn, registry_kind, root, leaf_index, valid_before)
     }
 
     /// Inserts a cached Merkle proof with a TTL.
@@ -227,8 +227,9 @@ mod tests {
         let root = [0xABu8; 32];
         db.merkle_cache_put(&guard, 1, root, 42, vec![1, 2, 3], 100, 10)
             .expect("put merkle proof");
+        let valid_before = 105;
         let hit = db
-            .merkle_cache_get(1, root, 42, 105)
+            .merkle_cache_get(1, root, 42, valid_before)
             .expect("get merkle proof");
         assert!(hit.is_some());
         let miss = db

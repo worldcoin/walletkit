@@ -11,6 +11,9 @@ use crate::storage::{CredentialStorage, ReplayGuardResult, RequestId};
 
 use super::Authenticator;
 
+/// Buffer cached proofs to remain valid during on-chain verification.
+const MERKLE_PROOF_VALIDITY_BUFFER_SECS: u64 = 120;
+
 impl Authenticator {
     /// Initializes storage using the authenticator's leaf index.
     ///
@@ -52,7 +55,8 @@ impl Authenticator {
         (MerkleInclusionProof<TREE_DEPTH>, AuthenticatorPublicKeySet),
         WalletKitError,
     > {
-        if let Some(bytes) = storage.merkle_cache_get(registry_kind, root, now)? {
+        let valid_before = now.saturating_add(MERKLE_PROOF_VALIDITY_BUFFER_SECS);
+        if let Some(bytes) = storage.merkle_cache_get(registry_kind, root, valid_before)? {
             if let Some(cached) = deserialize_inclusion_proof(&bytes) {
                 return Ok((cached.proof, cached.authenticator_pubkeys));
             }
@@ -201,8 +205,9 @@ mod tests {
         store
             .merkle_cache_put(1, root_bytes.to_vec(), payload_bytes, 100, 60)
             .expect("cache put");
+        let valid_before = 110;
         let cached = store
-            .merkle_cache_get(1, root_bytes.to_vec(), 110)
+            .merkle_cache_get(1, root_bytes.to_vec(), valid_before)
             .expect("cache get")
             .expect("cache hit");
         let decoded = deserialize_inclusion_proof(&cached).expect("decode");

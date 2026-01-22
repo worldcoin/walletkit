@@ -222,7 +222,8 @@ fn test_storage_flow_end_to_end() {
     let root_bytes = [0xAAu8; 32];
     CredentialStorage::merkle_cache_put(&mut store, 1, root_bytes, vec![9, 9], 100, 10)
         .expect("cache put");
-    let hit = CredentialStorage::merkle_cache_get(&store, 1, root_bytes, 105)
+    let valid_before = 105;
+    let hit = CredentialStorage::merkle_cache_get(&store, 1, root_bytes, valid_before)
         .expect("cache get");
     assert_eq!(hit, Some(vec![9, 9]));
     let miss = CredentialStorage::merkle_cache_get(&store, 1, root_bytes, 111)
