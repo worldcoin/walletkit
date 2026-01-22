@@ -48,7 +48,6 @@ pub(super) fn put(
     prune_expired(conn, now)?;
     let expires_at = expiry_timestamp(now, ttl_seconds);
     let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
-    let now_i64 = to_i64(now, "now")?;
     let expires_at_i64 = to_i64(expires_at, "expires_at")?;
     conn.execute(
         "INSERT OR REPLACE INTO merkle_proof_cache (
@@ -58,13 +57,12 @@ pub(super) fn put(
             proof_bytes,
             inserted_at,
             expires_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+         ) VALUES (?1, ?2, ?3, ?4, strftime('%s','now'), ?5)",
         params![
             i64::from(registry_kind),
             root.as_ref(),
             leaf_index_i64,
             proof_bytes,
-            now_i64,
             expires_at_i64
         ],
     )

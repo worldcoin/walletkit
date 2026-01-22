@@ -52,6 +52,7 @@ impl CacheDb {
     }
 
     /// Inserts a cached Merkle proof with a TTL.
+    /// Uses the database current time for `inserted_at`.
     ///
     /// # Errors
     ///
