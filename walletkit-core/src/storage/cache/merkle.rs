@@ -45,7 +45,7 @@ pub(super) fn put(
     now: u64,
     ttl_seconds: u64,
 ) -> StorageResult<()> {
-    prune_expired(conn, now)?;
+    prune_expired(conn)?;
     let expires_at = expiry_timestamp(now, ttl_seconds);
     let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
     let expires_at_i64 = to_i64(expires_at, "expires_at")?;
@@ -70,11 +70,11 @@ pub(super) fn put(
     Ok(())
 }
 
-fn prune_expired(conn: &Connection, now: u64) -> StorageResult<()> {
-    let now_i64 = to_i64(now, "now")?;
+fn prune_expired(conn: &Connection) -> StorageResult<()> {
     conn.execute(
-        "DELETE FROM merkle_proof_cache WHERE expires_at <= ?1",
-        params![now_i64],
+        "DELETE FROM merkle_proof_cache
+         WHERE expires_at <= CAST(strftime('%s','now') AS INTEGER)",
+        [],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
