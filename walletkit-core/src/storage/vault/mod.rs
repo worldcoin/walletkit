@@ -7,7 +7,7 @@ mod tests;
 
 use std::path::Path;
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 use uuid::Uuid;
 
 use super::error::{StorageError, StorageResult};
@@ -63,44 +63,33 @@ impl VaultDb {
         let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
         let now_i64 = to_i64(now, "now")?;
         let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
-        let existing = tx
-            .query_row("SELECT leaf_index FROM vault_meta LIMIT 1", [], |row| {
-                row.get::<_, Option<i64>>(0)
-            })
-            .optional()
+        let stored = tx
+            .query_row(
+                "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?3)
+                 ON CONFLICT(schema_version) DO UPDATE SET
+                     leaf_index = CASE
+                         WHEN vault_meta.leaf_index IS NULL
+                         THEN excluded.leaf_index
+                         ELSE vault_meta.leaf_index
+                     END,
+                     updated_at = CASE
+                         WHEN vault_meta.leaf_index IS NULL
+                           OR vault_meta.leaf_index = excluded.leaf_index
+                         THEN excluded.updated_at
+                         ELSE vault_meta.updated_at
+                     END
+                 RETURNING leaf_index",
+                params![VAULT_SCHEMA_VERSION, leaf_index_i64, now_i64],
+                |row| row.get::<_, i64>(0),
+            )
             .map_err(|err| map_db_err(&err))?;
-        match existing {
-            None => {
-                tx.execute(
-                    "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4)",
-                    params![
-                        VAULT_SCHEMA_VERSION,
-                        leaf_index_i64,
-                        now_i64,
-                        now_i64
-                    ],
-                )
-                .map_err(|err| map_db_err(&err))?;
-            }
-            Some(None) => {
-                tx.execute(
-                    "UPDATE vault_meta SET leaf_index = ?1, updated_at = ?2",
-                    params![leaf_index_i64, now_i64],
-                )
-                .map_err(|err| map_db_err(&err))?;
-            }
-            Some(Some(stored)) => {
-                if stored != leaf_index_i64 {
-                    let expected = to_u64(stored, "leaf_index")?;
-                    return Err(StorageError::InvalidLeafIndex {
-                        expected,
-                        provided: leaf_index,
-                    });
-                }
-                tx.execute("UPDATE vault_meta SET updated_at = ?1", params![now_i64])
-                    .map_err(|err| map_db_err(&err))?;
-            }
+        if stored != leaf_index_i64 {
+            let expected = to_u64(stored, "leaf_index")?;
+            return Err(StorageError::InvalidLeafIndex {
+                expected,
+                provided: leaf_index,
+            });
         }
         tx.commit().map_err(|err| map_db_err(&err))?;
         Ok(())

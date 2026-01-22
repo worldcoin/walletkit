@@ -15,6 +15,9 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
             updated_at      INTEGER NOT NULL
         );
 
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_meta_schema_version
+        ON vault_meta (schema_version);
+
         CREATE TABLE IF NOT EXISTS credential_records (
             credential_id           BLOB    NOT NULL,
             issuer_schema_id        INTEGER NOT NULL,
