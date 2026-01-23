@@ -93,7 +93,10 @@ impl CacheDb {
 
     /// Fetches a cached session key if present.
     ///
-    /// Session keys are optional performance hints and may be missing or expired.
+    /// This value is the per-RP session seed (aka `session_id_r_seed` in the
+    /// protocol). It is derived from `K_intermediate` and `rp_id` and is used to
+    /// derive the per-session `r` that feeds the sessionId commitment. The cache
+    /// is an optional performance hint and may be missing or expired.
     ///
     /// # Errors
     ///
@@ -296,14 +299,7 @@ mod tests {
         let second = vec![9, 9, 9];
 
         let fresh = db
-            .begin_replay_guard(
-                &guard,
-                request_id,
-                nullifier,
-                first.clone(),
-                100,
-                1000,
-            )
+            .begin_replay_guard(&guard, request_id, nullifier, first.clone(), 100, 1000)
             .expect("first disclosure");
         assert_eq!(
             fresh,
@@ -342,14 +338,10 @@ mod tests {
         db.begin_replay_guard(&guard, request_id, nullifier, payload.clone(), 100, 10)
             .expect("disclosure");
 
-        let hit = db
-            .replay_guard_get(request_id, 105)
-            .expect("lookup");
+        let hit = db.replay_guard_get(request_id, 105).expect("lookup");
         assert_eq!(hit, Some(payload));
 
-        let miss = db
-            .replay_guard_get(request_id, 111)
-            .expect("lookup");
+        let miss = db.replay_guard_get(request_id, 111).expect("lookup");
         assert!(miss.is_none());
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
