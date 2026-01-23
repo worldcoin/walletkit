@@ -7,7 +7,9 @@ use world_id_core::primitives::TREE_DEPTH;
 use world_id_core::{requests::ProofRequest, Credential, FieldElement};
 
 use crate::error::WalletKitError;
-use crate::storage::{CredentialStorage, ReplayGuardResult, RequestId};
+use crate::storage::{
+    CredentialStorage, ReplayGuardKind, ReplayGuardResult, RequestId,
+};
 
 use super::Authenticator;
 
@@ -100,7 +102,10 @@ impl Authenticator {
             .replay_guard_get(request_id, now)
             .map_err(WalletKitError::from)?
         {
-            return Ok(ReplayGuardResult::Replay(bytes));
+            return Ok(ReplayGuardResult {
+                kind: ReplayGuardKind::Replay,
+                bytes,
+            });
         }
         let (proof, nullifier) = self
             .0

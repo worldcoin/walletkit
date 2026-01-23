@@ -9,8 +9,7 @@ use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{
-    CredentialRecord, Nullifier, ReplayGuardResult, ReplayGuardResultFfi,
-    RequestId,
+    CredentialRecord, Nullifier, ReplayGuardResult, RequestId,
 };
 use super::{CacheDb, VaultDb};
 
@@ -345,7 +344,7 @@ impl CredentialStore {
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
-    ) -> StorageResult<ReplayGuardResultFfi> {
+    ) -> StorageResult<ReplayGuardResult> {
         let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
         let nullifier = parse_fixed_bytes::<32>(nullifier, "nullifier")?;
         let result = self.lock_inner()?.begin_replay_guard(
@@ -355,7 +354,7 @@ impl CredentialStore {
             now,
             ttl_seconds,
         )?;
-        Ok(ReplayGuardResultFfi::from(result))
+        Ok(result)
     }
 }
 

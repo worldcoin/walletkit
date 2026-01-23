@@ -6,7 +6,7 @@
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use crate::storage::error::{StorageError, StorageResult};
-use crate::storage::types::ReplayGuardResult;
+use crate::storage::types::{ReplayGuardKind, ReplayGuardResult};
 
 use super::util::{expiry_timestamp, map_db_err, to_i64};
 
@@ -59,7 +59,10 @@ pub(super) fn begin_replay_guard(
         .map_err(|err| map_db_err(&err))?;
     if let Some(bytes) = existing_proof {
         tx.commit().map_err(|err| map_db_err(&err))?;
-        return Ok(ReplayGuardResult::Replay(bytes));
+        return Ok(ReplayGuardResult {
+            kind: ReplayGuardKind::Replay,
+            bytes,
+        });
     }
 
     let existing_request: Option<Vec<u8>> = tx
@@ -91,5 +94,8 @@ pub(super) fn begin_replay_guard(
     )
     .map_err(|err| map_db_err(&err))?;
     tx.commit().map_err(|err| map_db_err(&err))?;
-    Ok(ReplayGuardResult::Fresh(proof_bytes))
+    Ok(ReplayGuardResult {
+        kind: ReplayGuardKind::Fresh,
+        bytes: proof_bytes,
+    })
 }

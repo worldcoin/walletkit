@@ -56,18 +56,6 @@ pub struct CredentialRecord {
     pub expires_at: Option<u64>,
 }
 
-/// Result of replay guard enforcement.
-///
-/// The replay guard is idempotent: repeated calls with the same request return
-/// the original proof bytes rather than generating a new disclosure.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReplayGuardResult {
-    /// Stored bytes for the first disclosure of a request.
-    Fresh(Vec<u8>),
-    /// Stored bytes replayed for an existing request.
-    Replay(Vec<u8>),
-}
-
 /// FFI-friendly replay guard result kind.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum ReplayGuardKind {
@@ -77,26 +65,11 @@ pub enum ReplayGuardKind {
     Replay,
 }
 
-/// FFI-friendly replay guard result.
+/// Replay guard result.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct ReplayGuardResultFfi {
+pub struct ReplayGuardResult {
     /// Result kind.
     pub kind: ReplayGuardKind,
     /// Stored proof package bytes.
     pub bytes: Vec<u8>,
-}
-
-impl From<ReplayGuardResult> for ReplayGuardResultFfi {
-    fn from(result: ReplayGuardResult) -> Self {
-        match result {
-            ReplayGuardResult::Fresh(bytes) => Self {
-                kind: ReplayGuardKind::Fresh,
-                bytes,
-            },
-            ReplayGuardResult::Replay(bytes) => Self {
-                kind: ReplayGuardKind::Replay,
-                bytes,
-            },
-        }
-    }
 }

@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use walletkit_core::storage::{
     AtomicBlobStore, CredentialStorage, CredentialStore, DeviceKeystore,
-    ReplayGuardResult, StoragePaths, StorageProvider,
+    ReplayGuardKind, ReplayGuardResult, StoragePaths, StorageProvider,
 };
 
 struct InMemoryKeystore {
@@ -240,7 +240,13 @@ fn test_storage_flow_end_to_end() {
         50,
     )
     .expect("disclose");
-    assert_eq!(fresh, ReplayGuardResult::Fresh(vec![1, 2]));
+    assert_eq!(
+        fresh,
+        ReplayGuardResult {
+            kind: ReplayGuardKind::Fresh,
+            bytes: vec![1, 2],
+        }
+    );
     let cached = CredentialStorage::replay_guard_get(&store, request_id, 210)
         .expect("disclosure lookup");
     assert_eq!(cached, Some(vec![1, 2]));
@@ -253,7 +259,13 @@ fn test_storage_flow_end_to_end() {
         50,
     )
     .expect("replay");
-    assert_eq!(replay, ReplayGuardResult::Replay(vec![1, 2]));
+    assert_eq!(
+        replay,
+        ReplayGuardResult {
+            kind: ReplayGuardKind::Replay,
+            bytes: vec![1, 2],
+        }
+    );
 
     cleanup_storage(&root);
 }

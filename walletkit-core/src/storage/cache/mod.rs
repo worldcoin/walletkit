@@ -172,6 +172,7 @@ mod tests {
     use super::*;
     use crate::storage::error::StorageError;
     use crate::storage::lock::StorageLock;
+    use crate::storage::types::ReplayGuardKind;
     use std::fs;
     use std::path::PathBuf;
     use uuid::Uuid;
@@ -304,12 +305,24 @@ mod tests {
                 1000,
             )
             .expect("first disclosure");
-        assert_eq!(fresh, ReplayGuardResult::Fresh(first.clone()));
+        assert_eq!(
+            fresh,
+            ReplayGuardResult {
+                kind: ReplayGuardKind::Fresh,
+                bytes: first.clone(),
+            }
+        );
 
         let replay = db
             .begin_replay_guard(&guard, request_id, nullifier, second, 101, 1000)
             .expect("replay disclosure");
-        assert_eq!(replay, ReplayGuardResult::Replay(first));
+        assert_eq!(
+            replay,
+            ReplayGuardResult {
+                kind: ReplayGuardKind::Replay,
+                bytes: first,
+            }
+        );
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }
@@ -386,7 +399,13 @@ mod tests {
         let fresh = db
             .begin_replay_guard(&guard, request_id_b, nullifier, vec![8], 111, 10)
             .expect("second disclosure after expiry");
-        assert_eq!(fresh, ReplayGuardResult::Fresh(vec![8]));
+        assert_eq!(
+            fresh,
+            ReplayGuardResult {
+                kind: ReplayGuardKind::Fresh,
+                bytes: vec![8],
+            }
+        );
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }
