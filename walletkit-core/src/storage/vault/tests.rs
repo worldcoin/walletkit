@@ -3,6 +3,7 @@ use super::*;
 use crate::storage::lock::StorageLock;
 use std::fs;
 use std::path::{Path, PathBuf};
+use uuid::Uuid;
 
 fn temp_vault_path() -> PathBuf {
     let mut path = std::env::temp_dir();

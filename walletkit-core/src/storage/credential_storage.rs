@@ -264,7 +264,7 @@ impl CredentialStore {
         credential_blob: Vec<u8>,
         associated_data: Option<Vec<u8>>,
         now: u64,
-    ) -> StorageResult<Vec<u8>> {
+    ) -> StorageResult<u64> {
         let subject_blinding_factor = parse_fixed_bytes::<32>(
             subject_blinding_factor,
             "subject_blinding_factor",
@@ -278,7 +278,7 @@ impl CredentialStore {
             associated_data,
             now,
         )?;
-        Ok(credential_id.to_vec())
+        Ok(credential_id)
     }
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.

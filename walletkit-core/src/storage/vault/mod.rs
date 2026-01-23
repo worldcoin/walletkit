@@ -8,7 +8,6 @@ mod tests;
 use std::path::Path;
 
 use rusqlite::{params, params_from_iter, Connection};
-use uuid::Uuid;
 
 use super::error::{StorageError, StorageResult};
 use super::lock::StorageLockGuard;
@@ -113,7 +112,6 @@ impl VaultDb {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<CredentialId> {
-        let credential_id = *Uuid::new_v4().as_bytes();
         let credential_blob_id =
             compute_content_id(BlobKind::CredentialBlob, &credential_blob);
         let associated_data_id = associated_data
@@ -156,32 +154,33 @@ impl VaultDb {
             .map_err(|err| map_db_err(&err))?;
         }
 
-        tx.execute(
-            "INSERT INTO credential_records (
-                credential_id,
-                issuer_schema_id,
-                subject_blinding_factor,
-                genesis_issued_at,
-                expires_at,
-                updated_at,
-                credential_blob_cid,
-                associated_data_cid
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
-                credential_id.as_ref(),
-                issuer_schema_id_i64,
-                subject_blinding_factor.as_ref(),
-                genesis_issued_at_i64,
-                expires_at_i64,
-                now_i64,
-                credential_blob_id.as_ref(),
-                associated_data_id.as_ref().map(AsRef::as_ref)
-            ],
-        )
-        .map_err(|err| map_db_err(&err))?;
+        let credential_id = tx
+            .query_row(
+                "INSERT INTO credential_records (
+                    issuer_schema_id,
+                    subject_blinding_factor,
+                    genesis_issued_at,
+                    expires_at,
+                    updated_at,
+                    credential_blob_cid,
+                    associated_data_cid
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                RETURNING credential_id",
+                params![
+                    issuer_schema_id_i64,
+                    subject_blinding_factor.as_ref(),
+                    genesis_issued_at_i64,
+                    expires_at_i64,
+                    now_i64,
+                    credential_blob_id.as_ref(),
+                    associated_data_id.as_ref().map(AsRef::as_ref)
+                ],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|err| map_db_err(&err))?;
 
         tx.commit().map_err(|err| map_db_err(&err))?;
-        Ok(credential_id)
+        Ok(to_u64(credential_id, "credential_id")?)
     }
 
     /// Lists active credentials, optionally filtered by issuer schema.

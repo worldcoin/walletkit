@@ -37,7 +37,9 @@ impl TryFrom<i64> for BlobKind {
 pub type ContentId = [u8; 32];
 
 /// Credential identifier.
-pub type CredentialId = [u8; 16];
+///
+/// Stored as a numeric value to align with protocol-level identifiers.
+pub type CredentialId = u64;
 
 /// Request identifier for replay guard.
 pub type RequestId = [u8; 32];
@@ -73,7 +75,7 @@ pub struct CredentialRecord {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CredentialRecordFfi {
     /// Credential identifier.
-    pub credential_id: Vec<u8>,
+    pub credential_id: u64,
     /// Issuer schema identifier.
     pub issuer_schema_id: u64,
     /// Subject blinding factor tied to the credential subject.
@@ -123,7 +125,7 @@ pub struct ReplayGuardResultFfi {
 impl From<CredentialRecord> for CredentialRecordFfi {
     fn from(record: CredentialRecord) -> Self {
         Self {
-            credential_id: record.credential_id.to_vec(),
+            credential_id: record.credential_id,
             issuer_schema_id: record.issuer_schema_id,
             subject_blinding_factor: record.subject_blinding_factor.to_vec(),
             genesis_issued_at: record.genesis_issued_at,

@@ -28,15 +28,14 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
         END;
 
         CREATE TABLE IF NOT EXISTS credential_records (
-            credential_id           BLOB    NOT NULL,
+            credential_id           INTEGER NOT NULL PRIMARY KEY,
             issuer_schema_id        INTEGER NOT NULL,
             subject_blinding_factor BLOB    NOT NULL,
             genesis_issued_at        INTEGER NOT NULL,
             expires_at              INTEGER,
             updated_at              INTEGER NOT NULL,
             credential_blob_cid     BLOB    NOT NULL,
-            associated_data_cid     BLOB,
-            PRIMARY KEY (credential_id)
+            associated_data_cid     BLOB
         );
 
         CREATE INDEX IF NOT EXISTS idx_cred_by_issuer_schema
