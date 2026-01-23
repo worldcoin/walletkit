@@ -32,7 +32,7 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
             issuer_schema_id        INTEGER NOT NULL,
             subject_blinding_factor BLOB    NOT NULL,
             genesis_issued_at        INTEGER NOT NULL,
-            expires_at              INTEGER,
+            expires_at              INTEGER NOT NULL,
             updated_at              INTEGER NOT NULL,
             credential_blob_cid     BLOB    NOT NULL,
             associated_data_cid     BLOB

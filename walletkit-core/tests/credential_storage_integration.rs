@@ -203,7 +203,7 @@ fn test_storage_flow_end_to_end() {
         7,
         [0x11u8; 32],
         1_700_000_000,
-        Some(1_800_000_000),
+        1_800_000_000,
         vec![1, 2, 3],
         Some(vec![4, 5, 6]),
         100,
@@ -216,7 +216,7 @@ fn test_storage_flow_end_to_end() {
     let record = &records[0];
     assert_eq!(record.credential_id, credential_id);
     assert_eq!(record.issuer_schema_id, 7);
-    assert_eq!(record.expires_at, Some(1_800_000_000));
+    assert_eq!(record.expires_at, 1_800_000_000);
 
     let root_bytes = [0xAAu8; 32];
     CredentialStorage::merkle_cache_put(&mut store, 1, root_bytes, vec![9, 9], 100, 10)

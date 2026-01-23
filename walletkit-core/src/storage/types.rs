@@ -52,8 +52,8 @@ pub struct CredentialRecord {
     pub credential_id: u64,
     /// Issuer schema identifier.
     pub issuer_schema_id: u64,
-    /// Optional expiry timestamp (seconds).
-    pub expires_at: Option<u64>,
+    /// Expiry timestamp (seconds).
+    pub expires_at: u64,
 }
 
 /// FFI-friendly replay guard result kind.

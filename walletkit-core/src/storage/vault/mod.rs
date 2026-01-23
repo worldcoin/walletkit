@@ -108,7 +108,7 @@ impl VaultDb {
         issuer_schema_id: u64,
         subject_blinding_factor: [u8; 32],
         genesis_issued_at: u64,
-        expires_at: Option<u64>,
+        expires_at: u64,
         credential_blob: Vec<u8>,
         associated_data: Option<Vec<u8>>,
         now: u64,
@@ -121,9 +121,7 @@ impl VaultDb {
         let now_i64 = to_i64(now, "now")?;
         let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
         let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
-        let expires_at_i64 = expires_at
-            .map(|value| to_i64(value, "expires_at"))
-            .transpose()?;
+        let expires_at_i64 = to_i64(expires_at, "expires_at")?;
 
         let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
         tx.execute(
@@ -205,7 +203,7 @@ impl VaultDb {
                 cr.issuer_schema_id,
                 cr.expires_at
              FROM credential_records cr
-             WHERE (cr.expires_at IS NULL OR cr.expires_at > ?1)",
+             WHERE cr.expires_at > ?1",
         );
         let mut params: Vec<&dyn rusqlite::ToSql> = vec![&expires];
         if let Some(ref issuer_schema_id_i64) = issuer_schema_id_i64 {

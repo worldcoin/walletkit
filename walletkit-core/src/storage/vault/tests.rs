@@ -109,7 +109,7 @@ fn test_store_credential_without_associated_data() {
             10,
             sample_blinding_factor(),
             123,
-            None,
+            2000,
             b"credential".to_vec(),
             None,
             1000,
@@ -119,7 +119,7 @@ fn test_store_credential_without_associated_data() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].credential_id, credential_id);
     assert_eq!(records[0].issuer_schema_id, 10);
-    assert!(records[0].expires_at.is_none());
+    assert_eq!(records[0].expires_at, 2000);
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -136,7 +136,7 @@ fn test_store_credential_with_associated_data() {
         11,
         sample_blinding_factor(),
         456,
-        None,
+        2000,
         b"credential-2".to_vec(),
         Some(b"associated".to_vec()),
         1000,
@@ -145,7 +145,7 @@ fn test_store_credential_with_associated_data() {
     let records = db.list_credentials(None, 1000).expect("list credentials");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].issuer_schema_id, 11);
-    assert!(records[0].expires_at.is_none());
+    assert_eq!(records[0].expires_at, 2000);
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -169,7 +169,7 @@ fn test_content_id_deduplication() {
         12,
         sample_blinding_factor(),
         1,
-        None,
+        2000,
         b"same".to_vec(),
         None,
         1000,
@@ -180,7 +180,7 @@ fn test_content_id_deduplication() {
         12,
         sample_blinding_factor(),
         1,
-        None,
+        2000,
         b"same".to_vec(),
         None,
         1001,
@@ -208,7 +208,7 @@ fn test_list_credentials_by_issuer() {
         100,
         sample_blinding_factor(),
         1,
-        None,
+        2000,
         b"issuer-a".to_vec(),
         None,
         1000,
@@ -219,7 +219,7 @@ fn test_list_credentials_by_issuer() {
         200,
         sample_blinding_factor(),
         1,
-        None,
+        2000,
         b"issuer-b".to_vec(),
         None,
         1000,
@@ -246,7 +246,7 @@ fn test_list_credentials_excludes_expired() {
         300,
         sample_blinding_factor(),
         1,
-        Some(900),
+        900,
         b"expired".to_vec(),
         None,
         1000,

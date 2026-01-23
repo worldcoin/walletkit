@@ -21,13 +21,11 @@ pub(super) fn compute_content_id(blob_kind: BlobKind, plaintext: &[u8]) -> Conte
 pub(super) fn map_record(row: &Row<'_>) -> StorageResult<CredentialRecord> {
     let credential_id: i64 = row.get(0).map_err(|err| map_db_err(&err))?;
     let issuer_schema_id: i64 = row.get(1).map_err(|err| map_db_err(&err))?;
-    let expires_at: Option<i64> = row.get(2).map_err(|err| map_db_err(&err))?;
+    let expires_at: i64 = row.get(2).map_err(|err| map_db_err(&err))?;
     Ok(CredentialRecord {
         credential_id: to_u64(credential_id, "credential_id")?,
         issuer_schema_id: to_u64(issuer_schema_id, "issuer_schema_id")?,
-        expires_at: expires_at
-            .map(|value| to_u64(value, "expires_at"))
-            .transpose()?,
+        expires_at: to_u64(expires_at, "expires_at")?,
     })
 }
 
