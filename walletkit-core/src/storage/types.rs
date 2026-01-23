@@ -58,6 +58,9 @@ pub struct CredentialRecord {
     /// Issuer schema identifier.
     pub issuer_schema_id: u64,
     /// Subject blinding factor tied to the credential subject.
+    ///
+    /// Stored for indexing and query efficiency; the authoritative value lives
+    /// in the credential payload itself.
     pub subject_blinding_factor: [u8; 32],
     /// Genesis issuance timestamp (seconds).
     pub genesis_issued_at: u64,
