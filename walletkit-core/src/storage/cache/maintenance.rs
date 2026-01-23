@@ -31,8 +31,7 @@ pub(super) fn open_or_rebuild(
 }
 
 fn open_prepared(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Connection> {
-    let conn =
-        sqlcipher::open_connection(path, false).map_err(map_sqlcipher_err)?;
+    let conn = sqlcipher::open_connection(path, false).map_err(map_sqlcipher_err)?;
     sqlcipher::apply_key(&conn, k_intermediate).map_err(map_sqlcipher_err)?;
     sqlcipher::configure_connection(&conn).map_err(map_sqlcipher_err)?;
     schema::ensure_schema(&conn)?;

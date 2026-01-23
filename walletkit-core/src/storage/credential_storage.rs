@@ -8,9 +8,7 @@ use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
-use super::types::{
-    CredentialRecord, Nullifier, ReplayGuardResult, RequestId,
-};
+use super::types::{CredentialRecord, Nullifier, ReplayGuardResult, RequestId};
 use super::{CacheDb, VaultDb};
 
 /// Public-facing storage API used by `WalletKit` v4 flows.
@@ -450,9 +448,12 @@ impl CredentialStorage for CredentialStoreInner {
         valid_before: u64,
     ) -> StorageResult<Option<Vec<u8>>> {
         let state = self.state()?;
-        state
-            .cache
-            .merkle_cache_get(registry_kind, root, state.leaf_index, valid_before)
+        state.cache.merkle_cache_get(
+            registry_kind,
+            root,
+            state.leaf_index,
+            valid_before,
+        )
     }
 
     fn merkle_cache_put(
@@ -623,12 +624,6 @@ impl CredentialStorage for CredentialStore {
         ttl_seconds: u64,
     ) -> StorageResult<ReplayGuardResult> {
         let mut inner = self.lock_inner()?;
-        inner.begin_replay_guard(
-            request_id,
-            nullifier,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
+        inner.begin_replay_guard(request_id, nullifier, proof_bytes, now, ttl_seconds)
     }
 }

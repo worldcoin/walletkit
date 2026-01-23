@@ -58,7 +58,9 @@ impl Authenticator {
         WalletKitError,
     > {
         let valid_before = now.saturating_add(MERKLE_PROOF_VALIDITY_BUFFER_SECS);
-        if let Some(bytes) = storage.merkle_cache_get(registry_kind, root, valid_before)? {
+        if let Some(bytes) =
+            storage.merkle_cache_get(registry_kind, root, valid_before)?
+        {
             if let Some(cached) = deserialize_inclusion_proof(&bytes) {
                 return Ok((cached.proof, cached.authenticator_pubkeys));
             }
