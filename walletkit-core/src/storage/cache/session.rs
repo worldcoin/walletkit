@@ -6,7 +6,9 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::storage::error::{StorageError, StorageResult};
 
-use super::util::{expiry_timestamp, map_db_err, parse_fixed_bytes, to_i64};
+use super::util::{
+    expiry_timestamp, map_db_err, parse_fixed_bytes, session_cache_key, to_i64,
+};
 
 pub(super) fn get(
     conn: &Connection,
@@ -14,13 +16,14 @@ pub(super) fn get(
 ) -> StorageResult<Option<[u8; 32]>> {
     let now = current_unix_timestamp()?;
     let now_i64 = to_i64(now, "now")?;
+    let key = session_cache_key(rp_id);
     let raw: Option<Vec<u8>> = conn
         .query_row(
-            "SELECT k_session
-             FROM session_keys
-             WHERE rp_id = ?1
+            "SELECT value_bytes
+             FROM cache_entries
+             WHERE key_bytes = ?1
                AND expires_at > ?2",
-            params![rp_id.as_ref(), now_i64],
+            params![key, now_i64],
             |row| row.get(0),
         )
         .optional()
@@ -40,14 +43,17 @@ pub(super) fn put(
     let now = current_unix_timestamp()?;
     prune_expired(conn, now)?;
     let expires_at = expiry_timestamp(now, ttl_seconds);
+    let key = session_cache_key(rp_id);
+    let inserted_at_i64 = to_i64(now, "now")?;
     let expires_at_i64 = to_i64(expires_at, "expires_at")?;
     conn.execute(
-        "INSERT OR REPLACE INTO session_keys (
-            rp_id,
-            k_session,
+        "INSERT OR REPLACE INTO cache_entries (
+            key_bytes,
+            value_bytes,
+            inserted_at,
             expires_at
-         ) VALUES (?1, ?2, ?3)",
-        params![rp_id.as_ref(), k_session.as_ref(), expires_at_i64],
+         ) VALUES (?1, ?2, ?3, ?4)",
+        params![key, k_session.as_ref(), inserted_at_i64, expires_at_i64],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
@@ -56,7 +62,7 @@ pub(super) fn put(
 fn prune_expired(conn: &Connection, now: u64) -> StorageResult<()> {
     let now_i64 = to_i64(now, "now")?;
     conn.execute(
-        "DELETE FROM session_keys WHERE expires_at <= ?1",
+        "DELETE FROM cache_entries WHERE expires_at <= ?1",
         params![now_i64],
     )
     .map_err(|err| map_db_err(&err))?;

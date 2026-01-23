@@ -35,6 +35,42 @@ pub(super) fn parse_fixed_bytes<const N: usize>(
     Ok(out)
 }
 
+pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
+pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
+pub(super) const CACHE_KEY_PREFIX_REPLAY_REQUEST: u8 = 0x03;
+pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x04;
+
+fn cache_key_with_prefix(prefix: u8, payload: &[u8]) -> Vec<u8> {
+    let mut key = Vec::with_capacity(1 + payload.len());
+    key.push(prefix);
+    key.extend_from_slice(payload);
+    key
+}
+
+pub(super) fn merkle_cache_key(
+    registry_kind: u8,
+    root: [u8; 32],
+    leaf_index: u64,
+) -> Vec<u8> {
+    let mut payload = Vec::with_capacity(1 + 32 + 8);
+    payload.push(registry_kind);
+    payload.extend_from_slice(root.as_ref());
+    payload.extend_from_slice(&leaf_index.to_be_bytes());
+    cache_key_with_prefix(CACHE_KEY_PREFIX_MERKLE, &payload)
+}
+
+pub(super) fn session_cache_key(rp_id: [u8; 32]) -> Vec<u8> {
+    cache_key_with_prefix(CACHE_KEY_PREFIX_SESSION, rp_id.as_ref())
+}
+
+pub(super) fn replay_request_key(request_id: [u8; 32]) -> Vec<u8> {
+    cache_key_with_prefix(CACHE_KEY_PREFIX_REPLAY_REQUEST, request_id.as_ref())
+}
+
+pub(super) fn replay_nullifier_key(nullifier: [u8; 32]) -> Vec<u8> {
+    cache_key_with_prefix(CACHE_KEY_PREFIX_REPLAY_NULLIFIER, nullifier.as_ref())
+}
+
 pub(super) const fn expiry_timestamp(now: u64, ttl_seconds: u64) -> u64 {
     now.saturating_add(ttl_seconds)
 }

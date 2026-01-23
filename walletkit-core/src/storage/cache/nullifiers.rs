@@ -8,7 +8,9 @@ use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{ReplayGuardKind, ReplayGuardResult};
 
-use super::util::{expiry_timestamp, map_db_err, to_i64};
+use super::util::{
+    expiry_timestamp, map_db_err, replay_nullifier_key, replay_request_key, to_i64,
+};
 
 pub(super) fn replay_guard_bytes_for_request_id(
     conn: &Connection,
@@ -16,12 +18,13 @@ pub(super) fn replay_guard_bytes_for_request_id(
     now: u64,
 ) -> StorageResult<Option<Vec<u8>>> {
     let now_i64 = to_i64(now, "now")?;
+    let key = replay_request_key(request_id);
     conn.query_row(
-        "SELECT proof_bytes
-         FROM used_nullifiers
-         WHERE request_id = ?1
+        "SELECT value_bytes
+         FROM cache_entries
+         WHERE key_bytes = ?1
            AND expires_at > ?2",
-        params![request_id.as_ref(), now_i64],
+        params![key, now_i64],
         |row| row.get(0),
     )
     .optional()
@@ -41,18 +44,19 @@ pub(super) fn begin_replay_guard(
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|err| map_db_err(&err))?;
     tx.execute(
-        "DELETE FROM used_nullifiers WHERE expires_at <= ?1",
+        "DELETE FROM cache_entries WHERE expires_at <= ?1",
         params![now_i64],
     )
     .map_err(|err| map_db_err(&err))?;
 
+    let request_key = replay_request_key(request_id);
     let existing_proof: Option<Vec<u8>> = tx
         .query_row(
-            "SELECT proof_bytes
-             FROM used_nullifiers
-             WHERE request_id = ?1
+            "SELECT value_bytes
+             FROM cache_entries
+             WHERE key_bytes = ?1
                AND expires_at > ?2",
-            params![request_id.as_ref(), now_i64],
+            params![request_key.as_slice(), now_i64],
             |row| row.get(0),
         )
         .optional()
@@ -65,13 +69,14 @@ pub(super) fn begin_replay_guard(
         });
     }
 
+    let nullifier_key = replay_nullifier_key(nullifier);
     let existing_request: Option<Vec<u8>> = tx
         .query_row(
-            "SELECT request_id
-             FROM used_nullifiers
-             WHERE nullifier = ?1
+            "SELECT value_bytes
+             FROM cache_entries
+             WHERE key_bytes = ?1
                AND expires_at > ?2",
-            params![nullifier.as_ref(), now_i64],
+            params![nullifier_key.as_slice(), now_i64],
             |row| row.get(0),
         )
         .optional()
@@ -82,14 +87,26 @@ pub(super) fn begin_replay_guard(
 
     let expires_at = expiry_timestamp(now, ttl_seconds);
     let expires_at_i64 = to_i64(expires_at, "expires_at")?;
+    let inserted_at_i64 = to_i64(now, "now")?;
     tx.execute(
-        "INSERT INTO used_nullifiers (request_id, nullifier, expires_at, proof_bytes)
+        "INSERT INTO cache_entries (key_bytes, value_bytes, inserted_at, expires_at)
          VALUES (?1, ?2, ?3, ?4)",
         params![
+            request_key.as_slice(),
+            proof_bytes,
+            inserted_at_i64,
+            expires_at_i64
+        ],
+    )
+    .map_err(|err| map_db_err(&err))?;
+    tx.execute(
+        "INSERT INTO cache_entries (key_bytes, value_bytes, inserted_at, expires_at)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![
+            nullifier_key.as_slice(),
             request_id.as_ref(),
-            nullifier.as_ref(),
-            expires_at_i64,
-            proof_bytes
+            inserted_at_i64,
+            expires_at_i64
         ],
     )
     .map_err(|err| map_db_err(&err))?;
