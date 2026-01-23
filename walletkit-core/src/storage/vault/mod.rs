@@ -186,7 +186,7 @@ impl VaultDb {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub fn d(
+    pub fn list_credentials(
         &self,
         issuer_schema_id: Option<u64>,
         now: u64,
