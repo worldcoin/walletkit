@@ -33,10 +33,20 @@ impl From<rusqlite::Error> for SqlcipherError {
 pub type SqlcipherResult<T> = Result<T, SqlcipherError>;
 
 /// Opens a `SQLite` connection with consistent flags.
-pub(super) fn open_connection(path: &Path) -> SqlcipherResult<Connection> {
-    let flags = OpenFlags::SQLITE_OPEN_READ_WRITE
-        | OpenFlags::SQLITE_OPEN_CREATE
-        | OpenFlags::SQLITE_OPEN_FULL_MUTEX;
+///
+/// Pass `read_only = true` for read-only access; `false` enables read/write
+/// access and creates the database if needed.
+pub(super) fn open_connection(
+    path: &Path,
+    read_only: bool,
+) -> SqlcipherResult<Connection> {
+    let flags = if read_only {
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_FULL_MUTEX
+    } else {
+        OpenFlags::SQLITE_OPEN_READ_WRITE
+            | OpenFlags::SQLITE_OPEN_CREATE
+            | OpenFlags::SQLITE_OPEN_FULL_MUTEX
+    };
     Ok(Connection::open_with_flags(path, flags)?)
 }
 

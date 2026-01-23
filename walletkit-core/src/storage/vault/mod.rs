@@ -35,7 +35,8 @@ impl VaultDb {
         k_intermediate: [u8; 32],
         _lock: &StorageLockGuard,
     ) -> StorageResult<Self> {
-        let conn = sqlcipher::open_connection(path).map_err(map_sqlcipher_err)?;
+        let conn =
+            sqlcipher::open_connection(path, false).map_err(map_sqlcipher_err)?;
         sqlcipher::apply_key(&conn, k_intermediate).map_err(map_sqlcipher_err)?;
         sqlcipher::configure_connection(&conn).map_err(map_sqlcipher_err)?;
         ensure_schema(&conn)?;
@@ -180,7 +181,7 @@ impl VaultDb {
             .map_err(|err| map_db_err(&err))?;
 
         tx.commit().map_err(|err| map_db_err(&err))?;
-        Ok(to_u64(credential_id, "credential_id")?)
+        to_u64(credential_id, "credential_id")
     }
 
     /// Lists active credential metadata, optionally filtered by issuer schema.
