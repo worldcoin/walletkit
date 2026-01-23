@@ -23,12 +23,11 @@ name = "walletkit_core"
 [dependencies]
 alloy-core = { workspace = true }
 alloy-primitives = { workspace = true }
-bincode = "1.3"
-chacha20poly1305 = "0.10"
+bincode = { version = "1.3", optional = true }
 hex = "0.4"
-hkdf = "0.12"
+hkdf = { version = "0.12", optional = true }
 log = "0.4"
-rand = "0.8"
+rand = { version = "0.8", optional = true }
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "brotli",
@@ -42,18 +41,19 @@ secrecy = "0.10"
 semaphore-rs = { version = "0.5" }
 serde = "1"
 serde_json = "1"
-sha2 = "0.10"
+sha2 = { version = "0.10", optional = true }
 strum = { version = "0.27", features = ["derive"] }
 subtle = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["sync"] }
-rusqlite = { version = "0.32", features = ["bundled-sqlcipher"] }
-uuid = { version = "1.10", features = ["v4"] }
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher"], optional = true }
+uuid = { version = "1.10", features = ["v4"], optional = true }
 uniffi = { workspace = true, features = ["build", "tokio"] }
 world-id-core = { workspace = true, optional = true }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = ["getrandom", "json", "contract", "node-bindings", "signer-local"] }
+chacha20poly1305 = "0.10"
 chrono = "0.4.41"
 dotenvy = "0.15.7"
 mockito = "1.6"
@@ -68,7 +68,8 @@ default = ["common-apps", "semaphore", "v4"]
 common-apps = []
 http-tests = []
 semaphore = ["semaphore-rs/depth_30"]
-v4 = ["world-id-core"]
+storage = ["dep:bincode", "dep:hkdf", "dep:rand", "dep:rusqlite", "dep:sha2", "dep:uuid"]
+v4 = ["world-id-core", "storage"]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.

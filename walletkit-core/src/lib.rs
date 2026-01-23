@@ -50,6 +50,7 @@ mod u256;
 pub use u256::U256Wrapper;
 
 /// Credential storage primitives for World ID v4.
+#[cfg(feature = "storage")]
 pub mod storage;
 
 #[cfg(feature = "v4")]
