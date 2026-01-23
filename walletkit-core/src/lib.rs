@@ -21,29 +21,17 @@
 
 use strum::EnumString;
 
-/// Initializes the rustls crypto provider.
-///
-/// This is required for TLS connections via reqwest
-/// This function installs the ring crypto provider as the default for rustls.
-/// It uses `Once` to ensure thread-safe, single initialization.
-#[cfg(not(test))]
-fn init_crypto_provider() {
-    use std::sync::Once;
-    static INIT: Once = Once::new();
-
-    INIT.call_once(|| {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-    });
-}
-
 /// Library initialization function called automatically on load.
 ///
+/// Installs the ring crypto provider as the default for rustls.
 /// Uses the `ctor` crate to ensure this runs when the dynamic library loads,
 /// before any user code executes.
 #[cfg(not(test))]
 #[ctor::ctor]
 fn init() {
-    init_crypto_provider();
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install default crypto provider");
 }
 
 /// Represents the environment in which a World ID is being presented and used.
