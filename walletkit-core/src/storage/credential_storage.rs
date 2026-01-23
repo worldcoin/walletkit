@@ -9,8 +9,8 @@ use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{
-    CredentialRecord, CredentialRecordFfi, Nullifier,
-    ReplayGuardResult, ReplayGuardResultFfi, RequestId,
+    CredentialRecord, Nullifier, ReplayGuardResult, ReplayGuardResultFfi,
+    RequestId,
 };
 use super::{CacheDb, VaultDb};
 
@@ -244,9 +244,8 @@ impl CredentialStore {
         &self,
         issuer_schema_id: Option<u64>,
         now: u64,
-    ) -> StorageResult<Vec<CredentialRecordFfi>> {
-        let records = self.lock_inner()?.list_credentials(issuer_schema_id, now)?;
-        Ok(records.into_iter().map(CredentialRecordFfi::from).collect())
+    ) -> StorageResult<Vec<CredentialRecord>> {
+        self.lock_inner()?.list_credentials(issuer_schema_id, now)
     }
 
     /// Stores a credential and optional associated data.

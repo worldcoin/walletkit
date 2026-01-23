@@ -46,19 +46,8 @@ pub type Nullifier = [u8; 32];
 ///
 /// This is intentionally small and excludes blobs; full credential payloads can
 /// be fetched separately to avoid heavy list queries.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CredentialRecord {
-    /// Credential identifier.
-    pub credential_id: u64,
-    /// Issuer schema identifier.
-    pub issuer_schema_id: u64,
-    /// Optional expiry timestamp (seconds).
-    pub expires_at: Option<u64>,
-}
-
-/// FFI-friendly credential record.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct CredentialRecordFfi {
+pub struct CredentialRecord {
     /// Credential identifier.
     pub credential_id: u64,
     /// Issuer schema identifier.
@@ -95,16 +84,6 @@ pub struct ReplayGuardResultFfi {
     pub kind: ReplayGuardKind,
     /// Stored proof package bytes.
     pub bytes: Vec<u8>,
-}
-
-impl From<CredentialRecord> for CredentialRecordFfi {
-    fn from(record: CredentialRecord) -> Self {
-        Self {
-            credential_id: record.credential_id,
-            issuer_schema_id: record.issuer_schema_id,
-            expires_at: record.expires_at,
-        }
-    }
 }
 
 impl From<ReplayGuardResult> for ReplayGuardResultFfi {
