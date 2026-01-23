@@ -36,11 +36,6 @@ impl TryFrom<i64> for BlobKind {
 /// Content identifier for stored blobs.
 pub type ContentId = [u8; 32];
 
-/// Credential identifier.
-///
-/// Stored as a numeric value to align with protocol-level identifiers.
-pub type CredentialId = u64;
-
 /// Request identifier for replay guard.
 pub type RequestId = [u8; 32];
 
@@ -54,7 +49,7 @@ pub type Nullifier = [u8; 32];
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredentialRecord {
     /// Credential identifier.
-    pub credential_id: CredentialId,
+    pub credential_id: u64,
     /// Issuer schema identifier.
     pub issuer_schema_id: u64,
     /// Optional expiry timestamp (seconds).

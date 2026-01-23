@@ -12,7 +12,7 @@ use rusqlite::{params, params_from_iter, Connection};
 use super::error::{StorageError, StorageResult};
 use super::lock::StorageLockGuard;
 use super::sqlcipher;
-use super::types::{BlobKind, CredentialId, CredentialRecord};
+use super::types::{BlobKind, CredentialRecord};
 use helpers::{
     compute_content_id, map_db_err, map_record, map_sqlcipher_err, to_i64, to_u64,
 };
@@ -111,7 +111,7 @@ impl VaultDb {
         credential_blob: Vec<u8>,
         associated_data: Option<Vec<u8>>,
         now: u64,
-    ) -> StorageResult<CredentialId> {
+    ) -> StorageResult<u64> {
         let credential_blob_id =
             compute_content_id(BlobKind::CredentialBlob, &credential_blob);
         let associated_data_id = associated_data

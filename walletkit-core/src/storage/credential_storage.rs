@@ -9,7 +9,7 @@ use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{
-    CredentialId, CredentialRecord, CredentialRecordFfi, Nullifier,
+    CredentialRecord, CredentialRecordFfi, Nullifier,
     ReplayGuardResult, ReplayGuardResultFfi, RequestId,
 };
 use super::{CacheDb, VaultDb};
@@ -52,7 +52,7 @@ pub trait CredentialStorage {
         credential_blob: Vec<u8>,
         associated_data: Option<Vec<u8>>,
         now: u64,
-    ) -> StorageResult<CredentialId>;
+    ) -> StorageResult<u64>;
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
     ///
@@ -430,7 +430,7 @@ impl CredentialStorage for CredentialStoreInner {
         credential_blob: Vec<u8>,
         associated_data: Option<Vec<u8>>,
         now: u64,
-    ) -> StorageResult<CredentialId> {
+    ) -> StorageResult<u64> {
         let guard = self.guard()?;
         let state = self.state_mut()?;
         state.vault.store_credential(
@@ -572,7 +572,7 @@ impl CredentialStorage for CredentialStore {
         credential_blob: Vec<u8>,
         associated_data: Option<Vec<u8>>,
         now: u64,
-    ) -> StorageResult<CredentialId> {
+    ) -> StorageResult<u64> {
         let mut inner = self.lock_inner()?;
         inner.store_credential(
             issuer_schema_id,
