@@ -72,12 +72,6 @@ impl VaultDb {
                          WHEN vault_meta.leaf_index IS NULL
                          THEN excluded.leaf_index
                          ELSE vault_meta.leaf_index
-                     END,
-                     updated_at = CASE
-                         WHEN vault_meta.leaf_index IS NULL
-                           OR vault_meta.leaf_index = excluded.leaf_index
-                         THEN excluded.updated_at
-                         ELSE vault_meta.updated_at
                      END
                  RETURNING leaf_index",
                 params![VAULT_SCHEMA_VERSION, leaf_index_i64, now_i64],

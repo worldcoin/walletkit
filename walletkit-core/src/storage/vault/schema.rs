@@ -18,6 +18,15 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_meta_schema_version
         ON vault_meta (schema_version);
 
+        CREATE TRIGGER IF NOT EXISTS vault_meta_set_updated_at
+        AFTER UPDATE ON vault_meta
+        FOR EACH ROW
+        BEGIN
+            UPDATE vault_meta
+            SET updated_at = CAST(strftime('%s','now') AS INTEGER)
+            WHERE schema_version = NEW.schema_version;
+        END;
+
         CREATE TABLE IF NOT EXISTS credential_records (
             credential_id           BLOB    NOT NULL,
             issuer_schema_id        INTEGER NOT NULL,
