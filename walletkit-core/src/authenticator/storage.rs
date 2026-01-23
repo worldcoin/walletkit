@@ -134,13 +134,17 @@ struct CachedInclusionProof {
 fn serialize_inclusion_proof(
     payload: &CachedInclusionProof,
 ) -> Result<Vec<u8>, WalletKitError> {
-    bincode::serialize(payload).map_err(|err| WalletKitError::SerializationError {
-        error: err.to_string(),
-    })
+    let mut bytes = Vec::new();
+    ciborium::ser::into_writer(payload, &mut bytes).map_err(|err| {
+        WalletKitError::SerializationError {
+            error: err.to_string(),
+        }
+    })?;
+    Ok(bytes)
 }
 
 fn deserialize_inclusion_proof(bytes: &[u8]) -> Option<CachedInclusionProof> {
-    bincode::deserialize(bytes).ok()
+    ciborium::de::from_reader(bytes).ok()
 }
 
 fn field_element_to_bytes(value: FieldElement) -> [u8; 32] {
@@ -151,11 +155,13 @@ fn serialize_proof_package(
     proof: &impl Serialize,
     nullifier: FieldElement,
 ) -> Result<Vec<u8>, WalletKitError> {
-    bincode::serialize(&(proof, nullifier)).map_err(|err| {
+    let mut bytes = Vec::new();
+    ciborium::ser::into_writer(&(proof, nullifier), &mut bytes).map_err(|err| {
         WalletKitError::SerializationError {
             error: err.to_string(),
         }
-    })
+    })?;
+    Ok(bytes)
 }
 
 #[cfg(test)]

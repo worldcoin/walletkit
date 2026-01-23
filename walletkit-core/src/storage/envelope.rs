@@ -25,12 +25,14 @@ impl AccountKeyEnvelope {
     }
 
     pub(crate) fn serialize(&self) -> StorageResult<Vec<u8>> {
-        bincode::serialize(self)
-            .map_err(|err| StorageError::Serialization(err.to_string()))
+        let mut bytes = Vec::new();
+        ciborium::ser::into_writer(self, &mut bytes)
+            .map_err(|err| StorageError::Serialization(err.to_string()))?;
+        Ok(bytes)
     }
 
     pub(crate) fn deserialize(bytes: &[u8]) -> StorageResult<Self> {
-        let envelope: Self = bincode::deserialize(bytes)
+        let envelope: Self = ciborium::de::from_reader(bytes)
             .map_err(|err| StorageError::Serialization(err.to_string()))?;
         if envelope.version != ENVELOPE_VERSION {
             return Err(StorageError::UnsupportedEnvelopeVersion(envelope.version));
