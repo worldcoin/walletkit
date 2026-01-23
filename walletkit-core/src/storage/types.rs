@@ -2,39 +2,6 @@
 
 use super::error::{StorageError, StorageResult};
 
-/// Status of a stored credential.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-#[repr(u8)]
-pub enum CredentialStatus {
-    /// Credential is active and can be used.
-    Active = 1,
-    /// Credential has been revoked.
-    Revoked = 2,
-    /// Credential has expired.
-    Expired = 3,
-}
-
-impl CredentialStatus {
-    pub(crate) const fn as_i64(self) -> i64 {
-        self as i64
-    }
-}
-
-impl TryFrom<i64> for CredentialStatus {
-    type Error = StorageError;
-
-    fn try_from(value: i64) -> StorageResult<Self> {
-        match value {
-            1 => Ok(Self::Active),
-            2 => Ok(Self::Revoked),
-            3 => Ok(Self::Expired),
-            _ => Err(StorageError::VaultDb(format!(
-                "invalid credential status {value}"
-            ))),
-        }
-    }
-}
-
 /// Kind of blob stored in the vault.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 #[repr(u8)]
@@ -82,8 +49,6 @@ pub struct CredentialRecord {
     pub credential_id: CredentialId,
     /// Issuer schema identifier.
     pub issuer_schema_id: u64,
-    /// Current credential status.
-    pub status: CredentialStatus,
     /// Subject blinding factor tied to the credential subject.
     pub subject_blinding_factor: [u8; 32],
     /// Genesis issuance timestamp (seconds).
@@ -105,8 +70,6 @@ pub struct CredentialRecordFfi {
     pub credential_id: Vec<u8>,
     /// Issuer schema identifier.
     pub issuer_schema_id: u64,
-    /// Current credential status.
-    pub status: CredentialStatus,
     /// Subject blinding factor tied to the credential subject.
     pub subject_blinding_factor: Vec<u8>,
     /// Genesis issuance timestamp (seconds).
@@ -153,7 +116,6 @@ impl From<CredentialRecord> for CredentialRecordFfi {
         Self {
             credential_id: record.credential_id.to_vec(),
             issuer_schema_id: record.issuer_schema_id,
-            status: record.status,
             subject_blinding_factor: record.subject_blinding_factor.to_vec(),
             genesis_issued_at: record.genesis_issued_at,
             expires_at: record.expires_at,

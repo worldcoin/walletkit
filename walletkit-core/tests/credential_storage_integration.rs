@@ -11,8 +11,8 @@ use rand::{rngs::OsRng, RngCore};
 use uuid::Uuid;
 
 use walletkit_core::storage::{
-    AtomicBlobStore, CredentialStatus, CredentialStorage, CredentialStore,
-    DeviceKeystore, ReplayGuardResult, StoragePaths, StorageProvider,
+    AtomicBlobStore, CredentialStorage, CredentialStore, DeviceKeystore,
+    ReplayGuardResult, StoragePaths, StorageProvider,
 };
 
 struct InMemoryKeystore {
@@ -199,7 +199,6 @@ fn test_storage_flow_end_to_end() {
     let credential_id = CredentialStorage::store_credential(
         &mut store,
         7,
-        CredentialStatus::Active,
         [0x11u8; 32],
         1_700_000_000,
         Some(1_800_000_000),

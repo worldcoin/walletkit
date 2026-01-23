@@ -13,7 +13,7 @@ use uuid::Uuid;
 use super::error::{StorageError, StorageResult};
 use super::lock::StorageLockGuard;
 use super::sqlcipher;
-use super::types::{BlobKind, CredentialId, CredentialRecord, CredentialStatus};
+use super::types::{BlobKind, CredentialId, CredentialRecord};
 use helpers::{
     compute_content_id, map_db_err, map_record, map_sqlcipher_err, to_i64, to_u64,
 };
@@ -100,7 +100,6 @@ impl VaultDb {
         &mut self,
         _lock: &StorageLockGuard,
         issuer_schema_id: u64,
-        status: CredentialStatus,
         subject_blinding_factor: [u8; 32],
         genesis_issued_at: u64,
         expires_at: Option<u64>,
@@ -158,18 +157,16 @@ impl VaultDb {
                 subject_blinding_factor,
                 genesis_issued_at,
                 expires_at,
-                status,
                 updated_at,
                 credential_blob_cid,
                 associated_data_cid
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 credential_id.as_ref(),
                 issuer_schema_id_i64,
                 subject_blinding_factor.as_ref(),
                 genesis_issued_at_i64,
                 expires_at_i64,
-                status.as_i64(),
                 now_i64,
                 credential_blob_id.as_ref(),
                 associated_data_id.as_ref().map(AsRef::as_ref)
@@ -192,7 +189,6 @@ impl VaultDb {
         now: u64,
     ) -> StorageResult<Vec<CredentialRecord>> {
         let mut records = Vec::new();
-        let status = CredentialStatus::Active.as_i64();
         let expires = to_i64(now, "now")?;
         let issuer_schema_id_i64 = issuer_schema_id
             .map(|value| to_i64(value, "issuer_schema_id"))
@@ -201,7 +197,6 @@ impl VaultDb {
             "SELECT
                 cr.credential_id,
                 cr.issuer_schema_id,
-                cr.status,
                 cr.subject_blinding_factor,
                 cr.genesis_issued_at,
                 cr.expires_at,
@@ -211,12 +206,11 @@ impl VaultDb {
              FROM credential_records cr
              JOIN blob_objects cb ON cb.content_id = cr.credential_blob_cid
              LEFT JOIN blob_objects ad ON ad.content_id = cr.associated_data_cid
-             WHERE cr.status = ?1
-               AND (cr.expires_at IS NULL OR cr.expires_at > ?2)",
+             WHERE (cr.expires_at IS NULL OR cr.expires_at > ?1)",
         );
-        let mut params: Vec<&dyn rusqlite::ToSql> = vec![&status, &expires];
+        let mut params: Vec<&dyn rusqlite::ToSql> = vec![&expires];
         if let Some(ref issuer_schema_id_i64) = issuer_schema_id_i64 {
-            sql.push_str(" AND cr.issuer_schema_id = ?3");
+            sql.push_str(" AND cr.issuer_schema_id = ?2");
             params.push(issuer_schema_id_i64);
         }
         sql.push_str(" ORDER BY cr.updated_at DESC");

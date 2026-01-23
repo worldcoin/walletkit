@@ -33,7 +33,6 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
             subject_blinding_factor BLOB    NOT NULL,
             genesis_issued_at        INTEGER NOT NULL,
             expires_at              INTEGER,
-            status                  INTEGER NOT NULL,
             updated_at              INTEGER NOT NULL,
             credential_blob_cid     BLOB    NOT NULL,
             associated_data_cid     BLOB,
@@ -41,10 +40,10 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_cred_by_issuer_schema
-        ON credential_records (issuer_schema_id, status, updated_at DESC);
+        ON credential_records (issuer_schema_id, updated_at DESC);
 
         CREATE INDEX IF NOT EXISTS idx_cred_by_expiry
-        ON credential_records (status, expires_at);
+        ON credential_records (expires_at);
 
         CREATE TABLE IF NOT EXISTS blob_objects (
             content_id  BLOB    NOT NULL,

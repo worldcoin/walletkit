@@ -106,7 +106,6 @@ fn test_store_credential_without_associated_data() {
         .store_credential(
             &guard,
             10,
-            CredentialStatus::Active,
             sample_blinding_factor(),
             123,
             None,
@@ -133,7 +132,6 @@ fn test_store_credential_with_associated_data() {
     db.store_credential(
         &guard,
         11,
-        CredentialStatus::Active,
         sample_blinding_factor(),
         456,
         None,
@@ -169,7 +167,6 @@ fn test_content_id_deduplication() {
     db.store_credential(
         &guard,
         12,
-        CredentialStatus::Active,
         sample_blinding_factor(),
         1,
         None,
@@ -181,7 +178,6 @@ fn test_content_id_deduplication() {
     db.store_credential(
         &guard,
         12,
-        CredentialStatus::Active,
         sample_blinding_factor(),
         1,
         None,
@@ -210,7 +206,6 @@ fn test_list_credentials_by_issuer() {
     db.store_credential(
         &guard,
         100,
-        CredentialStatus::Active,
         sample_blinding_factor(),
         1,
         None,
@@ -222,7 +217,6 @@ fn test_list_credentials_by_issuer() {
     db.store_credential(
         &guard,
         200,
-        CredentialStatus::Active,
         sample_blinding_factor(),
         1,
         None,
@@ -250,7 +244,6 @@ fn test_list_credentials_excludes_expired() {
     db.store_credential(
         &guard,
         300,
-        CredentialStatus::Active,
         sample_blinding_factor(),
         1,
         Some(900),

@@ -9,7 +9,7 @@ use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{
-    CredentialId, CredentialRecord, CredentialRecordFfi, CredentialStatus, Nullifier,
+    CredentialId, CredentialRecord, CredentialRecordFfi, Nullifier,
     ReplayGuardResult, ReplayGuardResultFfi, RequestId,
 };
 use super::{CacheDb, VaultDb};
@@ -43,7 +43,6 @@ pub trait CredentialStorage {
     fn store_credential(
         &mut self,
         issuer_schema_id: u64,
-        status: CredentialStatus,
         subject_blinding_factor: [u8; 32],
         genesis_issued_at: u64,
         expires_at: Option<u64>,
@@ -253,7 +252,6 @@ impl CredentialStore {
     pub fn store_credential(
         &self,
         issuer_schema_id: u64,
-        status: CredentialStatus,
         subject_blinding_factor: Vec<u8>,
         genesis_issued_at: u64,
         expires_at: Option<u64>,
@@ -267,7 +265,6 @@ impl CredentialStore {
         )?;
         let credential_id = self.lock_inner()?.store_credential(
             issuer_schema_id,
-            status,
             subject_blinding_factor,
             genesis_issued_at,
             expires_at,
@@ -421,7 +418,6 @@ impl CredentialStorage for CredentialStoreInner {
     fn store_credential(
         &mut self,
         issuer_schema_id: u64,
-        status: CredentialStatus,
         subject_blinding_factor: [u8; 32],
         genesis_issued_at: u64,
         expires_at: Option<u64>,
@@ -434,7 +430,6 @@ impl CredentialStorage for CredentialStoreInner {
         state.vault.store_credential(
             &guard,
             issuer_schema_id,
-            status,
             subject_blinding_factor,
             genesis_issued_at,
             expires_at,
@@ -565,7 +560,6 @@ impl CredentialStorage for CredentialStore {
     fn store_credential(
         &mut self,
         issuer_schema_id: u64,
-        status: CredentialStatus,
         subject_blinding_factor: [u8; 32],
         genesis_issued_at: u64,
         expires_at: Option<u64>,
@@ -576,7 +570,6 @@ impl CredentialStorage for CredentialStore {
         let mut inner = self.lock_inner()?;
         inner.store_credential(
             issuer_schema_id,
-            status,
             subject_blinding_factor,
             genesis_issued_at,
             expires_at,
