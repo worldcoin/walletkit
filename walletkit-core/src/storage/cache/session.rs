@@ -1,16 +1,18 @@
 //! Session key cache helpers.
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::storage::error::StorageResult;
+use crate::storage::error::{StorageError, StorageResult};
 
 use super::util::{expiry_timestamp, map_db_err, parse_fixed_bytes, to_i64};
 
 pub(super) fn get(
     conn: &Connection,
     rp_id: [u8; 32],
-    now: u64,
 ) -> StorageResult<Option<[u8; 32]>> {
+    let now = current_unix_timestamp()?;
     let now_i64 = to_i64(now, "now")?;
     let raw: Option<Vec<u8>> = conn
         .query_row(
@@ -33,9 +35,9 @@ pub(super) fn put(
     conn: &Connection,
     rp_id: [u8; 32],
     k_session: [u8; 32],
-    now: u64,
     ttl_seconds: u64,
 ) -> StorageResult<()> {
+    let now = current_unix_timestamp()?;
     prune_expired(conn, now)?;
     let expires_at = expiry_timestamp(now, ttl_seconds);
     let expires_at_i64 = to_i64(expires_at, "expires_at")?;
@@ -59,4 +61,13 @@ fn prune_expired(conn: &Connection, now: u64) -> StorageResult<()> {
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
+}
+
+fn current_unix_timestamp() -> StorageResult<u64> {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| {
+            StorageError::CacheDb(format!("system time before unix epoch: {err}"))
+        })?;
+    Ok(duration.as_secs())
 }

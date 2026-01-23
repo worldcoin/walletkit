@@ -101,12 +101,8 @@ impl CacheDb {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub fn session_key_get(
-        &self,
-        rp_id: [u8; 32],
-        now: u64,
-    ) -> StorageResult<Option<[u8; 32]>> {
-        session::get(&self.conn, rp_id, now)
+    pub fn session_key_get(&self, rp_id: [u8; 32]) -> StorageResult<Option<[u8; 32]>> {
+        session::get(&self.conn, rp_id)
     }
 
     /// Stores a session key with a TTL.
@@ -121,10 +117,9 @@ impl CacheDb {
         _lock: &StorageLockGuard,
         rp_id: [u8; 32],
         k_session: [u8; 32],
-        now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        session::put(&self.conn, rp_id, k_session, now, ttl_seconds)
+        session::put(&self.conn, rp_id, k_session, ttl_seconds)
     }
 
     /// Checks for a prior disclosure by request id.
@@ -178,6 +173,7 @@ mod tests {
     use crate::storage::types::ReplayGuardKind;
     use std::fs;
     use std::path::PathBuf;
+    use std::time::Duration;
     use uuid::Uuid;
 
     fn temp_cache_path() -> PathBuf {
@@ -228,14 +224,14 @@ mod tests {
         let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
         let rp_id = [0x01u8; 32];
         let k_session = [0x02u8; 32];
-        db.session_key_put(&guard, rp_id, k_session, 100, 1000)
+        db.session_key_put(&guard, rp_id, k_session, 1000)
             .expect("put session key");
         drop(db);
 
         fs::write(&path, b"corrupt").expect("corrupt cache file");
 
         let db = CacheDb::new(&path, key, &guard).expect("rebuild cache");
-        let value = db.session_key_get(rp_id, 200).expect("get session key");
+        let value = db.session_key_get(rp_id).expect("get session key");
         assert!(value.is_none());
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
@@ -275,11 +271,12 @@ mod tests {
         let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
         let rp_id = [0x55u8; 32];
         let k_session = [0x66u8; 32];
-        db.session_key_put(&guard, rp_id, k_session, 100, 10)
+        db.session_key_put(&guard, rp_id, k_session, 1)
             .expect("put session key");
-        let hit = db.session_key_get(rp_id, 105).expect("get session key");
+        let hit = db.session_key_get(rp_id).expect("get session key");
         assert!(hit.is_some());
-        let miss = db.session_key_get(rp_id, 111).expect("get session key");
+        std::thread::sleep(Duration::from_secs(2));
+        let miss = db.session_key_get(rp_id).expect("get session key");
         assert!(miss.is_none());
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
