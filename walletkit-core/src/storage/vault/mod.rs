@@ -7,7 +7,7 @@ mod tests;
 
 use std::path::Path;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, params_from_iter, Connection};
 use uuid::Uuid;
 
 use super::error::{StorageError, StorageResult};
@@ -186,7 +186,7 @@ impl VaultDb {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub fn list_credentials(
+    pub fn d(
         &self,
         issuer_schema_id: Option<u64>,
         now: u64,
@@ -194,64 +194,39 @@ impl VaultDb {
         let mut records = Vec::new();
         let status = CredentialStatus::Active.as_i64();
         let expires = to_i64(now, "now")?;
-        if let Some(issuer_schema_id) = issuer_schema_id {
-            let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
-            let mut stmt = self
-                .conn
-                .prepare(
-                    "SELECT
-                        cr.credential_id,
-                        cr.issuer_schema_id,
-                        cr.status,
-                        cr.subject_blinding_factor,
-                        cr.genesis_issued_at,
-                        cr.expires_at,
-                        cr.updated_at,
-                        cb.bytes,
-                        ad.bytes
-                     FROM credential_records cr
-                     JOIN blob_objects cb ON cb.content_id = cr.credential_blob_cid
-                     LEFT JOIN blob_objects ad ON ad.content_id = cr.associated_data_cid
-                     WHERE cr.status = ?1
-                       AND (cr.expires_at IS NULL OR cr.expires_at > ?2)
-                       AND cr.issuer_schema_id = ?3
-                     ORDER BY cr.updated_at DESC",
-                )
-                .map_err(|err| map_db_err(&err))?;
-            let mut rows = stmt
-                .query(params![status, expires, issuer_schema_id_i64])
-                .map_err(|err| map_db_err(&err))?;
-            while let Some(row) = rows.next().map_err(|err| map_db_err(&err))? {
-                records.push(map_record(row)?);
-            }
-        } else {
-            let mut stmt = self
-                .conn
-                .prepare(
-                    "SELECT
-                        cr.credential_id,
-                        cr.issuer_schema_id,
-                        cr.status,
-                        cr.subject_blinding_factor,
-                        cr.genesis_issued_at,
-                        cr.expires_at,
-                        cr.updated_at,
-                        cb.bytes,
-                        ad.bytes
-                     FROM credential_records cr
-                     JOIN blob_objects cb ON cb.content_id = cr.credential_blob_cid
-                     LEFT JOIN blob_objects ad ON ad.content_id = cr.associated_data_cid
-                     WHERE cr.status = ?1
-                       AND (cr.expires_at IS NULL OR cr.expires_at > ?2)
-                     ORDER BY cr.updated_at DESC",
-                )
-                .map_err(|err| map_db_err(&err))?;
-            let mut rows = stmt
-                .query(params![status, expires])
-                .map_err(|err| map_db_err(&err))?;
-            while let Some(row) = rows.next().map_err(|err| map_db_err(&err))? {
-                records.push(map_record(row)?);
-            }
+        let issuer_schema_id_i64 = issuer_schema_id
+            .map(|value| to_i64(value, "issuer_schema_id"))
+            .transpose()?;
+        let mut sql = String::from(
+            "SELECT
+                cr.credential_id,
+                cr.issuer_schema_id,
+                cr.status,
+                cr.subject_blinding_factor,
+                cr.genesis_issued_at,
+                cr.expires_at,
+                cr.updated_at,
+                cb.bytes,
+                ad.bytes
+             FROM credential_records cr
+             JOIN blob_objects cb ON cb.content_id = cr.credential_blob_cid
+             LEFT JOIN blob_objects ad ON ad.content_id = cr.associated_data_cid
+             WHERE cr.status = ?1
+               AND (cr.expires_at IS NULL OR cr.expires_at > ?2)",
+        );
+        let mut params: Vec<&dyn rusqlite::ToSql> = vec![&status, &expires];
+        if let Some(ref issuer_schema_id_i64) = issuer_schema_id_i64 {
+            sql.push_str(" AND cr.issuer_schema_id = ?3");
+            params.push(issuer_schema_id_i64);
+        }
+        sql.push_str(" ORDER BY cr.updated_at DESC");
+
+        let mut stmt = self.conn.prepare(&sql).map_err(|err| map_db_err(&err))?;
+        let mut rows = stmt
+            .query(params_from_iter(params))
+            .map_err(|err| map_db_err(&err))?;
+        while let Some(row) = rows.next().map_err(|err| map_db_err(&err))? {
+            records.push(map_record(row)?);
         }
         Ok(records)
     }
