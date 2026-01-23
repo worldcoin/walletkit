@@ -51,6 +51,9 @@ impl VaultDb {
 
     /// Initializes or validates the leaf index for this vault.
     ///
+    /// The leaf index is the account's position in the registry tree and must be
+    /// consistent for all subsequent operations. A mismatch returns an error.
+    ///
     /// # Errors
     ///
     /// Returns an error if the stored leaf index does not match.
@@ -90,6 +93,9 @@ impl VaultDb {
     }
 
     /// Stores a credential and optional associated data.
+    ///
+    /// Blob content is deduplicated by content id to avoid storing identical
+    /// payloads multiple times.
     ///
     /// # Errors
     ///

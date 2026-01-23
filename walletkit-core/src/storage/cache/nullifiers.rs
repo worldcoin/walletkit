@@ -1,4 +1,7 @@
-//! Used-nullifier cache helpers (Phase 4 hooks).
+//! Used-nullifier cache helpers for replay protection.
+//!
+//! Tracks request ids and nullifiers to enforce single-use disclosures while
+//! remaining idempotent for retries within the TTL window.
 
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 

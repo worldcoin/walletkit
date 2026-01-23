@@ -18,6 +18,9 @@ use super::{CacheDb, VaultDb};
 pub trait CredentialStorage {
     /// Initializes storage and validates the account leaf index.
     ///
+    /// Loads or creates the account key envelope, opens the vault/cache, and
+    /// ensures the stored leaf index matches the provided value.
+    ///
     /// # Errors
     ///
     /// Returns an error if storage initialization fails or the leaf index is invalid.
@@ -89,6 +92,9 @@ pub trait CredentialStorage {
     ) -> StorageResult<Option<Vec<u8>>>;
 
     /// Enforces replay safety for replay guard.
+    ///
+    /// Returns the stored proof bytes on replay and rejects nullifier reuse
+    /// across different request ids.
     ///
     /// # Errors
     ///

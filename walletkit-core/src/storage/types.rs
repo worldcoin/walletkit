@@ -3,6 +3,9 @@
 use super::error::{StorageError, StorageResult};
 
 /// Kind of blob stored in the vault.
+///
+/// Blob records (stored in the `blob_objects` table) carry a kind tag that
+/// distinguishes credential payloads from associated data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 #[repr(u8)]
 pub enum BlobKind {
@@ -43,6 +46,9 @@ pub type RequestId = [u8; 32];
 pub type Nullifier = [u8; 32];
 
 /// In-memory representation of a stored credential.
+///
+/// This struct joins vault metadata with the blob bytes so callers can consume
+/// a single, self-contained record without additional lookups.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredentialRecord {
     /// Credential identifier.
@@ -85,6 +91,9 @@ pub struct CredentialRecordFfi {
 }
 
 /// Result of replay guard enforcement.
+///
+/// The replay guard is idempotent: repeated calls with the same request return
+/// the original proof bytes rather than generating a new disclosure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReplayGuardResult {
     /// Stored bytes for the first disclosure of a request.

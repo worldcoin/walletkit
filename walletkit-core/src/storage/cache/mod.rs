@@ -16,6 +16,9 @@ mod session;
 mod util;
 
 /// Encrypted cache database wrapper.
+///
+/// Stores non-authoritative, regenerable data (proof cache, session keys, replay guard)
+/// to improve performance without affecting correctness if rebuilt.
 #[derive(Debug)]
 pub struct CacheDb {
     conn: Connection,
@@ -23,6 +26,9 @@ pub struct CacheDb {
 
 impl CacheDb {
     /// Opens or creates the encrypted cache database at `path`.
+    ///
+    /// If integrity checks fail, the cache is rebuilt since its contents can be
+    /// regenerated from authoritative sources.
     ///
     /// # Errors
     ///
@@ -37,6 +43,9 @@ impl CacheDb {
     }
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
+    ///
+    /// Returns `None` when missing or expired so callers can refetch from the
+    /// indexer without relying on stale proofs.
     ///
     /// # Errors
     ///
@@ -53,6 +62,8 @@ impl CacheDb {
 
     /// Inserts a cached Merkle proof with a TTL.
     /// Uses the database current time for `inserted_at`.
+    ///
+    /// Existing entries for the same (registry, root, leaf index) are replaced.
     ///
     /// # Errors
     ///
@@ -82,6 +93,8 @@ impl CacheDb {
 
     /// Fetches a cached session key if present.
     ///
+    /// Session keys are optional performance hints and may be missing or expired.
+    ///
     /// # Errors
     ///
     /// Returns an error if the query fails.
@@ -94,6 +107,8 @@ impl CacheDb {
     }
 
     /// Stores a session key with a TTL.
+    ///
+    /// The key is cached per relying party (`rp_id`) and replaced on insert.
     ///
     /// # Errors
     ///
@@ -111,6 +126,8 @@ impl CacheDb {
 
     /// Checks for a prior disclosure by request id.
     ///
+    /// Returns the original proof bytes to make disclosure idempotent.
+    ///
     /// # Errors
     ///
     /// Returns an error if the query fails.
@@ -123,6 +140,9 @@ impl CacheDb {
     }
 
     /// Enforces replay safety for replay guard.
+    ///
+    /// Ensures a nullifier is disclosed at most once and that repeated requests
+    /// return the previously stored proof bytes.
     ///
     /// # Errors
     ///

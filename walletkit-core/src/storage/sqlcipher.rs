@@ -57,6 +57,9 @@ pub(super) fn apply_key(
 }
 
 /// Configures durable WAL settings.
+///
+/// WAL improves read/write concurrency while `synchronous = FULL` prioritizes
+/// durability for credential data.
 pub(super) fn configure_connection(conn: &Connection) -> SqlcipherResult<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
@@ -67,6 +70,8 @@ pub(super) fn configure_connection(conn: &Connection) -> SqlcipherResult<()> {
 }
 
 /// Runs an integrity check.
+///
+/// Uses `PRAGMA integrity_check` to detect corruption on open.
 pub(super) fn integrity_check(conn: &Connection) -> SqlcipherResult<bool> {
     let result: String =
         conn.query_row("PRAGMA integrity_check;", [], |row| row.get(0))?;
