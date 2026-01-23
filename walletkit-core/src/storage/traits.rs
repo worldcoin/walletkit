@@ -8,7 +8,10 @@ use super::paths::StoragePaths;
 /// Device keystore interface used to seal and open account keys.
 #[uniffi::export(with_foreign)]
 pub trait DeviceKeystore: Send + Sync {
-    /// Seals plaintext under the device-bound key, binding `associated_data`.
+    /// Seals plaintext under the device-bound key, authenticating `associated_data`.
+    ///
+    /// The associated data is not encrypted, but it is integrity-protected as part
+    /// of the seal operation. Any mismatch when opening must fail.
     ///
     /// # Errors
     ///
@@ -20,6 +23,9 @@ pub trait DeviceKeystore: Send + Sync {
     ) -> StorageResult<Vec<u8>>;
 
     /// Opens ciphertext under the device-bound key, verifying `associated_data`.
+    ///
+    /// The same associated data used during sealing must be supplied or the open
+    /// operation must fail.
     ///
     /// # Errors
     ///
