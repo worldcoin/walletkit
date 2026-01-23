@@ -47,31 +47,18 @@ pub type RequestId = [u8; 32];
 /// Nullifier identifier used for replay safety.
 pub type Nullifier = [u8; 32];
 
-/// In-memory representation of a stored credential.
+/// In-memory representation of stored credential metadata.
 ///
-/// This struct joins vault metadata with the blob bytes so callers can consume
-/// a single, self-contained record without additional lookups.
+/// This is intentionally small and excludes blobs; full credential payloads can
+/// be fetched separately to avoid heavy list queries.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredentialRecord {
     /// Credential identifier.
     pub credential_id: CredentialId,
     /// Issuer schema identifier.
     pub issuer_schema_id: u64,
-    /// Subject blinding factor tied to the credential subject.
-    ///
-    /// Stored for indexing and query efficiency; the authoritative value lives
-    /// in the credential payload itself.
-    pub subject_blinding_factor: [u8; 32],
-    /// Genesis issuance timestamp (seconds).
-    pub genesis_issued_at: u64,
     /// Optional expiry timestamp (seconds).
     pub expires_at: Option<u64>,
-    /// Last updated timestamp (seconds).
-    pub updated_at: u64,
-    /// Raw credential blob bytes.
-    pub credential_blob: Vec<u8>,
-    /// Optional associated data blob bytes.
-    pub associated_data: Option<Vec<u8>>,
 }
 
 /// FFI-friendly credential record.
@@ -81,18 +68,8 @@ pub struct CredentialRecordFfi {
     pub credential_id: u64,
     /// Issuer schema identifier.
     pub issuer_schema_id: u64,
-    /// Subject blinding factor tied to the credential subject.
-    pub subject_blinding_factor: Vec<u8>,
-    /// Genesis issuance timestamp (seconds).
-    pub genesis_issued_at: u64,
     /// Optional expiry timestamp (seconds).
     pub expires_at: Option<u64>,
-    /// Last updated timestamp (seconds).
-    pub updated_at: u64,
-    /// Raw credential blob bytes.
-    pub credential_blob: Vec<u8>,
-    /// Optional associated data blob bytes.
-    pub associated_data: Option<Vec<u8>>,
 }
 
 /// Result of replay guard enforcement.
@@ -130,12 +107,7 @@ impl From<CredentialRecord> for CredentialRecordFfi {
         Self {
             credential_id: record.credential_id,
             issuer_schema_id: record.issuer_schema_id,
-            subject_blinding_factor: record.subject_blinding_factor.to_vec(),
-            genesis_issued_at: record.genesis_issued_at,
             expires_at: record.expires_at,
-            updated_at: record.updated_at,
-            credential_blob: record.credential_blob,
-            associated_data: record.associated_data,
         }
     }
 }

@@ -118,7 +118,8 @@ fn test_store_credential_without_associated_data() {
     let records = db.list_credentials(None, 1000).expect("list credentials");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].credential_id, credential_id);
-    assert!(records[0].associated_data.is_none());
+    assert_eq!(records[0].issuer_schema_id, 10);
+    assert!(records[0].expires_at.is_none());
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -143,10 +144,8 @@ fn test_store_credential_with_associated_data() {
     .expect("store credential");
     let records = db.list_credentials(None, 1000).expect("list credentials");
     assert_eq!(records.len(), 1);
-    assert_eq!(
-        records[0].associated_data.as_deref(),
-        Some(b"associated".as_slice())
-    );
+    assert_eq!(records[0].issuer_schema_id, 11);
+    assert!(records[0].expires_at.is_none());
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }

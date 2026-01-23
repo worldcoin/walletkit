@@ -183,7 +183,7 @@ impl VaultDb {
         Ok(to_u64(credential_id, "credential_id")?)
     }
 
-    /// Lists active credentials, optionally filtered by issuer schema.
+    /// Lists active credential metadata, optionally filtered by issuer schema.
     ///
     /// # Errors
     ///
@@ -202,15 +202,8 @@ impl VaultDb {
             "SELECT
                 cr.credential_id,
                 cr.issuer_schema_id,
-                cr.subject_blinding_factor,
-                cr.genesis_issued_at,
-                cr.expires_at,
-                cr.updated_at,
-                cb.bytes,
-                ad.bytes
+                cr.expires_at
              FROM credential_records cr
-             JOIN blob_objects cb ON cb.content_id = cr.credential_blob_cid
-             LEFT JOIN blob_objects ad ON ad.content_id = cr.associated_data_cid
              WHERE (cr.expires_at IS NULL OR cr.expires_at > ?1)",
         );
         let mut params: Vec<&dyn rusqlite::ToSql> = vec![&expires];

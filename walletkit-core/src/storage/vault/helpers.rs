@@ -21,46 +21,14 @@ pub(super) fn compute_content_id(blob_kind: BlobKind, plaintext: &[u8]) -> Conte
 pub(super) fn map_record(row: &Row<'_>) -> StorageResult<CredentialRecord> {
     let credential_id: i64 = row.get(0).map_err(|err| map_db_err(&err))?;
     let issuer_schema_id: i64 = row.get(1).map_err(|err| map_db_err(&err))?;
-    let subject_blinding_factor_bytes: Vec<u8> =
-        row.get(2).map_err(|err| map_db_err(&err))?;
-    let genesis_issued_at: i64 = row.get(3).map_err(|err| map_db_err(&err))?;
-    let expires_at: Option<i64> = row.get(4).map_err(|err| map_db_err(&err))?;
-    let updated_at: i64 = row.get(5).map_err(|err| map_db_err(&err))?;
-    let credential_blob: Vec<u8> = row.get(6).map_err(|err| map_db_err(&err))?;
-    let associated_data: Option<Vec<u8>> =
-        row.get(7).map_err(|err| map_db_err(&err))?;
-
-    let subject_blinding_factor = parse_fixed_bytes::<32>(
-        &subject_blinding_factor_bytes,
-        "subject_blinding_factor",
-    )?;
+    let expires_at: Option<i64> = row.get(2).map_err(|err| map_db_err(&err))?;
     Ok(CredentialRecord {
         credential_id: to_u64(credential_id, "credential_id")?,
         issuer_schema_id: to_u64(issuer_schema_id, "issuer_schema_id")?,
-        subject_blinding_factor,
-        genesis_issued_at: to_u64(genesis_issued_at, "genesis_issued_at")?,
         expires_at: expires_at
             .map(|value| to_u64(value, "expires_at"))
             .transpose()?,
-        updated_at: to_u64(updated_at, "updated_at")?,
-        credential_blob,
-        associated_data,
     })
-}
-
-pub(super) fn parse_fixed_bytes<const N: usize>(
-    bytes: &[u8],
-    label: &str,
-) -> StorageResult<[u8; N]> {
-    if bytes.len() != N {
-        return Err(StorageError::VaultDb(format!(
-            "{label} length mismatch: expected {N}, got {}",
-            bytes.len()
-        )));
-    }
-    let mut out = [0u8; N];
-    out.copy_from_slice(bytes);
-    Ok(out)
 }
 
 pub(super) fn to_i64(value: u64, label: &str) -> StorageResult<i64> {

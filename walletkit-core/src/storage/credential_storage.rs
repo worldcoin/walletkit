@@ -26,7 +26,7 @@ pub trait CredentialStorage {
     /// Returns an error if storage initialization fails or the leaf index is invalid.
     fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()>;
 
-    /// Lists active credentials, optionally filtered by issuer schema ID.
+    /// Lists active credential metadata, optionally filtered by issuer schema ID.
     ///
     /// # Errors
     ///
@@ -235,7 +235,7 @@ impl CredentialStore {
         inner.init(leaf_index, now)
     }
 
-    /// Lists active credentials, optionally filtered by issuer schema ID.
+    /// Lists active credential metadata, optionally filtered by issuer schema ID.
     ///
     /// # Errors
     ///

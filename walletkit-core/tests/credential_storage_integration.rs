@@ -216,9 +216,7 @@ fn test_storage_flow_end_to_end() {
     let record = &records[0];
     assert_eq!(record.credential_id, credential_id);
     assert_eq!(record.issuer_schema_id, 7);
-    assert_eq!(record.subject_blinding_factor, [0x11u8; 32]);
-    assert_eq!(record.credential_blob, vec![1, 2, 3]);
-    assert_eq!(record.associated_data.as_deref(), Some(&[4, 5, 6][..]));
+    assert_eq!(record.expires_at, Some(1_800_000_000));
 
     let root_bytes = [0xAAu8; 32];
     CredentialStorage::merkle_cache_put(&mut store, 1, root_bytes, vec![9, 9], 100, 10)
