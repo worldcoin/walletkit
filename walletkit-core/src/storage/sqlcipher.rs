@@ -68,8 +68,9 @@ pub(super) fn apply_key(
 
 /// Configures durable WAL settings.
 ///
-/// WAL improves read/write concurrency while `synchronous = FULL` prioritizes
-/// durability for credential data.
+/// Rationale:
+/// - `journal_mode = WAL` enables concurrent readers during writes
+/// - `synchronous = FULL` maximizes crash consistency
 pub(super) fn configure_connection(conn: &Connection) -> SqlcipherResult<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
