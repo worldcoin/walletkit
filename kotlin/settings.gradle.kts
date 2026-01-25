@@ -14,6 +14,7 @@ pluginManagement {
     plugins {
         id("com.android.library") version "8.3.0"
         id("org.jetbrains.kotlin.android") version "1.9.22"
+        id("org.jetbrains.kotlin.jvm") version "1.9.22"
     }
 }
 
@@ -25,4 +26,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "walletkit"
-include("lib")
+include("walletkit-android")
+include("walletkit-tests")
