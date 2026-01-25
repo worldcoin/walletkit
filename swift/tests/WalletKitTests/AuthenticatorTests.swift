@@ -7,10 +7,16 @@ final class AuthenticatorTests: XCTestCase {
 
     // MARK: - Helper Functions
 
+    struct U256HexTestCase {
+        let hexInput: String
+        let expectedDecimal: String
+        let expectedHex: String
+    }
+
     func generateRandomSeed() -> Data {
         var bytes = [UInt8](repeating: 0, count: 32)
-        for i in 0..<32 {
-            bytes[i] = UInt8.random(in: 0...255)
+        for index in 0..<32 {
+            bytes[index] = UInt8.random(in: 0...255)
         }
         return Data(bytes)
     }
@@ -60,33 +66,41 @@ final class AuthenticatorTests: XCTestCase {
 
     func testU256WrapperDeterministicHexParsing() throws {
         // Test with known values from Rust tests
-        let testCases: [(String, String, String)] = [
-            (
-                "0x0000000000000000000000000000000000000000000000000000000000000001",
-                "1",
-                "0x0000000000000000000000000000000000000000000000000000000000000001"
+        let testCases: [U256HexTestCase] = [
+            U256HexTestCase(
+                hexInput: "0x0000000000000000000000000000000000000000000000000000000000000001",
+                expectedDecimal: "1",
+                expectedHex: "0x0000000000000000000000000000000000000000000000000000000000000001"
             ),
-            (
-                "0x000000000000000000000000000000000000000000000000000000000000002a",
-                "42",
-                "0x000000000000000000000000000000000000000000000000000000000000002a"
+            U256HexTestCase(
+                hexInput: "0x000000000000000000000000000000000000000000000000000000000000002a",
+                expectedDecimal: "42",
+                expectedHex: "0x000000000000000000000000000000000000000000000000000000000000002a"
             ),
-            (
-                "0x00000000000000000000000000000000000000000000000000000000000f423f",
-                "999999",
-                "0x00000000000000000000000000000000000000000000000000000000000f423f"
+            U256HexTestCase(
+                hexInput: "0x00000000000000000000000000000000000000000000000000000000000f423f",
+                expectedDecimal: "999999",
+                expectedHex: "0x00000000000000000000000000000000000000000000000000000000000f423f"
             ),
-            (
-                "0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6",
-                "80084422859880547211683076133703299733277748156566366325829078699459944778998",
-                "0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6"
-            ),
+            U256HexTestCase(
+                hexInput: "0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6",
+                expectedDecimal: "80084422859880547211683076133703299733277748156566366325829078699459944778998",
+                expectedHex: "0xb10e2d527612073b26eecdfd717e6a320cf44b4afac2b0732d9fcbe2b7fa0cf6"
+            )
         ]
 
-        for (hexInput, expectedDecimal, expectedHex) in testCases {
-            let u256 = try U256Wrapper.tryFromHexString(hexString: hexInput)
-            XCTAssertEqual(u256.toDecimalString(), expectedDecimal, "Decimal mismatch for \(hexInput)")
-            XCTAssertEqual(u256.toHexString(), expectedHex, "Hex mismatch for \(hexInput)")
+        for testCase in testCases {
+            let u256 = try U256Wrapper.tryFromHexString(hexString: testCase.hexInput)
+            XCTAssertEqual(
+                u256.toDecimalString(),
+                testCase.expectedDecimal,
+                "Decimal mismatch for \(testCase.hexInput)"
+            )
+            XCTAssertEqual(
+                u256.toHexString(),
+                testCase.expectedHex,
+                "Hex mismatch for \(testCase.hexInput)"
+            )
         }
     }
 
@@ -96,7 +110,7 @@ final class AuthenticatorTests: XCTestCase {
             "0x0000000000000000000000000000000000000000000000000000000000000001",
             "0x00000000000000000000000000000000000000000000000000000000000000ff",
             "0x0000000000000000000000000000000000000000000000000000000000001234",
-            "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
         ]
 
         for hexString in hexStrings {
@@ -117,7 +131,7 @@ final class AuthenticatorTests: XCTestCase {
             "0xZZZZ",
             "1g",
             "not a hex string",
-            "0xGGGG",
+            "0xGGGG"
         ]
 
         for invalidInput in invalidInputs {
@@ -180,7 +194,7 @@ final class AuthenticatorTests: XCTestCase {
         let testCases: [(UInt64, String)] = [
             (1, "0x0000000000000000000000000000000000000000000000000000000000000001"),
             (2, "0x0000000000000000000000000000000000000000000000000000000000000002"),
-            (255, "0x00000000000000000000000000000000000000000000000000000000000000ff"),
+            (255, "0x00000000000000000000000000000000000000000000000000000000000000ff")
         ]
 
         for (value, expectedHex) in testCases {
