@@ -167,7 +167,7 @@ jobs:
 
       - name: Build for target
         run: |
-          CROSS_NO_WARNINGS=0 cross build -p walletkit --target ${{ matrix.settings.target }} --release --locked
+          CROSS_NO_WARNINGS=0 cross build -p walletkit --target ${{ matrix.settings.target }} --release --locked --features v4
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
