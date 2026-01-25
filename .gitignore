@@ -22,9 +22,7 @@ swift/tests/.build/
 # Kotlin bindings and native libs
 kotlin/libs/
 kotlin/walletkit/src/main/java/uniffi/
-kotlin/walletkit-android/src/main/java/uniffi/
 kotlin/walletkit-tests/build/
-
 .build/
 
 .env
