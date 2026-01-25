@@ -6,7 +6,7 @@ set -euo pipefail
 
 PROJECT_ROOT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KOTLIN_DIR="$PROJECT_ROOT_PATH/kotlin"
-JAVA_SRC_DIR="$KOTLIN_DIR/walletkit-android/src/main/java"
+JAVA_SRC_DIR="$KOTLIN_DIR/walletkit/src/main/java"
 LIBS_DIR="$KOTLIN_DIR/libs"
 
 # Clean previous artifacts

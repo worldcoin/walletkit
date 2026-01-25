@@ -42,7 +42,7 @@ afterEvaluate {
         publications {
             create<MavenPublication>("maven") {
                 groupId = "org.world"
-                artifactId = "walletkit-android"
+                artifactId = "walletkit"
 
                 // Read version from Cargo.toml
                 val cargoToml = file("../../Cargo.toml")

@@ -26,5 +26,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "walletkit"
-include("walletkit-android")
+include("walletkit")
 include("walletkit-tests")

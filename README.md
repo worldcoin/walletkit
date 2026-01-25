@@ -28,7 +28,7 @@ WalletKit's bindings for Kotlin are distributed through GitHub packages.
 ```kotlin
 dependencies {
     /// ...
-    implementation "org.world:walletkit-android:VERSION"
+    implementation "org.world:walletkit:VERSION"
 }
 ```
 
@@ -70,7 +70,7 @@ To test local changes before publishing a release, use the build script to compi
 This will:
 1. Build the Rust library for all Android architectures (arm64-v8a, armeabi-v7a, x86_64, x86)
 2. Generate Kotlin UniFFI bindings
-3. Publish to `~/.m2/repository/org/world/walletkit-android/`
+3. Publish to `~/.m2/repository/org/world/walletkit/`
 
 In your consuming project, ensure `mavenLocal()` is included in your repositories and update your dependency version to the SNAPSHOT version (e.g., `0.3.1-SNAPSHOT`).
 
