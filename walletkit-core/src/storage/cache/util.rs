@@ -1,5 +1,6 @@
 //! Shared helpers for cache database operations.
 
+use rusqlite::{params, Connection};
 use std::io;
 
 use crate::storage::error::{StorageError, StorageResult};
@@ -10,7 +11,7 @@ pub(super) fn map_db_err(err: &rusqlite::Error) -> StorageError {
     StorageError::CacheDb(err.to_string())
 }
 
-/// Maps a SQLCipher error into a cache storage error.
+/// Maps a `SQLCipher` error into a cache storage error.
 pub(super) fn map_sqlcipher_err(err: SqlcipherError) -> StorageError {
     match err {
         SqlcipherError::Sqlite(err) => StorageError::CacheDb(err.to_string()),
@@ -47,6 +48,92 @@ pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
 pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
 pub(super) const CACHE_KEY_PREFIX_REPLAY_REQUEST: u8 = 0x03;
 pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x04;
+
+/// Timestamps for cache entry insertion and expiry.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct CacheEntryTimes {
+    inserted_at: i64,
+    expires_at: i64,
+}
+
+/// Builds timestamps for cache entry inserts.
+///
+/// # Errors
+///
+/// Returns an error if timestamps do not fit into `i64`.
+pub(super) fn cache_entry_times(
+    now: u64,
+    ttl_seconds: u64,
+) -> StorageResult<CacheEntryTimes> {
+    let expires_at = expiry_timestamp(now, ttl_seconds);
+    Ok(CacheEntryTimes {
+        inserted_at: to_i64(now, "now")?,
+        expires_at: to_i64(expires_at, "expires_at")?,
+    })
+}
+
+/// Removes expired cache entries before inserting new ones.
+///
+/// # Errors
+///
+/// Returns an error if the deletion fails.
+pub(super) fn prune_expired_entries(conn: &Connection, now: u64) -> StorageResult<()> {
+    let now_i64 = to_i64(now, "now")?;
+    conn.execute(
+        "DELETE FROM cache_entries WHERE expires_at <= ?1",
+        params![now_i64],
+    )
+    .map_err(|err| map_db_err(&err))?;
+    Ok(())
+}
+
+/// Inserts or replaces a cache entry row.
+///
+/// # Errors
+///
+/// Returns an error if the insert fails.
+pub(super) fn upsert_cache_entry(
+    conn: &Connection,
+    key: &[u8],
+    value: &[u8],
+    times: CacheEntryTimes,
+) -> StorageResult<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO cache_entries (
+            key_bytes,
+            value_bytes,
+            inserted_at,
+            expires_at
+         ) VALUES (?1, ?2, ?3, ?4)",
+        params![key, value, times.inserted_at, times.expires_at],
+    )
+    .map_err(|err| map_db_err(&err))?;
+    Ok(())
+}
+
+/// Inserts a cache entry row.
+///
+/// # Errors
+///
+/// Returns an error if the insert fails.
+pub(super) fn insert_cache_entry(
+    conn: &Connection,
+    key: &[u8],
+    value: &[u8],
+    times: CacheEntryTimes,
+) -> StorageResult<()> {
+    conn.execute(
+        "INSERT INTO cache_entries (
+            key_bytes,
+            value_bytes,
+            inserted_at,
+            expires_at
+         ) VALUES (?1, ?2, ?3, ?4)",
+        params![key, value, times.inserted_at, times.expires_at],
+    )
+    .map_err(|err| map_db_err(&err))?;
+    Ok(())
+}
 
 /// Builds a cache key by prefixing the payload with a type byte.
 fn cache_key_with_prefix(prefix: u8, payload: &[u8]) -> Vec<u8> {
@@ -89,7 +176,7 @@ pub(super) const fn expiry_timestamp(now: u64, ttl_seconds: u64) -> u64 {
     now.saturating_add(ttl_seconds)
 }
 
-/// Converts a `u64` into `i64` for SQLite parameter bindings.
+/// Converts a `u64` into `i64` for `SQLite` parameter bindings.
 ///
 /// # Errors
 ///

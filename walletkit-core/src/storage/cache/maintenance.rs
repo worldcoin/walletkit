@@ -35,7 +35,7 @@ pub(super) fn open_or_rebuild(
     }
 }
 
-/// Opens the cache DB, applies SQLCipher settings, and ensures schema.
+/// Opens the cache DB, applies `SQLCipher` settings, and ensures schema.
 ///
 /// # Errors
 ///

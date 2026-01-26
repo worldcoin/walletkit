@@ -4,7 +4,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::storage::error::StorageResult;
 
-use super::util::{expiry_timestamp, map_db_err, merkle_cache_key, to_i64};
+use super::util::{
+    cache_entry_times, map_db_err, merkle_cache_key, prune_expired_entries, to_i64,
+    upsert_cache_entry,
+};
 
 /// Fetches a cached Merkle proof if it is still valid.
 ///
@@ -48,35 +51,8 @@ pub(super) fn put(
     now: u64,
     ttl_seconds: u64,
 ) -> StorageResult<()> {
-    prune_expired(conn, now)?;
-    let expires_at = expiry_timestamp(now, ttl_seconds);
+    prune_expired_entries(conn, now)?;
     let key = merkle_cache_key(registry_kind, root, leaf_index);
-    let inserted_at_i64 = to_i64(now, "now")?;
-    let expires_at_i64 = to_i64(expires_at, "expires_at")?;
-    conn.execute(
-        "INSERT OR REPLACE INTO cache_entries (
-            key_bytes,
-            value_bytes,
-            inserted_at,
-            expires_at
-         ) VALUES (?1, ?2, ?3, ?4)",
-        params![key, proof_bytes, inserted_at_i64, expires_at_i64],
-    )
-    .map_err(|err| map_db_err(&err))?;
-    Ok(())
-}
-
-/// Removes expired cache entries before inserting new ones.
-///
-/// # Errors
-///
-/// Returns an error if the deletion fails.
-fn prune_expired(conn: &Connection, now: u64) -> StorageResult<()> {
-    let now_i64 = to_i64(now, "now")?;
-    conn.execute(
-        "DELETE FROM cache_entries WHERE expires_at <= ?1",
-        params![now_i64],
-    )
-    .map_err(|err| map_db_err(&err))?;
-    Ok(())
+    let times = cache_entry_times(now, ttl_seconds)?;
+    upsert_cache_entry(conn, key.as_slice(), proof_bytes, times)
 }
