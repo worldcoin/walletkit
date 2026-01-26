@@ -32,7 +32,7 @@ pub(super) fn replay_guard_bytes_for_request_id(
     .map_err(|err| map_db_err(&err))
 }
 
-pub(super) fn replay_guard_reserve(
+pub(super) fn replay_guard_begin(
     conn: &mut Connection,
     request_id: [u8; 32],
     nullifier: [u8; 32],
@@ -178,6 +178,6 @@ pub(super) fn begin_replay_guard(
     now: u64,
     ttl_seconds: u64,
 ) -> StorageResult<ReplayGuardResult> {
-    replay_guard_reserve(conn, request_id, nullifier, now, ttl_seconds)?;
+    replay_guard_begin(conn, request_id, nullifier, now, ttl_seconds)?;
     replay_guard_finalize(conn, request_id, proof_bytes, now, ttl_seconds)
 }

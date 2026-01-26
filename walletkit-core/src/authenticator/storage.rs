@@ -139,7 +139,7 @@ impl Authenticator {
             .await?;
         let nullifier_bytes = field_element_to_bytes(prepared.nullifier());
         storage
-            .replay_guard_reserve(
+            .replay_guard_begin(
                 request_id.to_vec(),
                 nullifier_bytes.to_vec(),
                 now,

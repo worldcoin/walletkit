@@ -88,12 +88,12 @@ pub trait CredentialStorage {
         now: u64,
     ) -> StorageResult<Option<Vec<u8>>>;
 
-    /// Reserves a replay guard entry by nullifier.
+    /// Begins a replay guard entry by nullifier.
     ///
     /// # Errors
     ///
     /// Returns an error if the nullifier was already disclosed.
-    fn replay_guard_reserve(
+    fn replay_guard_begin(
         &mut self,
         request_id: RequestId,
         nullifier: Nullifier,
@@ -356,12 +356,12 @@ impl CredentialStore {
         self.lock_inner()?.replay_guard_get(request_id, now)
     }
 
-    /// Reserves a replay guard entry by nullifier.
+    /// Begins a replay guard entry by nullifier.
     ///
     /// # Errors
     ///
     /// Returns an error if the nullifier was already disclosed.
-    pub fn replay_guard_reserve(
+    pub fn replay_guard_begin(
         &self,
         request_id: Vec<u8>,
         nullifier: Vec<u8>,
@@ -371,7 +371,7 @@ impl CredentialStore {
         let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
         let nullifier = parse_fixed_bytes::<32>(nullifier, "nullifier")?;
         self.lock_inner()?
-            .replay_guard_reserve(request_id, nullifier, now, ttl_seconds)
+            .replay_guard_begin(request_id, nullifier, now, ttl_seconds)
     }
 
     /// Finalizes a replay guard entry by storing proof bytes.
@@ -547,7 +547,7 @@ impl CredentialStorage for CredentialStoreInner {
         state.cache.replay_guard_get(request_id, now)
     }
 
-    fn replay_guard_reserve(
+    fn replay_guard_begin(
         &mut self,
         request_id: RequestId,
         nullifier: Nullifier,
@@ -558,7 +558,7 @@ impl CredentialStorage for CredentialStoreInner {
         let state = self.state_mut()?;
         state
             .cache
-            .replay_guard_reserve(&guard, request_id, nullifier, now, ttl_seconds)
+            .replay_guard_begin(&guard, request_id, nullifier, now, ttl_seconds)
     }
 
     fn replay_guard_finalize(
@@ -704,7 +704,7 @@ impl CredentialStorage for CredentialStore {
         inner.replay_guard_get(request_id, now)
     }
 
-    fn replay_guard_reserve(
+    fn replay_guard_begin(
         &mut self,
         request_id: RequestId,
         nullifier: Nullifier,
@@ -712,7 +712,7 @@ impl CredentialStorage for CredentialStore {
         ttl_seconds: u64,
     ) -> StorageResult<()> {
         let mut inner = self.lock_inner()?;
-        inner.replay_guard_reserve(request_id, nullifier, now, ttl_seconds)
+        inner.replay_guard_begin(request_id, nullifier, now, ttl_seconds)
     }
 
     fn replay_guard_finalize(

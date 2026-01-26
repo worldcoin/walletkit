@@ -231,7 +231,7 @@ fn test_storage_flow_end_to_end() {
 
     let request_id = [0xABu8; 32];
     let nullifier = [0xCDu8; 32];
-    CredentialStorage::replay_guard_reserve(
+    CredentialStorage::replay_guard_begin(
         &mut store,
         request_id,
         nullifier,

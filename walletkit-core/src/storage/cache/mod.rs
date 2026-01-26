@@ -137,12 +137,12 @@ impl CacheDb {
         nullifiers::replay_guard_bytes_for_request_id(&self.conn, request_id, now)
     }
 
-    /// Reserves a replay guard entry by nullifier before proof generation.
+    /// Begins a replay guard entry by nullifier before proof generation.
     ///
     /// # Errors
     ///
     /// Returns an error if the nullifier was already disclosed.
-    pub fn replay_guard_reserve(
+    pub fn replay_guard_begin(
         &mut self,
         _lock: &StorageLockGuard,
         request_id: [u8; 32],
@@ -150,7 +150,7 @@ impl CacheDb {
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        nullifiers::replay_guard_reserve(
+        nullifiers::replay_guard_begin(
             &mut self.conn,
             request_id,
             nullifier,
@@ -339,7 +339,7 @@ mod tests {
         let first = vec![1, 2, 3];
         let second = vec![9, 9, 9];
 
-        db.replay_guard_reserve(&guard, request_id, nullifier, 100, 1000)
+        db.replay_guard_begin(&guard, request_id, nullifier, 100, 1000)
             .expect("reserve");
         let fresh = db
             .replay_guard_finalize(&guard, request_id, first.clone(), 100, 1000)
@@ -378,7 +378,7 @@ mod tests {
         let nullifier = [0x44u8; 32];
         let payload = vec![4, 5, 6];
 
-        db.replay_guard_reserve(&guard, request_id, nullifier, 100, 10)
+        db.replay_guard_begin(&guard, request_id, nullifier, 100, 10)
             .expect("reserve");
 
         let reserved = db.replay_guard_get(request_id, 101).expect("lookup");
@@ -408,11 +408,11 @@ mod tests {
         let request_id_b = [0x02u8; 32];
         let nullifier = [0x03u8; 32];
 
-        db.replay_guard_reserve(&guard, request_id_a, nullifier, 100, 1000)
+        db.replay_guard_begin(&guard, request_id_a, nullifier, 100, 1000)
             .expect("first reserve");
 
         let err = db
-            .replay_guard_reserve(&guard, request_id_b, nullifier, 101, 1000)
+            .replay_guard_begin(&guard, request_id_b, nullifier, 101, 1000)
             .expect_err("nullifier conflict");
         match err {
             StorageError::NullifierAlreadyDisclosed => {}
@@ -434,12 +434,12 @@ mod tests {
         let request_id_b = [0x0Bu8; 32];
         let nullifier = [0x0Cu8; 32];
 
-        db.replay_guard_reserve(&guard, request_id_a, nullifier, 100, 10)
+        db.replay_guard_begin(&guard, request_id_a, nullifier, 100, 10)
             .expect("first reserve");
         db.replay_guard_finalize(&guard, request_id_a, vec![7], 100, 10)
             .expect("first finalize");
 
-        db.replay_guard_reserve(&guard, request_id_b, nullifier, 111, 10)
+        db.replay_guard_begin(&guard, request_id_b, nullifier, 111, 10)
             .expect("second reserve after expiry");
         let fresh = db
             .replay_guard_finalize(&guard, request_id_b, vec![8], 111, 10)
