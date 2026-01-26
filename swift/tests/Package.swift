@@ -6,7 +6,7 @@ let package = Package(
     name: "WalletKitForeignTestPackage",
     platforms: [
         .iOS(.v13),
-        .macOS(.v12),
+        .macOS(.v12)
     ],
     products: [
         .library(
@@ -27,6 +27,6 @@ let package = Package(
             name: "WalletKitTests",
             dependencies: ["WalletKit"],
             path: "WalletKitTests"
-        ),
+        )
     ]
 )
