@@ -6819,6 +6819,7 @@ dependencies = [
 [[package]]
 name = "world-id-core"
 version = "0.3.0"
+source = "git+https://github.com/worldcoin/world-id-protocol.git?rev=6dc7c42e6cfd9f1d2563e88fa6d0f2e20114edbb#6dc7c42e6cfd9f1d2563e88fa6d0f2e20114edbb"
 dependencies = [
  "alloy",
  "anyhow",
@@ -6860,6 +6861,7 @@ dependencies = [
 [[package]]
 name = "world-id-primitives"
 version = "0.3.0"
+source = "git+https://github.com/worldcoin/world-id-protocol.git?rev=6dc7c42e6cfd9f1d2563e88fa6d0f2e20114edbb#6dc7c42e6cfd9f1d2563e88fa6d0f2e20114edbb"
 dependencies = [
  "alloy-primitives",
  "ark-bn254 0.5.0",
