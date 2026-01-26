@@ -62,7 +62,7 @@ impl Authenticator {
         if let Some(bytes) =
             storage.merkle_cache_get(registry_kind, root.to_vec(), valid_before)?
         {
-            if let Some(cached) = deserialize_inclusion_proof(&bytes) {
+            if let Some(cached) = CachedInclusionProof::deserialize(&bytes) {
                 return inclusion_proof_payload_from_cached(&cached);
             }
         }
@@ -176,6 +176,10 @@ impl CachedInclusionProof {
         })?;
         Ok(bytes)
     }
+
+    fn deserialize(bytes: &[u8]) -> Option<Self> {
+        ciborium::de::from_reader(bytes).ok()
+    }
 }
 
 #[derive(Debug, Clone, uniffi::Record)]
@@ -188,10 +192,6 @@ pub struct InclusionProofPayload {
     pub siblings: Vec<String>,
     /// Compressed authenticator public keys as hex strings.
     pub authenticator_pubkeys: Vec<String>,
-}
-
-fn deserialize_inclusion_proof(bytes: &[u8]) -> Option<CachedInclusionProof> {
-    ciborium::de::from_reader(bytes).ok()
 }
 
 fn inclusion_proof_payload_from_cached(
@@ -293,7 +293,7 @@ mod tests {
             .merkle_cache_get(1, root_bytes.to_vec(), valid_before)
             .expect("cache get")
             .expect("cache hit");
-        let decoded = deserialize_inclusion_proof(&cached).expect("decode");
+        let decoded = CachedInclusionProof::deserialize(&cached).expect("decode");
         assert_eq!(decoded.proof.leaf_index, 42);
         assert_eq!(decoded.proof.root, root_fe);
         assert_eq!(decoded.authenticator_pubkeys.len(), 0);
