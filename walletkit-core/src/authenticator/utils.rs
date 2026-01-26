@@ -31,5 +31,5 @@ pub(super) fn parse_fixed_bytes<const N: usize>(
 }
 
 pub(super) fn u256_to_hex(value: U256) -> String {
-    format!("{:#066x}", value)
+    format!("{value:#066x}")
 }

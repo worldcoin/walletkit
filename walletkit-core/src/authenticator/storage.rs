@@ -25,6 +25,7 @@ impl Authenticator {
     /// # Errors
     ///
     /// Returns an error if the leaf index is invalid or storage initialization fails.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn init_storage(
         &self,
         storage: Arc<CredentialStore>,
@@ -68,7 +69,7 @@ impl Authenticator {
         let (proof, key_set) = self.0.fetch_inclusion_proof().await?;
         let payload = CachedInclusionProof {
             proof: proof.clone(),
-            authenticator_pubkeys: key_set.clone(),
+            authenticator_pubkeys: key_set,
         };
         let payload_bytes = payload.serialize()?;
         let proof_root = {
@@ -79,7 +80,7 @@ impl Authenticator {
         storage.merkle_cache_put(
             registry_kind,
             proof_root.to_vec(),
-            payload_bytes.clone(),
+            payload_bytes,
             now,
             ttl_seconds,
         )?;
@@ -95,6 +96,7 @@ impl Authenticator {
     /// Returns an error if the proof generation or storage update fails.
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::future_not_send)]
+    #[allow(clippy::unused_async)]
     pub async fn generate_proof_with_replay_guard(
         &self,
         storage: Arc<CredentialStore>,
@@ -223,7 +225,7 @@ fn inclusion_proof_payload_from_cached(
             .proof
             .siblings
             .iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect(),
         authenticator_pubkeys,
     })
