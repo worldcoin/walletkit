@@ -12,6 +12,7 @@ use crate::{
 };
 
 mod storage;
+mod utils;
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
