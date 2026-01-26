@@ -1,11 +1,11 @@
 //! Merkle proof cache helpers.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::Connection;
 
 use crate::storage::error::StorageResult;
 
 use super::util::{
-    cache_entry_times, map_db_err, merkle_cache_key, prune_expired_entries, to_i64,
+    cache_entry_times, get_cache_entry, merkle_cache_key, prune_expired_entries,
     upsert_cache_entry,
 };
 
@@ -21,20 +21,8 @@ pub(super) fn get(
     leaf_index: u64,
     valid_before: u64,
 ) -> StorageResult<Option<Vec<u8>>> {
-    let valid_before_i64 = to_i64(valid_before, "valid_before")?;
     let key = merkle_cache_key(registry_kind, root, leaf_index);
-    let proof = conn
-        .query_row(
-            "SELECT value_bytes
-             FROM cache_entries
-             WHERE key_bytes = ?1
-               AND expires_at > ?2",
-            params![key, valid_before_i64],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|err| map_db_err(&err))?;
-    Ok(proof)
+    get_cache_entry(conn, key.as_slice(), valid_before)
 }
 
 /// Inserts or replaces a cached Merkle proof with a TTL.

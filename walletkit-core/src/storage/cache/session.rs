@@ -2,13 +2,13 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::Connection;
 
 use crate::storage::error::{StorageError, StorageResult};
 
 use super::util::{
-    cache_entry_times, map_db_err, parse_fixed_bytes, prune_expired_entries,
-    session_cache_key, to_i64, upsert_cache_entry,
+    cache_entry_times, get_cache_entry, parse_fixed_bytes, prune_expired_entries,
+    session_cache_key, upsert_cache_entry,
 };
 
 /// Fetches a cached session key if it is still valid.
@@ -21,19 +21,8 @@ pub(super) fn get(
     rp_id: [u8; 32],
 ) -> StorageResult<Option<[u8; 32]>> {
     let now = current_unix_timestamp()?;
-    let now_i64 = to_i64(now, "now")?;
     let key = session_cache_key(rp_id);
-    let raw: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT value_bytes
-             FROM cache_entries
-             WHERE key_bytes = ?1
-               AND expires_at > ?2",
-            params![key, now_i64],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|err| map_db_err(&err))?;
+    let raw = get_cache_entry(conn, key.as_slice(), now)?;
     match raw {
         Some(bytes) => Ok(Some(parse_fixed_bytes::<32>(&bytes, "k_session")?)),
         None => Ok(None),

@@ -1,6 +1,6 @@
 //! Shared helpers for cache database operations.
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use std::io;
 
 use crate::storage::error::{StorageError, StorageResult};
@@ -132,6 +132,39 @@ pub(super) fn insert_cache_entry(
         params![key, value, times.inserted_at, times.expires_at],
     )
     .map_err(|err| map_db_err(&err))?;
+    Ok(())
+}
+
+/// Fetches a cache entry if it is still valid.
+///
+/// # Errors
+///
+/// Returns an error if the query or conversion fails.
+pub(super) fn get_cache_entry(
+    conn: &Connection,
+    key: &[u8],
+    valid_before: u64,
+) -> StorageResult<Option<Vec<u8>>> {
+    let valid_before_i64 = to_i64(valid_before, "valid_before")?;
+    conn.query_row(
+        "SELECT value_bytes
+         FROM cache_entries
+         WHERE key_bytes = ?1
+           AND expires_at > ?2",
+        params![key, valid_before_i64],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(|err| map_db_err(&err))
+}
+
+/// Commits a `Transaction` with mapped cache errors.
+///
+/// # Errors
+///
+/// Returns an error if the commit fails.
+pub(super) fn commit_transaction(tx: Transaction) -> StorageResult<()> {
+    tx.commit().map_err(|err| map_db_err(&err))?;
     Ok(())
 }
 
