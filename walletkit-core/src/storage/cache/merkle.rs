@@ -6,6 +6,11 @@ use crate::storage::error::StorageResult;
 
 use super::util::{expiry_timestamp, map_db_err, merkle_cache_key, to_i64};
 
+/// Fetches a cached Merkle proof if it is still valid.
+///
+/// # Errors
+///
+/// Returns an error if the query or conversion fails.
 pub(super) fn get(
     conn: &Connection,
     registry_kind: u8,
@@ -29,6 +34,11 @@ pub(super) fn get(
     Ok(proof)
 }
 
+/// Inserts or replaces a cached Merkle proof with a TTL.
+///
+/// # Errors
+///
+/// Returns an error if pruning or insert fails.
 pub(super) fn put(
     conn: &Connection,
     registry_kind: u8,
@@ -56,6 +66,11 @@ pub(super) fn put(
     Ok(())
 }
 
+/// Removes expired cache entries before inserting new ones.
+///
+/// # Errors
+///
+/// Returns an error if the deletion fails.
 fn prune_expired(conn: &Connection, now: u64) -> StorageResult<()> {
     let now_i64 = to_i64(now, "now")?;
     conn.execute(

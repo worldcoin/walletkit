@@ -8,6 +8,11 @@ use super::util::map_db_err;
 
 const CACHE_SCHEMA_VERSION: i64 = 2;
 
+/// Ensures the cache schema is present and at the expected version.
+///
+/// # Errors
+///
+/// Returns an error if schema creation or migration fails.
 pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS cache_meta (
@@ -42,6 +47,11 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
     Ok(())
 }
 
+/// Ensures the `cache_entries` table and indexes exist.
+///
+/// # Errors
+///
+/// Returns an error if schema creation fails.
 fn ensure_entries_schema(conn: &Connection) -> StorageResult<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS cache_entries (
@@ -59,6 +69,11 @@ fn ensure_entries_schema(conn: &Connection) -> StorageResult<()> {
     Ok(())
 }
 
+/// Drops legacy cache tables and recreates the current schema.
+///
+/// # Errors
+///
+/// Returns an error if the reset or re-init fails.
 fn reset_schema(conn: &Connection) -> StorageResult<()> {
     conn.execute_batch(
         "DROP TABLE IF EXISTS used_nullifiers;
@@ -74,6 +89,11 @@ fn reset_schema(conn: &Connection) -> StorageResult<()> {
     Ok(())
 }
 
+/// Inserts the current schema version into `cache_meta`.
+///
+/// # Errors
+///
+/// Returns an error if the insert fails.
 fn insert_meta(conn: &Connection) -> StorageResult<()> {
     conn.execute(
         "INSERT INTO cache_meta (schema_version, created_at, updated_at)

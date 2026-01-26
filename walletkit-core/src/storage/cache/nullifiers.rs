@@ -12,6 +12,11 @@ use super::util::{
     expiry_timestamp, map_db_err, replay_nullifier_key, replay_request_key, to_i64,
 };
 
+/// Fetches stored proof bytes for a request id if still valid.
+///
+/// # Errors
+///
+/// Returns an error if the query or conversion fails.
 pub(super) fn replay_guard_bytes_for_request_id(
     conn: &Connection,
     request_id: [u8; 32],
@@ -31,6 +36,11 @@ pub(super) fn replay_guard_bytes_for_request_id(
     .map_err(|err| map_db_err(&err))
 }
 
+/// Enforces replay-safety for disclosures within a single transaction.
+///
+/// # Errors
+///
+/// Returns an error if the nullifier was already disclosed or on DB failures.
 pub(super) fn begin_replay_guard(
     conn: &mut Connection,
     request_id: [u8; 32],

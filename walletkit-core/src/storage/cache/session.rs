@@ -10,6 +10,11 @@ use super::util::{
     expiry_timestamp, map_db_err, parse_fixed_bytes, session_cache_key, to_i64,
 };
 
+/// Fetches a cached session key if it is still valid.
+///
+/// # Errors
+///
+/// Returns an error if the query fails or the cached bytes are malformed.
 pub(super) fn get(
     conn: &Connection,
     rp_id: [u8; 32],
@@ -34,6 +39,11 @@ pub(super) fn get(
     }
 }
 
+/// Stores a session key with a TTL.
+///
+/// # Errors
+///
+/// Returns an error if pruning or insert fails.
 pub(super) fn put(
     conn: &Connection,
     rp_id: [u8; 32],
@@ -59,6 +69,11 @@ pub(super) fn put(
     Ok(())
 }
 
+/// Removes expired cache entries before inserting new ones.
+///
+/// # Errors
+///
+/// Returns an error if the deletion fails.
 fn prune_expired(conn: &Connection, now: u64) -> StorageResult<()> {
     let now_i64 = to_i64(now, "now")?;
     conn.execute(
@@ -69,6 +84,11 @@ fn prune_expired(conn: &Connection, now: u64) -> StorageResult<()> {
     Ok(())
 }
 
+/// Returns the current unix timestamp in seconds.
+///
+/// # Errors
+///
+/// Returns an error if system time is before the unix epoch.
 fn current_unix_timestamp() -> StorageResult<u64> {
     let duration = SystemTime::now()
         .duration_since(UNIX_EPOCH)
