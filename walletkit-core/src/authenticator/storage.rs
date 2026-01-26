@@ -71,7 +71,7 @@ impl Authenticator {
             authenticator_pubkeys: key_set.clone(),
         };
         let payload_bytes = serialize_inclusion_proof(&payload)?;
-        let proof_root = field_element_to_bytes(proof.root);
+        let proof_root = field_element_to_bytes(proof.root)?;
         storage.merkle_cache_put(
             registry_kind,
             proof_root.to_vec(),
@@ -145,7 +145,7 @@ impl Authenticator {
             })
         })?;
         let proof_bytes = serialize_proof_package(&proof, nullifier)?;
-        let nullifier_bytes = field_element_to_bytes(nullifier);
+        let nullifier_bytes = field_element_to_bytes(nullifier)?;
         storage
             .begin_replay_guard(
                 request_id.to_vec(),
@@ -282,7 +282,8 @@ mod tests {
             authenticator_pubkeys: key_set,
         };
         let payload_bytes = serialize_inclusion_proof(&payload).expect("serialize");
-        let root_bytes = field_element_to_bytes(proof.root);
+        let root_bytes =
+            field_element_to_bytes(proof.root).expect("field element bytes");
 
         store
             .merkle_cache_put(1, root_bytes.to_vec(), payload_bytes, 100, 60)
