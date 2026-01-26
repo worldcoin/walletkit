@@ -4,6 +4,7 @@ use std::fmt;
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags};
+use zeroize::{Zeroize, Zeroizing};
 
 /// `SQLCipher` helper errors.
 #[derive(Debug)]
@@ -53,16 +54,17 @@ pub(super) fn open_connection(
 /// Applies `SQLCipher` keying and validates cipher availability.
 pub(super) fn apply_key(
     conn: &Connection,
-    k_intermediate: [u8; 32],
+    mut k_intermediate: [u8; 32],
 ) -> SqlcipherResult<()> {
-    let key_hex = hex::encode(k_intermediate);
-    let pragma = format!("PRAGMA key = \"x'{key_hex}'\";");
+    let key_hex = Zeroizing::new(hex::encode(k_intermediate));
+    let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{key_hex}'\";"));
     conn.execute_batch(&pragma)?;
     let cipher_version: String =
         conn.query_row("PRAGMA cipher_version;", [], |row| row.get(0))?;
     if cipher_version.trim().is_empty() {
         return Err(SqlcipherError::CipherUnavailable);
     }
+    k_intermediate.zeroize();
     Ok(())
 }
 

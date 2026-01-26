@@ -1,12 +1,13 @@
 //! Account key envelope persistence helpers.
 
 use serde::{Deserialize, Serialize};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::error::{StorageError, StorageResult};
 
 const ENVELOPE_VERSION: u32 = 1;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub(crate) struct AccountKeyEnvelope {
     pub(crate) version: u32,
     pub(crate) wrapped_k_intermediate: Vec<u8>,
