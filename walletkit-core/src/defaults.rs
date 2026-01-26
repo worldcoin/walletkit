@@ -1,5 +1,5 @@
 use alloy_primitives::{address, Address};
-use world_id_core::primitives::{Config, PrimitiveError};
+use world_id_core::primitives::Config;
 
 use crate::{error::WalletKitError, Environment};
 
@@ -13,15 +13,6 @@ pub trait DefaultConfig {
     ) -> Result<Self, WalletKitError>
     where
         Self: Sized;
-}
-
-fn map_config_error(e: PrimitiveError) -> WalletKitError {
-    if let PrimitiveError::InvalidInput { attribute, reason } = e {
-        return WalletKitError::InvalidInput { attribute, reason };
-    }
-    WalletKitError::Generic {
-        error: format!("Config initialization error: {e}"),
-    }
 }
 
 impl DefaultConfig for Config {
@@ -40,7 +31,7 @@ impl DefaultConfig for Config {
                 vec![],
                 2,
             )
-            .map_err(map_config_error),
+            .map_err(WalletKitError::from),
 
             Environment::Production => Self::new(
                 rpc_url,
@@ -51,7 +42,7 @@ impl DefaultConfig for Config {
                 vec![],
                 2,
             )
-            .map_err(map_config_error),
+            .map_err(WalletKitError::from),
         }
     }
 }

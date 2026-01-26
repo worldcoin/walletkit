@@ -1,4 +1,5 @@
 use thiserror::Error;
+use world_id_core::primitives::PrimitiveError;
 
 #[cfg(feature = "storage")]
 use crate::storage::StorageError;
@@ -101,6 +102,31 @@ impl From<reqwest::Error> for WalletKitError {
     }
 }
 
+impl From<PrimitiveError> for WalletKitError {
+    fn from(error: PrimitiveError) -> Self {
+        match error {
+            PrimitiveError::InvalidInput { attribute, reason } => {
+                Self::InvalidInput { attribute, reason }
+            }
+            PrimitiveError::Serialization(error) => {
+                Self::SerializationError { error }
+            }
+            PrimitiveError::Deserialization(reason) => Self::InvalidInput {
+                attribute: "deserialization".to_string(),
+                reason,
+            },
+            PrimitiveError::NotInField => Self::InvalidInput {
+                attribute: "field_element".to_string(),
+                reason: "Provided value is not in the field".to_string(),
+            },
+            PrimitiveError::OutOfBounds => Self::InvalidInput {
+                attribute: "index".to_string(),
+                reason: "Provided index is out of bounds".to_string(),
+            },
+        }
+    }
+}
+
 impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     fn from(error: semaphore_rs::protocol::ProofError) -> Self {
         Self::ProofGeneration {
@@ -139,17 +165,7 @@ impl From<AuthenticatorError> for WalletKitError {
                 error: body,
                 status: Some(status.as_u16()),
             },
-            AuthenticatorError::PrimitiveError(error) => {
-                use world_id_core::primitives::PrimitiveError;
-                match error {
-                    PrimitiveError::InvalidInput { attribute, reason } => {
-                        Self::InvalidInput { attribute, reason }
-                    }
-                    _ => Self::Generic {
-                        error: error.to_string(),
-                    },
-                }
-            }
+            AuthenticatorError::PrimitiveError(error) => Self::from(error),
 
             _ => Self::AuthenticatorError {
                 error: error.to_string(),

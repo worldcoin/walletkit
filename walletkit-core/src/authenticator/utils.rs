@@ -3,7 +3,6 @@ use std::convert::TryFrom;
 use crate::error::WalletKitError;
 use crate::U256Wrapper;
 use ruint::aliases::U256;
-use world_id_core::FieldElement;
 
 /// Converts a leaf index from `U256Wrapper` to `u64`.
 ///
@@ -29,25 +28,6 @@ pub(super) fn parse_fixed_bytes<const N: usize>(
             attribute: label.to_string(),
             reason: format!("length mismatch: expected {N}, got {}", bytes.len()),
         })
-}
-
-pub(super) fn field_element_to_bytes(
-    value: FieldElement,
-) -> Result<[u8; 32], WalletKitError> {
-    let mut bytes = Vec::new();
-    value.serialize_as_bytes(&mut bytes).map_err(|err| {
-        WalletKitError::SerializationError {
-            error: err.to_string(),
-        }
-    })?;
-    bytes.try_into().map_err(|bytes: Vec<u8>| {
-        WalletKitError::SerializationError {
-            error: format!(
-                "field element length mismatch: expected 32, got {}",
-                bytes.len()
-            ),
-        }
-    })
 }
 
 pub(super) fn u256_to_hex(value: U256) -> String {

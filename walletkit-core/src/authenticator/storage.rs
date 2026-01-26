@@ -12,9 +12,7 @@ use crate::error::WalletKitError;
 use crate::storage::{CredentialStore, ReplayGuardKind, ReplayGuardResult};
 use crate::U256Wrapper;
 
-use super::utils::{
-    field_element_to_bytes, leaf_index_to_u64, parse_fixed_bytes, u256_to_hex,
-};
+use super::utils::{leaf_index_to_u64, parse_fixed_bytes, u256_to_hex};
 use super::Authenticator;
 
 /// Buffer cached proofs to remain valid during on-chain verification.
@@ -73,7 +71,11 @@ impl Authenticator {
             authenticator_pubkeys: key_set.clone(),
         };
         let payload_bytes = payload.serialize()?;
-        let proof_root = field_element_to_bytes(proof.root)?;
+        let proof_root = {
+            let mut bytes = Vec::new();
+            proof.root.serialize_as_bytes(&mut bytes)?;
+            parse_fixed_bytes::<32>(bytes, "field_element")?
+        };
         storage.merkle_cache_put(
             registry_kind,
             proof_root.to_vec(),
@@ -147,7 +149,11 @@ impl Authenticator {
             })
         })?;
         let proof_bytes = serialize_proof_package(&proof, nullifier)?;
-        let nullifier_bytes = field_element_to_bytes(nullifier)?;
+        let nullifier_bytes = {
+            let mut bytes = Vec::new();
+            nullifier.serialize_as_bytes(&mut bytes)?;
+            parse_fixed_bytes::<32>(bytes, "field_element")?
+        };
         storage
             .begin_replay_guard(
                 request_id.to_vec(),
@@ -282,8 +288,15 @@ mod tests {
             authenticator_pubkeys: key_set,
         };
         let payload_bytes = payload.serialize().expect("serialize");
-        let root_bytes =
-            field_element_to_bytes(proof.root).expect("field element bytes");
+        let root_bytes: [u8; 32] = {
+            let mut bytes = Vec::new();
+            proof
+                .root
+                .serialize_as_bytes(&mut bytes)
+                .expect("serialize field element");
+            parse_fixed_bytes::<32>(bytes, "field_element")
+                .expect("field element bytes")
+        };
 
         store
             .merkle_cache_put(1, root_bytes.to_vec(), payload_bytes, 100, 60)
