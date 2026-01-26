@@ -77,9 +77,15 @@ impl Authenticator {
             proof.root.serialize_as_bytes(&mut bytes)?;
             parse_fixed_bytes::<32>(bytes, "field_element")?
         };
+        if proof_root != root {
+            return Err(WalletKitError::InvalidInput {
+                attribute: "root".to_string(),
+                reason: "fetched proof root does not match requested root".to_string(),
+            });
+        }
         storage.merkle_cache_put(
             registry_kind,
-            proof_root.to_vec(),
+            root.to_vec(),
             payload_bytes,
             now,
             ttl_seconds,
