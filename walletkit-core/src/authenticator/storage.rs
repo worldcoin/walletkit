@@ -4,16 +4,18 @@ use serde::{Deserialize, Serialize};
 use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
 use world_id_core::primitives::merkle::MerkleInclusionProof;
 use world_id_core::primitives::TREE_DEPTH;
-use world_id_core::{requests::ProofRequest, Credential, FieldElement, OnchainKeyRepresentable};
+use world_id_core::{
+    requests::ProofRequest, Credential, FieldElement, OnchainKeyRepresentable,
+};
 
 use crate::error::WalletKitError;
 use crate::storage::{CredentialStore, ReplayGuardKind, ReplayGuardResult};
 use crate::U256Wrapper;
 
-use super::Authenticator;
 use super::utils::{
     field_element_to_bytes, leaf_index_to_u64, parse_fixed_bytes, u256_to_hex,
 };
+use super::Authenticator;
 
 /// Buffer cached proofs to remain valid during on-chain verification.
 const MERKLE_PROOF_VALIDITY_BUFFER_SECS: u64 = 120;
@@ -70,7 +72,7 @@ impl Authenticator {
             proof: proof.clone(),
             authenticator_pubkeys: key_set.clone(),
         };
-        let payload_bytes = serialize_inclusion_proof(&payload)?;
+        let payload_bytes = payload.serialize()?;
         let proof_root = field_element_to_bytes(proof.root)?;
         storage.merkle_cache_put(
             registry_kind,
@@ -164,6 +166,18 @@ struct CachedInclusionProof {
     authenticator_pubkeys: AuthenticatorPublicKeySet,
 }
 
+impl CachedInclusionProof {
+    fn serialize(&self) -> Result<Vec<u8>, WalletKitError> {
+        let mut bytes = Vec::new();
+        ciborium::ser::into_writer(self, &mut bytes).map_err(|err| {
+            WalletKitError::SerializationError {
+                error: err.to_string(),
+            }
+        })?;
+        Ok(bytes)
+    }
+}
+
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct InclusionProofPayload {
     /// Merkle root as hex string.
@@ -174,18 +188,6 @@ pub struct InclusionProofPayload {
     pub siblings: Vec<String>,
     /// Compressed authenticator public keys as hex strings.
     pub authenticator_pubkeys: Vec<String>,
-}
-
-fn serialize_inclusion_proof(
-    payload: &CachedInclusionProof,
-) -> Result<Vec<u8>, WalletKitError> {
-    let mut bytes = Vec::new();
-    ciborium::ser::into_writer(payload, &mut bytes).map_err(|err| {
-        WalletKitError::SerializationError {
-            error: err.to_string(),
-        }
-    })?;
-    Ok(bytes)
 }
 
 fn deserialize_inclusion_proof(bytes: &[u8]) -> Option<CachedInclusionProof> {
@@ -201,9 +203,7 @@ fn inclusion_proof_payload_from_cached(
         .map(|pk| {
             let encoded = pk.to_ethereum_representation().map_err(|err| {
                 WalletKitError::Generic {
-                    error: format!(
-                        "failed to encode authenticator pubkey: {err}"
-                    ),
+                    error: format!("failed to encode authenticator pubkey: {err}"),
                 }
             })?;
             Ok(u256_to_hex(encoded))
@@ -281,7 +281,7 @@ mod tests {
             proof: proof.clone(),
             authenticator_pubkeys: key_set,
         };
-        let payload_bytes = serialize_inclusion_proof(&payload).expect("serialize");
+        let payload_bytes = payload.serialize().expect("serialize");
         let root_bytes =
             field_element_to_bytes(proof.root).expect("field element bytes");
 
