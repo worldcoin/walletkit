@@ -21,10 +21,16 @@ alloy-core = { version = "1", default-features = false, features = ["sol-types"]
 alloy-primitives = { version = "1", default-features = false }
 walletkit-core = { version = "0.3.3", path = "walletkit-core", default-features = false }
 uniffi = { version = "0.29", features = ["build", "tokio"] }
-world-id-core = { version = "0.3", default-features = false, features = ["authenticator", "embed-zkeys"] }
+world-id-core = { version = "0.3", path = "../world-id-protocol/crates/core", default-features = false, features = ["authenticator", "embed-zkeys"] }
 
 [profile.release]
 opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.
 panic = "abort"
 debug = false
+
+[patch.crates-io]
+taceo-oprf-core = { version = "0.3", git = "https://github.com/TaceoLabs/oprf-service.git", rev = "a6b774d" }
+taceo-oprf-types = { version = "0.4", git = "https://github.com/TaceoLabs/oprf-service.git", rev = "a6b774d" }
+taceo-oprf-client = { version = "0.3", git = "https://github.com/TaceoLabs/oprf-service.git", rev = "a6b774d" }
+taceo-oprf-service = { version = "0.3", git = "https://github.com/TaceoLabs/oprf-service.git", rev = "a6b774d" }

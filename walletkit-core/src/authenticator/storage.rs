@@ -109,20 +109,19 @@ impl Authenticator {
                 bytes,
             });
         }
-        let (proof, nullifier) = self
+        let prepared = self
             .0
-            .generate_proof(proof_request, credential, credential_sub_blinding_factor)
+            .prepare_proof(proof_request, credential, credential_sub_blinding_factor)
             .await?;
-        let proof_bytes = serialize_proof_package(&proof, nullifier)?;
-        let nullifier_bytes = field_element_to_bytes(nullifier);
+        let nullifier_bytes = field_element_to_bytes(prepared.nullifier());
         storage
-            .begin_replay_guard(
-                request_id,
-                nullifier_bytes,
-                proof_bytes,
-                now,
-                ttl_seconds,
-            )
+            .replay_guard_reserve(request_id, nullifier_bytes, now, ttl_seconds)
+            .map_err(WalletKitError::from)?;
+
+        let (proof, nullifier) = self.0.generate_proof_with_prepared(prepared)?;
+        let proof_bytes = serialize_proof_package(&proof, nullifier)?;
+        storage
+            .replay_guard_finalize(request_id, proof_bytes, now, ttl_seconds)
             .map_err(WalletKitError::from)
     }
 }

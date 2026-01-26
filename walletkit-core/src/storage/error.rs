@@ -65,6 +65,10 @@ pub enum StorageError {
     #[error("nullifier already disclosed")]
     NullifierAlreadyDisclosed,
 
+    /// Replay guard reservation missing for request id.
+    #[error("replay guard reservation missing")]
+    ReplayGuardNotReserved,
+
     /// Credential not found in the vault.
     #[error("credential not found")]
     CredentialNotFound,

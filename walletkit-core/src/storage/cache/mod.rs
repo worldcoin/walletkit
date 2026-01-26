@@ -137,6 +137,50 @@ impl CacheDb {
         nullifiers::replay_guard_bytes_for_request_id(&self.conn, request_id, now)
     }
 
+    /// Reserves a replay guard entry by nullifier before proof generation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the nullifier was already disclosed.
+    pub fn replay_guard_reserve(
+        &mut self,
+        _lock: &StorageLockGuard,
+        request_id: [u8; 32],
+        nullifier: [u8; 32],
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<()> {
+        nullifiers::replay_guard_reserve(
+            &mut self.conn,
+            request_id,
+            nullifier,
+            now,
+            ttl_seconds,
+        )
+    }
+
+    /// Finalizes a replay guard entry by storing proof bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the reservation is missing.
+    pub fn replay_guard_finalize(
+        &mut self,
+        _lock: &StorageLockGuard,
+        request_id: [u8; 32],
+        proof_bytes: Vec<u8>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<ReplayGuardResult> {
+        nullifiers::replay_guard_finalize(
+            &mut self.conn,
+            request_id,
+            proof_bytes,
+            now,
+            ttl_seconds,
+        )
+    }
+
     /// Enforces replay safety for replay guard.
     ///
     /// Ensures a nullifier is disclosed at most once and that repeated requests
@@ -295,9 +339,11 @@ mod tests {
         let first = vec![1, 2, 3];
         let second = vec![9, 9, 9];
 
+        db.replay_guard_reserve(&guard, request_id, nullifier, 100, 1000)
+            .expect("reserve");
         let fresh = db
-            .begin_replay_guard(&guard, request_id, nullifier, first.clone(), 100, 1000)
-            .expect("first disclosure");
+            .replay_guard_finalize(&guard, request_id, first.clone(), 100, 1000)
+            .expect("first finalize");
         assert_eq!(
             fresh,
             ReplayGuardResult {
@@ -307,8 +353,8 @@ mod tests {
         );
 
         let replay = db
-            .begin_replay_guard(&guard, request_id, nullifier, second, 101, 1000)
-            .expect("replay disclosure");
+            .replay_guard_finalize(&guard, request_id, second, 101, 1000)
+            .expect("replay finalize");
         assert_eq!(
             replay,
             ReplayGuardResult {
@@ -332,8 +378,14 @@ mod tests {
         let nullifier = [0x44u8; 32];
         let payload = vec![4, 5, 6];
 
-        db.begin_replay_guard(&guard, request_id, nullifier, payload.clone(), 100, 10)
-            .expect("disclosure");
+        db.replay_guard_reserve(&guard, request_id, nullifier, 100, 10)
+            .expect("reserve");
+
+        let reserved = db.replay_guard_get(request_id, 101).expect("lookup");
+        assert!(reserved.is_none());
+
+        db.replay_guard_finalize(&guard, request_id, payload.clone(), 100, 10)
+            .expect("finalize");
 
         let hit = db.replay_guard_get(request_id, 105).expect("lookup");
         assert_eq!(hit, Some(payload));
@@ -356,11 +408,11 @@ mod tests {
         let request_id_b = [0x02u8; 32];
         let nullifier = [0x03u8; 32];
 
-        db.begin_replay_guard(&guard, request_id_a, nullifier, vec![4], 100, 1000)
-            .expect("first disclosure");
+        db.replay_guard_reserve(&guard, request_id_a, nullifier, 100, 1000)
+            .expect("first reserve");
 
         let err = db
-            .begin_replay_guard(&guard, request_id_b, nullifier, vec![5], 101, 1000)
+            .replay_guard_reserve(&guard, request_id_b, nullifier, 101, 1000)
             .expect_err("nullifier conflict");
         match err {
             StorageError::NullifierAlreadyDisclosed => {}
@@ -382,12 +434,16 @@ mod tests {
         let request_id_b = [0x0Bu8; 32];
         let nullifier = [0x0Cu8; 32];
 
-        db.begin_replay_guard(&guard, request_id_a, nullifier, vec![7], 100, 10)
-            .expect("first disclosure");
+        db.replay_guard_reserve(&guard, request_id_a, nullifier, 100, 10)
+            .expect("first reserve");
+        db.replay_guard_finalize(&guard, request_id_a, vec![7], 100, 10)
+            .expect("first finalize");
 
+        db.replay_guard_reserve(&guard, request_id_b, nullifier, 111, 10)
+            .expect("second reserve after expiry");
         let fresh = db
-            .begin_replay_guard(&guard, request_id_b, nullifier, vec![8], 111, 10)
-            .expect("second disclosure after expiry");
+            .replay_guard_finalize(&guard, request_id_b, vec![8], 111, 10)
+            .expect("second finalize after expiry");
         assert_eq!(
             fresh,
             ReplayGuardResult {

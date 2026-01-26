@@ -231,15 +231,22 @@ fn test_storage_flow_end_to_end() {
 
     let request_id = [0xABu8; 32];
     let nullifier = [0xCDu8; 32];
-    let fresh = CredentialStorage::begin_replay_guard(
+    CredentialStorage::replay_guard_reserve(
         &mut store,
         request_id,
         nullifier,
+        200,
+        50,
+    )
+    .expect("reserve");
+    let fresh = CredentialStorage::replay_guard_finalize(
+        &mut store,
+        request_id,
         vec![1, 2],
         200,
         50,
     )
-    .expect("disclose");
+    .expect("finalize");
     assert_eq!(
         fresh,
         ReplayGuardResult {
@@ -250,10 +257,9 @@ fn test_storage_flow_end_to_end() {
     let cached = CredentialStorage::replay_guard_get(&store, request_id, 210)
         .expect("disclosure lookup");
     assert_eq!(cached, Some(vec![1, 2]));
-    let replay = CredentialStorage::begin_replay_guard(
+    let replay = CredentialStorage::replay_guard_finalize(
         &mut store,
         request_id,
-        nullifier,
         vec![9, 9],
         201,
         50,

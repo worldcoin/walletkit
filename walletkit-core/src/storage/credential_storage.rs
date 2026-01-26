@@ -88,6 +88,32 @@ pub trait CredentialStorage {
         now: u64,
     ) -> StorageResult<Option<Vec<u8>>>;
 
+    /// Reserves a replay guard entry by nullifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the nullifier was already disclosed.
+    fn replay_guard_reserve(
+        &mut self,
+        request_id: RequestId,
+        nullifier: Nullifier,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<()>;
+
+    /// Finalizes a replay guard entry by storing proof bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the reservation is missing.
+    fn replay_guard_finalize(
+        &mut self,
+        request_id: RequestId,
+        proof_bytes: Vec<u8>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<ReplayGuardResult>;
+
     /// Enforces replay safety for replay guard.
     ///
     /// Returns the stored proof bytes on replay and rejects nullifier reuse
@@ -330,6 +356,41 @@ impl CredentialStore {
         self.lock_inner()?.replay_guard_get(request_id, now)
     }
 
+    /// Reserves a replay guard entry by nullifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the nullifier was already disclosed.
+    pub fn replay_guard_reserve(
+        &self,
+        request_id: Vec<u8>,
+        nullifier: Vec<u8>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<()> {
+        let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
+        let nullifier = parse_fixed_bytes::<32>(nullifier, "nullifier")?;
+        self.lock_inner()?
+            .replay_guard_reserve(request_id, nullifier, now, ttl_seconds)
+    }
+
+    /// Finalizes a replay guard entry by storing proof bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the reservation is missing.
+    pub fn replay_guard_finalize(
+        &self,
+        request_id: Vec<u8>,
+        proof_bytes: Vec<u8>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<ReplayGuardResult> {
+        let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
+        self.lock_inner()?
+            .replay_guard_finalize(request_id, proof_bytes, now, ttl_seconds)
+    }
+
     /// Enforces replay safety for replay guard.
     ///
     /// # Errors
@@ -486,6 +547,34 @@ impl CredentialStorage for CredentialStoreInner {
         state.cache.replay_guard_get(request_id, now)
     }
 
+    fn replay_guard_reserve(
+        &mut self,
+        request_id: RequestId,
+        nullifier: Nullifier,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<()> {
+        let guard = self.guard()?;
+        let state = self.state_mut()?;
+        state
+            .cache
+            .replay_guard_reserve(&guard, request_id, nullifier, now, ttl_seconds)
+    }
+
+    fn replay_guard_finalize(
+        &mut self,
+        request_id: RequestId,
+        proof_bytes: Vec<u8>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<ReplayGuardResult> {
+        let guard = self.guard()?;
+        let state = self.state_mut()?;
+        state
+            .cache
+            .replay_guard_finalize(&guard, request_id, proof_bytes, now, ttl_seconds)
+    }
+
     fn begin_replay_guard(
         &mut self,
         request_id: RequestId,
@@ -613,6 +702,28 @@ impl CredentialStorage for CredentialStore {
     ) -> StorageResult<Option<Vec<u8>>> {
         let inner = self.lock_inner()?;
         inner.replay_guard_get(request_id, now)
+    }
+
+    fn replay_guard_reserve(
+        &mut self,
+        request_id: RequestId,
+        nullifier: Nullifier,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<()> {
+        let mut inner = self.lock_inner()?;
+        inner.replay_guard_reserve(request_id, nullifier, now, ttl_seconds)
+    }
+
+    fn replay_guard_finalize(
+        &mut self,
+        request_id: RequestId,
+        proof_bytes: Vec<u8>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<ReplayGuardResult> {
+        let mut inner = self.lock_inner()?;
+        inner.replay_guard_finalize(request_id, proof_bytes, now, ttl_seconds)
     }
 
     fn begin_replay_guard(
