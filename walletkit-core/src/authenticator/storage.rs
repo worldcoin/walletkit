@@ -133,27 +133,24 @@ impl Authenticator {
                 bytes,
             });
         }
-        let (proof, nullifier) = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.0
-                    .generate_proof(
-                        proof_request,
-                        credential,
-                        credential_sub_blinding_factor,
-                    )
-                    .await
-            })
-        })?;
-        let proof_bytes = serialize_proof_package(&proof, nullifier)?;
-        let nullifier_bytes = field_element_to_bytes(nullifier);
+        let prepared = self
+            .0
+            .prepare_proof(proof_request, credential, credential_sub_blinding_factor)
+            .await?;
+        let nullifier_bytes = field_element_to_bytes(prepared.nullifier());
         storage
-            .begin_replay_guard(
+            .replay_guard_begin(
                 request_id.to_vec(),
                 nullifier_bytes.to_vec(),
-                proof_bytes,
                 now,
                 ttl_seconds,
             )
+            .map_err(WalletKitError::from)?;
+
+        let (proof, nullifier) = self.0.generate_proof_with_prepared(prepared)?;
+        let proof_bytes = serialize_proof_package(&proof, nullifier)?;
+        storage
+            .replay_guard_finalize(request_id.to_vec(), proof_bytes, now, ttl_seconds)
             .map_err(WalletKitError::from)
     }
 }
