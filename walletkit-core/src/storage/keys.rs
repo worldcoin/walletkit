@@ -35,9 +35,10 @@ impl StorageKeys {
     ) -> StorageResult<Self> {
         if let Some(bytes) = blob_store.read(ACCOUNT_KEYS_FILENAME.to_string())? {
             let envelope = AccountKeyEnvelope::deserialize(&bytes)?;
+            let wrapped_k_intermediate = envelope.wrapped_k_intermediate.clone();
             let k_intermediate_bytes = Zeroizing::new(keystore.open_sealed(
                 ACCOUNT_KEY_ENVELOPE_AD.to_vec(),
-                envelope.wrapped_k_intermediate,
+                wrapped_k_intermediate,
             )?);
             let k_intermediate =
                 parse_key_32(k_intermediate_bytes.as_slice(), "K_intermediate")?;
