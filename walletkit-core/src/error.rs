@@ -110,9 +110,7 @@ impl From<PrimitiveError> for WalletKitError {
             PrimitiveError::InvalidInput { attribute, reason } => {
                 Self::InvalidInput { attribute, reason }
             }
-            PrimitiveError::Serialization(error) => {
-                Self::SerializationError { error }
-            }
+            PrimitiveError::Serialization(error) => Self::SerializationError { error },
             PrimitiveError::Deserialization(reason) => Self::InvalidInput {
                 attribute: "deserialization".to_string(),
                 reason,
