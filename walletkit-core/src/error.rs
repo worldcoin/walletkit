@@ -1,4 +1,5 @@
 use thiserror::Error;
+#[cfg(feature = "v4")]
 use world_id_core::primitives::PrimitiveError;
 
 #[cfg(feature = "storage")]
@@ -102,6 +103,7 @@ impl From<reqwest::Error> for WalletKitError {
     }
 }
 
+#[cfg(feature = "v4")]
 impl From<PrimitiveError> for WalletKitError {
     fn from(error: PrimitiveError) -> Self {
         match error {
