@@ -57,10 +57,7 @@ pub(super) fn apply_key(
     mut k_intermediate: [u8; 32],
 ) -> SqlcipherResult<()> {
     let key_hex = Zeroizing::new(hex::encode(k_intermediate));
-    let pragma = Zeroizing::new(format!(
-        "PRAGMA key = \"x'{}'\";",
-        key_hex.as_str()
-    ));
+    let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", key_hex.as_str()));
     conn.execute_batch(&pragma)?;
     let cipher_version: String =
         conn.query_row("PRAGMA cipher_version;", [], |row| row.get(0))?;
