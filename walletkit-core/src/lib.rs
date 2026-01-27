@@ -21,6 +21,19 @@
 
 use strum::EnumString;
 
+/// Library initialization function called automatically on load.
+///
+/// Installs the ring crypto provider as the default for rustls.
+/// Uses the `ctor` crate to ensure this runs when the dynamic library loads,
+/// before any user code executes.
+#[cfg(not(test))]
+#[ctor::ctor]
+fn init() {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install default crypto provider");
+}
+
 /// Represents the environment in which a World ID is being presented and used.
 ///
 /// Each environment uses different sources of truth for the World ID credentials.

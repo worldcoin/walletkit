@@ -5,7 +5,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-class SimpleTests {
+class SimpleTest {
     @Test
     fun simpleTest() {
         assertEquals(1, 1)

@@ -167,7 +167,7 @@ jobs:
 
       - name: Build for target
         run: |
-          CROSS_NO_WARNINGS=0 cross build -p walletkit --target ${{ matrix.settings.target }} --release --locked
+          CROSS_NO_WARNINGS=0 cross build -p walletkit --target ${{ matrix.settings.target }} --release --locked --features v4
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -210,7 +210,7 @@ jobs:
 
       - name: Move artifacts
         run: |
-          mkdir -p kotlin/walletkit-android/src/main/jniLibs && cd kotlin/walletkit-android/src/main/jniLibs
+          mkdir -p kotlin/walletkit/src/main/jniLibs && cd kotlin/walletkit/src/main/jniLibs
           mkdir armeabi-v7a arm64-v8a x86 x86_64
           mv /home/runner/work/walletkit/walletkit/android-armv7-linux-androideabi/libwalletkit.so ./armeabi-v7a/libwalletkit.so
           mv /home/runner/work/walletkit/walletkit/android-aarch64-linux-android/libwalletkit.so ./arm64-v8a/libwalletkit.so
@@ -219,11 +219,11 @@ jobs:
 
       - name: Generate bindings
         working-directory: kotlin
-        run: cargo run -p uniffi-bindgen generate ./walletkit-android/src/main/jniLibs/arm64-v8a/libwalletkit.so --library --language kotlin --no-format --out-dir walletkit-android/src/main/java
+        run: cargo run -p uniffi-bindgen generate ./walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so --library --language kotlin --no-format --out-dir walletkit/src/main/java
 
       - name: Publish
         working-directory: kotlin
-        run: ./gradlew walletkit-android:publish
+        run: ./gradlew walletkit:publish
         env:
           GITHUB_ACTOR: wld-walletkit-bot
           GITHUB_TOKEN: ${{ github.token }}
@@ -272,7 +272,7 @@ jobs:
 
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
-          
+
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
