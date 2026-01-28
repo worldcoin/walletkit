@@ -18,7 +18,6 @@ swift/ios_build/
 swift/local_build/
 swift/tests/Sources/
 swift/tests/.build/
-
 # Kotlin bindings and native libs
 kotlin/libs/
 kotlin/walletkit/src/main/java/uniffi/

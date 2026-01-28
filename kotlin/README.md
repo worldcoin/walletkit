@@ -22,5 +22,6 @@ This folder contains support files for WalletKit to work in Kotlin:
 ## Kotlin project structure
 
 The Kotlin project has two members:
+
 - `walletkit`: The main WalletKit library with UniFFI bindings for Kotlin.
 - `walletkit-tests`: Unit tests to assert the Kotlin bindings behave as intended (foreign tests).

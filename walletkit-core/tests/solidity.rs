@@ -1,15 +1,19 @@
+#[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
+use alloy::primitives::Address;
 use alloy::{
     node_bindings::AnvilInstance,
-    primitives::{address, Address, U256},
+    primitives::{address, U256},
     providers::{ext::AnvilApi, ProviderBuilder, WalletProvider},
     signers::local::PrivateKeySigner,
     sol,
     sol_types::SolValue,
 };
+#[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
 use chrono::{Days, Utc};
+#[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
+use walletkit_core::common_apps::AddressBook;
 use walletkit_core::{
-    common_apps::AddressBook, proof::ProofContext, world_id::WorldId, CredentialType,
-    Environment,
+    proof::ProofContext, world_id::WorldId, CredentialType, Environment,
 };
 
 sol!(
@@ -64,6 +68,7 @@ fn setup_anvil() -> AnvilInstance {
     anvil
 }
 
+#[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
 sol!(
     /// The World ID Address Book allows verifying wallet addresses using a World ID for a period of time.
     ///
@@ -85,6 +90,7 @@ sol!(
     }
 );
 
+#[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
 #[tokio::test]
 async fn test_address_book_proof_verification_on_chain() {
     // set up a World Chain Sepolia fork with the `WorldIdAddressBook` contract.
