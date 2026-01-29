@@ -83,10 +83,6 @@ cargo build --package $PACKAGE_NAME --target x86_64-apple-ios --release \
   --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
   --features "$FEATURES"
 
-strip -S -x $TARGET_DIR/aarch64-apple-ios/release/lib$PACKAGE_NAME.a
-strip -S -x $TARGET_DIR/x86_64-apple-ios/release/lib$PACKAGE_NAME.a
-strip -S -x $TARGET_DIR/aarch64-apple-ios-sim/release/lib$PACKAGE_NAME.dylib
-
 echo "Rust packages built. Combining simulator targets into universal binary..."
 
 # Create universal binary for simulators
