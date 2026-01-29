@@ -67,7 +67,10 @@ mkdir -p "$SWIFT_HEADERS_DIR"
 echo "Building Rust packages for iOS targets..."
 
 export IPHONEOS_DEPLOYMENT_TARGET="13.0"
-export RUSTFLAGS="-C link-arg=-Wl,-application_extension"
+export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
+                  -C link-arg=-Wl,-dead_strip \
+                  -C link-arg=-Wl,-dead_strip_dylibs \
+                  -C embed-bitcode=no"
 
 # Build for all iOS targets
 cargo build --package $PACKAGE_NAME --target aarch64-apple-ios-sim --release \
@@ -79,6 +82,10 @@ cargo build --package $PACKAGE_NAME --target aarch64-apple-ios --release \
 cargo build --package $PACKAGE_NAME --target x86_64-apple-ios --release \
   --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
   --features "$FEATURES"
+
+strip -S -x $TARGET_DIR/aarch64-apple-ios/release/lib$PACKAGE_NAME.a
+strip -S -x $TARGET_DIR/x86_64-apple-ios/release/lib$PACKAGE_NAME.a
+strip -S -x $TARGET_DIR/aarch64-apple-ios-sim/release/lib$PACKAGE_NAME.dylib
 
 echo "Rust packages built. Combining simulator targets into universal binary..."
 
