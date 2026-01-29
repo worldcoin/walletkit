@@ -27,5 +27,4 @@ world-id-core = { version = "0.3", default-features = false, features = ["authen
 opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.
 panic = "abort"
-strip = "symbols"
 debug = false
