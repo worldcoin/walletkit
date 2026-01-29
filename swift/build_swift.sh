@@ -67,7 +67,10 @@ mkdir -p "$SWIFT_HEADERS_DIR"
 echo "Building Rust packages for iOS targets..."
 
 export IPHONEOS_DEPLOYMENT_TARGET="13.0"
-export RUSTFLAGS="-C link-arg=-Wl,-application_extension"
+export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
+                  -C link-arg=-Wl,-dead_strip \
+                  -C link-arg=-Wl,-dead_strip_dylibs \
+                  -C embed-bitcode=no"
 
 # Build for all iOS targets
 cargo build --package $PACKAGE_NAME --target aarch64-apple-ios-sim --release \
