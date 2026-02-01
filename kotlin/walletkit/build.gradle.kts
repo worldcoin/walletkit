@@ -44,12 +44,16 @@ afterEvaluate {
                 groupId = "org.world"
                 artifactId = "walletkit"
 
-                // Read version from Cargo.toml
-                val cargoToml = file("../../Cargo.toml")
-                val versionRegex = """version\s*=\s*"([^"]+)"""".toRegex()
-                val cargoContent = cargoToml.readText()
-                version = versionRegex.find(cargoContent)?.groupValues?.get(1)
-                    ?: throw GradleException("Could not find version in Cargo.toml")
+                // Read version from Cargo.toml (allow override via -PversionName)
+                version = if (project.hasProperty("versionName")) {
+                    project.property("versionName") as String
+                } else {
+                    val cargoToml = file("../../Cargo.toml")
+                    val versionRegex = """version\s*=\s*"([^"]+)"""".toRegex()
+                    val cargoContent = cargoToml.readText()
+                    versionRegex.find(cargoContent)?.groupValues?.get(1)
+                        ?: throw GradleException("Could not find version in Cargo.toml")
+                }
 
                 afterEvaluate {
                     from(components["release"])
@@ -71,8 +75,8 @@ afterEvaluate {
 }
 
 dependencies {
-    // UniFFI requires JNA for native calls
-    implementation("net.java.dev.jna:jna:5.13.0")
+    // UniFFI requires JNA for native calls (AAR to avoid jar+aar duplicates)
+    implementation("net.java.dev.jna:jna:5.13.0@aar")
     implementation("androidx.core:core-ktx:1.8.0")
     implementation("androidx.appcompat:appcompat:1.4.1")
     implementation("com.google.android.material:material:1.5.0")
