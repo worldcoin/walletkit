@@ -4,7 +4,7 @@ use world_id_core::primitives::Config;
 use crate::{error::WalletKitError, Environment};
 
 pub static WORLD_ID_REGISTRY: Address =
-    address!("0xb64a1F443C9a18Cd3865C3c9Be871946617C0d75");
+    address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe");
 
 pub trait DefaultConfig {
     fn from_environment(
@@ -36,6 +36,7 @@ impl DefaultConfig for Config {
             Environment::Production => Self::new(
                 rpc_url,
                 480,
+                // FIXME: There is no production deployment yet
                 WORLD_ID_REGISTRY,
                 "https://world-id-indexer.crypto.worldcoin.org".to_string(),
                 "https://world-id-gateway.crypto.worldcoin.org".to_string(),
