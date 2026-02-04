@@ -446,3 +446,156 @@ impl CredentialStore {
         self.lock_inner().map(|inner| inner.paths.clone())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::tests_utils::InMemoryStorageProvider;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use uuid::Uuid;
+    use world_id_core::FieldElement;
+
+    fn temp_root() -> PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("walletkit-replay-guard-{}", Uuid::new_v4()));
+        path
+    }
+
+    fn cleanup_storage(root: &Path) {
+        let paths = StoragePaths::new(root);
+        let vault = paths.vault_db_path();
+        let cache = paths.cache_db_path();
+        let lock = paths.lock_path();
+        let _ = fs::remove_file(&vault);
+        let _ = fs::remove_file(vault.with_extension("sqlite-wal"));
+        let _ = fs::remove_file(vault.with_extension("sqlite-shm"));
+        let _ = fs::remove_file(&cache);
+        let _ = fs::remove_file(cache.with_extension("sqlite-wal"));
+        let _ = fs::remove_file(cache.with_extension("sqlite-shm"));
+        let _ = fs::remove_file(lock);
+        let _ = fs::remove_dir_all(paths.worldid_dir());
+        let _ = fs::remove_dir_all(paths.root());
+    }
+
+    #[test]
+    fn test_replay_guard_field_element_serialization() {
+        let root = temp_root();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        // Create a FieldElement from a known value
+        let nullifier = FieldElement::from(123_456_789u64);
+
+        // Set a replay guard
+        inner
+            .replay_guard_set(nullifier, 1000)
+            .expect("set replay guard");
+
+        // The same FieldElement should be properly serialized and found after the grace period
+        let exists_after_grace = inner
+            .replay_guard_get(nullifier, 1601)
+            .expect("check replay guard");
+        assert!(
+            exists_after_grace,
+            "Replay guard should exist after grace period (10 minutes)"
+        );
+
+        cleanup_storage(&root);
+    }
+
+    #[test]
+    fn test_replay_guard_grace_period() {
+        let root = temp_root();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        let nullifier = FieldElement::from(999u64);
+        let set_time = 1000u64;
+
+        // Set a replay guard at time 1000
+        inner
+            .replay_guard_set(nullifier, set_time)
+            .expect("set replay guard");
+
+        // Within grace period (< 10 minutes): should return false
+        // Grace period is 600 seconds (10 minutes)
+        let check_time_1min = set_time + 60; // 1 minute later
+        let exists_1min = inner
+            .replay_guard_get(nullifier, check_time_1min)
+            .expect("check at 1 minute");
+        assert!(
+            !exists_1min,
+            "Replay guard should NOT be enforced during grace period (1 minute)"
+        );
+
+        let check_time_ten_min = set_time + 601; // 10 minutes later
+        let exists_ten_min = inner
+            .replay_guard_get(nullifier, check_time_ten_min)
+            .expect("check at 9 minutes");
+        assert!(
+            exists_ten_min,
+            "Replay guard should be enforced during grace period (10 minutes)"
+        );
+
+        cleanup_storage(&root);
+    }
+
+    #[test]
+    fn test_replay_guard_expiration() {
+        let root = temp_root();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        let nullifier = FieldElement::from(555u64);
+        let set_time = 3000u64;
+
+        // Set a replay guard at time 3000
+        inner
+            .replay_guard_set(nullifier, set_time)
+            .expect("set replay guard");
+
+        // After expiration (> 1 year): should return false
+        let one_year_seconds = 365 * 24 * 60 * 60; // 31,536,000 seconds
+
+        // Just before expiration: should still exist
+        let check_time_before_exp = set_time + one_year_seconds - 1;
+        let exists_before_exp = inner
+            .replay_guard_get(nullifier, check_time_before_exp)
+            .expect("check before expiration");
+        assert!(
+            exists_before_exp,
+            "Replay guard SHOULD exist just before expiration"
+        );
+
+        // After expiration: should not exist
+        let check_time_at_exp = set_time + one_year_seconds + 1;
+        let exists_at_exp = inner
+            .replay_guard_get(nullifier, check_time_at_exp)
+            .expect("check at expiration");
+        assert!(
+            !exists_at_exp,
+            "Replay guard should NOT exist at expiration (1 year)"
+        );
+
+        cleanup_storage(&root);
+    }
+}

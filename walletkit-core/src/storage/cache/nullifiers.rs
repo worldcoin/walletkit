@@ -37,7 +37,7 @@ pub(super) fn replay_guard_get(
     now: u64,
 ) -> StorageResult<bool> {
     let key = replay_nullifier_key(nullifier);
-    let nbf = now.saturating_add(REPLAY_REQUEST_NBF_SECONDS);
+    let nbf = now.saturating_sub(REPLAY_REQUEST_NBF_SECONDS);
     let result = get_cache_entry(conn, key.as_slice(), now, Some(nbf))?;
     Ok(result.is_some())
 }

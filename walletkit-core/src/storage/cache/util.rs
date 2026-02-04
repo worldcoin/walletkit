@@ -136,7 +136,7 @@ pub(super) fn insert_cache_entry(
 
 /// Fetches a cache entry if it is still valid.
 ///
-/// Optionally, filters out entries that were inserted before `valid_after`.
+/// Optionally, filters out entries that were inserted after `valid_after`.
 ///
 /// # Errors
 ///
@@ -158,7 +158,7 @@ pub(super) fn get_cache_entry(
 
     let res = if let Some(valid_after) = valid_after {
         let valid_after_i64 = to_i64(valid_after, "valid_after")?;
-        let query = format!("{base} AND inserted_at >= ?3");
+        let query = format!("{base} AND inserted_at <= ?3");
         conn.query_row(
             &query,
             params![key, valid_before_i64, valid_after_i64],
