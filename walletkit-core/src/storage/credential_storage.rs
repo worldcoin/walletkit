@@ -2,6 +2,8 @@
 
 use std::sync::{Arc, Mutex};
 
+use world_id_core::FieldElement;
+
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
@@ -323,10 +325,9 @@ impl CredentialStore {
     /// Returns an error if the cache lookup fails.
     pub fn replay_guard_get(
         &self,
-        request_id: Vec<u8>,
+        nullifier: FieldElement,
         now: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
+    ) -> StorageResult<bool> {
         self.lock_inner()?.replay_guard_get(request_id, now)
     }
 

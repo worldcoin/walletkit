@@ -10,6 +10,7 @@ use world_id_core::{
 
 use crate::error::WalletKitError;
 use crate::storage::{CredentialStore, ReplayGuardKind, ReplayGuardResult};
+use crate::types::ProofResponse;
 use crate::U256Wrapper;
 
 use super::utils::{leaf_index_to_u64, parse_fixed_bytes, u256_to_hex};
@@ -100,19 +101,13 @@ impl Authenticator {
     /// # Errors
     ///
     /// Returns an error if the proof generation or storage update fails.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::future_not_send)]
-    #[allow(clippy::unused_async)]
     pub async fn generate_proof_with_replay_guard(
         &self,
-        storage: Arc<CredentialStore>,
-        proof_request_json: &str,
-        credential_json: &str,
-        credential_sub_blinding_factor: &U256Wrapper,
-        request_id: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> Result<ReplayGuardResult, WalletKitError> {
+        storage: Arc<CredentialStore>, // FIXME: should be in the constructor
+        proof_request_json: &str,      // FIXME: should be typed
+        now: Option<u64>,
+    ) -> Result<ProofResponse, WalletKitError> {
         let proof_request =
             ProofRequest::from_json(proof_request_json).map_err(|err| {
                 WalletKitError::InvalidInput {
@@ -120,21 +115,35 @@ impl Authenticator {
                     reason: err.to_string(),
                 }
             })?;
-        let credential: Credential =
-            serde_json::from_str(credential_json).map_err(|err| {
-                WalletKitError::InvalidInput {
-                    attribute: "credential".to_string(),
-                    reason: err.to_string(),
-                }
+
+        let now = match now {
+            Some(n) => n,
+            None => {
+                let start = std::time::SystemTime::now();
+                start
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|e| WalletKitError::Generic {
+                        error: format!("critical. unable to determine SystemTime: {e}"),
+                    })?
+                    .as_secs()
+            }
+        };
+
+        // First check if the request can be fulfilled and which credentials should be used
+        let credential_list = storage.list_credentials(None, now)?;
+        let credential_list = credential_list
+            .into_iter()
+            .map(|cred| cred.issuer_schema_id.clone().to_string())
+            .collect::<std::collections::HashSet<_>>();
+        let credentials_to_prove = proof_request
+            .credentials_to_prove(&credential_list)
+            .ok_or(WalletKitError::Generic {
+                // FIXME: this should return a ProofResponse but with an error attribute
+                error: "unfulfillable request".to_string(),
             })?;
-        let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
-        let credential_sub_blinding_factor = FieldElement::try_from(
-            credential_sub_blinding_factor.0,
-        )
-        .map_err(|err| WalletKitError::InvalidInput {
-            attribute: "credential_sub_blinding_factor".to_string(),
-            reason: err.to_string(),
-        })?;
+
+        // Next, generate the nullifier and check the replay guard
+        let nullifier = self.0.generate_nullifier(&proof_request).await?;
 
         if let Some(bytes) = storage
             .replay_guard_get(request_id.to_vec(), now)
@@ -145,6 +154,10 @@ impl Authenticator {
                 bytes,
             });
         }
+        for request_item in credentials_to_prove {
+            // TODO
+        }
+
         let (proof, nullifier) = tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async {
                 self.0
@@ -170,7 +183,9 @@ impl Authenticator {
                 now,
                 ttl_seconds,
             )
-            .map_err(WalletKitError::from)
+            .map_err(WalletKitError::from);
+
+        todo!("not fully implemented");
     }
 }
 

@@ -34,9 +34,7 @@ pub(super) fn replay_guard_bytes_for_request_id(
 /// Returns an error if the nullifier was already disclosed or on DB failures.
 pub(super) fn begin_replay_guard(
     conn: &mut Connection,
-    request_id: [u8; 32],
     nullifier: [u8; 32],
-    proof_bytes: Vec<u8>,
     now: u64,
     ttl_seconds: u64,
 ) -> StorageResult<ReplayGuardResult> {
@@ -45,24 +43,14 @@ pub(super) fn begin_replay_guard(
         .map_err(|err| map_db_err(&err))?;
     prune_expired_entries(&tx, now)?;
 
-    let request_key = replay_request_key(request_id);
-    let existing_proof = get_cache_entry(&tx, request_key.as_slice(), now)?;
-    if let Some(bytes) = existing_proof {
-        commit_transaction(tx)?;
-        return Ok(ReplayGuardResult {
-            kind: ReplayGuardKind::Replay,
-            bytes,
-        });
-    }
-
     let nullifier_key = replay_nullifier_key(nullifier);
     let existing_request = get_cache_entry(&tx, nullifier_key.as_slice(), now)?;
     if existing_request.is_some() {
         return Err(StorageError::NullifierAlreadyDisclosed);
     }
 
+    // FIXME: start enforcing after x minutes
     let times = cache_entry_times(now, ttl_seconds)?;
-    insert_cache_entry(&tx, request_key.as_slice(), proof_bytes.as_ref(), times)?;
     insert_cache_entry(&tx, nullifier_key.as_slice(), request_id.as_ref(), times)?;
     commit_transaction(tx)?;
     Ok(ReplayGuardResult {

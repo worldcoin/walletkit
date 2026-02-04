@@ -46,7 +46,6 @@ pub(super) fn parse_fixed_bytes<const N: usize>(
 
 pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
 pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
-pub(super) const CACHE_KEY_PREFIX_REPLAY_REQUEST: u8 = 0x03;
 pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x04;
 
 /// Timestamps for cache entry insertion and expiry.
@@ -192,11 +191,6 @@ pub(super) fn merkle_cache_key(
 /// Builds the cache key for a session key entry.
 pub(super) fn session_cache_key(rp_id: [u8; 32]) -> Vec<u8> {
     cache_key_with_prefix(CACHE_KEY_PREFIX_SESSION, rp_id.as_ref())
-}
-
-/// Builds the cache key for a replay-guard request entry.
-pub(super) fn replay_request_key(request_id: [u8; 32]) -> Vec<u8> {
-    cache_key_with_prefix(CACHE_KEY_PREFIX_REPLAY_REQUEST, request_id.as_ref())
 }
 
 /// Builds the cache key for a replay-guard nullifier entry.
