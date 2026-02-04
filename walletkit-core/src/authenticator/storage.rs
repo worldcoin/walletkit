@@ -163,6 +163,8 @@ mod tests {
     use std::path::{Path, PathBuf};
     use uuid::Uuid;
 
+    use world_id_core::FieldElement;
+
     fn temp_root() -> PathBuf {
         let mut path = std::env::temp_dir();
         path.push(format!("walletkit-auth-storage-{}", Uuid::new_v4()));
