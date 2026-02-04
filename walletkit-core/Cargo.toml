@@ -23,6 +23,7 @@ name = "walletkit_core"
 [dependencies]
 alloy-core = { workspace = true }
 alloy-primitives = { workspace = true }
+base64 = { version = "0.22", optional = true }
 ctor = "0.2"
 hex = "0.4"
 hkdf = { version = "0.12", optional = true }
@@ -75,9 +76,10 @@ world-id-core = { workspace = true }
 rand = "0.8"
 
 [features]
-default = ["common-apps", "semaphore", "v4"]
+default = ["common-apps", "semaphore", "v4", "issuers"]
 common-apps = []
 http-tests = []
+issuers = ["dep:base64"]
 semaphore = ["semaphore-rs/depth_30"]
 storage = [
     "dep:ciborium",
