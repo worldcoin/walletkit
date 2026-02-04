@@ -104,6 +104,7 @@ impl Request {
     ///
     /// Use this when you already have a serialized JSON string (e.g., from Oxide).
     /// Retries on 429, 5xx, timeouts and connection errors (same as `post`).
+    #[cfg(feature = "issuers")]
     pub(crate) async fn post_raw_json(
         &self,
         url: &str,
