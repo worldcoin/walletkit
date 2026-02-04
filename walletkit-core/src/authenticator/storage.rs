@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
 use world_id_core::primitives::merkle::MerkleInclusionProof;
@@ -145,21 +146,28 @@ impl Authenticator {
                 bytes,
             });
         }
-        let (proof, nullifier) = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.0
-                    .generate_proof(
-                        proof_request,
-                        credential,
-                        credential_sub_blinding_factor,
-                    )
-                    .await
-            })
-        })?;
-        let proof_bytes = serialize_proof_package(&proof, nullifier)?;
+        let request_item = proof_request
+            .find_request_by_issuer_schema_id(credential.issuer_schema_id)
+            .ok_or_else(|| WalletKitError::InvalidInput {
+                attribute: "proof_request".to_string(),
+                reason: "no matching request item for credential issuer_schema_id"
+                    .to_string(),
+            })?;
+        let oprf_nullifier = self.0.generate_nullifier(&proof_request).await?;
+        let session_id_r_seed = FieldElement::random(&mut OsRng);
+        let response_item = self.0.generate_single_proof(
+            oprf_nullifier,
+            request_item,
+            &credential,
+            credential_sub_blinding_factor,
+            session_id_r_seed,
+            proof_request.session_id,
+            proof_request.created_at,
+        )?;
+        let proof_bytes = serialize_proof(&response_item.proof)?;
         let nullifier_bytes = {
             let mut bytes = Vec::new();
-            nullifier.serialize_as_bytes(&mut bytes)?;
+            response_item.nullifier.serialize_as_bytes(&mut bytes)?;
             parse_fixed_bytes::<32>(bytes, "field_element")?
         };
         storage
@@ -236,12 +244,9 @@ fn inclusion_proof_payload_from_cached(
         authenticator_pubkeys,
     })
 }
-fn serialize_proof_package(
-    proof: &impl Serialize,
-    nullifier: FieldElement,
-) -> Result<Vec<u8>, WalletKitError> {
+fn serialize_proof(proof: &impl Serialize) -> Result<Vec<u8>, WalletKitError> {
     let mut bytes = Vec::new();
-    ciborium::ser::into_writer(&(proof, nullifier), &mut bytes).map_err(|err| {
+    ciborium::ser::into_writer(proof, &mut bytes).map_err(|err| {
         WalletKitError::SerializationError {
             error: err.to_string(),
         }
