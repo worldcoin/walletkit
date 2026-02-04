@@ -120,6 +120,36 @@ impl CacheDb {
     ) -> StorageResult<()> {
         session::put(&self.conn, rp_id, k_session, ttl_seconds)
     }
+
+    /// Checks whether a replay guard entry exists for the given nullifier.
+    ///
+    /// # Returns
+    /// - bool: true if a replay guard entry exists (hence signalling a nullifier replay), false otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    pub fn replay_guard_get(
+        &self,
+        nullifier: [u8; 32],
+        now: u64,
+    ) -> StorageResult<bool> {
+        nullifiers::replay_guard_get(&self.conn, nullifier, now)
+    }
+
+    /// After a proof has been successfully generated, creates a replay guard entry
+    /// locally to avoid future replays of the same nullifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    pub fn replay_guard_set(
+        &mut self,
+        nullifier: [u8; 32],
+        now: u64,
+    ) -> StorageResult<()> {
+        nullifiers::replay_guard_set(&mut self.conn, nullifier, now)
+    }
 }
 
 #[cfg(test)]

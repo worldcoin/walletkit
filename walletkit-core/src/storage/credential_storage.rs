@@ -2,6 +2,8 @@
 
 use std::sync::{Arc, Mutex};
 
+use world_id_core::FieldElement;
+
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
@@ -282,6 +284,7 @@ impl CredentialStoreInner {
         state.vault.list_credentials(issuer_schema_id, now)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn store_credential(
         &mut self,
         issuer_schema_id: u64,
@@ -341,6 +344,68 @@ impl CredentialStoreInner {
             ttl_seconds,
         )
     }
+
+    /// Checks whether a replay guard entry exists for the given nullifier.
+    ///
+    /// # Returns
+    /// - bool: true if a replay guard entry exists (hence signalling a nullifier replay), false otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    #[allow(dead_code)] // TODO: Once it gets used
+    fn replay_guard_get(
+        &self,
+        nullifier: FieldElement,
+        now: u64,
+    ) -> StorageResult<bool> {
+        let mut nullifier_bytes = Vec::new();
+        nullifier
+            .serialize_as_bytes(&mut nullifier_bytes)
+            .map_err(|e| {
+                StorageError::Serialization(format!(
+                    "critical. nullifier serialization failed: {e}"
+                ))
+            })?;
+        let nullifier_len = nullifier_bytes.len();
+        let nullifier_bytes: [u8; 32] = nullifier_bytes.try_into().map_err(|_| {
+            StorageError::Serialization(format!(
+                "critical. nullifier serialization failed: {nullifier_len}"
+            ))
+        })?;
+        let state = self.state()?;
+        state.cache.replay_guard_get(nullifier_bytes, now)
+    }
+
+    /// After a proof has been successfully generated, creates a replay guard entry
+    /// locally to avoid future replays of the same nullifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    #[allow(dead_code)] // TODO: Once it gets used
+    fn replay_guard_set(
+        &mut self,
+        nullifier: FieldElement,
+        now: u64,
+    ) -> StorageResult<()> {
+        let mut nullifier_bytes = Vec::new();
+        nullifier
+            .serialize_as_bytes(&mut nullifier_bytes)
+            .map_err(|e| {
+                StorageError::Serialization(format!(
+                    "critical. nullifier serialization failed: {e}"
+                ))
+            })?;
+        let nullifier_len = nullifier_bytes.len();
+        let nullifier_bytes: [u8; 32] = nullifier_bytes.try_into().map_err(|_| {
+            StorageError::Serialization(format!(
+                "critical. nullifier serialization failed: {nullifier_len}"
+            ))
+        })?;
+        let state = self.state_mut()?;
+        state.cache.replay_guard_set(nullifier_bytes, now)
+    }
 }
 
 impl CredentialStore {
@@ -381,4 +446,3 @@ impl CredentialStore {
         self.lock_inner().map(|inner| inner.paths.clone())
     }
 }
-

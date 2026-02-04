@@ -31,7 +31,6 @@ static REPLAY_REQUEST_TTL_SECONDS: u64 = 60 * 60 * 24 * 365; // 1 year
 /// # Errors
 ///
 /// Returns an error if the query to the cache unexpectedly fails.
-#[allow(dead_code)] // FIXME
 pub(super) fn replay_guard_get(
     conn: &Connection,
     nullifier: [u8; 32],
@@ -45,7 +44,6 @@ pub(super) fn replay_guard_get(
 
 /// After a proof has been successfully generated, creates a replay guard entry
 /// locally to avoid future replays of the same nullifier.
-#[allow(dead_code)] // FIXME
 pub(super) fn replay_guard_set(
     conn: &mut Connection,
     nullifier: [u8; 32],
