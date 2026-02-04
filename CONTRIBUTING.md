@@ -11,13 +11,16 @@ Thank you for your interest in contributing to our project! This document provid
 
 ## Local Development
 
-1. Install Rust (`rustup` is recommended). [Instructions](https://www.rust-lang.org/tools/install)/
+1. Install Rust (`rustup` is recommended). [Instructions](https://www.rust-lang.org/tools/install)
 2. Install Foundry. Anvil (from the Foundry toolkit) is required for functional tests with Solidity.
    ```bash
    curl -L https://foundry.paradigm.xyz | bash
    foundryup
    ```
-3. Run tests to ensure everything is working as expected. It's important to run with `all-features` as integration tests have dependencies on non-default features.
+3. Install OpenSSL or LibreSSL (required for the `storage` feature with SQLCipher):
+   - macOS: OpenSSL is typically pre-installed, or install via Homebrew: `brew install openssl@3`
+   - Linux: Install via package manager, e.g., `apt-get install libssl-dev` on Debian/Ubuntu
+4. Run tests to ensure everything is working as expected. It's important to run with `all-features` as integration tests have dependencies on non-default features.
    ```bash
    cargo test --all --all-features
    ```

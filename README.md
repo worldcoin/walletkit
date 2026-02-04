@@ -57,6 +57,14 @@ Replace `VERSION` with the desired WalletKit version.
    brew install protobuf
    ```
 
+4. **OpenSSL or LibreSSL** (if using the `storage` feature): Required for SQLCipher encryption
+   - macOS: OpenSSL is typically pre-installed, or install via Homebrew:
+     ```bash
+     brew install openssl@3
+     ```
+   - Linux: Install via package manager (e.g., `apt-get install libssl-dev` on Debian/Ubuntu)
+   - The library dynamically links to system-provided OpenSSL/LibreSSL instead of bundling it
+
 ### Building and publishing
 
 To test local changes before publishing a release, use the build script to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
