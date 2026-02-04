@@ -44,6 +44,9 @@ pub(super) fn replay_guard_get(
 
 /// After a proof has been successfully generated, creates a replay guard entry
 /// locally to avoid future replays of the same nullifier.
+///
+/// This operation is idempotent - if an entry already exists and hasn't expired,
+/// it will not be re-inserted (maintains the original insertion time).
 pub(super) fn replay_guard_set(
     conn: &mut Connection,
     nullifier: [u8; 32],
@@ -55,6 +58,16 @@ pub(super) fn replay_guard_set(
     prune_expired_entries(&tx, now)?;
 
     let key = replay_nullifier_key(nullifier);
+
+    // Check if entry already exists (idempotency check)
+    let existing = get_cache_entry(&tx, key.as_slice(), now, None)?;
+    if existing.is_some() {
+        // Entry already exists and hasn't expired - this is idempotent, just return success
+        commit_transaction(tx)?;
+        return Ok(());
+    }
+
+    // Insert new entry
     let times = cache_entry_times(now, REPLAY_REQUEST_TTL_SECONDS)?;
     insert_cache_entry(&tx, key.as_slice(), &[0x1], times)?;
     commit_transaction(tx)?;

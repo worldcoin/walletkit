@@ -389,6 +389,7 @@ impl CredentialStoreInner {
         nullifier: FieldElement,
         now: u64,
     ) -> StorageResult<()> {
+        let guard = self.guard()?;
         let mut nullifier_bytes = Vec::new();
         nullifier
             .serialize_as_bytes(&mut nullifier_bytes)
@@ -404,7 +405,7 @@ impl CredentialStoreInner {
             ))
         })?;
         let state = self.state_mut()?;
-        state.cache.replay_guard_set(nullifier_bytes, now)
+        state.cache.replay_guard_set(&guard, nullifier_bytes, now)
     }
 }
 
@@ -594,6 +595,43 @@ mod tests {
         assert!(
             !exists_at_exp,
             "Replay guard should NOT exist at expiration (1 year)"
+        );
+
+        cleanup_storage(&root);
+    }
+
+    #[test]
+    fn test_replay_guard_idempotency() {
+        let root = temp_root();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store).unwrap();
+        inner.init(42, 1000).expect("init storage");
+
+        let nullifier = FieldElement::from(12345u64);
+        let first_set_time = 1000u64;
+
+        // Set a replay guard at time 1000
+        inner.replay_guard_set(nullifier, first_set_time).unwrap();
+
+        // Try to set the same nullifier again at time 1060 (5 minutes later)
+        let second_set_time = first_set_time + 300;
+        inner
+            .replay_guard_set(nullifier, second_set_time)
+            .expect("second set should be idempotent");
+
+        // Check at time 1601 (10+ minutes from first set)
+        // This is past the grace period from the FIRST insertion
+        let check_time_after_grace = first_set_time + 601;
+        let exists_after_grace = inner
+            .replay_guard_get(nullifier, check_time_after_grace)
+            .expect("check after grace");
+        assert!(
+            exists_after_grace,
+            "Replay guard SHOULD be enforced - past grace period from FIRST insertion"
         );
 
         cleanup_storage(&root);

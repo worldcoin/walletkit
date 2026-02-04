@@ -145,6 +145,7 @@ impl CacheDb {
     /// Returns an error if the query to the cache unexpectedly fails.
     pub fn replay_guard_set(
         &mut self,
+        _lock: &StorageLockGuard,
         nullifier: [u8; 32],
         now: u64,
     ) -> StorageResult<()> {
