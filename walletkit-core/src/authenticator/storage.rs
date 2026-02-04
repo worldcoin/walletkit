@@ -162,6 +162,7 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use uuid::Uuid;
+    use world_id_core::FieldElement;
 
     use world_id_core::FieldElement;
 

@@ -5,68 +5,60 @@
 
 use rusqlite::{Connection, TransactionBehavior};
 
-use crate::storage::error::{StorageError, StorageResult};
-use crate::storage::types::{ReplayGuardKind, ReplayGuardResult};
+use crate::storage::error::StorageResult;
 
 use super::util::{
     cache_entry_times, commit_transaction, get_cache_entry, insert_cache_entry,
-    map_db_err, prune_expired_entries, replay_nullifier_key, replay_request_key,
+    map_db_err, prune_expired_entries, replay_nullifier_key,
 };
 
-/// Fetches stored proof bytes for a request id if still valid.
+/// The time to wait before a replayed request starts being enforced.
+///
+/// This delay in enforcement of non-replay nullifiers allows for issues
+/// that may cause proofs not to reach RPs and prevent users from getting locked out
+/// of performing a particular action.
+///
+/// FUTURE: Parametrize this as a configuration option.
+const REPLAY_REQUEST_NBF_SECONDS: u64 = 600; // 10 minutes
+
+static REPLAY_REQUEST_TTL_SECONDS: u64 = 60 * 60 * 24 * 365; // 1 year
+
+/// Checks whether a replay guard entry exists for the given nullifier.
+///
+/// # Returns
+/// - bool: true if a replay guard entry exists (hence signalling a nullifier replay), false otherwise.
 ///
 /// # Errors
 ///
-/// Returns an error if the query or conversion fails.
-pub(super) fn replay_guard_bytes_for_request_id(
+/// Returns an error if the query to the cache unexpectedly fails.
+#[allow(dead_code)] // FIXME
+pub(super) fn replay_guard_get(
     conn: &Connection,
-    request_id: [u8; 32],
+    nullifier: [u8; 32],
     now: u64,
-) -> StorageResult<Option<Vec<u8>>> {
-    let key = replay_request_key(request_id);
-    get_cache_entry(conn, key.as_slice(), now)
+) -> StorageResult<bool> {
+    let key = replay_nullifier_key(nullifier);
+    let nbf = now.saturating_add(REPLAY_REQUEST_NBF_SECONDS);
+    let result = get_cache_entry(conn, key.as_slice(), now, Some(nbf))?;
+    Ok(result.is_some())
 }
 
-/// Enforces replay-safety for disclosures within a single transaction.
-///
-/// # Errors
-///
-/// Returns an error if the nullifier was already disclosed or on DB failures.
-pub(super) fn begin_replay_guard(
+/// After a proof has been successfully generated, creates a replay guard entry
+/// locally to avoid future replays of the same nullifier.
+#[allow(dead_code)] // FIXME
+pub(super) fn replay_guard_set(
     conn: &mut Connection,
-    request_id: [u8; 32],
     nullifier: [u8; 32],
-    proof_bytes: Vec<u8>,
     now: u64,
-    ttl_seconds: u64,
-) -> StorageResult<ReplayGuardResult> {
+) -> StorageResult<()> {
     let tx = conn
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|err| map_db_err(&err))?;
     prune_expired_entries(&tx, now)?;
 
-    let request_key = replay_request_key(request_id);
-    let existing_proof = get_cache_entry(&tx, request_key.as_slice(), now)?;
-    if let Some(bytes) = existing_proof {
-        commit_transaction(tx)?;
-        return Ok(ReplayGuardResult {
-            kind: ReplayGuardKind::Replay,
-            bytes,
-        });
-    }
-
-    let nullifier_key = replay_nullifier_key(nullifier);
-    let existing_request = get_cache_entry(&tx, nullifier_key.as_slice(), now)?;
-    if existing_request.is_some() {
-        return Err(StorageError::NullifierAlreadyDisclosed);
-    }
-
-    let times = cache_entry_times(now, ttl_seconds)?;
-    insert_cache_entry(&tx, request_key.as_slice(), proof_bytes.as_ref(), times)?;
-    insert_cache_entry(&tx, nullifier_key.as_slice(), request_id.as_ref(), times)?;
+    let key = replay_nullifier_key(nullifier);
+    let times = cache_entry_times(now, REPLAY_REQUEST_TTL_SECONDS)?;
+    insert_cache_entry(&tx, key.as_slice(), &[0x1], times)?;
     commit_transaction(tx)?;
-    Ok(ReplayGuardResult {
-        kind: ReplayGuardKind::Fresh,
-        bytes: proof_bytes,
-    })
+    Ok(())
 }

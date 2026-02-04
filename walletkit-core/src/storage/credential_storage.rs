@@ -8,7 +8,7 @@ use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
-use super::types::{CredentialRecord, Nullifier, ReplayGuardResult, RequestId};
+use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
 
 /// Public-facing storage API used by `WalletKit` v4 flows.
@@ -76,35 +76,6 @@ pub trait CredentialStorage {
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()>;
-
-    /// Checks for a prior replay guard entry by request id.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the cache lookup fails.
-    fn replay_guard_get(
-        &self,
-        request_id: RequestId,
-        now: u64,
-    ) -> StorageResult<Option<Vec<u8>>>;
-
-    /// Enforces replay safety for replay guard.
-    ///
-    /// Returns the stored proof bytes on replay and rejects nullifier reuse
-    /// across different request ids.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the nullifier is already disclosed or the cache
-    /// operation fails.
-    fn begin_replay_guard(
-        &mut self,
-        request_id: RequestId,
-        nullifier: Nullifier,
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<ReplayGuardResult>;
 }
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
@@ -315,45 +286,6 @@ impl CredentialStore {
             ttl_seconds,
         )
     }
-
-    /// Checks for a prior replay guard entry by request id.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the cache lookup fails.
-    pub fn replay_guard_get(
-        &self,
-        request_id: Vec<u8>,
-        now: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
-        self.lock_inner()?.replay_guard_get(request_id, now)
-    }
-
-    /// Enforces replay safety for replay guard.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the disclosure conflicts or storage fails.
-    pub fn begin_replay_guard(
-        &self,
-        request_id: Vec<u8>,
-        nullifier: Vec<u8>,
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<ReplayGuardResult> {
-        let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
-        let nullifier = parse_fixed_bytes::<32>(nullifier, "nullifier")?;
-        let result = self.lock_inner()?.begin_replay_guard(
-            request_id,
-            nullifier,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )?;
-        Ok(result)
-    }
 }
 
 fn parse_fixed_bytes<const N: usize>(
@@ -476,35 +408,6 @@ impl CredentialStorage for CredentialStoreInner {
             ttl_seconds,
         )
     }
-
-    fn replay_guard_get(
-        &self,
-        request_id: RequestId,
-        now: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        let state = self.state()?;
-        state.cache.replay_guard_get(request_id, now)
-    }
-
-    fn begin_replay_guard(
-        &mut self,
-        request_id: RequestId,
-        nullifier: Nullifier,
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<ReplayGuardResult> {
-        let guard = self.guard()?;
-        let state = self.state_mut()?;
-        state.cache.begin_replay_guard(
-            &guard,
-            request_id,
-            nullifier,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
-    }
 }
 
 impl CredentialStore {
@@ -604,26 +507,5 @@ impl CredentialStorage for CredentialStore {
     ) -> StorageResult<()> {
         let mut inner = self.lock_inner()?;
         inner.merkle_cache_put(registry_kind, root, proof_bytes, now, ttl_seconds)
-    }
-
-    fn replay_guard_get(
-        &self,
-        request_id: RequestId,
-        now: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        let inner = self.lock_inner()?;
-        inner.replay_guard_get(request_id, now)
-    }
-
-    fn begin_replay_guard(
-        &mut self,
-        request_id: RequestId,
-        nullifier: Nullifier,
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<ReplayGuardResult> {
-        let mut inner = self.lock_inner()?;
-        inner.begin_replay_guard(request_id, nullifier, proof_bytes, now, ttl_seconds)
     }
 }
