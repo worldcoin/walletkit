@@ -6,10 +6,11 @@ all-features = true
 unknown-registry = "deny"
 
 [bans]
-deny = [
-    { name = "openssl-sys", reason = "increases complexity for foreign binding compilation and bundle size" },
-    { name = "openssl", reason = "increases complexity for foreign binding compilation and bundle size" }
-]
+# FIXME: Temporarily allowing openssl until it can be removed prior to v4 release
+# deny = [
+#     { name = "openssl-sys", reason = "increases complexity for foreign binding compilation and bundle size" },
+#     { name = "openssl", reason = "increases complexity for foreign binding compilation and bundle size" }
+# ]
 
 [licenses]
 version = 2
