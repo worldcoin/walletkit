@@ -11,73 +11,6 @@ use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
 
-/// Public-facing storage API used by `WalletKit` v4 flows.
-pub trait CredentialStorage {
-    /// Initializes storage and validates the account leaf index.
-    ///
-    /// Loads or creates the account key envelope, opens the vault/cache, and
-    /// ensures the stored leaf index matches the provided value.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if storage initialization fails or the leaf index is invalid.
-    fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()>;
-
-    /// Lists active credential metadata, optionally filtered by issuer schema ID.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the credential query fails.
-    fn list_credentials(
-        &self,
-        issuer_schema_id: Option<u64>,
-        now: u64,
-    ) -> StorageResult<Vec<CredentialRecord>>;
-
-    /// Stores a credential and optional associated data.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the credential cannot be stored.
-    #[allow(clippy::too_many_arguments)]
-    fn store_credential(
-        &mut self,
-        issuer_schema_id: u64,
-        subject_blinding_factor: [u8; 32],
-        genesis_issued_at: u64,
-        expires_at: u64,
-        credential_blob: Vec<u8>,
-        associated_data: Option<Vec<u8>>,
-        now: u64,
-    ) -> StorageResult<u64>;
-
-    /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the cache lookup fails.
-    fn merkle_cache_get(
-        &self,
-        registry_kind: u8,
-        root: [u8; 32],
-        valid_before: u64,
-    ) -> StorageResult<Option<Vec<u8>>>;
-
-    /// Inserts a cached Merkle proof with a TTL.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the cache insert fails.
-    fn merkle_cache_put(
-        &mut self,
-        registry_kind: u8,
-        root: [u8; 32],
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<()>;
-}
-
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[derive(uniffi::Object)]
 pub struct CredentialStore {
@@ -310,7 +243,7 @@ impl CredentialStore {
     }
 }
 
-impl CredentialStorage for CredentialStoreInner {
+impl CredentialStoreInner {
     fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
         let guard = self.guard()?;
         if let Some(state) = &mut self.state {
@@ -449,63 +382,3 @@ impl CredentialStore {
     }
 }
 
-impl CredentialStorage for CredentialStore {
-    fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
-        let mut inner = self.lock_inner()?;
-        inner.init(leaf_index, now)
-    }
-
-    fn list_credentials(
-        &self,
-        issuer_schema_id: Option<u64>,
-        now: u64,
-    ) -> StorageResult<Vec<CredentialRecord>> {
-        let inner = self.lock_inner()?;
-        inner.list_credentials(issuer_schema_id, now)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn store_credential(
-        &mut self,
-        issuer_schema_id: u64,
-        subject_blinding_factor: [u8; 32],
-        genesis_issued_at: u64,
-        expires_at: u64,
-        credential_blob: Vec<u8>,
-        associated_data: Option<Vec<u8>>,
-        now: u64,
-    ) -> StorageResult<u64> {
-        let mut inner = self.lock_inner()?;
-        inner.store_credential(
-            issuer_schema_id,
-            subject_blinding_factor,
-            genesis_issued_at,
-            expires_at,
-            credential_blob,
-            associated_data,
-            now,
-        )
-    }
-
-    fn merkle_cache_get(
-        &self,
-        registry_kind: u8,
-        root: [u8; 32],
-        valid_before: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        let inner = self.lock_inner()?;
-        inner.merkle_cache_get(registry_kind, root, valid_before)
-    }
-
-    fn merkle_cache_put(
-        &mut self,
-        registry_kind: u8,
-        root: [u8; 32],
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<()> {
-        let mut inner = self.lock_inner()?;
-        inner.merkle_cache_put(registry_kind, root, proof_bytes, now, ttl_seconds)
-    }
-}

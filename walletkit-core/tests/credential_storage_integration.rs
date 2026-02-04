@@ -13,8 +13,7 @@ use rand::{rngs::OsRng, RngCore};
 use uuid::Uuid;
 
 use walletkit_core::storage::{
-    AtomicBlobStore, CredentialStorage, CredentialStore, DeviceKeystore,
-    ReplayGuardKind, ReplayGuardResult, StoragePaths, StorageProvider,
+    AtomicBlobStore, CredentialStore, DeviceKeystore, StoragePaths, StorageProvider,
 };
 
 struct InMemoryKeystore {
@@ -194,38 +193,40 @@ fn cleanup_storage(root: &Path) {
 fn test_storage_flow_end_to_end() {
     let root = temp_root();
     let provider = InMemoryStorageProvider::new(&root);
-    let mut store = CredentialStore::from_provider(&provider).expect("store");
+    let store = CredentialStore::from_provider(&provider).expect("store");
 
     store.init(42, 100).expect("init");
 
-    let credential_id = CredentialStorage::store_credential(
-        &mut store,
-        7,
-        [0x11u8; 32],
-        1_700_000_000,
-        1_800_000_000,
-        vec![1, 2, 3],
-        Some(vec![4, 5, 6]),
-        100,
-    )
-    .expect("store credential");
+    let credential_id = store
+        .store_credential(
+            7,
+            vec![0x11u8; 32],
+            1_700_000_000,
+            1_800_000_000,
+            vec![1, 2, 3],
+            Some(vec![4, 5, 6]),
+            100,
+        )
+        .expect("store credential");
 
-    let records = CredentialStorage::list_credentials(&store, None, 101)
-        .expect("list credentials");
+    let records = store.list_credentials(None, 101).expect("list credentials");
     assert_eq!(records.len(), 1);
     let record = &records[0];
     assert_eq!(record.credential_id, credential_id);
     assert_eq!(record.issuer_schema_id, 7);
     assert_eq!(record.expires_at, 1_800_000_000);
 
-    let root_bytes = [0xAAu8; 32];
-    CredentialStorage::merkle_cache_put(&mut store, 1, root_bytes, vec![9, 9], 100, 10)
+    let root_bytes = vec![0xAAu8; 32];
+    store
+        .merkle_cache_put(1, root_bytes.clone(), vec![9, 9], 100, 10)
         .expect("cache put");
     let valid_before = 105;
-    let hit = CredentialStorage::merkle_cache_get(&store, 1, root_bytes, valid_before)
+    let hit = store
+        .merkle_cache_get(1, root_bytes.clone(), valid_before)
         .expect("cache get");
     assert_eq!(hit, Some(vec![9, 9]));
-    let miss = CredentialStorage::merkle_cache_get(&store, 1, root_bytes, 111)
+    let miss = store
+        .merkle_cache_get(1, root_bytes, 111)
         .expect("cache get");
     assert!(miss.is_none());
 
