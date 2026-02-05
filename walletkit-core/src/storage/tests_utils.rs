@@ -2,6 +2,8 @@
 
 use std::{
     collections::HashMap,
+    fs,
+    path::PathBuf,
     sync::{Arc, Mutex},
 };
 
@@ -10,6 +12,7 @@ use chacha20poly1305::{
     Key, XChaCha20Poly1305, XNonce,
 };
 use rand::{rngs::OsRng, RngCore};
+use uuid::Uuid;
 
 use std::path::Path;
 
@@ -22,6 +25,28 @@ use super::{
 
 pub struct InMemoryKeystore {
     key: [u8; 32],
+}
+
+pub fn temp_root_path() -> PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!("walletkit-replay-guard-{}", Uuid::new_v4()));
+    path
+}
+
+pub fn cleanup_test_storage(root: &Path) {
+    let paths = StoragePaths::new(root);
+    let vault = paths.vault_db_path();
+    let cache = paths.cache_db_path();
+    let lock = paths.lock_path();
+    let _ = fs::remove_file(&vault);
+    let _ = fs::remove_file(vault.with_extension("sqlite-wal"));
+    let _ = fs::remove_file(vault.with_extension("sqlite-shm"));
+    let _ = fs::remove_file(&cache);
+    let _ = fs::remove_file(cache.with_extension("sqlite-wal"));
+    let _ = fs::remove_file(cache.with_extension("sqlite-shm"));
+    let _ = fs::remove_file(lock);
+    let _ = fs::remove_dir_all(paths.worldid_dir());
+    let _ = fs::remove_dir_all(paths.root());
 }
 
 impl InMemoryKeystore {
