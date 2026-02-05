@@ -3,7 +3,7 @@
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
-use world_id_core::{Credential, FieldElement};
+use world_id_core::{Credential, FieldElement as CoreFieldElement};
 
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
@@ -13,6 +13,7 @@ use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
+use crate::FieldElement;
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[derive(uniffi::Object)]
@@ -167,20 +168,20 @@ impl CredentialStore {
     pub fn store_credential(
         &self,
         issuer_schema_id: u64,
-        subject_blinding_factor: Vec<u8>, // FIXME: the blinding factor should be properly lowered/lifed as a FieldElement to avoid encoding quirks
+        subject_blinding_factor: &FieldElement,
         genesis_issued_at: u64,
         expires_at: u64,
         credential_blob: Vec<u8>,
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        let subject_blinding_factor = parse_fixed_bytes::<32>(
-            subject_blinding_factor,
-            "subject_blinding_factor",
-        )?;
+        // TODO: This should likely take the `Credential` object and obtain all metadata from it
+        let subject_blinding_factor_bytes = subject_blinding_factor
+            .to_bytes()
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
         let credential_id = self.lock_inner()?.store_credential(
             issuer_schema_id,
-            subject_blinding_factor,
+            subject_blinding_factor_bytes,
             genesis_issued_at,
             expires_at,
             credential_blob,
@@ -215,18 +216,6 @@ impl CredentialStore {
     }
 }
 
-fn parse_fixed_bytes<const N: usize>(
-    bytes: Vec<u8>,
-    label: &str,
-) -> StorageResult<[u8; N]> {
-    bytes.try_into().map_err(|bytes: Vec<u8>| {
-        StorageError::Serialization(format!(
-            "{label} length mismatch: expected {N}, got {}",
-            bytes.len()
-        ))
-    })
-}
-
 /// Implementation not exposed to foreign bindings
 impl CredentialStore {
     fn lock_inner(
@@ -248,7 +237,7 @@ impl CredentialStore {
         &self,
         issuer_schema_id: u64,
         now: u64,
-    ) -> StorageResult<Option<(Credential, FieldElement)>> {
+    ) -> StorageResult<Option<(Credential, CoreFieldElement)>> {
         self.lock_inner()?.get_credential(issuer_schema_id, now)
     }
 
@@ -262,7 +251,7 @@ impl CredentialStore {
     /// Returns an error if the query to the cache unexpectedly fails.
     pub fn is_nullifier_replay(
         &self,
-        nullifier: FieldElement,
+        nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<bool> {
         self.lock_inner()?.is_nullifier_replay(nullifier, now)
@@ -276,7 +265,7 @@ impl CredentialStore {
     /// Returns an error if the query to the cache unexpectedly fails.
     pub fn replay_guard_set(
         &mut self,
-        nullifier: FieldElement,
+        nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
         self.lock_inner()?.replay_guard_set(nullifier, now)
@@ -326,7 +315,7 @@ impl CredentialStoreInner {
         &self,
         issuer_schema_id: u64,
         now: u64,
-    ) -> StorageResult<Option<(Credential, FieldElement)>> {
+    ) -> StorageResult<Option<(Credential, CoreFieldElement)>> {
         let state = self.state()?;
         if let Some((credential, blinding_factor)) = state
             .vault
@@ -339,13 +328,14 @@ impl CredentialStoreInner {
                     ))
                 })?;
 
-            let blinding_factor =
-                FieldElement::deserialize_from_bytes(&mut Cursor::new(blinding_factor))
-                    .map_err(|e| {
-                        StorageError::Serialization(format!(
-                            "Critical. Failed to deserialize blinding factor: {e}"
-                        ))
-                    })?;
+            let blinding_factor = CoreFieldElement::deserialize_from_bytes(
+                &mut Cursor::new(blinding_factor),
+            )
+            .map_err(|e| {
+                StorageError::Serialization(format!(
+                    "Critical. Failed to deserialize blinding factor: {e}"
+                ))
+            })?;
             return Ok(Some((cred, blinding_factor)));
         }
         Ok(None)
@@ -355,7 +345,7 @@ impl CredentialStoreInner {
     fn store_credential(
         &mut self,
         issuer_schema_id: u64,
-        subject_blinding_factor: [u8; 32],
+        subject_blinding_factor: Vec<u8>,
         genesis_issued_at: u64,
         expires_at: u64,
         credential_blob: Vec<u8>,
@@ -404,7 +394,7 @@ impl CredentialStoreInner {
     /// Returns an error if the query to the cache unexpectedly fails.
     fn is_nullifier_replay(
         &self,
-        nullifier: FieldElement,
+        nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<bool> {
         let mut nullifier_bytes = Vec::new();
@@ -433,7 +423,7 @@ impl CredentialStoreInner {
     /// Returns an error if the query to the cache unexpectedly fails.
     fn replay_guard_set(
         &mut self,
-        nullifier: FieldElement,
+        nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
         let guard = self.guard()?;
@@ -501,7 +491,6 @@ mod tests {
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
-    use world_id_core::FieldElement;
 
     #[test]
     fn test_replay_guard_field_element_serialization() {
@@ -516,7 +505,7 @@ mod tests {
         inner.init(42, 1000).expect("init storage");
 
         // Create a FieldElement from a known value
-        let nullifier = FieldElement::from(123_456_789u64);
+        let nullifier = CoreFieldElement::from(123_456_789u64);
 
         // Set a replay guard
         inner
@@ -547,7 +536,7 @@ mod tests {
             .expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
-        let nullifier = FieldElement::from(999u64);
+        let nullifier = CoreFieldElement::from(999u64);
         let set_time = 1000u64;
 
         // Set a replay guard at time 1000
@@ -590,7 +579,7 @@ mod tests {
             .expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
-        let nullifier = FieldElement::from(555u64);
+        let nullifier = CoreFieldElement::from(555u64);
         let set_time = 3000u64;
 
         // Set a replay guard at time 3000
@@ -635,7 +624,7 @@ mod tests {
         let mut inner = CredentialStoreInner::new(paths, keystore, blob_store).unwrap();
         inner.init(42, 1000).expect("init storage");
 
-        let nullifier = FieldElement::from(12345u64);
+        let nullifier = CoreFieldElement::from(12345u64);
         let first_set_time = 1000u64;
 
         // Set a replay guard at time 1000
@@ -675,7 +664,7 @@ mod tests {
 
         // Store a test credential
         let issuer_schema_id = 123u64;
-        let subject_blinding_factor = [42u8; 32];
+        let subject_blinding_factor = FieldElement::from(42u64);
         let genesis_issued_at = 1000u64;
         let expires_at = 2000u64;
         let credential_blob =
@@ -686,7 +675,9 @@ mod tests {
         inner
             .store_credential(
                 issuer_schema_id,
-                subject_blinding_factor,
+                subject_blinding_factor
+                    .to_bytes()
+                    .expect("serialize blinding factor"),
                 genesis_issued_at,
                 expires_at,
                 credential_blob,
