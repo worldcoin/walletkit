@@ -22,7 +22,7 @@ pub(super) fn get(
 ) -> StorageResult<Option<[u8; 32]>> {
     let now = current_unix_timestamp()?;
     let key = session_cache_key(rp_id);
-    let raw = get_cache_entry(conn, key.as_slice(), now)?;
+    let raw = get_cache_entry(conn, key.as_slice(), now, None)?;
     match raw {
         Some(bytes) => Ok(Some(parse_fixed_bytes::<32>(&bytes, "k_session")?)),
         None => Ok(None),

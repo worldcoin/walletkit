@@ -22,7 +22,7 @@ pub(super) fn get(
     valid_before: u64,
 ) -> StorageResult<Option<Vec<u8>>> {
     let key = merkle_cache_key(registry_kind, root, leaf_index);
-    get_cache_entry(conn, key.as_slice(), valid_before)
+    get_cache_entry(conn, key.as_slice(), valid_before, None)
 }
 
 /// Inserts or replaces a cached Merkle proof with a TTL.

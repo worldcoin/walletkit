@@ -6,7 +6,6 @@ use rusqlite::Connection;
 
 use crate::storage::error::StorageResult;
 use crate::storage::lock::StorageLockGuard;
-use crate::storage::types::ReplayGuardResult;
 
 mod maintenance;
 mod merkle;
@@ -122,55 +121,42 @@ impl CacheDb {
         session::put(&self.conn, rp_id, k_session, ttl_seconds)
     }
 
-    /// Checks for a prior disclosure by request id.
+    /// Checks whether a replay guard entry exists for the given nullifier.
     ///
-    /// Returns the original proof bytes to make disclosure idempotent.
+    /// # Returns
+    /// - bool: true if a replay guard entry exists (hence signalling a nullifier replay), false otherwise.
     ///
     /// # Errors
     ///
-    /// Returns an error if the query fails.
-    pub fn replay_guard_get(
+    /// Returns an error if the query to the cache unexpectedly fails.
+    pub fn is_nullifier_replay(
         &self,
-        request_id: [u8; 32],
+        nullifier: [u8; 32],
         now: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        nullifiers::replay_guard_bytes_for_request_id(&self.conn, request_id, now)
+    ) -> StorageResult<bool> {
+        nullifiers::is_nullifier_replay(&self.conn, nullifier, now)
     }
 
-    /// Enforces replay safety for replay guard.
-    ///
-    /// Ensures a nullifier is disclosed at most once and that repeated requests
-    /// return the previously stored proof bytes.
+    /// After a proof has been successfully generated, creates a replay guard entry
+    /// locally to avoid future replays of the same nullifier.
     ///
     /// # Errors
     ///
-    /// Returns an error if the disclosure conflicts with an existing nullifier.
-    pub fn begin_replay_guard(
+    /// Returns an error if the query to the cache unexpectedly fails.
+    pub fn replay_guard_set(
         &mut self,
         _lock: &StorageLockGuard,
-        request_id: [u8; 32],
         nullifier: [u8; 32],
-        proof_bytes: Vec<u8>,
         now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<ReplayGuardResult> {
-        nullifiers::begin_replay_guard(
-            &mut self.conn,
-            request_id,
-            nullifier,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
+    ) -> StorageResult<()> {
+        nullifiers::replay_guard_set(&mut self.conn, nullifier, now)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::error::StorageError;
     use crate::storage::lock::StorageLock;
-    use crate::storage::types::ReplayGuardKind;
     use std::fs;
     use std::path::PathBuf;
     use std::time::Duration;
@@ -278,123 +264,6 @@ mod tests {
         std::thread::sleep(Duration::from_secs(2));
         let miss = db.session_key_get(rp_id).expect("get session key");
         assert!(miss.is_none());
-        cleanup_cache_files(&path);
-        cleanup_lock_file(&lock_path);
-    }
-
-    #[test]
-    fn test_replay_guard_replay_returns_original_bytes() {
-        let path = temp_cache_path();
-        let key = [0x77u8; 32];
-        let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
-        let request_id = [0x10u8; 32];
-        let nullifier = [0x20u8; 32];
-        let first = vec![1, 2, 3];
-        let second = vec![9, 9, 9];
-
-        let fresh = db
-            .begin_replay_guard(&guard, request_id, nullifier, first.clone(), 100, 1000)
-            .expect("first disclosure");
-        assert_eq!(
-            fresh,
-            ReplayGuardResult {
-                kind: ReplayGuardKind::Fresh,
-                bytes: first.clone(),
-            }
-        );
-
-        let replay = db
-            .begin_replay_guard(&guard, request_id, nullifier, second, 101, 1000)
-            .expect("replay disclosure");
-        assert_eq!(
-            replay,
-            ReplayGuardResult {
-                kind: ReplayGuardKind::Replay,
-                bytes: first,
-            }
-        );
-        cleanup_cache_files(&path);
-        cleanup_lock_file(&lock_path);
-    }
-
-    #[test]
-    fn test_replay_guard_request_id_lookup() {
-        let path = temp_cache_path();
-        let key = [0x66u8; 32];
-        let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
-        let request_id = [0x55u8; 32];
-        let nullifier = [0x44u8; 32];
-        let payload = vec![4, 5, 6];
-
-        db.begin_replay_guard(&guard, request_id, nullifier, payload.clone(), 100, 10)
-            .expect("disclosure");
-
-        let hit = db.replay_guard_get(request_id, 105).expect("lookup");
-        assert_eq!(hit, Some(payload));
-
-        let miss = db.replay_guard_get(request_id, 111).expect("lookup");
-        assert!(miss.is_none());
-        cleanup_cache_files(&path);
-        cleanup_lock_file(&lock_path);
-    }
-
-    #[test]
-    fn test_replay_guard_nullifier_conflict_errors() {
-        let path = temp_cache_path();
-        let key = [0x88u8; 32];
-        let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
-        let request_id_a = [0x01u8; 32];
-        let request_id_b = [0x02u8; 32];
-        let nullifier = [0x03u8; 32];
-
-        db.begin_replay_guard(&guard, request_id_a, nullifier, vec![4], 100, 1000)
-            .expect("first disclosure");
-
-        let err = db
-            .begin_replay_guard(&guard, request_id_b, nullifier, vec![5], 101, 1000)
-            .expect_err("nullifier conflict");
-        match err {
-            StorageError::NullifierAlreadyDisclosed => {}
-            other => panic!("unexpected error: {other}"),
-        }
-        cleanup_cache_files(&path);
-        cleanup_lock_file(&lock_path);
-    }
-
-    #[test]
-    fn test_replay_guard_expiry_allows_new_insert() {
-        let path = temp_cache_path();
-        let key = [0x99u8; 32];
-        let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
-        let request_id_a = [0x0Au8; 32];
-        let request_id_b = [0x0Bu8; 32];
-        let nullifier = [0x0Cu8; 32];
-
-        db.begin_replay_guard(&guard, request_id_a, nullifier, vec![7], 100, 10)
-            .expect("first disclosure");
-
-        let fresh = db
-            .begin_replay_guard(&guard, request_id_b, nullifier, vec![8], 111, 10)
-            .expect("second disclosure after expiry");
-        assert_eq!(
-            fresh,
-            ReplayGuardResult {
-                kind: ReplayGuardKind::Fresh,
-                bytes: vec![8],
-            }
-        );
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }

@@ -46,8 +46,7 @@ pub(super) fn parse_fixed_bytes<const N: usize>(
 
 pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
 pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
-pub(super) const CACHE_KEY_PREFIX_REPLAY_REQUEST: u8 = 0x03;
-pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x04;
+pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x03;
 
 /// Timestamps for cache entry insertion and expiry.
 #[derive(Clone, Copy, Debug)]
@@ -137,25 +136,37 @@ pub(super) fn insert_cache_entry(
 
 /// Fetches a cache entry if it is still valid.
 ///
+/// Optionally, filters out entries that were inserted before a specific time (`insertion_before`).
+///
 /// # Errors
 ///
 /// Returns an error if the query or conversion fails.
 pub(super) fn get_cache_entry(
     conn: &Connection,
     key: &[u8],
-    valid_before: u64,
+    now: u64,
+    insertion_before: Option<u64>,
 ) -> StorageResult<Option<Vec<u8>>> {
-    let valid_before_i64 = to_i64(valid_before, "valid_before")?;
-    conn.query_row(
-        "SELECT value_bytes
-         FROM cache_entries
-         WHERE key_bytes = ?1
-           AND expires_at > ?2",
-        params![key, valid_before_i64],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(|err| map_db_err(&err))
+    let now = to_i64(now, "now")?;
+
+    let base = r"
+           SELECT value_bytes
+           FROM cache_entries
+           WHERE key_bytes = ?1
+             AND expires_at > ?2
+       ";
+
+    let res = if let Some(insertion_before) = insertion_before {
+        let insertion_before = to_i64(insertion_before, "insertion_before")?;
+        let query = format!("{base} AND inserted_at < ?3");
+        conn.query_row(&query, params![key, now, insertion_before], |row| {
+            row.get(0)
+        })
+    } else {
+        conn.query_row(base, params![key, now], |row| row.get(0))
+    };
+
+    res.optional().map_err(|err| map_db_err(&err))
 }
 
 /// Commits a `Transaction` with mapped cache errors.
@@ -192,11 +203,6 @@ pub(super) fn merkle_cache_key(
 /// Builds the cache key for a session key entry.
 pub(super) fn session_cache_key(rp_id: [u8; 32]) -> Vec<u8> {
     cache_key_with_prefix(CACHE_KEY_PREFIX_SESSION, rp_id.as_ref())
-}
-
-/// Builds the cache key for a replay-guard request entry.
-pub(super) fn replay_request_key(request_id: [u8; 32]) -> Vec<u8> {
-    cache_key_with_prefix(CACHE_KEY_PREFIX_REPLAY_REQUEST, request_id.as_ref())
 }
 
 /// Builds the cache key for a replay-guard nullifier entry.
