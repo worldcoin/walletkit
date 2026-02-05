@@ -106,7 +106,7 @@ impl VaultDb {
         &mut self,
         _lock: &StorageLockGuard,
         issuer_schema_id: u64,
-        subject_blinding_factor: [u8; 32],
+        subject_blinding_factor: Vec<u8>,
         genesis_issued_at: u64,
         expires_at: u64,
         credential_blob: Vec<u8>,
@@ -167,7 +167,7 @@ impl VaultDb {
                 RETURNING credential_id",
                 params![
                     issuer_schema_id_i64,
-                    subject_blinding_factor.as_ref(),
+                    subject_blinding_factor,
                     genesis_issued_at_i64,
                     expires_at_i64,
                     now_i64,
