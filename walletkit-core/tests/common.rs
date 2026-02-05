@@ -27,6 +27,12 @@ impl InMemoryKeystore {
     }
 }
 
+impl Default for InMemoryKeystore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DeviceKeystore for InMemoryKeystore {
     fn seal(
         &self,
@@ -84,6 +90,12 @@ impl InMemoryBlobStore {
         Self {
             blobs: Mutex::new(HashMap::new()),
         }
+    }
+}
+
+impl Default for InMemoryBlobStore {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

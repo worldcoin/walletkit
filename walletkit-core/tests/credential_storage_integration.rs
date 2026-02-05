@@ -31,58 +31,14 @@ fn test_storage_flow_end_to_end() {
     assert_eq!(record.issuer_schema_id, 7);
     assert_eq!(record.expires_at, 1_800_000_000);
 
-    let root_bytes = vec![0xAAu8; 32];
     store
-        .merkle_cache_put(1, root_bytes.clone(), vec![9, 9], 100, 10)
+        .merkle_cache_put(vec![9, 9], 100, 10)
         .expect("cache put");
-    let valid_before = 105;
-    let hit = store
-        .merkle_cache_get(1, root_bytes.clone(), valid_before)
-        .expect("cache get");
+    let now = 105;
+    let hit = store.merkle_cache_get(now).expect("cache get");
     assert_eq!(hit, Some(vec![9, 9]));
-    let miss = store
-        .merkle_cache_get(1, root_bytes, 111)
-        .expect("cache get");
+    let miss = store.merkle_cache_get(111).expect("cache get");
     assert!(miss.is_none());
-
-    // FIXME
-    // let request_id = [0xABu8; 32];
-    // let nullifier = [0xCDu8; 32];
-    // let fresh = CredentialStorage::begin_replay_guard(
-    //     &mut store,
-    //     request_id,
-    //     nullifier,
-    //     vec![1, 2],
-    //     200,
-    //     50,
-    // )
-    // .expect("disclose");
-    // assert_eq!(
-    //     fresh,
-    //     ReplayGuardResult {
-    //         kind: ReplayGuardKind::Fresh,
-    //         bytes: vec![1, 2],
-    //     }
-    // );
-    // let cached = CredentialStorage::is_nullifier_replay(&store, request_id, 210)
-    //     .expect("disclosure lookup");
-    // assert_eq!(cached, Some(vec![1, 2]));
-    // let replay = CredentialStorage::begin_replay_guard(
-    //     &mut store,
-    //     request_id,
-    //     nullifier,
-    //     vec![9, 9],
-    //     201,
-    //     50,
-    // )
-    // .expect("replay");
-    // assert_eq!(
-    //     replay,
-    //     ReplayGuardResult {
-    //         kind: ReplayGuardKind::Replay,
-    //         bytes: vec![1, 2],
-    //     }
-    // );
 
     common::cleanup_storage(&root);
 }

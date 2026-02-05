@@ -49,14 +49,8 @@ impl CacheDb {
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub fn merkle_cache_get(
-        &self,
-        registry_kind: u8,
-        root: [u8; 32],
-        leaf_index: u64,
-        valid_before: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        merkle::get(&self.conn, registry_kind, root, leaf_index, valid_before)
+    pub fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
+        merkle::get(&self.conn, valid_until)
     }
 
     /// Inserts a cached Merkle proof with a TTL.
@@ -67,27 +61,15 @@ impl CacheDb {
     /// # Errors
     ///
     /// Returns an error if the insert fails.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn merkle_cache_put(
         &mut self,
         _lock: &StorageLockGuard,
-        registry_kind: u8,
-        root: [u8; 32],
-        leaf_index: u64,
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        merkle::put(
-            &self.conn,
-            registry_kind,
-            root,
-            leaf_index,
-            proof_bytes.as_ref(),
-            now,
-            ttl_seconds,
-        )
+        merkle::put(&self.conn, proof_bytes.as_ref(), now, ttl_seconds)
     }
 
     /// Fetches a cached session key if present.
@@ -231,17 +213,12 @@ mod tests {
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
         let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
-        let root = [0xABu8; 32];
-        db.merkle_cache_put(&guard, 1, root, 42, vec![1, 2, 3], 100, 10)
+        db.merkle_cache_put(&guard, vec![1, 2, 3], 100, 10)
             .expect("put merkle proof");
-        let valid_before = 105;
-        let hit = db
-            .merkle_cache_get(1, root, 42, valid_before)
-            .expect("get merkle proof");
+        let valid_until = 105;
+        let hit = db.merkle_cache_get(valid_until).expect("get merkle proof");
         assert!(hit.is_some());
-        let miss = db
-            .merkle_cache_get(1, root, 42, 111)
-            .expect("get merkle proof");
+        let miss = db.merkle_cache_get(111).expect("get merkle proof");
         assert!(miss.is_none());
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
