@@ -1,5 +1,6 @@
 //! Storage facade implementing the credential storage API.
 
+use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
 use world_id_core::{Credential, FieldElement};
@@ -166,7 +167,7 @@ impl CredentialStore {
     pub fn store_credential(
         &self,
         issuer_schema_id: u64,
-        subject_blinding_factor: Vec<u8>,
+        subject_blinding_factor: Vec<u8>, // FIXME: the blinding factor should be properly lowered/lifed as a FieldElement to avoid encoding quirks
         genesis_issued_at: u64,
         expires_at: u64,
         credential_blob: Vec<u8>,
@@ -247,7 +248,7 @@ impl CredentialStore {
         &self,
         issuer_schema_id: u64,
         now: u64,
-    ) -> StorageResult<Option<Credential>> {
+    ) -> StorageResult<Option<(Credential, FieldElement)>> {
         self.lock_inner()?.get_credential(issuer_schema_id, now)
     }
 
@@ -325,18 +326,27 @@ impl CredentialStoreInner {
         &self,
         issuer_schema_id: u64,
         now: u64,
-    ) -> StorageResult<Option<Credential>> {
+    ) -> StorageResult<Option<(Credential, FieldElement)>> {
         let state = self.state()?;
-        if let Some(credential) =
-            state.vault.get_raw_credential(issuer_schema_id, now)?
+        if let Some((credential, blinding_factor)) = state
+            .vault
+            .fetch_credential_and_blinding_factor(issuer_schema_id, now)?
         {
             let cred =
                 serde_json::from_slice::<Credential>(&credential).map_err(|e| {
                     StorageError::Serialization(format!(
-                        "critical. failed to deserialize credential: {e}"
+                        "Critical. Failed to deserialize credential: {e}"
                     ))
                 })?;
-            return Ok(Some(cred));
+
+            let blinding_factor =
+                FieldElement::deserialize_from_bytes(&mut Cursor::new(blinding_factor))
+                    .map_err(|e| {
+                        StorageError::Serialization(format!(
+                            "Critical. Failed to deserialize blinding factor: {e}"
+                        ))
+                    })?;
+            return Ok(Some((cred, blinding_factor)));
         }
         Ok(None)
     }
@@ -686,7 +696,7 @@ mod tests {
             .expect("store credential");
 
         // Retrieve the credential
-        let credential = inner
+        let (credential, _blinding_factor) = inner
             .get_credential(issuer_schema_id, 1000)
             .expect("get credential")
             .expect("credential should exist");

@@ -219,7 +219,7 @@ impl Authenticator {
         let mut responses: Vec<ResponseItem> = vec![];
 
         for request_item in credentials_to_prove {
-            let credential = self
+            let (credential, blinding_factor) = self
                 .store
                 .get_credential(request_item.issuer_schema_id, now)?
                 .ok_or(WalletKitError::CredentialNotIssued)?;
@@ -230,7 +230,7 @@ impl Authenticator {
                 nullifier.clone(),
                 request_item,
                 &credential,
-                FieldElement::ZERO, // FIXME
+                blinding_factor,
                 session_id_r_seed,
                 proof_request.0.session_id,
                 proof_request.0.created_at,
