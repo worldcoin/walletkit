@@ -294,7 +294,7 @@ mod tests {
         let config = Config::new(
             Some(mock_server.url()),
             480,
-            address!("0xd66aFbf92d684B4404B1ed3e9aDA85353c178dE2"),
+            address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
             "https://world-id-indexer.stage-crypto.worldcoin.org".to_string(),
             "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
             vec![],

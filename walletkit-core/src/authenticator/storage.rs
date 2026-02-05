@@ -4,13 +4,10 @@ use serde::{Deserialize, Serialize};
 use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
 use world_id_core::primitives::merkle::MerkleInclusionProof;
 use world_id_core::primitives::TREE_DEPTH;
-use world_id_core::{
-    requests::ProofRequest, Credential, FieldElement, OnchainKeyRepresentable,
-};
+use world_id_core::OnchainKeyRepresentable;
 
 use crate::error::WalletKitError;
-use crate::storage::{CredentialStore, ReplayGuardKind, ReplayGuardResult};
-use crate::U256Wrapper;
+use crate::storage::CredentialStore;
 
 use super::utils::{leaf_index_to_u64, parse_fixed_bytes, u256_to_hex};
 use super::Authenticator;
@@ -92,86 +89,6 @@ impl Authenticator {
         )?;
         inclusion_proof_payload_from_cached(&payload)
     }
-
-    /// Generates a proof and enforces replay safety via storage.
-    ///
-    /// The proof request and credential are supplied as JSON strings.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the proof generation or storage update fails.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::future_not_send)]
-    #[allow(clippy::unused_async)]
-    pub async fn generate_proof_with_replay_guard(
-        &self,
-        storage: Arc<CredentialStore>,
-        proof_request_json: &str,
-        credential_json: &str,
-        credential_sub_blinding_factor: &U256Wrapper,
-        request_id: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> Result<ReplayGuardResult, WalletKitError> {
-        let proof_request =
-            ProofRequest::from_json(proof_request_json).map_err(|err| {
-                WalletKitError::InvalidInput {
-                    attribute: "proof_request".to_string(),
-                    reason: err.to_string(),
-                }
-            })?;
-        let credential: Credential =
-            serde_json::from_str(credential_json).map_err(|err| {
-                WalletKitError::InvalidInput {
-                    attribute: "credential".to_string(),
-                    reason: err.to_string(),
-                }
-            })?;
-        let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
-        let credential_sub_blinding_factor = FieldElement::try_from(
-            credential_sub_blinding_factor.0,
-        )
-        .map_err(|err| WalletKitError::InvalidInput {
-            attribute: "credential_sub_blinding_factor".to_string(),
-            reason: err.to_string(),
-        })?;
-
-        if let Some(bytes) = storage
-            .replay_guard_get(request_id.to_vec(), now)
-            .map_err(WalletKitError::from)?
-        {
-            return Ok(ReplayGuardResult {
-                kind: ReplayGuardKind::Replay,
-                bytes,
-            });
-        }
-        let (proof, nullifier) = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.0
-                    .generate_proof(
-                        proof_request,
-                        credential,
-                        credential_sub_blinding_factor,
-                    )
-                    .await
-            })
-        })?;
-        let proof_bytes = serialize_proof_package(&proof, nullifier)?;
-        let nullifier_bytes = {
-            let mut bytes = Vec::new();
-            nullifier.serialize_as_bytes(&mut bytes)?;
-            parse_fixed_bytes::<32>(bytes, "field_element")?
-        };
-        storage
-            .begin_replay_guard(
-                request_id.to_vec(),
-                nullifier_bytes.to_vec(),
-                proof_bytes,
-                now,
-                ttl_seconds,
-            )
-            .map_err(WalletKitError::from)
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,18 +153,6 @@ fn inclusion_proof_payload_from_cached(
         authenticator_pubkeys,
     })
 }
-fn serialize_proof_package(
-    proof: &impl Serialize,
-    nullifier: FieldElement,
-) -> Result<Vec<u8>, WalletKitError> {
-    let mut bytes = Vec::new();
-    ciborium::ser::into_writer(&(proof, nullifier), &mut bytes).map_err(|err| {
-        WalletKitError::SerializationError {
-            error: err.to_string(),
-        }
-    })?;
-    Ok(bytes)
-}
 
 #[cfg(test)]
 mod tests {
@@ -257,6 +162,8 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
     use uuid::Uuid;
+
+    use world_id_core::FieldElement;
 
     fn temp_root() -> PathBuf {
         let mut path = std::env::temp_dir();
