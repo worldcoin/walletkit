@@ -7,7 +7,7 @@ use walletkit_core::{Authenticator, Environment};
 use world_id_core::world_id_registry::WorldIdRegistry;
 
 const WORLD_ID_REGISTRY: alloy::primitives::Address =
-    address!("0xb64a1F443C9a18Cd3865C3c9Be871946617C0d75");
+    address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe");
 
 fn setup_anvil() -> AnvilInstance {
     dotenvy::dotenv().ok();
