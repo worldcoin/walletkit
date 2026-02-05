@@ -87,7 +87,9 @@ impl Authenticator {
             now,
             ttl_seconds,
         )?;
-        inclusion_proof_payload_from_cached(&payload)
+        // FIXME: this requires a refactor. deliberately panicking because it should not be used yet.
+        todo!("this requires refactoring for the proof caching");
+        //inclusion_proof_payload_from_cached(&payload)
     }
 }
 
