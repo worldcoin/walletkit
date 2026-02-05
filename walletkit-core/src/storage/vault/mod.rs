@@ -222,22 +222,23 @@ impl VaultDb {
         Ok(records)
     }
 
-    /// Retrieves the full credential bytes by issuer schema ID.
+    /// Retrieves the credential bytes and blinding factor by issuer schema ID.
     ///
     /// Returns the most recent non-expired credential matching the issuer schema ID.
     ///
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub fn get_raw_credential(
+    pub fn fetch_credential_and_blinding_factor(
         &self,
         issuer_schema_id: u64,
         now: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
+    ) -> StorageResult<Option<(Vec<u8>, Vec<u8>)>> {
         let expires = to_i64(now, "now")?;
         let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
 
         let sql = "SELECT
+                cr.subject_blinding_factor,
                 blob.bytes as credential_blob
              FROM credential_records cr
              INNER JOIN blob_objects blob ON cr.credential_blob_cid = blob.content_id
@@ -248,8 +249,9 @@ impl VaultDb {
         let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
         let result = stmt
             .query_row(params![expires, issuer_schema_id_i64], |row| {
-                let credential_blob: Vec<u8> = row.get(5)?;
-                Ok(credential_blob)
+                let blinding_factor: Vec<u8> = row.get(0)?;
+                let credential_blob: Vec<u8> = row.get(1)?;
+                Ok((credential_blob, blinding_factor))
             })
             .optional()
             .map_err(|err| map_db_err(&err))?;
