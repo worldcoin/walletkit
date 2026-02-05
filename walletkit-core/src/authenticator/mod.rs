@@ -3,15 +3,22 @@
 use std::sync::Arc;
 
 use alloy_primitives::Address;
+use rand::rngs::OsRng;
 use world_id_core::{
-    primitives::Config, types::GatewayRequestState, Authenticator as CoreAuthenticator,
+    primitives::Config,
+    requests::{ProofResponse as CoreProofResponse, ResponseItem},
+    types::GatewayRequestState,
+    Authenticator as CoreAuthenticator, FieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
 use crate::{
-    defaults::DefaultConfig, error::WalletKitError,
-    primitives::ParseFromForeignBinding, storage::CredentialStore, Environment,
-    U256Wrapper,
+    defaults::DefaultConfig,
+    error::WalletKitError,
+    primitives::ParseFromForeignBinding,
+    requests::{ProofRequest, ProofResponse},
+    storage::CredentialStore,
+    Environment, U256Wrapper,
 };
 
 mod utils;
@@ -115,6 +122,81 @@ impl Authenticator {
         )
         .await?;
         Ok(packed_account_data.into())
+    }
+
+    /// Generates a proof for the given proof request.
+    ///
+    /// # Errors
+    /// Returns an error if proof generation fails.
+    pub async fn generate_proof(
+        &self,
+        proof_request: &ProofRequest,
+        now: Option<u64>,
+    ) -> Result<ProofResponse, WalletKitError> {
+        let now = if let Some(n) = now {
+            n
+        } else {
+            let start = std::time::SystemTime::now();
+            start
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| WalletKitError::Generic {
+                    error: format!("Critical. Unable to determine SystemTime: {e}"),
+                })?
+                .as_secs()
+        };
+
+        // First check if the request can be fulfilled and which credentials should be used
+        let credential_list = self.store.list_credentials(None, now)?;
+        let credential_list = credential_list
+            .into_iter()
+            .map(|cred| cred.issuer_schema_id.clone().to_string())
+            .collect::<std::collections::HashSet<_>>();
+        let credentials_to_prove = proof_request
+            .0
+            .credentials_to_prove(&credential_list)
+            .ok_or(WalletKitError::UnfulfillableRequest)?;
+
+        // Next, generate the nullifier and check the replay guard
+        let nullifier = self.inner.generate_nullifier(&proof_request.0).await?;
+
+        if self
+            .store
+            .is_nullifier_replay(nullifier.verifiable_oprf_output.output.into(), now)?
+        {
+            return Err(WalletKitError::NullifierReplay);
+        }
+
+        let mut responses: Vec<ResponseItem> = vec![];
+
+        for request_item in credentials_to_prove {
+            let credential = self
+                .store
+                .get_credential(request_item.issuer_schema_id, now)?
+                .ok_or(WalletKitError::CredentialNotIssued)?;
+
+            let session_id_r_seed = FieldElement::random(&mut OsRng); // TODO: Properly fetch session seed from cache
+
+            let response_item = self.inner.generate_single_proof(
+                nullifier.clone(),
+                request_item,
+                &credential,
+                FieldElement::ZERO, // FIXME
+                session_id_r_seed,
+                proof_request.0.session_id,
+                proof_request.0.created_at,
+            )?;
+            responses.push(response_item);
+        }
+
+        let response = CoreProofResponse {
+            id: proof_request.0.id.clone(),
+            version: world_id_core::requests::RequestVersion::V1,
+            responses,
+            error: None,
+            session_id: None, // TODO: This needs to be computed to be shareable
+        };
+
+        Ok(response.into())
     }
 }
 

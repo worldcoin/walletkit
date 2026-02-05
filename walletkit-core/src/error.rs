@@ -87,6 +87,14 @@ pub enum WalletKitError {
         error: String,
     },
 
+    /// The request could not be fulfilled with the credentials the user has available
+    #[error("unfulfillable_request")]
+    UnfulfillableRequest,
+
+    /// The generated nullifier has already been used in a proof submission and cannot be used again
+    #[error("nullifier_replay")]
+    NullifierReplay,
+
     /// An unexpected error occurred
     #[error("unexpected_error: {error}")]
     Generic {
