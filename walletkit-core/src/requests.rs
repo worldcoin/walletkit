@@ -9,7 +9,7 @@ use crate::error::WalletKitError;
 /// A request from the RP to the Authenticator. See [`CoreProofRequest`] for more details.
 /// This is a wrapper type to expose to foreign language bindings.
 #[derive(Debug, Clone, uniffi::Object)]
-pub struct ProofRequest(CoreProofRequest);
+pub struct ProofRequest(pub(crate) CoreProofRequest);
 
 #[uniffi::export]
 impl ProofRequest {
@@ -41,5 +41,11 @@ impl ProofResponse {
         serde_json::to_string(&self.0).map_err(|e| WalletKitError::Generic {
             error: format!("critical unexpected error serializing to json: {e}"),
         })
+    }
+}
+
+impl From<CoreProofResponse> for ProofResponse {
+    fn from(core_response: CoreProofResponse) -> Self {
+        Self(core_response)
     }
 }
