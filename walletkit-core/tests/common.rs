@@ -28,7 +28,11 @@ impl InMemoryKeystore {
 }
 
 impl DeviceKeystore for InMemoryKeystore {
-    fn seal(&self, associated_data: Vec<u8>, plaintext: Vec<u8>) -> Result<Vec<u8>, StorageError> {
+    fn seal(
+        &self,
+        associated_data: Vec<u8>,
+        plaintext: Vec<u8>,
+    ) -> Result<Vec<u8>, StorageError> {
         let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.key));
         let mut nonce_bytes = [0u8; 24];
         OsRng.fill_bytes(&mut nonce_bytes);
@@ -145,12 +149,16 @@ pub fn temp_root() -> PathBuf {
     path
 }
 
+#[allow(dead_code, reason = "used in tests")]
 pub fn create_test_credential_store() -> Arc<CredentialStore> {
     let root = temp_root();
     let provider = InMemoryStorageProvider::new(&root);
-    Arc::new(CredentialStore::from_provider(&provider).expect("create credential store"))
+    Arc::new(
+        CredentialStore::from_provider(&provider).expect("create credential store"),
+    )
 }
 
+#[allow(dead_code, reason = "used in tests")]
 pub fn cleanup_storage(root: &Path) {
     use std::fs;
     let paths = StoragePaths::new(root);
