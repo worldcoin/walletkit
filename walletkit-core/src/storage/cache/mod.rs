@@ -129,12 +129,12 @@ impl CacheDb {
     /// # Errors
     ///
     /// Returns an error if the query to the cache unexpectedly fails.
-    pub fn replay_guard_get(
+    pub fn is_nullifier_replay(
         &self,
         nullifier: [u8; 32],
         now: u64,
     ) -> StorageResult<bool> {
-        nullifiers::replay_guard_get(&self.conn, nullifier, now)
+        nullifiers::is_nullifier_replay(&self.conn, nullifier, now)
     }
 
     /// After a proof has been successfully generated, creates a replay guard entry

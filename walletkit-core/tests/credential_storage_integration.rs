@@ -249,7 +249,7 @@ fn test_storage_flow_end_to_end() {
     //         bytes: vec![1, 2],
     //     }
     // );
-    // let cached = CredentialStorage::replay_guard_get(&store, request_id, 210)
+    // let cached = CredentialStorage::is_nullifier_replay(&store, request_id, 210)
     //     .expect("disclosure lookup");
     // assert_eq!(cached, Some(vec![1, 2]));
     // let replay = CredentialStorage::begin_replay_guard(

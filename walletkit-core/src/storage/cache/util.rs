@@ -136,7 +136,7 @@ pub(super) fn insert_cache_entry(
 
 /// Fetches a cache entry if it is still valid.
 ///
-/// Optionally, filters out entries that were inserted after `valid_after`.
+/// Optionally, filters out entries that were inserted (based on `inserted_at`) after `insertion_after`.
 ///
 /// # Errors
 ///
@@ -145,7 +145,7 @@ pub(super) fn get_cache_entry(
     conn: &Connection,
     key: &[u8],
     valid_before: u64,
-    valid_after: Option<u64>,
+    insertion_after: Option<u64>,
 ) -> StorageResult<Option<Vec<u8>>> {
     let valid_before_i64 = to_i64(valid_before, "valid_before")?;
 
@@ -156,12 +156,12 @@ pub(super) fn get_cache_entry(
              AND expires_at > ?2
        ";
 
-    let res = if let Some(valid_after) = valid_after {
-        let valid_after_i64 = to_i64(valid_after, "valid_after")?;
+    let res = if let Some(insertion_after) = insertion_after {
+        let insertion_after_i64 = to_i64(insertion_after, "valid_after")?;
         let query = format!("{base} AND inserted_at <= ?3");
         conn.query_row(
             &query,
-            params![key, valid_before_i64, valid_after_i64],
+            params![key, valid_before_i64, insertion_after_i64],
             |row| row.get(0),
         )
     } else {

@@ -354,7 +354,7 @@ impl CredentialStoreInner {
     ///
     /// Returns an error if the query to the cache unexpectedly fails.
     #[allow(dead_code)] // TODO: Once it gets used
-    fn replay_guard_get(
+    fn is_nullifier_replay(
         &self,
         nullifier: FieldElement,
         now: u64,
@@ -374,7 +374,7 @@ impl CredentialStoreInner {
             ))
         })?;
         let state = self.state()?;
-        state.cache.replay_guard_get(nullifier_bytes, now)
+        state.cache.is_nullifier_replay(nullifier_bytes, now)
     }
 
     /// After a proof has been successfully generated, creates a replay guard entry
@@ -501,7 +501,7 @@ mod tests {
 
         // The same FieldElement should be properly serialized and found after the grace period
         let exists_after_grace = inner
-            .replay_guard_get(nullifier, 1601)
+            .is_nullifier_replay(nullifier, 1601)
             .expect("check replay guard");
         assert!(
             exists_after_grace,
@@ -535,7 +535,7 @@ mod tests {
         // Grace period is 600 seconds (10 minutes)
         let check_time_1min = set_time + 60; // 1 minute later
         let exists_1min = inner
-            .replay_guard_get(nullifier, check_time_1min)
+            .is_nullifier_replay(nullifier, check_time_1min)
             .expect("check at 1 minute");
         assert!(
             !exists_1min,
@@ -544,7 +544,7 @@ mod tests {
 
         let check_time_ten_min = set_time + 601; // 10 minutes later
         let exists_ten_min = inner
-            .replay_guard_get(nullifier, check_time_ten_min)
+            .is_nullifier_replay(nullifier, check_time_ten_min)
             .expect("check at 9 minutes");
         assert!(
             exists_ten_min,
@@ -580,7 +580,7 @@ mod tests {
         // Just before expiration: should still exist
         let check_time_before_exp = set_time + one_year_seconds - 1;
         let exists_before_exp = inner
-            .replay_guard_get(nullifier, check_time_before_exp)
+            .is_nullifier_replay(nullifier, check_time_before_exp)
             .expect("check before expiration");
         assert!(
             exists_before_exp,
@@ -590,7 +590,7 @@ mod tests {
         // After expiration: should not exist
         let check_time_at_exp = set_time + one_year_seconds + 1;
         let exists_at_exp = inner
-            .replay_guard_get(nullifier, check_time_at_exp)
+            .is_nullifier_replay(nullifier, check_time_at_exp)
             .expect("check at expiration");
         assert!(
             !exists_at_exp,
@@ -627,7 +627,7 @@ mod tests {
         // This is past the grace period from the FIRST insertion
         let check_time_after_grace = first_set_time + 601;
         let exists_after_grace = inner
-            .replay_guard_get(nullifier, check_time_after_grace)
+            .is_nullifier_replay(nullifier, check_time_after_grace)
             .expect("check after grace");
         assert!(
             exists_after_grace,

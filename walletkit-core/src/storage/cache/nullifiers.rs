@@ -31,7 +31,7 @@ static REPLAY_REQUEST_TTL_SECONDS: u64 = 60 * 60 * 24 * 365; // 1 year
 /// # Errors
 ///
 /// Returns an error if the query to the cache unexpectedly fails.
-pub(super) fn replay_guard_get(
+pub(super) fn is_nullifier_replay(
     conn: &Connection,
     nullifier: [u8; 32],
     now: u64,
