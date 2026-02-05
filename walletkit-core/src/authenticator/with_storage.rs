@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use serde::{Deserialize, Serialize};
 use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
 use world_id_core::primitives::merkle::MerkleInclusionProof;
@@ -7,7 +5,6 @@ use world_id_core::primitives::TREE_DEPTH;
 use world_id_core::OnchainKeyRepresentable;
 
 use crate::error::WalletKitError;
-use crate::storage::CredentialStore;
 
 use super::utils::{leaf_index_to_u64, parse_fixed_bytes, u256_to_hex};
 use super::Authenticator;
@@ -22,14 +19,9 @@ impl Authenticator {
     /// # Errors
     ///
     /// Returns an error if the leaf index is invalid or storage initialization fails.
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn init_storage(
-        &self,
-        storage: Arc<CredentialStore>,
-        now: u64,
-    ) -> Result<(), WalletKitError> {
+    pub fn init_storage(&self, now: u64) -> Result<(), WalletKitError> {
         let leaf_index = leaf_index_to_u64(&self.leaf_index())?;
-        storage.init(leaf_index, now)?;
+        self.store.init(leaf_index, now)?;
         Ok(())
     }
 
@@ -47,7 +39,6 @@ impl Authenticator {
     #[allow(clippy::future_not_send)]
     pub async fn fetch_inclusion_proof_cached(
         &self,
-        storage: Arc<CredentialStore>,
         registry_kind: u8,
         root: Vec<u8>,
         now: u64,
@@ -56,14 +47,15 @@ impl Authenticator {
         let root = parse_fixed_bytes::<32>(root, "root")?;
         let valid_before = now.saturating_add(MERKLE_PROOF_VALIDITY_BUFFER_SECS);
         if let Some(bytes) =
-            storage.merkle_cache_get(registry_kind, root.to_vec(), valid_before)?
+            self.store
+                .merkle_cache_get(registry_kind, root.to_vec(), valid_before)?
         {
             if let Some(cached) = CachedInclusionProof::deserialize(&bytes) {
                 return inclusion_proof_payload_from_cached(&cached);
             }
         }
 
-        let (proof, key_set) = self.0.fetch_inclusion_proof().await?;
+        let (proof, key_set) = self.inner.fetch_inclusion_proof().await?;
         let payload = CachedInclusionProof {
             proof: proof.clone(),
             authenticator_pubkeys: key_set,
@@ -80,14 +72,16 @@ impl Authenticator {
                 reason: "fetched proof root does not match requested root".to_string(),
             });
         }
-        storage.merkle_cache_put(
+        self.store.merkle_cache_put(
             registry_kind,
             root.to_vec(),
             payload_bytes,
             now,
             ttl_seconds,
         )?;
-        inclusion_proof_payload_from_cached(&payload)
+        // FIXME: this requires a refactor. deliberately panicking because it should not be used yet.
+        todo!("this requires refactoring for the proof caching");
+        //inclusion_proof_payload_from_cached(&payload)
     }
 }
 
@@ -157,38 +151,15 @@ fn inclusion_proof_payload_from_cached(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::tests_utils::InMemoryStorageProvider;
+    use crate::storage::tests_utils::{
+        cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
+    };
     use crate::storage::CredentialStore;
-    use std::fs;
-    use std::path::{Path, PathBuf};
-    use uuid::Uuid;
     use world_id_core::FieldElement;
-
-    fn temp_root() -> PathBuf {
-        let mut path = std::env::temp_dir();
-        path.push(format!("walletkit-auth-storage-{}", Uuid::new_v4()));
-        path
-    }
-
-    fn cleanup_storage(root: &Path) {
-        let paths = crate::storage::StoragePaths::new(root);
-        let vault = paths.vault_db_path();
-        let cache = paths.cache_db_path();
-        let lock = paths.lock_path();
-        let _ = fs::remove_file(&vault);
-        let _ = fs::remove_file(vault.with_extension("sqlite-wal"));
-        let _ = fs::remove_file(vault.with_extension("sqlite-shm"));
-        let _ = fs::remove_file(&cache);
-        let _ = fs::remove_file(cache.with_extension("sqlite-wal"));
-        let _ = fs::remove_file(cache.with_extension("sqlite-shm"));
-        let _ = fs::remove_file(lock);
-        let _ = fs::remove_dir_all(paths.worldid_dir());
-        let _ = fs::remove_dir_all(paths.root());
-    }
 
     #[test]
     fn test_cached_inclusion_round_trip() {
-        let root = temp_root();
+        let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
@@ -224,6 +195,6 @@ mod tests {
         assert_eq!(decoded.proof.leaf_index, 42);
         assert_eq!(decoded.proof.root, root_fe);
         assert_eq!(decoded.authenticator_pubkeys.len(), 0);
-        cleanup_storage(&root);
+        cleanup_test_storage(&root);
     }
 }

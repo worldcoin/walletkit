@@ -1,11 +1,8 @@
-//! Test helpers for credential storage.
+//! Common test utilities shared across integration tests.
 
-use std::{
-    collections::HashMap,
-    fs,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use chacha20poly1305::{
     aead::{Aead, KeyInit, Payload},
@@ -13,40 +10,13 @@ use chacha20poly1305::{
 };
 use rand::{rngs::OsRng, RngCore};
 use uuid::Uuid;
-
-use std::path::Path;
-
-use super::{
-    error::StorageError,
-    paths::StoragePaths,
-    traits::{DeviceKeystore, StorageProvider},
-    AtomicBlobStore,
+use walletkit_core::storage::{
+    AtomicBlobStore, CredentialStore, DeviceKeystore, StorageError, StoragePaths,
+    StorageProvider,
 };
 
 pub struct InMemoryKeystore {
     key: [u8; 32],
-}
-
-pub fn temp_root_path() -> PathBuf {
-    let mut path = std::env::temp_dir();
-    path.push(format!("walletkit-replay-guard-{}", Uuid::new_v4()));
-    path
-}
-
-pub fn cleanup_test_storage(root: &Path) {
-    let paths = StoragePaths::new(root);
-    let vault = paths.vault_db_path();
-    let cache = paths.cache_db_path();
-    let lock = paths.lock_path();
-    let _ = fs::remove_file(&vault);
-    let _ = fs::remove_file(vault.with_extension("sqlite-wal"));
-    let _ = fs::remove_file(vault.with_extension("sqlite-shm"));
-    let _ = fs::remove_file(&cache);
-    let _ = fs::remove_file(cache.with_extension("sqlite-wal"));
-    let _ = fs::remove_file(cache.with_extension("sqlite-shm"));
-    let _ = fs::remove_file(lock);
-    let _ = fs::remove_dir_all(paths.worldid_dir());
-    let _ = fs::remove_dir_all(paths.root());
 }
 
 impl InMemoryKeystore {
@@ -54,12 +24,6 @@ impl InMemoryKeystore {
         let mut key = [0u8; 32];
         OsRng.fill_bytes(&mut key);
         Self { key }
-    }
-}
-
-impl Default for InMemoryKeystore {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -123,12 +87,6 @@ impl InMemoryBlobStore {
     }
 }
 
-impl Default for InMemoryBlobStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl AtomicBlobStore for InMemoryBlobStore {
     fn read(&self, path: String) -> Result<Option<Vec<u8>>, StorageError> {
         let guard = self
@@ -183,4 +141,37 @@ impl StorageProvider for InMemoryStorageProvider {
     fn paths(&self) -> Arc<StoragePaths> {
         Arc::clone(&self.paths)
     }
+}
+
+pub fn temp_root() -> PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!("walletkit-test-{}", Uuid::new_v4()));
+    path
+}
+
+#[allow(dead_code, reason = "used in tests")]
+pub fn create_test_credential_store() -> Arc<CredentialStore> {
+    let root = temp_root();
+    let provider = InMemoryStorageProvider::new(&root);
+    Arc::new(
+        CredentialStore::from_provider(&provider).expect("create credential store"),
+    )
+}
+
+#[allow(dead_code, reason = "used in tests")]
+pub fn cleanup_storage(root: &Path) {
+    use std::fs;
+    let paths = StoragePaths::new(root);
+    let vault = paths.vault_db_path();
+    let cache = paths.cache_db_path();
+    let lock = paths.lock_path();
+    let _ = fs::remove_file(&vault);
+    let _ = fs::remove_file(vault.with_extension("sqlite-wal"));
+    let _ = fs::remove_file(vault.with_extension("sqlite-shm"));
+    let _ = fs::remove_file(&cache);
+    let _ = fs::remove_file(cache.with_extension("sqlite-wal"));
+    let _ = fs::remove_file(cache.with_extension("sqlite-shm"));
+    let _ = fs::remove_file(lock);
+    let _ = fs::remove_dir_all(paths.worldid_dir());
+    let _ = fs::remove_dir_all(paths.root());
 }

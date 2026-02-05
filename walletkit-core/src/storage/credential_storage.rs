@@ -19,6 +19,12 @@ pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
 }
 
+impl std::fmt::Debug for CredentialStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialStore").finish()
+    }
+}
+
 struct CredentialStoreInner {
     lock: StorageLock,
     keystore: Arc<dyn DeviceKeystore>,
@@ -451,37 +457,14 @@ impl CredentialStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::tests_utils::InMemoryStorageProvider;
-    use std::fs;
-    use std::path::{Path, PathBuf};
-    use uuid::Uuid;
+    use crate::storage::tests_utils::{
+        cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
+    };
     use world_id_core::FieldElement;
-
-    fn temp_root() -> PathBuf {
-        let mut path = std::env::temp_dir();
-        path.push(format!("walletkit-replay-guard-{}", Uuid::new_v4()));
-        path
-    }
-
-    fn cleanup_storage(root: &Path) {
-        let paths = StoragePaths::new(root);
-        let vault = paths.vault_db_path();
-        let cache = paths.cache_db_path();
-        let lock = paths.lock_path();
-        let _ = fs::remove_file(&vault);
-        let _ = fs::remove_file(vault.with_extension("sqlite-wal"));
-        let _ = fs::remove_file(vault.with_extension("sqlite-shm"));
-        let _ = fs::remove_file(&cache);
-        let _ = fs::remove_file(cache.with_extension("sqlite-wal"));
-        let _ = fs::remove_file(cache.with_extension("sqlite-shm"));
-        let _ = fs::remove_file(lock);
-        let _ = fs::remove_dir_all(paths.worldid_dir());
-        let _ = fs::remove_dir_all(paths.root());
-    }
 
     #[test]
     fn test_replay_guard_field_element_serialization() {
-        let root = temp_root();
+        let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
         let keystore = provider.keystore();
@@ -508,12 +491,12 @@ mod tests {
             "Replay guard should exist after grace period (10 minutes)"
         );
 
-        cleanup_storage(&root);
+        cleanup_test_storage(&root);
     }
 
     #[test]
     fn test_replay_guard_grace_period() {
-        let root = temp_root();
+        let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
         let keystore = provider.keystore();
@@ -551,12 +534,12 @@ mod tests {
             "Replay guard should be enforced during grace period (10 minutes)"
         );
 
-        cleanup_storage(&root);
+        cleanup_test_storage(&root);
     }
 
     #[test]
     fn test_replay_guard_expiration() {
-        let root = temp_root();
+        let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
         let keystore = provider.keystore();
@@ -597,12 +580,12 @@ mod tests {
             "Replay guard should NOT exist at expiration (1 year)"
         );
 
-        cleanup_storage(&root);
+        cleanup_test_storage(&root);
     }
 
     #[test]
     fn test_replay_guard_idempotency() {
-        let root = temp_root();
+        let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
         let keystore = provider.keystore();
@@ -634,6 +617,6 @@ mod tests {
             "Replay guard SHOULD be enforced - past grace period from FIRST insertion"
         );
 
-        cleanup_storage(&root);
+        cleanup_test_storage(&root);
     }
 }

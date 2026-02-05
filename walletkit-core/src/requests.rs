@@ -1,0 +1,45 @@
+//! Proof requests and responses in World ID v4.
+
+use world_id_core::requests::{
+    ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse,
+};
+
+use crate::error::WalletKitError;
+
+/// A request from the RP to the Authenticator. See [`CoreProofRequest`] for more details.
+/// This is a wrapper type to expose to foreign language bindings.
+#[derive(Debug, Clone, uniffi::Object)]
+pub struct ProofRequest(CoreProofRequest);
+
+#[uniffi::export]
+impl ProofRequest {
+    #[uniffi::constructor]
+    fn from_json(json: &str) -> Result<Self, WalletKitError> {
+        let core_request: CoreProofRequest =
+            serde_json::from_str(json).map_err(|e| WalletKitError::Generic {
+                error: format!("invalid proof request json: {e}"),
+            })?;
+        Ok(Self(core_request))
+    }
+
+    fn to_json(&self) -> Result<String, WalletKitError> {
+        serde_json::to_string(&self.0).map_err(|e| WalletKitError::Generic {
+            error: format!("critical unexpected error serializing to json: {e}"),
+        })
+    }
+}
+
+/// A response from the Authenticator to the RP. See [`CoreProofResponse`] for more details.
+///
+/// This is a wrapper type to expose to foreign language bindings.
+#[derive(Debug, Clone, uniffi::Object)]
+pub struct ProofResponse(CoreProofResponse);
+
+#[uniffi::export]
+impl ProofResponse {
+    fn to_json(&self) -> Result<String, WalletKitError> {
+        serde_json::to_string(&self.0).map_err(|e| WalletKitError::Generic {
+            error: format!("critical unexpected error serializing to json: {e}"),
+        })
+    }
+}

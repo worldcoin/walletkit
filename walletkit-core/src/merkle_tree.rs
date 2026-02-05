@@ -1,7 +1,7 @@
 use semaphore_rs::poseidon_tree::Proof;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::WalletKitError, request::Request, u256::U256Wrapper};
+use crate::{error::WalletKitError, http_request::Request, u256::U256Wrapper};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
