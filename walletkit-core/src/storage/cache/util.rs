@@ -187,19 +187,6 @@ fn cache_key_with_prefix(prefix: u8, payload: &[u8]) -> Vec<u8> {
     key
 }
 
-/// Builds the cache key for a Merkle proof entry.
-pub(super) fn merkle_cache_key(
-    registry_kind: u8,
-    root: [u8; 32],
-    leaf_index: u64,
-) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(1 + 32 + 8);
-    payload.push(registry_kind);
-    payload.extend_from_slice(root.as_ref());
-    payload.extend_from_slice(&leaf_index.to_be_bytes());
-    cache_key_with_prefix(CACHE_KEY_PREFIX_MERKLE, &payload)
-}
-
 /// Builds the cache key for a session key entry.
 pub(super) fn session_cache_key(rp_id: [u8; 32]) -> Vec<u8> {
     cache_key_with_prefix(CACHE_KEY_PREFIX_SESSION, rp_id.as_ref())

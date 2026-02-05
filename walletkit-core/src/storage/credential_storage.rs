@@ -194,15 +194,8 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the cache lookup fails.
-    pub fn merkle_cache_get(
-        &self,
-        registry_kind: u8,
-        root: Vec<u8>,
-        valid_before: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        let root = parse_fixed_bytes::<32>(root, "root")?;
-        self.lock_inner()?
-            .merkle_cache_get(registry_kind, root, valid_before)
+    pub fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
+        self.lock_inner()?.merkle_cache_get(valid_until)
     }
 
     /// Inserts a cached Merkle proof with a TTL.
@@ -212,20 +205,12 @@ impl CredentialStore {
     /// Returns an error if the cache insert fails.
     pub fn merkle_cache_put(
         &self,
-        registry_kind: u8,
-        root: Vec<u8>,
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        let root = parse_fixed_bytes::<32>(root, "root")?;
-        self.lock_inner()?.merkle_cache_put(
-            registry_kind,
-            root,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
+        self.lock_inner()?
+            .merkle_cache_put(proof_bytes, now, ttl_seconds)
     }
 }
 
@@ -315,40 +300,22 @@ impl CredentialStoreInner {
         )
     }
 
-    fn merkle_cache_get(
-        &self,
-        registry_kind: u8,
-        root: [u8; 32],
-        valid_before: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
+    fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
         let state = self.state()?;
-        state.cache.merkle_cache_get(
-            registry_kind,
-            root,
-            state.leaf_index,
-            valid_before,
-        )
+        state.cache.merkle_cache_get(valid_until)
     }
 
     fn merkle_cache_put(
         &mut self,
-        registry_kind: u8,
-        root: [u8; 32],
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
         let guard = self.guard()?;
         let state = self.state_mut()?;
-        state.cache.merkle_cache_put(
-            &guard,
-            registry_kind,
-            root,
-            state.leaf_index,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
+        state
+            .cache
+            .merkle_cache_put(&guard, proof_bytes, now, ttl_seconds)
     }
 
     /// Checks whether a replay guard entry exists for the given nullifier.
