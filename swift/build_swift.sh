@@ -12,6 +12,7 @@ BASE_PATH="$PROJECT_ROOT_PATH/swift" # The base path for the Swift build
 PACKAGE_NAME="walletkit"
 TARGET_DIR="$PROJECT_ROOT_PATH/target"
 SUPPORT_SOURCES_DIR="$BASE_PATH/support"
+CARGO_FEATURE_ARGS=(--no-default-features --features "$FEATURES")
 
 # Default values
 OUTPUT_DIR="$BASE_PATH" # Default to BASE_PATH if not provided
@@ -73,11 +74,14 @@ export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
 
 # Build for all iOS targets
 cargo build --package $PACKAGE_NAME --target aarch64-apple-ios-sim --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
+  "${CARGO_FEATURE_ARGS[@]}"
 cargo build --package $PACKAGE_NAME --target aarch64-apple-ios --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
+  "${CARGO_FEATURE_ARGS[@]}"
 cargo build --package $PACKAGE_NAME --target x86_64-apple-ios --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
+  "${CARGO_FEATURE_ARGS[@]}"
 
 echo "Rust packages built. Combining simulator targets into universal binary..."
 
@@ -106,21 +110,22 @@ mv $BASE_PATH/ios_build/bindings/walletkit_core.swift ${SWIFT_SOURCES_DIR}/walle
 # Copy support Swift sources for the WalletKit module.
 if [ -d "$SUPPORT_SOURCES_DIR" ]; then
     rsync -a "$SUPPORT_SOURCES_DIR"/ "$SWIFT_SOURCES_DIR"/
+
+    for file in "$SWIFT_SOURCES_DIR"/*.swift; do
+      echo "Removing any @file:DependsOn directives in $file"
+      sed -i '' '/^@file:DependsOn/d' "$file"
+    done
 fi
 
-# Move headers
-mv $BASE_PATH/ios_build/bindings/walletkit_coreFFI.h $SWIFT_HEADERS_DIR/
-cat $BASE_PATH/ios_build/bindings/walletkit_coreFFI.modulemap > $SWIFT_HEADERS_DIR/module.modulemap
+# Move modulemap and header files to the Headers directory
+mkdir -p "$SWIFT_HEADERS_DIR"
+cp $BASE_PATH/ios_build/bindings/walletkitFFI.modulemap $SWIFT_HEADERS_DIR/module.modulemap
+cp $BASE_PATH/ios_build/bindings/walletkitFFI.h $SWIFT_HEADERS_DIR/
 
-echo "Creating XCFramework..."
-
-# Create XCFramework
+# Create the xcframework
 xcodebuild -create-xcframework \
-  -library "$TARGET_DIR/aarch64-apple-ios/release/lib${PACKAGE_NAME}.a" -headers $BASE_PATH/ios_build/Headers \
-  -library $BASE_PATH/ios_build/target/universal-ios-sim/release/lib${PACKAGE_NAME}.a -headers $BASE_PATH/ios_build/Headers \
-  -output $FRAMEWORK_OUTPUT
+  -library "$TARGET_DIR/aarch64-apple-ios/release/lib${PACKAGE_NAME}.a" -headers "$SWIFT_HEADERS_DIR" \
+  -library "$BASE_PATH/ios_build/target/universal-ios-sim/release/lib${PACKAGE_NAME}.a" -headers "$SWIFT_HEADERS_DIR" \
+  -output "$FRAMEWORK_OUTPUT"
 
-# Clean up intermediate build files
-rm -rf $BASE_PATH/ios_build
-
-echo "✅ Swift framework built successfully at: $FRAMEWORK_OUTPUT"
+echo "✅ Swift build complete: $FRAMEWORK_OUTPUT"

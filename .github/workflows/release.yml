@@ -165,9 +165,13 @@ jobs:
         run: |
           cargo install cross --git https://github.com/cross-rs/cross --locked
 
+      - name: Setup Android deps
+        run: |
+          ./scripts/setup-android-deps.sh
+
       - name: Build for target
         run: |
-          CROSS_NO_WARNINGS=0 cross build -p walletkit --target ${{ matrix.settings.target }} --release --locked
+          CROSS_NO_WARNINGS=0 cross build -p walletkit --target ${{ matrix.settings.target }} --release --locked --no-default-features --features v4
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
