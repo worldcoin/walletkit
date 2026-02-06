@@ -73,14 +73,11 @@ export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
 
 # Build for all iOS targets
 cargo build --package $PACKAGE_NAME --target aarch64-apple-ios-sim --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
-  --features "$FEATURES"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR"
 cargo build --package $PACKAGE_NAME --target aarch64-apple-ios --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
-  --features "$FEATURES"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR"
 cargo build --package $PACKAGE_NAME --target x86_64-apple-ios --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
-  --features "$FEATURES"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR"
 
 echo "Rust packages built. Combining simulator targets into universal binary..."
 
