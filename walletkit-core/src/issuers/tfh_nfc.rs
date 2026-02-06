@@ -1,32 +1,26 @@
 //! TFH NFC credential issuer (passport, eID, MNC).
-
-use std::collections::HashMap;
+use crate::{error::WalletKitError, request::Request, Environment};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
+use std::collections::HashMap;
 
-use crate::{error::WalletKitError, request::Request, Environment};
-
-// ============================================================================
-// Types
-// ============================================================================
-
-/// Response from NFC refresh endpoint.
+/// Response from NFC refresh endpoint
 #[derive(Debug, Clone, Deserialize)]
 struct NfcRefreshResponse {
     result: NfcRefreshResultRaw,
 }
 
-/// Raw credential wrapper (base64-encoded JSON).
+/// Raw credential wrapper (base64-encoded JSON)
 #[derive(Debug, Clone, Deserialize)]
 struct NfcRefreshResultRaw {
     credential: String,
 }
 
-/// Raw NFC credential blob. Client parses metadata from it.
+/// Raw NFC credential blob
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct NfcCredential {
-    /// Raw credential bytes (decoded from base64).
+    /// Raw credential bytes (decoded from base64)
     pub credential_blob: Vec<u8>,
 }
 
@@ -42,11 +36,7 @@ impl NfcRefreshResultRaw {
     }
 }
 
-// ============================================================================
-// Issuer
-// ============================================================================
-
-/// TFH NFC credential issuer API client.
+/// TFH NFC credential issuer API client
 #[derive(uniffi::Object)]
 pub struct TfhNfcIssuer {
     base_url: String,
@@ -55,7 +45,7 @@ pub struct TfhNfcIssuer {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl TfhNfcIssuer {
-    /// Create a new TFH NFC issuer for the specified environment.
+    /// Create a new TFH NFC issuer for the specified environment
     #[uniffi::constructor]
     #[must_use]
     pub fn new(environment: &Environment) -> Self {
@@ -71,11 +61,11 @@ impl TfhNfcIssuer {
         }
     }
 
-    /// Refresh an NFC credential (migrate legacy PCP to v4).
+    /// Refresh an NFC credential (migrate PCP to v4)
     ///
     /// # Errors
     ///
-    /// Returns error on network failure or invalid response.
+    /// Returns error on network failure or invalid response
     pub async fn refresh_nfc_credential(
         &self,
         request_body: &str,
@@ -83,10 +73,15 @@ impl TfhNfcIssuer {
     ) -> Result<NfcCredential, WalletKitError> {
         let url = format!("{}/v2/refresh", self.base_url);
 
-        let headers_vec: Vec<(&str, &str)> =
-            headers.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let headers_vec: Vec<(&str, &str)> = headers
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
 
-        let response = self.request.post_raw_json(&url, request_body, &headers_vec).await?;
+        let response = self
+            .request
+            .post_raw_json(&url, request_body, &headers_vec)
+            .await?;
 
         let status = response.status();
         if !status.is_success() {
@@ -99,9 +94,12 @@ impl TfhNfcIssuer {
         }
 
         let refresh_response: NfcRefreshResponse =
-            response.json().await.map_err(|e| WalletKitError::SerializationError {
-                error: format!("Failed to parse NFC refresh response: {e}"),
-            })?;
+            response
+                .json()
+                .await
+                .map_err(|e| WalletKitError::SerializationError {
+                    error: format!("Failed to parse NFC refresh response: {e}"),
+                })?;
 
         refresh_response.result.parse()
     }
