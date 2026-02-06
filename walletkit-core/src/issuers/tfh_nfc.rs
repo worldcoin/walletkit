@@ -1,5 +1,5 @@
 //! TFH NFC credential issuer (passport, eID, MNC).
-use crate::{error::WalletKitError, request::Request, Environment};
+use crate::{error::WalletKitError, http_request::Request, Environment};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
