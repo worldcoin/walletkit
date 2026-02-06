@@ -14,7 +14,7 @@ rm -rf "$JAVA_SRC_DIR" "$LIBS_DIR"
 mkdir -p "$JAVA_SRC_DIR" "$LIBS_DIR"
 
 echo "🟢 Building Rust cdylib for host platform"
-cargo build --package walletkit --release --no-default-features --features v4
+cargo build --package walletkit --release --features v4
 
 # Determine the correct library file extension and copy it
 if [[ "$OSTYPE" == "darwin"* ]]; then
