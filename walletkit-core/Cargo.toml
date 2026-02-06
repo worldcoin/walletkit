@@ -75,7 +75,7 @@ world-id-core = { workspace = true }
 rand = "0.8"
 
 [features]
-default = ["common-apps", "semaphore"]
+default = ["common-apps", "semaphore", "storage"]
 common-apps = []
 http-tests = []
 semaphore = ["semaphore-rs/depth_30"]
