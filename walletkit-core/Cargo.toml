@@ -53,7 +53,7 @@ rusqlite = { version = "0.32", features = [
 ], optional = true }
 uuid = { version = "1.10", features = ["v4"], optional = true }
 uniffi = { workspace = true, features = ["build", "tokio"] }
-world-id-core = { workspace = true, optional = true }
+world-id-core = { workspace = true }
 ciborium = { version = "0.2.2", optional = true }
 
 [dev-dependencies]
@@ -75,7 +75,7 @@ world-id-core = { workspace = true }
 rand = "0.8"
 
 [features]
-default = ["common-apps", "semaphore", "v4"]
+default = ["common-apps", "semaphore"]
 common-apps = []
 http-tests = []
 semaphore = ["semaphore-rs/depth_30"]
@@ -87,7 +87,6 @@ storage = [
     "dep:sha2",
     "dep:uuid",
 ]
-v4 = ["world-id-core", "storage"]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.

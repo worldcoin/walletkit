@@ -11,7 +11,6 @@ PROJECT_ROOT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_PATH="$PROJECT_ROOT_PATH/swift" # The base path for the Swift build
 PACKAGE_NAME="walletkit"
 TARGET_DIR="$PROJECT_ROOT_PATH/target"
-FEATURES="v4"
 SUPPORT_SOURCES_DIR="$BASE_PATH/support"
 
 # Default values
