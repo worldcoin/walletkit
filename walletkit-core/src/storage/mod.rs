@@ -13,7 +13,7 @@ pub mod types;
 pub mod vault;
 
 pub use cache::CacheDb;
-pub use credential_storage::{CredentialStorage, CredentialStore};
+pub use credential_storage::CredentialStore;
 pub use error::{StorageError, StorageResult};
 pub use keys::StorageKeys;
 pub use lock::{StorageLock, StorageLockGuard};

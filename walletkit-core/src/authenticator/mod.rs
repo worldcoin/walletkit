@@ -1,5 +1,7 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
+use std::sync::Arc;
+
 use alloy_primitives::Address;
 use world_id_core::{
     primitives::Config, types::GatewayRequestState, Authenticator as CoreAuthenticator,
@@ -8,15 +10,19 @@ use world_id_core::{
 
 use crate::{
     defaults::DefaultConfig, error::WalletKitError,
-    primitives::ParseFromForeignBinding, Environment, U256Wrapper,
+    primitives::ParseFromForeignBinding, storage::CredentialStore, Environment,
+    U256Wrapper,
 };
 
-mod storage;
 mod utils;
+mod with_storage;
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
-pub struct Authenticator(CoreAuthenticator);
+pub struct Authenticator {
+    inner: CoreAuthenticator,
+    store: Arc<CredentialStore>,
+}
 
 #[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
@@ -32,10 +38,14 @@ impl Authenticator {
         seed: &[u8],
         rpc_url: Option<String>,
         environment: &Environment,
+        store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url)?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
-        Ok(Self(authenticator))
+        Ok(Self {
+            inner: authenticator,
+            store,
+        })
     }
 
     /// Initializes a new Authenticator from a seed and config.
@@ -46,67 +56,21 @@ impl Authenticator {
     /// # Errors
     /// Will error if the provided seed is not valid or if the config is not valid.
     #[uniffi::constructor]
-    pub async fn init(seed: &[u8], config: &str) -> Result<Self, WalletKitError> {
+    pub async fn init(
+        seed: &[u8],
+        config: &str,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
         let config =
             Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
-        Ok(Self(authenticator))
-    }
-
-    /// Initializes (if the World ID already exists) or registers a new World ID with SDK defaults.
-    ///
-    /// This method will block until the registration is in a final state (success or terminal error).
-    /// See `CoreAuthenticator::init_or_register` for more details.
-    ///
-    /// # Errors
-    /// See `CoreAuthenticator::init_or_register` for potential errors.
-    #[uniffi::constructor]
-    pub async fn init_or_register_with_defaults(
-        seed: &[u8],
-        rpc_url: Option<String>,
-        environment: &Environment,
-        recovery_address: Option<String>,
-    ) -> Result<Self, WalletKitError> {
-        let recovery_address =
-            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
-
-        let config = Config::from_environment(environment, rpc_url)?;
-
-        let authenticator =
-            CoreAuthenticator::init_or_register(seed, config, recovery_address).await?;
-
-        Ok(Self(authenticator))
-    }
-
-    /// Initializes (if the World ID already exists) or registers a new World ID.
-    ///
-    /// This method will block until the registration is in a final state (success or terminal error).
-    /// See `CoreAuthenticator::init_or_register` for more details.
-    ///
-    /// # Errors
-    /// See `CoreAuthenticator::init_or_register` for potential errors.
-    #[uniffi::constructor]
-    pub async fn init_or_register(
-        seed: &[u8],
-        config: &str,
-        recovery_address: Option<String>,
-    ) -> Result<Self, WalletKitError> {
-        let recovery_address =
-            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
-
-        let config =
-            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
-                attribute: "config".to_string(),
-                reason: "Invalid config".to_string(),
-            })?;
-
-        let authenticator =
-            CoreAuthenticator::init_or_register(seed, config, recovery_address).await?;
-
-        Ok(Self(authenticator))
+        Ok(Self {
+            inner: authenticator,
+            store,
+        })
     }
 
     /// Returns the packed account data for the holder's World ID.
@@ -115,7 +79,7 @@ impl Authenticator {
     /// and their pubkey id/commitment.
     #[must_use]
     pub fn packed_account_data(&self) -> U256Wrapper {
-        self.0.packed_account_data.into()
+        self.inner.packed_account_data.into()
     }
 
     /// Returns the leaf index for the holder's World ID.
@@ -124,7 +88,7 @@ impl Authenticator {
     /// should only be used inside the authenticator and never shared.
     #[must_use]
     pub fn leaf_index(&self) -> U256Wrapper {
-        self.0.leaf_index().into()
+        self.inner.leaf_index().into()
     }
 
     /// Returns the Authenticator's `onchain_address`.
@@ -132,7 +96,7 @@ impl Authenticator {
     /// See `world_id_core::Authenticator::onchain_address` for more details.
     #[must_use]
     pub fn onchain_address(&self) -> String {
-        self.0.onchain_address().to_string()
+        self.inner.onchain_address().to_string()
     }
 
     /// Returns the packed account data for the holder's World ID fetching it from the on-chain registry.
@@ -144,9 +108,9 @@ impl Authenticator {
     ) -> Result<U256Wrapper, WalletKitError> {
         let client = reqwest::Client::new(); // TODO: reuse client
         let packed_account_data = CoreAuthenticator::get_packed_account_data(
-            self.0.onchain_address(),
-            self.0.registry().as_deref(),
-            &self.0.config,
+            self.inner.onchain_address(),
+            self.inner.registry().as_deref(),
+            &self.inner.config,
             &client,
         )
         .await?;
@@ -263,9 +227,11 @@ impl InitializingAuthenticator {
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::address;
-
     use super::*;
+    use crate::storage::tests_utils::{
+        cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
+    };
+    use alloy::primitives::address;
 
     #[tokio::test]
     async fn test_init_with_config() {
@@ -302,7 +268,16 @@ mod tests {
         )
         .unwrap();
         let config = serde_json::to_string(&config).unwrap();
-        Authenticator::init(&seed, &config).await.unwrap();
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("store");
+        store.init(42, 100).expect("init storage");
+
+        Authenticator::init(&seed, &config, Arc::new(store))
+            .await
+            .unwrap();
         drop(mock_server);
+        cleanup_test_storage(&root);
     }
 }

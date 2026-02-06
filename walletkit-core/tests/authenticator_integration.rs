@@ -1,3 +1,5 @@
+mod common;
+
 use alloy::node_bindings::AnvilInstance;
 use alloy::primitives::{address, U256};
 use alloy::providers::ProviderBuilder;
@@ -31,12 +33,14 @@ async fn test_authenticator_integration() {
     let anvil = setup_anvil();
 
     let authenticator_seeder = PrivateKeySigner::random();
+    let store = common::create_test_credential_store();
 
     // When account doesn't exist, this should fail
     let authenticator = Authenticator::init_with_defaults(
         authenticator_seeder.to_bytes().as_slice(),
         Some(anvil.endpoint()),
         &Environment::Staging,
+        store.clone(),
     )
     .await
     .unwrap_err();
@@ -70,6 +74,7 @@ async fn test_authenticator_integration() {
         authenticator_seeder.to_bytes().as_slice(),
         Some(anvil.endpoint()),
         &Environment::Staging,
+        store,
     )
     .await
     .unwrap();

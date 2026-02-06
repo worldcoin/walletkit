@@ -74,6 +74,9 @@ pub use authenticator::{Authenticator, InitializingAuthenticator, RegistrationSt
 #[cfg(feature = "v4")]
 pub(crate) mod defaults;
 
+#[cfg(feature = "v4")]
+pub mod requests;
+
 ////////////////////////////////////////////////////////////////////////////////
 // Legacy modules
 ////////////////////////////////////////////////////////////////////////////////
@@ -96,7 +99,7 @@ pub mod issuers;
 // Private modules
 ////////////////////////////////////////////////////////////////////////////////
 
+mod http_request;
 mod merkle_tree;
-mod request;
 
 uniffi::setup_scaffolding!("walletkit_core");
