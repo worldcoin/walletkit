@@ -1,3 +1,5 @@
 //! Credential issuers for World ID.
 
-pub mod nfc;
+mod tfh_nfc;
+
+pub use tfh_nfc::{NfcCredential, TfhNfcIssuer};
