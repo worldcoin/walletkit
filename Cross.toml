@@ -4,6 +4,21 @@ passthrough = [
     "HOME",                              # set $HOME to shared dir where we put .gitconfig
     "RUSTUP_HOME",                       # override rustup home to prevent host permission issues
     "CARGO_HOME",                        # override cargo home to prevent host permission issues
+    "OPENSSL_DIR",
+    "OPENSSL_INCLUDE_DIR",
+    "OPENSSL_LIB_DIR",
+    "PKG_CONFIG_ALLOW_CROSS",
+    "PKG_CONFIG_PATH",
+    "C_INCLUDE_PATH",
+    "CPATH",
+    "CFLAGS_aarch64_linux_android",
+    "CFLAGS_armv7_linux_androideabi",
+    "CFLAGS_x86_64_linux_android",
+    "CFLAGS_i686_linux_android",
+    "CC_aarch64_linux_android",
+    "CC_armv7_linux_androideabi",
+    "CC_x86_64_linux_android",
+    "CC_i686_linux_android",
 ]
 # max-page-size=16384:
 # Android 15 (API 35) introduces support for 16KB page sizes to improve performance on devices with larger RAM.
