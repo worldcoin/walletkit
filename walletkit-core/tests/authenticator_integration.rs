@@ -1,3 +1,5 @@
+#![cfg(feature = "storage")]
+
 mod common;
 
 use alloy::node_bindings::AnvilInstance;
