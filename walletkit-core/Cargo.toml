@@ -48,13 +48,20 @@ subtle = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["sync"] }
 zeroize = "1"
-rusqlite = { version = "0.32", default-features = false, features = [
-    "bundled-sqlcipher",
-], optional = true }
 uuid = { version = "1.10", features = ["v4"], optional = true }
 uniffi = { workspace = true, features = ["build", "tokio"] }
 world-id-core = { workspace = true }
 ciborium = { version = "0.2.2", optional = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+rusqlite = { version = "0.32", default-features = false, features = [
+    "bundled-sqlcipher-vendored-openssl",
+], optional = true }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rusqlite = { version = "0.32", default-features = false, features = [
+    "bundled-sqlcipher",
+], optional = true }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [
