@@ -130,7 +130,7 @@ jobs:
 
       - name: Build non-default features
         run: |
-          cargo build --all --no-default-features
+          cargo build --all
 
   deny:
     name: Cargo deny

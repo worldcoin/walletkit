@@ -28,6 +28,8 @@ walletkit-core = { workspace = true, features = ["legacy-nullifiers", "common-ap
 default = ["semaphore"]
 semaphore = ["walletkit-core/semaphore"]
 storage = ["walletkit-core/storage"]
+# World ID v4 feature alias (kept for compatibility)
+v4 = ["walletkit-core/v4"]
 
 [package.metadata.docs.rs]
 no-default-features = true
