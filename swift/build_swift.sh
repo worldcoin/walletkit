@@ -11,7 +11,6 @@ PROJECT_ROOT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_PATH="$PROJECT_ROOT_PATH/swift" # The base path for the Swift build
 PACKAGE_NAME="walletkit"
 TARGET_DIR="$PROJECT_ROOT_PATH/target"
-FEATURES="v4"
 SUPPORT_SOURCES_DIR="$BASE_PATH/support"
 
 # Default values
@@ -74,14 +73,11 @@ export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
 
 # Build for all iOS targets
 cargo build --package $PACKAGE_NAME --target aarch64-apple-ios-sim --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
-  --features "$FEATURES"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR"
 cargo build --package $PACKAGE_NAME --target aarch64-apple-ios --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
-  --features "$FEATURES"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR"
 cargo build --package $PACKAGE_NAME --target x86_64-apple-ios --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
-  --features "$FEATURES"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR"
 
 echo "Rust packages built. Combining simulator targets into universal binary..."
 

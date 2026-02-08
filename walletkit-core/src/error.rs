@@ -1,10 +1,9 @@
 use thiserror::Error;
-#[cfg(feature = "v4")]
+
 use world_id_core::primitives::PrimitiveError;
 
 #[cfg(feature = "storage")]
 use crate::storage::StorageError;
-#[cfg(feature = "v4")]
 use world_id_core::AuthenticatorError;
 
 /// Error outputs from `WalletKit`
@@ -111,7 +110,6 @@ impl From<reqwest::Error> for WalletKitError {
     }
 }
 
-#[cfg(feature = "v4")]
 impl From<PrimitiveError> for WalletKitError {
     fn from(error: PrimitiveError) -> Self {
         match error {
@@ -152,7 +150,6 @@ impl From<StorageError> for WalletKitError {
     }
 }
 
-#[cfg(feature = "v4")]
 impl From<AuthenticatorError> for WalletKitError {
     fn from(error: AuthenticatorError) -> Self {
         match error {

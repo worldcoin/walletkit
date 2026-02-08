@@ -1,7 +1,5 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
-use std::sync::Arc;
-
 use alloy_primitives::Address;
 use rand::rngs::OsRng;
 use world_id_core::{
@@ -12,26 +10,124 @@ use world_id_core::{
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
+#[cfg(feature = "storage")]
+use crate::storage::CredentialStore;
 use crate::{
     defaults::DefaultConfig,
     error::WalletKitError,
     primitives::ParseFromForeignBinding,
     requests::{ProofRequest, ProofResponse},
-    storage::CredentialStore,
     Environment, U256Wrapper,
 };
+#[cfg(feature = "storage")]
+use std::sync::Arc;
 
+#[cfg(feature = "storage")]
 mod utils;
+#[cfg(feature = "storage")]
 mod with_storage;
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator {
     inner: CoreAuthenticator,
+    #[cfg(feature = "storage")]
     store: Arc<CredentialStore>,
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[uniffi::export]
+impl Authenticator {
+    /// Returns the packed account data for the holder's World ID.
+    ///
+    /// The packed account data is a 256 bit integer which includes the user's leaf index, their recovery counter,
+    /// and their pubkey id/commitment.
+    #[must_use]
+    pub fn packed_account_data(&self) -> U256Wrapper {
+        self.inner.packed_account_data.into()
+    }
+
+    /// Returns the leaf index for the holder's World ID.
+    ///
+    /// This is the index in the Merkle tree where the holder's World ID account is registered. It
+    /// should only be used inside the authenticator and never shared.
+    #[must_use]
+    pub fn leaf_index(&self) -> U256Wrapper {
+        self.inner.leaf_index().into()
+    }
+
+    /// Returns the Authenticator's `onchain_address`.
+    ///
+    /// See `world_id_core::Authenticator::onchain_address` for more details.
+    #[must_use]
+    pub fn onchain_address(&self) -> String {
+        self.inner.onchain_address().to_string()
+    }
+
+    /// Returns the packed account data for the holder's World ID fetching it from the on-chain registry.
+    ///
+    /// # Errors
+    /// Will error if the provided RPC URL is not valid or if there are RPC call failures.
+    pub async fn get_packed_account_data_remote(
+        &self,
+    ) -> Result<U256Wrapper, WalletKitError> {
+        let client = reqwest::Client::new(); // TODO: reuse client
+        let packed_account_data = CoreAuthenticator::get_packed_account_data(
+            self.inner.onchain_address(),
+            self.inner.registry().as_deref(),
+            &self.inner.config,
+            &client,
+        )
+        .await?;
+        Ok(packed_account_data.into())
+    }
+}
+
+#[cfg(not(feature = "storage"))]
+#[uniffi::export]
+impl Authenticator {
+    /// Initializes a new Authenticator from a seed and with SDK defaults.
+    ///
+    /// The user's World ID must already be registered in the `WorldIDRegistry`,
+    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::init` for potential errors.
+    #[uniffi::constructor]
+    pub async fn init_with_defaults(
+        seed: &[u8],
+        rpc_url: Option<String>,
+        environment: &Environment,
+    ) -> Result<Self, WalletKitError> {
+        let config = Config::from_environment(environment, rpc_url)?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        Ok(Self {
+            inner: authenticator,
+        })
+    }
+
+    /// Initializes a new Authenticator from a seed and config.
+    ///
+    /// The user's World ID must already be registered in the `WorldIDRegistry`,
+    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
+    ///
+    /// # Errors
+    /// Will error if the provided seed is not valid or if the config is not valid.
+    #[uniffi::constructor]
+    pub async fn init(seed: &[u8], config: &str) -> Result<Self, WalletKitError> {
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+                attribute: "config".to_string(),
+                reason: "Invalid config".to_string(),
+            })?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        Ok(Self {
+            inner: authenticator,
+        })
+    }
+}
+
+#[cfg(feature = "storage")]
+#[uniffi::export]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -78,50 +174,6 @@ impl Authenticator {
             inner: authenticator,
             store,
         })
-    }
-
-    /// Returns the packed account data for the holder's World ID.
-    ///
-    /// The packed account data is a 256 bit integer which includes the user's leaf index, their recovery counter,
-    /// and their pubkey id/commitment.
-    #[must_use]
-    pub fn packed_account_data(&self) -> U256Wrapper {
-        self.inner.packed_account_data.into()
-    }
-
-    /// Returns the leaf index for the holder's World ID.
-    ///
-    /// This is the index in the Merkle tree where the holder's World ID account is registered. It
-    /// should only be used inside the authenticator and never shared.
-    #[must_use]
-    pub fn leaf_index(&self) -> U256Wrapper {
-        self.inner.leaf_index().into()
-    }
-
-    /// Returns the Authenticator's `onchain_address`.
-    ///
-    /// See `world_id_core::Authenticator::onchain_address` for more details.
-    #[must_use]
-    pub fn onchain_address(&self) -> String {
-        self.inner.onchain_address().to_string()
-    }
-
-    /// Returns the packed account data for the holder's World ID fetching it from the on-chain registry.
-    ///
-    /// # Errors
-    /// Will error if the provided RPC URL is not valid or if there are RPC call failures.
-    pub async fn get_packed_account_data_remote(
-        &self,
-    ) -> Result<U256Wrapper, WalletKitError> {
-        let client = reqwest::Client::new(); // TODO: reuse client
-        let packed_account_data = CoreAuthenticator::get_packed_account_data(
-            self.inner.onchain_address(),
-            self.inner.registry().as_deref(),
-            &self.inner.config,
-            &client,
-        )
-        .await?;
-        Ok(packed_account_data.into())
     }
 
     /// Generates a proof for the given proof request.
@@ -307,7 +359,7 @@ impl InitializingAuthenticator {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "storage"))]
 mod tests {
     use super::*;
     use crate::storage::tests_utils::{
@@ -316,7 +368,7 @@ mod tests {
     use alloy::primitives::address;
 
     #[tokio::test]
-    async fn test_init_with_config() {
+    async fn test_init_with_config_and_storage() {
         // Install default crypto provider for rustls
         let _ = rustls::crypto::ring::default_provider().install_default();
 
