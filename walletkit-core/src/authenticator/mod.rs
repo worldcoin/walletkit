@@ -246,6 +246,8 @@ impl Authenticator {
             session_id: None, // TODO: This needs to be computed to be shareable
         };
 
+        self.store
+            .replay_guard_set(nullifier.verifiable_oprf_output.output.into(), now)?;
         Ok(response.into())
     }
 }
