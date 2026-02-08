@@ -264,7 +264,7 @@ impl CredentialStore {
     ///
     /// Returns an error if the query to the cache unexpectedly fails.
     pub fn replay_guard_set(
-        &mut self,
+        &self,
         nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
