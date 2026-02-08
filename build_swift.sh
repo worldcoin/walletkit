@@ -18,9 +18,9 @@ mkdir -p $BASE_PATH/Sources/WalletKit
 
 export IPHONEOS_DEPLOYMENT_TARGET="13.0"
 export RUSTFLAGS="-C link-arg=-Wl,-application_extension"
-cargo build --package walletkit --target aarch64-apple-ios-sim --release --features v4
-cargo build --package walletkit --target aarch64-apple-ios --release --features v4
-cargo build --package walletkit --target x86_64-apple-ios --release --features v4
+cargo build --package walletkit --target aarch64-apple-ios-sim --release
+cargo build --package walletkit --target aarch64-apple-ios --release
+cargo build --package walletkit --target x86_64-apple-ios --release
 
 echo "Rust packages built. Combining into a single binary."
 

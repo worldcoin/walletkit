@@ -21,13 +21,13 @@ name = "walletkit"
 
 [dependencies]
 uniffi = { workspace = true, features = ["build", "tokio"] }
-walletkit-core = { workspace = true, features = ["legacy-nullifiers", "common-apps"] }
+walletkit-core = { workspace = true, features = ["legacy-nullifiers", "common-apps", "storage"] }
 
 
 [features]
 default = ["semaphore"]
 semaphore = ["walletkit-core/semaphore"]
-v4 = ["walletkit-core/v4"]
+storage = ["walletkit-core/storage"]
 
 [package.metadata.docs.rs]
 no-default-features = true

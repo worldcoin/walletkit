@@ -66,15 +66,11 @@ pub use u256::U256Wrapper;
 #[cfg(feature = "storage")]
 pub mod storage;
 
-#[cfg(feature = "v4")]
 mod authenticator;
-#[cfg(feature = "v4")]
 pub use authenticator::{Authenticator, InitializingAuthenticator, RegistrationStatus};
 
-#[cfg(feature = "v4")]
 pub(crate) mod defaults;
 
-#[cfg(feature = "v4")]
 pub mod requests;
 
 ////////////////////////////////////////////////////////////////////////////////
