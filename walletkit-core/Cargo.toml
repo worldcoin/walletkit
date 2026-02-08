@@ -28,7 +28,7 @@ ctor = "0.2"
 hex = "0.4"
 hkdf = { version = "0.12", optional = true }
 log = "0.4"
-rand = { version = "0.8", optional = true }
+rand = { version = "0.8" }
 reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "brotli",
@@ -80,8 +80,6 @@ mockito = "1.6"
 regex = "1.11"
 rustls = { version = "0.23", features = ["ring"] }
 tokio-test = "0.4"
-world-id-core = { workspace = true }
-rand = "0.8"
 
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]
@@ -91,7 +89,6 @@ issuers = ["dep:base64"]
 storage = [
     "dep:ciborium",
     "dep:hkdf",
-    "dep:rand",
     "dep:rusqlite",
     "dep:sha2",
     "dep:uuid",
