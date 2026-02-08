@@ -78,7 +78,6 @@ rand = "0.8"
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]
 common-apps = []
-http-tests = []
 semaphore = ["semaphore-rs/depth_30"]
 issuers = ["dep:base64"]
 storage = [
