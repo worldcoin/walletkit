@@ -29,8 +29,8 @@ fn cleanup_lock_file(path: &Path) {
     let _ = fs::remove_file(path);
 }
 
-fn sample_blinding_factor() -> [u8; 32] {
-    [0x11u8; 32]
+fn sample_blinding_factor() -> Vec<u8> {
+    [0x11u8; 32].to_vec()
 }
 
 #[test]

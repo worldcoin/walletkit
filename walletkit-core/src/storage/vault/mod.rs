@@ -7,7 +7,7 @@ mod tests;
 
 use std::path::Path;
 
-use rusqlite::{params, params_from_iter, Connection};
+use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 
 use super::error::{StorageError, StorageResult};
 use super::lock::StorageLockGuard;
@@ -106,7 +106,7 @@ impl VaultDb {
         &mut self,
         _lock: &StorageLockGuard,
         issuer_schema_id: u64,
-        subject_blinding_factor: [u8; 32],
+        subject_blinding_factor: Vec<u8>,
         genesis_issued_at: u64,
         expires_at: u64,
         credential_blob: Vec<u8>,
@@ -167,7 +167,7 @@ impl VaultDb {
                 RETURNING credential_id",
                 params![
                     issuer_schema_id_i64,
-                    subject_blinding_factor.as_ref(),
+                    subject_blinding_factor,
                     genesis_issued_at_i64,
                     expires_at_i64,
                     now_i64,
@@ -220,6 +220,43 @@ impl VaultDb {
             records.push(map_record(row)?);
         }
         Ok(records)
+    }
+
+    /// Retrieves the credential bytes and blinding factor by issuer schema ID.
+    ///
+    /// Returns the most recent non-expired credential matching the issuer schema ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn fetch_credential_and_blinding_factor(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<(Vec<u8>, Vec<u8>)>> {
+        let expires = to_i64(now, "now")?;
+        let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
+
+        let sql = "SELECT
+                cr.subject_blinding_factor,
+                blob.bytes as credential_blob
+             FROM credential_records cr
+             INNER JOIN blob_objects blob ON cr.credential_blob_cid = blob.content_id
+             WHERE cr.expires_at > ?1 AND cr.issuer_schema_id = ?2
+             ORDER BY cr.updated_at DESC
+             LIMIT 1";
+
+        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        let result = stmt
+            .query_row(params![expires, issuer_schema_id_i64], |row| {
+                let blinding_factor: Vec<u8> = row.get(0)?;
+                let credential_blob: Vec<u8> = row.get(1)?;
+                Ok((credential_blob, blinding_factor))
+            })
+            .optional()
+            .map_err(|err| map_db_err(&err))?;
+
+        Ok(result)
     }
 
     /// Runs an integrity check on the vault database.

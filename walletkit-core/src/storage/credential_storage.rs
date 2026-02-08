@@ -1,8 +1,9 @@
 //! Storage facade implementing the credential storage API.
 
+use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
-use world_id_core::FieldElement;
+use world_id_core::{Credential, FieldElement as CoreFieldElement};
 
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
@@ -12,6 +13,7 @@ use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
+use crate::FieldElement;
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[derive(uniffi::Object)]
@@ -166,20 +168,20 @@ impl CredentialStore {
     pub fn store_credential(
         &self,
         issuer_schema_id: u64,
-        subject_blinding_factor: Vec<u8>,
+        subject_blinding_factor: &FieldElement,
         genesis_issued_at: u64,
         expires_at: u64,
         credential_blob: Vec<u8>,
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        let subject_blinding_factor = parse_fixed_bytes::<32>(
-            subject_blinding_factor,
-            "subject_blinding_factor",
-        )?;
+        // TODO: This should likely take the `Credential` object and obtain all metadata from it
+        let subject_blinding_factor_bytes = subject_blinding_factor
+            .to_bytes()
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
         let credential_id = self.lock_inner()?.store_credential(
             issuer_schema_id,
-            subject_blinding_factor,
+            subject_blinding_factor_bytes,
             genesis_issued_at,
             expires_at,
             credential_blob,
@@ -214,18 +216,7 @@ impl CredentialStore {
     }
 }
 
-fn parse_fixed_bytes<const N: usize>(
-    bytes: Vec<u8>,
-    label: &str,
-) -> StorageResult<[u8; N]> {
-    bytes.try_into().map_err(|bytes: Vec<u8>| {
-        StorageError::Serialization(format!(
-            "{label} length mismatch: expected {N}, got {}",
-            bytes.len()
-        ))
-    })
-}
-
+/// Implementation not exposed to foreign bindings
 impl CredentialStore {
     fn lock_inner(
         &self,
@@ -233,6 +224,51 @@ impl CredentialStore {
         self.inner
             .lock()
             .map_err(|_| StorageError::Lock("storage mutex poisoned".to_string()))
+    }
+
+    /// Retrieves a full credential including raw bytes by issuer schema ID.
+    ///
+    /// Returns the most recent non-expired credential matching the issuer schema ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the credential query fails.
+    pub fn get_credential(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<(Credential, CoreFieldElement)>> {
+        self.lock_inner()?.get_credential(issuer_schema_id, now)
+    }
+
+    /// Checks whether a replay guard entry exists for the given nullifier.
+    ///
+    /// # Returns
+    /// - bool: true if a replay guard entry exists (hence signalling a nullifier replay), false otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    pub fn is_nullifier_replay(
+        &self,
+        nullifier: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<bool> {
+        self.lock_inner()?.is_nullifier_replay(nullifier, now)
+    }
+
+    /// After a proof has been successfully generated, creates a replay guard entry
+    /// locally to avoid future replays of the same nullifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    pub fn replay_guard_set(
+        &self,
+        nullifier: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<()> {
+        self.lock_inner()?.replay_guard_set(nullifier, now)
     }
 }
 
@@ -275,11 +311,41 @@ impl CredentialStoreInner {
         state.vault.list_credentials(issuer_schema_id, now)
     }
 
+    fn get_credential(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<(Credential, CoreFieldElement)>> {
+        let state = self.state()?;
+        if let Some((credential, blinding_factor)) = state
+            .vault
+            .fetch_credential_and_blinding_factor(issuer_schema_id, now)?
+        {
+            let cred =
+                serde_json::from_slice::<Credential>(&credential).map_err(|e| {
+                    StorageError::Serialization(format!(
+                        "Critical. Failed to deserialize credential: {e}"
+                    ))
+                })?;
+
+            let blinding_factor = CoreFieldElement::deserialize_from_bytes(
+                &mut Cursor::new(blinding_factor),
+            )
+            .map_err(|e| {
+                StorageError::Serialization(format!(
+                    "Critical. Failed to deserialize blinding factor: {e}"
+                ))
+            })?;
+            return Ok(Some((cred, blinding_factor)));
+        }
+        Ok(None)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn store_credential(
         &mut self,
         issuer_schema_id: u64,
-        subject_blinding_factor: [u8; 32],
+        subject_blinding_factor: Vec<u8>,
         genesis_issued_at: u64,
         expires_at: u64,
         credential_blob: Vec<u8>,
@@ -326,10 +392,9 @@ impl CredentialStoreInner {
     /// # Errors
     ///
     /// Returns an error if the query to the cache unexpectedly fails.
-    #[allow(dead_code)] // TODO: Once it gets used
     fn is_nullifier_replay(
         &self,
-        nullifier: FieldElement,
+        nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<bool> {
         let mut nullifier_bytes = Vec::new();
@@ -356,10 +421,9 @@ impl CredentialStoreInner {
     /// # Errors
     ///
     /// Returns an error if the query to the cache unexpectedly fails.
-    #[allow(dead_code)] // TODO: Once it gets used
     fn replay_guard_set(
         &mut self,
-        nullifier: FieldElement,
+        nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
         let guard = self.guard()?;
@@ -427,7 +491,6 @@ mod tests {
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
-    use world_id_core::FieldElement;
 
     #[test]
     fn test_replay_guard_field_element_serialization() {
@@ -442,7 +505,7 @@ mod tests {
         inner.init(42, 1000).expect("init storage");
 
         // Create a FieldElement from a known value
-        let nullifier = FieldElement::from(123_456_789u64);
+        let nullifier = CoreFieldElement::from(123_456_789u64);
 
         // Set a replay guard
         inner
@@ -473,7 +536,7 @@ mod tests {
             .expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
-        let nullifier = FieldElement::from(999u64);
+        let nullifier = CoreFieldElement::from(999u64);
         let set_time = 1000u64;
 
         // Set a replay guard at time 1000
@@ -516,7 +579,7 @@ mod tests {
             .expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
-        let nullifier = FieldElement::from(555u64);
+        let nullifier = CoreFieldElement::from(555u64);
         let set_time = 3000u64;
 
         // Set a replay guard at time 3000
@@ -561,7 +624,7 @@ mod tests {
         let mut inner = CredentialStoreInner::new(paths, keystore, blob_store).unwrap();
         inner.init(42, 1000).expect("init storage");
 
-        let nullifier = FieldElement::from(12345u64);
+        let nullifier = CoreFieldElement::from(12345u64);
         let first_set_time = 1000u64;
 
         // Set a replay guard at time 1000
@@ -583,6 +646,69 @@ mod tests {
             exists_after_grace,
             "Replay guard SHOULD be enforced - past grace period from FIRST insertion"
         );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_get_credential() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        // Store a test credential
+        let issuer_schema_id = 123u64;
+        let subject_blinding_factor = FieldElement::from(42u64);
+        let genesis_issued_at = 1000u64;
+        let expires_at = 2000u64;
+        let credential_blob =
+            serde_json::to_vec(&Credential::new().issuer_schema_id(issuer_schema_id))
+                .expect("serialize credential");
+        let associated_data = Some(vec![6, 7, 8]);
+
+        inner
+            .store_credential(
+                issuer_schema_id,
+                subject_blinding_factor
+                    .to_bytes()
+                    .expect("serialize blinding factor"),
+                genesis_issued_at,
+                expires_at,
+                credential_blob,
+                associated_data,
+                1000,
+            )
+            .expect("store credential");
+
+        // Retrieve the credential
+        let (credential, _blinding_factor) = inner
+            .get_credential(issuer_schema_id, 1000)
+            .expect("get credential")
+            .expect("credential should exist");
+
+        // Verify the retrieved data
+        assert_eq!(credential.issuer_schema_id, issuer_schema_id);
+
+        // Verify non-existent credential returns None
+        let non_existent = inner
+            .get_credential(999u64, 1000)
+            .expect("get credential query should succeed");
+        assert!(
+            non_existent.is_none(),
+            "Non-existent credential should return None"
+        );
+
+        // Verify expired credential returns None
+        let expired = inner
+            .get_credential(issuer_schema_id, 2001)
+            .expect("get credential query should succeed");
+        assert!(expired.is_none(), "Expired credential should return None");
 
         cleanup_test_storage(&root);
     }

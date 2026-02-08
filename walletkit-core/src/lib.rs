@@ -62,6 +62,9 @@ pub mod logger;
 mod u256;
 pub use u256::U256Wrapper;
 
+mod field_element;
+pub use field_element::FieldElement;
+
 /// Credential storage primitives for World ID v4.
 #[cfg(feature = "storage")]
 pub mod storage;
