@@ -94,6 +94,8 @@ storage = [
     "dep:sha2",
     "dep:uuid",
 ]
+# World ID v4 feature alias (kept for compatibility)
+v4 = ["storage"]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.

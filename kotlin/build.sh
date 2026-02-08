@@ -32,7 +32,7 @@ export CPATH="$OPENSSL_BASE/arm64-v8a/include"
 export CFLAGS_aarch64_linux_android="-I$OPENSSL_BASE/arm64-v8a/include"
 export CC_aarch64_linux_android="aarch64-linux-android21-clang"
 export CROSS_CONTAINER_OPTS="-v $REPO_ROOT/third-party-libs:/project/third-party-libs:ro -v $REPO_ROOT/circom:/project/circom:ro"
-cross build -p walletkit --release --target=aarch64-linux-android --no-default-features --features v4
+cross build -p walletkit --release --target=aarch64-linux-android --features v4
 
 echo "Building for armv7-linux-androideabi..."
 export OPENSSL_DIR="$OPENSSL_BASE/armeabi-v7a"
@@ -43,7 +43,7 @@ export CPATH="$OPENSSL_BASE/armeabi-v7a/include"
 export CFLAGS_armv7_linux_androideabi="-I$OPENSSL_BASE/armeabi-v7a/include"
 export CC_armv7_linux_androideabi="armv7a-linux-androideabi21-clang"
 export CROSS_CONTAINER_OPTS="-v $REPO_ROOT/third-party-libs:/project/third-party-libs:ro -v $REPO_ROOT/circom:/project/circom:ro"
-cross build -p walletkit --release --target=armv7-linux-androideabi --no-default-features --features v4
+cross build -p walletkit --release --target=armv7-linux-androideabi --features v4
 
 echo "Building for x86_64-linux-android..."
 export OPENSSL_DIR="$OPENSSL_BASE/x86_64"
@@ -54,7 +54,7 @@ export CPATH="$OPENSSL_BASE/x86_64/include"
 export CFLAGS_x86_64_linux_android="-I$OPENSSL_BASE/x86_64/include"
 export CC_x86_64_linux_android="x86_64-linux-android21-clang"
 export CROSS_CONTAINER_OPTS="-v $REPO_ROOT/third-party-libs:/project/third-party-libs:ro -v $REPO_ROOT/circom:/project/circom:ro"
-cross build -p walletkit --release --target=x86_64-linux-android --no-default-features --features v4
+cross build -p walletkit --release --target=x86_64-linux-android --features v4
 
 echo "Building for i686-linux-android..."
 export OPENSSL_DIR="$OPENSSL_BASE/x86"
@@ -65,7 +65,7 @@ export CPATH="$OPENSSL_BASE/x86/include"
 export CFLAGS_i686_linux_android="-I$OPENSSL_BASE/x86/include"
 export CC_i686_linux_android="i686-linux-android21-clang"
 export CROSS_CONTAINER_OPTS="-v $REPO_ROOT/third-party-libs:/project/third-party-libs:ro -v $REPO_ROOT/circom:/project/circom:ro"
-cross build -p walletkit --release --target=i686-linux-android --no-default-features --features v4
+cross build -p walletkit --release --target=i686-linux-android --features v4
 
 # Move .so files to jniLibs
 echo "Moving native libraries..."

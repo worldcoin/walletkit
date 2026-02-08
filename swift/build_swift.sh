@@ -12,7 +12,7 @@ BASE_PATH="$PROJECT_ROOT_PATH/swift" # The base path for the Swift build
 PACKAGE_NAME="walletkit"
 TARGET_DIR="$PROJECT_ROOT_PATH/target"
 SUPPORT_SOURCES_DIR="$BASE_PATH/support"
-CARGO_FEATURE_ARGS=(--features "$FEATURES")
+CARGO_FEATURE_ARGS=(--features v4)
 
 # Default values
 OUTPUT_DIR="$BASE_PATH" # Default to BASE_PATH if not provided
