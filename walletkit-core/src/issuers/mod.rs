@@ -2,4 +2,4 @@
 
 mod tfh_nfc;
 
-pub use tfh_nfc::{NfcCredential, TfhNfcIssuer};
+pub use tfh_nfc::TfhNfcIssuer;
