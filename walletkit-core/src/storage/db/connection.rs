@@ -1,4 +1,4 @@
-//! Safe wrapper around a SQLite database connection.
+//! Safe wrapper around a `SQLite` database connection.
 //!
 //! This file contains **no `unsafe` code**. All FFI interaction is delegated to
 //! [`ffi::RawDb`] which encapsulates the raw pointers and C type conversions.
@@ -11,7 +11,7 @@ use super::statement::{Statement, StepResult};
 use super::transaction::Transaction;
 use super::value::Value;
 
-/// A SQLite database connection.
+/// A `SQLite` database connection.
 ///
 /// Closed when dropped. Not `Sync` -- all access must happen from a single
 /// thread (matches the WASM single-thread constraint and the native
@@ -39,12 +39,6 @@ impl Connection {
         Self::open(Path::new(":memory:"), false)
     }
 
-    /// Provides access to the underlying handle for [`Statement`] construction.
-    #[allow(dead_code)]
-    pub(super) fn raw(&self) -> &RawDb {
-        &self.db
-    }
-
     /// Executes one or more SQL statements separated by semicolons.
     ///
     /// No result rows are returned. Suitable for DDL, PRAGMAs, and
@@ -63,10 +57,10 @@ impl Connection {
     ///
     /// Returns the number of rows changed.
     pub fn execute(&self, sql: &str, params: &[Value]) -> DbResult<usize> {
-        let mut stmt = self.prepare(sql)?;
+        let stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         stmt.step()?;
-        Ok(self.db.changes() as usize)
+        Ok(usize::try_from(self.db.changes()).unwrap_or(0))
     }
 
     /// Prepares and executes a statement, mapping exactly one result row.
@@ -78,7 +72,7 @@ impl Connection {
         params: &[Value],
         mapper: impl FnOnce(&Statement) -> DbResult<T>,
     ) -> DbResult<T> {
-        let mut stmt = self.prepare(sql)?;
+        let stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         match stmt.step()? {
             StepResult::Row => mapper(&stmt),
@@ -94,7 +88,7 @@ impl Connection {
         params: &[Value],
         mapper: impl FnOnce(&Statement) -> DbResult<T>,
     ) -> DbResult<Option<T>> {
-        let mut stmt = self.prepare(sql)?;
+        let stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         match stmt.step()? {
             StepResult::Row => mapper(&stmt).map(Some),
@@ -121,7 +115,7 @@ impl Connection {
     /// Returns the number of rows changed by the most recent statement.
     #[allow(dead_code)]
     pub fn changes(&self) -> usize {
-        self.db.changes() as usize
+        usize::try_from(self.db.changes()).unwrap_or(0)
     }
 }
 

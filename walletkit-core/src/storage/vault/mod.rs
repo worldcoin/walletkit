@@ -8,7 +8,7 @@ mod tests;
 use std::path::Path;
 
 use crate::storage::db::cipher;
-use crate::storage::db::{params, Connection, Value};
+use crate::storage::db::{params, Connection, StepResult, Value};
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::lock::StorageLockGuard;
 use crate::storage::types::{BlobKind, CredentialRecord};
@@ -33,7 +33,7 @@ impl VaultDb {
         _lock: &StorageLockGuard,
     ) -> StorageResult<Self> {
         let conn =
-            cipher::open_encrypted(path, k_intermediate, false).map_err(map_db_err_owned)?;
+            cipher::open_encrypted(path, k_intermediate, false).map_err(|e| map_db_err_owned(&e))?;
         ensure_schema(&conn)?;
         let db = Self { conn };
         if !db.check_integrity()? {
@@ -152,10 +152,9 @@ impl VaultDb {
             .map_err(|err| map_db_err(&err))?;
         }
 
-        let ad_cid_value: Value = match associated_data_id {
-            Some(ref cid) => Value::Blob(cid.to_vec()),
-            None => Value::Null,
-        };
+        let ad_cid_value: Value = associated_data_id
+            .as_ref()
+            .map_or(Value::Null, |cid| Value::Blob(cid.to_vec()));
 
         let credential_id = tx
             .query_row(
@@ -213,22 +212,14 @@ impl VaultDb {
                  WHERE cr.expires_at > ?1
                    AND cr.issuer_schema_id = ?2
                  ORDER BY cr.updated_at DESC";
-            let mut stmt = self
-                .conn
-                .prepare(sql)
-                .map_err(|err| map_db_err(&err))?;
+            let stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
             stmt.bind_values(params![
                 Value::Integer(expires),
                 Value::Integer(issuer_id),
             ])
             .map_err(|err| map_db_err(&err))?;
-            loop {
-                match stmt.step().map_err(|err| map_db_err(&err))? {
-                    crate::storage::db::StepResult::Row => {
-                        records.push(map_record(&stmt)?);
-                    }
-                    crate::storage::db::StepResult::Done => break,
-                }
+            while stmt.step().map_err(|err| map_db_err(&err))? == StepResult::Row {
+                records.push(map_record(&stmt)?);
             }
         } else {
             let sql =
@@ -239,19 +230,11 @@ impl VaultDb {
                  FROM credential_records cr
                  WHERE cr.expires_at > ?1
                  ORDER BY cr.updated_at DESC";
-            let mut stmt = self
-                .conn
-                .prepare(sql)
-                .map_err(|err| map_db_err(&err))?;
+            let stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
             stmt.bind_values(params![Value::Integer(expires)])
                 .map_err(|err| map_db_err(&err))?;
-            loop {
-                match stmt.step().map_err(|err| map_db_err(&err))? {
-                    crate::storage::db::StepResult::Row => {
-                        records.push(map_record(&stmt)?);
-                    }
-                    crate::storage::db::StepResult::Done => break,
-                }
+            while stmt.step().map_err(|err| map_db_err(&err))? == StepResult::Row {
+                records.push(map_record(&stmt)?);
             }
         }
         Ok(records)
@@ -263,6 +246,6 @@ impl VaultDb {
     ///
     /// Returns an error if the check cannot be executed.
     pub fn check_integrity(&self) -> StorageResult<bool> {
-        cipher::integrity_check(&self.conn).map_err(map_db_err_owned)
+        cipher::integrity_check(&self.conn).map_err(|e| map_db_err_owned(&e))
     }
 }

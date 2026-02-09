@@ -11,7 +11,7 @@ pub(super) fn map_db_err(err: &DbError) -> StorageError {
 }
 
 /// Maps an owned database error into a cache storage error.
-pub(super) fn map_db_err_owned(err: DbError) -> StorageError {
+pub(super) fn map_db_err_owned(err: &DbError) -> StorageError {
     StorageError::CacheDb(err.to_string())
 }
 
@@ -198,7 +198,7 @@ pub(super) fn get_cache_entry_tx(
 
     if let Some(insertion_before) = insertion_before {
         let insertion_before = to_i64(insertion_before, "insertion_before")?;
-        let mut stmt = tx.prepare(
+        let stmt = tx.prepare(
             "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2 AND inserted_at < ?3",
         ).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![key, Value::Integer(now), Value::Integer(insertion_before)])
@@ -208,7 +208,7 @@ pub(super) fn get_cache_entry_tx(
             crate::storage::db::StepResult::Done => Ok(None),
         }
     } else {
-        let mut stmt = tx.prepare(
+        let stmt = tx.prepare(
             "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2",
         ).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![key, Value::Integer(now)])

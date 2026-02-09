@@ -1,4 +1,4 @@
-//! Safe wrapper around a SQLite transaction.
+//! Safe wrapper around a `SQLite` transaction.
 //!
 //! Automatically rolls back on drop unless explicitly committed.
 

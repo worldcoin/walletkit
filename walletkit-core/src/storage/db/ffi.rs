@@ -1,24 +1,24 @@
-//! Raw FFI bindings to SQLite, resolved at compile time via `cfg`.
+//! Raw FFI bindings to `SQLite`, resolved at compile time via `cfg`.
 //!
 //! This module is the **only** place in the codebase that contains `unsafe` code
 //! or C types (`*mut c_void`, `CString`, etc.). It exposes two safe handle types
 //! -- [`RawDb`] and [`RawStmt`] -- whose methods perform the underlying FFI calls
-//! and translate results into idiomatic Rust (`DbResult`, `String`, `Vec<u8>`).
+//! and translate results into idiomatic Rust ([`DbResult`], `String`, `Vec<u8>`).
 //!
-//! Why `unsafe` is required: SQLite is a C library. Calling any C function from
+//! Why `unsafe` is required: `SQLite` is a C library. Calling any C function from
 //! Rust is `unsafe` by definition because the Rust compiler cannot verify memory
 //! safety across the FFI boundary. Each `unsafe` block below upholds the
 //! following invariants:
 //!
-//! - Pointers passed to SQLite are either non-null (checked by the caller) or
+//! - Pointers passed to `SQLite` are either non-null (checked by the caller) or
 //!   explicitly documented as nullable (e.g. `sqlite3_exec` callback).
 //! - Strings are null-terminated via `CString` before being handed to C.
-//! - Pointer lifetimes are tracked by `RawDb` / `RawStmt` ownership: a handle
-//!   is valid from construction until `Drop`.
-//! - `SQLITE_TRANSIENT` tells SQLite to copy bound data immediately, so Rust
+//! - Pointer lifetimes are tracked by [`RawDb`] / [`RawStmt`] ownership: a
+//!   handle is valid from construction until `Drop`.
+//! - `SQLITE_TRANSIENT` tells `SQLite` to copy bound data immediately, so Rust
 //!   can safely free the source buffer after the call returns.
 //!
-//! On native targets the symbols come from the sqlite3mc static library compiled
+//! On native targets the symbols come from the `sqlite3mc` static library compiled
 //! by `build.rs`. On `wasm32` targets they come from `sqlite-wasm-rs`.
 
 use std::ffi::{CStr, CString};
@@ -26,7 +26,7 @@ use std::os::raw::{c_char, c_int, c_void};
 
 use super::error::{DbError, DbResult};
 
-// -- SQLite constants (plain i32, no C types leaked to callers) ---------------
+// -- SQLite constants (plain `i32`, no C types leaked to callers) -------------
 
 pub const SQLITE_OK: i32 = 0;
 pub const SQLITE_ROW: i32 = 100;
@@ -74,21 +74,21 @@ impl RawDb {
         let c_path = to_cstring(path)?;
         let mut ptr: *mut c_void = std::ptr::null_mut();
 
-        // Safety: `c_path` is a valid null-terminated string. `ptr` is a local
+        // Safety: c_path is a valid null-terminated string. ptr is a local
         // out-pointer that SQLite writes to. VFS is null (use default).
         let rc = unsafe {
-            raw::sqlite3_open_v2(c_path.as_ptr(), &mut ptr, flags as c_int, std::ptr::null())
+            raw::sqlite3_open_v2(c_path.as_ptr(), &raw mut ptr, flags as c_int, std::ptr::null())
         };
 
         if rc != SQLITE_OK as c_int {
-            let msg = if !ptr.is_null() {
+            let msg = if ptr.is_null() {
+                format!("sqlite3_open_v2 returned {rc}")
+            } else {
                 let m = errmsg_from_ptr(ptr);
-                // Safety: ptr was successfully allocated by sqlite3_open_v2 even
-                // on error; we must close it.
+                // Safety: ptr was allocated by sqlite3_open_v2 even on error;
+                // we must close it.
                 unsafe { raw::sqlite3_close_v2(ptr); }
                 m
-            } else {
-                format!("sqlite3_open_v2 returned {rc}")
             };
             return Err(DbError::new(rc, msg));
         }
@@ -104,22 +104,22 @@ impl RawDb {
         // Safety: self.ptr is valid for the lifetime of RawDb. c_sql is null-
         // terminated. Callback and arg are null (no result rows needed).
         let rc = unsafe {
-            raw::sqlite3_exec(self.ptr, c_sql.as_ptr(), std::ptr::null(), std::ptr::null_mut(), &mut errmsg)
+            raw::sqlite3_exec(self.ptr, c_sql.as_ptr(), std::ptr::null(), std::ptr::null_mut(), &raw mut errmsg)
         };
 
-        if rc != SQLITE_OK as c_int {
-            let msg = if !errmsg.is_null() {
-                // Safety: errmsg points to a C string allocated by SQLite.
-                let s = unsafe { CStr::from_ptr(errmsg) }.to_string_lossy().into_owned();
-                unsafe { raw::sqlite3_free(errmsg.cast()); }
-                s
-            } else {
-                self.errmsg()
-            };
-            return Err(DbError::new(rc, msg));
+        if rc == SQLITE_OK as c_int {
+            return Ok(());
         }
 
-        Ok(())
+        let msg = if errmsg.is_null() {
+            self.errmsg()
+        } else {
+            // Safety: errmsg points to a C string allocated by SQLite.
+            let s = unsafe { CStr::from_ptr(errmsg) }.to_string_lossy().into_owned();
+            unsafe { raw::sqlite3_free(errmsg.cast()); }
+            s
+        };
+        Err(DbError::new(rc, msg))
     }
 
     /// Prepares a single SQL statement for execution.
@@ -130,7 +130,7 @@ impl RawDb {
         // Safety: self.ptr is valid. c_sql is null-terminated. -1 tells SQLite
         // to read until the null terminator. tail pointer is unused.
         let rc = unsafe {
-            raw::sqlite3_prepare_v2(self.ptr, c_sql.as_ptr(), -1, &mut stmt_ptr, std::ptr::null_mut())
+            raw::sqlite3_prepare_v2(self.ptr, c_sql.as_ptr(), -1, &raw mut stmt_ptr, std::ptr::null_mut())
         };
 
         if rc != SQLITE_OK as c_int || stmt_ptr.is_null() {
@@ -152,7 +152,7 @@ impl RawDb {
         unsafe { raw::sqlite3_last_insert_rowid(self.ptr) }
     }
 
-    /// Returns the most recent error message from SQLite.
+    /// Returns the most recent error message from `SQLite`.
     pub fn errmsg(&self) -> String {
         errmsg_from_ptr(self.ptr)
     }
@@ -181,8 +181,8 @@ impl RawStmt {
         // Safety: self.ptr is a valid prepared statement.
         let rc = unsafe { raw::sqlite3_step(self.ptr) };
         match rc {
-            rc if rc == SQLITE_ROW as c_int => Ok(SQLITE_ROW),
-            rc if rc == SQLITE_DONE as c_int => Ok(SQLITE_DONE),
+            _ if rc == SQLITE_ROW as c_int => Ok(SQLITE_ROW),
+            _ if rc == SQLITE_DONE as c_int => Ok(SQLITE_DONE),
             _ => Err(DbError::new(rc, self.errmsg())),
         }
     }
@@ -192,10 +192,11 @@ impl RawStmt {
     pub fn reset(&self) -> DbResult<()> {
         // Safety: self.ptr is valid.
         let rc = unsafe { raw::sqlite3_reset(self.ptr) };
-        if rc != SQLITE_OK as c_int {
-            return Err(DbError::new(rc, self.errmsg()));
+        if rc == SQLITE_OK as c_int {
+            Ok(())
+        } else {
+            Err(DbError::new(rc, self.errmsg()))
         }
-        Ok(())
     }
 
     // -- Binding --------------------------------------------------------------
@@ -213,8 +214,8 @@ impl RawStmt {
             raw::sqlite3_bind_blob(
                 self.ptr,
                 idx as c_int,
-                value.as_ptr().cast(),
-                value.len() as c_int,
+                value.as_ptr().cast::<c_void>(),
+                c_int::try_from(value.len()).unwrap_or(c_int::MAX),
                 SQLITE_TRANSIENT,
             )
         };
@@ -228,8 +229,8 @@ impl RawStmt {
             raw::sqlite3_bind_text(
                 self.ptr,
                 idx as c_int,
-                value.as_ptr().cast(),
-                value.len() as c_int,
+                value.as_ptr().cast::<c_char>(),
+                c_int::try_from(value.len()).unwrap_or(c_int::MAX),
                 SQLITE_TRANSIENT,
             )
         };
@@ -258,7 +259,7 @@ impl RawStmt {
             if ptr.is_null() || len <= 0 {
                 Vec::new()
             } else {
-                std::slice::from_raw_parts(ptr.cast::<u8>(), len as usize).to_vec()
+                std::slice::from_raw_parts(ptr.cast::<u8>(), usize::try_from(len).unwrap_or(0)).to_vec()
             }
         }
     }
@@ -320,10 +321,10 @@ fn errmsg_from_ptr(db: *mut c_void) -> String {
 }
 
 fn check(rc: c_int, stmt: &RawStmt) -> DbResult<()> {
-    if rc != SQLITE_OK as c_int {
-        Err(DbError::new(rc, stmt.errmsg()))
-    } else {
+    if rc == SQLITE_OK as c_int {
         Ok(())
+    } else {
+        Err(DbError::new(rc, stmt.errmsg()))
     }
 }
 

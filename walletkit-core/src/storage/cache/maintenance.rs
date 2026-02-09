@@ -21,7 +21,7 @@ pub(super) fn open_or_rebuild(
 ) -> StorageResult<Connection> {
     match open_prepared(path, k_intermediate) {
         Ok(conn) => {
-            let integrity_ok = cipher::integrity_check(&conn).map_err(map_db_err_owned)?;
+            let integrity_ok = cipher::integrity_check(&conn).map_err(|e| map_db_err_owned(&e))?;
             if integrity_ok {
                 Ok(conn)
             } else {
@@ -40,7 +40,7 @@ pub(super) fn open_or_rebuild(
 /// Returns an error if the DB cannot be opened or configured.
 fn open_prepared(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Connection> {
     let conn =
-        cipher::open_encrypted(path, k_intermediate, false).map_err(map_db_err_owned)?;
+        cipher::open_encrypted(path, k_intermediate, false).map_err(|e| map_db_err_owned(&e))?;
     schema::ensure_schema(&conn)?;
     Ok(conn)
 }

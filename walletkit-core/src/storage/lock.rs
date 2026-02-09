@@ -44,7 +44,7 @@ mod imp {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
-    use super::*;
+    use super::{Path, StorageResult, StorageError};
     use std::fs::{self, File, OpenOptions};
     use std::sync::Arc;
 

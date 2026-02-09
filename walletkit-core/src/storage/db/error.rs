@@ -1,8 +1,8 @@
-//! Database error types for the safe SQLite wrapper.
+//! Database error types for the safe `SQLite` wrapper.
 
 use std::fmt;
 
-/// Error code returned by SQLite operations.
+/// Error code returned by `SQLite` operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DbErrorCode(pub i32);
 
@@ -13,9 +13,9 @@ impl fmt::Display for DbErrorCode {
 }
 
 /// Error returned by database operations.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DbError {
-    /// SQLite result code.
+    /// `SQLite` result code.
     pub code: DbErrorCode,
     /// Human-readable error message (from `sqlite3_errmsg` when available).
     pub message: String,

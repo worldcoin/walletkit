@@ -1,8 +1,8 @@
-//! Parameter and column value types for the safe SQLite wrapper.
+//! Parameter and column value types for the safe `SQLite` wrapper.
 
 /// A value that can be bound to a prepared statement parameter or read from
 /// a result column.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     /// 64-bit signed integer.
     Integer(i64),
@@ -41,15 +41,6 @@ impl From<String> for Value {
 impl From<&str> for Value {
     fn from(v: &str) -> Self {
         Self::Text(v.to_string())
-    }
-}
-
-impl<T: Into<Value>> From<Option<T>> for Value {
-    fn from(v: Option<T>) -> Self {
-        match v {
-            Some(inner) => inner.into(),
-            None => Self::Null,
-        }
     }
 }
 
