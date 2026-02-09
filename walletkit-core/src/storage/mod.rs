@@ -2,7 +2,6 @@
 
 pub mod cache;
 pub mod credential_storage;
-#[allow(dead_code)]
 pub(crate) mod db;
 pub mod envelope;
 pub mod error;

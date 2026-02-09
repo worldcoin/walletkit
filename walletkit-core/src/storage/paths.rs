@@ -7,7 +7,8 @@ const CACHE_FILENAME: &str = "account.cache.sqlite";
 const LOCK_FILENAME: &str = "lock";
 
 /// Paths for credential storage artifacts under `<root>/worldid`.
-#[derive(Debug, Clone, uniffi::Object)]
+#[derive(Debug, Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct StoragePaths {
     root: PathBuf,
     worldid_dir: PathBuf,
@@ -53,10 +54,10 @@ impl StoragePaths {
     }
 }
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 impl StoragePaths {
     /// Builds storage paths rooted at `root`.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     #[must_use]
     pub fn from_root(root: String) -> Self {
         Self::new(PathBuf::from(root))

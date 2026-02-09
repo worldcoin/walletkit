@@ -9,9 +9,10 @@
 //!   feature) which ships its own WASM-compiled sqlite3mc.
 //!
 //! Consumer code (vault, cache, cipher config) uses only the safe types
-//! defined here and never touches raw FFI directly.
+//! defined here and never touches raw FFI directly. The `ffi` module is the
+//! **only** file that contains `unsafe` code or C types.
 
-pub(crate) mod ffi;
+mod ffi;
 
 mod connection;
 pub(crate) mod error;
@@ -22,7 +23,10 @@ pub(crate) mod value;
 pub(crate) mod cipher;
 
 pub(crate) use connection::Connection;
-pub(crate) use error::{DbError, DbResult};
+pub(crate) use error::DbError;
 pub(crate) use statement::{Statement, StepResult};
-pub(crate) use transaction::{Transaction, TransactionBehavior};
+pub(crate) use transaction::Transaction;
 pub(crate) use value::{params, Value};
+
+#[cfg(test)]
+mod tests;

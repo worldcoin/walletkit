@@ -7,8 +7,8 @@ unknown-registry = "deny"
 
 [bans]
 deny = [
-    # openssl-sys is allowed to bundle it in Android apps which require it for sqlcipher
-    { name = "openssl", reason = "increases complexity for foreign binding compilation and bundle size" }
+    { name = "openssl", reason = "increases complexity for foreign binding compilation and bundle size" },
+    { name = "openssl-sys", reason = "sqlite3mc has built-in crypto; OpenSSL is no longer needed" },
 ]
 
 [licenses]

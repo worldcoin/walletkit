@@ -8,7 +8,7 @@ use crate::storage::db::Connection;
 use crate::storage::error::StorageResult;
 
 use super::schema;
-use super::util::{map_db_err, map_db_err_owned, map_io_err};
+use super::util::{map_db_err_owned, map_io_err};
 
 /// Opens the cache DB or rebuilds it if integrity checks fail.
 ///
