@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use world_id_core::Credential as CoreCredential;
 
 use crate::FieldElement;
@@ -23,5 +25,25 @@ impl Credential {
     #[must_use]
     pub fn sub(&self) -> FieldElement {
         self.0.sub.into()
+    }
+}
+
+impl From<CoreCredential> for Credential {
+    fn from(credential: CoreCredential) -> Self {
+        Self(credential)
+    }
+}
+
+impl From<Credential> for CoreCredential {
+    fn from(credential: Credential) -> Self {
+        credential.0
+    }
+}
+
+impl Deref for Credential {
+    type Target = CoreCredential;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
