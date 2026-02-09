@@ -56,22 +56,27 @@ impl Statement {
 
     /// Reads a column as `i64`.
     pub fn column_i64(&self, idx: usize) -> i64 {
-        self.raw.column_i64(i32::try_from(idx).expect("column index overflow"))
+        self.raw
+            .column_i64(i32::try_from(idx).expect("column index overflow"))
     }
 
     /// Reads a column as a blob. Returns an empty `Vec` for NULL.
     pub fn column_blob(&self, idx: usize) -> Vec<u8> {
-        self.raw.column_blob(i32::try_from(idx).expect("column index overflow"))
+        self.raw
+            .column_blob(i32::try_from(idx).expect("column index overflow"))
     }
 
     /// Reads a column as a UTF-8 string. Returns an empty string for NULL.
     pub fn column_text(&self, idx: usize) -> String {
-        self.raw.column_text(i32::try_from(idx).expect("column index overflow"))
+        self.raw
+            .column_text(i32::try_from(idx).expect("column index overflow"))
     }
 
     /// Returns `true` if the column is SQL NULL.
     #[allow(dead_code)]
     pub fn is_column_null(&self, idx: usize) -> bool {
-        self.raw.column_type(i32::try_from(idx).expect("column index overflow")) == ffi::SQLITE_NULL
+        self.raw
+            .column_type(i32::try_from(idx).expect("column index overflow"))
+            == ffi::SQLITE_NULL
     }
 }

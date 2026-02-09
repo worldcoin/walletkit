@@ -44,7 +44,7 @@ mod imp {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
-    use super::{Path, StorageResult, StorageError};
+    use super::{Path, StorageError, StorageResult};
     use std::fs::{self, File, OpenOptions};
     use std::sync::Arc;
 
@@ -199,8 +199,7 @@ mod imp {
 
     #[cfg(windows)]
     fn unlock(file: &File) -> std::io::Result<()> {
-        let handle =
-            std::os::windows::io::AsRawHandle::as_raw_handle(file) as HANDLE;
+        let handle = std::os::windows::io::AsRawHandle::as_raw_handle(file) as HANDLE;
         let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
         let result = unsafe { UnlockFileEx(handle, 0, 1, 0, &mut overlapped) };
         if result != 0 {
@@ -212,8 +211,7 @@ mod imp {
 
     #[cfg(windows)]
     fn lock_file(file: &File, flags: u32) -> std::io::Result<()> {
-        let handle =
-            std::os::windows::io::AsRawHandle::as_raw_handle(file) as HANDLE;
+        let handle = std::os::windows::io::AsRawHandle::as_raw_handle(file) as HANDLE;
         let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
         let result = unsafe {
             LockFileEx(

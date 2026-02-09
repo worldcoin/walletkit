@@ -14,7 +14,8 @@ use std::process::Command;
 const SQLITE3MC_VERSION: &str = "2.2.7";
 const SQLITE_VERSION: &str = "3.51.2";
 const DOWNLOAD_URL: &str = "https://github.com/utelle/SQLite3MultipleCiphers/releases/download/v2.2.7/sqlite3mc-2.2.7-sqlite-3.51.2-amalgamation.zip";
-const EXPECTED_SHA256: &str = "8e84aadc53bc09bda9cd307745a178191e7783e1b6478d74ffbcdf6a04f98085";
+const EXPECTED_SHA256: &str =
+    "8e84aadc53bc09bda9cd307745a178191e7783e1b6478d74ffbcdf6a04f98085";
 
 fn main() {
     #[cfg(feature = "storage")]
@@ -40,8 +41,14 @@ fn build_sqlite3mc() {
         download(&zip_path);
         verify_checksum(&zip_path);
         extract(&zip_path, &source_dir);
-        assert!(amalgamation_c.exists(), "sqlite3mc_amalgamation.c not found after extraction");
-        assert!(amalgamation_h.exists(), "sqlite3mc_amalgamation.h not found after extraction");
+        assert!(
+            amalgamation_c.exists(),
+            "sqlite3mc_amalgamation.c not found after extraction"
+        );
+        assert!(
+            amalgamation_h.exists(),
+            "sqlite3mc_amalgamation.h not found after extraction"
+        );
     }
 
     compile(&amalgamation_c, &source_dir);
@@ -68,11 +75,7 @@ fn verify_checksum(zip_path: &Path) {
         .args(["-a", "256"])
         .arg(zip_path)
         .output()
-        .or_else(|_| {
-            Command::new("sha256sum")
-                .arg(zip_path)
-                .output()
-        })
+        .or_else(|_| Command::new("sha256sum").arg(zip_path).output())
         .expect("failed to run shasum or sha256sum -- is one installed?");
 
     assert!(output.status.success(), "checksum command failed");

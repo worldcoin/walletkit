@@ -190,11 +190,9 @@ fn test_content_id_deduplication() {
     .expect("store credential");
     let count = db
         .conn
-        .query_row(
-            "SELECT COUNT(*) FROM blob_objects",
-            &[],
-            |stmt| Ok(stmt.column_i64(0)),
-        )
+        .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
+            Ok(stmt.column_i64(0))
+        })
         .map_err(|err| map_db_err(&err))
         .expect("count blobs");
     assert_eq!(count, 1);

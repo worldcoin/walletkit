@@ -104,10 +104,8 @@ fn configure_connection(conn: &Connection) -> DbResult<()> {
 
 /// Runs `PRAGMA integrity_check` and returns whether the database is healthy.
 pub fn integrity_check(conn: &Connection) -> DbResult<bool> {
-    let result = conn.query_row(
-        "PRAGMA integrity_check;",
-        &[],
-        |stmt| Ok(stmt.column_text(0)),
-    )?;
+    let result = conn.query_row("PRAGMA integrity_check;", &[], |stmt| {
+        Ok(stmt.column_text(0))
+    })?;
     Ok(result.trim() == "ok")
 }

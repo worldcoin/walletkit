@@ -23,9 +23,16 @@ impl<'conn> Transaction<'conn> {
     /// When `immediate` is true, the transaction acquires a RESERVED lock
     /// immediately (`BEGIN IMMEDIATE`) rather than deferring it.
     pub(super) fn begin(conn: &'conn Connection, immediate: bool) -> DbResult<Self> {
-        let sql = if immediate { "BEGIN IMMEDIATE" } else { "BEGIN DEFERRED" };
+        let sql = if immediate {
+            "BEGIN IMMEDIATE"
+        } else {
+            "BEGIN DEFERRED"
+        };
         conn.execute_batch(sql)?;
-        Ok(Self { conn, committed: false })
+        Ok(Self {
+            conn,
+            committed: false,
+        })
     }
 
     /// Commits the transaction.

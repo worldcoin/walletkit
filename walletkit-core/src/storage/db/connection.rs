@@ -27,7 +27,9 @@ impl Connection {
         let flags = if read_only {
             ffi::SQLITE_OPEN_READONLY | ffi::SQLITE_OPEN_FULLMUTEX
         } else {
-            ffi::SQLITE_OPEN_READWRITE | ffi::SQLITE_OPEN_CREATE | ffi::SQLITE_OPEN_FULLMUTEX
+            ffi::SQLITE_OPEN_READWRITE
+                | ffi::SQLITE_OPEN_CREATE
+                | ffi::SQLITE_OPEN_FULLMUTEX
         };
         let db = RawDb::open(&path_str, flags)?;
         Ok(Self { db })
@@ -76,7 +78,9 @@ impl Connection {
         stmt.bind_values(params)?;
         match stmt.step()? {
             StepResult::Row => mapper(&stmt),
-            StepResult::Done => Err(DbError::new(ffi::SQLITE_DONE, "query returned no rows")),
+            StepResult::Done => {
+                Err(DbError::new(ffi::SQLITE_DONE, "query returned no rows"))
+            }
         }
     }
 

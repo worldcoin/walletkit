@@ -201,8 +201,12 @@ pub(super) fn get_cache_entry_tx(
         let stmt = tx.prepare(
             "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2 AND inserted_at < ?3",
         ).map_err(|err| map_db_err(&err))?;
-        stmt.bind_values(params![key, Value::Integer(now), Value::Integer(insertion_before)])
-            .map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![
+            key,
+            Value::Integer(now),
+            Value::Integer(insertion_before)
+        ])
+        .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
             crate::storage::db::StepResult::Row => Ok(Some(stmt.column_blob(0))),
             crate::storage::db::StepResult::Done => Ok(None),
