@@ -1,4 +1,4 @@
-//! Unit tests for the safe SQLite db wrapper.
+//! Unit tests for the safe `SQLite` db wrapper.
 
 use super::*;
 
