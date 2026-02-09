@@ -87,8 +87,7 @@ impl Authenticator {
     ///
     /// # Errors
     ///
-    /// - Will raise a [`ProofError`] if there is any issue generating the blinding factor.
-    ///   For example, network issues, unexpected incorrect responses from OPRF Nodes.
+    /// - Will generally error if there are network issues or if the OPRF Nodes return an error.
     /// - Raises an error if the OPRF Nodes configuration is not correctly set.
     pub async fn generate_credential_blinding_factor_remote(
         &self,
