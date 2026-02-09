@@ -2,8 +2,7 @@
 
 use std::path::Path;
 
-use rusqlite::Connection;
-
+use crate::storage::db::Connection;
 use crate::storage::error::StorageResult;
 use crate::storage::lock::StorageLockGuard;
 
@@ -131,7 +130,7 @@ impl CacheDb {
         nullifier: [u8; 32],
         now: u64,
     ) -> StorageResult<()> {
-        nullifiers::replay_guard_set(&mut self.conn, nullifier, now)
+        nullifiers::replay_guard_set(&self.conn, nullifier, now)
     }
 }
 

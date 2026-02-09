@@ -3,13 +3,12 @@
 //! Tracks request ids and nullifiers to enforce single-use disclosures while
 //! remaining idempotent for retries within the TTL window.
 
-use rusqlite::{Connection, TransactionBehavior};
-
+use crate::storage::db::Connection;
 use crate::storage::error::StorageResult;
 
 use super::util::{
-    cache_entry_times, commit_transaction, get_cache_entry, insert_cache_entry,
-    map_db_err, prune_expired_entries, replay_nullifier_key,
+    cache_entry_times, get_cache_entry, get_cache_entry_tx, insert_cache_entry_tx,
+    map_db_err, prune_expired_entries_tx, replay_nullifier_key,
 };
 
 /// The time to wait before a replayed request starts being enforced.
@@ -48,28 +47,28 @@ pub(super) fn is_nullifier_replay(
 /// This operation is idempotent - if an entry already exists and hasn't expired,
 /// it will not be re-inserted (maintains the original insertion time).
 pub(super) fn replay_guard_set(
-    conn: &mut Connection,
+    conn: &Connection,
     nullifier: [u8; 32],
     now: u64,
 ) -> StorageResult<()> {
     let tx = conn
-        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .transaction_immediate()
         .map_err(|err| map_db_err(&err))?;
-    prune_expired_entries(&tx, now)?;
+    prune_expired_entries_tx(&tx, now)?;
 
     let key = replay_nullifier_key(nullifier);
 
     // Check if entry already exists (idempotency check)
-    let existing = get_cache_entry(&tx, key.as_slice(), now, None)?;
+    let existing = get_cache_entry_tx(&tx, key.as_slice(), now, None)?;
     if existing.is_some() {
         // Entry already exists and hasn't expired - this is idempotent, just return success
-        commit_transaction(tx)?;
+        tx.commit().map_err(|err| map_db_err(&err))?;
         return Ok(());
     }
 
     // Insert new entry
     let times = cache_entry_times(now, REPLAY_REQUEST_TTL_SECONDS)?;
-    insert_cache_entry(&tx, key.as_slice(), &[0x1], times)?;
-    commit_transaction(tx)?;
+    insert_cache_entry_tx(&tx, key.as_slice(), &[0x1], times)?;
+    tx.commit().map_err(|err| map_db_err(&err))?;
     Ok(())
 }

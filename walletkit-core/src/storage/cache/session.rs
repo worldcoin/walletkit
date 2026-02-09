@@ -2,8 +2,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::Connection;
-
+use crate::storage::db::Connection;
 use crate::storage::error::{StorageError, StorageResult};
 
 use super::util::{

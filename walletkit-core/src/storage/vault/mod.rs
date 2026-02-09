@@ -7,15 +7,12 @@ mod tests;
 
 use std::path::Path;
 
-use rusqlite::{params, params_from_iter, Connection};
-
-use super::error::{StorageError, StorageResult};
-use super::lock::StorageLockGuard;
-use super::sqlcipher;
-use super::types::{BlobKind, CredentialRecord};
-use helpers::{
-    compute_content_id, map_db_err, map_record, map_sqlcipher_err, to_i64, to_u64,
-};
+use crate::storage::db::cipher;
+use crate::storage::db::{params, Connection, Value};
+use crate::storage::error::{StorageError, StorageResult};
+use crate::storage::lock::StorageLockGuard;
+use crate::storage::types::{BlobKind, CredentialRecord};
+use helpers::{compute_content_id, map_db_err, map_db_err_owned, map_record, to_i64, to_u64};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 
 /// Encrypted vault database wrapper.
@@ -36,9 +33,7 @@ impl VaultDb {
         _lock: &StorageLockGuard,
     ) -> StorageResult<Self> {
         let conn =
-            sqlcipher::open_connection(path, false).map_err(map_sqlcipher_err)?;
-        sqlcipher::apply_key(&conn, k_intermediate).map_err(map_sqlcipher_err)?;
-        sqlcipher::configure_connection(&conn).map_err(map_sqlcipher_err)?;
+            cipher::open_encrypted(path, k_intermediate, false).map_err(map_db_err_owned)?;
         ensure_schema(&conn)?;
         let db = Self { conn };
         if !db.check_integrity()? {
@@ -77,8 +72,12 @@ impl VaultDb {
                          ELSE vault_meta.leaf_index
                      END
                  RETURNING leaf_index",
-                params![VAULT_SCHEMA_VERSION, leaf_index_i64, now_i64],
-                |row| row.get::<_, i64>(0),
+                params![
+                    Value::Integer(VAULT_SCHEMA_VERSION),
+                    Value::Integer(leaf_index_i64),
+                    Value::Integer(now_i64),
+                ],
+                |stmt| Ok(stmt.column_i64(0)),
             )
             .map_err(|err| map_db_err(&err))?;
         if stored != leaf_index_i64 {
@@ -129,9 +128,9 @@ impl VaultDb {
              VALUES (?1, ?2, ?3, ?4)",
             params![
                 credential_blob_id.as_ref(),
-                BlobKind::CredentialBlob.as_i64(),
-                now_i64,
-                credential_blob
+                Value::Integer(BlobKind::CredentialBlob.as_i64()),
+                Value::Integer(now_i64),
+                credential_blob.as_slice(),
             ],
         )
         .map_err(|err| map_db_err(&err))?;
@@ -145,13 +144,18 @@ impl VaultDb {
                  VALUES (?1, ?2, ?3, ?4)",
                 params![
                     cid.as_ref(),
-                    BlobKind::AssociatedData.as_i64(),
-                    now_i64,
-                    data
+                    Value::Integer(BlobKind::AssociatedData.as_i64()),
+                    Value::Integer(now_i64),
+                    data.as_slice(),
                 ],
             )
             .map_err(|err| map_db_err(&err))?;
         }
+
+        let ad_cid_value: Value = match associated_data_id {
+            Some(ref cid) => Value::Blob(cid.to_vec()),
+            None => Value::Null,
+        };
 
         let credential_id = tx
             .query_row(
@@ -166,15 +170,15 @@ impl VaultDb {
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                 RETURNING credential_id",
                 params![
-                    issuer_schema_id_i64,
+                    Value::Integer(issuer_schema_id_i64),
                     subject_blinding_factor.as_ref(),
-                    genesis_issued_at_i64,
-                    expires_at_i64,
-                    now_i64,
+                    Value::Integer(genesis_issued_at_i64),
+                    Value::Integer(expires_at_i64),
+                    Value::Integer(now_i64),
                     credential_blob_id.as_ref(),
-                    associated_data_id.as_ref().map(AsRef::as_ref)
+                    ad_cid_value,
                 ],
-                |row| row.get::<_, i64>(0),
+                |stmt| Ok(stmt.column_i64(0)),
             )
             .map_err(|err| map_db_err(&err))?;
 
@@ -192,32 +196,63 @@ impl VaultDb {
         issuer_schema_id: Option<u64>,
         now: u64,
     ) -> StorageResult<Vec<CredentialRecord>> {
-        let mut records = Vec::new();
         let expires = to_i64(now, "now")?;
         let issuer_schema_id_i64 = issuer_schema_id
             .map(|value| to_i64(value, "issuer_schema_id"))
             .transpose()?;
-        let mut sql = String::from(
-            "SELECT
-                cr.credential_id,
-                cr.issuer_schema_id,
-                cr.expires_at
-             FROM credential_records cr
-             WHERE cr.expires_at > ?1",
-        );
-        let mut params: Vec<&dyn rusqlite::ToSql> = vec![&expires];
-        if let Some(ref issuer_schema_id_i64) = issuer_schema_id_i64 {
-            sql.push_str(" AND cr.issuer_schema_id = ?2");
-            params.push(issuer_schema_id_i64);
-        }
-        sql.push_str(" ORDER BY cr.updated_at DESC");
 
-        let mut stmt = self.conn.prepare(&sql).map_err(|err| map_db_err(&err))?;
-        let mut rows = stmt
-            .query(params_from_iter(params))
+        let mut records = Vec::new();
+
+        if let Some(issuer_id) = issuer_schema_id_i64 {
+            let sql =
+                "SELECT
+                    cr.credential_id,
+                    cr.issuer_schema_id,
+                    cr.expires_at
+                 FROM credential_records cr
+                 WHERE cr.expires_at > ?1
+                   AND cr.issuer_schema_id = ?2
+                 ORDER BY cr.updated_at DESC";
+            let mut stmt = self
+                .conn
+                .prepare(sql)
+                .map_err(|err| map_db_err(&err))?;
+            stmt.bind_values(params![
+                Value::Integer(expires),
+                Value::Integer(issuer_id),
+            ])
             .map_err(|err| map_db_err(&err))?;
-        while let Some(row) = rows.next().map_err(|err| map_db_err(&err))? {
-            records.push(map_record(row)?);
+            loop {
+                match stmt.step().map_err(|err| map_db_err(&err))? {
+                    crate::storage::db::StepResult::Row => {
+                        records.push(map_record(&stmt)?);
+                    }
+                    crate::storage::db::StepResult::Done => break,
+                }
+            }
+        } else {
+            let sql =
+                "SELECT
+                    cr.credential_id,
+                    cr.issuer_schema_id,
+                    cr.expires_at
+                 FROM credential_records cr
+                 WHERE cr.expires_at > ?1
+                 ORDER BY cr.updated_at DESC";
+            let mut stmt = self
+                .conn
+                .prepare(sql)
+                .map_err(|err| map_db_err(&err))?;
+            stmt.bind_values(params![Value::Integer(expires)])
+                .map_err(|err| map_db_err(&err))?;
+            loop {
+                match stmt.step().map_err(|err| map_db_err(&err))? {
+                    crate::storage::db::StepResult::Row => {
+                        records.push(map_record(&stmt)?);
+                    }
+                    crate::storage::db::StepResult::Done => break,
+                }
+            }
         }
         Ok(records)
     }
@@ -228,6 +263,6 @@ impl VaultDb {
     ///
     /// Returns an error if the check cannot be executed.
     pub fn check_integrity(&self) -> StorageResult<bool> {
-        sqlcipher::integrity_check(&self.conn).map_err(map_sqlcipher_err)
+        cipher::integrity_check(&self.conn).map_err(map_db_err_owned)
     }
 }

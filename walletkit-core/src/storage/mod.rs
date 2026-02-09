@@ -2,12 +2,13 @@
 
 pub mod cache;
 pub mod credential_storage;
+#[allow(dead_code)]
+pub(crate) mod db;
 pub mod envelope;
 pub mod error;
 pub mod keys;
 pub mod lock;
 pub mod paths;
-pub(crate) mod sqlcipher;
 pub mod traits;
 pub mod types;
 pub mod vault;

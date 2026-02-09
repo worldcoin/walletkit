@@ -1,22 +1,18 @@
 //! Shared helpers for cache database operations.
 
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use std::io;
 
+use crate::storage::db::{params, Connection, DbError, Transaction, Value};
 use crate::storage::error::{StorageError, StorageResult};
-use crate::storage::sqlcipher::SqlcipherError;
 
-/// Maps a rusqlite error into a cache storage error.
-pub(super) fn map_db_err(err: &rusqlite::Error) -> StorageError {
+/// Maps a database error into a cache storage error.
+pub(super) fn map_db_err(err: &DbError) -> StorageError {
     StorageError::CacheDb(err.to_string())
 }
 
-/// Maps a `SQLCipher` error into a cache storage error.
-pub(super) fn map_sqlcipher_err(err: SqlcipherError) -> StorageError {
-    match err {
-        SqlcipherError::Sqlite(err) => StorageError::CacheDb(err.to_string()),
-        SqlcipherError::CipherUnavailable => StorageError::CacheDb(err.to_string()),
-    }
+/// Maps an owned database error into a cache storage error.
+pub(super) fn map_db_err_owned(err: DbError) -> StorageError {
+    StorageError::CacheDb(err.to_string())
 }
 
 /// Maps an IO error into a cache storage error.
@@ -51,8 +47,8 @@ pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x03;
 /// Timestamps for cache entry insertion and expiry.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct CacheEntryTimes {
-    inserted_at: i64,
-    expires_at: i64,
+    pub inserted_at: i64,
+    pub expires_at: i64,
 }
 
 /// Builds timestamps for cache entry inserts.
@@ -80,7 +76,21 @@ pub(super) fn prune_expired_entries(conn: &Connection, now: u64) -> StorageResul
     let now_i64 = to_i64(now, "now")?;
     conn.execute(
         "DELETE FROM cache_entries WHERE expires_at <= ?1",
-        params![now_i64],
+        params![Value::Integer(now_i64)],
+    )
+    .map_err(|err| map_db_err(&err))?;
+    Ok(())
+}
+
+/// Prunes expired cache entries within a transaction.
+pub(super) fn prune_expired_entries_tx(
+    tx: &Transaction<'_>,
+    now: u64,
+) -> StorageResult<()> {
+    let now_i64 = to_i64(now, "now")?;
+    tx.execute(
+        "DELETE FROM cache_entries WHERE expires_at <= ?1",
+        params![Value::Integer(now_i64)],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
@@ -104,31 +114,41 @@ pub(super) fn upsert_cache_entry(
             inserted_at,
             expires_at
          ) VALUES (?1, ?2, ?3, ?4)",
-        params![key, value, times.inserted_at, times.expires_at],
+        params![
+            key,
+            value,
+            Value::Integer(times.inserted_at),
+            Value::Integer(times.expires_at),
+        ],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
 }
 
-/// Inserts a cache entry row.
+/// Inserts a cache entry row within a transaction.
 ///
 /// # Errors
 ///
 /// Returns an error if the insert fails.
-pub(super) fn insert_cache_entry(
-    conn: &Connection,
+pub(super) fn insert_cache_entry_tx(
+    tx: &Transaction<'_>,
     key: &[u8],
     value: &[u8],
     times: CacheEntryTimes,
 ) -> StorageResult<()> {
-    conn.execute(
+    tx.execute(
         "INSERT INTO cache_entries (
             key_bytes,
             value_bytes,
             inserted_at,
             expires_at
          ) VALUES (?1, ?2, ?3, ?4)",
-        params![key, value, times.inserted_at, times.expires_at],
+        params![
+            key,
+            value,
+            Value::Integer(times.inserted_at),
+            Value::Integer(times.expires_at),
+        ],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
@@ -149,34 +169,55 @@ pub(super) fn get_cache_entry(
 ) -> StorageResult<Option<Vec<u8>>> {
     let now = to_i64(now, "now")?;
 
-    let base = r"
-           SELECT value_bytes
-           FROM cache_entries
-           WHERE key_bytes = ?1
-             AND expires_at > ?2
-       ";
-
-    let res = if let Some(insertion_before) = insertion_before {
+    if let Some(insertion_before) = insertion_before {
         let insertion_before = to_i64(insertion_before, "insertion_before")?;
-        let query = format!("{base} AND inserted_at < ?3");
-        conn.query_row(&query, params![key, now, insertion_before], |row| {
-            row.get(0)
-        })
+        conn.query_row_optional(
+            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2 AND inserted_at < ?3",
+            params![key, Value::Integer(now), Value::Integer(insertion_before)],
+            |stmt| Ok(stmt.column_blob(0)),
+        )
+        .map_err(|err| map_db_err(&err))
     } else {
-        conn.query_row(base, params![key, now], |row| row.get(0))
-    };
-
-    res.optional().map_err(|err| map_db_err(&err))
+        conn.query_row_optional(
+            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2",
+            params![key, Value::Integer(now)],
+            |stmt| Ok(stmt.column_blob(0)),
+        )
+        .map_err(|err| map_db_err(&err))
+    }
 }
 
-/// Commits a `Transaction` with mapped cache errors.
-///
-/// # Errors
-///
-/// Returns an error if the commit fails.
-pub(super) fn commit_transaction(tx: Transaction) -> StorageResult<()> {
-    tx.commit().map_err(|err| map_db_err(&err))?;
-    Ok(())
+/// Fetches a cache entry within a transaction.
+pub(super) fn get_cache_entry_tx(
+    tx: &Transaction<'_>,
+    key: &[u8],
+    now: u64,
+    insertion_before: Option<u64>,
+) -> StorageResult<Option<Vec<u8>>> {
+    let now = to_i64(now, "now")?;
+
+    if let Some(insertion_before) = insertion_before {
+        let insertion_before = to_i64(insertion_before, "insertion_before")?;
+        let mut stmt = tx.prepare(
+            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2 AND inserted_at < ?3",
+        ).map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![key, Value::Integer(now), Value::Integer(insertion_before)])
+            .map_err(|err| map_db_err(&err))?;
+        match stmt.step().map_err(|err| map_db_err(&err))? {
+            crate::storage::db::StepResult::Row => Ok(Some(stmt.column_blob(0))),
+            crate::storage::db::StepResult::Done => Ok(None),
+        }
+    } else {
+        let mut stmt = tx.prepare(
+            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2",
+        ).map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![key, Value::Integer(now)])
+            .map_err(|err| map_db_err(&err))?;
+        match stmt.step().map_err(|err| map_db_err(&err))? {
+            crate::storage::db::StepResult::Row => Ok(Some(stmt.column_blob(0))),
+            crate::storage::db::StepResult::Done => Ok(None),
+        }
+    }
 }
 
 /// Builds a cache key by prefixing the payload with a type byte.
