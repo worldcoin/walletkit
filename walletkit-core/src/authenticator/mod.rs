@@ -76,7 +76,7 @@ impl Authenticator {
 }
 
 #[cfg(not(feature = "storage"))]
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -120,7 +120,7 @@ impl Authenticator {
 }
 
 #[cfg(feature = "storage")]
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
