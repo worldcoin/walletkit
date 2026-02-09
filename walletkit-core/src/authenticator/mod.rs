@@ -28,7 +28,7 @@ pub struct Authenticator {
     store: Arc<CredentialStore>,
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
     ///
