@@ -6,7 +6,7 @@ use world_id_core::{
     primitives::Config,
     requests::{ProofResponse as CoreProofResponse, ResponseItem},
     types::GatewayRequestState,
-    Authenticator as CoreAuthenticator, FieldElement,
+    Authenticator as CoreAuthenticator, FieldElement as CoreFieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
@@ -17,7 +17,7 @@ use crate::{
     error::WalletKitError,
     primitives::ParseFromForeignBinding,
     requests::{ProofRequest, ProofResponse},
-    Environment, U256Wrapper,
+    Environment, FieldElement, U256Wrapper,
 };
 #[cfg(feature = "storage")]
 use std::sync::Arc;
@@ -79,6 +79,26 @@ impl Authenticator {
         )
         .await?;
         Ok(packed_account_data.into())
+    }
+
+    /// Generates a blinding factor for a Credential sub (through OPRF Nodes).
+    ///
+    /// See [`CoreAuthenticator::generate_credential_blinding_factor`] for more details.
+    ///
+    /// # Errors
+    ///
+    /// - Will raise a [`ProofError`] if there is any issue generating the blinding factor.
+    ///   For example, network issues, unexpected incorrect responses from OPRF Nodes.
+    /// - Raises an error if the OPRF Nodes configuration is not correctly set.
+    pub async fn generate_credential_blinding_factor_remote(
+        &self,
+        issuer_schema_id: u64,
+    ) -> Result<FieldElement, WalletKitError> {
+        Ok(self
+            .inner
+            .generate_credential_blinding_factor(issuer_schema_id)
+            .await
+            .map(Into::into)?)
     }
 }
 
@@ -226,7 +246,7 @@ impl Authenticator {
                 .get_credential(request_item.issuer_schema_id, now)?
                 .ok_or(WalletKitError::CredentialNotIssued)?;
 
-            let session_id_r_seed = FieldElement::random(&mut OsRng); // TODO: Properly fetch session seed from cache
+            let session_id_r_seed = CoreFieldElement::random(&mut OsRng); // TODO: Properly fetch session seed from cache
 
             let response_item = self.inner.generate_single_proof(
                 nullifier.clone(),
