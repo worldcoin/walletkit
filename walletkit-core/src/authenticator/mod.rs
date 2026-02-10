@@ -6,7 +6,8 @@ use world_id_core::{
     primitives::Config,
     requests::{ProofResponse as CoreProofResponse, ResponseItem},
     types::GatewayRequestState,
-    Authenticator as CoreAuthenticator, FieldElement as CoreFieldElement,
+    Authenticator as CoreAuthenticator, Credential as CoreCredential,
+    FieldElement as CoreFieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
@@ -98,6 +99,19 @@ impl Authenticator {
             .generate_credential_blinding_factor(issuer_schema_id)
             .await
             .map(Into::into)?)
+    }
+
+    /// Compute the `sub` for a credential from the authenticator's leaf index and a `blinding_factor`.
+    #[must_use]
+    pub fn compute_credential_sub(
+        &self,
+        blinding_factor: &FieldElement,
+    ) -> FieldElement {
+        CoreCredential::compute_sub(
+            self.inner.leaf_index().to::<u64>(),
+            blinding_factor.0,
+        )
+        .into()
     }
 }
 
@@ -251,7 +265,7 @@ impl Authenticator {
                 nullifier.clone(),
                 request_item,
                 &credential,
-                blinding_factor,
+                blinding_factor.0,
                 session_id_r_seed,
                 proof_request.0.session_id,
                 proof_request.0.created_at,

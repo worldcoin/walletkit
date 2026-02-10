@@ -65,6 +65,9 @@ pub use u256::U256Wrapper;
 mod field_element;
 pub use field_element::FieldElement;
 
+mod credential;
+pub use credential::Credential;
+
 /// Credential storage primitives for World ID v4.
 #[cfg(feature = "storage")]
 pub mod storage;
@@ -75,9 +78,6 @@ pub use authenticator::{Authenticator, InitializingAuthenticator, RegistrationSt
 pub(crate) mod defaults;
 
 pub mod requests;
-
-mod credential;
-pub use credential::Credential;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Legacy modules
