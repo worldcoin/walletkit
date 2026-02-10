@@ -1,6 +1,6 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
-use alloy_primitives::{Address, U256};
+use alloy_primitives::Address;
 use rand::rngs::OsRng;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
