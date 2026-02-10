@@ -172,8 +172,13 @@ impl CredentialStore {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        self.lock_inner()?
-            .store_credential(credential, blinding_factor, expires_at, associated_data, now)
+        self.lock_inner()?.store_credential(
+            credential,
+            blinding_factor,
+            expires_at,
+            associated_data,
+            now,
+        )
     }
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.

@@ -6,8 +6,8 @@ use world_id_core::{
     primitives::Config,
     requests::{ProofResponse as CoreProofResponse, ResponseItem},
     types::GatewayRequestState,
-    Authenticator as CoreAuthenticator,
-    Credential as CoreCredential, FieldElement as CoreFieldElement,
+    Authenticator as CoreAuthenticator, Credential as CoreCredential,
+    FieldElement as CoreFieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 

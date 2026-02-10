@@ -53,10 +53,8 @@ impl Credential {
     ///
     /// Returns an error if serialization fails.
     pub fn to_bytes(&self) -> Result<Vec<u8>, WalletKitError> {
-        serde_json::to_vec(&self.0).map_err(|e| {
-            WalletKitError::SerializationError {
-                error: format!("Failed to serialize credential: {e}"),
-            }
+        serde_json::to_vec(&self.0).map_err(|e| WalletKitError::SerializationError {
+            error: format!("Failed to serialize credential: {e}"),
         })
     }
 
