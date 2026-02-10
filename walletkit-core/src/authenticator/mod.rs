@@ -107,7 +107,11 @@ impl Authenticator {
         &self,
         blinding_factor: &FieldElement,
     ) -> FieldElement {
-        CoreCredential::compute_sub(self.inner.leaf_index().to::<u64>(), blinding_factor.0).into()
+        CoreCredential::compute_sub(
+            self.inner.leaf_index().to::<u64>(),
+            blinding_factor.0,
+        )
+        .into()
     }
 }
 
