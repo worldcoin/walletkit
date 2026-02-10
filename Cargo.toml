@@ -24,6 +24,7 @@ uniffi = { version = "0.31", features = ["build", "tokio"] }
 #FIXME: Update to next published version when available
 # world-id-core = { version = "0.3", default-features = false, features = ["authenticator", "embed-zkeys"] }
 world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "6ededf6", default-features = false, features = ["authenticator", "embed-zkeys"] }
+reqwest = { version = "0.12.5", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 
 [profile.release]
 opt-level = 'z' # Optimize for size.
