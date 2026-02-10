@@ -3,7 +3,7 @@ members = ["uniffi-bindgen","walletkit-core", "walletkit"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.11"
+version = "0.4.0"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -19,7 +19,7 @@ categories = ["api-bindings", "cryptography::cryptocurrencies"]
 [workspace.dependencies]
 alloy-core = { version = "1", default-features = false, features = ["sol-types"] }
 alloy-primitives = { version = "1", default-features = false }
-walletkit-core = { version = "0.3.11", path = "walletkit-core", default-features = false }
+walletkit-core = { version = "0.4.0", path = "walletkit-core", default-features = false }
 uniffi = { version = "0.31", features = ["build", "tokio"] }
 #FIXME: Update to next published version when available
 # world-id-core = { version = "0.3", default-features = false, features = ["authenticator", "embed-zkeys"] }
