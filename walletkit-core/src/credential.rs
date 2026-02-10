@@ -22,6 +22,7 @@ impl Credential {
     ///
     /// Returns an error if the bytes cannot be deserialized.
     #[uniffi::constructor]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, WalletKitError> {
         let credential: CoreCredential =
             serde_json::from_slice(&bytes).map_err(|e| {
@@ -41,7 +42,7 @@ impl Credential {
 
     /// Returns the credential's issuer schema ID.
     #[must_use]
-    pub fn issuer_schema_id(&self) -> u64 {
+    pub const fn issuer_schema_id(&self) -> u64 {
         self.0.issuer_schema_id
     }
 }
@@ -59,7 +60,8 @@ impl Credential {
     }
 
     /// Returns the credential's `genesis_issued_at` timestamp.
-    pub fn genesis_issued_at(&self) -> u64 {
+    #[must_use]
+    pub const fn genesis_issued_at(&self) -> u64 {
         self.0.genesis_issued_at
     }
 }
