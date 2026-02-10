@@ -6,8 +6,8 @@ use world_id_core::{
     primitives::Config,
     requests::{ProofResponse as CoreProofResponse, ResponseItem},
     types::GatewayRequestState,
-    Authenticator as CoreAuthenticator, Credential as CoreCredential,
-    FieldElement as CoreFieldElement,
+    Authenticator as CoreAuthenticator,
+    Credential as CoreCredential, FieldElement as CoreFieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
@@ -265,7 +265,7 @@ impl Authenticator {
                 nullifier.clone(),
                 request_item,
                 &credential,
-                blinding_factor,
+                blinding_factor.0,
                 session_id_r_seed,
                 proof_request.0.session_id,
                 proof_request.0.created_at,
