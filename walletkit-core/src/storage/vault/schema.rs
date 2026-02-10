@@ -1,5 +1,6 @@
-use rusqlite::Connection;
+//! Vault database schema management.
 
+use crate::storage::db::Connection;
 use crate::storage::error::StorageResult;
 
 use super::helpers::map_db_err;

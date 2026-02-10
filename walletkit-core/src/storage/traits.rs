@@ -20,7 +20,7 @@ use super::error::StorageResult;
 use super::paths::StoragePaths;
 
 /// Device keystore interface used to seal and open account keys.
-#[uniffi::export(with_foreign)]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 pub trait DeviceKeystore: Send + Sync {
     /// Seals plaintext under the device-bound key, authenticating `associated_data`.
     ///
@@ -52,7 +52,7 @@ pub trait DeviceKeystore: Send + Sync {
 }
 
 /// Atomic blob store for small binary files (e.g., `account_keys.bin`).
-#[uniffi::export(with_foreign)]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 pub trait AtomicBlobStore: Send + Sync {
     /// Reads the blob at `path`, if present.
     ///
@@ -77,7 +77,7 @@ pub trait AtomicBlobStore: Send + Sync {
 }
 
 /// Provider responsible for platform-specific storage components and paths.
-#[uniffi::export(with_foreign)]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 pub trait StorageProvider: Send + Sync {
     /// Returns the device keystore implementation.
     fn keystore(&self) -> Arc<dyn DeviceKeystore>;

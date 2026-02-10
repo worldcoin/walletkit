@@ -1,7 +1,6 @@
 //! Merkle proof cache helpers.
 
-use rusqlite::Connection;
-
+use crate::storage::db::Connection;
 use crate::storage::{cache::util::CACHE_KEY_PREFIX_MERKLE, error::StorageResult};
 
 use super::util::{

@@ -1,7 +1,6 @@
 //! Cache database schema management.
 
-use rusqlite::{Connection, OptionalExtension};
-
+use crate::storage::db::{params, Connection, Value};
 use crate::storage::error::StorageResult;
 
 use super::util::map_db_err;
@@ -23,13 +22,12 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
     )
     .map_err(|err| map_db_err(&err))?;
 
-    let existing: Option<i64> = conn
-        .query_row(
+    let existing = conn
+        .query_row_optional(
             "SELECT schema_version FROM cache_meta LIMIT 1;",
-            [],
-            |row| row.get(0),
+            &[],
+            |stmt| Ok(stmt.column_i64(0)),
         )
-        .optional()
         .map_err(|err| map_db_err(&err))?;
 
     match existing {
@@ -83,7 +81,7 @@ fn reset_schema(conn: &Connection) -> StorageResult<()> {
     )
     .map_err(|err| map_db_err(&err))?;
     ensure_entries_schema(conn)?;
-    conn.execute("DELETE FROM cache_meta;", [])
+    conn.execute("DELETE FROM cache_meta;", &[])
         .map_err(|err| map_db_err(&err))?;
     insert_meta(conn)?;
     Ok(())
@@ -98,7 +96,7 @@ fn insert_meta(conn: &Connection) -> StorageResult<()> {
     conn.execute(
         "INSERT INTO cache_meta (schema_version, created_at, updated_at)
          VALUES (?1, strftime('%s','now'), strftime('%s','now'))",
-        [CACHE_SCHEMA_VERSION],
+        params![Value::Integer(CACHE_SCHEMA_VERSION)],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
