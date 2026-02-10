@@ -6,7 +6,6 @@ use world_id_core::primitives::TREE_DEPTH;
 
 use crate::error::WalletKitError;
 
-use super::utils::leaf_index_to_u64;
 use super::Authenticator;
 
 /// The amount of time a Merkle inclusion proof remains valid in the cache.
@@ -20,9 +19,7 @@ impl Authenticator {
     ///
     /// Returns an error if the leaf index is invalid or storage initialization fails.
     pub fn init_storage(&self, now: u64) -> Result<(), WalletKitError> {
-        // TODO: Update leaf_index to final type to avoid conversion (requires upstream protocol update)
-        let leaf_index = leaf_index_to_u64(&self.leaf_index())?;
-        self.store.init(leaf_index, now)?;
+        self.store.init(self.leaf_index(), now)?;
         Ok(())
     }
 }
@@ -44,8 +41,7 @@ impl Authenticator {
         // If there is a cached inclusion proof, return it
         if let Some(bytes) = self.store.merkle_cache_get(now)? {
             if let Some(cached) = CachedInclusionProof::deserialize(&bytes) {
-                if U256::from(cached.inclusion_proof.leaf_index) == self.leaf_index().0
-                {
+                if U256::from(cached.inclusion_proof.leaf_index) == self.leaf_index() {
                     return Ok((cached.inclusion_proof, cached.authenticator_keyset));
                 }
             }
