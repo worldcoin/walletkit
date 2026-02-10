@@ -1,11 +1,11 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
-use alloy_primitives::Address;
+use alloy_primitives::{Address, U256};
 use rand::rngs::OsRng;
 use world_id_core::{
+    api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::Config,
     requests::{ProofResponse as CoreProofResponse, ResponseItem},
-    types::GatewayRequestState,
     Authenticator as CoreAuthenticator, FieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
@@ -52,7 +52,7 @@ impl Authenticator {
     /// should only be used inside the authenticator and never shared.
     #[must_use]
     pub fn leaf_index(&self) -> U256Wrapper {
-        self.inner.leaf_index().into()
+        U256::from(self.inner.leaf_index()).into()
     }
 
     /// Returns the Authenticator's `onchain_address`.
@@ -283,7 +283,7 @@ impl From<GatewayRequestState> for RegistrationStatus {
             GatewayRequestState::Finalized { .. } => Self::Finalized,
             GatewayRequestState::Failed { error, error_code } => Self::Failed {
                 error,
-                error_code: error_code.map(|c| c.to_string()),
+                error_code: error_code.map(|c: GatewayErrorCode| c.to_string()),
             },
         }
     }
