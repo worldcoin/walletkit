@@ -77,7 +77,6 @@ pub(crate) mod defaults;
 pub mod requests;
 
 mod credential;
-pub use credential::Credential;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Legacy modules
