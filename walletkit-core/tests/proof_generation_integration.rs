@@ -7,24 +7,26 @@
 
 mod common;
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use alloy::signers::local::LocalSigner;
-use eyre::{Context as _, Result, eyre};
+use eyre::{eyre, Context as _, Result};
 use taceo_oprf::types::{OprfKeyId, ShareEpoch};
 use taceo_oprf_test_utils::health_checks;
 use walletkit_core::Authenticator;
 use world_id_core::{
-    Authenticator as CoreAuthenticator, EdDSAPrivateKey,
     requests::{ProofRequest, RequestItem, RequestVersion},
+    Authenticator as CoreAuthenticator, EdDSAPrivateKey,
 };
-use world_id_gateway::{GatewayConfig, SignerArgs, spawn_gateway_for_tests};
-use world_id_primitives::{Config, FieldElement, TREE_DEPTH, merkle::AccountInclusionProof};
+use world_id_gateway::{spawn_gateway_for_tests, GatewayConfig, SignerArgs};
+use world_id_primitives::{
+    merkle::AccountInclusionProof, Config, FieldElement, TREE_DEPTH,
+};
 use world_id_test_utils::{
     anvil::WorldIDVerifier,
     fixtures::{
-        MerkleFixture, RegistryTestContext, build_base_credential, generate_rp_fixture,
-        single_leaf_merkle_fixture,
+        build_base_credential, generate_rp_fixture, single_leaf_merkle_fixture,
+        MerkleFixture, RegistryTestContext,
     },
     stubs::spawn_indexer_stub,
 };
@@ -48,13 +50,18 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         )
         .try_init();
 
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .unwrap();
+    // rustls::crypto::aws_lc_rs::default_provider()
+    //     .install_default()
+    //     .unwrap();
+
+    let test_start = Instant::now();
 
     // ----------------------------------------------------------------
     // Phase 1: Infrastructure — containers, contracts, gateway
     // ----------------------------------------------------------------
+    println!("[Phase 1] Spawning containers (LocalStack + 5x Postgres)...");
+    let phase_start = Instant::now();
+
     let containers = tokio::join!(
         taceo_oprf_test_utils::localstack_testcontainer(),
         taceo_oprf_test_utils::postgres_testcontainer(),
@@ -70,6 +77,11 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let (_pg3, pg_url_3) = containers.4?;
     let (_pg4, pg_url_4) = containers.5?;
     let postgres_urls = [pg_url_0, pg_url_1, pg_url_2, pg_url_3, pg_url_4];
+
+    println!(
+        "[Phase 1] Containers ready ({:.1}s). Deploying contracts...",
+        phase_start.elapsed().as_secs_f64()
+    );
 
     let RegistryTestContext {
         anvil,
@@ -102,9 +114,17 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .await
         .map_err(|e| eyre!("failed to spawn gateway: {e}"))?;
 
+    println!(
+        "[Phase 1] Infrastructure ready ({:.1}s)",
+        phase_start.elapsed().as_secs_f64()
+    );
+
     // ----------------------------------------------------------------
     // Phase 2: Account creation via CoreAuthenticator
     // ----------------------------------------------------------------
+    println!("[Phase 2] Creating account via gateway...");
+    let phase_start = Instant::now();
+
     let seed = [7u8; 32];
     let recovery_address = anvil
         .signer(1)
@@ -122,20 +142,33 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     )
     .unwrap();
 
-    let core_authenticator =
-        CoreAuthenticator::init_or_register(&seed, creation_config.clone(), Some(recovery_address))
-            .await
-            .wrap_err("account creation failed")?;
+    let core_authenticator = CoreAuthenticator::init_or_register(
+        &seed,
+        creation_config.clone(),
+        Some(recovery_address),
+    )
+    .await
+    .wrap_err("account creation failed")?;
     assert_eq!(core_authenticator.leaf_index(), 1);
 
+    println!(
+        "[Phase 2] Account created (leaf_index={}) ({:.1}s)",
+        core_authenticator.leaf_index(),
+        phase_start.elapsed().as_secs_f64()
+    );
+
     // Build Merkle fixture and indexer stub
+    println!("[Phase 2] Building Merkle fixture and indexer stub...");
     let leaf_index = core_authenticator.leaf_index();
     let MerkleFixture {
         key_set,
         inclusion_proof: merkle_inclusion_proof,
         ..
-    } = single_leaf_merkle_fixture(vec![core_authenticator.offchain_pubkey()], leaf_index)
-        .wrap_err("failed to construct merkle fixture")?;
+    } = single_leaf_merkle_fixture(
+        vec![core_authenticator.offchain_pubkey()],
+        leaf_index,
+    )
+    .wrap_err("failed to construct merkle fixture")?;
 
     let inclusion_proof =
         AccountInclusionProof::<{ TREE_DEPTH }>::new(merkle_inclusion_proof, key_set)
@@ -145,9 +178,14 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .await
         .wrap_err("failed to start indexer stub")?;
 
+    println!("[Phase 2] Indexer stub running at {indexer_url}");
+
     // ----------------------------------------------------------------
     // Phase 3: OPRF nodes + on-chain registrations
     // ----------------------------------------------------------------
+    println!("[Phase 3] Spawning OPRF key-gen services...");
+    let phase_start = Instant::now();
+
     let rp_fixture = generate_rp_fixture();
     let mut rng = rand::thread_rng();
 
@@ -159,6 +197,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     )
     .await;
 
+    println!("[Phase 3] Spawning OPRF nodes...");
     let nodes = world_id_test_utils::stubs::spawn_oprf_nodes(
         anvil.ws_endpoint(),
         &postgres_urls,
@@ -169,13 +208,17 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     )
     .await;
 
+    println!("[Phase 3] Waiting for OPRF health checks...");
     health_checks::services_health_check(&nodes, Duration::from_secs(60)).await?;
-    health_checks::services_health_check(&oprf_key_gens, Duration::from_secs(60)).await?;
+    health_checks::services_health_check(&oprf_key_gens, Duration::from_secs(60))
+        .await?;
+    println!("[Phase 3] OPRF services healthy");
 
     // Register issuer on-chain (triggers OPRF key-gen for issuer)
     let issuer_schema_id = 1u64;
     let issuer_sk = EdDSAPrivateKey::random(&mut rng);
     let issuer_pk = issuer_sk.public();
+    println!("[Phase 3] Registering issuer (schema_id={issuer_schema_id})...");
     anvil
         .register_issuer(
             credential_registry,
@@ -186,6 +229,10 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .await?;
 
     // Register RP on-chain (triggers OPRF key-gen for RP)
+    println!(
+        "[Phase 3] Registering RP (rp_id={})...",
+        rp_fixture.world_rp_id
+    );
     let rp_signer = LocalSigner::from_signing_key(rp_fixture.signing_key.clone());
     anvil
         .register_rp(
@@ -199,6 +246,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .await?;
 
     // Wait for OPRF public keys to be available
+    println!("[Phase 3] Waiting for RP OPRF public key...");
     let _rp_oprf_pk = health_checks::oprf_public_key_from_services(
         rp_fixture.oprf_key_id,
         ShareEpoch::default(),
@@ -207,6 +255,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     )
     .await?;
 
+    println!("[Phase 3] Waiting for issuer OPRF public key...");
     let _issuer_oprf_pk = health_checks::oprf_public_key_from_services(
         OprfKeyId::new(alloy::primitives::U160::from(issuer_schema_id)),
         ShareEpoch::default(),
@@ -215,9 +264,16 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     )
     .await?;
 
+    println!(
+        "[Phase 3] OPRF setup complete ({:.1}s)",
+        phase_start.elapsed().as_secs_f64()
+    );
+
     // ----------------------------------------------------------------
     // Phase 4: Reinitialize walletkit Authenticator with full config
     // ----------------------------------------------------------------
+    println!("[Phase 4] Initializing walletkit Authenticator with full config...");
+    let phase_start = Instant::now();
 
     // Set working directory to workspace root so embedded zkeys can be found
     let workspace_root =
@@ -253,9 +309,17 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .init_storage(now)
         .map_err(|e| eyre!("init_storage failed: {e}"))?;
 
+    println!(
+        "[Phase 4] Authenticator initialized ({:.1}s)",
+        phase_start.elapsed().as_secs_f64()
+    );
+
     // ----------------------------------------------------------------
     // Phase 5: Credential issuance
     // ----------------------------------------------------------------
+    println!("[Phase 5] Generating credential blinding factor via OPRF...");
+    let phase_start = Instant::now();
+
     let blinding_factor = authenticator
         .generate_credential_blinding_factor_remote(issuer_schema_id)
         .await
@@ -264,6 +328,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let _credential_sub = authenticator.compute_credential_sub(&blinding_factor);
 
     // Build and sign credential (inline, equivalent to faux-issuer)
+    println!("[Phase 5] Building and signing credential...");
     let mut credential = build_base_credential(
         issuer_schema_id,
         leaf_index,
@@ -272,9 +337,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         blinding_factor.0,
     );
     credential.issuer = issuer_pk;
-    let credential_hash = credential
-        .hash()
-        .wrap_err("failed to hash credential")?;
+    let credential_hash = credential.hash().wrap_err("failed to hash credential")?;
     credential.signature = Some(issuer_sk.sign(*credential_hash));
 
     // Store credential in the CredentialStore
@@ -289,9 +352,17 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         )
         .map_err(|e| eyre!("store_credential failed: {e}"))?;
 
+    println!(
+        "[Phase 5] Credential issued and stored ({:.1}s)",
+        phase_start.elapsed().as_secs_f64()
+    );
+
     // ----------------------------------------------------------------
     // Phase 6: Proof generation via walletkit Authenticator
     // ----------------------------------------------------------------
+    println!("[Phase 6] Generating proof...");
+    let phase_start = Instant::now();
+
     let proof_request_core = ProofRequest {
         id: "test_request".to_string(),
         version: RequestVersion::V1,
@@ -304,7 +375,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         signature: rp_fixture.signature,
         nonce: rp_fixture.nonce.into(),
         requests: vec![RequestItem {
-            identifier: "test_credential".to_string(),
+            identifier: issuer_schema_id.to_string(),
             issuer_schema_id,
             signal: Some("my_signal".to_string()),
             genesis_issued_at_min: None,
@@ -327,7 +398,8 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .to_json()
         .map_err(|e| eyre!("failed to serialize proof response: {e}"))?;
     let response: world_id_core::requests::ProofResponse =
-        serde_json::from_str(&response_json).wrap_err("failed to parse proof response JSON")?;
+        serde_json::from_str(&response_json)
+            .wrap_err("failed to parse proof response JSON")?;
     assert!(response.error.is_none(), "proof response contains error");
     assert_eq!(response.responses.len(), 1);
 
@@ -337,15 +409,24 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .expect("uniqueness proof should have nullifier");
     assert_ne!(nullifier, FieldElement::ZERO);
 
+    println!(
+        "[Phase 6] Proof generated successfully ({:.1}s)",
+        phase_start.elapsed().as_secs_f64()
+    );
+
     // ----------------------------------------------------------------
     // Phase 7: On-chain verification
     // ----------------------------------------------------------------
+    println!("[Phase 7] Verifying proof on-chain...");
+    let phase_start = Instant::now();
+
     let request_item = proof_request_core
         .find_request_by_issuer_schema_id(issuer_schema_id)
         .unwrap();
 
-    let verifier: WorldIDVerifier::WorldIDVerifierInstance<alloy::providers::DynProvider> =
-        WorldIDVerifier::new(world_id_verifier, anvil.provider()?);
+    let verifier: WorldIDVerifier::WorldIDVerifierInstance<
+        alloy::providers::DynProvider,
+    > = WorldIDVerifier::new(world_id_verifier, anvil.provider()?);
     verifier
         .verify(
             nullifier.into(),
@@ -366,9 +447,17 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .await
         .wrap_err("on-chain proof verification failed")?;
 
+    println!(
+        "[Phase 7] On-chain verification passed ({:.1}s)",
+        phase_start.elapsed().as_secs_f64()
+    );
+
     // ----------------------------------------------------------------
     // Phase 8: Replay guard
     // ----------------------------------------------------------------
+    println!("[Phase 8] Testing replay guard...");
+    let phase_start = Instant::now();
+
     let replay_result = authenticator
         .generate_proof(&proof_request, Some(now))
         .await;
@@ -380,7 +469,17 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         "expected NullifierReplay error on second proof generation, got: {replay_result:?}"
     );
 
+    println!(
+        "[Phase 8] Replay guard enforced ({:.1}s)",
+        phase_start.elapsed().as_secs_f64()
+    );
+
     // Cleanup
     indexer_handle.abort();
+
+    println!(
+        "[Done] Full e2e test passed in {:.1}s",
+        test_start.elapsed().as_secs_f64()
+    );
     Ok(())
 }
