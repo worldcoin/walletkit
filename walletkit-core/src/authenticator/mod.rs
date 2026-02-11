@@ -238,6 +238,8 @@ impl Authenticator {
         // Next, generate the nullifier and check the replay guard
         let nullifier = self.inner.generate_nullifier(&proof_request.0).await?;
 
+        // NOTE: In a normal flow this error can not be triggered since OPRF nodes have their own
+        // replay protection so the function will fail before this when attempting to generate the nullifier
         if self
             .store
             .is_nullifier_replay(nullifier.verifiable_oprf_output.output.into(), now)?
