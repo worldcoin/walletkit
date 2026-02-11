@@ -18,8 +18,6 @@ use crate::{
 use std::sync::Arc;
 
 #[cfg(feature = "storage")]
-mod utils;
-#[cfg(feature = "storage")]
 mod with_storage;
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
@@ -46,8 +44,8 @@ impl Authenticator {
     /// This is the index in the Merkle tree where the holder's World ID account is registered. It
     /// should only be used inside the authenticator and never shared.
     #[must_use]
-    pub fn leaf_index(&self) -> U256Wrapper {
-        U256Wrapper::from_u64(self.inner.leaf_index())
+    pub fn leaf_index(&self) -> u64 {
+        self.inner.leaf_index()
     }
 
     /// Returns the Authenticator's `onchain_address`.
