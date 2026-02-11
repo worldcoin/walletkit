@@ -3,9 +3,9 @@
 use alloy_primitives::Address;
 use rand::rngs::OsRng;
 use world_id_core::{
+    api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::Config,
     requests::{ProofResponse as CoreProofResponse, ResponseItem},
-    types::GatewayRequestState,
     Authenticator as CoreAuthenticator, Credential as CoreCredential,
     FieldElement as CoreFieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
@@ -24,8 +24,6 @@ use crate::{
 use std::sync::Arc;
 
 #[cfg(feature = "storage")]
-mod utils;
-#[cfg(feature = "storage")]
 mod with_storage;
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
@@ -36,7 +34,7 @@ pub struct Authenticator {
     store: Arc<CredentialStore>,
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
     ///
@@ -52,8 +50,8 @@ impl Authenticator {
     /// This is the index in the Merkle tree where the holder's World ID account is registered. It
     /// should only be used inside the authenticator and never shared.
     #[must_use]
-    pub fn leaf_index(&self) -> U256Wrapper {
-        self.inner.leaf_index().into()
+    pub fn leaf_index(&self) -> u64 {
+        self.inner.leaf_index()
     }
 
     /// Returns the Authenticator's `onchain_address`.
@@ -116,7 +114,7 @@ impl Authenticator {
 }
 
 #[cfg(not(feature = "storage"))]
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -160,7 +158,7 @@ impl Authenticator {
 }
 
 #[cfg(feature = "storage")]
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -316,7 +314,7 @@ impl From<GatewayRequestState> for RegistrationStatus {
             GatewayRequestState::Finalized { .. } => Self::Finalized,
             GatewayRequestState::Failed { error, error_code } => Self::Failed {
                 error,
-                error_code: error_code.map(|c| c.to_string()),
+                error_code: error_code.map(|c: GatewayErrorCode| c.to_string()),
             },
         }
     }
