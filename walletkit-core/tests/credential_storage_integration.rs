@@ -4,7 +4,8 @@ mod common;
 
 use rand::rngs::OsRng;
 use walletkit_core::storage::CredentialStore;
-use world_id_core::FieldElement as CoreFieldElement;
+use walletkit_core::Credential;
+use world_id_core::{Credential as CoreCredential, FieldElement as CoreFieldElement};
 
 #[test]
 fn test_storage_flow_end_to_end() {
@@ -15,14 +16,16 @@ fn test_storage_flow_end_to_end() {
     store.init(42, 100).expect("init");
 
     let blinding_factor = CoreFieldElement::random(&mut OsRng);
+    let core_cred = CoreCredential::new()
+        .issuer_schema_id(7)
+        .genesis_issued_at(1_700_000_000);
+    let credential: Credential = core_cred.into();
 
     let credential_id = store
         .store_credential(
-            7,
+            &credential,
             &blinding_factor.into(),
-            1_700_000_000,
             1_800_000_000,
-            vec![1, 2, 3],
             Some(vec![4, 5, 6]),
             100,
         )
