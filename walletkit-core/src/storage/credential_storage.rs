@@ -3,7 +3,7 @@
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
-use world_id_core::{Credential, FieldElement as CoreFieldElement};
+use world_id_core::FieldElement as CoreFieldElement;
 
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
@@ -13,7 +13,7 @@ use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
-use crate::FieldElement;
+use crate::{Credential, FieldElement};
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[derive(uniffi::Object)]
@@ -164,31 +164,21 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the credential cannot be stored.
-    #[allow(clippy::too_many_arguments)]
     pub fn store_credential(
         &self,
-        issuer_schema_id: u64,
-        subject_blinding_factor: &FieldElement,
-        genesis_issued_at: u64,
+        credential: &Credential,
+        blinding_factor: &FieldElement,
         expires_at: u64,
-        credential_blob: Vec<u8>,
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        // TODO: This should likely take the `Credential` object and obtain all metadata from it
-        let subject_blinding_factor_bytes = subject_blinding_factor
-            .to_bytes()
-            .map_err(|e| StorageError::Serialization(e.to_string()))?;
-        let credential_id = self.lock_inner()?.store_credential(
-            issuer_schema_id,
-            subject_blinding_factor_bytes,
-            genesis_issued_at,
+        self.lock_inner()?.store_credential(
+            credential,
+            blinding_factor,
             expires_at,
-            credential_blob,
             associated_data,
             now,
-        )?;
-        Ok(credential_id)
+        )
     }
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
@@ -237,7 +227,7 @@ impl CredentialStore {
         &self,
         issuer_schema_id: u64,
         now: u64,
-    ) -> StorageResult<Option<(Credential, CoreFieldElement)>> {
+    ) -> StorageResult<Option<(Credential, FieldElement)>> {
         self.lock_inner()?.get_credential(issuer_schema_id, now)
     }
 
@@ -315,43 +305,48 @@ impl CredentialStoreInner {
         &self,
         issuer_schema_id: u64,
         now: u64,
-    ) -> StorageResult<Option<(Credential, CoreFieldElement)>> {
+    ) -> StorageResult<Option<(Credential, FieldElement)>> {
         let state = self.state()?;
-        if let Some((credential, blinding_factor)) = state
+        if let Some((credential_bytes, blinding_factor_bytes)) = state
             .vault
             .fetch_credential_and_blinding_factor(issuer_schema_id, now)?
         {
-            let cred =
-                serde_json::from_slice::<Credential>(&credential).map_err(|e| {
-                    StorageError::Serialization(format!(
-                        "Critical. Failed to deserialize credential: {e}"
-                    ))
-                })?;
+            let credential = Credential::from_bytes(credential_bytes).map_err(|e| {
+                StorageError::Serialization(format!(
+                    "Critical. Failed to deserialize credential: {e}"
+                ))
+            })?;
 
             let blinding_factor = CoreFieldElement::deserialize_from_bytes(
-                &mut Cursor::new(blinding_factor),
+                &mut Cursor::new(blinding_factor_bytes),
             )
             .map_err(|e| {
                 StorageError::Serialization(format!(
                     "Critical. Failed to deserialize blinding factor: {e}"
                 ))
             })?;
-            return Ok(Some((cred, blinding_factor)));
+            return Ok(Some((credential, blinding_factor.into())));
         }
         Ok(None)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn store_credential(
         &mut self,
-        issuer_schema_id: u64,
-        subject_blinding_factor: Vec<u8>,
-        genesis_issued_at: u64,
+        credential: &Credential,
+        blinding_factor: &FieldElement,
         expires_at: u64,
-        credential_blob: Vec<u8>,
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
+        let issuer_schema_id = credential.issuer_schema_id();
+        let genesis_issued_at = credential.genesis_issued_at();
+        let credential_blob = credential
+            .to_bytes()
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        let subject_blinding_factor = blinding_factor
+            .to_bytes()
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+
         let guard = self.guard()?;
         let state = self.state_mut()?;
         state.vault.store_credential(
@@ -652,6 +647,8 @@ mod tests {
 
     #[test]
     fn test_get_credential() {
+        use world_id_core::Credential as CoreCredential;
+
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
@@ -664,23 +661,19 @@ mod tests {
 
         // Store a test credential
         let issuer_schema_id = 123u64;
-        let subject_blinding_factor = FieldElement::from(42u64);
-        let genesis_issued_at = 1000u64;
+        let blinding_factor = FieldElement::from(42u64);
         let expires_at = 2000u64;
-        let credential_blob =
-            serde_json::to_vec(&Credential::new().issuer_schema_id(issuer_schema_id))
-                .expect("serialize credential");
+        let core_cred = CoreCredential::new()
+            .issuer_schema_id(issuer_schema_id)
+            .genesis_issued_at(1000);
+        let credential: Credential = core_cred.into();
         let associated_data = Some(vec![6, 7, 8]);
 
         inner
             .store_credential(
-                issuer_schema_id,
-                subject_blinding_factor
-                    .to_bytes()
-                    .expect("serialize blinding factor"),
-                genesis_issued_at,
+                &credential,
+                &blinding_factor,
                 expires_at,
-                credential_blob,
                 associated_data,
                 1000,
             )
@@ -693,7 +686,7 @@ mod tests {
             .expect("credential should exist");
 
         // Verify the retrieved data
-        assert_eq!(credential.issuer_schema_id, issuer_schema_id);
+        assert_eq!(credential.issuer_schema_id(), issuer_schema_id);
 
         // Verify non-existent credential returns None
         let non_existent = inner

@@ -6,7 +6,8 @@ use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::Config,
     requests::{ProofResponse as CoreProofResponse, ResponseItem},
-    Authenticator as CoreAuthenticator, FieldElement,
+    Authenticator as CoreAuthenticator, Credential as CoreCredential,
+    FieldElement as CoreFieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
@@ -17,7 +18,7 @@ use crate::{
     error::WalletKitError,
     primitives::ParseFromForeignBinding,
     requests::{ProofRequest, ProofResponse},
-    Environment, U256Wrapper,
+    Environment, FieldElement, U256Wrapper,
 };
 #[cfg(feature = "storage")]
 use std::sync::Arc;
@@ -77,6 +78,34 @@ impl Authenticator {
         )
         .await?;
         Ok(packed_account_data.into())
+    }
+
+    /// Generates a blinding factor for a Credential sub (through OPRF Nodes).
+    ///
+    /// See [`CoreAuthenticator::generate_credential_blinding_factor`] for more details.
+    ///
+    /// # Errors
+    ///
+    /// - Will generally error if there are network issues or if the OPRF Nodes return an error.
+    /// - Raises an error if the OPRF Nodes configuration is not correctly set.
+    pub async fn generate_credential_blinding_factor_remote(
+        &self,
+        issuer_schema_id: u64,
+    ) -> Result<FieldElement, WalletKitError> {
+        Ok(self
+            .inner
+            .generate_credential_blinding_factor(issuer_schema_id)
+            .await
+            .map(Into::into)?)
+    }
+
+    /// Compute the `sub` for a credential from the authenticator's leaf index and a `blinding_factor`.
+    #[must_use]
+    pub fn compute_credential_sub(
+        &self,
+        blinding_factor: &FieldElement,
+    ) -> FieldElement {
+        CoreCredential::compute_sub(self.inner.leaf_index(), blinding_factor.0).into()
     }
 }
 
@@ -224,13 +253,13 @@ impl Authenticator {
                 .get_credential(request_item.issuer_schema_id, now)?
                 .ok_or(WalletKitError::CredentialNotIssued)?;
 
-            let session_id_r_seed = FieldElement::random(&mut OsRng); // TODO: Properly fetch session seed from cache
+            let session_id_r_seed = CoreFieldElement::random(&mut OsRng); // TODO: Properly fetch session seed from cache
 
             let response_item = self.inner.generate_single_proof(
                 nullifier.clone(),
                 request_item,
                 &credential,
-                blinding_factor,
+                blinding_factor.0,
                 session_id_r_seed,
                 proof_request.0.session_id,
                 proof_request.0.created_at,
