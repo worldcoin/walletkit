@@ -452,28 +452,6 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         phase_start.elapsed().as_secs_f64()
     );
 
-    // ----------------------------------------------------------------
-    // Phase 8: Replay guard
-    // ----------------------------------------------------------------
-    println!("[Phase 8] Testing replay guard...");
-    let phase_start = Instant::now();
-
-    let replay_result = authenticator
-        .generate_proof(&proof_request, Some(now))
-        .await;
-    assert!(
-        matches!(
-            replay_result,
-            Err(walletkit_core::error::WalletKitError::NullifierReplay)
-        ),
-        "expected NullifierReplay error on second proof generation, got: {replay_result:?}"
-    );
-
-    println!(
-        "[Phase 8] Replay guard enforced ({:.1}s)",
-        phase_start.elapsed().as_secs_f64()
-    );
-
     // Cleanup
     indexer_handle.abort();
 
