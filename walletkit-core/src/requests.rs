@@ -13,8 +13,12 @@ pub struct ProofRequest(pub(crate) CoreProofRequest);
 
 #[uniffi::export]
 impl ProofRequest {
+    /// Deserializes a `ProofRequest` from a JSON string.
+    ///
+    /// # Errors
+    /// Returns an error if the JSON is invalid or cannot be parsed.
     #[uniffi::constructor]
-    fn from_json(json: &str) -> Result<Self, WalletKitError> {
+    pub fn from_json(json: &str) -> Result<Self, WalletKitError> {
         let core_request: CoreProofRequest =
             serde_json::from_str(json).map_err(|e| WalletKitError::Generic {
                 error: format!("invalid proof request json: {e}"),
@@ -22,7 +26,11 @@ impl ProofRequest {
         Ok(Self(core_request))
     }
 
-    fn to_json(&self) -> Result<String, WalletKitError> {
+    /// Serializes the proof request to a JSON string.
+    ///
+    /// # Errors
+    /// Returns an error if serialization fails.
+    pub fn to_json(&self) -> Result<String, WalletKitError> {
         serde_json::to_string(&self.0).map_err(|e| WalletKitError::Generic {
             error: format!("critical unexpected error serializing to json: {e}"),
         })
@@ -37,7 +45,11 @@ pub struct ProofResponse(CoreProofResponse);
 
 #[uniffi::export]
 impl ProofResponse {
-    fn to_json(&self) -> Result<String, WalletKitError> {
+    /// Serializes the proof response to a JSON string.
+    ///
+    /// # Errors
+    /// Returns an error if serialization fails.
+    pub fn to_json(&self) -> Result<String, WalletKitError> {
         serde_json::to_string(&self.0).map_err(|e| WalletKitError::Generic {
             error: format!("critical unexpected error serializing to json: {e}"),
         })
