@@ -6073,7 +6073,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "uniffi",
 ]
@@ -6287,7 +6287,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "uniffi",
  "walletkit-core",
@@ -6295,7 +6295,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "alloy",
  "alloy-core",
