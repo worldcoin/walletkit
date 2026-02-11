@@ -2,7 +2,9 @@
 
 use alloy_primitives::Address;
 use world_id_core::{
-    primitives::Config, types::GatewayRequestState, Authenticator as CoreAuthenticator,
+    api_types::{GatewayErrorCode, GatewayRequestState},
+    primitives::Config,
+    Authenticator as CoreAuthenticator,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
@@ -15,8 +17,6 @@ use crate::{
 #[cfg(feature = "storage")]
 use std::sync::Arc;
 
-#[cfg(feature = "storage")]
-mod utils;
 #[cfg(feature = "storage")]
 mod with_storage;
 
@@ -44,8 +44,8 @@ impl Authenticator {
     /// This is the index in the Merkle tree where the holder's World ID account is registered. It
     /// should only be used inside the authenticator and never shared.
     #[must_use]
-    pub fn leaf_index(&self) -> U256Wrapper {
-        self.inner.leaf_index().into()
+    pub fn leaf_index(&self) -> u64 {
+        self.inner.leaf_index()
     }
 
     /// Returns the Authenticator's `onchain_address`.
@@ -199,7 +199,7 @@ impl From<GatewayRequestState> for RegistrationStatus {
             GatewayRequestState::Finalized { .. } => Self::Finalized,
             GatewayRequestState::Failed { error, error_code } => Self::Failed {
                 error,
-                error_code: error_code.map(|c| c.to_string()),
+                error_code: error_code.map(|c: GatewayErrorCode| c.to_string()),
             },
         }
     }

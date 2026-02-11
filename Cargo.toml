@@ -1,15 +1,15 @@
 [workspace]
-members = ["uniffi-bindgen","walletkit-core", "walletkit"]
+members = ["uniffi-bindgen", "walletkit-core", "walletkit"]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.0"
+version = "0.5.0"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
 readme = "./README.md"
-homepage = "https://docs.world.org" # TODO: Update to specific WalletKit page
-rust-version = "1.91" # MSRV
+homepage = "https://docs.world.org"                             # TODO: Update to specific WalletKit page
+rust-version = "1.91"                                           # MSRV
 repository = "https://github.com/worldcoin/walletkit"
 exclude = ["tests/", "uniffi-bindgen/"]
 keywords = ["ZKP", "WorldID", "World", "Identity", "Semaphore"]
@@ -17,14 +17,21 @@ categories = ["api-bindings", "cryptography::cryptocurrencies"]
 
 
 [workspace.dependencies]
-alloy-core = { version = "1", default-features = false, features = ["sol-types"] }
+alloy-core = { version = "1", default-features = false, features = [
+  "sol-types",
+] }
 alloy-primitives = { version = "1", default-features = false }
-walletkit-core = { version = "0.4.0", path = "walletkit-core", default-features = false }
+walletkit-core = { version = "0.5.0", path = "walletkit-core", default-features = false }
 uniffi = { version = "0.31", features = ["build", "tokio"] }
-#FIXME: Update to next published version when available
-# world-id-core = { version = "0.3", default-features = false, features = ["authenticator", "embed-zkeys"] }
-world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "6ededf6", default-features = false, features = ["authenticator", "embed-zkeys"] }
 reqwest = { version = "0.12.5", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+
+[workspace.dependencies.world-id-core]
+#FIXME: Update to next published version when available
+# version = "0.3"
+git = "https://github.com/worldcoin/world-id-protocol"
+rev = "34dc355268673c1370a7268d6dc7a2d967315503"
+default-features = false
+features = ["authenticator", "embed-zkeys"]
 
 [profile.release]
 opt-level = 'z' # Optimize for size.
