@@ -2,7 +2,9 @@
 
 use alloy_primitives::Address;
 use world_id_core::{
-    primitives::Config, types::GatewayRequestState, Authenticator as CoreAuthenticator,
+    api_types::{GatewayErrorCode, GatewayRequestState},
+    primitives::Config,
+    Authenticator as CoreAuthenticator,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
@@ -45,7 +47,7 @@ impl Authenticator {
     /// should only be used inside the authenticator and never shared.
     #[must_use]
     pub fn leaf_index(&self) -> U256Wrapper {
-        self.inner.leaf_index().into()
+        U256Wrapper::from_u64(self.inner.leaf_index())
     }
 
     /// Returns the Authenticator's `onchain_address`.
@@ -199,7 +201,7 @@ impl From<GatewayRequestState> for RegistrationStatus {
             GatewayRequestState::Finalized { .. } => Self::Finalized,
             GatewayRequestState::Failed { error, error_code } => Self::Failed {
                 error,
-                error_code: error_code.map(|c| c.to_string()),
+                error_code: error_code.map(|c: GatewayErrorCode| c.to_string()),
             },
         }
     }
