@@ -56,6 +56,12 @@ impl ProofResponse {
     }
 }
 
+impl From<CoreProofRequest> for ProofRequest {
+    fn from(core_request: CoreProofRequest) -> Self {
+        Self(core_request)
+    }
+}
+
 impl From<CoreProofResponse> for ProofResponse {
     fn from(core_response: CoreProofResponse) -> Self {
         Self(core_response)

@@ -227,10 +227,8 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         constraints: None,
     };
 
-    let proof_request_json = serde_json::to_string(&proof_request_core).unwrap();
-    let proof_request =
-        walletkit_core::requests::ProofRequest::from_json(&proof_request_json)
-            .wrap_err("failed to parse proof request")?;
+    let proof_request: walletkit_core::requests::ProofRequest =
+        proof_request_core.clone().into();
 
     let proof_response = authenticator
         .generate_proof(&proof_request, Some(now))
