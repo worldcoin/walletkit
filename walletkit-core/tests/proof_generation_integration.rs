@@ -82,7 +82,6 @@ sol!(
 /// 2. Credential issuance (signed by a pre-registered staging issuer)
 /// 3. Proof generation with real staging OPRF nodes
 /// 4. On-chain proof verification via the staging `WorldIDVerifier`
-#[ignore] // requires staging services + pre-registered RP/issuer
 #[tokio::test(flavor = "multi_thread")]
 async fn e2e_authenticator_generate_proof() -> Result<()> {
     let _ = tracing_subscriber::fmt()
@@ -92,8 +91,8 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         )
         .try_init();
 
-    let rpc_url =
-        std::env::var("RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
+    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
+        .unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
 
     // ----------------------------------------------------------------
     // Phase 1: Account registration
