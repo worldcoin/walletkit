@@ -48,7 +48,7 @@ impl DefaultConfig for Config {
                     // "https://node3.ap.staging.world.oprf.taceo.network".to_string(),
                     // "https://node4.ap.staging.world.oprf.taceo.network".to_string(),
                 ],
-                2,
+                3,
             )
             .map_err(WalletKitError::from),
 
