@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use reqwest::Response;
 use serde::ser::Serialize;
 
 use crate::error::WalletKitError;
@@ -109,7 +108,7 @@ impl Request {
         url: &str,
         body: &str,
         headers: &[(&str, &str)],
-    ) -> Result<Response, WalletKitError> {
+    ) -> Result<reqwest::Response, WalletKitError> {
         #[cfg(not(test))]
         assert!(url.starts_with("https"));
 
