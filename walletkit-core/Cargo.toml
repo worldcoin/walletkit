@@ -30,13 +30,13 @@ hkdf = { version = "0.12", optional = true }
 log = "0.4"
 rand = { version = "0.8" }
 reqwest = { version = "0.12", default-features = false, features = [
-    "json",
-    "brotli",
-    "rustls-tls",
+  "json",
+  "brotli",
+  "rustls-tls",
 ] }
 ruint = { version = "1.17", default-features = false, features = [
-    "alloc",
-    "ark-ff-04",
+  "alloc",
+  "ark-ff-04",
 ] }
 rustls = { version = "0.23", features = ["ring"] }
 secrecy = "0.10"
@@ -57,21 +57,21 @@ ciborium = { version = "0.2.2", optional = true }
 # For Android, OpenSSL gets bundled through openssl-sys
 [target.'cfg(target_os = "android")'.dependencies]
 rusqlite = { version = "0.32", default-features = false, features = [
-    "bundled-sqlcipher-vendored-openssl",
+  "bundled-sqlcipher-vendored-openssl",
 ], optional = true }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rusqlite = { version = "0.32", default-features = false, features = [
-    "bundled-sqlcipher",
+  "bundled-sqlcipher",
 ], optional = true }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [
-    "getrandom",
-    "json",
-    "contract",
-    "node-bindings",
-    "signer-local",
+  "getrandom",
+  "json",
+  "contract",
+  "node-bindings",
+  "signer-local",
 ] }
 chacha20poly1305 = "0.10"
 chrono = "0.4.41"
@@ -79,7 +79,7 @@ dotenvy = "0.15.7"
 eyre = "0.6"
 mockito = "1.6"
 regex = "1.11"
-rustls = { version = "0.23", features = ["ring", "aws_lc_rs"] }
+rustls = { version = "0.23", features = ["ring"] }
 taceo-oprf = { version = "0.4", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
@@ -99,13 +99,7 @@ default = ["common-apps", "semaphore", "storage", "issuers"]
 common-apps = []
 semaphore = ["semaphore-rs/depth_30"]
 issuers = ["dep:base64"]
-storage = [
-    "dep:ciborium",
-    "dep:hkdf",
-    "dep:rusqlite",
-    "dep:sha2",
-    "dep:uuid",
-]
+storage = ["dep:ciborium", "dep:hkdf", "dep:rusqlite", "dep:sha2", "dep:uuid"]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
