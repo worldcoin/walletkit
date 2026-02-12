@@ -15,9 +15,8 @@ const WORLD_ID_REGISTRY: alloy::primitives::Address =
 
 fn setup_anvil() -> AnvilInstance {
     dotenvy::dotenv().ok();
-    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL").expect(
-        "WORLDCHAIN_RPC_URL not set. Copy .env.example to .env and add your RPC URL",
-    );
+    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
+        .unwrap_or_else(|_| "https://worldchain-mainnet.g.alchemy.com/public".to_string());
 
     let anvil = alloy::node_bindings::Anvil::new().fork(rpc_url).spawn();
     println!(
