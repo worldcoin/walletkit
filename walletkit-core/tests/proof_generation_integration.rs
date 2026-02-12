@@ -45,7 +45,8 @@ const ISSUER_EDDSA_KEY_HEX: &str =
     "0000000000000000000000000000000000000000000000000000000000000000"; // TODO
 
 /// WorldIDVerifier proxy contract address on staging (World Chain Mainnet 480).
-const WORLD_ID_VERIFIER: &str = "0x0000000000000000000000000000000000000000"; // TODO
+const WORLD_ID_VERIFIER: alloy::primitives::Address =
+    alloy::primitives::address!("0xC1BF296fdf56Eec522eFCcb7655F158F3D108560");
 
 /// Default RPC URL for World Chain Mainnet (chain 480).
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
@@ -140,13 +141,10 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     )
     .wrap_err("failed to build staging config")?;
 
-    let core_authenticator = CoreAuthenticator::init_or_register(
-        &seed,
-        config,
-        Some(recovery_address),
-    )
-    .await
-    .wrap_err("account creation/init failed")?;
+    let core_authenticator =
+        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
+            .await
+            .wrap_err("account creation/init failed")?;
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -239,9 +237,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let action = FieldElement::from(1u64);
 
     let rp_msg = world_id_primitives::rp::compute_rp_signature_msg(
-        *nonce,
-        created_at,
-        expires_at,
+        *nonce, created_at, expires_at,
     );
     let signature = rp_signer
         .sign_message_sync(&rp_msg)
@@ -255,9 +251,9 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         created_at,
         expires_at,
         rp_id,
-        oprf_key_id: taceo_oprf::types::OprfKeyId::new(
-            alloy::primitives::U160::from(RP_ID),
-        ),
+        oprf_key_id: taceo_oprf::types::OprfKeyId::new(alloy::primitives::U160::from(
+            RP_ID,
+        )),
         session_id: None,
         action: Some(action),
         signature,
@@ -302,12 +298,9 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     // ----------------------------------------------------------------
     // Phase 5: On-chain verification
     // ----------------------------------------------------------------
-    let verifier_addr: alloy::primitives::Address = WORLD_ID_VERIFIER
-        .parse()
-        .wrap_err("invalid WORLD_ID_VERIFIER address")?;
     let provider = ProviderBuilder::new().connect_http(rpc_url.parse().unwrap());
 
-    let verifier = IWorldIDVerifier::new(verifier_addr, &provider);
+    let verifier = IWorldIDVerifier::new(WORLD_ID_VERIFIER, &provider);
 
     let request_item = proof_request_core
         .find_request_by_issuer_schema_id(ISSUER_SCHEMA_ID)
