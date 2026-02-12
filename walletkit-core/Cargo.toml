@@ -81,16 +81,11 @@ mockito = "1.6"
 regex = "1.11"
 rustls = { version = "0.23", features = ["ring", "aws_lc_rs"] }
 taceo-oprf = { version = "0.4", default-features = false }
-taceo-oprf-test-utils = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies.world-id-test-utils]
-git = "https://github.com/worldcoin/world-id-protocol"
-rev = "34dc355268673c1370a7268d6dc7a2d967315503"
-
-[dev-dependencies.world-id-gateway]
 git = "https://github.com/worldcoin/world-id-protocol"
 rev = "34dc355268673c1370a7268d6dc7a2d967315503"
 

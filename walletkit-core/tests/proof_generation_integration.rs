@@ -1,224 +1,158 @@
 #![cfg(feature = "storage")]
 
-//! End-to-end integration test for `Authenticator::generate_proof` (World ID v4).
+//! End-to-end integration test for `Authenticator::generate_proof` (World ID v4)
+//! using **staging infrastructure** (real OPRF nodes, indexer, gateway, on-chain registries).
 //!
-//! Requires Docker for Postgres + LocalStack containers.
-//! Run with: `cargo test --test proof_generation_integration --features default`
+//! Prerequisites:
+//! - A registered RP on the staging `RpRegistry` contract (hardcoded below)
+//! - A registered issuer on the staging `CredentialSchemaIssuerRegistry` (hardcoded below)
+//! - Staging OPRF key-gen must have picked up both registrations
+//!
+//! Run with:
+//!   cargo test --test proof_generation_integration --features default -- --ignored
 
 mod common;
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use alloy::signers::local::LocalSigner;
+use alloy::providers::ProviderBuilder;
+use alloy::signers::{local::PrivateKeySigner, SignerSync};
+use alloy::sol;
 use eyre::{Context as _, Result};
-use taceo_oprf::types::{OprfKeyId, ShareEpoch};
-use taceo_oprf_test_utils::health_checks;
-use walletkit_core::Authenticator;
+use walletkit_core::{Authenticator, Environment};
 use world_id_core::{
     requests::{ProofRequest, RequestItem, RequestVersion},
     Authenticator as CoreAuthenticator, EdDSAPrivateKey,
 };
-use world_id_gateway::{spawn_gateway_for_tests, GatewayConfig, SignerArgs};
-use world_id_primitives::{
-    merkle::AccountInclusionProof, Config, FieldElement, TREE_DEPTH,
-};
-use world_id_test_utils::{
-    anvil::WorldIDVerifier,
-    fixtures::{
-        build_base_credential, generate_rp_fixture, single_leaf_merkle_fixture,
-        MerkleFixture, RegistryTestContext,
-    },
-    stubs::spawn_indexer_stub,
-};
+use world_id_primitives::{rp::RpId, Config, FieldElement};
 
-/// Full end-to-end proof generation through `walletkit_core::Authenticator::generate_proof`.
+// ---------------------------------------------------------------------------
+// Staging-registered constants (TODO: fill in after on-chain registration)
+// ---------------------------------------------------------------------------
+
+/// RP ID registered on the staging `RpRegistry` contract.
+const RP_ID: u64 = 0; // TODO: replace with actual staging RP ID
+
+/// Hex-encoded ECDSA private key for the registered RP (secp256k1).
+const RP_SIGNING_KEY_HEX: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000"; // TODO
+
+/// Issuer schema ID registered on the staging `CredentialSchemaIssuerRegistry`.
+const ISSUER_SCHEMA_ID: u64 = 0; // TODO: replace with actual staging issuer schema ID
+
+/// Hex-encoded EdDSA private key (32 bytes) for the registered issuer.
+const ISSUER_EDDSA_KEY_HEX: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000"; // TODO
+
+/// WorldIDVerifier proxy contract address on staging (World Chain Mainnet 480).
+const WORLD_ID_VERIFIER: &str = "0x0000000000000000000000000000000000000000"; // TODO
+
+/// Default RPC URL for World Chain Mainnet (chain 480).
+const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
+
+/// World ID Registry address on World Chain Mainnet.
+const WORLD_ID_REGISTRY: alloy::primitives::Address =
+    alloy::primitives::address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe");
+
+/// Staging indexer URL.
+const INDEXER_URL: &str = "https://world-id-indexer.stage-crypto.worldcoin.org";
+
+/// Staging gateway URL.
+const GATEWAY_URL: &str = "https://world-id-gateway.stage-crypto.worldcoin.org";
+
+/// Staging OPRF node URLs.
+const OPRF_NODE_URLS: &[&str] = &[
+    "https://node0.us.staging.world.oprf.taceo.network",
+    "https://node1.us.staging.world.oprf.taceo.network",
+    "https://node2.us.staging.world.oprf.taceo.network",
+    "https://node3.us.staging.world.oprf.taceo.network",
+    "https://node4.us.staging.world.oprf.taceo.network",
+    "https://node0.eu.staging.world.oprf.taceo.network",
+    "https://node1.eu.staging.world.oprf.taceo.network",
+    "https://node2.eu.staging.world.oprf.taceo.network",
+    "https://node3.eu.staging.world.oprf.taceo.network",
+    "https://node4.eu.staging.world.oprf.taceo.network",
+    "https://node0.ap.staging.world.oprf.taceo.network",
+    "https://node1.ap.staging.world.oprf.taceo.network",
+    "https://node2.ap.staging.world.oprf.taceo.network",
+    "https://node3.ap.staging.world.oprf.taceo.network",
+    "https://node4.ap.staging.world.oprf.taceo.network",
+];
+
+// ---------------------------------------------------------------------------
+// On-chain WorldIDVerifier binding (only the `verify` function)
+// ---------------------------------------------------------------------------
+sol!(
+    #[allow(clippy::too_many_arguments)]
+    #[sol(rpc)]
+    interface IWorldIDVerifier {
+        function verify(
+            uint256 nullifier,
+            uint256 action,
+            uint64 rpId,
+            uint256 nonce,
+            uint256 signalHash,
+            uint64 expiresAtMin,
+            uint64 issuerSchemaId,
+            uint256 credentialGenesisIssuedAtMin,
+            uint256[5] calldata zeroKnowledgeProof
+        ) external view;
+    }
+);
+
+/// Full end-to-end proof generation through `walletkit_core::Authenticator::generate_proof`
+/// against staging infrastructure.
 ///
 /// This test exercises:
-/// 1. Account creation via the gateway
-/// 2. Credential issuance (signed by a test issuer)
-/// 3. Proof generation with real OPRF nodes (ZK circuit requires real OPRF output)
-/// 4. On-chain proof verification via `WorldIDVerifier`
+/// 1. Account registration (or init if already registered) via the staging gateway
+/// 2. Credential issuance (signed by a pre-registered staging issuer)
+/// 3. Proof generation with real staging OPRF nodes
+/// 4. On-chain proof verification via the staging `WorldIDVerifier`
+#[ignore] // requires staging services + pre-registered RP/issuer
 #[tokio::test(flavor = "multi_thread")]
 async fn e2e_authenticator_generate_proof() -> Result<()> {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .try_init();
 
-    // ----------------------------------------------------------------
-    // Phase 1: Infrastructure — containers, contracts, gateway
-    // ----------------------------------------------------------------
-    let containers = tokio::join!(
-        taceo_oprf_test_utils::localstack_testcontainer(),
-        taceo_oprf_test_utils::postgres_testcontainer(),
-        taceo_oprf_test_utils::postgres_testcontainer(),
-        taceo_oprf_test_utils::postgres_testcontainer(),
-        taceo_oprf_test_utils::postgres_testcontainer(),
-        taceo_oprf_test_utils::postgres_testcontainer(),
-    );
-    let (_localstack_container, localstack_url) = containers.0?;
-    let (_pg0, pg_url_0) = containers.1?;
-    let (_pg1, pg_url_1) = containers.2?;
-    let (_pg2, pg_url_2) = containers.3?;
-    let (_pg3, pg_url_3) = containers.4?;
-    let (_pg4, pg_url_4) = containers.5?;
-    let postgres_urls = [pg_url_0, pg_url_1, pg_url_2, pg_url_3, pg_url_4];
+    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
+        .unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
 
-    let RegistryTestContext {
-        anvil,
-        world_id_registry,
-        rp_registry,
-        oprf_key_registry,
-        world_id_verifier,
-        credential_registry,
-    } = RegistryTestContext::new().await?;
-
-    let deployer = anvil
-        .signer(0)
-        .wrap_err("failed to fetch deployer signer")?;
-
-    let signer_args = SignerArgs::from_wallet(hex::encode(deployer.to_bytes()));
-    let gateway_config = GatewayConfig {
-        registry_addr: world_id_registry,
-        provider: world_id_gateway::ProviderArgs {
-            http: Some(vec![anvil.endpoint().parse().unwrap()]),
-            signer: Some(signer_args),
-            ..Default::default()
-        },
-        batch_ms: 200,
-        listen_addr: (std::net::Ipv4Addr::LOCALHOST, 0u16).into(),
-        max_create_batch_size: 10,
-        max_ops_batch_size: 10,
-        redis_url: None,
-    };
-    let gateway = spawn_gateway_for_tests(gateway_config)
-        .await
-        .wrap_err("failed to spawn gateway")?;
-    let gateway_url = format!("http://{}", gateway.listen_addr);
+    let oprf_urls: Vec<String> = OPRF_NODE_URLS.iter().map(|s| s.to_string()).collect();
 
     // ----------------------------------------------------------------
-    // Phase 2: Account creation via CoreAuthenticator
+    // Phase 1: Account registration
     // ----------------------------------------------------------------
     let seed = [7u8; 32];
-    let recovery_address = anvil
-        .signer(1)
-        .wrap_err("failed to fetch recovery signer")?
-        .address();
+    let recovery_address = alloy::primitives::Address::ZERO;
 
-    let creation_config = Config::new(
-        Some(anvil.endpoint().to_string()),
-        anvil.instance.chain_id(),
-        world_id_registry,
-        "http://127.0.0.1:0".to_string(), // placeholder indexer
-        gateway_url.clone(),
-        Vec::new(),
-        3,
+    let config = Config::new(
+        Some(rpc_url.clone()),
+        480,
+        WORLD_ID_REGISTRY,
+        INDEXER_URL.to_string(),
+        GATEWAY_URL.to_string(),
+        oprf_urls,
+        2,
     )
-    .unwrap();
+    .wrap_err("failed to build staging config")?;
 
     let core_authenticator = CoreAuthenticator::init_or_register(
         &seed,
-        creation_config.clone(),
+        config,
         Some(recovery_address),
     )
     .await
-    .wrap_err("account creation failed")?;
-    assert_eq!(core_authenticator.leaf_index(), 1);
+    .wrap_err("account creation/init failed")?;
 
     let leaf_index = core_authenticator.leaf_index();
-    let MerkleFixture {
-        key_set,
-        inclusion_proof: merkle_inclusion_proof,
-        ..
-    } = single_leaf_merkle_fixture(
-        vec![core_authenticator.offchain_pubkey()],
-        leaf_index,
-    )
-    .wrap_err("failed to construct merkle fixture")?;
-
-    let inclusion_proof =
-        AccountInclusionProof::<{ TREE_DEPTH }>::new(merkle_inclusion_proof, key_set)
-            .wrap_err("failed to build inclusion proof")?;
-
-    let (indexer_url, indexer_handle) = spawn_indexer_stub(leaf_index, inclusion_proof)
-        .await
-        .wrap_err("failed to start indexer stub")?;
+    eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
 
     // ----------------------------------------------------------------
-    // Phase 3: OPRF nodes + on-chain registrations
-    // ----------------------------------------------------------------
-    let rp_fixture = generate_rp_fixture();
-    let mut rng = rand::thread_rng();
-
-    let oprf_key_gens = world_id_test_utils::stubs::spawn_key_gens(
-        anvil.ws_endpoint(),
-        &localstack_url,
-        &postgres_urls,
-        oprf_key_registry,
-    )
-    .await;
-
-    let nodes = world_id_test_utils::stubs::spawn_oprf_nodes(
-        anvil.ws_endpoint(),
-        &postgres_urls,
-        oprf_key_registry,
-        world_id_registry,
-        rp_registry,
-        credential_registry,
-    )
-    .await;
-
-    health_checks::services_health_check(&nodes, Duration::from_secs(60)).await?;
-    health_checks::services_health_check(&oprf_key_gens, Duration::from_secs(60))
-        .await?;
-
-    // Register issuer on-chain (triggers OPRF key-gen for issuer)
-    let issuer_schema_id = 1u64;
-    let issuer_sk = EdDSAPrivateKey::random(&mut rng);
-    let issuer_pk = issuer_sk.public();
-    anvil
-        .register_issuer(
-            credential_registry,
-            deployer.clone(),
-            issuer_schema_id,
-            issuer_pk.clone(),
-        )
-        .await?;
-
-    // Register RP on-chain (triggers OPRF key-gen for RP)
-    let rp_signer = LocalSigner::from_signing_key(rp_fixture.signing_key.clone());
-    anvil
-        .register_rp(
-            rp_registry,
-            deployer.clone(),
-            rp_fixture.world_rp_id,
-            rp_signer.address(),
-            rp_signer.address(),
-            "taceo.oprf".to_string(),
-        )
-        .await?;
-
-    // Wait for OPRF public keys to be available
-    let _rp_oprf_pk = health_checks::oprf_public_key_from_services(
-        rp_fixture.oprf_key_id,
-        ShareEpoch::default(),
-        &nodes,
-        Duration::from_secs(120),
-    )
-    .await?;
-
-    let _issuer_oprf_pk = health_checks::oprf_public_key_from_services(
-        OprfKeyId::new(alloy::primitives::U160::from(issuer_schema_id)),
-        ShareEpoch::default(),
-        &nodes,
-        Duration::from_secs(120),
-    )
-    .await?;
-
-    // ----------------------------------------------------------------
-    // Phase 4: Reinitialize walletkit Authenticator with full config
+    // Phase 2: Authenticator init with walletkit wrapper
     // ----------------------------------------------------------------
     // Set working directory to workspace root so embedded zkeys can be found
     let workspace_root =
@@ -226,24 +160,16 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     std::env::set_current_dir(&workspace_root)
         .wrap_err("failed to set working directory to workspace root")?;
 
-    let proof_config = Config::new(
-        Some(anvil.endpoint().to_string()),
-        anvil.instance.chain_id(),
-        world_id_registry,
-        indexer_url.clone(),
-        gateway_url.clone(),
-        nodes.to_vec(),
-        3,
-    )
-    .unwrap();
-    let config_json = serde_json::to_string(&proof_config).unwrap();
-
     let store = common::create_test_credential_store();
 
-    let authenticator = Authenticator::init(&seed, &config_json, store.clone())
-        .await
-        .wrap_err("failed to init walletkit Authenticator with proof config")?;
-    assert_eq!(authenticator.leaf_index(), 1);
+    let authenticator = Authenticator::init_with_defaults(
+        &seed,
+        Some(rpc_url.clone()),
+        &Environment::Staging,
+        store.clone(),
+    )
+    .await
+    .wrap_err("failed to init walletkit Authenticator")?;
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -254,19 +180,29 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .init_storage(now)
         .wrap_err("init_storage failed")?;
 
+    eprintln!("Phase 2 complete: authenticator initialized");
+
     // ----------------------------------------------------------------
-    // Phase 5: Credential issuance
+    // Phase 3: Credential issuance
     // ----------------------------------------------------------------
+    let issuer_sk = {
+        let bytes: [u8; 32] = hex::decode(ISSUER_EDDSA_KEY_HEX)
+            .expect("invalid issuer EdDSA key hex")
+            .try_into()
+            .expect("issuer EdDSA key must be 32 bytes");
+        EdDSAPrivateKey::from_bytes(bytes)
+    };
+    let issuer_pk = issuer_sk.public();
+
     let blinding_factor = authenticator
-        .generate_credential_blinding_factor_remote(issuer_schema_id)
+        .generate_credential_blinding_factor_remote(ISSUER_SCHEMA_ID)
         .await
         .wrap_err("blinding factor generation failed")?;
 
     let _credential_sub = authenticator.compute_credential_sub(&blinding_factor);
 
-    // Build and sign credential (inline, equivalent to faux-issuer)
-    let mut credential = build_base_credential(
-        issuer_schema_id,
+    let mut credential = world_id_test_utils::fixtures::build_base_credential(
+        ISSUER_SCHEMA_ID,
         leaf_index,
         now,
         now + 3600, // expires in 1 hour
@@ -276,7 +212,6 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let credential_hash = credential.hash().wrap_err("failed to hash credential")?;
     credential.signature = Some(issuer_sk.sign(*credential_hash));
 
-    // Store credential in the CredentialStore
     let walletkit_credential: walletkit_core::Credential = credential.clone().into();
     store
         .store_credential(
@@ -288,23 +223,48 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         )
         .wrap_err("store_credential failed")?;
 
+    eprintln!("Phase 3 complete: credential issued and stored");
+
     // ----------------------------------------------------------------
-    // Phase 6: Proof generation via walletkit Authenticator
+    // Phase 4: Proof generation
     // ----------------------------------------------------------------
+    let rp_signer = PrivateKeySigner::from_slice(
+        &hex::decode(RP_SIGNING_KEY_HEX).expect("invalid RP signing key hex"),
+    )
+    .expect("invalid RP ECDSA key");
+
+    let nonce = FieldElement::from(42u64);
+    let created_at = now;
+    let expires_at = now + 300;
+    let action = FieldElement::from(1u64);
+
+    let rp_msg = world_id_primitives::rp::compute_rp_signature_msg(
+        *nonce,
+        created_at,
+        expires_at,
+    );
+    let signature = rp_signer
+        .sign_message_sync(&rp_msg)
+        .wrap_err("failed to sign RP message")?;
+
+    let rp_id = RpId::new(RP_ID);
+
     let proof_request_core = ProofRequest {
-        id: "test_request".to_string(),
+        id: "staging_test_request".to_string(),
         version: RequestVersion::V1,
-        created_at: rp_fixture.current_timestamp,
-        expires_at: rp_fixture.expiration_timestamp,
-        rp_id: rp_fixture.world_rp_id,
-        oprf_key_id: rp_fixture.oprf_key_id,
+        created_at,
+        expires_at,
+        rp_id,
+        oprf_key_id: taceo_oprf::types::OprfKeyId::new(
+            alloy::primitives::U160::from(RP_ID),
+        ),
         session_id: None,
-        action: Some(rp_fixture.action.into()),
-        signature: rp_fixture.signature,
-        nonce: rp_fixture.nonce.into(),
+        action: Some(action),
+        signature,
+        nonce,
         requests: vec![RequestItem {
             identifier: "identifier".to_string(),
-            issuer_schema_id,
+            issuer_schema_id: ISSUER_SCHEMA_ID,
             signal: Some("my_signal".to_string()),
             genesis_issued_at_min: None,
             expires_at_min: None,
@@ -337,25 +297,31 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .expect("uniqueness proof should have nullifier");
     assert_ne!(nullifier, FieldElement::ZERO);
 
+    eprintln!("Phase 4 complete: proof generated (nullifier={nullifier:?})");
+
     // ----------------------------------------------------------------
-    // Phase 7: On-chain verification
+    // Phase 5: On-chain verification
     // ----------------------------------------------------------------
+    let verifier_addr: alloy::primitives::Address = WORLD_ID_VERIFIER
+        .parse()
+        .wrap_err("invalid WORLD_ID_VERIFIER address")?;
+    let provider = ProviderBuilder::new().connect_http(rpc_url.parse().unwrap());
+
+    let verifier = IWorldIDVerifier::new(verifier_addr, &provider);
+
     let request_item = proof_request_core
-        .find_request_by_issuer_schema_id(issuer_schema_id)
+        .find_request_by_issuer_schema_id(ISSUER_SCHEMA_ID)
         .unwrap();
 
-    let verifier: WorldIDVerifier::WorldIDVerifierInstance<
-        alloy::providers::DynProvider,
-    > = WorldIDVerifier::new(world_id_verifier, anvil.provider()?);
     verifier
         .verify(
             nullifier.into(),
-            rp_fixture.action.into(),
-            rp_fixture.world_rp_id.into_inner(),
-            rp_fixture.nonce.into(),
+            action.into(),
+            RP_ID,
+            nonce.into(),
             request_item.signal_hash().into(),
             response_item.expires_at_min,
-            issuer_schema_id,
+            ISSUER_SCHEMA_ID,
             request_item
                 .genesis_issued_at_min
                 .unwrap_or_default()
@@ -367,10 +333,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .await
         .wrap_err("on-chain proof verification failed")?;
 
-    // Cleanup
-    indexer_handle.abort();
-
-    panic!();
+    eprintln!("Phase 5 complete: on-chain verification passed");
 
     Ok(())
 }
