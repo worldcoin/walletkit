@@ -27,22 +27,24 @@ use world_id_core::{
 use world_id_primitives::{rp::RpId, FieldElement};
 
 // ---------------------------------------------------------------------------
-// Staging-registered constants (TODO: fill in after on-chain registration)
+// Staging-registered constants
 // ---------------------------------------------------------------------------
 
 /// RP ID registered on the staging `RpRegistry` contract.
-const RP_ID: u64 = 0; // TODO: replace with actual staging RP ID
+const RP_ID: u64 = 42;
 
 /// ECDSA private key for the registered RP (secp256k1).
-const RP_SIGNING_KEY: [u8; 32] =
-    alloy::primitives::hex!("81ee18b54602db350e0575685ab35ce07840b89121a98d325623fc9b02db4f63");
+const RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
+    "81ee18b54602db350e0575685ab35ce07840b89121a98d325623fc9b02db4f63"
+);
 
 /// Issuer schema ID registered on the staging `CredentialSchemaIssuerRegistry`.
-const ISSUER_SCHEMA_ID: u64 = 0; // TODO: replace with actual staging issuer schema ID
+const ISSUER_SCHEMA_ID: u64 = 43;
 
 /// EdDSA private key (32 bytes) for the registered issuer.
-const ISSUER_EDDSA_KEY: [u8; 32] =
-    alloy::primitives::hex!("4670065be71c9035d4f43b28eab2dc364a1af46bfc31eac24dc01ff47a26ccbc");
+const ISSUER_EDDSA_KEY: [u8; 32] = alloy::primitives::hex!(
+    "8957edfc42e2c699fcc7ec33cd8ec83eddc907f9dbd5cb4a73193cfeead9c42a"
+);
 
 /// WorldIDVerifier proxy contract address on staging (World Chain Mainnet 480).
 const WORLD_ID_VERIFIER: alloy::primitives::Address =
@@ -90,8 +92,8 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         )
         .try_init();
 
-    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
-        .unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
+    let rpc_url =
+        std::env::var("RPC_URL").unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
 
     // ----------------------------------------------------------------
     // Phase 1: Account registration
@@ -215,7 +217,9 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         signature,
         nonce,
         requests: vec![RequestItem {
-            identifier: "identifier".to_string(),
+            // NOTE: Identifier now matches issuer schema ID but we would like to setup a mapping
+            // of identifier to ISID
+            identifier: ISSUER_SCHEMA_ID.to_string(),
             issuer_schema_id: ISSUER_SCHEMA_ID,
             signal: Some("my_signal".to_string()),
             genesis_issued_at_min: None,
