@@ -33,16 +33,16 @@ use world_id_primitives::{rp::RpId, FieldElement};
 /// RP ID registered on the staging `RpRegistry` contract.
 const RP_ID: u64 = 0; // TODO: replace with actual staging RP ID
 
-/// Hex-encoded ECDSA private key for the registered RP (secp256k1).
-const RP_SIGNING_KEY_HEX: &str =
-    "0000000000000000000000000000000000000000000000000000000000000000"; // TODO
+/// ECDSA private key for the registered RP (secp256k1).
+const RP_SIGNING_KEY: [u8; 32] =
+    alloy::primitives::hex!("81ee18b54602db350e0575685ab35ce07840b89121a98d325623fc9b02db4f63");
 
 /// Issuer schema ID registered on the staging `CredentialSchemaIssuerRegistry`.
 const ISSUER_SCHEMA_ID: u64 = 0; // TODO: replace with actual staging issuer schema ID
 
-/// Hex-encoded EdDSA private key (32 bytes) for the registered issuer.
-const ISSUER_EDDSA_KEY_HEX: &str =
-    "0000000000000000000000000000000000000000000000000000000000000000"; // TODO
+/// EdDSA private key (32 bytes) for the registered issuer.
+const ISSUER_EDDSA_KEY: [u8; 32] =
+    alloy::primitives::hex!("4670065be71c9035d4f43b28eab2dc364a1af46bfc31eac24dc01ff47a26ccbc");
 
 /// WorldIDVerifier proxy contract address on staging (World Chain Mainnet 480).
 const WORLD_ID_VERIFIER: alloy::primitives::Address =
@@ -147,13 +147,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     // ----------------------------------------------------------------
     // Phase 3: Credential issuance
     // ----------------------------------------------------------------
-    let issuer_sk = {
-        let bytes: [u8; 32] = hex::decode(ISSUER_EDDSA_KEY_HEX)
-            .expect("invalid issuer EdDSA key hex")
-            .try_into()
-            .expect("issuer EdDSA key must be 32 bytes");
-        EdDSAPrivateKey::from_bytes(bytes)
-    };
+    let issuer_sk = EdDSAPrivateKey::from_bytes(ISSUER_EDDSA_KEY);
     let issuer_pk = issuer_sk.public();
 
     let blinding_factor = authenticator
@@ -190,10 +184,8 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     // ----------------------------------------------------------------
     // Phase 4: Proof generation
     // ----------------------------------------------------------------
-    let rp_signer = PrivateKeySigner::from_slice(
-        &hex::decode(RP_SIGNING_KEY_HEX).expect("invalid RP signing key hex"),
-    )
-    .expect("invalid RP ECDSA key");
+    let rp_signer = PrivateKeySigner::from_bytes(&RP_SIGNING_KEY.into())
+        .expect("invalid RP ECDSA key");
 
     let nonce = FieldElement::from(42u64);
     let created_at = now;
