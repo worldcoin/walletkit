@@ -19,12 +19,12 @@ use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
 use eyre::{Context as _, Result};
-use walletkit_core::{Authenticator, Environment};
+use walletkit_core::{defaults::DefaultConfig, Authenticator, Environment};
 use world_id_core::{
     requests::{ProofRequest, RequestItem, RequestVersion},
     Authenticator as CoreAuthenticator, EdDSAPrivateKey,
 };
-use world_id_primitives::{rp::RpId, Config, FieldElement};
+use world_id_primitives::{rp::RpId, FieldElement};
 
 // ---------------------------------------------------------------------------
 // Staging-registered constants (TODO: fill in after on-chain registration)
@@ -50,35 +50,6 @@ const WORLD_ID_VERIFIER: alloy::primitives::Address =
 
 /// Default RPC URL for World Chain Mainnet (chain 480).
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
-
-/// World ID Registry address on World Chain Mainnet.
-const WORLD_ID_REGISTRY: alloy::primitives::Address =
-    alloy::primitives::address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe");
-
-/// Staging indexer URL.
-const INDEXER_URL: &str = "https://world-id-indexer.stage-crypto.worldcoin.org";
-
-/// Staging gateway URL.
-const GATEWAY_URL: &str = "https://world-id-gateway.stage-crypto.worldcoin.org";
-
-/// Staging OPRF node URLs.
-const OPRF_NODE_URLS: &[&str] = &[
-    "https://node0.us.staging.world.oprf.taceo.network",
-    "https://node1.us.staging.world.oprf.taceo.network",
-    "https://node2.us.staging.world.oprf.taceo.network",
-    "https://node3.us.staging.world.oprf.taceo.network",
-    "https://node4.us.staging.world.oprf.taceo.network",
-    "https://node0.eu.staging.world.oprf.taceo.network",
-    "https://node1.eu.staging.world.oprf.taceo.network",
-    "https://node2.eu.staging.world.oprf.taceo.network",
-    "https://node3.eu.staging.world.oprf.taceo.network",
-    "https://node4.eu.staging.world.oprf.taceo.network",
-    "https://node0.ap.staging.world.oprf.taceo.network",
-    "https://node1.ap.staging.world.oprf.taceo.network",
-    "https://node2.ap.staging.world.oprf.taceo.network",
-    "https://node3.ap.staging.world.oprf.taceo.network",
-    "https://node4.ap.staging.world.oprf.taceo.network",
-];
 
 // ---------------------------------------------------------------------------
 // On-chain WorldIDVerifier binding (only the `verify` function)
@@ -122,22 +93,15 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
         .unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
 
-    let oprf_urls: Vec<String> = OPRF_NODE_URLS.iter().map(|s| s.to_string()).collect();
-
     // ----------------------------------------------------------------
     // Phase 1: Account registration
     // ----------------------------------------------------------------
     let seed = [7u8; 32];
     let recovery_address = alloy::primitives::Address::ZERO;
 
-    let config = Config::new(
+    let config = world_id_primitives::Config::from_environment(
+        &Environment::Staging,
         Some(rpc_url.clone()),
-        480,
-        WORLD_ID_REGISTRY,
-        INDEXER_URL.to_string(),
-        GATEWAY_URL.to_string(),
-        oprf_urls,
-        2,
     )
     .wrap_err("failed to build staging config")?;
 
