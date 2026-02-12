@@ -10,6 +10,10 @@ pub static WORLD_ID_REGISTRY: Address =
 /// Build a [`Config`] from well-known defaults for a given [`Environment`].
 pub trait DefaultConfig {
     /// Returns a config populated with the default URLs and addresses for the given environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WalletKitError`] if the configuration cannot be constructed (e.g. invalid RPC URL).
     fn from_environment(
         environment: &Environment,
         rpc_url: Option<String>,
