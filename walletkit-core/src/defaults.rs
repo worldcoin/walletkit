@@ -5,7 +5,7 @@ use crate::{error::WalletKitError, Environment};
 
 /// The World ID Registry contract address on World Chain Mainnet.
 pub static WORLD_ID_REGISTRY: Address =
-    address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe");
+    address!("0x7215Be2f5521985e2169f376B36a57473eaaAe6f");
 
 /// Build a [`Config`] from well-known defaults for a given [`Environment`].
 pub trait DefaultConfig {
