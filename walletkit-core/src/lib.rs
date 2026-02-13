@@ -75,7 +75,8 @@ pub mod storage;
 mod authenticator;
 pub use authenticator::{Authenticator, InitializingAuthenticator, RegistrationStatus};
 
-pub(crate) mod defaults;
+/// Default configuration values for each [`Environment`].
+pub mod defaults;
 
 pub mod requests;
 

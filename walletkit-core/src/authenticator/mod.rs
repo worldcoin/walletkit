@@ -228,7 +228,7 @@ impl Authenticator {
         let credential_list = self.store.list_credentials(None, now)?;
         let credential_list = credential_list
             .into_iter()
-            .map(|cred| cred.issuer_schema_id.clone().to_string())
+            .map(|cred| cred.issuer_schema_id)
             .collect::<std::collections::HashSet<_>>();
         let credentials_to_prove = proof_request
             .0
@@ -238,6 +238,8 @@ impl Authenticator {
         // Next, generate the nullifier and check the replay guard
         let nullifier = self.inner.generate_nullifier(&proof_request.0).await?;
 
+        // NOTE: In a normal flow this error can not be triggered since OPRF nodes have their own
+        // replay protection so the function will fail before this when attempting to generate the nullifier
         if self
             .store
             .is_nullifier_replay(nullifier.verifiable_oprf_output.output.into(), now)?
