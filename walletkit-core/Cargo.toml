@@ -33,6 +33,7 @@ reqwest = { version = "0.12", default-features = false, features = [
     "json",
     "brotli",
     "rustls-tls",
+    "multipart",
 ] }
 ruint = { version = "1.17", default-features = false, features = [
     "alloc",
