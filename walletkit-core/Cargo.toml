@@ -51,7 +51,10 @@ tokio = { version = "1", features = ["sync"] }
 zeroize = "1"
 uuid = { version = "1.10", features = ["v4"], optional = true }
 uniffi = { workspace = true, features = ["build", "tokio"] }
-world-id-core = { workspace = true }
+world-id-core = { workspace = true, features = [
+  "authenticator",
+  "embed-zkeys",
+] }
 ciborium = { version = "0.2.2", optional = true }
 
 # For Android, OpenSSL gets bundled through openssl-sys
@@ -85,14 +88,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-[dev-dependencies.world-id-test-utils]
-git = "https://github.com/worldcoin/world-id-protocol"
-rev = "34dc355268673c1370a7268d6dc7a2d967315503"
-
-[dev-dependencies.world-id-primitives]
-git = "https://github.com/worldcoin/world-id-protocol"
-rev = "34dc355268673c1370a7268d6dc7a2d967315503"
-default-features = false
+world-id-test-utils = { workspace = true }
+world-id-primitives = { workspace = true }
 
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]

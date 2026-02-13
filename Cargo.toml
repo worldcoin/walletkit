@@ -28,9 +28,18 @@ uniffi = { version = "0.31", features = ["build", "tokio"] }
 #FIXME: Update to next published version when available
 # version = "0.3"
 git = "https://github.com/worldcoin/world-id-protocol"
-rev = "34dc355268673c1370a7268d6dc7a2d967315503"
+rev = "f1bd233e97ab77e884b776e36dc011be41deb52a"
 default-features = false
-features = ["authenticator", "embed-zkeys"]
+
+[workspace.dependencies.world-id-test-utils]
+git = "https://github.com/worldcoin/world-id-protocol"
+rev = "f1bd233e97ab77e884b776e36dc011be41deb52a"
+default-features = false
+
+[workspace.dependencies.world-id-primitives]
+git = "https://github.com/worldcoin/world-id-protocol"
+rev = "f1bd233e97ab77e884b776e36dc011be41deb52a"
+default-features = false
 
 [profile.release]
 opt-level = 'z' # Optimize for size.
