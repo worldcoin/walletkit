@@ -21,7 +21,7 @@ name = "walletkit"
 
 [dependencies]
 uniffi = { workspace = true, features = ["build", "tokio"] }
-walletkit-core = { workspace = true, features = ["legacy-nullifiers", "common-apps", "storage"] }
+walletkit-core = { workspace = true, features = ["legacy-nullifiers", "common-apps", "storage", "issuers"] }
 
 
 [features]
