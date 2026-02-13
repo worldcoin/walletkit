@@ -55,7 +55,6 @@ world-id-core = { workspace = true, features = [
   "authenticator",
   "embed-zkeys",
   "compress-zkeys",
-  "zstd-compress-zkeys",
 ] }
 ciborium = { version = "0.2.2", optional = true }
 
