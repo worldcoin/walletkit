@@ -31,24 +31,24 @@ use world_id_primitives::{rp::RpId, FieldElement};
 // ---------------------------------------------------------------------------
 
 /// RP ID registered on the staging `RpRegistry` contract.
-const RP_ID: u64 = 42;
+const RP_ID: u64 = 44;
 
 /// ECDSA private key for the registered RP (secp256k1).
 const RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
-    "81ee18b54602db350e0575685ab35ce07840b89121a98d325623fc9b02db4f63"
+    "1111111111111111111111111111111111111111111111111111111111111111"
 );
 
 /// Issuer schema ID registered on the staging `CredentialSchemaIssuerRegistry`.
-const ISSUER_SCHEMA_ID: u64 = 43;
+const ISSUER_SCHEMA_ID: u64 = 45;
 
 /// EdDSA private key (32 bytes) for the registered issuer.
 const ISSUER_EDDSA_KEY: [u8; 32] = alloy::primitives::hex!(
-    "8957edfc42e2c699fcc7ec33cd8ec83eddc907f9dbd5cb4a73193cfeead9c42a"
+    "1111111111111111111111111111111111111111111111111111111111111111"
 );
 
 /// WorldIDVerifier proxy contract address on staging (World Chain Mainnet 480).
 const WORLD_ID_VERIFIER: alloy::primitives::Address =
-    alloy::primitives::address!("0xC1BF296fdf56Eec522eFCcb7655F158F3D108560");
+    alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
 
 /// Default RPC URL for World Chain Mainnet (chain 480).
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
