@@ -3,7 +3,7 @@ members = ["uniffi-bindgen", "walletkit-core", "walletkit"]
 resolver = "2"
 
 [workspace.package]
-version = "0.5.0"
+version = "0.5.1"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -21,7 +21,7 @@ alloy-core = { version = "1", default-features = false, features = [
   "sol-types",
 ] }
 alloy-primitives = { version = "1", default-features = false }
-walletkit-core = { version = "0.5.0", path = "walletkit-core", default-features = false }
+walletkit-core = { version = "0.5.1", path = "walletkit-core", default-features = false }
 uniffi = { version = "0.31", features = ["build", "tokio"] }
 
 [workspace.dependencies.world-id-core]
