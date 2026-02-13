@@ -228,7 +228,7 @@ impl Authenticator {
         let credential_list = self.store.list_credentials(None, now)?;
         let credential_list = credential_list
             .into_iter()
-            .map(|cred| cred.issuer_schema_id.clone().to_string())
+            .map(|cred| cred.issuer_schema_id)
             .collect::<std::collections::HashSet<_>>();
         let credentials_to_prove = proof_request
             .0
