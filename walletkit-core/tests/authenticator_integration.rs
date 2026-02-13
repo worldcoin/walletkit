@@ -13,8 +13,9 @@ use world_id_core::world_id_registry::WorldIdRegistry;
 
 fn setup_anvil() -> AnvilInstance {
     dotenvy::dotenv().ok();
-    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
-        .unwrap_or_else(|_| "https://worldchain-mainnet.g.alchemy.com/public".to_string());
+    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL").unwrap_or_else(|_| {
+        "https://worldchain-mainnet.g.alchemy.com/public".to_string()
+    });
 
     let anvil = alloy::node_bindings::Anvil::new().fork(rpc_url).spawn();
     println!(

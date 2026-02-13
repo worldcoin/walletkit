@@ -59,6 +59,7 @@ impl ProofResponse {
 impl ProofResponse {
     // TODO: ProofResponse should expose fields/methods for use by binding consumer
     /// Consumes the wrapper and returns the inner `CoreProofResponse`.
+    #[must_use]
     pub fn into_inner(self) -> CoreProofResponse {
         self.0
     }
