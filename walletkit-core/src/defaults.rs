@@ -35,6 +35,10 @@ impl DefaultConfig for Config {
                 WORLD_ID_REGISTRY,
                 "https://world-id-indexer.stage-crypto.worldcoin.org".to_string(),
                 "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
+                // TODO: Add a mechanism for selecting nodes by region
+                // https://github.com/worldcoin/walletkit/issues/194
+                // NOTE: That node0.us.. and node0.eu.. are the same node, so we can't just samle
+                // from the full list
                 vec![
                     // "https://node0.us.staging.world.oprf.taceo.network".to_string(),
                     // "https://node1.us.staging.world.oprf.taceo.network".to_string(),
