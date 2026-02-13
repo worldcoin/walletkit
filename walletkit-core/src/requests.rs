@@ -41,7 +41,7 @@ impl ProofRequest {
 ///
 /// This is a wrapper type to expose to foreign language bindings.
 #[derive(Debug, Clone, uniffi::Object)]
-pub struct ProofResponse(CoreProofResponse);
+pub struct ProofResponse(pub CoreProofResponse);
 
 #[uniffi::export]
 impl ProofResponse {
@@ -53,6 +53,14 @@ impl ProofResponse {
         serde_json::to_string(&self.0).map_err(|e| WalletKitError::Generic {
             error: format!("critical unexpected error serializing to json: {e}"),
         })
+    }
+}
+
+impl ProofResponse {
+    // TODO: ProofResponse should expose fields/methods for use by binding consumer
+    /// Consumes the wrapper and returns the inner `CoreProofResponse`.
+    pub fn into_inner(self) -> CoreProofResponse {
+        self.0
     }
 }
 

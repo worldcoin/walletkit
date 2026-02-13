@@ -18,7 +18,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
+use alloy_primitives::U160;
 use eyre::{Context as _, Result};
+use taceo_oprf::types::OprfKeyId;
 use walletkit_core::{defaults::DefaultConfig, Authenticator, Environment};
 use world_id_core::{
     requests::{ProofRequest, RequestItem, RequestVersion},
@@ -186,7 +188,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let rp_signer = PrivateKeySigner::from_bytes(&RP_SIGNING_KEY.into())
         .expect("invalid RP ECDSA key");
 
-    let nonce = FieldElement::from(42u64);
+    let nonce = FieldElement::random(&mut OsRng);
     let created_at = now;
     let expires_at = now + 300;
     let action = FieldElement::from(1u64);
@@ -206,17 +208,13 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         created_at,
         expires_at,
         rp_id,
-        oprf_key_id: taceo_oprf::types::OprfKeyId::new(alloy::primitives::U160::from(
-            RP_ID,
-        )),
+        oprf_key_id: OprfKeyId::new(U160::from(RP_ID)),
         session_id: None,
         action: Some(action),
         signature,
         nonce,
         requests: vec![RequestItem {
-            // NOTE: Identifier now matches issuer schema ID but we would like to setup a mapping
-            // of identifier to ISID
-            identifier: ISSUER_SCHEMA_ID.to_string(),
+            identifier: "credential identifier".to_string(),
             issuer_schema_id: ISSUER_SCHEMA_ID,
             signal: Some("my_signal".to_string()),
             genesis_issued_at_min: None,
@@ -233,12 +231,8 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .await
         .wrap_err("generate_proof failed")?;
 
-    let response_json = proof_response
-        .to_json()
-        .wrap_err("failed to serialize proof response")?;
-    let response: world_id_core::requests::ProofResponse =
-        serde_json::from_str(&response_json)
-            .wrap_err("failed to parse proof response JSON")?;
+    // TODO: ProofResponse should expose fields/methods for use by binding consumer
+    let response: world_id_core::requests::ProofResponse = proof_response.into_inner();
     assert!(response.error.is_none(), "proof response contains error");
     assert_eq!(response.responses.len(), 1);
 
