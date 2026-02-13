@@ -15,6 +15,8 @@ mod common;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rand::rngs::OsRng;
+
 use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
