@@ -9,12 +9,16 @@ use crate::error::WalletKitError;
 /// A request from the RP to the Authenticator. See [`CoreProofRequest`] for more details.
 /// This is a wrapper type to expose to foreign language bindings.
 #[derive(Debug, Clone, uniffi::Object)]
-pub struct ProofRequest(CoreProofRequest);
+pub struct ProofRequest(pub(crate) CoreProofRequest);
 
 #[uniffi::export]
 impl ProofRequest {
+    /// Deserializes a `ProofRequest` from a JSON string.
+    ///
+    /// # Errors
+    /// Returns an error if the JSON is invalid or cannot be parsed.
     #[uniffi::constructor]
-    fn from_json(json: &str) -> Result<Self, WalletKitError> {
+    pub fn from_json(json: &str) -> Result<Self, WalletKitError> {
         let core_request: CoreProofRequest =
             serde_json::from_str(json).map_err(|e| WalletKitError::Generic {
                 error: format!("invalid proof request json: {e}"),
@@ -22,7 +26,11 @@ impl ProofRequest {
         Ok(Self(core_request))
     }
 
-    fn to_json(&self) -> Result<String, WalletKitError> {
+    /// Serializes the proof request to a JSON string.
+    ///
+    /// # Errors
+    /// Returns an error if serialization fails.
+    pub fn to_json(&self) -> Result<String, WalletKitError> {
         serde_json::to_string(&self.0).map_err(|e| WalletKitError::Generic {
             error: format!("critical unexpected error serializing to json: {e}"),
         })
@@ -33,13 +41,38 @@ impl ProofRequest {
 ///
 /// This is a wrapper type to expose to foreign language bindings.
 #[derive(Debug, Clone, uniffi::Object)]
-pub struct ProofResponse(CoreProofResponse);
+pub struct ProofResponse(pub CoreProofResponse);
 
 #[uniffi::export]
 impl ProofResponse {
-    fn to_json(&self) -> Result<String, WalletKitError> {
+    /// Serializes the proof response to a JSON string.
+    ///
+    /// # Errors
+    /// Returns an error if serialization fails.
+    pub fn to_json(&self) -> Result<String, WalletKitError> {
         serde_json::to_string(&self.0).map_err(|e| WalletKitError::Generic {
             error: format!("critical unexpected error serializing to json: {e}"),
         })
+    }
+}
+
+impl ProofResponse {
+    // TODO: ProofResponse should expose fields/methods for use by binding consumer
+    /// Consumes the wrapper and returns the inner `CoreProofResponse`.
+    #[must_use]
+    pub fn into_inner(self) -> CoreProofResponse {
+        self.0
+    }
+}
+
+impl From<CoreProofRequest> for ProofRequest {
+    fn from(core_request: CoreProofRequest) -> Self {
+        Self(core_request)
+    }
+}
+
+impl From<CoreProofResponse> for ProofResponse {
+    fn from(core_response: CoreProofResponse) -> Self {
+        Self(core_response)
     }
 }

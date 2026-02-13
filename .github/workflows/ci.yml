@@ -30,6 +30,9 @@ jobs:
           toolchain: 1.92.0
           components: clippy,rustfmt
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
       - name: Check code formatting
         run: cargo fmt -- --check
 
