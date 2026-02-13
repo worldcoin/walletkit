@@ -28,9 +28,14 @@ uniffi = { version = "0.31", features = ["build", "tokio"] }
 #FIXME: Update to next published version when available
 # version = "0.3"
 git = "https://github.com/worldcoin/world-id-protocol"
-rev = "34dc355268673c1370a7268d6dc7a2d967315503"
+rev = "8702d7d96223ada5b96a54703643f1c5c93e0ae8"
 default-features = false
-features = ["authenticator", "embed-zkeys"]
+features = [
+  "authenticator",
+  "embed-zkeys",
+  "compress-zkeys",
+  "zstd-compress-zkeys",
+]
 
 [profile.release]
 opt-level = 'z' # Optimize for size.
