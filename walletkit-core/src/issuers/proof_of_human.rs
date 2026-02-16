@@ -4,6 +4,7 @@ use reqwest::multipart::Form;
 use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::time::Duration;
 
 /// Response from POP refresh endpoint
 #[derive(Deserialize, Debug, Eq, PartialEq)]
@@ -13,11 +14,12 @@ pub struct RefreshCredentialsResponse {
     pub message: Option<String>,
 }
 
-/// TFH POP credential issuer API client
+/// Proof of Human credential issuer API client
 #[derive(uniffi::Object)]
 pub struct ProofOfHumanIssuer {
     base_url: String,
     client: Client,
+    timeout: Duration,
 }
 
 #[uniffi::export]
@@ -25,7 +27,7 @@ impl ProofOfHumanIssuer {
     /// Create a new TFH POP issuer with the specified base URL
     #[uniffi::constructor]
     #[must_use]
-    pub fn new(environment: &Environment) -> Self {
+    pub fn new(environment: &Environment, timeout: Option<Duration>) -> Self {
         let base_url = match environment {
             Environment::Staging => "https://app.stage.orb.worldcoin.org",
             Environment::Production => "https://app.orb.worldcoin.org",
@@ -35,9 +37,13 @@ impl ProofOfHumanIssuer {
         Self {
             base_url,
             client: Client::new(),
+            timeout: timeout.unwrap_or(Duration::from_secs(60)),
         }
     }
+}
 
+
+impl ProofOfHumanIssuer {
     /// Refresh a POP credential (proof of personhood).
     ///
     /// Calls the `/api/v1/refresh` endpoint and returns a parsed credential string.
@@ -50,6 +56,9 @@ impl ProofOfHumanIssuer {
     ///
     ///
     /// Returns error on network failure or invalid response.
+    /// # Errors
+    ///
+    /// Returns error on network failure or invalid response.
     pub async fn refresh_pop_credential(
         &self,
         multipart_form: Form,
@@ -58,11 +67,15 @@ impl ProofOfHumanIssuer {
     ) -> Result<String, WalletKitError> {
         let url = format!("{}/api/v1/refresh?idComm={}", self.base_url, id_commitment);
 
-        let mut request = self.client.post(url).multipart(multipart_form);
-
+        let mut request = self.client.post(url).timeout(self.timeout).multipart(multipart_form);
+        
         for (key, value) in headers {
             request = request.header(key, value);
         }
+        request = request.header(
+            "User-Agent",
+            format!("walletkit-core/{}", env!("CARGO_PKG_VERSION")),
+        );
 
         let response = request.send().await?;
         let credential = self.parse_refresh_credentials_response(response).await?;
@@ -109,13 +122,14 @@ impl ProofOfHumanIssuer {
 }
 
 #[cfg(test)]
-impl TfhPopIssuer {
+impl ProofOfHumanIssuer {
     /// Create an issuer with a custom base URL (for testing).
     #[must_use]
     pub fn with_base_url(base_url: &str) -> Self {
         Self {
             base_url: base_url.to_string(),
             client: Client::new(),
+            timeout: Duration::from_secs(60),
         }
     }
 }
@@ -144,7 +158,7 @@ mod tests {
             .create_async()
             .await;
 
-        let issuer = TfhPopIssuer::with_base_url(&server.url());
+        let issuer = ProofOfHumanIssuer::with_base_url(&server.url());
 
         let form = Form::new().part("field1", Part::text("value1"));
 
@@ -172,7 +186,7 @@ mod tests {
             .create_async()
             .await;
 
-        let issuer = TfhPopIssuer::with_base_url(&server.url());
+        let issuer = ProofOfHumanIssuer::with_base_url(&server.url());
 
         let form = Form::new();
         let headers = HashMap::new();
