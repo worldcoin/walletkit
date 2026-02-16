@@ -15,12 +15,13 @@ pub struct RefreshCredentialsResponse {
 
 /// TFH POP credential issuer API client
 #[derive(uniffi::Object)]
-pub struct TfhPopIssuer {
+pub struct ProofOfHumanIssuer {
     base_url: String,
     client: Client,
 }
 
-impl TfhPopIssuer {
+#[uniffi::export]
+impl ProofOfHumanIssuer {
     /// Create a new TFH POP issuer with the specified base URL
     #[uniffi::constructor]
     #[must_use]
@@ -59,11 +60,11 @@ impl TfhPopIssuer {
         }
 
         let response = request.send().await?;
-        let credential = Self::parse_refresh_credentials_response(response).await?;
+        let credential = self.parse_refresh_credentials_response(response).await?;
         Ok(credential)
     }
 
-    async fn parse_refresh_credentials_response(
+    async fn parse_refresh_credentials_response(&self,
         response: reqwest::Response,
     ) -> Result<String, WalletKitError> {
         let status = response.status();

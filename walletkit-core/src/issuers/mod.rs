@@ -4,4 +4,4 @@ mod tfh_nfc;
 mod tfh_pop;
 
 pub use tfh_nfc::TfhNfcIssuer;
-pub use tfh_pop::TfhPopIssuer;
+pub use proof_of_human::ProofOfHumanIssuer;
