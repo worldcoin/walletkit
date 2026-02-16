@@ -1,10 +1,10 @@
 //! TFH NFC credential issuer (passport, eID, MNC).
+use crate::Credential;
 use crate::{error::WalletKitError, http_request::Request, Environment};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
 use std::collections::HashMap;
-use world_id_core::Credential;
 
 /// Response from NFC refresh endpoint
 #[derive(Debug, Clone, Deserialize)]
@@ -26,7 +26,7 @@ impl NfcRefreshResultRaw {
             }
         })?;
 
-        serde_json::from_slice(&credential_bytes).map_err(|e| {
+        Credential::from_bytes(credential_bytes).map_err(|e| {
             WalletKitError::SerializationError {
                 error: format!("Failed to deserialize NFC credential: {e}"),
             }
@@ -60,6 +60,7 @@ impl TfhNfcIssuer {
     }
 }
 
+#[uniffi::export(async_runtime = "tokio")]
 impl TfhNfcIssuer {
     /// Refresh an NFC credential (migrate PCP to v4).
     ///
@@ -137,8 +138,8 @@ mod tests {
 
     #[test]
     fn test_parse_credential() {
-        let credential = Credential::new();
-        let credential_json = serde_json::to_vec(&credential).unwrap();
+        let core_cred = world_id_core::Credential::new();
+        let credential_json = serde_json::to_vec(&core_cred).unwrap();
         let credential_base64 = STANDARD.encode(&credential_json);
 
         let raw = NfcRefreshResultRaw {
@@ -146,8 +147,8 @@ mod tests {
         };
 
         let parsed = raw.parse().unwrap();
-        assert_eq!(parsed.version, credential.version);
-        assert_eq!(parsed.issuer_schema_id, credential.issuer_schema_id);
+        assert_eq!(parsed.version, core_cred.version);
+        assert_eq!(parsed.issuer_schema_id(), core_cred.issuer_schema_id);
     }
 
     #[test]

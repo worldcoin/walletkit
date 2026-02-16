@@ -1,18 +1,24 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
 use alloy_primitives::Address;
+use rand::rngs::OsRng;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::Config,
-    Authenticator as CoreAuthenticator,
+    requests::{ProofResponse as CoreProofResponse, ResponseItem},
+    Authenticator as CoreAuthenticator, Credential as CoreCredential,
+    FieldElement as CoreFieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
 #[cfg(feature = "storage")]
 use crate::storage::CredentialStore;
 use crate::{
-    defaults::DefaultConfig, error::WalletKitError,
-    primitives::ParseFromForeignBinding, Environment, U256Wrapper,
+    defaults::DefaultConfig,
+    error::WalletKitError,
+    primitives::ParseFromForeignBinding,
+    requests::{ProofRequest, ProofResponse},
+    Environment, FieldElement, U256Wrapper,
 };
 #[cfg(feature = "storage")]
 use std::sync::Arc;
@@ -72,6 +78,34 @@ impl Authenticator {
         )
         .await?;
         Ok(packed_account_data.into())
+    }
+
+    /// Generates a blinding factor for a Credential sub (through OPRF Nodes).
+    ///
+    /// See [`CoreAuthenticator::generate_credential_blinding_factor`] for more details.
+    ///
+    /// # Errors
+    ///
+    /// - Will generally error if there are network issues or if the OPRF Nodes return an error.
+    /// - Raises an error if the OPRF Nodes configuration is not correctly set.
+    pub async fn generate_credential_blinding_factor_remote(
+        &self,
+        issuer_schema_id: u64,
+    ) -> Result<FieldElement, WalletKitError> {
+        Ok(self
+            .inner
+            .generate_credential_blinding_factor(issuer_schema_id)
+            .await
+            .map(Into::into)?)
+    }
+
+    /// Compute the `sub` for a credential from the authenticator's leaf index and a `blinding_factor`.
+    #[must_use]
+    pub fn compute_credential_sub(
+        &self,
+        blinding_factor: &FieldElement,
+    ) -> FieldElement {
+        CoreCredential::compute_sub(self.inner.leaf_index(), blinding_factor.0).into()
     }
 }
 
@@ -167,6 +201,85 @@ impl Authenticator {
             inner: authenticator,
             store,
         })
+    }
+
+    /// Generates a proof for the given proof request.
+    ///
+    /// # Errors
+    /// Returns an error if proof generation fails.
+    pub async fn generate_proof(
+        &self,
+        proof_request: &ProofRequest,
+        now: Option<u64>,
+    ) -> Result<ProofResponse, WalletKitError> {
+        let now = if let Some(n) = now {
+            n
+        } else {
+            let start = std::time::SystemTime::now();
+            start
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| WalletKitError::Generic {
+                    error: format!("Critical. Unable to determine SystemTime: {e}"),
+                })?
+                .as_secs()
+        };
+
+        // First check if the request can be fulfilled and which credentials should be used
+        let credential_list = self.store.list_credentials(None, now)?;
+        let credential_list = credential_list
+            .into_iter()
+            .map(|cred| cred.issuer_schema_id)
+            .collect::<std::collections::HashSet<_>>();
+        let credentials_to_prove = proof_request
+            .0
+            .credentials_to_prove(&credential_list)
+            .ok_or(WalletKitError::UnfulfillableRequest)?;
+
+        // Next, generate the nullifier and check the replay guard
+        let nullifier = self.inner.generate_nullifier(&proof_request.0).await?;
+
+        // NOTE: In a normal flow this error can not be triggered since OPRF nodes have their own
+        // replay protection so the function will fail before this when attempting to generate the nullifier
+        if self
+            .store
+            .is_nullifier_replay(nullifier.verifiable_oprf_output.output.into(), now)?
+        {
+            return Err(WalletKitError::NullifierReplay);
+        }
+
+        let mut responses: Vec<ResponseItem> = vec![];
+
+        for request_item in credentials_to_prove {
+            let (credential, blinding_factor) = self
+                .store
+                .get_credential(request_item.issuer_schema_id, now)?
+                .ok_or(WalletKitError::CredentialNotIssued)?;
+
+            let session_id_r_seed = CoreFieldElement::random(&mut OsRng); // TODO: Properly fetch session seed from cache
+
+            let response_item = self.inner.generate_single_proof(
+                nullifier.clone(),
+                request_item,
+                &credential,
+                blinding_factor.0,
+                session_id_r_seed,
+                proof_request.0.session_id,
+                proof_request.0.created_at,
+            )?;
+            responses.push(response_item);
+        }
+
+        let response = CoreProofResponse {
+            id: proof_request.0.id.clone(),
+            version: world_id_core::requests::RequestVersion::V1,
+            responses,
+            error: None,
+            session_id: None, // TODO: This needs to be computed to be shareable
+        };
+
+        self.store
+            .replay_guard_set(nullifier.verifiable_oprf_output.output.into(), now)?;
+        Ok(response.into())
     }
 }
 

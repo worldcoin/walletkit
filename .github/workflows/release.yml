@@ -67,7 +67,9 @@ jobs:
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
           components: rustfmt
 
-      - name: Build the project (iOS)
+      # Includes temporary downstream UniFFI callback vtable patch:
+      # https://github.com/mozilla/uniffi-rs/pull/2821
+      - name: Build the project (iOS, with temporary UniFFI ASan workaround)
         run: ./swift/build_swift.sh
 
       - name: Compress XCFramework binary

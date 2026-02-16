@@ -62,6 +62,12 @@ pub mod logger;
 mod u256;
 pub use u256::U256Wrapper;
 
+mod field_element;
+pub use field_element::FieldElement;
+
+mod credential;
+pub use credential::Credential;
+
 /// Credential storage primitives for World ID v4.
 #[cfg(feature = "storage")]
 pub mod storage;
@@ -69,7 +75,8 @@ pub mod storage;
 mod authenticator;
 pub use authenticator::{Authenticator, InitializingAuthenticator, RegistrationStatus};
 
-pub(crate) mod defaults;
+/// Default configuration values for each [`Environment`].
+pub mod defaults;
 
 pub mod requests;
 

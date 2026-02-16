@@ -3,21 +3,19 @@
 mod common;
 
 use alloy::node_bindings::AnvilInstance;
-use alloy::primitives::{address, U256};
+use alloy::primitives::U256;
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
+use walletkit_core::defaults::WORLD_ID_REGISTRY;
 use walletkit_core::error::WalletKitError;
 use walletkit_core::{Authenticator, Environment};
 use world_id_core::world_id_registry::WorldIdRegistry;
 
-const WORLD_ID_REGISTRY: alloy::primitives::Address =
-    address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe");
-
 fn setup_anvil() -> AnvilInstance {
     dotenvy::dotenv().ok();
-    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL").expect(
-        "WORLDCHAIN_RPC_URL not set. Copy .env.example to .env and add your RPC URL",
-    );
+    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL").unwrap_or_else(|_| {
+        "https://worldchain-mainnet.g.alchemy.com/public".to_string()
+    });
 
     let anvil = alloy::node_bindings::Anvil::new().fork(rpc_url).spawn();
     println!(
@@ -60,7 +58,7 @@ async fn test_authenticator_integration() {
 
     let tx = registry
         .createAccount(
-            address!("0x0000000000000000000000000000000000000001"), // recovery address
+            alloy::primitives::Address::with_last_byte(1), // recovery address
             vec![authenticator_seeder.address()],
             vec![U256::from(1)], // pubkeys
             U256::from(1),       // commitment
