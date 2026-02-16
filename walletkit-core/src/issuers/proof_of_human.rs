@@ -41,8 +41,13 @@ impl ProofOfHumanIssuer {
     /// Refresh a POP credential (proof of personhood).
     ///
     /// Calls the `/api/v1/refresh` endpoint and returns a parsed credential string.
+    /// 
+    /// # Arguments
     ///
-    /// # Errors
+    /// * `multipart_form` - The multipart form with pcp data to send in the request.
+    /// * `headers` - The headers to send in the request. Expected headers are `x-zkp-proof` and `attestation-gateway-token`.
+    /// * `id_commitment` - The ID commitment to use in the request.
+    ///
     ///
     /// Returns error on network failure or invalid response.
     pub async fn refresh_pop_credential(
