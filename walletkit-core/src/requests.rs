@@ -78,6 +78,12 @@ impl ProofResponse {
     pub const fn version(&self) -> u8 {
         self.0.version as u8
     }
+
+    /// Returns the top-level error message, if the entire proof request failed.
+    #[must_use]
+    pub fn error(&self) -> Option<String> {
+        self.0.error.clone()
+    }
 }
 
 impl ProofResponse {
