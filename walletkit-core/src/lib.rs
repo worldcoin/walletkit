@@ -48,6 +48,22 @@ pub enum Environment {
     Production,
 }
 
+/// Region for OPRF node selection.
+///
+/// Each region has 5 nodes. All nodes in a request must be from the same region
+/// because the same physical node is reachable from multiple region endpoints
+/// (e.g. node0.us and node0.eu are the same node).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum)]
+pub enum OprfRegion {
+    /// United States
+    Us,
+    /// Europe (default)
+    #[default]
+    Eu,
+    /// Asia-Pacific
+    Ap,
+}
+
 pub(crate) mod primitives;
 
 mod credential_type;
