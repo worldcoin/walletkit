@@ -37,12 +37,14 @@ impl ProofRequest {
     }
 
     /// Returns the unique identifier for this request.
+    #[must_use]
     pub fn id(&self) -> String {
         self.0.id.clone()
     }
 
     /// Returns the protocol version as a `u8`.
-    pub fn version(&self) -> u8 {
+    #[must_use]
+    pub const fn version(&self) -> u8 {
         self.0.version as u8
     }
 }
@@ -66,12 +68,14 @@ impl ProofResponse {
     }
 
     /// Returns the unique identifier for this response.
+    #[must_use]
     pub fn id(&self) -> String {
         self.0.id.clone()
     }
 
     /// Returns the protocol version as a `u8`.
-    pub fn version(&self) -> u8 {
+    #[must_use]
+    pub const fn version(&self) -> u8 {
         self.0.version as u8
     }
 }
