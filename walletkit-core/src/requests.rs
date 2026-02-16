@@ -35,6 +35,16 @@ impl ProofRequest {
             error: format!("critical unexpected error serializing to json: {e}"),
         })
     }
+
+    /// Returns the unique identifier for this request.
+    pub fn id(&self) -> String {
+        self.0.id.clone()
+    }
+
+    /// Returns the protocol version as a `u8`.
+    pub fn version(&self) -> u8 {
+        self.0.version as u8
+    }
 }
 
 /// A response from the Authenticator to the RP. See [`CoreProofResponse`] for more details.
@@ -54,10 +64,19 @@ impl ProofResponse {
             error: format!("critical unexpected error serializing to json: {e}"),
         })
     }
+
+    /// Returns the unique identifier for this response.
+    pub fn id(&self) -> String {
+        self.0.id.clone()
+    }
+
+    /// Returns the protocol version as a `u8`.
+    pub fn version(&self) -> u8 {
+        self.0.version as u8
+    }
 }
 
 impl ProofResponse {
-    // TODO: ProofResponse should expose fields/methods for use by binding consumer
     /// Consumes the wrapper and returns the inner `CoreProofResponse`.
     #[must_use]
     pub fn into_inner(self) -> CoreProofResponse {
