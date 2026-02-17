@@ -3,7 +3,7 @@
 use std::io;
 
 use crate::storage::error::{StorageError, StorageResult};
-use walletkit_db::{params, Connection, DbError, Transaction, Value};
+use walletkit_db::{params, Connection, DbError, Transaction};
 
 /// Maps a database error into a cache storage error.
 pub(super) fn map_db_err(err: &DbError) -> StorageError {
@@ -71,7 +71,7 @@ pub(super) fn prune_expired_entries(conn: &Connection, now: u64) -> StorageResul
     let now_i64 = to_i64(now, "now")?;
     conn.execute(
         "DELETE FROM cache_entries WHERE expires_at <= ?1",
-        params![Value::Integer(now_i64)],
+        params![now_i64],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
@@ -85,7 +85,7 @@ pub(super) fn prune_expired_entries_tx(
     let now_i64 = to_i64(now, "now")?;
     tx.execute(
         "DELETE FROM cache_entries WHERE expires_at <= ?1",
-        params![Value::Integer(now_i64)],
+        params![now_i64],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
@@ -112,8 +112,8 @@ pub(super) fn upsert_cache_entry(
         params![
             key,
             value,
-            Value::Integer(times.inserted_at),
-            Value::Integer(times.expires_at),
+            times.inserted_at,
+            times.expires_at,
         ],
     )
     .map_err(|err| map_db_err(&err))?;
@@ -141,8 +141,8 @@ pub(super) fn insert_cache_entry_tx(
         params![
             key,
             value,
-            Value::Integer(times.inserted_at),
-            Value::Integer(times.expires_at),
+            times.inserted_at,
+            times.expires_at,
         ],
     )
     .map_err(|err| map_db_err(&err))?;
@@ -168,14 +168,14 @@ pub(super) fn get_cache_entry(
         let insertion_before = to_i64(insertion_before, "insertion_before")?;
         conn.query_row_optional(
             "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2 AND inserted_at < ?3",
-            params![key, Value::Integer(now), Value::Integer(insertion_before)],
+            params![key, now, insertion_before],
             |stmt| Ok(stmt.column_blob(0)),
         )
         .map_err(|err| map_db_err(&err))
     } else {
         conn.query_row_optional(
             "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2",
-            params![key, Value::Integer(now)],
+            params![key, now],
             |stmt| Ok(stmt.column_blob(0)),
         )
         .map_err(|err| map_db_err(&err))
@@ -198,8 +198,8 @@ pub(super) fn get_cache_entry_tx(
         ).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![
             key,
-            Value::Integer(now),
-            Value::Integer(insertion_before)
+            now,
+            insertion_before
         ])
         .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
@@ -210,7 +210,7 @@ pub(super) fn get_cache_entry_tx(
         let stmt = tx.prepare(
             "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2",
         ).map_err(|err| map_db_err(&err))?;
-        stmt.bind_values(params![key, Value::Integer(now)])
+        stmt.bind_values(params![key, now])
             .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
             walletkit_db::StepResult::Row => Ok(Some(stmt.column_blob(0))),

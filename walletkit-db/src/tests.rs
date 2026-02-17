@@ -9,13 +9,13 @@ fn test_open_in_memory() {
         .expect("create table");
     conn.execute(
         "INSERT INTO t (id, val) VALUES (?1, ?2)",
-        params![Value::Integer(1), Value::from("hello")],
+        params![1_i64, "hello"],
     )
     .expect("insert");
     let result = conn
         .query_row(
             "SELECT val FROM t WHERE id = ?1",
-            params![Value::Integer(1)],
+            params![1_i64],
             |stmt| Ok(stmt.column_text(0)),
         )
         .expect("query");
@@ -44,7 +44,7 @@ fn test_transaction_commit() {
         let tx = conn.transaction().expect("begin tx");
         tx.execute(
             "INSERT INTO t (id) VALUES (?1)",
-            params![Value::Integer(42)],
+            params![42_i64],
         )
         .expect("insert");
         tx.commit().expect("commit");
@@ -66,7 +66,7 @@ fn test_transaction_rollback_on_drop() {
         let tx = conn.transaction().expect("begin tx");
         tx.execute(
             "INSERT INTO t (id) VALUES (?1)",
-            params![Value::Integer(99)],
+            params![99_i64],
         )
         .expect("insert");
         // Drop without commit -> rollback
@@ -87,7 +87,7 @@ fn test_blob_round_trip() {
     let data = vec![0xDE, 0xAD, 0xBE, 0xEF];
     conn.execute(
         "INSERT INTO t (id, data) VALUES (?1, ?2)",
-        params![Value::Integer(1), data.as_slice()],
+        params![1_i64, data.as_slice()],
     )
     .expect("insert");
     let result = conn
@@ -105,7 +105,7 @@ fn test_null_handling() {
         .expect("create table");
     conn.execute(
         "INSERT INTO t (id, val) VALUES (?1, ?2)",
-        params![Value::Integer(1), Value::Null],
+        params![1_i64, Value::Null],
     )
     .expect("insert");
     let result = conn

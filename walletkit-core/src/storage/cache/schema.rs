@@ -1,7 +1,7 @@
 //! Cache database schema management.
 
 use crate::storage::error::StorageResult;
-use walletkit_db::{params, Connection, Value};
+use walletkit_db::{params, Connection};
 
 use super::util::map_db_err;
 
@@ -96,7 +96,7 @@ fn insert_meta(conn: &Connection) -> StorageResult<()> {
     conn.execute(
         "INSERT INTO cache_meta (schema_version, created_at, updated_at)
          VALUES (?1, strftime('%s','now'), strftime('%s','now'))",
-        params![Value::Integer(CACHE_SCHEMA_VERSION)],
+        params![CACHE_SCHEMA_VERSION],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())

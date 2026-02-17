@@ -75,9 +75,9 @@ impl VaultDb {
                      END
                  RETURNING leaf_index",
                 params![
-                    Value::Integer(VAULT_SCHEMA_VERSION),
-                    Value::Integer(leaf_index_i64),
-                    Value::Integer(now_i64),
+                    VAULT_SCHEMA_VERSION,
+                    leaf_index_i64,
+                    now_i64,
                 ],
                 |stmt| Ok(stmt.column_i64(0)),
             )
@@ -130,8 +130,8 @@ impl VaultDb {
              VALUES (?1, ?2, ?3, ?4)",
             params![
                 credential_blob_id.as_ref(),
-                Value::Integer(BlobKind::CredentialBlob.as_i64()),
-                Value::Integer(now_i64),
+                BlobKind::CredentialBlob.as_i64(),
+                now_i64,
                 credential_blob.as_slice(),
             ],
         )
@@ -146,8 +146,8 @@ impl VaultDb {
                  VALUES (?1, ?2, ?3, ?4)",
                 params![
                     cid.as_ref(),
-                    Value::Integer(BlobKind::AssociatedData.as_i64()),
-                    Value::Integer(now_i64),
+                    BlobKind::AssociatedData.as_i64(),
+                    now_i64,
                     data.as_slice(),
                 ],
             )
@@ -171,11 +171,11 @@ impl VaultDb {
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                 RETURNING credential_id",
                 params![
-                    Value::Integer(issuer_schema_id_i64),
+                    issuer_schema_id_i64,
                     subject_blinding_factor.as_ref(),
-                    Value::Integer(genesis_issued_at_i64),
-                    Value::Integer(expires_at_i64),
-                    Value::Integer(now_i64),
+                    genesis_issued_at_i64,
+                    expires_at_i64,
+                    now_i64,
                     credential_blob_id.as_ref(),
                     ad_cid_value,
                 ],
@@ -214,10 +214,7 @@ impl VaultDb {
                    AND cr.issuer_schema_id = ?2
                  ORDER BY cr.updated_at DESC";
             let stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
-            stmt.bind_values(params![
-                Value::Integer(expires),
-                Value::Integer(issuer_id),
-            ])
+            stmt.bind_values(params![expires, issuer_id])
             .map_err(|err| map_db_err(&err))?;
             while stmt.step().map_err(|err| map_db_err(&err))? == StepResult::Row {
                 records.push(map_record(&stmt)?);
@@ -231,7 +228,7 @@ impl VaultDb {
                  WHERE cr.expires_at > ?1
                  ORDER BY cr.updated_at DESC";
             let stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
-            stmt.bind_values(params![Value::Integer(expires)])
+            stmt.bind_values(params![expires])
                 .map_err(|err| map_db_err(&err))?;
             while stmt.step().map_err(|err| map_db_err(&err))? == StepResult::Row {
                 records.push(map_record(&stmt)?);
