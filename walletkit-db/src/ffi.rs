@@ -33,6 +33,7 @@ use super::error::{DbError, DbResult};
 pub const SQLITE_OK: i32 = 0;
 pub const SQLITE_ROW: i32 = 100;
 pub const SQLITE_DONE: i32 = 101;
+
 pub const SQLITE_NULL: i32 = 5;
 
 pub const SQLITE_OPEN_READONLY: i32 = 0x0000_0001;
