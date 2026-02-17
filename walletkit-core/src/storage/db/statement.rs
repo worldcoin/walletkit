@@ -19,14 +19,15 @@ pub enum StepResult {
 /// A prepared `SQLite` statement.
 ///
 /// Created via [`Connection::prepare`](super::Connection::prepare).
+/// Tied to the lifetime of the connection that created it.
 /// Finalized when dropped.
-pub struct Statement {
-    raw: RawStmt,
+pub struct Statement<'conn> {
+    raw: RawStmt<'conn>,
 }
 
-impl Statement {
+impl<'conn> Statement<'conn> {
     /// Wraps a raw statement handle.
-    pub(super) const fn new(raw: RawStmt) -> Self {
+    pub(super) const fn new(raw: RawStmt<'conn>) -> Self {
         Self { raw }
     }
 

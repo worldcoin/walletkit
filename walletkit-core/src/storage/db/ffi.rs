@@ -55,18 +55,21 @@ pub(super) struct RawDb {
 
 /// Opaque handle to a prepared `sqlite3_stmt`.
 ///
+/// The lifetime `'db` ties the statement to the [`RawDb`] that created it,
+/// ensuring at the type level that the statement cannot outlive the database.
 /// The statement is finalized when the handle is dropped.
-pub(super) struct RawStmt {
+pub(super) struct RawStmt<'db> {
     ptr: *mut c_void,
-    /// Kept to extract error messages via `sqlite3_errmsg`.
-    db: *mut c_void,
+    /// Borrowed database handle — used only to extract error messages via
+    /// `sqlite3_errmsg`.
+    db: &'db RawDb,
 }
 
 // Safety: the handles represent single-owner resources. They are not `Sync`
 // (no concurrent access) but can be moved between threads (`Send`), which the
 // outer `Mutex<CredentialStoreInner>` guarantees.
 unsafe impl Send for RawDb {}
-unsafe impl Send for RawStmt {}
+unsafe impl Send for RawStmt<'_> {}
 
 // -- RawDb implementation -----------------------------------------------------
 
@@ -183,7 +186,7 @@ impl RawDb {
     }
 
     /// Prepares a single SQL statement for execution.
-    pub fn prepare(&self, sql: &str) -> DbResult<RawStmt> {
+    pub fn prepare(&self, sql: &str) -> DbResult<RawStmt<'_>> {
         let c_sql = to_cstring(sql)?;
         let mut stmt_ptr: *mut c_void = std::ptr::null_mut();
 
@@ -205,7 +208,7 @@ impl RawDb {
 
         Ok(RawStmt {
             ptr: stmt_ptr,
-            db: self.ptr,
+            db: self,
         })
     }
 
@@ -246,7 +249,7 @@ impl std::fmt::Debug for RawDb {
 
 // -- RawStmt implementation ---------------------------------------------------
 
-impl RawStmt {
+impl RawStmt<'_> {
     /// Executes a single step. Returns `SQLITE_ROW` or `SQLITE_DONE`.
     pub fn step(&self) -> DbResult<i32> {
         // Safety: self.ptr is a valid prepared statement.
@@ -364,11 +367,11 @@ impl RawStmt {
     }
 
     fn errmsg(&self) -> String {
-        errmsg_from_ptr(self.db)
+        self.db.errmsg()
     }
 }
 
-impl Drop for RawStmt {
+impl Drop for RawStmt<'_> {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
             // Safety: self.ptr was obtained from sqlite3_prepare_v2 and is valid.

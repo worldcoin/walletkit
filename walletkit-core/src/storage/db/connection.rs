@@ -51,7 +51,7 @@ impl Connection {
     }
 
     /// Prepares a single SQL statement.
-    pub fn prepare(&self, sql: &str) -> DbResult<Statement> {
+    pub fn prepare(&self, sql: &str) -> DbResult<Statement<'_>> {
         let raw_stmt = self.db.prepare(sql)?;
         Ok(Statement::new(raw_stmt))
     }
@@ -73,7 +73,7 @@ impl Connection {
         &self,
         sql: &str,
         params: &[Value],
-        mapper: impl FnOnce(&Statement) -> DbResult<T>,
+        mapper: impl FnOnce(&Statement<'_>) -> DbResult<T>,
     ) -> DbResult<T> {
         let stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
@@ -91,7 +91,7 @@ impl Connection {
         &self,
         sql: &str,
         params: &[Value],
-        mapper: impl FnOnce(&Statement) -> DbResult<T>,
+        mapper: impl FnOnce(&Statement<'_>) -> DbResult<T>,
     ) -> DbResult<Option<T>> {
         let stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;

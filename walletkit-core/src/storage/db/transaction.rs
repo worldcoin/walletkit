@@ -60,13 +60,13 @@ impl<'conn> Transaction<'conn> {
         &self,
         sql: &str,
         params: &[Value],
-        mapper: impl FnOnce(&Statement) -> DbResult<T>,
+        mapper: impl FnOnce(&Statement<'_>) -> DbResult<T>,
     ) -> DbResult<T> {
         self.conn.query_row(sql, params, mapper)
     }
 
     /// See [`Connection::prepare`].
-    pub fn prepare(&self, sql: &str) -> DbResult<Statement> {
+    pub fn prepare(&self, sql: &str) -> DbResult<Statement<'_>> {
         self.conn.prepare(sql)
     }
 }
