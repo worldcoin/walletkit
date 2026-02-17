@@ -73,7 +73,7 @@ impl ProofResponse {
         self.0.id.clone()
     }
 
-    /// Returns the protocol version as a `u8`.
+    /// Returns the response format version as a `u8`.
     #[must_use]
     pub const fn version(&self) -> u8 {
         self.0.version as u8
