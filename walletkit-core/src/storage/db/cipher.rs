@@ -33,7 +33,7 @@
 
 use std::path::Path;
 
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use super::connection::Connection;
 use super::error::{DbError, DbResult};
@@ -50,7 +50,7 @@ pub fn open_encrypted(
     read_only: bool,
 ) -> DbResult<Connection> {
     let conn = Connection::open(path, read_only)?;
-    apply_key(&conn, k_intermediate)?;
+    apply_key(&conn, Zeroizing::new(k_intermediate))?;
     configure_connection(&conn)?;
     Ok(conn)
 }
@@ -65,11 +65,14 @@ pub fn open_encrypted(
 /// After keying, a lightweight read (`SELECT count(*) FROM sqlite_master`)
 /// verifies the key is correct. If it's wrong, `sqlite3mc` fails with
 /// `SQLITE_NOTADB` on the first page read.
-fn apply_key(conn: &Connection, mut k_intermediate: [u8; 32]) -> DbResult<()> {
+fn apply_key(conn: &Connection, k_intermediate: Zeroizing<[u8; 32]>) -> DbResult<()> {
     // Hex-encode the key and build the PRAGMA. Both are zeroized on drop.
-    let key_hex = Zeroizing::new(hex::encode(k_intermediate));
+    let key_hex = Zeroizing::new(hex::encode(&*k_intermediate));
     let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", key_hex.as_str()));
-    conn.execute_batch(&pragma)?;
+
+    // execute_batch_zeroized ensures the internal CString copy of the PRAGMA
+    // (which contains the hex key) is zeroized after the FFI call returns.
+    conn.execute_batch_zeroized(&pragma)?;
 
     // Touch a page to verify the key works. On failure this produces a clear
     // error rather than a confusing "not a database" later during schema setup.
@@ -84,7 +87,8 @@ fn apply_key(conn: &Connection, mut k_intermediate: [u8; 32]) -> DbResult<()> {
             )
         })?;
 
-    k_intermediate.zeroize();
+    // k_intermediate, key_hex, and pragma are all Zeroizing — zeroed on drop
+    // regardless of which exit path we took.
     Ok(())
 }
 

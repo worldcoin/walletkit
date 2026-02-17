@@ -49,6 +49,13 @@ impl Connection {
         self.db.exec(sql)
     }
 
+    /// Like [`execute_batch`](Self::execute_batch) but zeroizes the internal
+    /// C string buffer after execution. Use for SQL containing sensitive
+    /// material (e.g. `PRAGMA key`).
+    pub fn execute_batch_zeroized(&self, sql: &str) -> DbResult<()> {
+        self.db.exec_zeroized(sql)
+    }
+
     /// Prepares a single SQL statement.
     pub fn prepare(&self, sql: &str) -> DbResult<Statement> {
         let raw_stmt = self.db.prepare(sql)?;

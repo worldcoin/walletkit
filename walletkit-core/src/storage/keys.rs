@@ -58,10 +58,11 @@ impl StorageKeys {
         }
     }
 
-    /// Returns the intermediate key. Treat this as sensitive material.
+    /// Returns the intermediate key wrapped in [`Zeroizing`] so the caller's
+    /// copy is automatically zeroed on drop. Treat this as sensitive material.
     #[must_use]
-    pub const fn intermediate_key(&self) -> [u8; 32] {
-        self.intermediate_key
+    pub fn intermediate_key(&self) -> Zeroizing<[u8; 32]> {
+        Zeroizing::new(self.intermediate_key)
     }
 }
 

@@ -24,6 +24,8 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 
+use zeroize::Zeroize;
+
 use super::error::{DbError, DbResult};
 
 // -- SQLite constants (plain `i32`, no C types leaked to callers) -------------
@@ -119,6 +121,47 @@ impl RawDb {
                 &raw mut errmsg,
             )
         };
+
+        if rc == SQLITE_OK as c_int {
+            return Ok(());
+        }
+
+        let msg = if errmsg.is_null() {
+            self.errmsg()
+        } else {
+            // Safety: errmsg points to a C string allocated by SQLite.
+            let s = unsafe { CStr::from_ptr(errmsg) }
+                .to_string_lossy()
+                .into_owned();
+            unsafe {
+                raw::sqlite3_free(errmsg.cast());
+            }
+            s
+        };
+        Err(DbError::new(rc, msg))
+    }
+
+    /// Like [`exec`](Self::exec) but zeroizes the internal `CString` buffer
+    /// after the FFI call. Use for SQL that contains sensitive material (e.g.
+    /// `PRAGMA key`).
+    pub fn exec_zeroized(&self, sql: &str) -> DbResult<()> {
+        let c_sql = to_cstring(sql)?;
+        let mut errmsg: *mut c_char = std::ptr::null_mut();
+
+        // Safety: same invariants as exec().
+        let rc = unsafe {
+            raw::sqlite3_exec(
+                self.ptr,
+                c_sql.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null_mut(),
+                &raw mut errmsg,
+            )
+        };
+
+        // Zeroize the CString buffer that held the sensitive SQL before freeing.
+        let mut bytes = c_sql.into_bytes_with_nul();
+        bytes.zeroize();
 
         if rc == SQLITE_OK as c_int {
             return Ok(());
