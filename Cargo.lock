@@ -4194,7 +4194,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.2",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -5646,7 +5646,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.36",
- "socket2 0.6.2",
+ "socket2 0.5.10",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -5683,7 +5683,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.6.2",
+ "socket2 0.5.10",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -7756,9 +7756,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-types"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df4a13d21292f6f89e3cd9051acff0ea53e353f4d2bb4b8b2808a7925833cdc9"
+checksum = "6e6bc6213af1e0e1d7701a88fb4861cb0df966fc8ca8bb57cd432d9293d7673b"
 dependencies = [
  "alloy",
  "ark-ff 0.5.0",
