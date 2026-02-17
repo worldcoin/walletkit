@@ -391,7 +391,9 @@ fn to_cstring(s: &str) -> DbResult<CString> {
 }
 
 fn errmsg_from_ptr(db: *mut c_void) -> String {
-    // Safety: db is a valid sqlite3 handle (or null, which we check).
+    // Safety: callers must pass a valid sqlite3 handle pointer.
+    // In this module, it's only called with RawDb::ptr or the pointer returned
+    // by sqlite3_open_v2 before we close it on open failure.
     unsafe {
         let ptr = raw::sqlite3_errmsg(db);
         if ptr.is_null() {
