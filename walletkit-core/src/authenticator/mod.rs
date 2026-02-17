@@ -1,22 +1,28 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
 use alloy_primitives::Address;
+use rand::rngs::OsRng;
 use world_id_core::{
-    primitives::Config, types::GatewayRequestState, Authenticator as CoreAuthenticator,
+    api_types::{GatewayErrorCode, GatewayRequestState},
+    primitives::Config,
+    requests::{ProofResponse as CoreProofResponse, ResponseItem},
+    Authenticator as CoreAuthenticator, Credential as CoreCredential,
+    FieldElement as CoreFieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
 #[cfg(feature = "storage")]
 use crate::storage::CredentialStore;
 use crate::{
-    defaults::DefaultConfig, error::WalletKitError,
-    primitives::ParseFromForeignBinding, Environment, U256Wrapper,
+    defaults::DefaultConfig,
+    error::WalletKitError,
+    primitives::ParseFromForeignBinding,
+    requests::{ProofRequest, ProofResponse},
+    Environment, FieldElement, Region, U256Wrapper,
 };
 #[cfg(feature = "storage")]
 use std::sync::Arc;
 
-#[cfg(feature = "storage")]
-mod utils;
 #[cfg(feature = "storage")]
 mod with_storage;
 
@@ -28,7 +34,7 @@ pub struct Authenticator {
     store: Arc<CredentialStore>,
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
     ///
@@ -44,8 +50,8 @@ impl Authenticator {
     /// This is the index in the Merkle tree where the holder's World ID account is registered. It
     /// should only be used inside the authenticator and never shared.
     #[must_use]
-    pub fn leaf_index(&self) -> U256Wrapper {
-        self.inner.leaf_index().into()
+    pub fn leaf_index(&self) -> u64 {
+        self.inner.leaf_index()
     }
 
     /// Returns the Authenticator's `onchain_address`.
@@ -73,10 +79,38 @@ impl Authenticator {
         .await?;
         Ok(packed_account_data.into())
     }
+
+    /// Generates a blinding factor for a Credential sub (through OPRF Nodes).
+    ///
+    /// See [`CoreAuthenticator::generate_credential_blinding_factor`] for more details.
+    ///
+    /// # Errors
+    ///
+    /// - Will generally error if there are network issues or if the OPRF Nodes return an error.
+    /// - Raises an error if the OPRF Nodes configuration is not correctly set.
+    pub async fn generate_credential_blinding_factor_remote(
+        &self,
+        issuer_schema_id: u64,
+    ) -> Result<FieldElement, WalletKitError> {
+        Ok(self
+            .inner
+            .generate_credential_blinding_factor(issuer_schema_id)
+            .await
+            .map(Into::into)?)
+    }
+
+    /// Compute the `sub` for a credential from the authenticator's leaf index and a `blinding_factor`.
+    #[must_use]
+    pub fn compute_credential_sub(
+        &self,
+        blinding_factor: &FieldElement,
+    ) -> FieldElement {
+        CoreCredential::compute_sub(self.inner.leaf_index(), blinding_factor.0).into()
+    }
 }
 
 #[cfg(not(feature = "storage"))]
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -90,8 +124,9 @@ impl Authenticator {
         seed: &[u8],
         rpc_url: Option<String>,
         environment: &Environment,
+        region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url)?;
+        let config = Config::from_environment(environment, rpc_url, region)?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         Ok(Self {
             inner: authenticator,
@@ -120,7 +155,7 @@ impl Authenticator {
 }
 
 #[cfg(feature = "storage")]
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -134,9 +169,10 @@ impl Authenticator {
         seed: &[u8],
         rpc_url: Option<String>,
         environment: &Environment,
+        region: Option<Region>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url)?;
+        let config = Config::from_environment(environment, rpc_url, region)?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         Ok(Self {
             inner: authenticator,
@@ -167,6 +203,85 @@ impl Authenticator {
             inner: authenticator,
             store,
         })
+    }
+
+    /// Generates a proof for the given proof request.
+    ///
+    /// # Errors
+    /// Returns an error if proof generation fails.
+    pub async fn generate_proof(
+        &self,
+        proof_request: &ProofRequest,
+        now: Option<u64>,
+    ) -> Result<ProofResponse, WalletKitError> {
+        let now = if let Some(n) = now {
+            n
+        } else {
+            let start = std::time::SystemTime::now();
+            start
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| WalletKitError::Generic {
+                    error: format!("Critical. Unable to determine SystemTime: {e}"),
+                })?
+                .as_secs()
+        };
+
+        // First check if the request can be fulfilled and which credentials should be used
+        let credential_list = self.store.list_credentials(None, now)?;
+        let credential_list = credential_list
+            .into_iter()
+            .map(|cred| cred.issuer_schema_id)
+            .collect::<std::collections::HashSet<_>>();
+        let credentials_to_prove = proof_request
+            .0
+            .credentials_to_prove(&credential_list)
+            .ok_or(WalletKitError::UnfulfillableRequest)?;
+
+        // Next, generate the nullifier and check the replay guard
+        let nullifier = self.inner.generate_nullifier(&proof_request.0).await?;
+
+        // NOTE: In a normal flow this error can not be triggered since OPRF nodes have their own
+        // replay protection so the function will fail before this when attempting to generate the nullifier
+        if self
+            .store
+            .is_nullifier_replay(nullifier.verifiable_oprf_output.output.into(), now)?
+        {
+            return Err(WalletKitError::NullifierReplay);
+        }
+
+        let mut responses: Vec<ResponseItem> = vec![];
+
+        for request_item in credentials_to_prove {
+            let (credential, blinding_factor) = self
+                .store
+                .get_credential(request_item.issuer_schema_id, now)?
+                .ok_or(WalletKitError::CredentialNotIssued)?;
+
+            let session_id_r_seed = CoreFieldElement::random(&mut OsRng); // TODO: Properly fetch session seed from cache
+
+            let response_item = self.inner.generate_single_proof(
+                nullifier.clone(),
+                request_item,
+                &credential,
+                blinding_factor.0,
+                session_id_r_seed,
+                proof_request.0.session_id,
+                proof_request.0.created_at,
+            )?;
+            responses.push(response_item);
+        }
+
+        let response = CoreProofResponse {
+            id: proof_request.0.id.clone(),
+            version: world_id_core::requests::RequestVersion::V1,
+            responses,
+            error: None,
+            session_id: None, // TODO: This needs to be computed to be shareable
+        };
+
+        self.store
+            .replay_guard_set(nullifier.verifiable_oprf_output.output.into(), now)?;
+        Ok(response.into())
     }
 }
 
@@ -199,7 +314,7 @@ impl From<GatewayRequestState> for RegistrationStatus {
             GatewayRequestState::Finalized { .. } => Self::Finalized,
             GatewayRequestState::Failed { error, error_code } => Self::Failed {
                 error,
-                error_code: error_code.map(|c| c.to_string()),
+                error_code: error_code.map(|c: GatewayErrorCode| c.to_string()),
             },
         }
     }
@@ -226,12 +341,13 @@ impl InitializingAuthenticator {
         seed: &[u8],
         rpc_url: Option<String>,
         environment: &Environment,
+        region: Option<Region>,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = Config::from_environment(environment, rpc_url)?;
+        let config = Config::from_environment(environment, rpc_url, region)?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;

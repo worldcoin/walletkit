@@ -107,7 +107,7 @@ impl VaultDb {
         &mut self,
         _lock: &StorageLockGuard,
         issuer_schema_id: u64,
-        subject_blinding_factor: [u8; 32],
+        subject_blinding_factor: Vec<u8>,
         genesis_issued_at: u64,
         expires_at: u64,
         credential_blob: Vec<u8>,
@@ -172,7 +172,7 @@ impl VaultDb {
                 RETURNING credential_id",
                 params![
                     issuer_schema_id_i64,
-                    subject_blinding_factor.as_ref(),
+                    subject_blinding_factor,
                     genesis_issued_at_i64,
                     expires_at_i64,
                     now_i64,
@@ -239,6 +239,43 @@ impl VaultDb {
             }
         }
         Ok(records)
+    }
+
+    /// Retrieves the credential bytes and blinding factor by issuer schema ID.
+    ///
+    /// Returns the most recent non-expired credential matching the issuer schema ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn fetch_credential_and_blinding_factor(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<(Vec<u8>, Vec<u8>)>> {
+        let expires = to_i64(now, "now")?;
+        let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
+
+        let sql = "SELECT
+                cr.subject_blinding_factor,
+                blob.bytes as credential_blob
+             FROM credential_records cr
+             INNER JOIN blob_objects blob ON cr.credential_blob_cid = blob.content_id
+             WHERE cr.expires_at > ?1 AND cr.issuer_schema_id = ?2
+             ORDER BY cr.updated_at DESC
+             LIMIT 1";
+
+        let stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![expires, issuer_schema_id_i64])
+            .map_err(|err| map_db_err(&err))?;
+        match stmt.step().map_err(|err| map_db_err(&err))? {
+            StepResult::Row(row) => {
+                let blinding_factor = row.column_blob(0);
+                let credential_blob = row.column_blob(1);
+                Ok(Some((credential_blob, blinding_factor)))
+            }
+            StepResult::Done => Ok(None),
+        }
     }
 
     /// Runs an integrity check on the vault database.
