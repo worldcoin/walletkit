@@ -21,7 +21,7 @@ let package = Package(
         ),
         .binaryTarget(
             name: "WalletKitFFI",
-            path: "../../WalletKit.xcframework"
+            path: "../WalletKit.xcframework"
         ),
         .testTarget(
             name: "WalletKitTests",
