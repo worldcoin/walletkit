@@ -18,7 +18,7 @@ use crate::{
     error::WalletKitError,
     primitives::ParseFromForeignBinding,
     requests::{ProofRequest, ProofResponse},
-    Environment, FieldElement, U256Wrapper,
+    Environment, FieldElement, Region, U256Wrapper,
 };
 #[cfg(feature = "storage")]
 use std::sync::Arc;
@@ -124,8 +124,9 @@ impl Authenticator {
         seed: &[u8],
         rpc_url: Option<String>,
         environment: &Environment,
+        region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url)?;
+        let config = Config::from_environment(environment, rpc_url, region)?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         Ok(Self {
             inner: authenticator,
@@ -168,9 +169,10 @@ impl Authenticator {
         seed: &[u8],
         rpc_url: Option<String>,
         environment: &Environment,
+        region: Option<Region>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url)?;
+        let config = Config::from_environment(environment, rpc_url, region)?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         Ok(Self {
             inner: authenticator,
@@ -339,12 +341,13 @@ impl InitializingAuthenticator {
         seed: &[u8],
         rpc_url: Option<String>,
         environment: &Environment,
+        region: Option<Region>,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = Config::from_environment(environment, rpc_url)?;
+        let config = Config::from_environment(environment, rpc_url, region)?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;

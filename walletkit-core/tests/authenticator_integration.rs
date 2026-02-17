@@ -40,6 +40,7 @@ async fn test_authenticator_integration() {
         authenticator_seeder.to_bytes().as_slice(),
         Some(anvil.endpoint()),
         &Environment::Staging,
+        None,
         store.clone(),
     )
     .await
@@ -74,6 +75,7 @@ async fn test_authenticator_integration() {
         authenticator_seeder.to_bytes().as_slice(),
         Some(anvil.endpoint()),
         &Environment::Staging,
+        None,
         store,
     )
     .await

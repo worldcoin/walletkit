@@ -48,6 +48,18 @@ pub enum Environment {
     Production,
 }
 
+/// Region for node selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum)]
+pub enum Region {
+    /// United States
+    Us,
+    /// Europe (default)
+    #[default]
+    Eu,
+    /// Asia-Pacific
+    Ap,
+}
+
 pub(crate) mod primitives;
 
 mod credential_type;

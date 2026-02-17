@@ -1,11 +1,35 @@
 use alloy_primitives::{address, Address};
 use world_id_core::primitives::Config;
 
-use crate::{error::WalletKitError, Environment};
+use crate::{error::WalletKitError, Environment, Region};
 
 /// The World ID Registry contract address on World Chain Mainnet.
 pub static WORLD_ID_REGISTRY: Address =
     address!("0x7215Be2f5521985e2169f376B36a57473eaaAe6f");
+
+const OPRF_NODE_COUNT: usize = 5;
+
+/// Generates the list of OPRF node URLs for a given region and environment.
+fn oprf_node_urls(region: Region, environment: &Environment) -> Vec<String> {
+    let region_code = match region {
+        Region::Us => "us",
+        Region::Eu => "eu",
+        Region::Ap => "ap",
+    };
+
+    let env_segment = match environment {
+        Environment::Staging => ".staging",
+        Environment::Production => "",
+    };
+
+    (0..OPRF_NODE_COUNT)
+        .map(|i| {
+            format!(
+                "https://node{i}.{region_code}{env_segment}.world.oprf.taceo.network"
+            )
+        })
+        .collect()
+}
 
 /// Build a [`Config`] from well-known defaults for a given [`Environment`].
 pub trait DefaultConfig {
@@ -17,6 +41,7 @@ pub trait DefaultConfig {
     fn from_environment(
         environment: &Environment,
         rpc_url: Option<String>,
+        region: Option<Region>,
     ) -> Result<Self, WalletKitError>
     where
         Self: Sized;
@@ -26,8 +51,10 @@ impl DefaultConfig for Config {
     fn from_environment(
         environment: &Environment,
         rpc_url: Option<String>,
+        region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
-        // TODO: Add all correct values
+        let region = region.unwrap_or_default();
+
         match environment {
             Environment::Staging => Self::new(
                 rpc_url,
@@ -35,27 +62,7 @@ impl DefaultConfig for Config {
                 WORLD_ID_REGISTRY,
                 "https://world-id-indexer.stage-crypto.worldcoin.org".to_string(),
                 "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
-                // TODO: Add a mechanism for selecting nodes by region
-                // https://github.com/worldcoin/walletkit/issues/194
-                // NOTE: That node0.us.. and node0.eu.. are the same node, so we can't just samle
-                // from the full list
-                vec![
-                    // "https://node0.us.staging.world.oprf.taceo.network".to_string(),
-                    // "https://node1.us.staging.world.oprf.taceo.network".to_string(),
-                    // "https://node2.us.staging.world.oprf.taceo.network".to_string(),
-                    // "https://node3.us.staging.world.oprf.taceo.network".to_string(),
-                    // "https://node4.us.staging.world.oprf.taceo.network".to_string(),
-                    "https://node0.eu.staging.world.oprf.taceo.network".to_string(),
-                    "https://node1.eu.staging.world.oprf.taceo.network".to_string(),
-                    "https://node2.eu.staging.world.oprf.taceo.network".to_string(),
-                    "https://node3.eu.staging.world.oprf.taceo.network".to_string(),
-                    "https://node4.eu.staging.world.oprf.taceo.network".to_string(),
-                    // "https://node0.ap.staging.world.oprf.taceo.network".to_string(),
-                    // "https://node1.ap.staging.world.oprf.taceo.network".to_string(),
-                    // "https://node2.ap.staging.world.oprf.taceo.network".to_string(),
-                    // "https://node3.ap.staging.world.oprf.taceo.network".to_string(),
-                    // "https://node4.ap.staging.world.oprf.taceo.network".to_string(),
-                ],
+                oprf_node_urls(region, environment),
                 3,
             )
             .map_err(WalletKitError::from),

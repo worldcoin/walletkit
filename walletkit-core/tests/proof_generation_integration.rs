@@ -107,6 +107,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let config = world_id_primitives::Config::from_environment(
         &Environment::Staging,
         Some(rpc_url.clone()),
+        None,
     )
     .wrap_err("failed to build staging config")?;
 
@@ -133,6 +134,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         &seed,
         Some(rpc_url.clone()),
         &Environment::Staging,
+        None,
         store.clone(),
     )
     .await
