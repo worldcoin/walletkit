@@ -31,7 +31,7 @@ echo -e "${BLUE}🔨 Step 1: Building Swift bindings${NC}"
 cd "$BASE_PATH/.." && bash ./swift/build_swift.sh
 
 # Check if the XCFramework was created
-if [ ! -d "$BASE_PATH/../WalletKit.xcframework" ]; then
+if [ ! -d "$BASE_PATH/WalletKit.xcframework" ]; then
     echo -e "${RED}✗ Failed to build XCFramework${NC}"
     exit 1
 fi
@@ -42,11 +42,11 @@ echo -e "${BLUE}📦 Step 2: Copying generated Swift files to test package${NC}"
 mkdir -p "$TESTS_PATH/$SOURCES_PATH_NAME"
 
 # Copy the generated Swift files to the test package
-if [ -f "$BASE_PATH/../Sources/WalletKit/walletkit.swift" ]; then
-    cp "$BASE_PATH/../Sources/WalletKit/walletkit.swift" "$TESTS_PATH/$SOURCES_PATH_NAME"
+if [ -f "$BASE_PATH/Sources/WalletKit/walletkit.swift" ]; then
+    cp "$BASE_PATH/Sources/WalletKit/walletkit.swift" "$TESTS_PATH/$SOURCES_PATH_NAME"
     echo -e "${GREEN}✅ walletkit.swift copied to test package${NC}"
 else
-    echo -e "${RED}✗ Could not find generated Swift bindings at: $BASE_PATH/../Sources/WalletKit/walletkit.swift${NC}"
+    echo -e "${RED}✗ Could not find generated Swift bindings at: $BASE_PATH/Sources/WalletKit/walletkit.swift${NC}"
     exit 1
 fi
 
