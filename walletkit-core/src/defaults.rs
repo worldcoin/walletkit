@@ -25,7 +25,7 @@ fn oprf_node_urls(region: Region, environment: &Environment) -> Vec<String> {
     (0..OPRF_NODE_COUNT)
         .map(|i| {
             format!(
-                "https://node{i}.{region_code}.{env_segment}world.oprf.taceo.network"
+                "https://node{i}.{region_code}{env_segment}.world.oprf.taceo.network"
             )
         })
         .collect()
