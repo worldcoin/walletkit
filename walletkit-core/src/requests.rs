@@ -35,6 +35,18 @@ impl ProofRequest {
             error: format!("critical unexpected error serializing to json: {e}"),
         })
     }
+
+    /// Returns the unique identifier for this request.
+    #[must_use]
+    pub fn id(&self) -> String {
+        self.0.id.clone()
+    }
+
+    /// Returns the request format version as a `u8`.
+    #[must_use]
+    pub const fn version(&self) -> u8 {
+        self.0.version as u8
+    }
 }
 
 /// A response from the Authenticator to the RP. See [`CoreProofResponse`] for more details.
@@ -54,10 +66,27 @@ impl ProofResponse {
             error: format!("critical unexpected error serializing to json: {e}"),
         })
     }
+
+    /// Returns the unique identifier for this response.
+    #[must_use]
+    pub fn id(&self) -> String {
+        self.0.id.clone()
+    }
+
+    /// Returns the response format version as a `u8`.
+    #[must_use]
+    pub const fn version(&self) -> u8 {
+        self.0.version as u8
+    }
+
+    /// Returns the top-level error message, if the entire proof request failed.
+    #[must_use]
+    pub fn error(&self) -> Option<String> {
+        self.0.error.clone()
+    }
 }
 
 impl ProofResponse {
-    // TODO: ProofResponse should expose fields/methods for use by binding consumer
     /// Consumes the wrapper and returns the inner `CoreProofResponse`.
     #[must_use]
     pub fn into_inner(self) -> CoreProofResponse {
