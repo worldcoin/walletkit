@@ -10,11 +10,6 @@ pub(super) fn map_db_err(err: &DbError) -> StorageError {
     StorageError::CacheDb(err.to_string())
 }
 
-/// Maps an owned database error into a cache storage error.
-pub(super) fn map_db_err_owned(err: &DbError) -> StorageError {
-    StorageError::CacheDb(err.to_string())
-}
-
 /// Maps an IO error into a cache storage error.
 pub(super) fn map_io_err(err: &io::Error) -> StorageError {
     StorageError::CacheDb(err.to_string())

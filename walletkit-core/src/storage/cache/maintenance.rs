@@ -8,7 +8,7 @@ use crate::storage::db::Connection;
 use crate::storage::error::StorageResult;
 
 use super::schema;
-use super::util::{map_db_err_owned, map_io_err};
+use super::util::{map_db_err, map_io_err};
 
 /// Opens the cache DB or rebuilds it if integrity checks fail.
 ///
@@ -22,7 +22,7 @@ pub(super) fn open_or_rebuild(
     match open_prepared(path, k_intermediate) {
         Ok(conn) => {
             let integrity_ok =
-                cipher::integrity_check(&conn).map_err(|e| map_db_err_owned(&e))?;
+                cipher::integrity_check(&conn).map_err(|e| map_db_err(&e))?;
             if integrity_ok {
                 Ok(conn)
             } else {
@@ -41,7 +41,7 @@ pub(super) fn open_or_rebuild(
 /// Returns an error if the DB cannot be opened or configured.
 fn open_prepared(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Connection> {
     let conn = cipher::open_encrypted(path, k_intermediate, false)
-        .map_err(|e| map_db_err_owned(&e))?;
+        .map_err(|e| map_db_err(&e))?;
     schema::ensure_schema(&conn)?;
     Ok(conn)
 }

@@ -13,7 +13,7 @@ use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::lock::StorageLockGuard;
 use crate::storage::types::{BlobKind, CredentialRecord};
 use helpers::{
-    compute_content_id, map_db_err, map_db_err_owned, map_record, to_i64, to_u64,
+    compute_content_id, map_db_err, map_record, to_i64, to_u64,
 };
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 
@@ -35,7 +35,7 @@ impl VaultDb {
         _lock: &StorageLockGuard,
     ) -> StorageResult<Self> {
         let conn = cipher::open_encrypted(path, k_intermediate, false)
-            .map_err(|e| map_db_err_owned(&e))?;
+            .map_err(|e| map_db_err(&e))?;
         ensure_schema(&conn)?;
         let db = Self { conn };
         if !db.check_integrity()? {
@@ -246,6 +246,6 @@ impl VaultDb {
     ///
     /// Returns an error if the check cannot be executed.
     pub fn check_integrity(&self) -> StorageResult<bool> {
-        cipher::integrity_check(&self.conn).map_err(|e| map_db_err_owned(&e))
+        cipher::integrity_check(&self.conn).map_err(|e| map_db_err(&e))
     }
 }

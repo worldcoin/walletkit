@@ -45,7 +45,3 @@ pub(super) fn to_u64(value: i64, label: &str) -> StorageResult<u64> {
 pub(super) fn map_db_err(err: &DbError) -> StorageError {
     StorageError::VaultDb(err.to_string())
 }
-
-pub(super) fn map_db_err_owned(err: &DbError) -> StorageError {
-    StorageError::VaultDb(err.to_string())
-}
