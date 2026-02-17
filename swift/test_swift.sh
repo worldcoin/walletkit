@@ -50,14 +50,6 @@ else
     exit 1
 fi
 
-if [ -f "$BASE_PATH/../Sources/WalletKit/walletkit_core.swift" ]; then
-    cp "$BASE_PATH/../Sources/WalletKit/walletkit_core.swift" "$TESTS_PATH/$SOURCES_PATH_NAME"
-    echo -e "${GREEN}✅ walletkit_core.swift copied to test package${NC}"
-else
-    echo -e "${RED}✗ Could not find generated Swift bindings at: $BASE_PATH/../Sources/WalletKit/walletkit_core.swift${NC}"
-    exit 1
-fi
-
 echo ""
 echo -e "${BLUE}🧪 Running Swift tests with verbose output...${NC}"
 echo ""
