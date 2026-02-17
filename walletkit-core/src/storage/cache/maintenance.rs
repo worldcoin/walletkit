@@ -3,9 +3,9 @@
 use std::fs;
 use std::path::Path;
 
-use crate::storage::db::cipher;
-use crate::storage::db::Connection;
 use crate::storage::error::StorageResult;
+use walletkit_db::cipher;
+use walletkit_db::Connection;
 
 use super::schema;
 use super::util::{map_db_err, map_io_err};

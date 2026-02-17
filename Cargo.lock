@@ -6318,7 +6318,6 @@ dependencies = [
  "alloy-core",
  "alloy-primitives",
  "base64 0.22.1",
- "cc",
  "chacha20poly1305",
  "chrono",
  "ciborium",
@@ -6338,16 +6337,26 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "sqlite-wasm-rs",
  "strum",
  "subtle",
- "tempfile",
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
  "uniffi",
  "uuid",
+ "walletkit-db",
  "world-id-core",
+ "zeroize",
+]
+
+[[package]]
+name = "walletkit-db"
+version = "0.3.11"
+dependencies = [
+ "cc",
+ "hex",
+ "sqlite-wasm-rs",
+ "tempfile",
  "zeroize",
 ]
 

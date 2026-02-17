@@ -1,7 +1,7 @@
 //! Cache database schema management.
 
-use crate::storage::db::{params, Connection, Value};
 use crate::storage::error::StorageResult;
+use walletkit_db::{params, Connection, Value};
 
 use super::util::map_db_err;
 

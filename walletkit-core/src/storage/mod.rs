@@ -2,7 +2,6 @@
 
 pub mod cache;
 pub mod credential_storage;
-pub(crate) mod db;
 pub mod envelope;
 pub mod error;
 pub mod keys;

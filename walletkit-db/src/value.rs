@@ -47,10 +47,9 @@ impl From<&str> for Value {
 /// Convenience macro for building parameter lists.
 ///
 /// Usage: `params![1_i64, blob.as_slice(), "text"]`
+#[macro_export]
 macro_rules! params {
     ($($val:expr),* $(,)?) => {
-        &[$($crate::storage::db::Value::from($val)),*][..]
+        &[$($crate::Value::from($val)),*][..]
     };
 }
-
-pub(crate) use params;

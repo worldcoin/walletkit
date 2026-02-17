@@ -1,8 +1,8 @@
-//! Build script for walletkit-core.
+//! Build script for walletkit-db.
 //!
 //! On non-WASM targets this downloads the sqlite3mc amalgamation from a pinned
 //! upstream release (if not already cached) and compiles it into a static
-//! library that the `db` module links against.
+//! library.
 //!
 //! On WASM targets compilation is skipped because `sqlite-wasm-rs` provides
 //! the pre-compiled WASM binary.
@@ -18,11 +18,9 @@ const EXPECTED_SHA256: &str =
     "8e84aadc53bc09bda9cd307745a178191e7783e1b6478d74ffbcdf6a04f98085";
 
 fn main() {
-    #[cfg(feature = "storage")]
     build_sqlite3mc();
 }
 
-#[cfg(feature = "storage")]
 fn build_sqlite3mc() {
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch == "wasm32" {
@@ -55,7 +53,6 @@ fn build_sqlite3mc() {
 }
 
 /// Downloads the pinned amalgamation zip using curl.
-#[cfg(feature = "storage")]
 fn download(dest: &Path) {
     eprintln!("cargo:warning=Downloading sqlite3mc {SQLITE3MC_VERSION} (SQLite {SQLITE_VERSION})...");
     let status = Command::new("curl")
@@ -68,7 +65,6 @@ fn download(dest: &Path) {
 }
 
 /// Verifies the SHA-256 checksum of the downloaded zip.
-#[cfg(feature = "storage")]
 fn verify_checksum(zip_path: &Path) {
     // Try shasum (macOS) then sha256sum (Linux/CI).
     let output = Command::new("shasum")
@@ -89,7 +85,6 @@ fn verify_checksum(zip_path: &Path) {
 }
 
 /// Extracts the two needed files from the zip into `dest_dir`.
-#[cfg(feature = "storage")]
 fn extract(zip_path: &Path, dest_dir: &Path) {
     let status = Command::new("unzip")
         .args(["-o", "-j"]) // overwrite, junk paths (flatten)
@@ -103,7 +98,6 @@ fn extract(zip_path: &Path, dest_dir: &Path) {
 }
 
 /// Compiles the sqlite3mc amalgamation into a static library.
-#[cfg(feature = "storage")]
 fn compile(amalgamation_c: &Path, include_dir: &Path) {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 

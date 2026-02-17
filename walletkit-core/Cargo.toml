@@ -53,13 +53,7 @@ uuid = { version = "1.10", features = ["v4"], optional = true }
 uniffi = { workspace = true, features = ["build", "tokio"] }
 world-id-core = { workspace = true }
 ciborium = { version = "0.2.2", optional = true }
-
-# WASM: sqlite-wasm-rs provides SQLite compiled to WASM with sqlite3mc encryption
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-sqlite-wasm-rs = { version = "0.5", features = ["sqlite3mc"], optional = true }
-
-[build-dependencies]
-cc = "1"
+walletkit-db = { path = "../walletkit-db", optional = true }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [
@@ -78,7 +72,6 @@ rustls = { version = "0.23", features = ["ring"] }
 tokio-test = "0.4"
 world-id-core = { workspace = true }
 rand = "0.8"
-tempfile = "3"
 
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]
@@ -91,7 +84,7 @@ storage = [
     "dep:rand",
     "dep:sha2",
     "dep:uuid",
-    "dep:sqlite-wasm-rs",
+    "dep:walletkit-db",
 ]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.

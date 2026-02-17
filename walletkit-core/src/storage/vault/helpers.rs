@@ -2,9 +2,9 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::storage::db::{DbError, Statement};
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{BlobKind, ContentId, CredentialRecord};
+use walletkit_db::{DbError, Statement};
 
 const CONTENT_ID_PREFIX: &[u8] = b"worldid:blob";
 

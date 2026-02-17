@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
-use crate::storage::db::Connection;
 use crate::storage::error::StorageResult;
 use crate::storage::lock::StorageLockGuard;
+use walletkit_db::Connection;
 
 mod maintenance;
 mod merkle;

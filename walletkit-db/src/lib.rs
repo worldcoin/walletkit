@@ -1,6 +1,6 @@
 //! Minimal safe `SQLite` wrapper backed by `sqlite3mc`.
 //!
-//! This module provides a small, safe Rust API over the `SQLite` C FFI.
+//! This crate provides a small, safe Rust API over the `SQLite` C FFI.
 //! The raw symbols are resolved at compile time:
 //!
 //! * **Native** (`not(wasm32)`): linked against the `sqlite3mc` static library
@@ -26,7 +26,6 @@ pub use connection::Connection;
 pub use error::DbError;
 pub use statement::{Statement, StepResult};
 pub use transaction::Transaction;
-pub(crate) use value::params;
 pub use value::Value;
 
 #[cfg(test)]

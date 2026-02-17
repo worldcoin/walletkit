@@ -3,8 +3,8 @@
 //! Tracks request ids and nullifiers to enforce single-use disclosures while
 //! remaining idempotent for retries within the TTL window.
 
-use crate::storage::db::Connection;
 use crate::storage::error::StorageResult;
+use walletkit_db::Connection;
 
 use super::util::{
     cache_entry_times, get_cache_entry, get_cache_entry_tx, insert_cache_entry_tx,

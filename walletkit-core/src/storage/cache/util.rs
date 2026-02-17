@@ -2,8 +2,8 @@
 
 use std::io;
 
-use crate::storage::db::{params, Connection, DbError, Transaction, Value};
 use crate::storage::error::{StorageError, StorageResult};
+use walletkit_db::{params, Connection, DbError, Transaction, Value};
 
 /// Maps a database error into a cache storage error.
 pub(super) fn map_db_err(err: &DbError) -> StorageError {
@@ -203,8 +203,8 @@ pub(super) fn get_cache_entry_tx(
         ])
         .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
-            crate::storage::db::StepResult::Row => Ok(Some(stmt.column_blob(0))),
-            crate::storage::db::StepResult::Done => Ok(None),
+            walletkit_db::StepResult::Row => Ok(Some(stmt.column_blob(0))),
+            walletkit_db::StepResult::Done => Ok(None),
         }
     } else {
         let stmt = tx.prepare(
@@ -213,8 +213,8 @@ pub(super) fn get_cache_entry_tx(
         stmt.bind_values(params![key, Value::Integer(now)])
             .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
-            crate::storage::db::StepResult::Row => Ok(Some(stmt.column_blob(0))),
-            crate::storage::db::StepResult::Done => Ok(None),
+            walletkit_db::StepResult::Row => Ok(Some(stmt.column_blob(0))),
+            walletkit_db::StepResult::Done => Ok(None),
         }
     }
 }

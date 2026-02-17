@@ -7,8 +7,8 @@ mod tests;
 
 use std::path::Path;
 
-use crate::storage::db::cipher;
-use crate::storage::db::{params, Connection, StepResult, Value};
+use walletkit_db::cipher;
+use walletkit_db::{params, Connection, StepResult, Value};
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::lock::StorageLockGuard;
 use crate::storage::types::{BlobKind, CredentialRecord};
