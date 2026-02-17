@@ -171,8 +171,14 @@ impl Authenticator {
         environment: &Environment,
         region: Option<Region>,
         store: Arc<CredentialStore>,
+        // TODO: Add a builder pattern constructor to enable more configurability without breaking
+        // changes
+        zkey_cache_dir: Option<String>,
     ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url, region)?;
+        let mut config = Config::from_environment(environment, rpc_url, region)?;
+        if let Some(zkey_cache_dir) = zkey_cache_dir {
+            config = config.with_zkey_cache_dir(zkey_cache_dir);
+        }
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         Ok(Self {
             inner: authenticator,
