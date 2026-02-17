@@ -1,7 +1,7 @@
 use alloy_primitives::{address, Address};
 use world_id_core::primitives::Config;
 
-use crate::{error::WalletKitError, Environment, OprfRegion};
+use crate::{error::WalletKitError, Environment, Region};
 
 /// The World ID Registry contract address on World Chain Mainnet.
 pub static WORLD_ID_REGISTRY: Address =
@@ -10,22 +10,22 @@ pub static WORLD_ID_REGISTRY: Address =
 const OPRF_NODE_COUNT: usize = 5;
 
 /// Generates the list of OPRF node URLs for a given region and environment.
-fn oprf_node_urls(region: OprfRegion, environment: &Environment) -> Vec<String> {
+fn oprf_node_urls(region: Region, environment: &Environment) -> Vec<String> {
     let region_code = match region {
-        OprfRegion::Us => "us",
-        OprfRegion::Eu => "eu",
-        OprfRegion::Ap => "ap",
+        Region::Us => "us",
+        Region::Eu => "eu",
+        Region::Ap => "ap",
     };
 
     let env_segment = match environment {
-        Environment::Staging => "staging",
-        Environment::Production => todo!("Production OPRF URLs not yet defined"),
+        Environment::Staging => ".staging",
+        Environment::Production => "",
     };
 
     (0..OPRF_NODE_COUNT)
         .map(|i| {
             format!(
-                "https://node{i}.{region_code}.{env_segment}.world.oprf.taceo.network"
+                "https://node{i}.{region_code}.{env_segment}world.oprf.taceo.network"
             )
         })
         .collect()
@@ -41,7 +41,7 @@ pub trait DefaultConfig {
     fn from_environment(
         environment: &Environment,
         rpc_url: Option<String>,
-        oprf_region: Option<OprfRegion>,
+        region: Option<Region>,
     ) -> Result<Self, WalletKitError>
     where
         Self: Sized;
@@ -51,9 +51,9 @@ impl DefaultConfig for Config {
     fn from_environment(
         environment: &Environment,
         rpc_url: Option<String>,
-        oprf_region: Option<OprfRegion>,
+        region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
-        let region = oprf_region.unwrap_or_default();
+        let region = region.unwrap_or_default();
 
         match environment {
             Environment::Staging => Self::new(
