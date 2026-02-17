@@ -7,7 +7,7 @@ use std::path::Path;
 
 use super::error::{DbError, DbResult};
 use super::ffi::{self, RawDb};
-use super::statement::{Statement, StepResult};
+use super::statement::{Row, Statement, StepResult};
 use super::transaction::Transaction;
 use super::value::Value;
 
@@ -73,12 +73,12 @@ impl Connection {
         &self,
         sql: &str,
         params: &[Value],
-        mapper: impl FnOnce(&Statement<'_>) -> DbResult<T>,
+        mapper: impl FnOnce(&Row<'_, '_>) -> DbResult<T>,
     ) -> DbResult<T> {
         let stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         match stmt.step()? {
-            StepResult::Row => mapper(&stmt),
+            StepResult::Row(row) => mapper(&row),
             StepResult::Done => {
                 Err(DbError::new(ffi::SQLITE_DONE, "query returned no rows"))
             }
@@ -91,12 +91,12 @@ impl Connection {
         &self,
         sql: &str,
         params: &[Value],
-        mapper: impl FnOnce(&Statement<'_>) -> DbResult<T>,
+        mapper: impl FnOnce(&Row<'_, '_>) -> DbResult<T>,
     ) -> DbResult<Option<T>> {
         let stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         match stmt.step()? {
-            StepResult::Row => mapper(&stmt).map(Some),
+            StepResult::Row(row) => mapper(&row).map(Some),
             StepResult::Done => Ok(None),
         }
     }

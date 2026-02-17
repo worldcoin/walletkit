@@ -216,8 +216,10 @@ impl VaultDb {
             let stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
             stmt.bind_values(params![expires, issuer_id])
             .map_err(|err| map_db_err(&err))?;
-            while stmt.step().map_err(|err| map_db_err(&err))? == StepResult::Row {
-                records.push(map_record(&stmt)?);
+            while let StepResult::Row(row) =
+                stmt.step().map_err(|err| map_db_err(&err))?
+            {
+                records.push(map_record(&row)?);
             }
         } else {
             let sql = "SELECT
@@ -230,8 +232,10 @@ impl VaultDb {
             let stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
             stmt.bind_values(params![expires])
                 .map_err(|err| map_db_err(&err))?;
-            while stmt.step().map_err(|err| map_db_err(&err))? == StepResult::Row {
-                records.push(map_record(&stmt)?);
+            while let StepResult::Row(row) =
+                stmt.step().map_err(|err| map_db_err(&err))?
+            {
+                records.push(map_record(&row)?);
             }
         }
         Ok(records)

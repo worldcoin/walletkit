@@ -24,7 +24,7 @@ pub mod cipher;
 
 pub use connection::Connection;
 pub use error::DbError;
-pub use statement::{Statement, StepResult};
+pub use statement::{Row, Statement, StepResult};
 pub use transaction::Transaction;
 pub use value::Value;
 

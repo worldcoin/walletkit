@@ -203,7 +203,7 @@ pub(super) fn get_cache_entry_tx(
         ])
         .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
-            walletkit_db::StepResult::Row => Ok(Some(stmt.column_blob(0))),
+            walletkit_db::StepResult::Row(row) => Ok(Some(row.column_blob(0))),
             walletkit_db::StepResult::Done => Ok(None),
         }
     } else {
@@ -213,7 +213,7 @@ pub(super) fn get_cache_entry_tx(
         stmt.bind_values(params![key, now])
             .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
-            walletkit_db::StepResult::Row => Ok(Some(stmt.column_blob(0))),
+            walletkit_db::StepResult::Row(row) => Ok(Some(row.column_blob(0))),
             walletkit_db::StepResult::Done => Ok(None),
         }
     }

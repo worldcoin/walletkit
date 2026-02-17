@@ -4,7 +4,7 @@
 
 use super::connection::Connection;
 use super::error::DbResult;
-use super::statement::Statement;
+use super::statement::{Row, Statement};
 use super::value::Value;
 
 /// An open database transaction.
@@ -60,7 +60,7 @@ impl<'conn> Transaction<'conn> {
         &self,
         sql: &str,
         params: &[Value],
-        mapper: impl FnOnce(&Statement<'_>) -> DbResult<T>,
+        mapper: impl FnOnce(&Row<'_, '_>) -> DbResult<T>,
     ) -> DbResult<T> {
         self.conn.query_row(sql, params, mapper)
     }

@@ -8,12 +8,52 @@ use super::ffi::{self, RawStmt};
 use super::value::Value;
 
 /// Result of a single `sqlite3_step` call.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StepResult {
+pub enum StepResult<'stmt, 'conn> {
     /// A result row is available.
-    Row,
+    Row(Row<'stmt, 'conn>),
     /// The statement has finished executing.
     Done,
+}
+
+/// A guard that represents the current row for a statement.
+///
+/// Values read through this guard are valid for the current row only.
+/// Calling `step`, `reset`, or dropping/finalizing the statement invalidates
+/// SQLite's internal row pointers.
+pub struct Row<'stmt, 'conn> {
+    stmt: &'stmt Statement<'conn>,
+}
+
+impl Row<'_, '_> {
+    /// Reads a column as `i64`.
+    pub fn column_i64(&self, idx: usize) -> i64 {
+        self.stmt
+            .raw
+            .column_i64(i32::try_from(idx).expect("column index overflow"))
+    }
+
+    /// Reads a column as a blob. Returns an empty `Vec` for NULL.
+    pub fn column_blob(&self, idx: usize) -> Vec<u8> {
+        self.stmt
+            .raw
+            .column_blob(i32::try_from(idx).expect("column index overflow"))
+    }
+
+    /// Reads a column as a UTF-8 string. Returns an empty string for NULL.
+    pub fn column_text(&self, idx: usize) -> String {
+        self.stmt
+            .raw
+            .column_text(i32::try_from(idx).expect("column index overflow"))
+    }
+
+    /// Returns `true` if the column is SQL NULL.
+    #[allow(dead_code)]
+    pub fn is_column_null(&self, idx: usize) -> bool {
+        self.stmt
+            .raw
+            .column_type(i32::try_from(idx).expect("column index overflow"))
+            == ffi::SQLITE_NULL
+    }
 }
 
 /// A prepared `SQLite` statement.
@@ -46,38 +86,12 @@ impl<'conn> Statement<'conn> {
     }
 
     /// Executes a single step.
-    pub fn step(&self) -> DbResult<StepResult> {
+    pub fn step<'stmt>(&'stmt self) -> DbResult<StepResult<'stmt, 'conn>> {
         let rc = self.raw.step()?;
         if rc == ffi::SQLITE_ROW {
-            Ok(StepResult::Row)
+            Ok(StepResult::Row(Row { stmt: self }))
         } else {
             Ok(StepResult::Done)
         }
-    }
-
-    /// Reads a column as `i64`.
-    pub fn column_i64(&self, idx: usize) -> i64 {
-        self.raw
-            .column_i64(i32::try_from(idx).expect("column index overflow"))
-    }
-
-    /// Reads a column as a blob. Returns an empty `Vec` for NULL.
-    pub fn column_blob(&self, idx: usize) -> Vec<u8> {
-        self.raw
-            .column_blob(i32::try_from(idx).expect("column index overflow"))
-    }
-
-    /// Reads a column as a UTF-8 string. Returns an empty string for NULL.
-    pub fn column_text(&self, idx: usize) -> String {
-        self.raw
-            .column_text(i32::try_from(idx).expect("column index overflow"))
-    }
-
-    /// Returns `true` if the column is SQL NULL.
-    #[allow(dead_code)]
-    pub fn is_column_null(&self, idx: usize) -> bool {
-        self.raw
-            .column_type(i32::try_from(idx).expect("column index overflow"))
-            == ffi::SQLITE_NULL
     }
 }

@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{BlobKind, ContentId, CredentialRecord};
-use walletkit_db::{DbError, Statement};
+use walletkit_db::{DbError, Row};
 
 const CONTENT_ID_PREFIX: &[u8] = b"worldid:blob";
 
@@ -19,10 +19,10 @@ pub(super) fn compute_content_id(blob_kind: BlobKind, plaintext: &[u8]) -> Conte
     out
 }
 
-pub(super) fn map_record(stmt: &Statement) -> StorageResult<CredentialRecord> {
-    let credential_id = stmt.column_i64(0);
-    let issuer_schema_id = stmt.column_i64(1);
-    let expires_at = stmt.column_i64(2);
+pub(super) fn map_record(row: &Row<'_, '_>) -> StorageResult<CredentialRecord> {
+    let credential_id = row.column_i64(0);
+    let issuer_schema_id = row.column_i64(1);
+    let expires_at = row.column_i64(2);
     Ok(CredentialRecord {
         credential_id: to_u64(credential_id, "credential_id")?,
         issuer_schema_id: to_u64(issuer_schema_id, "issuer_schema_id")?,
