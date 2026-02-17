@@ -118,12 +118,8 @@ fn test_null_handling() {
 
 #[test]
 fn test_cipher_encrypted_round_trip() {
-    use std::path::PathBuf;
-    let path = PathBuf::from(format!(
-        "{}/walletkit-db-cipher-test-{}.sqlite",
-        std::env::temp_dir().display(),
-        uuid::Uuid::new_v4()
-    ));
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let path = dir.path().join("cipher-test.sqlite");
     let key = [0xABu8; 32];
 
     // Create and write
@@ -153,10 +149,7 @@ fn test_cipher_encrypted_round_trip() {
         assert!(result.is_err(), "wrong key should fail");
     }
 
-    // Clean up
-    let _ = std::fs::remove_file(&path);
-    let _ = std::fs::remove_file(path.with_extension("sqlite-wal"));
-    let _ = std::fs::remove_file(path.with_extension("sqlite-shm"));
+    // dir is cleaned up on drop
 }
 
 #[test]

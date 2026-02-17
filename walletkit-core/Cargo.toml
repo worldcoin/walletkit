@@ -78,6 +78,7 @@ rustls = { version = "0.23", features = ["ring"] }
 tokio-test = "0.4"
 world-id-core = { workspace = true }
 rand = "0.8"
+tempfile = "3"
 
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]
