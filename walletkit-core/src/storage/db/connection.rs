@@ -35,12 +35,6 @@ impl Connection {
         Ok(Self { db })
     }
 
-    /// Opens an in-memory database (useful for tests).
-    #[allow(dead_code)]
-    pub fn open_in_memory() -> DbResult<Self> {
-        Self::open(Path::new(":memory:"), false)
-    }
-
     /// Executes one or more SQL statements separated by semicolons.
     ///
     /// No result rows are returned. Suitable for DDL, PRAGMAs, and
@@ -133,5 +127,13 @@ impl Connection {
 impl std::fmt::Debug for Connection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Connection").finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+impl Connection {
+    /// Opens an in-memory database.
+    pub fn open_in_memory() -> DbResult<Self> {
+        Self::open(Path::new(":memory:"), false)
     }
 }
