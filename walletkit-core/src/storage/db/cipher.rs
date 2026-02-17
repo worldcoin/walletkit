@@ -92,17 +92,20 @@ fn apply_key(conn: &Connection, k_intermediate: Zeroizing<[u8; 32]>) -> DbResult
     Ok(())
 }
 
-/// Configures durable WAL settings and enables foreign keys.
+/// Configures durable WAL settings, foreign keys, and secure deletion.
 ///
 /// - `journal_mode = WAL` -- enables concurrent readers during writes.
 /// - `synchronous = FULL` -- maximizes crash consistency (all WAL pages are
 ///   fsynced before the transaction is reported as committed).
 /// - `foreign_keys = ON` -- enforces referential integrity constraints.
+/// - `secure_delete = ON` -- overwrites deleted content with zeroes so
+///   sensitive data does not linger in free pages.
 fn configure_connection(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
          PRAGMA journal_mode = WAL;
-         PRAGMA synchronous = FULL;",
+         PRAGMA synchronous = FULL;
+         PRAGMA secure_delete = ON;",
     )
 }
 
