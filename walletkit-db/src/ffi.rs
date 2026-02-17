@@ -255,9 +255,9 @@ impl RawStmt<'_> {
         // Safety: self.ptr is a valid prepared statement.
         let rc = unsafe { raw::sqlite3_step(self.ptr) };
         match rc {
-            _ if rc == SQLITE_ROW as c_int => Ok(SQLITE_ROW),
-            _ if rc == SQLITE_DONE as c_int => Ok(SQLITE_DONE),
-            _ => Err(DbError::new(rc, self.errmsg())),
+            SQLITE_ROW => Ok(SQLITE_ROW),
+            SQLITE_DONE => Ok(SQLITE_DONE),
+            other => Err(DbError::new(other, self.errmsg())),
         }
     }
 
