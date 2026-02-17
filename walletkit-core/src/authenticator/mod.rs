@@ -237,8 +237,13 @@ impl Authenticator {
             .credentials_to_prove(&credential_list)
             .ok_or(WalletKitError::UnfulfillableRequest)?;
 
+        let (inclusion_proof, key_set) = self.inner.fetch_inclusion_proof().await?;
+
         // Next, generate the nullifier and check the replay guard
-        let nullifier = self.inner.generate_nullifier(&proof_request.0).await?;
+        let nullifier = self
+            .inner
+            .generate_nullifier(&proof_request.0, inclusion_proof, key_set)
+            .await?;
 
         // NOTE: In a normal flow this error can not be triggered since OPRF nodes have their own
         // replay protection so the function will fail before this when attempting to generate the nullifier
