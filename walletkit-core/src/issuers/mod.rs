@@ -1,7 +1,7 @@
 //! Credential issuers for World ID.
 
-mod tfh_nfc;
 mod proof_of_human;
+mod tfh_nfc;
 
-pub use tfh_nfc::TfhNfcIssuer;
 pub use proof_of_human::ProofOfHumanIssuer;
+pub use tfh_nfc::TfhNfcIssuer;

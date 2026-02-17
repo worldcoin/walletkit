@@ -42,12 +42,11 @@ impl ProofOfHumanIssuer {
     }
 }
 
-
 impl ProofOfHumanIssuer {
     /// Refresh a POP credential (proof of personhood).
     ///
     /// Calls the `/api/v1/refresh` endpoint and returns a parsed credential string.
-    /// 
+    ///
     /// # Arguments
     ///
     /// * `multipart_form` - The multipart form with pcp data to send in the request.
@@ -67,8 +66,12 @@ impl ProofOfHumanIssuer {
     ) -> Result<String, WalletKitError> {
         let url = format!("{}/api/v1/refresh?idComm={}", self.base_url, id_commitment);
 
-        let mut request = self.client.post(url).timeout(self.timeout).multipart(multipart_form);
-        
+        let mut request = self
+            .client
+            .post(url)
+            .timeout(self.timeout)
+            .multipart(multipart_form);
+
         for (key, value) in headers {
             request = request.header(key, value);
         }
@@ -82,7 +85,8 @@ impl ProofOfHumanIssuer {
         Ok(credential)
     }
 
-    async fn parse_refresh_credentials_response(&self,
+    async fn parse_refresh_credentials_response(
+        &self,
         response: reqwest::Response,
     ) -> Result<String, WalletKitError> {
         let status = response.status();
