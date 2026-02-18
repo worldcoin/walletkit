@@ -102,7 +102,7 @@ struct RequestHandleError {
 }
 
 impl RequestHandleError {
-    fn retryable(url: String, status: Option<u16>, error: String) -> Self {
+    const fn retryable(url: String, status: Option<u16>, error: String) -> Self {
         Self {
             url,
             status,
@@ -111,7 +111,7 @@ impl RequestHandleError {
         }
     }
 
-    fn permanent(url: String, status: Option<u16>, error: String) -> Self {
+    const fn permanent(url: String, status: Option<u16>, error: String) -> Self {
         Self {
             url,
             status,
@@ -120,14 +120,14 @@ impl RequestHandleError {
         }
     }
 
-    fn is_retryable(&self) -> bool {
+    const fn is_retryable(&self) -> bool {
         self.retryable
     }
 }
 
 impl From<RequestHandleError> for WalletKitError {
     fn from(value: RequestHandleError) -> Self {
-        WalletKitError::NetworkError {
+        Self::NetworkError {
             url: value.url,
             status: value.status,
             error: value.error,
@@ -141,9 +141,10 @@ async fn execute_request_builder(
     let (client, request) = request_builder.build_split();
     let request = request.map_err(|err| {
         RequestHandleError::permanent(
-            err.url()
-                .map(|url| url.to_string())
-                .unwrap_or_else(|| "<unknown>".to_string()),
+            err.url().map_or_else(
+                || "<unknown>".to_string(),
+                std::string::ToString::to_string,
+            ),
             None,
             format!("request build failed: {err}"),
         )
