@@ -67,14 +67,7 @@ impl Request {
             .with_max_delay(Duration::from_secs(2))
             .with_max_times(self.max_retries as usize);
 
-        let template = request_builder.try_clone().ok_or_else(|| {
-            WalletKitError::NetworkError {
-                url: "<unknown>".to_string(),
-                status: None,
-                error: "request cannot be retried because it is not cloneable"
-                    .to_string(),
-            }
-        })?;
+        let template = request_builder;
 
         (|| async {
             let request_builder = template.try_clone().ok_or_else(|| {
