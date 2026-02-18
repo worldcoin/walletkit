@@ -70,11 +70,9 @@ impl Request {
         let template = request_builder;
 
         (|| async {
-            let request_builder = template.try_clone().unwrap_or_else(|| {
-                unreachable!(
-                    "request_builder must be cloneable after initial handle() guard"
-                )
-            });
+            let request_builder = template.try_clone().expect(
+                "request_builder must be cloneable after initial handle() guard",
+            );
             execute_request_builder(request_builder).await
         })
         .retry(backoff)
