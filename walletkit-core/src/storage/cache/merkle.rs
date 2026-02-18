@@ -1,8 +1,7 @@
 //! Merkle proof cache helpers.
 
-use rusqlite::Connection;
-
 use crate::storage::{cache::util::CACHE_KEY_PREFIX_MERKLE, error::StorageResult};
+use walletkit_db::Connection;
 
 use super::util::{
     cache_entry_times, get_cache_entry, prune_expired_entries, upsert_cache_entry,

@@ -7,7 +7,6 @@ pub mod error;
 pub mod keys;
 pub mod lock;
 pub mod paths;
-pub(crate) mod sqlcipher;
 pub mod traits;
 pub mod types;
 pub mod vault;

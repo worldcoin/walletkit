@@ -1,9 +1,10 @@
-use rusqlite::Row;
+//! Vault database helpers for content addressing and type conversion.
+
 use sha2::{Digest, Sha256};
 
 use crate::storage::error::{StorageError, StorageResult};
-use crate::storage::sqlcipher::SqlcipherError;
 use crate::storage::types::{BlobKind, ContentId, CredentialRecord};
+use walletkit_db::{DbError, Row};
 
 const CONTENT_ID_PREFIX: &[u8] = b"worldid:blob";
 
@@ -18,10 +19,10 @@ pub(super) fn compute_content_id(blob_kind: BlobKind, plaintext: &[u8]) -> Conte
     out
 }
 
-pub(super) fn map_record(row: &Row<'_>) -> StorageResult<CredentialRecord> {
-    let credential_id: i64 = row.get(0).map_err(|err| map_db_err(&err))?;
-    let issuer_schema_id: i64 = row.get(1).map_err(|err| map_db_err(&err))?;
-    let expires_at: i64 = row.get(2).map_err(|err| map_db_err(&err))?;
+pub(super) fn map_record(row: &Row<'_, '_>) -> StorageResult<CredentialRecord> {
+    let credential_id = row.column_i64(0);
+    let issuer_schema_id = row.column_i64(1);
+    let expires_at = row.column_i64(2);
     Ok(CredentialRecord {
         credential_id: to_u64(credential_id, "credential_id")?,
         issuer_schema_id: to_u64(issuer_schema_id, "issuer_schema_id")?,
@@ -41,13 +42,6 @@ pub(super) fn to_u64(value: i64, label: &str) -> StorageResult<u64> {
     })
 }
 
-pub(super) fn map_db_err(err: &rusqlite::Error) -> StorageError {
+pub(super) fn map_db_err(err: &DbError) -> StorageError {
     StorageError::VaultDb(err.to_string())
-}
-
-pub(super) fn map_sqlcipher_err(err: SqlcipherError) -> StorageError {
-    match err {
-        SqlcipherError::Sqlite(err) => StorageError::VaultDb(err.to_string()),
-        SqlcipherError::CipherUnavailable => StorageError::VaultDb(err.to_string()),
-    }
 }

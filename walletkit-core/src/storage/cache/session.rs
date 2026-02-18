@@ -2,9 +2,8 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::Connection;
-
 use crate::storage::error::{StorageError, StorageResult};
+use walletkit_db::Connection;
 
 use super::util::{
     cache_entry_times, get_cache_entry, parse_fixed_bytes, prune_expired_entries,
