@@ -8839,6 +8839,7 @@ dependencies = [
  "alloy",
  "alloy-core",
  "alloy-primitives",
+ "backon",
  "base64 0.22.1",
  "chacha20poly1305",
  "chrono",
@@ -9522,7 +9523,7 @@ dependencies = [
 [[package]]
 name = "world-id-authenticator"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=f7b9c63665da47c7105ce0b9fa707bcff6b13e9a#f7b9c63665da47c7105ce0b9fa707bcff6b13e9a"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
 dependencies = [
  "alloy",
  "anyhow",
@@ -9550,7 +9551,7 @@ dependencies = [
 [[package]]
 name = "world-id-core"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=f7b9c63665da47c7105ce0b9fa707bcff6b13e9a#f7b9c63665da47c7105ce0b9fa707bcff6b13e9a"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -9561,7 +9562,7 @@ dependencies = [
 [[package]]
 name = "world-id-oprf-node"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=f7b9c63665da47c7105ce0b9fa707bcff6b13e9a#f7b9c63665da47c7105ce0b9fa707bcff6b13e9a"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
 dependencies = [
  "alloy",
  "ark-bn254 0.5.0",
@@ -9596,7 +9597,7 @@ dependencies = [
 [[package]]
 name = "world-id-primitives"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=f7b9c63665da47c7105ce0b9fa707bcff6b13e9a#f7b9c63665da47c7105ce0b9fa707bcff6b13e9a"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -9632,7 +9633,7 @@ dependencies = [
 [[package]]
 name = "world-id-proof"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=f7b9c63665da47c7105ce0b9fa707bcff6b13e9a#f7b9c63665da47c7105ce0b9fa707bcff6b13e9a"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
 dependencies = [
  "ark-bn254 0.5.0",
  "ark-ff 0.5.0",
@@ -9658,7 +9659,7 @@ dependencies = [
 [[package]]
 name = "world-id-test-utils"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=f7b9c63665da47c7105ce0b9fa707bcff6b13e9a#f7b9c63665da47c7105ce0b9fa707bcff6b13e9a"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
 dependencies = [
  "alloy",
  "alloy-node-bindings",
