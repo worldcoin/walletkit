@@ -70,13 +70,11 @@ impl Request {
         let template = request_builder;
 
         (|| async {
-            let request_builder = template.try_clone().ok_or_else(|| {
-                RequestHandleError::permanent(
-                    "<unknown>".to_string(),
-                    None,
-                    "request cannot be retried because it is not cloneable".to_string(),
+            let request_builder = template.try_clone().unwrap_or_else(|| {
+                unreachable!(
+                    "request_builder must be cloneable after initial handle() guard"
                 )
-            })?;
+            });
             execute_request_builder(request_builder).await
         })
         .retry(backoff)
