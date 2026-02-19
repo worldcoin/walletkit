@@ -2,9 +2,12 @@
 
 use std::{
     fs,
+    io::Read,
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+use sha2::{Digest, Sha256};
 
 use super::{StorageError, StoragePaths, StorageResult};
 
@@ -18,6 +21,10 @@ use super::{StorageError, StoragePaths, StorageResult};
 #[uniffi::export]
 #[allow(clippy::needless_pass_by_value)]
 pub fn cache_embedded_groth16_material(paths: Arc<StoragePaths>) -> StorageResult<()> {
+    if has_valid_cached_material(paths.as_ref())? {
+        return Ok(());
+    }
+
     let files = world_id_core::proof::load_embedded_circuit_files()
         .map_err(|error| StorageError::CacheDb(error.to_string()))?;
 
@@ -30,6 +37,57 @@ pub fn cache_embedded_groth16_material(paths: Arc<StoragePaths>) -> StorageResul
     write_atomic(&paths.nullifier_graph_path(), &files.nullifier_graph)?;
 
     Ok(())
+}
+
+fn has_valid_cached_material(paths: &StoragePaths) -> StorageResult<bool> {
+    let entries = [
+        (
+            paths.query_zkey_path(),
+            world_id_core::proof::QUERY_ZKEY_FINGERPRINT,
+        ),
+        (
+            paths.nullifier_zkey_path(),
+            world_id_core::proof::NULLIFIER_ZKEY_FINGERPRINT,
+        ),
+        (
+            paths.query_graph_path(),
+            world_id_core::proof::QUERY_GRAPH_FINGERPRINT,
+        ),
+        (
+            paths.nullifier_graph_path(),
+            world_id_core::proof::NULLIFIER_GRAPH_FINGERPRINT,
+        ),
+    ];
+
+    for (path, expected_fingerprint) in entries {
+        if !path.is_file() {
+            return Ok(false);
+        }
+        let actual_fingerprint = file_sha256_hex(&path)?;
+        if actual_fingerprint != expected_fingerprint {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
+}
+
+fn file_sha256_hex(path: &Path) -> StorageResult<String> {
+    let mut file = fs::File::open(path)
+        .map_err(|error| StorageError::CacheDb(error.to_string()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 16 * 1024];
+    loop {
+        let bytes_read = file
+            .read(&mut buffer)
+            .map_err(|error| StorageError::CacheDb(error.to_string()))?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> StorageResult<()> {
