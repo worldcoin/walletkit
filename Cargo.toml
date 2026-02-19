@@ -28,17 +28,17 @@ uniffi = { version = "0.31", features = ["build", "tokio"] }
 #FIXME: Update to next published version when available
 # version = "0.3"
 git = "https://github.com/worldcoin/world-id-protocol"
-rev = "4c973a88cd003e4cd25be85666291a26c84c424f"
+rev = "b7a84859b11a"
 default-features = false
 
 [workspace.dependencies.world-id-test-utils]
 git = "https://github.com/worldcoin/world-id-protocol"
-rev = "4c973a88cd003e4cd25be85666291a26c84c424f"
+rev = "b7a84859b11a"
 default-features = false
 
 [workspace.dependencies.world-id-primitives]
 git = "https://github.com/worldcoin/world-id-protocol"
-rev = "4c973a88cd003e4cd25be85666291a26c84c424f"
+rev = "b7a84859b11a"
 default-features = false
 
 [profile.release]
