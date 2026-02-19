@@ -277,6 +277,32 @@ impl VaultDb {
         }
     }
 
+    /// **Development only.** Permanently deletes all credentials and their
+    /// associated blob data from the vault.
+    ///
+    /// This is a destructive, unrecoverable operation. Do not call in production.
+    /// Vault metadata (leaf index, schema version) is preserved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete operation fails.
+    pub fn danger_delete_all_credentials(
+        &mut self,
+        _lock: &StorageLockGuard,
+    ) -> StorageResult<u64> {
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+
+        let deleted = tx
+            .execute("DELETE FROM credential_records", &[])
+            .map_err(|err| map_db_err(&err))?;
+
+        tx.execute("DELETE FROM blob_objects", &[])
+            .map_err(|err| map_db_err(&err))?;
+
+        tx.commit().map_err(|err| map_db_err(&err))?;
+        Ok(deleted as u64)
+    }
+
     /// Runs an integrity check on the vault database.
     ///
     /// # Errors
