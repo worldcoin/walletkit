@@ -8,14 +8,6 @@ use std::{
 
 use super::{StorageError, StoragePaths, StorageResult};
 
-fn write_atomic(path: &Path, bytes: &[u8]) -> StorageResult<()> {
-    let tmp_path = PathBuf::from(format!("{}.tmp", path.to_string_lossy()));
-    fs::write(&tmp_path, bytes)
-        .map_err(|error| StorageError::CacheDb(error.to_string()))?;
-    fs::rename(&tmp_path, path)
-        .map_err(|error| StorageError::CacheDb(error.to_string()))
-}
-
 /// Writes embedded Groth16 material to the cache paths managed by [`StoragePaths`].
 ///
 /// This operation is idempotent and atomically rewrites all managed files.
@@ -37,6 +29,14 @@ pub fn cache_embedded_groth16_material(paths: Arc<StoragePaths>) -> StorageResul
     write_atomic(&paths.nullifier_graph_path(), &files.nullifier_graph)?;
 
     Ok(())
+}
+
+fn write_atomic(path: &Path, bytes: &[u8]) -> StorageResult<()> {
+    let tmp_path = PathBuf::from(format!("{}.tmp", path.to_string_lossy()));
+    fs::write(&tmp_path, bytes)
+        .map_err(|error| StorageError::CacheDb(error.to_string()))?;
+    fs::rename(&tmp_path, path)
+        .map_err(|error| StorageError::CacheDb(error.to_string()))
 }
 
 #[cfg(test)]

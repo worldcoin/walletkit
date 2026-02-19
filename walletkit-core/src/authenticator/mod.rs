@@ -27,95 +27,13 @@ use crate::{
 #[cfg(feature = "storage")]
 mod with_storage;
 
-#[cfg(feature = "storage")]
-fn ensure_cache_file_exists(path: &Path) -> Result<(), WalletKitError> {
-    if path.is_file() {
-        Ok(())
-    } else {
-        Err(WalletKitError::Groth16MaterialCacheMissing {
-            path: path.to_string_lossy().to_string(),
-        })
-    }
-}
-
-#[cfg(feature = "storage")]
-fn load_cached_materials(
-    store: &CredentialStore,
-) -> Result<
-    (
-        Arc<world_id_core::proof::CircomGroth16Material>,
-        Arc<world_id_core::proof::CircomGroth16Material>,
-    ),
-    WalletKitError,
-> {
-    let paths = store.storage_paths()?;
-    let query_zkey = paths.query_zkey_path();
-    let nullifier_zkey = paths.nullifier_zkey_path();
-    let query_graph = paths.query_graph_path();
-    let nullifier_graph = paths.nullifier_graph_path();
-
-    ensure_cache_file_exists(&query_zkey)?;
-    ensure_cache_file_exists(&nullifier_zkey)?;
-    ensure_cache_file_exists(&query_graph)?;
-    ensure_cache_file_exists(&nullifier_graph)?;
-
-    let query_material = world_id_core::proof::load_query_material_from_reader(
-        std::fs::File::open(&query_zkey).map_err(|error| {
-            WalletKitError::Groth16MaterialCacheIo {
-                path: query_zkey.to_string_lossy().to_string(),
-                error: error.to_string(),
-            }
-        })?,
-        std::fs::File::open(&query_graph).map_err(|error| {
-            WalletKitError::Groth16MaterialCacheIo {
-                path: query_graph.to_string_lossy().to_string(),
-                error: error.to_string(),
-            }
-        })?,
-    )
-    .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
-        path: format!(
-            "{} and {}",
-            query_zkey.to_string_lossy(),
-            query_graph.to_string_lossy()
-        ),
-        error: error.to_string(),
-    })?;
-
-    let nullifier_material = world_id_core::proof::load_nullifier_material_from_reader(
-        std::fs::File::open(&nullifier_zkey).map_err(|error| {
-            WalletKitError::Groth16MaterialCacheIo {
-                path: nullifier_zkey.to_string_lossy().to_string(),
-                error: error.to_string(),
-            }
-        })?,
-        std::fs::File::open(&nullifier_graph).map_err(|error| {
-            WalletKitError::Groth16MaterialCacheIo {
-                path: nullifier_graph.to_string_lossy().to_string(),
-                error: error.to_string(),
-            }
-        })?,
-    )
-    .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
-        path: format!(
-            "{} and {}",
-            nullifier_zkey.to_string_lossy(),
-            nullifier_graph.to_string_lossy()
-        ),
-        error: error.to_string(),
-    })?;
-
-    Ok((Arc::new(query_material), Arc::new(nullifier_material)))
-}
+type Groth16Materials = (
+    Arc<world_id_core::proof::CircomGroth16Material>,
+    Arc<world_id_core::proof::CircomGroth16Material>,
+);
 
 #[cfg(not(feature = "storage"))]
-fn load_embedded_materials() -> Result<
-    (
-        Arc<world_id_core::proof::CircomGroth16Material>,
-        Arc<world_id_core::proof::CircomGroth16Material>,
-    ),
-    WalletKitError,
-> {
+fn load_embedded_materials() -> Result<Groth16Materials, WalletKitError> {
     let query_material =
         world_id_core::proof::load_embedded_query_material().map_err(|error| {
             WalletKitError::Groth16MaterialEmbeddedLoad {
@@ -130,6 +48,85 @@ fn load_embedded_materials() -> Result<
     })?;
 
     Ok((Arc::new(query_material), Arc::new(nullifier_material)))
+}
+
+#[cfg(feature = "storage")]
+fn load_cached_materials(
+    store: &CredentialStore,
+) -> Result<Groth16Materials, WalletKitError> {
+    let paths = store.storage_paths()?;
+    let query_zkey = paths.query_zkey_path();
+    let nullifier_zkey = paths.nullifier_zkey_path();
+    let query_graph = paths.query_graph_path();
+    let nullifier_graph = paths.nullifier_graph_path();
+
+    ensure_cache_file_exists(&query_zkey)?;
+    ensure_cache_file_exists(&nullifier_zkey)?;
+    ensure_cache_file_exists(&query_graph)?;
+    ensure_cache_file_exists(&nullifier_graph)?;
+
+    let query_material = load_query_material_from_cache(&query_zkey, &query_graph)?;
+    let nullifier_material =
+        load_nullifier_material_from_cache(&nullifier_zkey, &nullifier_graph)?;
+
+    Ok((Arc::new(query_material), Arc::new(nullifier_material)))
+}
+
+#[cfg(feature = "storage")]
+fn ensure_cache_file_exists(path: &Path) -> Result<(), WalletKitError> {
+    if path.is_file() {
+        Ok(())
+    } else {
+        Err(WalletKitError::Groth16MaterialCacheMissing {
+            path: path.to_string_lossy().to_string(),
+        })
+    }
+}
+
+#[cfg(feature = "storage")]
+fn open_cached_material_file(path: &Path) -> Result<std::fs::File, WalletKitError> {
+    std::fs::File::open(path).map_err(|error| WalletKitError::Groth16MaterialCacheIo {
+        path: path.to_string_lossy().to_string(),
+        error: error.to_string(),
+    })
+}
+
+#[cfg(feature = "storage")]
+fn load_query_material_from_cache(
+    query_zkey: &Path,
+    query_graph: &Path,
+) -> Result<world_id_core::proof::CircomGroth16Material, WalletKitError> {
+    world_id_core::proof::load_query_material_from_reader(
+        open_cached_material_file(query_zkey)?,
+        open_cached_material_file(query_graph)?,
+    )
+    .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
+        path: format!(
+            "{} and {}",
+            query_zkey.to_string_lossy(),
+            query_graph.to_string_lossy()
+        ),
+        error: error.to_string(),
+    })
+}
+
+#[cfg(feature = "storage")]
+fn load_nullifier_material_from_cache(
+    nullifier_zkey: &Path,
+    nullifier_graph: &Path,
+) -> Result<world_id_core::proof::CircomGroth16Material, WalletKitError> {
+    world_id_core::proof::load_nullifier_material_from_reader(
+        open_cached_material_file(nullifier_zkey)?,
+        open_cached_material_file(nullifier_graph)?,
+    )
+    .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
+        path: format!(
+            "{} and {}",
+            nullifier_zkey.to_string_lossy(),
+            nullifier_graph.to_string_lossy()
+        ),
+        error: error.to_string(),
+    })
 }
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
