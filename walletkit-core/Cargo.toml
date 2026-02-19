@@ -58,7 +58,6 @@ world-id-core = { workspace = true, features = [
   "zstd-compress-zkeys",
 ] }
 ciborium = { version = "0.2.2", optional = true }
-tracing = "0.1"
 
 # for Android, OpenSSL gets bundled through openssl-sys
 [target.'cfg(target_os = "android")'.dependencies]
