@@ -39,7 +39,7 @@ use world_id_primitives::{rp::RpId, FieldElement};
 // ---------------------------------------------------------------------------
 
 /// RP ID registered on the staging `RpRegistry` contract.
-const RP_ID: u64 = 44;
+const RP_ID: u64 = 46;
 
 /// ECDSA private key for the registered RP (secp256k1).
 const RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
@@ -47,7 +47,7 @@ const RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
 );
 
 /// Issuer schema ID registered on the staging `CredentialSchemaIssuerRegistry`.
-const ISSUER_SCHEMA_ID: u64 = 45;
+const ISSUER_SCHEMA_ID: u64 = 47;
 
 /// EdDSA private key (32 bytes) for the registered issuer.
 const ISSUER_EDDSA_KEY: [u8; 32] = alloy::primitives::hex!(
