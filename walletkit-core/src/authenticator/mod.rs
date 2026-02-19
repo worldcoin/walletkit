@@ -3,7 +3,6 @@
 use alloy_primitives::Address;
 use rand::rngs::OsRng;
 #[cfg(feature = "storage")]
-use std::path::Path;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
@@ -68,49 +67,32 @@ fn load_cached_materials(
 }
 
 #[cfg(feature = "storage")]
-fn open_cached_material_file(path: &Path) -> Result<std::fs::File, WalletKitError> {
-    std::fs::File::open(path).map_err(|error| WalletKitError::Groth16MaterialCacheIo {
-        path: path.to_string_lossy().to_string(),
-        error: error.to_string(),
-    })
-}
-
-#[cfg(feature = "storage")]
 fn load_query_material_from_cache(
-    query_zkey: &Path,
-    query_graph: &Path,
+    query_zkey: &std::path::Path,
+    query_graph: &std::path::Path,
 ) -> Result<world_id_core::proof::CircomGroth16Material, WalletKitError> {
-    world_id_core::proof::load_query_material_from_reader(
-        open_cached_material_file(query_zkey)?,
-        open_cached_material_file(query_graph)?,
-    )
-    .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
-        path: format!(
-            "{} and {}",
-            query_zkey.to_string_lossy(),
-            query_graph.to_string_lossy()
-        ),
-        error: error.to_string(),
-    })
+    world_id_core::proof::load_query_material_from_paths(query_zkey, query_graph)
+        .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
+            path: format!(
+                "{} and {}",
+                query_zkey.to_string_lossy(),
+                query_graph.to_string_lossy()
+            ),
+            error: error.to_string(),
+        })
 }
 
 #[cfg(feature = "storage")]
 fn load_nullifier_material_from_cache(
-    nullifier_zkey: &Path,
-    nullifier_graph: &Path,
+    nullifier_zkey: &std::path::Path,
+    nullifier_graph: &std::path::Path,
 ) -> Result<world_id_core::proof::CircomGroth16Material, WalletKitError> {
-    world_id_core::proof::load_nullifier_material_from_reader(
-        open_cached_material_file(nullifier_zkey)?,
-        open_cached_material_file(nullifier_graph)?,
-    )
-    .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
-        path: format!(
-            "{} and {}",
-            nullifier_zkey.to_string_lossy(),
-            nullifier_graph.to_string_lossy()
-        ),
-        error: error.to_string(),
-    })
+    // TODO: Switch to error mapping once world-id-core exposes
+    // `load_nullifier_material_from_paths` as `Result` instead of panicking.
+    Ok(world_id_core::proof::load_nullifier_material_from_paths(
+        nullifier_zkey,
+        nullifier_graph,
+    ))
 }
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
