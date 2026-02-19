@@ -90,14 +90,9 @@ impl RawDb {
             )
         };
 
-        if rc != SQLITE_OK as c_int || ptr.is_null() {
+        if rc != SQLITE_OK as c_int {
             let msg = if ptr.is_null() {
-                if rc == SQLITE_OK as c_int {
-                    "sqlite3_open_v2 returned SQLITE_OK with null db pointer"
-                        .to_string()
-                } else {
-                    format!("sqlite3_open_v2 returned {rc}")
-                }
+                format!("sqlite3_open_v2 returned {rc}")
             } else {
                 let m = errmsg_from_ptr(ptr);
                 // Safety: ptr was allocated by sqlite3_open_v2 even on error;
@@ -107,12 +102,7 @@ impl RawDb {
                 }
                 m
             };
-            let code = if rc == SQLITE_OK as c_int {
-                SQLITE_ERROR as c_int
-            } else {
-                rc
-            };
-            return Err(DbError::new(code, msg));
+            return Err(DbError::new(rc, msg));
         }
 
         Ok(Self { ptr })
