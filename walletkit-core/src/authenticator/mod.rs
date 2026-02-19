@@ -2,6 +2,9 @@
 
 use alloy_primitives::Address;
 use rand::rngs::OsRng;
+#[cfg(feature = "storage")]
+use std::path::Path;
+use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::Config,
@@ -20,11 +23,114 @@ use crate::{
     requests::{ProofRequest, ProofResponse},
     Environment, FieldElement, Region, U256Wrapper,
 };
-#[cfg(feature = "storage")]
-use std::sync::Arc;
 
 #[cfg(feature = "storage")]
 mod with_storage;
+
+#[cfg(feature = "storage")]
+fn ensure_cache_file_exists(path: &Path) -> Result<(), WalletKitError> {
+    if path.is_file() {
+        Ok(())
+    } else {
+        Err(WalletKitError::Groth16MaterialCacheMissing {
+            path: path.to_string_lossy().to_string(),
+        })
+    }
+}
+
+#[cfg(feature = "storage")]
+fn load_cached_materials(
+    store: &CredentialStore,
+) -> Result<
+    (
+        Arc<world_id_core::proof::CircomGroth16Material>,
+        Arc<world_id_core::proof::CircomGroth16Material>,
+    ),
+    WalletKitError,
+> {
+    let paths = store.storage_paths()?;
+    let query_zkey = paths.query_zkey_path();
+    let nullifier_zkey = paths.nullifier_zkey_path();
+    let query_graph = paths.query_graph_path();
+    let nullifier_graph = paths.nullifier_graph_path();
+
+    ensure_cache_file_exists(&query_zkey)?;
+    ensure_cache_file_exists(&nullifier_zkey)?;
+    ensure_cache_file_exists(&query_graph)?;
+    ensure_cache_file_exists(&nullifier_graph)?;
+
+    let query_material = world_id_core::proof::load_query_material_from_reader(
+        std::fs::File::open(&query_zkey).map_err(|error| {
+            WalletKitError::Groth16MaterialCacheIo {
+                path: query_zkey.to_string_lossy().to_string(),
+                error: error.to_string(),
+            }
+        })?,
+        std::fs::File::open(&query_graph).map_err(|error| {
+            WalletKitError::Groth16MaterialCacheIo {
+                path: query_graph.to_string_lossy().to_string(),
+                error: error.to_string(),
+            }
+        })?,
+    )
+    .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
+        path: format!(
+            "{} and {}",
+            query_zkey.to_string_lossy(),
+            query_graph.to_string_lossy()
+        ),
+        error: error.to_string(),
+    })?;
+
+    let nullifier_material = world_id_core::proof::load_nullifier_material_from_reader(
+        std::fs::File::open(&nullifier_zkey).map_err(|error| {
+            WalletKitError::Groth16MaterialCacheIo {
+                path: nullifier_zkey.to_string_lossy().to_string(),
+                error: error.to_string(),
+            }
+        })?,
+        std::fs::File::open(&nullifier_graph).map_err(|error| {
+            WalletKitError::Groth16MaterialCacheIo {
+                path: nullifier_graph.to_string_lossy().to_string(),
+                error: error.to_string(),
+            }
+        })?,
+    )
+    .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
+        path: format!(
+            "{} and {}",
+            nullifier_zkey.to_string_lossy(),
+            nullifier_graph.to_string_lossy()
+        ),
+        error: error.to_string(),
+    })?;
+
+    Ok((Arc::new(query_material), Arc::new(nullifier_material)))
+}
+
+#[cfg(not(feature = "storage"))]
+fn load_embedded_materials() -> Result<
+    (
+        Arc<world_id_core::proof::CircomGroth16Material>,
+        Arc<world_id_core::proof::CircomGroth16Material>,
+    ),
+    WalletKitError,
+> {
+    let query_material =
+        world_id_core::proof::load_embedded_query_material().map_err(|error| {
+            WalletKitError::Groth16MaterialEmbeddedLoad {
+                error: error.to_string(),
+            }
+        })?;
+    let nullifier_material = world_id_core::proof::load_embedded_nullifier_material()
+        .map_err(|error| {
+        WalletKitError::Groth16MaterialEmbeddedLoad {
+            error: error.to_string(),
+        }
+    })?;
+
+    Ok((Arc::new(query_material), Arc::new(nullifier_material)))
+}
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
@@ -127,7 +233,10 @@ impl Authenticator {
         region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_embedded_materials()?;
+        let authenticator =
+            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
+                .await?;
         Ok(Self {
             inner: authenticator,
         })
@@ -147,7 +256,10 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_embedded_materials()?;
+        let authenticator =
+            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
+                .await?;
         Ok(Self {
             inner: authenticator,
         })
@@ -173,7 +285,10 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_cached_materials(&store)?;
+        let authenticator =
+            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
+                .await?;
         Ok(Self {
             inner: authenticator,
             store,
@@ -198,7 +313,10 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_cached_materials(&store)?;
+        let authenticator =
+            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
+                .await?;
         Ok(Self {
             inner: authenticator,
             store,
@@ -401,6 +519,7 @@ impl InitializingAuthenticator {
 #[cfg(all(test, feature = "storage"))]
 mod tests {
     use super::*;
+    use crate::storage::cache_embedded_groth16_material;
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
@@ -446,6 +565,8 @@ mod tests {
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
+        cache_embedded_groth16_material(store.storage_paths().expect("paths"))
+            .expect("cache material");
 
         Authenticator::init(&seed, &config, Arc::new(store))
             .await

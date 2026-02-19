@@ -94,6 +94,38 @@ pub enum WalletKitError {
     #[error("nullifier_replay")]
     NullifierReplay,
 
+    /// A required cached Groth16 material file is missing.
+    #[error("groth16_material_cache_missing")]
+    Groth16MaterialCacheMissing {
+        /// Expected file path.
+        path: String,
+    },
+
+    /// Cached Groth16 material could not be parsed or verified.
+    #[error("groth16_material_cache_invalid")]
+    Groth16MaterialCacheInvalid {
+        /// Input path(s) used for loading.
+        path: String,
+        /// Underlying error message.
+        error: String,
+    },
+
+    /// Failed to read Groth16 material cache file(s).
+    #[error("groth16_material_cache_io")]
+    Groth16MaterialCacheIo {
+        /// Path that failed IO.
+        path: String,
+        /// Underlying error message.
+        error: String,
+    },
+
+    /// Failed to load embedded Groth16 material.
+    #[error("groth16_material_embedded_load")]
+    Groth16MaterialEmbeddedLoad {
+        /// Underlying error message.
+        error: String,
+    },
+
     /// An unexpected error occurred
     #[error("unexpected_error: {error}")]
     Generic {
