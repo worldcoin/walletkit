@@ -60,27 +60,11 @@ fn load_cached_materials(
     let query_graph = paths.query_graph_path();
     let nullifier_graph = paths.nullifier_graph_path();
 
-    ensure_cache_file_exists(&query_zkey)?;
-    ensure_cache_file_exists(&nullifier_zkey)?;
-    ensure_cache_file_exists(&query_graph)?;
-    ensure_cache_file_exists(&nullifier_graph)?;
-
     let query_material = load_query_material_from_cache(&query_zkey, &query_graph)?;
     let nullifier_material =
         load_nullifier_material_from_cache(&nullifier_zkey, &nullifier_graph)?;
 
     Ok((Arc::new(query_material), Arc::new(nullifier_material)))
-}
-
-#[cfg(feature = "storage")]
-fn ensure_cache_file_exists(path: &Path) -> Result<(), WalletKitError> {
-    if path.is_file() {
-        Ok(())
-    } else {
-        Err(WalletKitError::Groth16MaterialCacheMissing {
-            path: path.to_string_lossy().to_string(),
-        })
-    }
 }
 
 #[cfg(feature = "storage")]
