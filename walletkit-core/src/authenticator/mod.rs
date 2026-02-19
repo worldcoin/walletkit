@@ -31,6 +31,10 @@ type Groth16Materials = (
 );
 
 #[cfg(not(feature = "storage"))]
+/// Loads embedded Groth16 query/nullifier material for authenticator initialization.
+///
+/// # Errors
+/// Returns an error if embedded material cannot be loaded or verified.
 fn load_embedded_materials() -> Result<Groth16Materials, WalletKitError> {
     let query_material =
         world_id_core::proof::load_embedded_query_material().map_err(|error| {
@@ -49,6 +53,10 @@ fn load_embedded_materials() -> Result<Groth16Materials, WalletKitError> {
 }
 
 #[cfg(feature = "storage")]
+/// Loads cached Groth16 query/nullifier material from the provided storage paths.
+///
+/// # Errors
+/// Returns an error if cached material cannot be loaded or verified.
 fn load_cached_materials(
     paths: &StoragePaths,
 ) -> Result<Groth16Materials, WalletKitError> {
@@ -65,6 +73,10 @@ fn load_cached_materials(
 }
 
 #[cfg(feature = "storage")]
+/// Loads cached query material from zkey/graph paths.
+///
+/// # Errors
+/// Returns an error if the cached query material cannot be loaded or verified.
 fn load_query_material_from_cache(
     query_zkey: &std::path::Path,
     query_graph: &std::path::Path,
@@ -85,6 +97,11 @@ fn load_query_material_from_cache(
     clippy::unnecessary_wraps,
     reason = "Temporary wrapper until world-id-core returns Result for nullifier path loader"
 )]
+/// Loads cached nullifier material from zkey/graph paths.
+///
+/// # Errors
+/// This currently mirrors a panicking upstream API and does not return an error path yet.
+/// It is intentionally wrapped in `Result` for forward compatibility with upstream.
 fn load_nullifier_material_from_cache(
     nullifier_zkey: &std::path::Path,
     nullifier_graph: &std::path::Path,
