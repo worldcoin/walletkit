@@ -55,12 +55,12 @@ uniffi = { workspace = true, features = ["build", "tokio"] }
 world-id-core = { workspace = true, features = [
   "authenticator",
   "embed-zkeys",
-  "compress-zkeys",
   "zstd-compress-zkeys",
 ] }
 ciborium = { version = "0.2.2", optional = true }
+tracing = "0.1"
 
-# For Android, OpenSSL gets bundled through openssl-sys
+# for Android, OpenSSL gets bundled through openssl-sys
 [target.'cfg(target_os = "android")'.dependencies]
 rusqlite = { version = "0.32", default-features = false, features = [
   "bundled-sqlcipher-vendored-openssl",
@@ -90,16 +90,23 @@ taceo-oprf = { version = "0.5", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
 world-id-test-utils = { workspace = true }
 world-id-primitives = { workspace = true }
 
+
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]
-common-apps = []
-semaphore = ["semaphore-rs/depth_30"]
+
+# Enables point-compression on all verifying keys. This results in ~2x smaller bundle size, but decompression is very expensive,
+# using it requires proper handling to ensure decompression is done once and cached. By default walletkit-swift and walletkit-android
+# ship with compressed keys. But this is disabled for tests.
+compress-zkeys = ["world-id-core/compress-zkeys"]
 issuers = ["dep:base64"]
 storage = ["dep:ciborium", "dep:hkdf", "dep:rusqlite", "dep:sha2", "dep:uuid"]
+
+# SECTION: V3 Feature Flags
+common-apps = []
+semaphore = ["semaphore-rs/depth_30"]
 
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
@@ -107,3 +114,4 @@ legacy-nullifiers = []
 
 [package.metadata.docs.rs]
 no-default-features = true
+features = ["issuers", "storage"]
