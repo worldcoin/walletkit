@@ -59,7 +59,7 @@ fn load_cached_materials(
 
     let query_material = load_query_material_from_cache(&query_zkey, &query_graph)?;
     let nullifier_material =
-        load_nullifier_material_from_cache(&nullifier_zkey, &nullifier_graph)?;
+        load_nullifier_material_from_cache(&nullifier_zkey, &nullifier_graph);
 
     Ok((Arc::new(query_material), Arc::new(nullifier_material)))
 }
@@ -84,13 +84,13 @@ fn load_query_material_from_cache(
 fn load_nullifier_material_from_cache(
     nullifier_zkey: &std::path::Path,
     nullifier_graph: &std::path::Path,
-) -> Result<world_id_core::proof::CircomGroth16Material, WalletKitError> {
+) -> world_id_core::proof::CircomGroth16Material {
     // TODO: Switch to error mapping once world-id-core exposes
     // `load_nullifier_material_from_paths` as `Result` instead of panicking.
-    Ok(world_id_core::proof::load_nullifier_material_from_paths(
+    world_id_core::proof::load_nullifier_material_from_paths(
         nullifier_zkey,
         nullifier_graph,
-    ))
+    )
 }
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.

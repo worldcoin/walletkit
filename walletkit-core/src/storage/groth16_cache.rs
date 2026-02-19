@@ -16,6 +16,7 @@ use super::{StorageError, StoragePaths, StorageResult};
 ///
 /// Returns an error if embedded material cannot be loaded or cache files cannot be written.
 #[uniffi::export]
+#[allow(clippy::needless_pass_by_value)]
 pub fn cache_embedded_groth16_material(paths: Arc<StoragePaths>) -> StorageResult<()> {
     let files = world_id_core::proof::load_embedded_circuit_files()
         .map_err(|error| StorageError::CacheDb(error.to_string()))?;
