@@ -204,6 +204,24 @@ impl CredentialStore {
         self.lock_inner()?
             .merkle_cache_put(proof_bytes, now, ttl_seconds)
     }
+
+    /// Deletes all stored credentials from the vault.
+    ///
+    /// This removes all credentials but preserves storage metadata
+    /// (leaf index, schema version). After deletion, the storage
+    /// remains initialized and ready to store new credentials.
+    ///
+    /// # Returns
+    ///
+    /// The number of credentials deleted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete operation fails.
+    pub fn delete_all_credentials(&self) -> StorageResult<u64> {
+        let mut inner = self.lock_inner()?;
+        inner.delete_all_credentials()
+    }
 }
 
 /// Implementation not exposed to foreign bindings
@@ -438,6 +456,17 @@ impl CredentialStoreInner {
         })?;
         let state = self.state_mut()?;
         state.cache.replay_guard_set(&guard, nullifier_bytes, now)
+    }
+
+    /// Deletes all stored credentials from the vault.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete operation fails.
+    fn delete_all_credentials(&mut self) -> StorageResult<u64> {
+        let guard = self.guard()?;
+        let state = self.state_mut()?;
+        state.vault.delete_all_credentials(&guard)
     }
 }
 
@@ -702,6 +731,109 @@ mod tests {
             .get_credential(issuer_schema_id, 2001)
             .expect("get credential query should succeed");
         assert!(expired.is_none(), "Expired credential should return None");
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_delete_all_credentials() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        // Store multiple test credentials with different issuer schema IDs
+        let issuer_schema_id_1 = 100u64;
+        let issuer_schema_id_2 = 200u64;
+        let blinding_factor = FieldElement::from(42u64);
+        let expires_at = 2000u64;
+
+        let core_cred_1 = CoreCredential::new()
+            .issuer_schema_id(issuer_schema_id_1)
+            .genesis_issued_at(1000);
+        let credential_1: Credential = core_cred_1.into();
+
+        let core_cred_2 = CoreCredential::new()
+            .issuer_schema_id(issuer_schema_id_2)
+            .genesis_issued_at(1000);
+        let credential_2: Credential = core_cred_2.into();
+
+        inner
+            .store_credential(&credential_1, &blinding_factor, expires_at, None, 1000)
+            .expect("store credential 1");
+
+        inner
+            .store_credential(&credential_2, &blinding_factor, expires_at, None, 1000)
+            .expect("store credential 2");
+
+        // Verify both credentials exist
+        let list_before = inner
+            .list_credentials(None, 1000)
+            .expect("list credentials before delete");
+        assert_eq!(
+            list_before.len(),
+            2,
+            "Should have 2 credentials before delete"
+        );
+
+        // Delete all credentials
+        let deleted_count = inner
+            .delete_all_credentials()
+            .expect("delete all credentials");
+        assert_eq!(deleted_count, 2, "Should have deleted 2 credentials");
+
+        // Verify no credentials remain
+        let list_after = inner
+            .list_credentials(None, 1000)
+            .expect("list credentials after delete");
+        assert_eq!(
+            list_after.len(),
+            0,
+            "Should have 0 credentials after delete"
+        );
+
+        // Verify specific credential lookups return None
+        let cred_1_after = inner
+            .get_credential(issuer_schema_id_1, 1000)
+            .expect("get credential 1");
+        assert!(
+            cred_1_after.is_none(),
+            "Credential 1 should not exist after delete"
+        );
+
+        let cred_2_after = inner
+            .get_credential(issuer_schema_id_2, 1000)
+            .expect("get credential 2");
+        assert!(
+            cred_2_after.is_none(),
+            "Credential 2 should not exist after delete"
+        );
+
+        // Verify storage can still be used to store new credentials after deletion
+        let core_cred_3 = CoreCredential::new()
+            .issuer_schema_id(300u64)
+            .genesis_issued_at(1000);
+        let credential_3: Credential = core_cred_3.into();
+
+        inner
+            .store_credential(&credential_3, &blinding_factor, expires_at, None, 1000)
+            .expect("store credential after delete");
+
+        let list_new = inner
+            .list_credentials(None, 1000)
+            .expect("list credentials after new store");
+        assert_eq!(
+            list_new.len(),
+            1,
+            "Should have 1 credential after storing new one"
+        );
 
         cleanup_test_storage(&root);
     }
