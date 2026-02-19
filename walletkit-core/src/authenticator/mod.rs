@@ -2,7 +2,6 @@
 
 use alloy_primitives::Address;
 use rand::rngs::OsRng;
-#[cfg(feature = "storage")]
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
@@ -14,7 +13,7 @@ use world_id_core::{
 };
 
 #[cfg(feature = "storage")]
-use crate::storage::CredentialStore;
+use crate::storage::{CredentialStore, StoragePaths};
 use crate::{
     defaults::DefaultConfig,
     error::WalletKitError,
@@ -51,9 +50,8 @@ fn load_embedded_materials() -> Result<Groth16Materials, WalletKitError> {
 
 #[cfg(feature = "storage")]
 fn load_cached_materials(
-    store: &CredentialStore,
+    paths: &StoragePaths,
 ) -> Result<Groth16Materials, WalletKitError> {
-    let paths = store.storage_paths()?;
     let query_zkey = paths.query_zkey_path();
     let nullifier_zkey = paths.nullifier_zkey_path();
     let query_graph = paths.query_graph_path();
@@ -245,10 +243,12 @@ impl Authenticator {
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
+        paths: Arc<StoragePaths>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let (query_material, nullifier_material) = load_cached_materials(&store)?;
+        let (query_material, nullifier_material) =
+            load_cached_materials(paths.as_ref())?;
         let authenticator =
             CoreAuthenticator::init(seed, config, query_material, nullifier_material)
                 .await?;
@@ -269,6 +269,7 @@ impl Authenticator {
     pub async fn init(
         seed: &[u8],
         config: &str,
+        paths: Arc<StoragePaths>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config =
@@ -276,7 +277,8 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        let (query_material, nullifier_material) = load_cached_materials(&store)?;
+        let (query_material, nullifier_material) =
+            load_cached_materials(paths.as_ref())?;
         let authenticator =
             CoreAuthenticator::init(seed, config, query_material, nullifier_material)
                 .await?;
@@ -531,7 +533,8 @@ mod tests {
         cache_embedded_groth16_material(store.storage_paths().expect("paths"))
             .expect("cache material");
 
-        Authenticator::init(&seed, &config, Arc::new(store))
+        let paths = store.storage_paths().expect("paths");
+        Authenticator::init(&seed, &config, paths, Arc::new(store))
             .await
             .unwrap();
         drop(mock_server);
