@@ -341,7 +341,8 @@ impl Authenticator {
             .credentials_to_prove(&credential_list)
             .ok_or(WalletKitError::UnfulfillableRequest)?;
 
-        let (inclusion_proof, key_set) = self.inner.fetch_inclusion_proof().await?;
+        let (inclusion_proof, key_set) =
+            self.fetch_inclusion_proof_with_cache(now).await?;
 
         // Next, generate the nullifier and check the replay guard
         let nullifier = self
@@ -388,8 +389,14 @@ impl Authenticator {
             session_id: None, // TODO: This needs to be computed to be shareable
         };
 
+        proof_request
+            .0
+            .validate_response(&response)
+            .map_err(|err| WalletKitError::ResponseValidation(err.to_string()))?;
+
         self.store
             .replay_guard_set(nullifier.verifiable_oprf_output.output.into(), now)?;
+
         Ok(response.into())
     }
 }
