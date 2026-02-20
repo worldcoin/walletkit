@@ -29,8 +29,7 @@ impl Authenticator {
     /// # Errors
     ///
     /// Returns an error if fetching or caching the proof fails.
-    #[allow(dead_code)] // TODO: Temporary while this gets integrated
-    async fn fetch_inclusion_proof_with_cache(
+    pub(crate) async fn fetch_inclusion_proof_with_cache(
         &self,
         now: u64,
     ) -> Result<
