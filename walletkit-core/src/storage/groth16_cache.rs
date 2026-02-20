@@ -63,6 +63,7 @@ fn has_valid_cached_material(paths: &StoragePaths) -> StorageResult<bool> {
         if !path.is_file() {
             return Ok(false);
         }
+
         let actual_fingerprint = file_sha256_hex(&path)?;
         if actual_fingerprint != expected_fingerprint {
             return Ok(false);
