@@ -120,8 +120,6 @@ impl Deref for FieldElement {
 
 #[cfg(test)]
 mod tests {
-    use world_id_core::Credential;
-
     use super::*;
 
     #[test]
@@ -180,9 +178,7 @@ mod tests {
     /// Ensures encoding is consistent with different round trips
     #[test]
     fn test_encoding_round_trip() {
-        let leaf_index = 8;
-        let blinding_factor = CoreFieldElement::from(42u64);
-        let sub_one = Credential::compute_sub(leaf_index, blinding_factor);
+        let sub_one = CoreFieldElement::from(42u64);
         let sub_two = FieldElement::from(sub_one);
 
         assert_eq!(sub_one, *sub_two);
