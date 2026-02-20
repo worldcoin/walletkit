@@ -120,6 +120,8 @@ impl Deref for FieldElement {
 
 #[cfg(test)]
 mod tests {
+    use world_id_core::Credential;
+
     use super::*;
 
     #[test]
@@ -173,5 +175,22 @@ mod tests {
     fn test_invalid_hex_string() {
         assert!(FieldElement::try_from_hex_string("0xZZZZ").is_err());
         assert!(FieldElement::try_from_hex_string("not hex").is_err());
+    }
+
+    /// Ensures encoding is consistent with different round trips
+    #[test]
+    fn test_encoding_round_trip() {
+        let leaf_index = 8;
+        let blinding_factor = CoreFieldElement::from(42u64);
+        let sub_one = Credential::compute_sub(leaf_index, blinding_factor);
+        let sub_two = FieldElement::from(sub_one);
+
+        assert_eq!(sub_one, *sub_two);
+        assert_eq!(sub_one.to_string(), sub_two.to_hex_string().unwrap());
+
+        let sub_three =
+            FieldElement::try_from_hex_string(&sub_two.to_hex_string().unwrap())
+                .unwrap();
+        assert_eq!(sub_one, *sub_three);
     }
 }
