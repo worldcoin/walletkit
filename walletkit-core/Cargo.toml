@@ -90,8 +90,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 world-id-test-utils = { workspace = true }
-world-id-primitives = { workspace = true }
-
 
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]

@@ -24,11 +24,11 @@ use alloy_primitives::U160;
 use eyre::{Context as _, Result};
 use taceo_oprf::types::OprfKeyId;
 use walletkit_core::{defaults::DefaultConfig, Authenticator, Environment};
+use world_id_core::primitives::{rp::RpId, FieldElement};
 use world_id_core::{
     requests::{ProofRequest, RequestItem, RequestVersion},
     Authenticator as CoreAuthenticator, EdDSAPrivateKey,
 };
-use world_id_primitives::{rp::RpId, FieldElement};
 
 // ---------------------------------------------------------------------------
 // Staging-registered constants
