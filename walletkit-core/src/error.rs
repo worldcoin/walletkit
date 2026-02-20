@@ -90,6 +90,13 @@ pub enum WalletKitError {
     #[error("unfulfillable_request")]
     UnfulfillableRequest,
 
+    /// The response generated didn't match the request
+    ///
+    /// This occurs if the response doesn't match the requested proofs - e.g. by ids
+    /// or doesn't satisfy the contraints declared in the request
+    #[error("invalid response: {0}")]
+    ResponseValidation(String),
+
     /// The generated nullifier has already been used in a proof submission and cannot be used again
     #[error("nullifier_replay")]
     NullifierReplay,

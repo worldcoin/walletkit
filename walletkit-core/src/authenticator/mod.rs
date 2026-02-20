@@ -388,6 +388,11 @@ impl Authenticator {
             session_id: None, // TODO: This needs to be computed to be shareable
         };
 
+        proof_request
+            .0
+            .validate_response(&response)
+            .map_err(|err| WalletKitError::ResponseValidation(err.to_string()))?;
+
         self.store
             .replay_guard_set(nullifier.verifiable_oprf_output.output.into(), now)?;
         Ok(response.into())
