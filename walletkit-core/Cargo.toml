@@ -33,6 +33,7 @@ rand = { version = "0.8" }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "brotli",
+  "rustls",
 ] }
 ruint = { version = "1.17", default-features = false, features = [
   "alloc",
