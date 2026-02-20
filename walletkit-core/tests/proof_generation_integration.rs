@@ -108,7 +108,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let seed = [7u8; 32];
     let recovery_address = alloy::primitives::Address::ZERO;
 
-    let config = world_id_primitives::Config::from_environment(
+    let config = world_id_core::primitives::Config::from_environment(
         &Environment::Staging,
         Some(rpc_url.clone()),
         None,
@@ -212,7 +212,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let expires_at = now + 300;
     let action = FieldElement::from(1u64);
 
-    let rp_msg = world_id_primitives::rp::compute_rp_signature_msg(
+    let rp_msg = world_id_core::primitives::rp::compute_rp_signature_msg(
         *nonce, created_at, expires_at,
     );
     let signature = rp_signer
