@@ -94,6 +94,22 @@ pub enum WalletKitError {
     #[error("nullifier_replay")]
     NullifierReplay,
 
+    /// Cached Groth16 material could not be parsed or verified.
+    #[error("groth16_material_cache_invalid")]
+    Groth16MaterialCacheInvalid {
+        /// Input path(s) used for loading.
+        path: String,
+        /// Underlying error message.
+        error: String,
+    },
+
+    /// Failed to load embedded Groth16 material.
+    #[error("groth16_material_embedded_load")]
+    Groth16MaterialEmbeddedLoad {
+        /// Underlying error message.
+        error: String,
+    },
+
     /// An unexpected error occurred
     #[error("unexpected_error: {error}")]
     Generic {

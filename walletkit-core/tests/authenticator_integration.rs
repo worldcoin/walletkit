@@ -8,6 +8,7 @@ use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
 use walletkit_core::defaults::WORLD_ID_REGISTRY;
 use walletkit_core::error::WalletKitError;
+use walletkit_core::storage::cache_embedded_groth16_material;
 use walletkit_core::{Authenticator, Environment};
 use world_id_core::world_id_registry::WorldIdRegistry;
 
@@ -34,6 +35,8 @@ async fn test_authenticator_integration() {
 
     let authenticator_seeder = PrivateKeySigner::random();
     let store = common::create_test_credential_store();
+    let paths = store.storage_paths().unwrap();
+    cache_embedded_groth16_material(paths.clone()).expect("cache groth16 material");
 
     // When account doesn't exist, this should fail
     let authenticator = Authenticator::init_with_defaults(
@@ -41,6 +44,7 @@ async fn test_authenticator_integration() {
         Some(anvil.endpoint()),
         &Environment::Staging,
         None,
+        paths.clone(),
         store.clone(),
     )
     .await
@@ -76,6 +80,7 @@ async fn test_authenticator_integration() {
         Some(anvil.endpoint()),
         &Environment::Staging,
         None,
+        paths,
         store,
     )
     .await

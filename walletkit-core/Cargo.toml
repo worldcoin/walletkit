@@ -30,10 +30,9 @@ hex = "0.4"
 hkdf = { version = "0.12", optional = true }
 log = "0.4"
 rand = { version = "0.8" }
-reqwest = { version = "0.12", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "brotli",
-  "rustls-tls",
 ] }
 ruint = { version = "1.17", default-features = false, features = [
   "alloc",
