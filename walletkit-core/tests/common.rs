@@ -17,6 +17,21 @@ use walletkit_core::storage::{
     StorageProvider,
 };
 
+pub fn build_base_credential(
+    issuer_schema_id: u64,
+    leaf_index: u64,
+    genesis_issued_at: u64,
+    expires_at: u64,
+    credential_sub_blinding_factor: FieldElement,
+) -> Credential {
+    let sub = Credential::compute_sub(leaf_index, credential_sub_blinding_factor);
+    Credential::new()
+        .issuer_schema_id(issuer_schema_id)
+        .subject(sub)
+        .genesis_issued_at(genesis_issued_at)
+        .expires_at(expires_at)
+}
+
 pub struct InMemoryKeystore {
     key: [u8; 32],
 }

@@ -177,7 +177,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .await
         .wrap_err("blinding factor generation failed")?;
 
-    let mut credential = world_id_test_utils::fixtures::build_base_credential(
+    let mut credential = common::build_base_credential(
         ISSUER_SCHEMA_ID,
         leaf_index,
         now,

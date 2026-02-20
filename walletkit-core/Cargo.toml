@@ -89,7 +89,6 @@ taceo-oprf = { version = "0.5", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-world-id-test-utils = { workspace = true }
 
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]

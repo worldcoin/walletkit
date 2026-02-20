@@ -25,11 +25,6 @@ walletkit-core = { version = "0.6.1", path = "walletkit-core", default-features 
 uniffi = { version = "0.31", features = ["build", "tokio"] }
 world-id-core = { version = "0.4", default-features = false }
 
-[workspace.dependencies.world-id-test-utils]
-git = "https://github.com/worldcoin/world-id-protocol"
-rev = "289affed72c516a992cf93c7a5fc9bff6554451b"
-default-features = false
-
 [profile.release]
 opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.
