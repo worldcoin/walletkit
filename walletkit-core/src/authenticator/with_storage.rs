@@ -107,7 +107,7 @@ mod tests {
         let root_fe = FieldElement::from(123u64);
         let inclusion_proof = MerkleInclusionProof::new(root_fe, 42, siblings);
         let authenticator_keyset =
-            AuthenticatorPublicKeySet::new(None).expect("key set");
+            AuthenticatorPublicKeySet::new(vec![]).expect("key set");
         let payload = CachedInclusionProof {
             inclusion_proof,
             authenticator_keyset,
