@@ -3,7 +3,7 @@ members = ["uniffi-bindgen", "walletkit-core", "walletkit"]
 resolver = "2"
 
 [workspace.package]
-version = "0.5.3"
+version = "0.6.1"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -21,13 +21,13 @@ alloy-core = { version = "1", default-features = false, features = [
   "sol-types",
 ] }
 alloy-primitives = { version = "1", default-features = false }
-walletkit-core = { version = "0.5.3", path = "walletkit-core", default-features = false }
+walletkit-core = { version = "0.6.1", path = "walletkit-core", default-features = false }
 uniffi = { version = "0.31", features = ["build", "tokio"] }
 world-id-core = { version = "0.4", default-features = false }
 
 [workspace.dependencies.world-id-test-utils]
 git = "https://github.com/worldcoin/world-id-protocol"
-rev = "4c973a88cd003e4cd25be85666291a26c84c424f"
+rev = "289affed72c516a992cf93c7a5fc9bff6554451b"
 default-features = false
 
 [profile.release]

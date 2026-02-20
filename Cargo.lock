@@ -2665,9 +2665,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.57"
+version = "4.5.59"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6899ea499e3fb9305a65d5ebf6e3d2248c5fab291f300ad0a704fbe142eae31a"
+checksum = "c5caf74d17c3aec5495110c34cc3f78644bfa89af6c8993ed4de2790e49b6499"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -2675,9 +2675,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.57"
+version = "4.5.59"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b12c8b680195a62a8364d16b8447b01b6c2c8f9aaf68bee653be34d4245e238"
+checksum = "370daa45065b80218950227371916a1633217ae42b2715b2287b606dcd618e24"
 dependencies = [
  "anstream",
  "anstyle",
@@ -2699,9 +2699,9 @@ dependencies = [
 
 [[package]]
 name = "clap_lex"
-version = "0.7.7"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
+checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
 name = "cmake"
@@ -8663,7 +8663,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.5.3"
+version = "0.6.1"
 dependencies = [
  "uniffi",
 ]
@@ -8922,7 +8922,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit"
-version = "0.5.3"
+version = "0.6.1"
 dependencies = [
  "uniffi",
  "walletkit-core",
@@ -8930,7 +8930,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-core"
-version = "0.5.3"
+version = "0.6.1"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -8949,7 +8949,7 @@ dependencies = [
  "mockito",
  "rand 0.8.5",
  "regex",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "ruint",
  "rusqlite",
  "rustls 0.23.36",
@@ -9693,7 +9693,7 @@ dependencies = [
 [[package]]
 name = "world-id-authenticator"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=289affed72c516a992cf93c7a5fc9bff6554451b#289affed72c516a992cf93c7a5fc9bff6554451b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -9701,17 +9701,18 @@ dependencies = [
  "backon",
  "eyre",
  "rand 0.8.5",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "ruint",
  "rustls 0.23.36",
  "secrecy",
  "serde",
+ "serde_json",
  "taceo-ark-babyjubjub",
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
  "taceo-oprf 0.6.0",
  "taceo-poseidon2",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "webpki-roots 1.0.6",
  "world-id-primitives 0.4.0",
@@ -9751,7 +9752,7 @@ dependencies = [
 [[package]]
 name = "world-id-core"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=289affed72c516a992cf93c7a5fc9bff6554451b#289affed72c516a992cf93c7a5fc9bff6554451b"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator 0.4.0",
@@ -9774,7 +9775,7 @@ dependencies = [
 [[package]]
 name = "world-id-oprf-node"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=289affed72c516a992cf93c7a5fc9bff6554451b#289affed72c516a992cf93c7a5fc9bff6554451b"
 dependencies = [
  "alloy",
  "ark-bn254 0.5.0",
@@ -9797,7 +9798,7 @@ dependencies = [
  "taceo-nodes-common",
  "taceo-nodes-observability",
  "taceo-oprf 0.6.0",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-util",
  "tracing",
@@ -9809,7 +9810,7 @@ dependencies = [
 [[package]]
 name = "world-id-primitives"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=289affed72c516a992cf93c7a5fc9bff6554451b#289affed72c516a992cf93c7a5fc9bff6554451b"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -9837,7 +9838,7 @@ dependencies = [
  "taceo-groth16-sol",
  "taceo-oprf 0.6.0",
  "taceo-poseidon2",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "url",
  "uuid",
 ]
@@ -9881,7 +9882,7 @@ dependencies = [
 [[package]]
 name = "world-id-proof"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=289affed72c516a992cf93c7a5fc9bff6554451b#289affed72c516a992cf93c7a5fc9bff6554451b"
 dependencies = [
  "ark-bn254 0.5.0",
  "ark-ff 0.5.0",
@@ -9890,14 +9891,14 @@ dependencies = [
  "eyre",
  "rand 0.8.5",
  "rayon",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "taceo-ark-babyjubjub",
  "taceo-circom-types",
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
  "taceo-oprf 0.6.0",
  "tar",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tracing",
  "world-id-primitives 0.4.0",
  "zeroize",
@@ -9934,7 +9935,7 @@ dependencies = [
 [[package]]
 name = "world-id-test-utils"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=4c973a88cd003e4cd25be85666291a26c84c424f#4c973a88cd003e4cd25be85666291a26c84c424f"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=289affed72c516a992cf93c7a5fc9bff6554451b#289affed72c516a992cf93c7a5fc9bff6554451b"
 dependencies = [
  "alloy",
  "alloy-node-bindings",
@@ -9946,7 +9947,7 @@ dependencies = [
  "hex",
  "k256",
  "rand 0.8.5",
- "reqwest 0.12.28",
+ "reqwest 0.13.2",
  "semver 1.0.27",
  "serde_json",
  "taceo-ark-babyjubjub",
