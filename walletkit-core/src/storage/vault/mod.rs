@@ -259,6 +259,33 @@ impl VaultDb {
         Ok(result)
     }
 
+    /// Deletes all credential records from the vault.
+    ///
+    /// This removes all stored credentials but preserves the vault metadata
+    /// (leaf index, schema version).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete operation fails.
+    pub fn delete_all_credentials(
+        &mut self,
+        _lock: &StorageLockGuard,
+    ) -> StorageResult<u64> {
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+
+        // Delete all credential records
+        let deleted = tx
+            .execute("DELETE FROM credential_records", [])
+            .map_err(|err| map_db_err(&err))?;
+
+        // Note: blob_objects are not deleted here as they use content-addressable storage
+        // and may be referenced by other records. SQLite will handle cleanup via foreign keys
+        // or future vacuum operations.
+
+        tx.commit().map_err(|err| map_db_err(&err))?;
+        Ok(deleted as u64)
+    }
+
     /// Runs an integrity check on the vault database.
     ///
     /// # Errors
