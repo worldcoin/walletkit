@@ -28,6 +28,9 @@ fn setup_anvil() -> AnvilInstance {
 
 #[tokio::test]
 async fn test_authenticator_integration() {
+    // Install default crypto provider for rustls
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let anvil = setup_anvil();
 
     let authenticator_seeder = PrivateKeySigner::random();
