@@ -60,11 +60,6 @@ pub enum Region {
     Ap,
 }
 
-pub(crate) mod primitives;
-
-mod credential_type;
-pub use credential_type::CredentialType;
-
 /// Contains error outputs from `WalletKit`
 pub mod error;
 
@@ -90,31 +85,21 @@ pub use authenticator::{Authenticator, InitializingAuthenticator, RegistrationSt
 /// Default configuration values for each [`Environment`].
 pub mod defaults;
 
+/// Proof requests and responses in World ID v4.
 pub mod requests;
-
-////////////////////////////////////////////////////////////////////////////////
-// Legacy modules
-////////////////////////////////////////////////////////////////////////////////
-
-/// Contains all components to interact and use a World ID
-pub mod world_id;
-
-/// This module handles World ID proof generation
-pub mod proof;
-
-/// This module exposes helper functions to interact with common apps & contracts related to the World ID Protocol.
-#[cfg(feature = "common-apps")]
-pub mod common_apps;
 
 /// Credential issuers for World ID (NFC, etc.)
 #[cfg(feature = "issuers")]
 pub mod issuers;
+
+#[cfg(feature = "v3")]
+pub mod v3;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private modules
 ////////////////////////////////////////////////////////////////////////////////
 
 mod http_request;
-mod merkle_tree;
+pub(crate) mod primitives;
 
 uniffi::setup_scaffolding!("walletkit_core");

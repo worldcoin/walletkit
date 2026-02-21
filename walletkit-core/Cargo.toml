@@ -101,12 +101,13 @@ issuers = ["dep:base64"]
 storage = ["dep:ciborium", "dep:hkdf", "dep:rusqlite", "dep:sha2", "dep:uuid"]
 
 # SECTION: V3 Feature Flags
-common-apps = []
-semaphore = ["semaphore-rs/depth_30"]
-
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
 legacy-nullifiers = []
+semaphore = ["semaphore-rs/depth_30"]
+v3 = ["semaphore", "legacy-nullifiers"]
+
+
 
 [package.metadata.docs.rs]
 no-default-features = true
