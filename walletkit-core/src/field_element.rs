@@ -168,7 +168,8 @@ mod tests {
         assert_eq!(sub_one, *sub_two);
         assert_eq!(sub_one.to_string(), sub_two.to_hex_string());
 
-        let sub_three = FieldElement::try_from_hex_string(&sub_two.to_hex_string()).unwrap();
+        let sub_three =
+            FieldElement::try_from_hex_string(&sub_two.to_hex_string()).unwrap();
         assert_eq!(sub_one, *sub_three);
     }
 }
