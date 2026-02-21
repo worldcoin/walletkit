@@ -520,9 +520,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_with_config_and_storage() {
-        // Install default crypto provider for rustls
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
         let mut mock_server = mockito::Server::new_async().await;
 
         // Mock eth_call to return account data indicating account exists

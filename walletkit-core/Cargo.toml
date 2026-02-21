@@ -91,7 +91,7 @@ tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
-default = ["common-apps", "semaphore", "storage", "issuers"]
+default = ["issuers", "storage"]
 
 # Enables point-compression on all verifying keys. This results in ~2x smaller bundle size, but decompression is very expensive,
 # using it requires proper handling to ensure decompression is done once and cached. By default walletkit-swift and walletkit-android
@@ -101,12 +101,13 @@ issuers = ["dep:base64"]
 storage = ["dep:ciborium", "dep:hkdf", "dep:rusqlite", "dep:sha2", "dep:uuid"]
 
 # SECTION: V3 Feature Flags
-common-apps = []
-semaphore = ["semaphore-rs/depth_30"]
-
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
 legacy-nullifiers = []
+semaphore = ["semaphore-rs/depth_30"]
+v3 = ["semaphore", "legacy-nullifiers"]
+
+
 
 [package.metadata.docs.rs]
 no-default-features = true

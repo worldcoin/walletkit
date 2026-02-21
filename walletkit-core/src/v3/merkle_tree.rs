@@ -121,7 +121,10 @@ impl MerkleTreeProof {
 
 #[cfg(test)]
 mod tests {
-    use crate::{credential_type::CredentialType, world_id::WorldId, Environment};
+    use crate::{
+        v3::{world_id::WorldId, CredentialType},
+        Environment,
+    };
 
     use super::*;
 
@@ -132,7 +135,9 @@ mod tests {
         mock_server
             .mock("POST", "/inclusionProof")
             .with_status(200)
-            .with_body(include_bytes!("../tests/fixtures/inclusion_proof.json"))
+            .with_body(include_bytes!(
+                "../../tests/v3/fixtures/inclusion_proof.json"
+            ))
             .create_async()
             .await;
 
@@ -235,7 +240,7 @@ mod tests {
     async fn test_fail_when_mined_proof_is_required_and_identity_is_not_ready() {
         let mut mock_server = mockito::Server::new_async().await;
 
-        let response = include_str!("../tests/fixtures/inclusion_proof.json")
+        let response = include_str!("../../tests/v3/fixtures/inclusion_proof.json")
             .replace("\"mined\"", "\"pending\"");
 
         mock_server

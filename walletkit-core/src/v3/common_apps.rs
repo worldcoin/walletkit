@@ -1,6 +1,7 @@
 #[cfg(feature = "legacy-nullifiers")]
 use {
-    crate::{error::WalletKitError, proof::ProofContext, CredentialType},
+    super::{proof::ProofContext, CredentialType},
+    crate::error::WalletKitError,
     alloy_core::primitives::{Address, U256},
     alloy_core::sol_types::SolValue,
     ruint::uint,

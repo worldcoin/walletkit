@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+// make sure to run `forge build -C walletkit-core/tests/contracts -o walletkit-core/tests/out` when updating
+
 library ByteHasher {
     /// @dev Creates a keccak256 hash of a bytestring.
     /// @param value The bytestring to hash
@@ -27,16 +29,12 @@ contract ExternalNullifier {
     /// @notice Generate an external nullifier to be used in tests
     /// @param someText A random string to be included
     /// @return The external nullifier
-    function generateExternalNullifier(
-        string memory someText
-    ) external view returns (uint256) {
-        uint256 externalNullifier = abi
-            .encodePacked(
+    function generateExternalNullifier(string memory someText) external view returns (uint256) {
+        uint256 externalNullifier = abi.encodePacked(
                 abi.encodePacked(appId).hashToField(),
                 abi.encodePacked(msg.sender), // Note how this could be used to validate a more advanced context
                 abi.encodePacked(someText)
-            )
-            .hashToField();
+            ).hashToField();
 
         return externalNullifier;
     }
