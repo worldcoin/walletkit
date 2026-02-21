@@ -23,7 +23,7 @@ alloy-core = { version = "1", default-features = false, features = [
 alloy-primitives = { version = "1", default-features = false }
 walletkit-core = { version = "0.6.1", path = "walletkit-core", default-features = false }
 uniffi = { version = "0.31", features = ["build", "tokio"] }
-world-id-core = { version = "0.4", default-features = false }
+world-id-core = { version = "0.4.2", default-features = false }
 
 [profile.release]
 opt-level = 'z' # Optimize for size.
