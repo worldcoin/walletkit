@@ -1,6 +1,5 @@
 //! Storage facade implementing the credential storage API.
 
-use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
 use world_id_core::FieldElement as CoreFieldElement;
@@ -317,8 +316,12 @@ impl CredentialStoreInner {
                 ))
             })?;
 
-            let blinding_factor = CoreFieldElement::deserialize_from_bytes(
-                &mut Cursor::new(blinding_factor_bytes),
+            let blinding_factor = CoreFieldElement::from_be_bytes(
+                &blinding_factor_bytes.try_into().map_err(|_| {
+                    StorageError::Serialization(
+                        "Critical. Blinding factor has invalid length".to_string(),
+                    )
+                })?,
             )
             .map_err(|e| {
                 StorageError::Serialization(format!(
@@ -343,9 +346,7 @@ impl CredentialStoreInner {
         let credential_blob = credential
             .to_bytes()
             .map_err(|e| StorageError::Serialization(e.to_string()))?;
-        let subject_blinding_factor = blinding_factor
-            .to_bytes()
-            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        let subject_blinding_factor = blinding_factor.to_bytes();
 
         let guard = self.guard()?;
         let state = self.state_mut()?;
@@ -392,22 +393,9 @@ impl CredentialStoreInner {
         nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<bool> {
-        let mut nullifier_bytes = Vec::new();
-        nullifier
-            .serialize_as_bytes(&mut nullifier_bytes)
-            .map_err(|e| {
-                StorageError::Serialization(format!(
-                    "critical. nullifier serialization failed: {e}"
-                ))
-            })?;
-        let nullifier_len = nullifier_bytes.len();
-        let nullifier_bytes: [u8; 32] = nullifier_bytes.try_into().map_err(|_| {
-            StorageError::Serialization(format!(
-                "critical. nullifier serialization failed: {nullifier_len}"
-            ))
-        })?;
+        let nullifier = nullifier.to_be_bytes();
         let state = self.state()?;
-        state.cache.is_nullifier_replay(nullifier_bytes, now)
+        state.cache.is_nullifier_replay(nullifier, now)
     }
 
     /// After a proof has been successfully generated, creates a replay guard entry
@@ -422,22 +410,9 @@ impl CredentialStoreInner {
         now: u64,
     ) -> StorageResult<()> {
         let guard = self.guard()?;
-        let mut nullifier_bytes = Vec::new();
-        nullifier
-            .serialize_as_bytes(&mut nullifier_bytes)
-            .map_err(|e| {
-                StorageError::Serialization(format!(
-                    "critical. nullifier serialization failed: {e}"
-                ))
-            })?;
-        let nullifier_len = nullifier_bytes.len();
-        let nullifier_bytes: [u8; 32] = nullifier_bytes.try_into().map_err(|_| {
-            StorageError::Serialization(format!(
-                "critical. nullifier serialization failed: {nullifier_len}"
-            ))
-        })?;
+        let nullifier = nullifier.to_be_bytes();
         let state = self.state_mut()?;
-        state.cache.replay_guard_set(&guard, nullifier_bytes, now)
+        state.cache.replay_guard_set(&guard, nullifier, now)
     }
 }
 

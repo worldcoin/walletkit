@@ -23,23 +23,7 @@ alloy-core = { version = "1", default-features = false, features = [
 alloy-primitives = { version = "1", default-features = false }
 walletkit-core = { version = "0.6.1", path = "walletkit-core", default-features = false }
 uniffi = { version = "0.31", features = ["build", "tokio"] }
-
-[workspace.dependencies.world-id-core]
-#FIXME: Update to next published version when available
-# version = "0.3"
-git = "https://github.com/worldcoin/world-id-protocol"
-rev = "289affed72c516a992cf93c7a5fc9bff6554451b"
-default-features = false
-
-[workspace.dependencies.world-id-test-utils]
-git = "https://github.com/worldcoin/world-id-protocol"
-rev = "289affed72c516a992cf93c7a5fc9bff6554451b"
-default-features = false
-
-[workspace.dependencies.world-id-primitives]
-git = "https://github.com/worldcoin/world-id-protocol"
-rev = "289affed72c516a992cf93c7a5fc9bff6554451b"
-default-features = false
+world-id-core = { version = "0.4.2", default-features = false }
 
 [profile.release]
 opt-level = 'z' # Optimize for size.
