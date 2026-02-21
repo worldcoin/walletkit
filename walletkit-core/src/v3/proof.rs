@@ -1,4 +1,4 @@
-use crate::error::WalletKitError;
+use crate::{error::WalletKitError, U256Wrapper};
 
 use alloy_core::sol_types::SolValue;
 use semaphore_rs::{
@@ -11,9 +11,7 @@ use semaphore_rs::MODULUS;
 
 use serde::Serialize;
 
-use crate::{
-    credential_type::CredentialType, merkle_tree::MerkleTreeProof, u256::U256Wrapper,
-};
+use super::{credential_type::CredentialType, merkle_tree::MerkleTreeProof};
 
 /// A `ProofContext` contains the basic information on the verifier and the specific action a user will be proving.
 ///
@@ -605,7 +603,7 @@ mod proof_tests {
 
     fn helper_load_merkle_proof() -> MerkleTreeProof {
         let json_merkle: Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/inclusion_proof.json"
+            "../../tests/v3/fixtures/inclusion_proof.json"
         ))
         .unwrap();
         MerkleTreeProof::from_json_proof(

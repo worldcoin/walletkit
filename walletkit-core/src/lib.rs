@@ -92,6 +92,7 @@ pub mod requests;
 #[cfg(feature = "issuers")]
 pub mod issuers;
 
+/// Legacy World ID 3.0 Proofs
 #[cfg(feature = "v3")]
 pub mod v3;
 
