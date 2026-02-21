@@ -63,22 +63,14 @@ impl FieldElement {
     ///
     /// Returns an error if the hex string is invalid or cannot be parsed.
     #[uniffi::constructor]
-    pub fn try_from_string(hex_string: &str) -> Result<Self, WalletKitError> {
+    pub fn try_from_hex_string(hex_string: &str) -> Result<Self, WalletKitError> {
         let fe = CoreFieldElement::from_str(hex_string)?;
         Ok(Self(fe))
     }
 
-    /// Converts the field element to a string (hex-encoded, padded).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if serialization fails.
+    /// Converts the field element to a hex-encoded, padded string.
     #[must_use]
-    #[expect(
-        clippy::inherent_to_string,
-        reason = "This method is intended for FFI use."
-    )]
-    pub fn to_string(&self) -> String {
+    pub fn to_hex_string(&self) -> String {
         self.0.to_string()
     }
 }
@@ -136,8 +128,8 @@ mod tests {
     #[test]
     fn test_hex_round_trip() {
         let original = FieldElement::from_u64(999);
-        let hex = original.to_string();
-        let restored = FieldElement::try_from_string(&hex).unwrap();
+        let hex = original.to_hex_string();
+        let restored = FieldElement::try_from_hex_string(&hex).unwrap();
 
         let original_bytes = original.to_bytes();
         let restored_bytes = restored.to_bytes();
@@ -147,14 +139,14 @@ mod tests {
     #[test]
     fn test_hex_string_with_and_without_0x() {
         let fe = FieldElement::from_u64(255);
-        let hex = fe.to_string();
+        let hex = fe.to_hex_string();
 
         // Should work with 0x prefix
-        let with_prefix = FieldElement::try_from_string(&hex).unwrap();
+        let with_prefix = FieldElement::try_from_hex_string(&hex).unwrap();
 
         // Should also work without 0x prefix
         let hex_no_prefix = hex.trim_start_matches("0x");
-        let without_prefix = FieldElement::try_from_string(hex_no_prefix).unwrap();
+        let without_prefix = FieldElement::try_from_hex_string(hex_no_prefix).unwrap();
 
         let with_bytes = with_prefix.to_bytes();
         let without_bytes = without_prefix.to_bytes();
@@ -163,8 +155,8 @@ mod tests {
 
     #[test]
     fn test_invalid_hex_string() {
-        assert!(FieldElement::try_from_string("0xZZZZ").is_err());
-        assert!(FieldElement::try_from_string("not hex").is_err());
+        assert!(FieldElement::try_from_hex_string("0xZZZZ").is_err());
+        assert!(FieldElement::try_from_hex_string("not hex").is_err());
     }
 
     /// Ensures encoding is consistent with different round trips
@@ -174,9 +166,9 @@ mod tests {
         let sub_two = FieldElement::from(sub_one);
 
         assert_eq!(sub_one, *sub_two);
-        assert_eq!(sub_one.to_string(), sub_two.to_string());
+        assert_eq!(sub_one.to_string(), sub_two.to_hex_string());
 
-        let sub_three = FieldElement::try_from_string(&sub_two.to_string()).unwrap();
+        let sub_three = FieldElement::try_from_hex_string(&sub_two.to_hex_string()).unwrap();
         assert_eq!(sub_one, *sub_three);
     }
 }
