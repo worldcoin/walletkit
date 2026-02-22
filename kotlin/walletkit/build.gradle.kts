@@ -1,5 +1,4 @@
 import groovy.json.JsonSlurper
-import java.io.ByteArrayOutputStream
 
 plugins {
     id("com.android.library")
@@ -76,28 +75,28 @@ afterEvaluate {
 }
 
 // Locate the local maven repo bundled inside rustls-platform-verifier-android.
+// Uses providers.exec for configuration-cache compatibility.
 // https://github.com/rustls/rustls-platform-verifier#android
-fun findRustlsPlatformVerifierMaven(): String {
-    val out = ByteArrayOutputStream()
-    exec {
-        workingDir = file("../../")
-        commandLine(
-            "cargo", "metadata", "--format-version", "1",
-            "--filter-platform", "aarch64-linux-android",
-        )
-        standardOutput = out
-    }
+val rustlsMavenPath: Provider<String> = providers.exec {
+    workingDir(file("../../"))
+    commandLine(
+        "cargo", "metadata", "--format-version", "1",
+        "--filter-platform", "aarch64-linux-android",
+    )
+}.standardOutput.asText.map { output ->
     @Suppress("UNCHECKED_CAST")
-    val meta = JsonSlurper().parseText(out.toString()) as Map<String, Any>
+    val meta = JsonSlurper().parseText(output) as Map<String, Any>
     @Suppress("UNCHECKED_CAST")
     val packages = meta["packages"] as List<Map<String, Any>>
-    val manifest = packages.first { it["name"] == "rustls-platform-verifier-android" }["manifest_path"] as String
-    return File(File(manifest).parent, "maven").path
+    val manifest = packages.first {
+        it["name"] == "rustls-platform-verifier-android"
+    }["manifest_path"] as String
+    File(File(manifest).parent, "maven").path
 }
 
 repositories {
     maven {
-        url = uri(findRustlsPlatformVerifierMaven())
+        url = uri(rustlsMavenPath.get())
         metadataSources.artifact()
     }
 }
