@@ -21,13 +21,14 @@
 
 use strum::EnumString;
 
-/// Installs the ring crypto provider as the default for rustls.
-#[cfg(not(test))]
+/// Installs the ring crypto provider as the global default for rustls.
+///
+/// Runs automatically when the library is loaded (both production and test
+/// builds). `install_default` uses a `OnceCell` internally, so the first
+/// caller wins and subsequent calls are harmless no-ops.
 #[ctor::ctor]
 fn init() {
-    rustls::crypto::ring::default_provider()
-        .install_default()
-        .expect("Failed to install default crypto provider");
+    let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
 /// Represents the environment in which a World ID is being presented and used.
@@ -113,16 +114,18 @@ pub mod issuers;
 mod http_request;
 mod merkle_tree;
 
-// Android: raw JNI entrypoint for initializing the TLS platform verifier.
-//
-// `rustls-platform-verifier` on Android needs the JVM and an application
-// `Context` to verify server certificates via the system trust store. This
-// function must be called from the Android app (e.g. `Application.onCreate`)
-// *before* any walletkit network request.
-//
-// The JVM guarantees that `env` and `context` are valid pointers when this
-// function is invoked through JNI, so the raw-pointer construction is safe
-// in practice.
+/// Android: raw JNI entrypoint for initializing the TLS platform verifier.
+///
+/// `rustls-platform-verifier` on Android needs the JVM and an application
+/// `Context` to verify server certificates via the system trust store. This
+/// function must be called from the Android app (e.g. `Application.onCreate`)
+/// *before* any walletkit network request.
+///
+/// The JVM guarantees that `env` and `context` are valid pointers when this
+/// function is invoked through JNI, so the raw-pointer construction is safe
+/// in practice.
+///
+/// See <https://github.com/rustls/rustls-platform-verifier#android>
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub extern "system" fn Java_org_world_walletkit_WalletKitPlatform_initTlsPlatformVerifier(
