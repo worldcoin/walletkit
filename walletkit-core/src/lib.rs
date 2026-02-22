@@ -21,11 +21,7 @@
 
 use strum::EnumString;
 
-/// Library initialization function called automatically on load.
-///
 /// Installs the ring crypto provider as the default for rustls.
-/// Uses the `ctor` crate to ensure this runs when the dynamic library loads,
-/// before any user code executes.
 #[cfg(not(test))]
 #[ctor::ctor]
 fn init() {
@@ -116,5 +112,26 @@ pub mod issuers;
 
 mod http_request;
 mod merkle_tree;
+
+// Android: raw JNI entrypoint for initializing the TLS platform verifier.
+//
+// `rustls-platform-verifier` on Android needs the JVM and an application
+// `Context` to verify server certificates via the system trust store. This
+// function must be called from the Android app (e.g. `Application.onCreate`)
+// *before* any walletkit network request.
+//
+// The JVM guarantees that `env` and `context` are valid pointers when this
+// function is invoked through JNI, so the raw-pointer construction is safe
+// in practice.
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub extern "system" fn Java_org_world_walletkit_WalletKitPlatform_initTlsPlatformVerifier(
+    mut env: jni::JNIEnv,
+    _class: jni::objects::JClass,
+    context: jni::objects::JObject,
+) {
+    rustls_platform_verifier::android::init_with_env(&mut env, context)
+        .expect("Failed to initialize TLS platform verifier");
+}
 
 uniffi::setup_scaffolding!("walletkit_core");

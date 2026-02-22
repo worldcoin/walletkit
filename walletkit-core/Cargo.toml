@@ -59,8 +59,11 @@ world-id-core = { workspace = true, features = [
 ] }
 ciborium = { version = "0.2.2", optional = true }
 
-# for Android, OpenSSL gets bundled through openssl-sys
+# Android-specific dependencies
 [target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+rustls-platform-verifier = "0.6"
+# OpenSSL gets bundled through openssl-sys
 rusqlite = { version = "0.32", default-features = false, features = [
   "bundled-sqlcipher-vendored-openssl",
 ], optional = true }
