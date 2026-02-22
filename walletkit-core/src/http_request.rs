@@ -1,9 +1,43 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use backon::{ExponentialBuilder, Retryable};
 use reqwest::{Method, RequestBuilder, Response};
 
 use crate::error::WalletKitError;
+
+/// Installs ring as the global default rustls crypto provider.
+///
+/// Safe to call multiple times; subsequent calls are no-ops.
+/// Needed for third-party code (e.g. `world-id-core`) that creates
+/// `reqwest::Client::new()` without an explicit provider.
+pub fn ensure_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
+/// Builds a [`reqwest::Client`] with an explicit rustls config using bundled
+/// Mozilla CA roots (`webpki-roots`). This bypasses `rustls-platform-verifier`,
+/// which panics on Android because it requires a JNI context that is
+/// unavailable when the shared library is loaded via `UniFFI`.
+pub fn build_client() -> reqwest::Client {
+    ensure_crypto_provider();
+
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    let tls_config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("default protocol versions are valid")
+    .with_root_certificates(root_store)
+    .with_no_client_auth();
+
+    reqwest::Client::builder()
+        .tls_backend_preconfigured(tls_config)
+        .build()
+        .expect("TLS-preconfigured client builder should not fail")
+}
 
 /// A simple wrapper on an HTTP client for making requests. Sets sensible defaults such as timeouts,
 /// user-agent & ensuring HTTPS, and applies retry middleware for transient failures.
@@ -16,7 +50,7 @@ pub struct Request {
 impl Request {
     /// Initializes a new `Request` instance.
     pub(crate) fn new() -> Self {
-        let client = reqwest::Client::new();
+        let client = build_client();
         let timeout = Duration::from_secs(5);
         let max_retries = 3; // total attempts = 4
         Self {
