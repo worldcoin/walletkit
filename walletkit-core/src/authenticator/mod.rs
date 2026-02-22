@@ -157,7 +157,7 @@ impl Authenticator {
     pub async fn get_packed_account_data_remote(
         &self,
     ) -> Result<U256Wrapper, WalletKitError> {
-        let client = reqwest::Client::new(); // TODO: reuse client
+        let client = crate::http_request::build_client();
         let packed_account_data = CoreAuthenticator::get_packed_account_data(
             self.inner.onchain_address(),
             self.inner.registry().as_deref(),
@@ -214,6 +214,7 @@ impl Authenticator {
         environment: &Environment,
         region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
+        crate::http_request::ensure_crypto_provider();
         let config = Config::from_environment(environment, rpc_url, region)?;
         let (query_material, nullifier_material) = load_embedded_materials()?;
         let authenticator =
@@ -233,6 +234,7 @@ impl Authenticator {
     /// Will error if the provided seed is not valid or if the config is not valid.
     #[uniffi::constructor]
     pub async fn init(seed: &[u8], config: &str) -> Result<Self, WalletKitError> {
+        crate::http_request::ensure_crypto_provider();
         let config =
             Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
@@ -267,6 +269,7 @@ impl Authenticator {
         paths: Arc<StoragePaths>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
+        crate::http_request::ensure_crypto_provider();
         let config = Config::from_environment(environment, rpc_url, region)?;
         let (query_material, nullifier_material) =
             load_cached_materials(paths.as_ref())?;
@@ -293,6 +296,7 @@ impl Authenticator {
         paths: Arc<StoragePaths>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
+        crate::http_request::ensure_crypto_provider();
         let config =
             Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
@@ -520,9 +524,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_with_config_and_storage() {
-        // Install default crypto provider for rustls
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
         let mut mock_server = mockito::Server::new_async().await;
 
         // Mock eth_call to return account data indicating account exists
