@@ -76,15 +76,15 @@ impl TfhNfcIssuer {
     ) -> Result<Credential, WalletKitError> {
         let url = format!("{}/v2/refresh", self.base_url);
 
-        let headers_vec: Vec<(&str, &str)> = headers
-            .iter()
-            .map(|(k, v)| (k.as_str(), v.as_str()))
-            .collect();
-
-        let response = self
+        let mut request_builder = self
             .request
-            .post_raw_json(&url, request_body, &headers_vec)
-            .await?;
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .body(request_body.to_string());
+        for (name, value) in &headers {
+            request_builder = request_builder.header(name, value);
+        }
+        let response = self.request.handle(request_builder).await?;
 
         let status = response.status();
         if !status.is_success() {

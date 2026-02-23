@@ -13,7 +13,10 @@
 
 mod common;
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use rand::rngs::OsRng;
 
@@ -23,19 +26,20 @@ use alloy::sol;
 use alloy_primitives::U160;
 use eyre::{Context as _, Result};
 use taceo_oprf::types::OprfKeyId;
+use walletkit_core::storage::cache_embedded_groth16_material;
 use walletkit_core::{defaults::DefaultConfig, Authenticator, Environment};
+use world_id_core::primitives::{rp::RpId, FieldElement};
 use world_id_core::{
     requests::{ProofRequest, RequestItem, RequestVersion},
     Authenticator as CoreAuthenticator, EdDSAPrivateKey,
 };
-use world_id_primitives::{rp::RpId, FieldElement};
 
 // ---------------------------------------------------------------------------
 // Staging-registered constants
 // ---------------------------------------------------------------------------
 
 /// RP ID registered on the staging `RpRegistry` contract.
-const RP_ID: u64 = 44;
+const RP_ID: u64 = 46;
 
 /// ECDSA private key for the registered RP (secp256k1).
 const RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
@@ -43,7 +47,7 @@ const RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
 );
 
 /// Issuer schema ID registered on the staging `CredentialSchemaIssuerRegistry`.
-const ISSUER_SCHEMA_ID: u64 = 45;
+const ISSUER_SCHEMA_ID: u64 = 47;
 
 /// EdDSA private key (32 bytes) for the registered issuer.
 const ISSUER_EDDSA_KEY: [u8; 32] = alloy::primitives::hex!(
@@ -104,17 +108,30 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let seed = [7u8; 32];
     let recovery_address = alloy::primitives::Address::ZERO;
 
-    let config = world_id_primitives::Config::from_environment(
+    let config = world_id_core::primitives::Config::from_environment(
         &Environment::Staging,
         Some(rpc_url.clone()),
         None,
     )
     .wrap_err("failed to build staging config")?;
+    let query_material = Arc::new(
+        world_id_core::proof::load_embedded_query_material()
+            .wrap_err("failed to load embedded query material")?,
+    );
+    let nullifier_material = Arc::new(
+        world_id_core::proof::load_embedded_nullifier_material()
+            .wrap_err("failed to load embedded nullifier material")?,
+    );
 
-    let core_authenticator =
-        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
-            .await
-            .wrap_err("account creation/init failed")?;
+    let core_authenticator = CoreAuthenticator::init_or_register(
+        &seed,
+        config,
+        query_material,
+        nullifier_material,
+        Some(recovery_address),
+    )
+    .await
+    .wrap_err("account creation/init failed")?;
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -122,19 +139,17 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     // ----------------------------------------------------------------
     // Phase 2: Authenticator init with walletkit wrapper
     // ----------------------------------------------------------------
-    // Set working directory to workspace root so embedded zkeys can be found
-    let workspace_root =
-        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
-    std::env::set_current_dir(&workspace_root)
-        .wrap_err("failed to set working directory to workspace root")?;
-
     let store = common::create_test_credential_store();
+    let paths = store.storage_paths().wrap_err("storage_paths failed")?;
+    cache_embedded_groth16_material(paths.clone())
+        .wrap_err("cache_embedded_groth16_material failed")?;
 
     let authenticator = Authenticator::init_with_defaults(
         &seed,
         Some(rpc_url.clone()),
         &Environment::Staging,
         None,
+        paths,
         store.clone(),
     )
     .await
@@ -162,7 +177,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         .await
         .wrap_err("blinding factor generation failed")?;
 
-    let mut credential = world_id_test_utils::fixtures::build_base_credential(
+    let mut credential = common::build_base_credential(
         ISSUER_SCHEMA_ID,
         leaf_index,
         now,
@@ -197,7 +212,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let expires_at = now + 300;
     let action = FieldElement::from(1u64);
 
-    let rp_msg = world_id_primitives::rp::compute_rp_signature_msg(
+    let rp_msg = world_id_core::primitives::rp::compute_rp_signature_msg(
         *nonce, created_at, expires_at,
     );
     let signature = rp_signer

@@ -23,6 +23,7 @@ name = "walletkit_core"
 [dependencies]
 alloy-core = { workspace = true }
 alloy-primitives = { workspace = true }
+backon = "1.6"
 base64 = { version = "0.22", optional = true }
 ctor = "0.2"
 hex = "0.4"
@@ -54,7 +55,6 @@ uniffi = { workspace = true, features = ["build", "tokio"] }
 world-id-core = { workspace = true, features = [
   "authenticator",
   "embed-zkeys",
-  "compress-zkeys",
   "zstd-compress-zkeys",
 ] }
 ciborium = { version = "0.2.2", optional = true }
@@ -79,15 +79,14 @@ taceo-oprf = { version = "0.5", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
 rand = "0.8"
-world-id-test-utils = { workspace = true }
-world-id-primitives = { workspace = true }
-
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]
-common-apps = []
-semaphore = ["semaphore-rs/depth_30"]
+
+# Enables point-compression on all verifying keys. This results in ~2x smaller bundle size, but decompression is very expensive,
+# using it requires proper handling to ensure decompression is done once and cached. By default walletkit-swift and walletkit-android
+# ship with compressed keys. But this is disabled for tests.
+compress-zkeys = ["world-id-core/compress-zkeys"]
 issuers = ["dep:base64"]
 storage = [
     "dep:ciborium",
@@ -98,9 +97,14 @@ storage = [
     "dep:walletkit-db",
 ]
 
+# SECTION: V3 Feature Flags
+common-apps = []
+semaphore = ["semaphore-rs/depth_30"]
+
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
 legacy-nullifiers = []
 
 [package.metadata.docs.rs]
 no-default-features = true
+features = ["issuers", "storage"]

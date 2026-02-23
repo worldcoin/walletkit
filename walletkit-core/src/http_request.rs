@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use serde::ser::Serialize;
+use backon::{ExponentialBuilder, Retryable};
+use reqwest::{Method, RequestBuilder, Response};
 
 use crate::error::WalletKitError;
 
@@ -25,150 +26,146 @@ impl Request {
         }
     }
 
-    /// Makes a POST request to a given URL with a JSON body. Retries are handled internally for
-    /// transient failures such as timeouts, 5xx responses, and rate limiting (429)
-    pub(crate) async fn post<T>(
-        &self,
-        url: String,
-        body: T,
-    ) -> Result<reqwest::Response, WalletKitError>
-    where
-        T: Serialize + Send + Sync,
-    {
+    /// Creates a request builder with defaults applied.
+    pub(crate) fn req(&self, method: Method, url: &str) -> RequestBuilder {
         #[cfg(not(test))]
         assert!(url.starts_with("https"));
 
-        let mut attempt = 0;
+        self.client
+            .request(method, url)
+            .timeout(self.timeout)
+            .header(
+                "User-Agent",
+                format!("walletkit-core/{}", env!("CARGO_PKG_VERSION")),
+            )
+    }
 
-        loop {
-            let result = self
-                .client
-                .post(&url)
-                .timeout(self.timeout)
-                .header(
-                    "User-Agent",
-                    format!("walletkit-core/{}", env!("CARGO_PKG_VERSION")),
-                )
-                .json(&body)
-                .send()
-                .await;
+    /// Creates a GET request builder with defaults applied.
+    #[allow(dead_code)]
+    pub(crate) fn get(&self, url: &str) -> RequestBuilder {
+        self.req(Method::GET, url)
+    }
 
-            match result {
-                Ok(resp) => {
-                    let status = resp.status().as_u16();
-                    // Retry on 429 and 5xx
-                    if status == 429 || (500..600).contains(&status) {
-                        if attempt >= self.max_retries {
-                            return Err(WalletKitError::NetworkError {
-                                url,
-                                status: Some(status),
-                                error: format!(
-                                    "request error with bad status code {status}"
-                                ),
-                            });
-                        }
-                        attempt += 1;
-                        // No sleep to keep runtime-agnostic
-                        continue;
-                    }
+    /// Creates a POST request builder with defaults applied.
+    pub(crate) fn post(&self, url: &str) -> RequestBuilder {
+        self.req(Method::POST, url)
+    }
 
-                    return Ok(resp);
-                }
-                Err(err) => {
-                    // Retry on timeouts/connect errors
-                    if err.is_timeout() || err.is_connect() {
-                        if attempt >= self.max_retries {
-                            return Err(WalletKitError::NetworkError {
-                                url,
-                                status: None,
-                                error: format!(
-                                    "request timeout/connect error after all retries: {err}"
-                                ),
-                            });
-                        }
-                        attempt += 1;
-                        continue;
-                    }
-                    return Err(WalletKitError::NetworkError {
-                        url,
-                        status: None,
-                        error: format!("request failed after all retries: {err}"),
-                    });
-                }
-            }
+    /// Handles sending a request built by `req`/`get`/`post` with retries for transient failures.
+    pub(crate) async fn handle(
+        &self,
+        request_builder: RequestBuilder,
+    ) -> Result<Response, WalletKitError> {
+        if request_builder.try_clone().is_none() {
+            return execute_request_builder(request_builder)
+                .await
+                .map_err(Into::into);
+        }
+
+        let backoff = ExponentialBuilder::default()
+            .with_min_delay(Duration::from_millis(200))
+            .with_max_delay(Duration::from_secs(2))
+            .with_max_times(self.max_retries as usize);
+
+        let template = request_builder;
+
+        (|| async {
+            let request_builder = template.try_clone().expect(
+                "request_builder must be cloneable after initial handle() guard",
+            );
+            execute_request_builder(request_builder).await
+        })
+        .retry(backoff)
+        .when(|err: &RequestHandleError| err.is_retryable())
+        .await
+        .map_err(Into::into)
+    }
+}
+
+#[derive(Debug)]
+struct RequestHandleError {
+    url: String,
+    status: Option<u16>,
+    error: String,
+    retryable: bool,
+}
+
+impl RequestHandleError {
+    const fn retryable(url: String, status: Option<u16>, error: String) -> Self {
+        Self {
+            url,
+            status,
+            error,
+            retryable: true,
         }
     }
 
-    /// Makes a POST request with a raw JSON body string and custom headers.
-    ///
-    /// Retries on 429, 5xx, timeouts and connection errors (same as `post`).
-    #[cfg(feature = "issuers")]
-    pub(crate) async fn post_raw_json(
-        &self,
-        url: &str,
-        body: &str,
-        headers: &[(&str, &str)],
-    ) -> Result<reqwest::Response, WalletKitError> {
-        #[cfg(not(test))]
-        assert!(url.starts_with("https"));
+    const fn permanent(url: String, status: Option<u16>, error: String) -> Self {
+        Self {
+            url,
+            status,
+            error,
+            retryable: false,
+        }
+    }
 
-        let mut attempt = 0;
+    const fn is_retryable(&self) -> bool {
+        self.retryable
+    }
+}
 
-        loop {
-            let mut builder = self
-                .client
-                .post(url)
-                .timeout(self.timeout)
-                .header(
-                    "User-Agent",
-                    format!("walletkit-core/{}", env!("CARGO_PKG_VERSION")),
-                )
-                .header("Content-Type", "application/json")
-                .body(body.to_string());
+impl From<RequestHandleError> for WalletKitError {
+    fn from(value: RequestHandleError) -> Self {
+        Self::NetworkError {
+            url: value.url,
+            status: value.status,
+            error: value.error,
+        }
+    }
+}
 
-            for (name, value) in headers {
-                builder = builder.header(*name, *value);
+async fn execute_request_builder(
+    request_builder: RequestBuilder,
+) -> Result<Response, RequestHandleError> {
+    let (client, request) = request_builder.build_split();
+    let request = request.map_err(|err| {
+        RequestHandleError::permanent(
+            err.url().map_or_else(
+                || "<unknown>".to_string(),
+                std::string::ToString::to_string,
+            ),
+            None,
+            format!("request build failed: {err}"),
+        )
+    })?;
+    let url = request.url().to_string();
+
+    match client.execute(request).await {
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            if status == 429 || (500..600).contains(&status) {
+                return Err(RequestHandleError::retryable(
+                    url,
+                    Some(status),
+                    format!("request error with bad status code {status}"),
+                ));
+            }
+            Ok(resp)
+        }
+        Err(err) => {
+            if err.is_timeout() || err.is_connect() {
+                return Err(RequestHandleError::retryable(
+                    url,
+                    None,
+                    format!("request timeout/connect error: {err}"),
+                ));
             }
 
-            let result = builder.send().await;
-
-            match result {
-                Ok(resp) => {
-                    let status = resp.status().as_u16();
-                    if status == 429 || (500..600).contains(&status) {
-                        if attempt >= self.max_retries {
-                            return Err(WalletKitError::NetworkError {
-                                url: url.to_string(),
-                                status: Some(status),
-                                error: format!(
-                                    "request error with bad status code {status}"
-                                ),
-                            });
-                        }
-                        attempt += 1;
-                        continue;
-                    }
-                    return Ok(resp);
-                }
-                Err(err) => {
-                    if err.is_timeout() || err.is_connect() {
-                        if attempt >= self.max_retries {
-                            return Err(WalletKitError::NetworkError {
-                                url: url.to_string(),
-                                status: None,
-                                error: format!("request timeout/connect error after retries: {err}"),
-                            });
-                        }
-                        attempt += 1;
-                        continue;
-                    }
-                    return Err(WalletKitError::NetworkError {
-                        url: url.to_string(),
-                        status: None,
-                        error: format!("request failed: {err}"),
-                    });
-                }
-            }
+            Err(RequestHandleError::permanent(
+                url,
+                None,
+                format!("request failed: {err}"),
+            ))
         }
     }
 }

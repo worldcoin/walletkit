@@ -8,13 +8,14 @@ PROJECT_ROOT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KOTLIN_DIR="$PROJECT_ROOT_PATH/kotlin"
 JAVA_SRC_DIR="$KOTLIN_DIR/walletkit/src/main/java"
 LIBS_DIR="$KOTLIN_DIR/libs"
+CARGO_FEATURES="compress-zkeys"
 
 # Clean previous artifacts
 rm -rf "$JAVA_SRC_DIR" "$LIBS_DIR"
 mkdir -p "$JAVA_SRC_DIR" "$LIBS_DIR"
 
 echo "🟢 Building Rust cdylib for host platform"
-cargo build --package walletkit --release
+cargo build --package walletkit --release --features "$CARGO_FEATURES"
 
 # Determine the correct library file extension and copy it
 if [[ "$OSTYPE" == "darwin"* ]]; then

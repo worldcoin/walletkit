@@ -19,8 +19,10 @@ VERSION="$1"
 echo "Using version: $VERSION"
 
 # Build using kotlin/build.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 echo "Building WalletKit SDK..."
-cd kotlin
 ./build.sh
 
 # Publish to Maven Local

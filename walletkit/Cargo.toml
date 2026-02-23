@@ -28,6 +28,7 @@ walletkit-core = { workspace = true, features = ["legacy-nullifiers", "common-ap
 default = ["semaphore"]
 semaphore = ["walletkit-core/semaphore"]
 storage = ["walletkit-core/storage"]
+compress-zkeys = ["walletkit-core/compress-zkeys"]
 
 [package.metadata.docs.rs]
 no-default-features = true

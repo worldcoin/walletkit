@@ -130,8 +130,10 @@ jobs:
         env:
           WORLDCHAIN_SEPOLIA_RPC_URL: ${{ secrets.WORLDCHAIN_SEPOLIA_RPC_URL || 'https://worldchain-sepolia.g.alchemy.com/public' }}
           WORLDCHAIN_RPC_URL: ${{ secrets.WORLDCHAIN_RPC_URL || 'https://worldchain-mainnet.g.alchemy.com/public' }}
+        # we don't do --all-features because `compress-zkeys` is very expensive for the CI and doesn't need to be tested on every PR
+        # we add the remainder of non-default features to include them in tests
         run: |
-          cargo test --all --all-features
+          cargo test --workspace --features walletkit-core/legacy-nullifiers
 
       - name: Build non-default features
         run: |
