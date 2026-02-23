@@ -10,14 +10,18 @@ private class CapturingLogger : Logger {
     private val lock = Any()
     private val entries = mutableListOf<Pair<LogLevel, String>>()
 
-    override fun log(level: LogLevel, message: String) {
+    override fun log(
+        level: LogLevel,
+        message: String,
+    ) {
         synchronized(lock) {
             entries.add(level to message)
         }
     }
 
-    fun snapshot(): List<Pair<LogLevel, String>> =
-        synchronized(lock) { entries.toList() }
+    fun snapshot(): List<Pair<LogLevel, String>> = synchronized(lock) {
+        entries.toList()
+    }
 }
 
 class SimpleTest {
@@ -29,9 +33,10 @@ class SimpleTest {
         val entries = logger.snapshot()
         assertTrue(entries.isNotEmpty(), "expected at least one bridged log entry")
 
-        val hasInitInfo = entries.any { (level, message) ->
-            level == LogLevel.INFO && message.contains("WalletKit logging initialized")
-        }
+        val hasInitInfo =
+            entries.any { (level, message) ->
+                level == LogLevel.INFO && message.contains("WalletKit logging initialized")
+            }
         assertTrue(hasInitInfo, "expected info-level initialization log")
     }
 }
