@@ -66,11 +66,10 @@ pub(super) struct RawStmt<'db> {
     db: &'db RawDb,
 }
 
-// Safety: the handles represent single-owner resources. They are not `Sync`
-// (no concurrent access) but can be moved between threads (`Send`), which the
-// outer `Mutex<CredentialStoreInner>` guarantees.
+// Safety: RawDb is a single-owner handle to sqlite3*. On native we always open
+// with FULLMUTEX and upper layers guard shared access with a Mutex, so moving a
+// connection between threads is sound.
 unsafe impl Send for RawDb {}
-unsafe impl Send for RawStmt<'_> {}
 
 // -- RawDb implementation -----------------------------------------------------
 
@@ -115,12 +114,12 @@ impl RawDb {
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
         // Safety: self.ptr is valid for the lifetime of RawDb. c_sql is null-
-        // terminated. Callback and arg are null (no result rows needed).
+        // terminated. Callback is None and arg is null (no result rows needed).
         let rc = unsafe {
             raw::sqlite3_exec(
                 self.ptr,
                 c_sql.as_ptr(),
-                std::ptr::null(),
+                None,
                 std::ptr::null_mut(),
                 &raw mut errmsg,
             )
@@ -157,7 +156,7 @@ impl RawDb {
             raw::sqlite3_exec(
                 self.ptr,
                 c_sql.as_ptr(),
-                std::ptr::null(),
+                None,
                 std::ptr::null_mut(),
                 &raw mut errmsg,
             )
@@ -252,7 +251,7 @@ impl std::fmt::Debug for RawDb {
 
 impl RawStmt<'_> {
     /// Executes a single step. Returns `SQLITE_ROW` or `SQLITE_DONE`.
-    pub fn step(&self) -> DbResult<i32> {
+    pub fn step(&mut self) -> DbResult<i32> {
         // Safety: self.ptr is a valid prepared statement.
         let rc = unsafe { raw::sqlite3_step(self.ptr) };
         match rc {
@@ -264,7 +263,7 @@ impl RawStmt<'_> {
 
     /// Resets the statement so it can be stepped again.
     #[allow(dead_code)]
-    pub fn reset(&self) -> DbResult<()> {
+    pub fn reset(&mut self) -> DbResult<()> {
         // Safety: self.ptr is valid.
         let rc = unsafe { raw::sqlite3_reset(self.ptr) };
         if rc == SQLITE_OK as c_int {
@@ -276,13 +275,13 @@ impl RawStmt<'_> {
 
     // -- Binding --------------------------------------------------------------
 
-    pub fn bind_i64(&self, idx: i32, value: i64) -> DbResult<()> {
+    pub fn bind_i64(&mut self, idx: i32, value: i64) -> DbResult<()> {
         // Safety: self.ptr is valid; idx is a 1-based parameter index.
         let rc = unsafe { raw::sqlite3_bind_int64(self.ptr, idx as c_int, value) };
         check(rc, self)
     }
 
-    pub fn bind_blob(&self, idx: i32, value: &[u8]) -> DbResult<()> {
+    pub fn bind_blob(&mut self, idx: i32, value: &[u8]) -> DbResult<()> {
         // Safety: value.as_ptr() is valid for value.len() bytes.
         // SQLITE_TRANSIENT tells SQLite to copy the data immediately.
         let rc = unsafe {
@@ -297,7 +296,7 @@ impl RawStmt<'_> {
         check(rc, self)
     }
 
-    pub fn bind_text(&self, idx: i32, value: &str) -> DbResult<()> {
+    pub fn bind_text(&mut self, idx: i32, value: &str) -> DbResult<()> {
         // Safety: value.as_ptr() is valid for value.len() bytes.
         // SQLITE_TRANSIENT tells SQLite to copy the data immediately.
         let rc = unsafe {
@@ -312,7 +311,7 @@ impl RawStmt<'_> {
         check(rc, self)
     }
 
-    pub fn bind_null(&self, idx: i32) -> DbResult<()> {
+    pub fn bind_null(&mut self, idx: i32) -> DbResult<()> {
         // Safety: self.ptr is valid.
         let rc = unsafe { raw::sqlite3_bind_null(self.ptr, idx as c_int) };
         check(rc, self)
@@ -421,6 +420,15 @@ fn check(rc: c_int, stmt: &RawStmt) -> DbResult<()> {
 mod raw {
     use std::os::raw::{c_char, c_int, c_void};
 
+    pub type Sqlite3Callback = Option<
+        unsafe extern "C" fn(
+            arg: *mut c_void,
+            n_cols: c_int,
+            values: *mut *mut c_char,
+            names: *mut *mut c_char,
+        ) -> c_int,
+    >;
+
     #[allow(dead_code, non_camel_case_types)]
     type sqlite3 = c_void;
     #[allow(dead_code, non_camel_case_types)]
@@ -437,7 +445,7 @@ mod raw {
         pub fn sqlite3_exec(
             db: *mut sqlite3,
             sql: *const c_char,
-            callback: *const c_void,
+            callback: Sqlite3Callback,
             arg: *mut c_void,
             errmsg: *mut *mut c_char,
         ) -> c_int;
@@ -495,6 +503,8 @@ mod raw {
     use sqlite_wasm_rs as wasm;
     use std::os::raw::{c_char, c_int, c_void};
 
+    pub type Sqlite3Callback = wasm::sqlite3_callback;
+
     pub unsafe fn sqlite3_open_v2(
         filename: *const c_char,
         pp_db: *mut *mut c_void,
@@ -509,17 +519,11 @@ mod raw {
     pub unsafe fn sqlite3_exec(
         db: *mut c_void,
         sql: *const c_char,
-        callback: *const c_void,
+        callback: Sqlite3Callback,
         arg: *mut c_void,
         errmsg: *mut *mut c_char,
     ) -> c_int {
-        wasm::sqlite3_exec(
-            db.cast(),
-            sql.cast(),
-            std::mem::transmute(callback),
-            arg,
-            errmsg.cast(),
-        )
+        wasm::sqlite3_exec(db.cast(), sql.cast(), callback, arg, errmsg.cast())
     }
     pub unsafe fn sqlite3_free(ptr: *mut c_void) {
         wasm::sqlite3_free(ptr);

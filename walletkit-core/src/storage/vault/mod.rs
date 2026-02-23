@@ -7,15 +7,13 @@ mod tests;
 
 use std::path::Path;
 
-use walletkit_db::cipher;
-use walletkit_db::{params, Connection, StepResult, Value};
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::lock::StorageLockGuard;
 use crate::storage::types::{BlobKind, CredentialRecord};
-use helpers::{
-    compute_content_id, map_db_err, map_record, to_i64, to_u64,
-};
+use helpers::{compute_content_id, map_db_err, map_record, to_i64, to_u64};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
+use walletkit_db::cipher;
+use walletkit_db::{params, Connection, StepResult, Value};
 
 /// Encrypted vault database wrapper.
 #[derive(Debug)]
@@ -213,9 +211,9 @@ impl VaultDb {
                  WHERE cr.expires_at > ?1
                    AND cr.issuer_schema_id = ?2
                  ORDER BY cr.updated_at DESC";
-            let stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+            let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
             stmt.bind_values(params![expires, issuer_id])
-            .map_err(|err| map_db_err(&err))?;
+                .map_err(|err| map_db_err(&err))?;
             while let StepResult::Row(row) =
                 stmt.step().map_err(|err| map_db_err(&err))?
             {
@@ -229,7 +227,7 @@ impl VaultDb {
                  FROM credential_records cr
                  WHERE cr.expires_at > ?1
                  ORDER BY cr.updated_at DESC";
-            let stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+            let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
             stmt.bind_values(params![expires])
                 .map_err(|err| map_db_err(&err))?;
             while let StepResult::Row(row) =
@@ -265,7 +263,7 @@ impl VaultDb {
              ORDER BY cr.updated_at DESC
              LIMIT 1";
 
-        let stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![expires, issuer_schema_id_i64])
             .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {

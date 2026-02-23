@@ -72,7 +72,7 @@ impl<'conn> Statement<'conn> {
     }
 
     /// Binds a slice of [`Value`]s to the statement parameters (1-indexed).
-    pub fn bind_values(&self, values: &[Value]) -> DbResult<()> {
+    pub fn bind_values(&mut self, values: &[Value]) -> DbResult<()> {
         for (i, val) in values.iter().enumerate() {
             let idx = i32::try_from(i + 1).expect("parameter index overflow");
             match val {
@@ -86,7 +86,7 @@ impl<'conn> Statement<'conn> {
     }
 
     /// Executes a single step.
-    pub fn step<'stmt>(&'stmt self) -> DbResult<StepResult<'stmt, 'conn>> {
+    pub fn step<'stmt>(&'stmt mut self) -> DbResult<StepResult<'stmt, 'conn>> {
         let rc = self.raw.step()?;
         if rc == ffi::SQLITE_ROW {
             Ok(StepResult::Row(Row { stmt: self }))

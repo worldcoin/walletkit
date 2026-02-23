@@ -60,7 +60,7 @@ impl Connection {
     ///
     /// Returns the number of rows changed.
     pub fn execute(&self, sql: &str, params: &[Value]) -> DbResult<usize> {
-        let stmt = self.prepare(sql)?;
+        let mut stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         stmt.step()?;
         Ok(usize::try_from(self.db.changes()).unwrap_or(0))
@@ -75,7 +75,7 @@ impl Connection {
         params: &[Value],
         mapper: impl FnOnce(&Row<'_, '_>) -> DbResult<T>,
     ) -> DbResult<T> {
-        let stmt = self.prepare(sql)?;
+        let mut stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         match stmt.step()? {
             StepResult::Row(row) => mapper(&row),
@@ -93,7 +93,7 @@ impl Connection {
         params: &[Value],
         mapper: impl FnOnce(&Row<'_, '_>) -> DbResult<T>,
     ) -> DbResult<Option<T>> {
-        let stmt = self.prepare(sql)?;
+        let mut stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         match stmt.step()? {
             StepResult::Row(row) => mapper(&row).map(Some),

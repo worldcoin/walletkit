@@ -109,12 +109,7 @@ pub(super) fn upsert_cache_entry(
             inserted_at,
             expires_at
          ) VALUES (?1, ?2, ?3, ?4)",
-        params![
-            key,
-            value,
-            times.inserted_at,
-            times.expires_at,
-        ],
+        params![key, value, times.inserted_at, times.expires_at,],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
@@ -138,12 +133,7 @@ pub(super) fn insert_cache_entry_tx(
             inserted_at,
             expires_at
          ) VALUES (?1, ?2, ?3, ?4)",
-        params![
-            key,
-            value,
-            times.inserted_at,
-            times.expires_at,
-        ],
+        params![key, value, times.inserted_at, times.expires_at,],
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())
@@ -193,21 +183,17 @@ pub(super) fn get_cache_entry_tx(
 
     if let Some(insertion_before) = insertion_before {
         let insertion_before = to_i64(insertion_before, "insertion_before")?;
-        let stmt = tx.prepare(
+        let mut stmt = tx.prepare(
             "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2 AND inserted_at < ?3",
         ).map_err(|err| map_db_err(&err))?;
-        stmt.bind_values(params![
-            key,
-            now,
-            insertion_before
-        ])
-        .map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![key, now, insertion_before])
+            .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
             walletkit_db::StepResult::Row(row) => Ok(Some(row.column_blob(0))),
             walletkit_db::StepResult::Done => Ok(None),
         }
     } else {
-        let stmt = tx.prepare(
+        let mut stmt = tx.prepare(
             "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2",
         ).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![key, now])
