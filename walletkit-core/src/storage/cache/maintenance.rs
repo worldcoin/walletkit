@@ -55,7 +55,10 @@ fn open_prepared(
 /// # Errors
 ///
 /// Returns an error if deletion or re-open fails.
-fn rebuild(path: &Path, k_intermediate: &Zeroizing<[u8; 32]>) -> StorageResult<Connection> {
+fn rebuild(
+    path: &Path,
+    k_intermediate: &Zeroizing<[u8; 32]>,
+) -> StorageResult<Connection> {
     delete_cache_files(path)?;
     open_prepared(path, k_intermediate)
 }

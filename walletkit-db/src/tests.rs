@@ -14,11 +14,9 @@ fn test_open_in_memory() {
     )
     .expect("insert");
     let result = conn
-        .query_row(
-            "SELECT val FROM t WHERE id = ?1",
-            params![1_i64],
-            |stmt| Ok(stmt.column_text(0)),
-        )
+        .query_row("SELECT val FROM t WHERE id = ?1", params![1_i64], |stmt| {
+            Ok(stmt.column_text(0))
+        })
         .expect("query");
     assert_eq!(result, "hello");
 }
@@ -43,11 +41,8 @@ fn test_transaction_commit() {
         .expect("create table");
     {
         let tx = conn.transaction().expect("begin tx");
-        tx.execute(
-            "INSERT INTO t (id) VALUES (?1)",
-            params![42_i64],
-        )
-        .expect("insert");
+        tx.execute("INSERT INTO t (id) VALUES (?1)", params![42_i64])
+            .expect("insert");
         tx.commit().expect("commit");
     }
     let result = conn
@@ -65,11 +60,8 @@ fn test_transaction_rollback_on_drop() {
         .expect("create table");
     {
         let tx = conn.transaction().expect("begin tx");
-        tx.execute(
-            "INSERT INTO t (id) VALUES (?1)",
-            params![99_i64],
-        )
-        .expect("insert");
+        tx.execute("INSERT INTO t (id) VALUES (?1)", params![99_i64])
+            .expect("insert");
         // Drop without commit -> rollback
     }
     let result = conn
@@ -134,7 +126,8 @@ fn test_cipher_encrypted_round_trip() {
 
     // Re-open with correct key
     {
-        let conn = cipher::open_encrypted(&path, &key, false).expect("reopen encrypted");
+        let conn =
+            cipher::open_encrypted(&path, &key, false).expect("reopen encrypted");
         let val = conn
             .query_row("SELECT val FROM secret WHERE id = 1", &[], |stmt| {
                 Ok(stmt.column_text(0))
