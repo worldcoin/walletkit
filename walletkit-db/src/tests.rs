@@ -1,6 +1,7 @@
 //! Unit tests for the safe `SQLite` db wrapper.
 
 use super::*;
+use zeroize::Zeroizing;
 
 #[test]
 fn test_open_in_memory() {
@@ -120,11 +121,11 @@ fn test_null_handling() {
 fn test_cipher_encrypted_round_trip() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().join("cipher-test.sqlite");
-    let key = [0xABu8; 32];
+    let key = Zeroizing::new([0xABu8; 32]);
 
     // Create and write
     {
-        let conn = cipher::open_encrypted(&path, key, false).expect("open encrypted");
+        let conn = cipher::open_encrypted(&path, &key, false).expect("open encrypted");
         conn.execute_batch("CREATE TABLE secret (id INTEGER PRIMARY KEY, val TEXT);")
             .expect("create table");
         conn.execute("INSERT INTO secret (id, val) VALUES (1, 'top-secret')", &[])
@@ -133,7 +134,7 @@ fn test_cipher_encrypted_round_trip() {
 
     // Re-open with correct key
     {
-        let conn = cipher::open_encrypted(&path, key, false).expect("reopen encrypted");
+        let conn = cipher::open_encrypted(&path, &key, false).expect("reopen encrypted");
         let val = conn
             .query_row("SELECT val FROM secret WHERE id = 1", &[], |stmt| {
                 Ok(stmt.column_text(0))
@@ -144,8 +145,8 @@ fn test_cipher_encrypted_round_trip() {
 
     // Wrong key should fail
     {
-        let wrong_key = [0xCDu8; 32];
-        let result = cipher::open_encrypted(&path, wrong_key, false);
+        let wrong_key = Zeroizing::new([0xCDu8; 32]);
+        let result = cipher::open_encrypted(&path, &wrong_key, false);
         assert!(result.is_err(), "wrong key should fail");
     }
 

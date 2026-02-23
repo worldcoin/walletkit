@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::storage::error::StorageResult;
 use walletkit_db::cipher;
 use walletkit_db::Connection;
+use zeroize::Zeroizing;
 
 use super::schema;
 use super::util::{map_db_err, map_io_err};
@@ -17,7 +18,7 @@ use super::util::{map_db_err, map_io_err};
 /// Returns an error if the database cannot be opened or rebuilt.
 pub(super) fn open_or_rebuild(
     path: &Path,
-    k_intermediate: [u8; 32],
+    k_intermediate: &Zeroizing<[u8; 32]>,
 ) -> StorageResult<Connection> {
     match open_prepared(path, k_intermediate) {
         Ok(conn) => {
@@ -39,7 +40,10 @@ pub(super) fn open_or_rebuild(
 /// # Errors
 ///
 /// Returns an error if the DB cannot be opened or configured.
-fn open_prepared(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Connection> {
+fn open_prepared(
+    path: &Path,
+    k_intermediate: &Zeroizing<[u8; 32]>,
+) -> StorageResult<Connection> {
     let conn = cipher::open_encrypted(path, k_intermediate, false)
         .map_err(|e| map_db_err(&e))?;
     schema::ensure_schema(&conn)?;
@@ -51,7 +55,7 @@ fn open_prepared(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Connect
 /// # Errors
 ///
 /// Returns an error if deletion or re-open fails.
-fn rebuild(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Connection> {
+fn rebuild(path: &Path, k_intermediate: &Zeroizing<[u8; 32]>) -> StorageResult<Connection> {
     delete_cache_files(path)?;
     open_prepared(path, k_intermediate)
 }

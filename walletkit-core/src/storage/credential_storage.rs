@@ -277,10 +277,11 @@ impl CredentialStoreInner {
             &guard,
             now,
         )?;
+        let k_intermediate = keys.intermediate_key();
         let vault =
-            VaultDb::new(&self.paths.vault_db_path(), *keys.intermediate_key(), &guard)?;
+            VaultDb::new(&self.paths.vault_db_path(), &k_intermediate, &guard)?;
         let cache =
-            CacheDb::new(&self.paths.cache_db_path(), *keys.intermediate_key(), &guard)?;
+            CacheDb::new(&self.paths.cache_db_path(), &k_intermediate, &guard)?;
         let mut state = StorageState {
             keys,
             vault,

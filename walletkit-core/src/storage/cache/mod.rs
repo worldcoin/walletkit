@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::storage::error::StorageResult;
 use crate::storage::lock::StorageLockGuard;
 use walletkit_db::Connection;
+use zeroize::Zeroizing;
 
 mod maintenance;
 mod merkle;
@@ -33,7 +34,7 @@ impl CacheDb {
     /// Returns an error if the database cannot be opened or rebuilt.
     pub fn new(
         path: &Path,
-        k_intermediate: [u8; 32],
+        k_intermediate: &Zeroizing<[u8; 32]>,
         _lock: &StorageLockGuard,
     ) -> StorageResult<Self> {
         let conn = maintenance::open_or_rebuild(path, k_intermediate)?;
@@ -170,13 +171,13 @@ mod tests {
     #[test]
     fn test_cache_create_and_open() {
         let path = temp_cache_path();
-        let key = [0x11u8; 32];
+        let key = Zeroizing::new([0x11u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
-        let db = CacheDb::new(&path, key, &guard).expect("create cache");
+        let db = CacheDb::new(&path, &key, &guard).expect("create cache");
         drop(db);
-        CacheDb::new(&path, key, &guard).expect("open cache");
+        CacheDb::new(&path, &key, &guard).expect("open cache");
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }
@@ -184,11 +185,11 @@ mod tests {
     #[test]
     fn test_cache_rebuild_on_corruption() {
         let path = temp_cache_path();
-        let key = [0x22u8; 32];
+        let key = Zeroizing::new([0x22u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
+        let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
         let rp_id = [0x01u8; 32];
         let k_session = [0x02u8; 32];
         db.session_key_put(&guard, rp_id, k_session, 1000)
@@ -197,7 +198,7 @@ mod tests {
 
         fs::write(&path, b"corrupt").expect("corrupt cache file");
 
-        let db = CacheDb::new(&path, key, &guard).expect("rebuild cache");
+        let db = CacheDb::new(&path, &key, &guard).expect("rebuild cache");
         let value = db.session_key_get(rp_id).expect("get session key");
         assert!(value.is_none());
         cleanup_cache_files(&path);
@@ -207,11 +208,11 @@ mod tests {
     #[test]
     fn test_merkle_cache_ttl() {
         let path = temp_cache_path();
-        let key = [0x33u8; 32];
+        let key = Zeroizing::new([0x33u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
+        let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
         db.merkle_cache_put(&guard, vec![1, 2, 3], 100, 10)
             .expect("put merkle proof");
         let valid_until = 105;
@@ -226,11 +227,11 @@ mod tests {
     #[test]
     fn test_session_cache_ttl() {
         let path = temp_cache_path();
-        let key = [0x44u8; 32];
+        let key = Zeroizing::new([0x44u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
+        let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
         let rp_id = [0x55u8; 32];
         let k_session = [0x66u8; 32];
         db.session_key_put(&guard, rp_id, k_session, 1)

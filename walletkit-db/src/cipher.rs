@@ -46,11 +46,11 @@ use super::error::{DbError, DbResult};
 /// See the [module-level documentation](self) for the full encryption flow.
 pub fn open_encrypted(
     path: &Path,
-    k_intermediate: [u8; 32],
+    k_intermediate: &Zeroizing<[u8; 32]>,
     read_only: bool,
 ) -> DbResult<Connection> {
     let conn = Connection::open(path, read_only)?;
-    apply_key(&conn, Zeroizing::new(k_intermediate))?;
+    apply_key(&conn, k_intermediate)?;
     configure_connection(&conn)?;
     Ok(conn)
 }
@@ -65,7 +65,7 @@ pub fn open_encrypted(
 /// After keying, a lightweight read (`SELECT count(*) FROM sqlite_master`)
 /// verifies the key is correct. If it's wrong, `sqlite3mc` fails with
 /// `SQLITE_NOTADB` on the first page read.
-fn apply_key(conn: &Connection, k_intermediate: Zeroizing<[u8; 32]>) -> DbResult<()> {
+fn apply_key(conn: &Connection, k_intermediate: &Zeroizing<[u8; 32]>) -> DbResult<()> {
     // Hex-encode the key and build the PRAGMA. Both are zeroized on drop.
     let key_hex = Zeroizing::new(hex::encode(&*k_intermediate));
     let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", key_hex.as_str()));

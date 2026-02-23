@@ -6,6 +6,7 @@ use crate::storage::lock::StorageLock;
 use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 fn temp_vault_path() -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -38,13 +39,13 @@ fn sample_blinding_factor() -> Vec<u8> {
 #[test]
 fn test_vault_create_and_open() {
     let path = temp_vault_path();
-    let key = [0x42u8; 32];
+    let key = Zeroizing::new([0x42u8; 32]);
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let db = VaultDb::new(&path, key, &guard).expect("create vault");
+    let db = VaultDb::new(&path, &key, &guard).expect("create vault");
     drop(db);
-    VaultDb::new(&path, key, &guard).expect("open vault");
+    VaultDb::new(&path, &key, &guard).expect("open vault");
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -52,12 +53,13 @@ fn test_vault_create_and_open() {
 #[test]
 fn test_vault_wrong_key_fails() {
     let path = temp_vault_path();
-    let key = [0x01u8; 32];
+    let key = Zeroizing::new([0x01u8; 32]);
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    VaultDb::new(&path, key, &guard).expect("create vault");
-    let err = VaultDb::new(&path, [0x02u8; 32], &guard).expect_err("wrong key");
+    VaultDb::new(&path, &key, &guard).expect("create vault");
+    let wrong_key = Zeroizing::new([0x02u8; 32]);
+    let err = VaultDb::new(&path, &wrong_key, &guard).expect_err("wrong key");
     match err {
         StorageError::VaultDb(_) | StorageError::CorruptedVault(_) => {}
         _ => panic!("unexpected error: {err}"),
@@ -72,7 +74,8 @@ fn test_leaf_index_set_once() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x03u8; 32], &guard).expect("create vault");
+    let key = Zeroizing::new([0x03u8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.init_leaf_index(&guard, 42, 100)
         .expect("init leaf index");
     db.init_leaf_index(&guard, 42, 200)
@@ -87,7 +90,8 @@ fn test_leaf_index_immutable() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x04u8; 32], &guard).expect("create vault");
+    let key = Zeroizing::new([0x04u8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.init_leaf_index(&guard, 7, 100).expect("init leaf index");
     let err = db.init_leaf_index(&guard, 8, 200).expect_err("mismatch");
     match err {
@@ -104,7 +108,8 @@ fn test_store_credential_without_associated_data() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x05u8; 32], &guard).expect("create vault");
+    let key = Zeroizing::new([0x05u8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     let credential_id = db
         .store_credential(
             &guard,
@@ -132,7 +137,8 @@ fn test_store_credential_with_associated_data() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x06u8; 32], &guard).expect("create vault");
+    let key = Zeroizing::new([0x06u8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.store_credential(
         &guard,
         11,
@@ -165,7 +171,8 @@ fn test_content_id_deduplication() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x07u8; 32], &guard).expect("create vault");
+    let key = Zeroizing::new([0x07u8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.store_credential(
         &guard,
         12,
@@ -206,7 +213,8 @@ fn test_list_credentials_by_issuer() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x08u8; 32], &guard).expect("create vault");
+    let key = Zeroizing::new([0x08u8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.store_credential(
         &guard,
         100,
@@ -244,7 +252,8 @@ fn test_list_credentials_excludes_expired() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let mut db = VaultDb::new(&path, [0x09u8; 32], &guard).expect("create vault");
+    let key = Zeroizing::new([0x09u8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.store_credential(
         &guard,
         300,
@@ -268,7 +277,8 @@ fn test_vault_integrity_check() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let db = VaultDb::new(&path, [0x0Au8; 32], &guard).expect("create vault");
+    let key = Zeroizing::new([0x0Au8; 32]);
+    let db = VaultDb::new(&path, &key, &guard).expect("create vault");
     assert!(db.check_integrity().expect("integrity"));
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
@@ -277,13 +287,13 @@ fn test_vault_integrity_check() {
 #[test]
 fn test_vault_corruption_handling() {
     let path = temp_vault_path();
-    let key = [0x0Bu8; 32];
+    let key = Zeroizing::new([0x0Bu8; 32]);
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    VaultDb::new(&path, key, &guard).expect("create vault");
+    VaultDb::new(&path, &key, &guard).expect("create vault");
     fs::write(&path, b"corrupt").expect("corrupt file");
-    let err = VaultDb::new(&path, key, &guard).expect_err("corrupt vault");
+    let err = VaultDb::new(&path, &key, &guard).expect_err("corrupt vault");
     match err {
         StorageError::VaultDb(_) | StorageError::CorruptedVault(_) => {}
         _ => panic!("unexpected error: {err}"),
