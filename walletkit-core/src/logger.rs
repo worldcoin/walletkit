@@ -109,7 +109,8 @@ impl tracing::field::Visit for EventFieldVisitor {
         if field.name() == "message" {
             self.message = Some(value.to_string());
         } else {
-            self.fields.push((field.name().to_string(), value.to_string()));
+            self.fields
+                .push((field.name().to_string(), value.to_string()));
         }
     }
 }
@@ -148,7 +149,8 @@ where
             message = metadata.name().to_string();
         }
 
-        let formatted = format!("[{} {}] {message}", metadata.level(), metadata.target());
+        let formatted =
+            format!("[{} {}] {message}", metadata.level(), metadata.target());
         logger.log(log_level(*metadata.level()), formatted);
     }
 }
@@ -186,7 +188,8 @@ pub fn init_logging(logger: Arc<dyn Logger>) {
 
     let _ = tracing_log::LogTracer::init();
 
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let subscriber = Registry::default()
         .with(filter)
         .with(
