@@ -65,7 +65,12 @@ To test local changes before publishing a release, use the build script to compi
 ./kotlin/build_android_local.sh 0.3.1-SNAPSHOT
 ```
 
-> **Note**: The script sets `RUSTUP_HOME` and `CARGO_HOME` to `/tmp` by default to avoid Docker permission issues when using `cross`. You can override them by exporting your own values.
+Example with custom Rust locations:
+```bash
+RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo ./kotlin/build_android_local.sh 0.1.0-SNAPSHOT
+```
+
+> **Note**: The script can be run from any working directory (it resolves its own location). It sets `RUSTUP_HOME` and `CARGO_HOME` to `/tmp` by default to avoid Docker permission issues when using `cross`. You can override them by exporting your own values.
 
 This will:
 1. Build the Rust library for all Android architectures (arm64-v8a, armeabi-v7a, x86_64, x86)
