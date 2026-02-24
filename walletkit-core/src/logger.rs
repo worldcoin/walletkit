@@ -169,9 +169,7 @@ pub fn init_logging(logger: Arc<dyn Logger>) {
 
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let subscriber = Registry::default()
-        .with(filter)
-        .with(ForeignLoggerLayer);
+    let subscriber = Registry::default().with(filter).with(ForeignLoggerLayer);
 
     if tracing::subscriber::set_global_default(subscriber).is_ok() {
         let _ = LOGGING_INITIALIZED.set(());
