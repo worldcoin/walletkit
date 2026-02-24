@@ -19,11 +19,10 @@ private class CapturingLogger : Logger {
         }
     }
 
-    fun snapshot(): List<Pair<LogLevel, String>> {
-        return synchronized(lock) {
+    fun snapshot(): List<Pair<LogLevel, String>> =
+        synchronized(lock) {
             entries.toList()
         }
-    }
 }
 
 class SimpleTest {
