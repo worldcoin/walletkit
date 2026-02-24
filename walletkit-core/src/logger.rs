@@ -1,12 +1,10 @@
 use std::{
     fmt,
-    io::{self, Write},
     sync::{Arc, OnceLock},
 };
 
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{
-    fmt::MakeWriter,
     layer::{Context, SubscriberExt},
     registry::LookupSpan,
     EnvFilter, Layer, Registry,
@@ -154,24 +152,6 @@ where
     }
 }
 
-#[derive(Clone, Copy, Default)]
-struct StdIoByLevel;
-
-impl<'writer> MakeWriter<'writer> for StdIoByLevel {
-    type Writer = Box<dyn Write + Send + 'writer>;
-
-    fn make_writer(&'writer self) -> Self::Writer {
-        Box::new(io::stdout())
-    }
-
-    fn make_writer_for(&'writer self, meta: &tracing::Metadata<'_>) -> Self::Writer {
-        match *meta.level() {
-            Level::ERROR | Level::WARN => Box::new(io::stderr()),
-            Level::INFO | Level::DEBUG | Level::TRACE => Box::new(io::stdout()),
-        }
-    }
-}
-
 static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
 static LOGGING_INITIALIZED: OnceLock<()> = OnceLock::new();
 
@@ -191,12 +171,6 @@ pub fn init_logging(logger: Arc<dyn Logger>) {
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let subscriber = Registry::default()
         .with(filter)
-        .with(
-            tracing_subscriber::fmt::layer()
-                .with_target(true)
-                .with_ansi(false)
-                .with_writer(StdIoByLevel),
-        )
         .with(ForeignLoggerLayer);
 
     if tracing::subscriber::set_global_default(subscriber).is_ok() {
