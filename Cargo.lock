@@ -4414,7 +4414,9 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
+ "futures-channel",
  "futures-core",
+ "futures-util",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",
@@ -4452,9 +4454,7 @@ checksum = "ab3f43e3283ab1488b624b44b0e988d0acea0b3214e694730a055cb6b2efa801"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "futures-channel",
  "futures-core",
- "futures-util",
  "http 1.4.0",
  "http-body 1.0.1",
  "http-body-util",
@@ -7260,9 +7260,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-authenticator"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3825148efb875f6cd56eba41742a32968c443e66554679b8a5c4abd2e7379ba1"
+checksum = "20c714d8943ffa65d9a0534f4bb396065de1312a172eac622deb3fac4c679f8f"
 dependencies = [
  "alloy",
  "anyhow",
@@ -7270,7 +7270,7 @@ dependencies = [
  "backon",
  "eyre",
  "rand 0.8.5",
- "reqwest 0.13.2",
+ "reqwest 0.12.28",
  "ruint",
  "rustls 0.23.36",
  "secrecy",
@@ -7290,9 +7290,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-core"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21b59b713c63e90dadd688ab4511209fd3dfecb639bf63e631e6d88cd86015c7"
+checksum = "930970a5aeace52879ccf21575277d2d5fd29f60d316a6b8a95043a3d9e9fdf9"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -7302,9 +7302,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-primitives"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26ad073d30ce3fdac588da2f5837a7dcb08c3ea71d3c6e7f978fed89736085e5"
+checksum = "684dfd0f5da4ed6613e0d2b4e7afc62911b1f88e5a72ce6c21d1c4b4a61f5861"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -7338,9 +7338,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-proof"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2aa8bf742cbb47421f4808aecfba280a17877d8f67e2b71e42595a4abecdeb39"
+checksum = "03c7c168a4b0a66e8f96b5dbc144394c5415c7b85876c600d7ac498b3e11b3b1"
 dependencies = [
  "ark-bn254 0.5.0",
  "ark-ff 0.5.0",
@@ -7349,7 +7349,7 @@ dependencies = [
  "eyre",
  "rand 0.8.5",
  "rayon",
- "reqwest 0.13.2",
+ "reqwest 0.12.28",
  "taceo-ark-babyjubjub",
  "taceo-circom-types",
  "taceo-eddsa-babyjubjub",
