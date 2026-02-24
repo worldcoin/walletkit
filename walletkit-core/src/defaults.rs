@@ -5,18 +5,12 @@ use crate::{error::WalletKitError, Environment, Region};
 
 /// The World ID Registry contract address on World Chain Mainnet.
 pub static WORLD_ID_REGISTRY: Address =
-    address!("0x7215Be2f5521985e2169f376B36a57473eaaAe6f");
+    address!("0x8556d07D75025f286fe757C7EeEceC40D54FA16D");
 
 const OPRF_NODE_COUNT: usize = 5;
 
 /// Generates the list of OPRF node URLs for a given region and environment.
 fn oprf_node_urls(region: Region, environment: &Environment) -> Vec<String> {
-    let region_code = match region {
-        Region::Us => "us",
-        Region::Eu => "eu",
-        Region::Ap => "ap",
-    };
-
     let env_segment = match environment {
         Environment::Staging => ".staging",
         Environment::Production => "",
@@ -24,11 +18,17 @@ fn oprf_node_urls(region: Region, environment: &Environment) -> Vec<String> {
 
     (0..OPRF_NODE_COUNT)
         .map(|i| {
-            format!(
-                "https://node{i}.{region_code}{env_segment}.world.oprf.taceo.network"
-            )
+            format!("https://node{i}.{region}{env_segment}.world.oprf.taceo.network")
         })
         .collect()
+}
+
+fn indexer_url(region: Region, environment: &Environment) -> String {
+    let domain = match environment {
+        Environment::Staging => "worldcoin.dev",
+        Environment::Production => "world.org",
+    };
+    format!("https://indexer.{region}.id-infra.{domain}")
 }
 
 /// Build a [`Config`] from well-known defaults for a given [`Environment`].
@@ -60,7 +60,7 @@ impl DefaultConfig for Config {
                 rpc_url,
                 480, // Staging also runs on World Chain Mainnet by default
                 WORLD_ID_REGISTRY,
-                "https://world-id-indexer.stage-crypto.worldcoin.org".to_string(),
+                indexer_url(region, environment),
                 "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
                 oprf_node_urls(region, environment),
                 3,
