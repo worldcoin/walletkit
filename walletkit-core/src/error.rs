@@ -80,7 +80,7 @@ pub enum WalletKitError {
     UnauthorizedAuthenticator,
 
     /// An unexpected error occurred with the Authenticator
-    #[error("unexpected_authenticator_error")]
+    #[error("unexpected_authenticator_error: {error}")]
     AuthenticatorError {
         /// The error message from the authenticator
         error: String,
