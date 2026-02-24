@@ -19,7 +19,7 @@
     dead_code
 )]
 
-use strum::EnumString;
+use strum::{Display, EnumString};
 
 /// Library initialization function called automatically on load.
 ///
@@ -49,7 +49,10 @@ pub enum Environment {
 }
 
 /// Region for node selection.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum, EnumString, Display,
+)]
+#[strum(serialize_all = "lowercase")]
 pub enum Region {
     /// United States
     Us,
