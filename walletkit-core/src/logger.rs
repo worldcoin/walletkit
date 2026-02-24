@@ -173,6 +173,8 @@ pub fn init_logging(logger: Arc<dyn Logger>) {
 
     if tracing::subscriber::set_global_default(subscriber).is_ok() {
         let _ = LOGGING_INITIALIZED.set(());
-        tracing::info!(target: "walletkit::logger", "WalletKit logging initialized");
+        // NOTE: Don't log here! Logging inside init_logging causes FFI re-entrancy
+        // which crashes on some platforms. The tracing setup is complete and will
+        // work for subsequent log calls.
     }
 }
