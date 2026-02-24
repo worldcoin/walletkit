@@ -149,8 +149,7 @@ where
             message = metadata.name().to_string();
         }
 
-        let formatted =
-            format!("[{} {}] {message}", metadata.level(), metadata.target());
+        let formatted = format!("{} {message}", metadata.target());
         logger.log(log_level(*metadata.level()), formatted);
     }
 }
