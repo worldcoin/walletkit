@@ -5,7 +5,7 @@ use crate::{error::WalletKitError, Environment, Region};
 
 /// The World ID Registry contract address on World Chain Mainnet.
 pub static WORLD_ID_REGISTRY: Address =
-    address!("0x7215Be2f5521985e2169f376B36a57473eaaAe6f");
+    address!("0x8556d07D75025f286fe757C7EeEceC40D54FA16D");
 
 const OPRF_NODE_COUNT: usize = 5;
 
