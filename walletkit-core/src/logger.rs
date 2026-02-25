@@ -155,6 +155,20 @@ where
 static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
 static LOGGING_INITIALIZED: OnceLock<()> = OnceLock::new();
 
+/// Emits a message at the given level through WalletKit's tracing pipeline.
+///
+/// Useful for verifying that the logging bridge is wired up correctly.
+#[uniffi::export]
+pub fn emit_log(level: LogLevel, message: String) {
+    match level {
+        LogLevel::Trace => tracing::trace!(target: "walletkit", "{message}"),
+        LogLevel::Debug => tracing::debug!(target: "walletkit", "{message}"),
+        LogLevel::Info => tracing::info!(target: "walletkit", "{message}"),
+        LogLevel::Warn => tracing::warn!(target: "walletkit", "{message}"),
+        LogLevel::Error => tracing::error!(target: "walletkit", "{message}"),
+    }
+}
+
 /// Initializes `WalletKit` tracing and registers a foreign logger sink.
 ///
 /// This function is idempotent. The first call wins; subsequent calls are no-ops.
