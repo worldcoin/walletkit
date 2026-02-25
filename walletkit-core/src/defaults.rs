@@ -61,7 +61,7 @@ impl DefaultConfig for Config {
                 480, // Staging also runs on World Chain Mainnet by default
                 WORLD_ID_REGISTRY,
                 indexer_url(region, environment),
-                "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
+                "https://gateway.id-infra.worldcoin.dev".to_string(),
                 oprf_node_urls(region, environment),
                 3,
             )
