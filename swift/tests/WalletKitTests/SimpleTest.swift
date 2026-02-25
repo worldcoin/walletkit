@@ -22,13 +22,14 @@ final class SimpleTest: XCTestCase {
     func testInitLoggingForwardsLevelAndMessage() {
         let logger = CapturingLogger()
         WalletKit.initLogging(logger: logger)
+        WalletKit.emitLog(level: .info, message: "bridge test")
 
         let entries = logger.snapshot()
         XCTAssertFalse(entries.isEmpty, "expected at least one bridged log entry")
 
-        let hasInitInfo = entries.contains { level, message in
-            level == .info && message.contains("WalletKit logging initialized")
+        let hasBridgedMessage = entries.contains { level, message in
+            level == .info && message.contains("bridge test")
         }
-        XCTAssertTrue(hasInitInfo, "expected info-level initialization log")
+        XCTAssertTrue(hasBridgedMessage, "expected info-level bridged log")
     }
 }
