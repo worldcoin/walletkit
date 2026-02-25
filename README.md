@@ -132,18 +132,18 @@ forwarding to Datadog, Crashlytics, `os_log`, Android `Log`, or any custom sink.
 Implement the `Logger` trait and initialize logging once at app startup:
 
 ```rust
-use walletkit_core::logger::{init_logging, Logger};
+use walletkit_core::logger::{init_logging, LogLevel, Logger};
 use std::sync::Arc;
 
 struct MyLogger;
 
 impl Logger for MyLogger {
-    fn log(&self, level: walletkit_core::logger::LogLevel, message: String) {
+    fn log(&self, level: LogLevel, message: String) {
         println!("[{level:?}] {message}");
     }
 }
 
-init_logging(Arc::new(MyLogger));
+init_logging(Arc::new(MyLogger), Some(LogLevel::Debug));
 ```
 
 ### Swift Integration
@@ -169,7 +169,7 @@ class WalletKitLoggerBridge: WalletKit.Logger {
 }
 
 public func setupWalletKitLogging() {
-    WalletKit.initLogging(logger: WalletKitLoggerBridge.shared)
+    WalletKit.initLogging(logger: WalletKitLoggerBridge.shared, level: .debug)
 }
 ```
 
@@ -196,6 +196,6 @@ class WalletKitLoggerBridge : WalletKit.Logger {
 }
 
 fun setupWalletKitLogging() {
-    WalletKit.initLogging(WalletKitLoggerBridge.shared)
+    WalletKit.initLogging(WalletKitLoggerBridge.shared, WalletKit.LogLevel.DEBUG)
 }
 ```

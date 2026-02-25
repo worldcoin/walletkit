@@ -30,7 +30,7 @@ use tracing_subscriber::{
 ///     }
 /// }
 ///
-/// init_logging(Arc::new(AppLogger));
+/// init_logging(Arc::new(AppLogger), Some(LogLevel::Debug));
 /// ```
 ///
 /// # Swift example
@@ -55,7 +55,7 @@ use tracing_subscriber::{
 ///     }
 /// }
 ///
-/// WalletKit.initLogging(logger: WalletKitLoggerBridge.shared)
+/// WalletKit.initLogging(logger: WalletKitLoggerBridge.shared, level: .debug)
 /// ```
 #[uniffi::export(with_foreign)]
 pub trait Logger: Sync + Send {
@@ -193,14 +193,22 @@ where
 
 static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
 static LOGGING_INITIALIZED: OnceLock<()> = OnceLock::new();
-const DEFAULT_LOG_FILTER: &str = "walletkit=debug,walletkit_core=debug,info";
+
+const fn log_level_filter(level: LogLevel) -> &'static str {
+    match level {
+        LogLevel::Trace => "trace",
+        LogLevel::Debug => "debug",
+        LogLevel::Info => "info",
+        LogLevel::Warn => "warn",
+        LogLevel::Error => "error",
+    }
+}
 
 /// Emits a message at the given level through `WalletKit`'s tracing pipeline.
 ///
 /// Useful for verifying that the logging bridge is wired up correctly.
 #[uniffi::export]
 pub fn emit_log(level: LogLevel, message: String) {
-    // Consume the owned `String` once, then log by shared reference.
     let message = message.into_boxed_str();
     let message = message.as_ref();
 
@@ -215,9 +223,13 @@ pub fn emit_log(level: LogLevel, message: String) {
 
 /// Initializes `WalletKit` tracing and registers a foreign logger sink.
 ///
+/// `level` controls the **global** minimum severity for all Rust crates in the
+/// process (walletkit, taceo, reqwest, etc.). Pass `None` to default to `Info`.
+/// The `RUST_LOG` environment variable, when set, always takes precedence.
+///
 /// This function is idempotent. The first call wins; subsequent calls are no-ops.
 #[uniffi::export]
-pub fn init_logging(logger: Arc<dyn Logger>) {
+pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
     let _ = LOGGER_INSTANCE.set(logger);
     if LOGGING_INITIALIZED.get().is_some() {
         return;
@@ -225,14 +237,12 @@ pub fn init_logging(logger: Arc<dyn Logger>) {
 
     let _ = tracing_log::LogTracer::init();
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER));
+    let default = level.map_or("info", log_level_filter);
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default));
     let subscriber = Registry::default().with(filter).with(ForeignLoggerLayer);
 
     if tracing::subscriber::set_global_default(subscriber).is_ok() {
         let _ = LOGGING_INITIALIZED.set(());
-        // NOTE: Don't log here! Logging inside init_logging causes FFI re-entrancy
-        // which crashes on some platforms. The tracing setup is complete and will
-        // work for subsequent log calls.
     }
 }

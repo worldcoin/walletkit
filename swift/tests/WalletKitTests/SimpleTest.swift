@@ -21,7 +21,7 @@ private final class CapturingLogger: WalletKit.Logger {
 final class SimpleTest: XCTestCase {
     func testInitLoggingForwardsLevelAndMessage() {
         let logger = CapturingLogger()
-        WalletKit.initLogging(logger: logger)
+        WalletKit.initLogging(logger: logger, level: .info)
         WalletKit.emitLog(level: .info, message: "bridge test")
 
         let entries = logger.snapshot()

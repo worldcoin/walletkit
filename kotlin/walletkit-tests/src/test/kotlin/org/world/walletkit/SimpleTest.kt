@@ -30,7 +30,7 @@ class SimpleTest {
     @Test
     fun initLoggingForwardsLevelAndMessage() {
         val logger = CapturingLogger()
-        initLogging(logger)
+        initLogging(logger, LogLevel.INFO)
         emitLog(LogLevel.INFO, "bridge test")
 
         val entries = logger.snapshot()
