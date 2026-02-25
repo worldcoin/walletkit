@@ -1,4 +1,5 @@
 use std::{
+    cell::Cell,
     fmt,
     sync::{Arc, OnceLock},
 };
@@ -116,6 +117,30 @@ impl tracing::field::Visit for EventFieldVisitor {
 /// Forwards walletkit tracing events to the foreign logger.
 struct ForeignLoggerLayer;
 
+thread_local! {
+    /// Prevents recursive logger callback re-entry on the same thread.
+    static IN_FOREIGN_LOGGER_CALLBACK: Cell<bool> = const { Cell::new(false) };
+}
+
+struct CallbackGuard<'a>(&'a Cell<bool>);
+
+impl Drop for CallbackGuard<'_> {
+    fn drop(&mut self) {
+        self.0.set(false);
+    }
+}
+
+fn with_foreign_logger_callback_guard(f: impl FnOnce()) {
+    IN_FOREIGN_LOGGER_CALLBACK.with(|in_callback| {
+        if in_callback.replace(true) {
+            return;
+        }
+
+        let _guard = CallbackGuard(in_callback);
+        f();
+    });
+}
+
 impl<S> Layer<S> for ForeignLoggerLayer
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
@@ -148,12 +173,15 @@ where
         }
 
         let formatted = format!("{} {message}", metadata.target());
-        logger.log(log_level(*metadata.level()), formatted);
+        with_foreign_logger_callback_guard(|| {
+            logger.log(log_level(*metadata.level()), formatted);
+        });
     }
 }
 
 static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
 static LOGGING_INITIALIZED: OnceLock<()> = OnceLock::new();
+const DEFAULT_LOG_FILTER: &str = "walletkit=debug,walletkit_core=debug,info";
 
 /// Emits a message at the given level through `WalletKit`'s tracing pipeline.
 ///
@@ -185,8 +213,8 @@ pub fn init_logging(logger: Arc<dyn Logger>) {
 
     let _ = tracing_log::LogTracer::init();
 
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER));
     let subscriber = Registry::default().with(filter).with(ForeignLoggerLayer);
 
     if tracing::subscriber::set_global_default(subscriber).is_ok() {
