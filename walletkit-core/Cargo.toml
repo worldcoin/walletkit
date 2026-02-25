@@ -28,7 +28,8 @@ base64 = { version = "0.22", optional = true }
 ctor = "0.2"
 hex = "0.4"
 hkdf = { version = "0.12", optional = true }
-rand = { version = "0.8" }
+log = "0.4"
+rand = { version = "0.8", optional = true }
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "brotli",
@@ -60,17 +61,7 @@ world-id-core = { workspace = true, features = [
   "zstd-compress-zkeys",
 ] }
 ciborium = { version = "0.2.2", optional = true }
-
-# for Android, OpenSSL gets bundled through openssl-sys
-[target.'cfg(target_os = "android")'.dependencies]
-rusqlite = { version = "0.32", default-features = false, features = [
-  "bundled-sqlcipher-vendored-openssl",
-], optional = true }
-
-[target.'cfg(not(target_os = "android"))'.dependencies]
-rusqlite = { version = "0.32", default-features = false, features = [
-  "bundled-sqlcipher",
-], optional = true }
+walletkit-db = { path = "../walletkit-db", optional = true }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [
@@ -91,7 +82,7 @@ taceo-oprf = { version = "0.7", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-
+rand = "0.8"
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]
 
@@ -100,7 +91,14 @@ default = ["common-apps", "semaphore", "storage", "issuers"]
 # ship with compressed keys. But this is disabled for tests.
 compress-zkeys = ["world-id-core/compress-zkeys"]
 issuers = ["dep:base64"]
-storage = ["dep:ciborium", "dep:hkdf", "dep:rusqlite", "dep:sha2", "dep:uuid"]
+storage = [
+    "dep:ciborium",
+    "dep:hkdf",
+    "dep:rand",
+    "dep:sha2",
+    "dep:uuid",
+    "dep:walletkit-db",
+]
 
 # SECTION: V3 Feature Flags
 common-apps = []

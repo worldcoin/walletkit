@@ -15,7 +15,7 @@ use super::{CacheDb, VaultDb};
 use crate::{Credential, FieldElement};
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
-#[derive(uniffi::Object)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
 }
@@ -90,14 +90,14 @@ impl CredentialStoreInner {
     }
 }
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 impl CredentialStore {
     /// Creates a new storage handle from explicit components.
     ///
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn new_with_components(
         paths: Arc<StoragePaths>,
         keystore: Arc<dyn DeviceKeystore>,
@@ -115,7 +115,7 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn from_provider_arc(
         provider: Arc<dyn StorageProvider>,
@@ -276,10 +276,9 @@ impl CredentialStoreInner {
             &guard,
             now,
         )?;
-        let vault =
-            VaultDb::new(&self.paths.vault_db_path(), keys.intermediate_key(), &guard)?;
-        let cache =
-            CacheDb::new(&self.paths.cache_db_path(), keys.intermediate_key(), &guard)?;
+        let k_intermediate = keys.intermediate_key();
+        let vault = VaultDb::new(&self.paths.vault_db_path(), &k_intermediate, &guard)?;
+        let cache = CacheDb::new(&self.paths.cache_db_path(), &k_intermediate, &guard)?;
         let mut state = StorageState {
             keys,
             vault,

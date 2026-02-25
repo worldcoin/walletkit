@@ -3,13 +3,13 @@
 use std::fs;
 use std::path::Path;
 
-use rusqlite::Connection;
-
 use crate::storage::error::StorageResult;
-use crate::storage::sqlcipher;
+use walletkit_db::cipher;
+use walletkit_db::Connection;
+use zeroize::Zeroizing;
 
 use super::schema;
-use super::util::{map_io_err, map_sqlcipher_err};
+use super::util::{map_db_err, map_io_err};
 
 /// Opens the cache DB or rebuilds it if integrity checks fail.
 ///
@@ -18,12 +18,12 @@ use super::util::{map_io_err, map_sqlcipher_err};
 /// Returns an error if the database cannot be opened or rebuilt.
 pub(super) fn open_or_rebuild(
     path: &Path,
-    k_intermediate: [u8; 32],
+    k_intermediate: &Zeroizing<[u8; 32]>,
 ) -> StorageResult<Connection> {
     match open_prepared(path, k_intermediate) {
         Ok(conn) => {
             let integrity_ok =
-                sqlcipher::integrity_check(&conn).map_err(map_sqlcipher_err)?;
+                cipher::integrity_check(&conn).map_err(|e| map_db_err(&e))?;
             if integrity_ok {
                 Ok(conn)
             } else {
@@ -35,15 +35,17 @@ pub(super) fn open_or_rebuild(
     }
 }
 
-/// Opens the cache DB, applies `SQLCipher` settings, and ensures schema.
+/// Opens the cache DB, applies encryption settings, and ensures schema.
 ///
 /// # Errors
 ///
 /// Returns an error if the DB cannot be opened or configured.
-fn open_prepared(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Connection> {
-    let conn = sqlcipher::open_connection(path, false).map_err(map_sqlcipher_err)?;
-    sqlcipher::apply_key(&conn, k_intermediate).map_err(map_sqlcipher_err)?;
-    sqlcipher::configure_connection(&conn).map_err(map_sqlcipher_err)?;
+fn open_prepared(
+    path: &Path,
+    k_intermediate: &Zeroizing<[u8; 32]>,
+) -> StorageResult<Connection> {
+    let conn = cipher::open_encrypted(path, k_intermediate, false)
+        .map_err(|e| map_db_err(&e))?;
     schema::ensure_schema(&conn)?;
     Ok(conn)
 }
@@ -53,7 +55,10 @@ fn open_prepared(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Connect
 /// # Errors
 ///
 /// Returns an error if deletion or re-open fails.
-fn rebuild(path: &Path, k_intermediate: [u8; 32]) -> StorageResult<Connection> {
+fn rebuild(
+    path: &Path,
+    k_intermediate: &Zeroizing<[u8; 32]>,
+) -> StorageResult<Connection> {
     delete_cache_files(path)?;
     open_prepared(path, k_intermediate)
 }
