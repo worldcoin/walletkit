@@ -32,6 +32,10 @@ fn init() {
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install default crypto provider");
+
+    // Install the default tracing subscriber (stdout) so that upstream crates
+    // using `tracing` emit output even if the consumer never calls `set_logger`.
+    logger::init_default_tracing();
 }
 
 /// Represents the environment in which a World ID is being presented and used.

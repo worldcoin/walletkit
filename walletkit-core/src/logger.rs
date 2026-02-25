@@ -1,5 +1,10 @@
 use std::sync::{Arc, OnceLock};
 
+use tracing_core::{Event, Subscriber};
+use tracing_subscriber::layer::Context;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{EnvFilter, Layer};
+
 /// Trait representing a logger that can log messages at various levels.
 ///
 /// This trait should be implemented by any logger that wants to receive log messages.
@@ -70,133 +75,151 @@ pub enum LogLevel {
     Error,
 }
 
-/// A logger that forwards log messages to a user-provided `Logger` implementation.
+/// A global instance of the user-provided logger.
 ///
-/// This struct implements the `log::Log` trait and integrates with the Rust `log` crate.
-struct ForeignLogger;
+/// This static variable holds the logger provided by the user and is accessed
+/// by the tracing layer to forward log messages.
+static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
 
-impl log::Log for ForeignLogger {
-    /// Determines if a log message with the specified metadata should be logged.
-    ///
-    /// This implementation logs all messages. Modify this method to implement log level filtering.
-    ///
-    /// # Arguments
-    ///
-    /// * `_metadata` - Metadata about the log message.
-    fn enabled(&self, _metadata: &log::Metadata) -> bool {
-        // Currently, we log all messages. Adjust this if you need to filter messages.
-        true
-    }
+/// A `tracing` [`Layer`] that forwards events to the foreign [`Logger`] callback.
+///
+/// When no foreign logger is registered via [`set_logger`], this layer is a
+/// no-op and events fall through to the default `fmt` layer which writes to
+/// stdout/stderr.
+struct ForeignLoggerLayer;
 
-    /// Logs a record.
-    ///
-    /// This method is called by the `log` crate when a log message needs to be logged.
-    /// It forwards the log message to the user-provided `Logger` implementation if available.
-    ///
-    /// # Arguments
-    ///
-    /// * `record` - The log record containing the message and metadata.
-    fn log(&self, record: &log::Record) {
-        // Determine if the record originates from the "walletkit" module.
-        let is_record_from_walletkit = record
+impl<S: Subscriber> Layer<S> for ForeignLoggerLayer {
+    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+        let Some(logger) = LOGGER_INSTANCE.get() else {
+            return;
+        };
+
+        // Only forward walletkit-originating events at Debug/Trace level.
+        let meta = event.metadata();
+        let level = meta.level();
+        let is_walletkit = meta
             .module_path()
-            .is_some_and(|module_path| module_path.starts_with("walletkit"));
+            .is_some_and(|m| m.starts_with("walletkit"));
 
-        // Determine if the log level is Debug or Trace.
-        let is_debug_or_trace_level =
-            record.level() == log::Level::Debug || record.level() == log::Level::Trace;
-
-        // Skip logging Debug or Trace level messages that are not from the "walletkit" module.
-        if is_debug_or_trace_level && !is_record_from_walletkit {
+        if (*level == tracing::Level::DEBUG || *level == tracing::Level::TRACE)
+            && !is_walletkit
+        {
             return;
         }
 
-        // Forward the log message to the user-provided logger if available.
-        if let Some(logger) = LOGGER_INSTANCE.get() {
-            let level = log_level(record.level());
-            let message = format!("{}", record.args());
-            logger.log(level, message);
+        // Format the event fields into a single message string.
+        let mut visitor = MessageVisitor(String::new());
+        event.record(&mut visitor);
+
+        logger.log(to_log_level(*level), visitor.0);
+    }
+}
+
+/// Visitor that collects event fields into a formatted string.
+struct MessageVisitor(String);
+
+impl tracing::field::Visit for MessageVisitor {
+    fn record_debug(
+        &mut self,
+        field: &tracing::field::Field,
+        value: &dyn std::fmt::Debug,
+    ) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        } else if self.0.is_empty() {
+            self.0 = format!("{} = {value:?}", field.name());
         } else {
-            // Handle the case when the logger is not set.
-            eprintln!("Logger not set: {}", record.args());
+            self.0 = format!("{}, {} = {value:?}", self.0, field.name());
         }
     }
-
-    /// Flushes any buffered records.
-    ///
-    /// This implementation does nothing because buffering is not used.
-    fn flush(&self) {}
 }
 
-/// Converts a `log::Level` to a `LogLevel`.
-///
-/// This function maps the log levels from the `log` crate to your own `LogLevel` enum.
-///
-/// # Arguments
-///
-/// * `level` - The `log::Level` to convert.
-///
-/// # Returns
-///
-/// A corresponding `LogLevel`.
-const fn log_level(level: log::Level) -> LogLevel {
+/// Converts a [`tracing::Level`] to a [`LogLevel`].
+const fn to_log_level(level: tracing::Level) -> LogLevel {
     match level {
-        log::Level::Error => LogLevel::Error,
-        log::Level::Warn => LogLevel::Warn,
-        log::Level::Info => LogLevel::Info,
-        log::Level::Debug => LogLevel::Debug,
-        log::Level::Trace => LogLevel::Trace,
+        tracing::Level::ERROR => LogLevel::Error,
+        tracing::Level::WARN => LogLevel::Warn,
+        tracing::Level::INFO => LogLevel::Info,
+        tracing::Level::DEBUG => LogLevel::Debug,
+        tracing::Level::TRACE => LogLevel::Trace,
     }
 }
 
-/// A global instance of the user-provided logger.
+/// Sets the global logger and initialises the tracing subscriber.
 ///
-/// This static variable holds the logger provided by the user and is accessed by `ForeignLogger` to forward log messages.
-static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
-
-/// Sets the global logger.
-///
-/// This function allows you to provide your own implementation of the `Logger` trait.
-/// It initializes the logging system and should be called before any logging occurs.
+/// When a foreign [`Logger`] is provided, **all** tracing events are forwarded
+/// to it (subject to level/module filtering identical to the previous `log`
+/// crate behaviour).  The default `fmt` subscriber is still installed so that
+/// events are printed to stdout when no foreign logger has been registered.
 ///
 /// # Arguments
 ///
 /// * `logger` - An `Arc` containing your logger implementation.
 ///
-/// # Panics
-///
-/// Panics if the logger has already been set.
-///
 /// # Note
 ///
-/// If the logger has already been set, this function will print a message and do nothing.
+/// If the logger has already been set, this function will print a message and
+/// do nothing.
 #[uniffi::export]
 pub fn set_logger(logger: Arc<dyn Logger>) {
-    match LOGGER_INSTANCE.set(logger) {
-        Ok(()) => (),
-        Err(_) => println!("Logger already set"),
+    if LOGGER_INSTANCE.set(logger).is_err() {
+        eprintln!("Logger already set");
+        return;
     }
 
-    // Initialize the logger system.
-    if let Err(e) = init_logger() {
-        eprintln!("Failed to set logger: {e}");
-    }
+    init_tracing();
 }
 
-/// Initializes the logger system.
+/// Initialises the default tracing subscriber with both `fmt` (stdout) and
+/// the [`ForeignLoggerLayer`].
 ///
-/// This function sets up the global logger with the `ForeignLogger` implementation and sets the maximum log level.
+/// This is safe to call multiple times – only the first call installs the
+/// global subscriber.
+fn init_tracing() {
+    // Build an EnvFilter: honour RUST_LOG if set, otherwise default to
+    // info-level for walletkit crates plus warn for everything else.
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("walletkit=debug,walletkit_core=debug,warn")
+    });
+
+    let subscriber = tracing_subscriber::registry()
+        .with(filter)
+        .with(ForeignLoggerLayer)
+        .with(tracing_subscriber::fmt::layer().with_target(true));
+
+    // `try_init` returns Err if a subscriber is already installed – that's OK.
+    let _ = tracing::subscriber::set_global_default(subscriber);
+}
+
+/// Initialise the default tracing subscriber (stdout only, no foreign logger).
 ///
-/// # Returns
-///
-/// A `Result` indicating success or failure.
-///
-/// # Errors
-///
-/// Returns a `log::SetLoggerError` if the logger could not be set (e.g., if a logger was already set).
-fn init_logger() -> Result<(), log::SetLoggerError> {
-    static LOGGER: ForeignLogger = ForeignLogger;
-    log::set_logger(&LOGGER)?;
-    log::set_max_level(log::LevelFilter::Trace);
-    Ok(())
+/// This is called automatically when the library loads (via `ctor`) so that
+/// upstream crates using `tracing` emit output even if the consumer never
+/// calls [`set_logger`].
+#[cfg(not(test))]
+pub(crate) fn init_default_tracing() {
+    init_tracing();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn log_level_conversion_round_trips() {
+        assert!(matches!(
+            to_log_level(tracing::Level::ERROR),
+            LogLevel::Error
+        ));
+        assert!(matches!(to_log_level(tracing::Level::WARN), LogLevel::Warn));
+        assert!(matches!(to_log_level(tracing::Level::INFO), LogLevel::Info));
+        assert!(matches!(
+            to_log_level(tracing::Level::DEBUG),
+            LogLevel::Debug
+        ));
+        assert!(matches!(
+            to_log_level(tracing::Level::TRACE),
+            LogLevel::Trace
+        ));
+    }
 }

@@ -28,7 +28,9 @@ base64 = { version = "0.22", optional = true }
 ctor = "0.2"
 hex = "0.4"
 hkdf = { version = "0.12", optional = true }
-log = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-core = "0.1"
 rand = { version = "0.8" }
 reqwest = { version = "0.12", default-features = false, features = [
   "json",
@@ -88,7 +90,6 @@ rustls = { version = "0.23", features = ["ring"] }
 taceo-oprf = { version = "0.7", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]

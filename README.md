@@ -115,11 +115,25 @@ async fn example() {
 
 ## 🛠️ Logging
 
-WalletKit includes logging functionality that can be integrated with foreign language bindings. The logging system allows you to capture debug information and operational logs from the library.
+WalletKit uses the [`tracing`](https://docs.rs/tracing) ecosystem for structured, unified logging. All internal log call-sites and upstream dependencies that emit `tracing` events are captured by the same subscriber pipeline.
 
-### Basic Usage
+### Default behaviour (stdout)
 
-Implement the `Logger` trait and set it as the global logger:
+Out of the box WalletKit installs a `tracing-subscriber` `fmt` layer that writes human-readable logs to **stdout**. No setup is required — logs appear as soon as WalletKit loads.
+
+You can control verbosity with the standard `RUST_LOG` environment variable:
+
+```bash
+RUST_LOG=walletkit=trace,warn cargo run   # verbose WalletKit, warn for everything else
+```
+
+The built-in default (when `RUST_LOG` is not set) is `walletkit=debug,walletkit_core=debug,warn`.
+
+### Custom logger (foreign callback)
+
+For mobile / foreign-language consumers the `Logger` trait is still exported via UniFFI. Calling `set_logger` registers your callback **and** installs the tracing subscriber — events are forwarded to both your callback and stdout.
+
+#### Rust
 
 ```rust
 use walletkit_core::logger::{Logger, LogLevel, set_logger};
@@ -137,14 +151,13 @@ impl Logger for MyLogger {
 set_logger(Arc::new(MyLogger));
 ```
 
-### Swift Integration
+#### Swift
 
 ```swift
 class WalletKitLoggerBridge: WalletKit.Logger {
     static let shared = WalletKitLoggerBridge()
 
     func log(level: WalletKit.LogLevel, message: String) {
-        // Forward to your app's logging system
         Log.log(level.toCoreLevel(), message)
     }
 }
@@ -155,7 +168,7 @@ public func setupWalletKitLogger() {
 }
 ```
 
-### Kotlin Integration
+#### Kotlin
 
 ```kotlin
 class WalletKitLoggerBridge : WalletKit.Logger {
@@ -164,13 +177,20 @@ class WalletKitLoggerBridge : WalletKit.Logger {
     }
 
     override fun log(level: WalletKit.LogLevel, message: String) {
-        // Forward to your app's logging system
         Log.log(level.toCoreLevel(), message)
     }
 }
 
-// Set up the logger in your application
 fun setupWalletKitLogger() {
     WalletKit.setLogger(WalletKitLoggerBridge.shared)
 }
 ```
+
+### Migration from `log` crate
+
+WalletKit ≤ 0.6.x used the `log` crate internally. Starting with this release:
+
+- Internal logging uses `tracing` macros (`tracing::info!`, `tracing::error!`, etc.).
+- The `log` crate dependency has been removed from `walletkit-core`.
+- The public `Logger` trait and `set_logger` function are **unchanged** — existing Swift/Kotlin bridges continue to work without modification.
+- Upstream crates that emit `tracing` events (e.g. `reqwest`, `semaphore-rs`) are now captured by the same subscriber, giving you full-stack observability.
