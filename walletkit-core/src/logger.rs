@@ -204,6 +204,36 @@ const fn log_level_filter(level: LogLevel) -> &'static str {
     }
 }
 
+// Infrastructure crates whose debug/trace events fire on background
+// tokio threads. UniFFI foreign callbacks can crash when invoked from
+// those thread contexts, and the logs are rarely useful to consumers
+// anyway. We cap these at `info` whenever the caller requests a more
+// verbose global level.
+const INFRA_CRATE_CAPS: &[&str] = &[
+    "hyper", "hyper_util", "h2", "reqwest", "rustls", "tokio",
+];
+
+fn build_env_filter(level: Option<LogLevel>) -> EnvFilter {
+    if let Ok(filter) = EnvFilter::try_from_default_env() {
+        return filter;
+    }
+
+    let base = level.map_or("info", log_level_filter);
+
+    let needs_caps = matches!(level, Some(LogLevel::Trace | LogLevel::Debug));
+    if !needs_caps {
+        return EnvFilter::new(base);
+    }
+
+    let mut directives = String::from(base);
+    for crate_name in INFRA_CRATE_CAPS {
+        directives.push(',');
+        directives.push_str(crate_name);
+        directives.push_str("=info");
+    }
+    EnvFilter::new(directives)
+}
+
 /// Emits a message at the given level through `WalletKit`'s tracing pipeline.
 ///
 /// Useful for verifying that the logging bridge is wired up correctly.
@@ -223,8 +253,12 @@ pub fn emit_log(level: LogLevel, message: String) {
 
 /// Initializes `WalletKit` tracing and registers a foreign logger sink.
 ///
-/// `level` controls the **global** minimum severity for all Rust crates in the
-/// process (walletkit, taceo, reqwest, etc.). Pass `None` to default to `Info`.
+/// `level` controls the minimum severity for application-level Rust crates
+/// (walletkit, taceo, world-id, semaphore, etc.). Low-level infrastructure
+/// crates (hyper, reqwest, rustls, tokio) are always capped at `Info` to
+/// avoid triggering FFI callbacks from internal networking threads.
+///
+/// Pass `None` to default to `Info`.
 /// The `RUST_LOG` environment variable, when set, always takes precedence.
 ///
 /// This function is idempotent. The first call wins; subsequent calls are no-ops.
@@ -237,9 +271,7 @@ pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
 
     let _ = tracing_log::LogTracer::init();
 
-    let default = level.map_or("info", log_level_filter);
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default));
+    let filter = build_env_filter(level);
     let subscriber = Registry::default().with(filter).with(ForeignLoggerLayer);
 
     if tracing::subscriber::set_global_default(subscriber).is_ok() {
