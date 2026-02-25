@@ -1,7 +1,7 @@
 use std::{
     cell::Cell,
     fmt,
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use tracing::{Event, Level, Subscriber};
@@ -186,6 +186,10 @@ where
 
         let formatted = format!("{} {message}", metadata.target());
         with_foreign_logger_callback_guard(|| {
+            let callback_lock = logger_callback_lock();
+            let _callback_guard = callback_lock
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             logger.log(log_level(*metadata.level()), formatted);
         });
     }
@@ -193,6 +197,11 @@ where
 
 static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
 static LOGGING_INITIALIZED: OnceLock<()> = OnceLock::new();
+static LOGGER_CALLBACK_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn logger_callback_lock() -> &'static Mutex<()> {
+    LOGGER_CALLBACK_LOCK.get_or_init(|| Mutex::new(()))
+}
 
 const fn log_level_filter(level: LogLevel) -> &'static str {
     match level {
