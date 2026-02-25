@@ -1,7 +1,7 @@
 use std::{
-    cell::Cell,
     fmt,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{mpsc, Arc, Mutex, OnceLock},
+    thread,
 };
 
 use tracing::{Event, Level, Subscriber};
@@ -117,48 +117,30 @@ impl tracing::field::Visit for EventFieldVisitor {
 /// Forwards walletkit tracing events to the foreign logger.
 struct ForeignLoggerLayer;
 
-thread_local! {
-    /// Prevents recursive logger callback re-entry on the same thread.
-    static IN_FOREIGN_LOGGER_CALLBACK: Cell<bool> = const { Cell::new(false) };
+struct LogEvent {
+    level: LogLevel,
+    message: String,
 }
 
-struct CallbackGuard<'a>(&'a Cell<bool>);
-
-impl Drop for CallbackGuard<'_> {
-    fn drop(&mut self) {
-        self.0.set(false);
-    }
-}
-
-// `ForeignLoggerLayer::on_event` is called synchronously by the tracing subscriber.
-// Inside that path we invoke the foreign callback `Logger::log` over FFI.
+// Log events are pushed into this channel by `ForeignLoggerLayer::on_event`
+// and delivered to the foreign callback on a dedicated thread.
 //
-// On some platforms, the host logger may itself emit logs while handling that callback
-// (for example through other logging bridges). Those logs are routed back into tracing,
-// which re-enters `on_event` before the first call has returned. Without a guard this
-// creates unbounded recursion (`on_event -> Logger::log -> on_event -> ...`) and can
-// crash the app at launch with a stack overflow / re-entrancy failure.
-//
-// We use a thread-local flag because this recursion happens on the same thread as the
-// synchronous callback. If we detect nested entry, we intentionally drop that nested
-// event to preserve process safety and keep the original log flow moving.
-fn with_foreign_logger_callback_guard(f: impl FnOnce()) {
-    IN_FOREIGN_LOGGER_CALLBACK.with(|in_callback| {
-        if in_callback.replace(true) {
-            return;
-        }
-
-        let _guard = CallbackGuard(in_callback);
-        f();
-    });
-}
+// This architecture is required because UniFFI foreign callbacks crash with
+// EXC_BAD_ACCESS when invoked synchronously from within a UniFFI future-poll
+// context (`rust_call_with_out_status`). The nested FFI boundary crossing
+// corrupts state. By decoupling collection from delivery through a channel,
+// the tracing layer never makes an FFI call — it only pushes to an in-process
+// queue — and the dedicated delivery thread calls `Logger::log` from a clean
+// stack with no active FFI frames.
+static LOG_CHANNEL: OnceLock<Mutex<mpsc::Sender<LogEvent>>> = OnceLock::new();
+static LOGGING_INITIALIZED: OnceLock<()> = OnceLock::new();
 
 impl<S> Layer<S> for ForeignLoggerLayer
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
-        let Some(logger) = LOGGER_INSTANCE.get() else {
+        let Some(sender) = LOG_CHANNEL.get() else {
             return;
         };
 
@@ -185,22 +167,14 @@ where
         }
 
         let formatted = format!("{} {message}", metadata.target());
-        with_foreign_logger_callback_guard(|| {
-            let callback_lock = logger_callback_lock();
-            let _callback_guard = callback_lock
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            logger.log(log_level(*metadata.level()), formatted);
-        });
+
+        if let Ok(sender) = sender.lock() {
+            let _ = sender.send(LogEvent {
+                level: log_level(*metadata.level()),
+                message: formatted,
+            });
+        }
     }
-}
-
-static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
-static LOGGING_INITIALIZED: OnceLock<()> = OnceLock::new();
-static LOGGER_CALLBACK_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-
-fn logger_callback_lock() -> &'static Mutex<()> {
-    LOGGER_CALLBACK_LOCK.get_or_init(|| Mutex::new(()))
 }
 
 const fn log_level_filter(level: LogLevel) -> &'static str {
@@ -214,10 +188,8 @@ const fn log_level_filter(level: LogLevel) -> &'static str {
 }
 
 // Only these crates are promoted to the caller-requested level.
-// Everything else stays at the baseline (`info`). This keeps
-// infrastructure crates (hyper, reqwest, tokio, rustls, …) from
-// flooding the FFI logger callback — their debug/trace events fire
-// on background threads where UniFFI foreign callbacks can crash.
+// Everything else stays at the baseline (`info`). This avoids
+// flooding the logger with internal noise from infrastructure crates.
 const APP_CRATES: &[&str] = &[
     "walletkit",
     "walletkit_core",
@@ -281,12 +253,27 @@ pub fn emit_log(level: LogLevel, message: String) {
 /// The `RUST_LOG` environment variable, when set, always takes precedence.
 ///
 /// This function is idempotent. The first call wins; subsequent calls are no-ops.
+///
+/// # Panics
+///
+/// Panics if the dedicated logger delivery thread cannot be spawned.
 #[uniffi::export]
 pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
-    let _ = LOGGER_INSTANCE.set(logger);
     if LOGGING_INITIALIZED.get().is_some() {
         return;
     }
+
+    let (tx, rx) = mpsc::channel::<LogEvent>();
+    let _ = LOG_CHANNEL.set(Mutex::new(tx));
+
+    thread::Builder::new()
+        .name("walletkit-logger".into())
+        .spawn(move || {
+            for event in rx {
+                logger.log(event.level, event.message);
+            }
+        })
+        .expect("failed to spawn walletkit logger thread");
 
     let _ = tracing_log::LogTracer::init();
 
