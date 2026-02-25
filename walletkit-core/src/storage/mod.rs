@@ -8,7 +8,6 @@ pub mod groth16_cache;
 pub mod keys;
 pub mod lock;
 pub mod paths;
-pub(crate) mod sqlcipher;
 pub mod traits;
 pub mod types;
 pub mod vault;
