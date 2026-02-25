@@ -91,6 +91,7 @@ sol!(
 /// 3. Proof generation with real staging OPRF nodes
 /// 4. On-chain proof verification via the staging `WorldIDVerifier`
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires staging infrastructure (OPRF nodes, indexer, gateway)"]
 async fn e2e_authenticator_generate_proof() -> Result<()> {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
