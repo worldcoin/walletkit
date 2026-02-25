@@ -130,6 +130,18 @@ impl Drop for CallbackGuard<'_> {
     }
 }
 
+// `ForeignLoggerLayer::on_event` is called synchronously by the tracing subscriber.
+// Inside that path we invoke the foreign callback `Logger::log` over FFI.
+//
+// On some platforms, the host logger may itself emit logs while handling that callback
+// (for example through other logging bridges). Those logs are routed back into tracing,
+// which re-enters `on_event` before the first call has returned. Without a guard this
+// creates unbounded recursion (`on_event -> Logger::log -> on_event -> ...`) and can
+// crash the app at launch with a stack overflow / re-entrancy failure.
+//
+// We use a thread-local flag because this recursion happens on the same thread as the
+// synchronous callback. If we detect nested entry, we intentionally drop that nested
+// event to preserve process safety and keep the original log flow moving.
 fn with_foreign_logger_callback_guard(f: impl FnOnce()) {
     IN_FOREIGN_LOGGER_CALLBACK.with(|in_callback| {
         if in_callback.replace(true) {
