@@ -204,13 +204,23 @@ const fn log_level_filter(level: LogLevel) -> &'static str {
     }
 }
 
-// Infrastructure crates whose debug/trace events fire on background
-// tokio threads. UniFFI foreign callbacks can crash when invoked from
-// those thread contexts, and the logs are rarely useful to consumers
-// anyway. We cap these at `info` whenever the caller requests a more
-// verbose global level.
-const INFRA_CRATE_CAPS: &[&str] = &[
-    "hyper", "hyper_util", "h2", "reqwest", "rustls", "tokio",
+// Only these crates are promoted to the caller-requested level.
+// Everything else stays at the baseline (`info`). This keeps
+// infrastructure crates (hyper, reqwest, tokio, rustls, …) from
+// flooding the FFI logger callback — their debug/trace events fire
+// on background threads where UniFFI foreign callbacks can crash.
+const APP_CRATES: &[&str] = &[
+    "walletkit",
+    "walletkit_core",
+    "world_id_core",
+    "world_id_proof",
+    "world_id_authenticator",
+    "world_id_primitives",
+    "taceo_oprf",
+    "taceo_oprf_client",
+    "taceo_oprf_core",
+    "taceo_oprf_types",
+    "semaphore_rs",
 ];
 
 fn build_env_filter(level: Option<LogLevel>) -> EnvFilter {
@@ -218,19 +228,22 @@ fn build_env_filter(level: Option<LogLevel>) -> EnvFilter {
         return filter;
     }
 
-    let base = level.map_or("info", log_level_filter);
+    let level_str = level.map_or("info", log_level_filter);
 
-    let needs_caps = matches!(level, Some(LogLevel::Trace | LogLevel::Debug));
-    if !needs_caps {
-        return EnvFilter::new(base);
+    let needs_per_crate = matches!(level, Some(LogLevel::Trace | LogLevel::Debug));
+    if !needs_per_crate {
+        return EnvFilter::new(level_str);
     }
 
-    let mut directives = String::from(base);
-    for crate_name in INFRA_CRATE_CAPS {
-        directives.push(',');
+    // e.g. "walletkit=debug,walletkit_core=debug,...,info"
+    let mut directives = String::new();
+    for crate_name in APP_CRATES {
         directives.push_str(crate_name);
-        directives.push_str("=info");
+        directives.push('=');
+        directives.push_str(level_str);
+        directives.push(',');
     }
+    directives.push_str("info");
     EnvFilter::new(directives)
 }
 
@@ -253,12 +266,9 @@ pub fn emit_log(level: LogLevel, message: String) {
 
 /// Initializes `WalletKit` tracing and registers a foreign logger sink.
 ///
-/// `level` controls the minimum severity for application-level Rust crates
-/// (walletkit, taceo, world-id, semaphore, etc.). Low-level infrastructure
-/// crates (hyper, reqwest, rustls, tokio) are always capped at `Info` to
-/// avoid triggering FFI callbacks from internal networking threads.
-///
-/// Pass `None` to default to `Info`.
+/// `level` controls the minimum severity for `WalletKit` and its direct
+/// dependencies (taceo, world-id, semaphore). All other crates remain at
+/// `Info` regardless of this setting. Pass `None` to default to `Info`.
 /// The `RUST_LOG` environment variable, when set, always takes precedence.
 ///
 /// This function is idempotent. The first call wins; subsequent calls are no-ops.
