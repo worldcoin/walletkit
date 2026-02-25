@@ -188,6 +188,19 @@ impl From<AuthenticatorError> for WalletKitError {
                 status: None,
             },
             AuthenticatorError::PublicKeyNotFound => Self::UnauthorizedAuthenticator,
+            AuthenticatorError::OprfNodeError {
+                threshold_required,
+                node_errors,
+            } => Self::AuthenticatorError {
+                error: format!(
+                    "OPRF nodes did not reach threshold ({threshold_required} required): {}",
+                    node_errors
+                        .iter()
+                        .map(|(url, err)| format!("{url}: {err}"))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ),
+            },
             AuthenticatorError::GatewayError { status, body } => Self::NetworkError {
                 url: "gateway".to_string(),
                 error: body,
