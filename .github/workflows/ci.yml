@@ -39,6 +39,45 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features
 
+  wasm-check:
+    name: WASM walletkit-db compile check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.92.0
+          targets: wasm32-unknown-unknown
+
+      - name: Select wasm-capable clang
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          CLANG_VERSION="$(clang --version | head -n1 || true)"
+          CLANG_MAJOR="$(echo "$CLANG_VERSION" | sed -nE 's/.*clang version ([0-9]+).*/\1/p')"
+
+          if [ -n "$CLANG_MAJOR" ] && [ "$CLANG_MAJOR" -ge 15 ]; then
+            echo "Using system clang: $CLANG_VERSION"
+            echo "CC_wasm32_unknown_unknown=clang" >> "$GITHUB_ENV"
+            echo "AR_wasm32_unknown_unknown=llvm-ar" >> "$GITHUB_ENV"
+          else
+            echo "System clang is missing/too old for sqlite-wasm-rs; installing clang-18"
+            sudo apt-get update
+            sudo apt-get install -y clang-18 llvm-18
+            echo "CC_wasm32_unknown_unknown=clang-18" >> "$GITHUB_ENV"
+            echo "AR_wasm32_unknown_unknown=llvm-ar-18" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run WASM compile check
+        run: cargo check -p walletkit-db --target wasm32-unknown-unknown
+
   swift-build-and-test:
     name: Swift Build & Foreign Binding Tests
     runs-on: macos-14
