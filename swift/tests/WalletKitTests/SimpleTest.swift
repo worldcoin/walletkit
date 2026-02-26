@@ -24,6 +24,10 @@ final class SimpleTest: XCTestCase {
         WalletKit.initLogging(logger: logger, level: .info)
         WalletKit.emitLog(level: .info, message: "bridge test")
 
+        // Log delivery happens on a dedicated background thread, so give it
+        // a moment to flush through the channel.
+        Thread.sleep(forTimeInterval: 0.001)
+
         let entries = logger.snapshot()
         XCTAssertFalse(entries.isEmpty, "expected at least one bridged log entry")
 

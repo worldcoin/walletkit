@@ -33,6 +33,10 @@ class SimpleTest {
         initLogging(logger, LogLevel.INFO)
         emitLog(LogLevel.INFO, "bridge test")
 
+        // Log delivery happens on a dedicated background thread, so give it
+        // a moment to flush through the channel.
+        Thread.sleep(1)
+
         val entries = logger.snapshot()
         assertTrue(entries.isNotEmpty(), "expected at least one bridged log entry")
 

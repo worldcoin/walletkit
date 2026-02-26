@@ -6333,6 +6333,7 @@ dependencies = [
  "eyre",
  "hex",
  "hkdf",
+ "log",
  "mockito",
  "rand 0.8.5",
  "regex",
