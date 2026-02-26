@@ -65,15 +65,33 @@ jobs:
 
           if [ -n "$CLANG_MAJOR" ] && [ "$CLANG_MAJOR" -ge 15 ]; then
             echo "Using system clang: $CLANG_VERSION"
-            echo "CC_wasm32_unknown_unknown=clang" >> "$GITHUB_ENV"
-            echo "AR_wasm32_unknown_unknown=llvm-ar" >> "$GITHUB_ENV"
+            CC_BIN="clang"
           else
             echo "System clang is missing/too old for sqlite-wasm-rs; installing clang-18"
             sudo apt-get update
             sudo apt-get install -y clang-18 llvm-18
-            echo "CC_wasm32_unknown_unknown=clang-18" >> "$GITHUB_ENV"
-            echo "AR_wasm32_unknown_unknown=llvm-ar-18" >> "$GITHUB_ENV"
+            CC_BIN="clang-18"
+            CLANG_MAJOR="18"
           fi
+
+          AR_BIN=""
+          if command -v llvm-ar >/dev/null 2>&1; then
+            AR_BIN="llvm-ar"
+          elif [ -n "$CLANG_MAJOR" ] && command -v "llvm-ar-${CLANG_MAJOR}" >/dev/null 2>&1; then
+            AR_BIN="llvm-ar-${CLANG_MAJOR}"
+          elif command -v llvm-ar-18 >/dev/null 2>&1; then
+            AR_BIN="llvm-ar-18"
+          elif command -v ar >/dev/null 2>&1; then
+            AR_BIN="ar"
+          else
+            echo "No suitable archiver found for wasm build" >&2
+            exit 1
+          fi
+
+          echo "Using CC: $CC_BIN"
+          echo "Using AR: $AR_BIN"
+          echo "CC_wasm32_unknown_unknown=$CC_BIN" >> "$GITHUB_ENV"
+          echo "AR_wasm32_unknown_unknown=$AR_BIN" >> "$GITHUB_ENV"
 
       - name: Run WASM compile check
         run: cargo check -p walletkit-db --target wasm32-unknown-unknown
