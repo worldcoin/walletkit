@@ -12,21 +12,14 @@ use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::authenticator::AuthenticatorPublicKeySet,
     Authenticator as CoreAuthenticator, AuthenticatorConfig,
-    Credential as CoreCredential,
+    Credential as CoreCredential, CredentialInput,
     InitializingAuthenticator as CoreInitializingAuthenticator,
     OnchainKeyRepresentable, Signer,
 };
 
-#[cfg(feature = "storage")]
-use world_id_core::CredentialInput;
-
-#[cfg(feature = "storage")]
+use crate::requests::{ProofRequest, ProofResponse};
 use crate::storage::{CredentialStore, StoragePaths};
 
-#[cfg(feature = "storage")]
-use crate::requests::{ProofRequest, ProofResponse};
-
-#[cfg(feature = "storage")]
 mod with_storage;
 
 type Groth16Materials = (
@@ -34,29 +27,7 @@ type Groth16Materials = (
     Arc<world_id_core::proof::CircomGroth16Material>,
 );
 
-#[cfg(not(feature = "storage"))]
-/// Loads embedded Groth16 query/nullifier material for authenticator initialization.
-///
-/// # Errors
-/// Returns an error if embedded material cannot be loaded or verified.
-fn load_embedded_materials() -> Result<Groth16Materials, WalletKitError> {
-    let query_material =
-        world_id_core::proof::load_embedded_query_material().map_err(|error| {
-            WalletKitError::Groth16MaterialEmbeddedLoad {
-                error: error.to_string(),
-            }
-        })?;
-    let nullifier_material = world_id_core::proof::load_embedded_nullifier_material()
-        .map_err(|error| {
-        WalletKitError::Groth16MaterialEmbeddedLoad {
-            error: error.to_string(),
-        }
-    })?;
 
-    Ok((Arc::new(query_material), Arc::new(nullifier_material)))
-}
-
-#[cfg(feature = "storage")]
 /// Loads cached Groth16 query/nullifier material from the provided storage paths.
 ///
 /// # Errors
@@ -76,7 +47,6 @@ fn load_cached_materials(
     Ok((Arc::new(query_material), Arc::new(nullifier_material)))
 }
 
-#[cfg(feature = "storage")]
 /// Loads cached query material from zkey/graph paths.
 ///
 /// # Errors
@@ -96,7 +66,10 @@ fn load_query_material_from_cache(
         })
 }
 
-#[cfg(feature = "storage")]
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "Temporary wrapper until world-id-core returns Result for nullifier path loader"
+)]
 /// Loads cached nullifier material from zkey/graph paths.
 ///
 /// # Errors
@@ -123,7 +96,6 @@ fn load_nullifier_material_from_cache(
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator {
     inner: CoreAuthenticator,
-    #[cfg(feature = "storage")]
     store: Arc<CredentialStore>,
 }
 
@@ -326,60 +298,6 @@ impl Authenticator {
     }
 }
 
-#[cfg(not(feature = "storage"))]
-#[uniffi::export(async_runtime = "tokio")]
-impl Authenticator {
-    /// Initializes a new Authenticator from a seed and with SDK defaults.
-    ///
-    /// The user's World ID must already be registered in the `WorldIDRegistry`,
-    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
-    ///
-    /// # Errors
-    /// See `CoreAuthenticator::init` for potential errors.
-    #[uniffi::constructor]
-    pub async fn init_with_defaults(
-        seed: &[u8],
-        rpc_url: Option<String>,
-        environment: &Environment,
-        region: Option<Region>,
-    ) -> Result<Self, WalletKitError> {
-        let config =
-            AuthenticatorConfig::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
-        let (query_material, nullifier_material) = load_embedded_materials()?;
-        let authenticator =
-            authenticator.with_proof_materials(query_material, nullifier_material);
-        Ok(Self {
-            inner: authenticator,
-        })
-    }
-
-    /// Initializes a new Authenticator from a seed and config.
-    ///
-    /// The user's World ID must already be registered in the `WorldIDRegistry`,
-    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
-    ///
-    /// # Errors
-    /// Will error if the provided seed is not valid or if the config is not valid.
-    #[uniffi::constructor]
-    pub async fn init(seed: &[u8], config: &str) -> Result<Self, WalletKitError> {
-        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
-            WalletKitError::InvalidInput {
-                attribute: "config".to_string(),
-                reason: "Invalid config".to_string(),
-            }
-        })?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
-        let (query_material, nullifier_material) = load_embedded_materials()?;
-        let authenticator =
-            authenticator.with_proof_materials(query_material, nullifier_material);
-        Ok(Self {
-            inner: authenticator,
-        })
-    }
-}
-
-#[cfg(feature = "storage")]
 #[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
@@ -814,7 +732,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "storage"))]
+#[cfg(test)]
 mod storage_tests {
     use super::*;
     use crate::storage::cache_embedded_groth16_material;

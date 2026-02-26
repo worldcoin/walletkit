@@ -21,13 +21,13 @@ name = "walletkit"
 
 [dependencies]
 uniffi = { workspace = true }
-walletkit-core = { workspace = true }
+walletkit-core = { workspace = true, features = ["legacy-nullifiers", "common-apps", "issuers"] }
 
 [features]
-default = ["issuers", "storage"]
+default = ["semaphore"]
+semaphore = ["walletkit-core/semaphore"]
 compress-zkeys = ["walletkit-core/compress-zkeys"]
 issuers = ["walletkit-core/issuers"]
-storage = ["walletkit-core/storage"]
 
 # v3 features
 v3 = ["walletkit-core/v3"]
