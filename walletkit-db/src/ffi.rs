@@ -579,7 +579,13 @@ mod raw {
     ) -> c_int {
         // WASM bindings use typed destructor callbacks; all callers pass SQLITE_TRANSIENT.
         let _ = destructor;
-        wasm::sqlite3_bind_text(stmt.cast(), index, value.cast(), n, wasm::SQLITE_TRANSIENT())
+        wasm::sqlite3_bind_text(
+            stmt.cast(),
+            index,
+            value.cast(),
+            n,
+            wasm::SQLITE_TRANSIENT(),
+        )
     }
     pub unsafe fn sqlite3_bind_null(stmt: *mut c_void, index: c_int) -> c_int {
         wasm::sqlite3_bind_null(stmt.cast(), index)
