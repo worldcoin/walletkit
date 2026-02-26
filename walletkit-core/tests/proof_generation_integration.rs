@@ -25,8 +25,7 @@ use alloy::sol;
 use alloy_primitives::U160;
 use eyre::{Context as _, Result};
 use taceo_oprf::types::OprfKeyId;
-use walletkit_core::storage::cache_embedded_groth16_material;
-use walletkit_core::{defaults::DefaultConfig, Authenticator, Environment};
+use walletkit_core::{defaults::DefaultConfig, Authenticator, Environment, Groth16Materials};
 use world_id_core::primitives::{rp::RpId, FieldElement};
 use world_id_core::{
     requests::{ProofRequest, RequestItem, RequestVersion},
@@ -139,16 +138,17 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     // Phase 2: Authenticator init with walletkit wrapper
     // ----------------------------------------------------------------
     let store = common::create_test_credential_store();
-    let paths = store.storage_paths().wrap_err("storage_paths failed")?;
-    cache_embedded_groth16_material(paths.clone())
-        .wrap_err("cache_embedded_groth16_material failed")?;
+    let materials = Arc::new(
+        Groth16Materials::from_embedded()
+            .wrap_err("failed to load embedded groth16 materials")?,
+    );
 
     let authenticator = Authenticator::init_with_defaults(
         &seed,
         Some(rpc_url.clone()),
         &Environment::Staging,
         None,
-        paths,
+        materials,
         store.clone(),
     )
     .await
