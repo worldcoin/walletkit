@@ -114,7 +114,6 @@ mod credential;
 pub use credential::Credential;
 
 /// Credential storage primitives for World ID v4.
-#[cfg(feature = "storage")]
 pub mod storage;
 
 mod authenticator;
