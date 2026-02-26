@@ -8,11 +8,20 @@
 //! * **WASM** (`wasm32`): delegated to `sqlite-wasm-rs` (with the `sqlite3mc`
 //!   feature) which ships its own WASM-compiled `sqlite3mc`.
 //!
+//! ## Persistent WASM storage
+//!
+//! On WASM the default VFS is in-memory (volatile). Enable the `wasm-storage`
+//! feature to gain access to the [`wasm_storage`] module which can install
+//! OPFS or IndexedDB backed VFS implementations before opening a database.
+//!
 //! Consumer code (vault, cache, cipher config) uses only the safe types
 //! defined here and never touches raw FFI directly. The `ffi` module is the
 //! **only** file that contains `unsafe` code or C types.
 
 mod ffi;
+
+#[cfg(all(target_arch = "wasm32", feature = "wasm-storage"))]
+pub mod wasm_storage;
 
 mod connection;
 pub mod error;
