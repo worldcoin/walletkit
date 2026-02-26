@@ -61,43 +61,21 @@ jobs:
           toolchain: 1.92.0
           targets: wasm32-unknown-unknown
 
-      - name: Select wasm-capable clang
+      - name: Install LLVM toolchain for WASM C build
         shell: bash
         run: |
           set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang-18 llvm-18
 
-          CLANG_VERSION="$(clang --version | head -n1 || true)"
-          CLANG_MAJOR="$(echo "$CLANG_VERSION" | sed -nE 's/.*clang version ([0-9]+).*/\1/p')"
-
-          if [ -n "$CLANG_MAJOR" ] && [ "$CLANG_MAJOR" -ge 15 ]; then
-            echo "Using system clang: $CLANG_VERSION"
-            CC_BIN="clang"
-          else
-            echo "System clang is missing/too old for sqlite-wasm-rs; installing clang-18"
-            sudo apt-get update
-            sudo apt-get install -y clang-18 llvm-18
-            CC_BIN="clang-18"
-            CLANG_MAJOR="18"
-          fi
-
-          AR_BIN=""
-          if command -v llvm-ar >/dev/null 2>&1; then
-            AR_BIN="llvm-ar"
-          elif [ -n "$CLANG_MAJOR" ] && command -v "llvm-ar-${CLANG_MAJOR}" >/dev/null 2>&1; then
-            AR_BIN="llvm-ar-${CLANG_MAJOR}"
-          elif command -v llvm-ar-18 >/dev/null 2>&1; then
-            AR_BIN="llvm-ar-18"
-          elif command -v ar >/dev/null 2>&1; then
-            AR_BIN="ar"
-          else
-            echo "No suitable archiver found for wasm build" >&2
-            exit 1
-          fi
-
-          echo "Using CC: $CC_BIN"
-          echo "Using AR: $AR_BIN"
-          echo "CC_wasm32_unknown_unknown=$CC_BIN" >> "$GITHUB_ENV"
-          echo "AR_wasm32_unknown_unknown=$AR_BIN" >> "$GITHUB_ENV"
+      - name: Configure C toolchain for wasm32
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "CC_wasm32_unknown_unknown=clang-18" >> "$GITHUB_ENV"
+          echo "AR_wasm32_unknown_unknown=llvm-ar-18" >> "$GITHUB_ENV"
+          clang-18 --version | head -n1
+          llvm-ar-18 --version | head -n1
 
       - name: Run WASM compile check
         run: cargo check -p walletkit-db --target wasm32-unknown-unknown
