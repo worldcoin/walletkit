@@ -1,4 +1,3 @@
-#![cfg(feature = "storage")]
 
 mod common;
 

@@ -1,4 +1,3 @@
-#![cfg(feature = "storage")]
 
 //! Common test utilities shared across integration tests.
 

@@ -1,4 +1,3 @@
-#![cfg(feature = "storage")]
 
 //! End-to-end integration test for `Authenticator::generate_proof` (World ID v4)
 //! using **staging infrastructure** (real OPRF nodes, indexer, gateway, on-chain registries).
