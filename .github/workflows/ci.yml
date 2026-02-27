@@ -61,7 +61,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
   wasm-check:
-    name: WASM walletkit-db compile check
+    name: WASM walletkit compile check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -93,7 +93,7 @@ jobs:
           llvm-ar-18 --version | head -n1
 
       - name: Run WASM compile check
-        run: cargo check -p walletkit-db --target wasm32-unknown-unknown
+        run: cargo check -p walletkit --target wasm32-unknown-unknown
 
   swift-build-and-test:
     name: Swift Build & Foreign Binding Tests
