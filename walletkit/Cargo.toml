@@ -20,14 +20,15 @@ crate-type = ["lib", "staticlib", "cdylib"]
 name = "walletkit"
 
 [dependencies]
+walletkit-core = { workspace = true, features = ["legacy-nullifiers", "common-apps", "issuers"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 uniffi = { workspace = true, features = ["build", "tokio"] }
-walletkit-core = { workspace = true, features = ["legacy-nullifiers", "common-apps", "storage", "issuers"] }
 
 
 [features]
 default = ["semaphore"]
 semaphore = ["walletkit-core/semaphore"]
-storage = ["walletkit-core/storage"]
 compress-zkeys = ["walletkit-core/compress-zkeys"]
 
 [package.metadata.docs.rs]

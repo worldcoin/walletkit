@@ -1,5 +1,3 @@
-#![cfg(feature = "storage")]
-
 mod common;
 
 use rand::rngs::OsRng;

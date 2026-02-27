@@ -26,7 +26,9 @@ use strum::{Display, EnumString};
 /// Installs the ring crypto provider as the default for rustls.
 /// Uses the `ctor` crate to ensure this runs when the dynamic library loads,
 /// before any user code executes.
-#[cfg(not(test))]
+///
+/// On WASM targets, rustls is not used (reqwest uses the browser fetch API).
+#[cfg(all(not(test), not(target_arch = "wasm32")))]
 #[ctor::ctor]
 fn init() {
     rustls::crypto::ring::default_provider()
@@ -39,7 +41,8 @@ fn init() {
 /// Each environment uses different sources of truth for the World ID credentials.
 ///
 /// More information on testing for the World ID Protocol can be found in: `https://docs.world.org/world-id/quick-start/testing`
-#[derive(Debug, Clone, PartialEq, Eq, EnumString, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumString)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
 #[strum(serialize_all = "lowercase")]
 pub enum Environment {
     /// For testing purposes ONLY.
@@ -49,9 +52,8 @@ pub enum Environment {
 }
 
 /// Region for node selection.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum, EnumString, Display,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, Display)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
 #[strum(serialize_all = "lowercase")]
 pub enum Region {
     /// United States
@@ -84,11 +86,12 @@ mod credential;
 pub use credential::Credential;
 
 /// Credential storage primitives for World ID v4.
-#[cfg(feature = "storage")]
 pub mod storage;
 
 mod authenticator;
-pub use authenticator::{Authenticator, InitializingAuthenticator, RegistrationStatus};
+pub use authenticator::{
+    Authenticator, Groth16Materials, InitializingAuthenticator, RegistrationStatus,
+};
 
 /// Default configuration values for each [`Environment`].
 pub mod defaults;
@@ -120,4 +123,5 @@ pub mod issuers;
 mod http_request;
 mod merkle_tree;
 
+#[cfg(not(target_arch = "wasm32"))]
 uniffi::setup_scaffolding!("walletkit_core");
