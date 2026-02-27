@@ -8,16 +8,17 @@ use crate::error::WalletKitError;
 
 /// A request from the RP to the Authenticator. See [`CoreProofRequest`] for more details.
 /// This is a wrapper type to expose to foreign language bindings.
-#[derive(Debug, Clone, uniffi::Object)]
+#[derive(Debug, Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct ProofRequest(pub(crate) CoreProofRequest);
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 impl ProofRequest {
     /// Deserializes a `ProofRequest` from a JSON string.
     ///
     /// # Errors
     /// Returns an error if the JSON is invalid or cannot be parsed.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn from_json(json: &str) -> Result<Self, WalletKitError> {
         let core_request: CoreProofRequest =
             serde_json::from_str(json).map_err(|e| WalletKitError::Generic {
@@ -52,10 +53,11 @@ impl ProofRequest {
 /// A response from the Authenticator to the RP. See [`CoreProofResponse`] for more details.
 ///
 /// This is a wrapper type to expose to foreign language bindings.
-#[derive(Debug, Clone, uniffi::Object)]
+#[derive(Debug, Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct ProofResponse(pub CoreProofResponse);
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 impl ProofResponse {
     /// Serializes the proof response to a JSON string.
     ///

@@ -29,7 +29,8 @@ mod with_storage;
 ///
 /// Construct via [`Groth16Materials::from_embedded`] (all platforms) or
 /// [`Groth16Materials::from_cache`] (native only, loads from filesystem).
-#[derive(Clone, uniffi::Object)]
+#[derive(Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct Groth16Materials {
     query: Arc<world_id_core::proof::CircomGroth16Material>,
     nullifier: Arc<world_id_core::proof::CircomGroth16Material>,
@@ -41,7 +42,7 @@ impl std::fmt::Debug for Groth16Materials {
     }
 }
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 impl Groth16Materials {
     /// Loads Groth16 material from the embedded (compiled-in) zkeys and graphs.
     ///
@@ -51,13 +52,14 @@ impl Groth16Materials {
     /// # Errors
     ///
     /// Returns an error if the embedded material cannot be loaded or verified.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn from_embedded() -> Result<Self, WalletKitError> {
-        let query = world_id_core::proof::load_embedded_query_material().map_err(
-            |error| WalletKitError::Groth16MaterialEmbeddedLoad {
-                error: error.to_string(),
-            },
-        )?;
+        let query =
+            world_id_core::proof::load_embedded_query_material().map_err(|error| {
+                WalletKitError::Groth16MaterialEmbeddedLoad {
+                    error: error.to_string(),
+                }
+            })?;
         let nullifier = world_id_core::proof::load_embedded_nullifier_material()
             .map_err(|error| WalletKitError::Groth16MaterialEmbeddedLoad {
                 error: error.to_string(),
@@ -115,13 +117,14 @@ impl Groth16Materials {
 }
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct Authenticator {
     inner: CoreAuthenticator,
     store: Arc<CredentialStore>,
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(async_runtime = "tokio"))]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
     ///
@@ -175,6 +178,7 @@ impl Authenticator {
     ///
     /// - Will generally error if there are network issues or if the OPRF Nodes return an error.
     /// - Raises an error if the OPRF Nodes configuration is not correctly set.
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn generate_credential_blinding_factor_remote(
         &self,
         issuer_schema_id: u64,
@@ -196,7 +200,7 @@ impl Authenticator {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(async_runtime = "tokio"))]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -205,7 +209,7 @@ impl Authenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub async fn init_with_defaults(
         seed: &[u8],
         rpc_url: Option<String>,
@@ -235,7 +239,7 @@ impl Authenticator {
     ///
     /// # Errors
     /// Will error if the provided seed is not valid or if the config is not valid.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub async fn init(
         seed: &[u8],
         config: &str,
@@ -264,6 +268,7 @@ impl Authenticator {
     ///
     /// # Errors
     /// Returns an error if proof generation fails.
+    #[cfg(not(target_arch = "wasm32"))]
     pub async fn generate_proof(
         &self,
         proof_request: &ProofRequest,
@@ -353,7 +358,8 @@ impl Authenticator {
 }
 
 /// Registration status for a World ID being created through the gateway.
-#[derive(Debug, Clone, uniffi::Enum)]
+#[derive(Debug, Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
 pub enum RegistrationStatus {
     /// Request queued but not yet batched.
     Queued,
@@ -391,10 +397,10 @@ impl From<GatewayRequestState> for RegistrationStatus {
 ///
 /// The account is not yet registered in the `WorldIDRegistry` contract.
 /// Use this for non-blocking registration flows where you want to poll the status yourself.
-#[derive(uniffi::Object)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct InitializingAuthenticator(CoreInitializingAuthenticator);
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(async_runtime = "tokio"))]
 impl InitializingAuthenticator {
     /// Registers a new World ID with SDK defaults.
     ///
@@ -403,7 +409,7 @@ impl InitializingAuthenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub async fn register_with_defaults(
         seed: &[u8],
         rpc_url: Option<String>,
@@ -429,7 +435,7 @@ impl InitializingAuthenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub async fn register(
         seed: &[u8],
         config: &str,

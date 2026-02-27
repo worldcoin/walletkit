@@ -1,4 +1,3 @@
-
 //! Common test utilities shared across integration tests.
 
 use std::collections::HashMap;

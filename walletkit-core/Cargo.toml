@@ -25,21 +25,15 @@ alloy-core = { workspace = true }
 alloy-primitives = { workspace = true }
 backon = "1.6"
 base64 = { version = "0.22", optional = true }
-ctor = "0.2"
 hex = "0.4"
 hkdf = "0.12"
 log = "0.4"
 rand = "0.8"
-reqwest = { version = "0.12", default-features = false, features = [
-  "json",
-  "brotli",
-  "rustls-tls",
-] }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
 ruint = { version = "1.17", default-features = false, features = [
   "alloc",
   "ark-ff-04",
 ] }
-rustls = { version = "0.23", features = ["ring"] }
 secrecy = "0.10"
 semaphore-rs = { version = "0.5" }
 serde = "1"
@@ -51,7 +45,6 @@ thiserror = "2"
 tokio = { version = "1", features = ["sync"] }
 zeroize = "1"
 uuid = { version = "1.10", features = ["v4"] }
-uniffi = { workspace = true, features = ["build", "tokio"] }
 world-id-core = { workspace = true, features = [
   "authenticator",
   "embed-zkeys",
@@ -59,6 +52,13 @@ world-id-core = { workspace = true, features = [
 ] }
 ciborium = "0.2.2"
 walletkit-db = { path = "../walletkit-db" }
+
+# Native-only dependencies (not available on wasm32)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ctor = "0.2"
+reqwest = { version = "0.12", default-features = false, features = ["brotli", "rustls-tls"] }
+rustls = { version = "0.23", features = ["ring"] }
+uniffi = { workspace = true, features = ["build", "tokio"] }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [

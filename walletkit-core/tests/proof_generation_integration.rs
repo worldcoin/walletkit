@@ -1,4 +1,3 @@
-
 //! End-to-end integration test for `Authenticator::generate_proof` (World ID v4)
 //! using **staging infrastructure** (real OPRF nodes, indexer, gateway, on-chain registries).
 //!
@@ -25,7 +24,9 @@ use alloy::sol;
 use alloy_primitives::U160;
 use eyre::{Context as _, Result};
 use taceo_oprf::types::OprfKeyId;
-use walletkit_core::{defaults::DefaultConfig, Authenticator, Environment, Groth16Materials};
+use walletkit_core::{
+    defaults::DefaultConfig, Authenticator, Environment, Groth16Materials,
+};
 use world_id_core::primitives::{rp::RpId, FieldElement};
 use world_id_core::{
     requests::{ProofRequest, RequestItem, RequestVersion},
