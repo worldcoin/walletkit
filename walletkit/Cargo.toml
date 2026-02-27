@@ -20,8 +20,10 @@ crate-type = ["lib", "staticlib", "cdylib"]
 name = "walletkit"
 
 [dependencies]
-uniffi = { workspace = true }
 walletkit-core = { workspace = true, features = ["legacy-nullifiers", "common-apps", "issuers"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+uniffi = { workspace = true, features = ["build", "tokio"] }
 
 [features]
 default = ["semaphore"]

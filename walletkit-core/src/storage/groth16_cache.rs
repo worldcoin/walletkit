@@ -17,7 +17,7 @@ use super::{StorageError, StoragePaths, StorageResult};
 /// # Errors
 ///
 /// Returns an error if embedded material cannot be loaded or cache files cannot be written.
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 #[allow(clippy::needless_pass_by_value)]
 pub fn cache_embedded_groth16_material(paths: &StoragePaths) -> StorageResult<()> {
     if has_valid_cached_material(paths)? {

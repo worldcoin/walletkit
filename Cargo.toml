@@ -37,6 +37,23 @@ nursery = { level = "deny", priority = -1 }
 missing_docs = "deny"
 dead_code = "deny"
 
+# Temporary patches for WASM compatibility (until upstream releases)
+[patch.crates-io]
+# WASM compat: https://github.com/worldcoin/world-id-protocol/pull/512
+world-id-core = { git = "https://github.com/worldcoin/world-id-protocol.git", branch = "main" }
+world-id-authenticator = { git = "https://github.com/worldcoin/world-id-protocol.git", branch = "main" }
+world-id-primitives = { git = "https://github.com/worldcoin/world-id-protocol.git", branch = "main" }
+world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol.git", branch = "main" }
+# WASM compat: https://github.com/TaceoLabs/oprf-service/pull/488
+taceo-oprf = { git = "https://github.com/Dzejkop/oprf-service.git", branch = "feat/wasm-compat" }
+taceo-oprf-client = { git = "https://github.com/Dzejkop/oprf-service.git", branch = "feat/wasm-compat" }
+taceo-oprf-core = { git = "https://github.com/Dzejkop/oprf-service.git", branch = "feat/wasm-compat" }
+taceo-oprf-types = { git = "https://github.com/Dzejkop/oprf-service.git", branch = "feat/wasm-compat" }
+# WASM compat: https://github.com/worldcoin/semaphore-rs/pull/131
+semaphore-rs = { git = "https://github.com/worldcoin/semaphore-rs.git", branch = "feat/wasm-compat" }
+semaphore-rs-storage = { git = "https://github.com/worldcoin/semaphore-rs.git", branch = "feat/wasm-compat" }
+semaphore-rs-trees = { git = "https://github.com/worldcoin/semaphore-rs.git", branch = "feat/wasm-compat" }
+
 [profile.release]
 opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.

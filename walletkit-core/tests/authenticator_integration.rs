@@ -1,4 +1,3 @@
-
 mod common;
 
 use alloy::node_bindings::AnvilInstance;
