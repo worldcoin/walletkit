@@ -15,17 +15,18 @@ use crate::error::WalletKitError;
 ///
 /// Field elements are typically 32 bytes when serialized.
 #[allow(clippy::module_name_repetitions)]
-#[derive(Debug, Clone, uniffi::Object)]
+#[derive(Debug, Clone)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct FieldElement(pub CoreFieldElement);
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 impl FieldElement {
     /// Creates a `FieldElement` from raw bytes (big-endian).
     ///
     /// # Errors
     ///
     /// Returns an error if the bytes cannot be deserialized into a valid field element.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, WalletKitError> {
         let len = bytes.len();
         let val: [u8; 32] =
@@ -42,7 +43,7 @@ impl FieldElement {
     ///
     /// This is useful for testing or when working with small field element values.
     #[must_use]
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn from_u64(value: u64) -> Self {
         Self(CoreFieldElement::from(value))
     }
@@ -62,7 +63,7 @@ impl FieldElement {
     /// # Errors
     ///
     /// Returns an error if the hex string is invalid or cannot be parsed.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn try_from_hex_string(hex_string: &str) -> Result<Self, WalletKitError> {
         let fe = CoreFieldElement::from_str(hex_string)?;
         Ok(Self(fe))

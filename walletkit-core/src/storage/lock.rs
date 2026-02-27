@@ -26,14 +26,17 @@ mod imp {
     pub struct StorageLockGuard;
 
     impl StorageLock {
+        /// Opens a no-op lock (WASM is single-threaded).
         pub fn open(_path: &Path) -> StorageResult<Self> {
             Ok(Self)
         }
 
+        /// Acquires a no-op lock (always succeeds).
         pub fn lock(&self) -> StorageResult<StorageLockGuard> {
             Ok(StorageLockGuard)
         }
 
+        /// Attempts to acquire a no-op lock (always succeeds).
         pub fn try_lock(&self) -> StorageResult<Option<StorageLockGuard>> {
             Ok(Some(StorageLockGuard))
         }

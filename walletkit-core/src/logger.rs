@@ -57,14 +57,15 @@ use tracing_subscriber::{
 ///
 /// WalletKit.initLogging(logger: WalletKitLoggerBridge.shared, level: .debug)
 /// ```
-#[uniffi::export(with_foreign)]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 pub trait Logger: Sync + Send {
     /// Receives a log `message` with its corresponding `level`.
     fn log(&self, level: LogLevel, message: String);
 }
 
 /// Enumeration of possible log levels for foreign logger callbacks.
-#[derive(Debug, Clone, Copy, uniffi::Enum)]
+#[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
 pub enum LogLevel {
     /// Very detailed diagnostic messages.
     Trace,
@@ -258,7 +259,7 @@ pub fn emit_log(level: LogLevel, message: String) {
 /// # Panics
 ///
 /// Panics if the dedicated logger delivery thread cannot be spawned.
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
     if LOGGING_INITIALIZED.get().is_some() {
         return;

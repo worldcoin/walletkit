@@ -17,7 +17,8 @@ use super::{credential_type::CredentialType, merkle_tree::MerkleTreeProof};
 /// It is required to generate a `Proof` and will generally be initialized from an `app_id` and `action`.
 ///
 /// Note on naming: `ProofContext` is used to make it clear in FFIs which may not respect the module structure.
-#[derive(Clone, PartialEq, Eq, Debug, uniffi::Object)]
+#[derive(Clone, PartialEq, Eq, Debug)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct ProofContext {
     /// The `external_nullifier` is the computed result of a specific context for which a World ID Proof is generated.
     /// It is used in the Sempahore ZK circuit and in the computation of the `nullifier_hash` to guarantee uniqueness in a privacy-preserving way.
@@ -31,7 +32,7 @@ pub struct ProofContext {
     pub require_mined_proof: bool,
 }
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 impl ProofContext {
     /// Initializes a `ProofContext`.
     ///
@@ -49,7 +50,7 @@ impl ProofContext {
     /// * `credential_type` - The type of credential being requested.
     ///
     #[must_use]
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn new(
         app_id: &str,
         action: Option<String>,
@@ -75,7 +76,7 @@ impl ProofContext {
     /// See `ProofContext::new` for reference. The `action` and `signal` need to be provided as raw bytes.
     ///
     #[must_use]
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn new_from_bytes(
         app_id: &str,
@@ -113,7 +114,7 @@ impl ProofContext {
     /// # Errors
     ///
     /// - Returns an error if the signal is not a valid number in the field.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn new_from_signal_hash(
         app_id: &str,
         action: Option<Vec<u8>>,
@@ -176,7 +177,7 @@ impl ProofContext {
     }
 }
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 #[cfg(feature = "legacy-nullifiers")]
 impl ProofContext {
     /// LEGACY AND ADVANCED USE ONLY.
@@ -196,7 +197,7 @@ impl ProofContext {
     /// * `credential_type` - The type of credential being requested.
     /// * `signal` - Optional. The signal is included in the ZKP and is committed to in the proof.
     #[must_use]
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn legacy_new_from_pre_image_external_nullifier(
         external_nullifier: &[u8],
         credential_type: CredentialType,
@@ -232,7 +233,7 @@ impl ProofContext {
     /// # Errors
     ///
     /// - Returns an error if the external nullifier is not a valid number in the field.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn legacy_new_from_raw_external_nullifier(
         external_nullifier: &Uint256,
         credential_type: CredentialType,
@@ -258,7 +259,8 @@ impl ProofContext {
 /// For on-chain verification, the `proof` (which is packed) should generally be deserialized into `uint256[8]`.
 ///
 /// More information on: [On-Chain Verification](https://docs.world.org/world-id/id/on-chain)
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, uniffi::Object)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 #[allow(clippy::module_name_repetitions)]
 pub struct ProofOutput {
     /// The root hash of the Merkle tree used to prove membership. This root hash should match published hashes in the World ID
@@ -277,7 +279,7 @@ pub struct ProofOutput {
     pub credential_type: CredentialType,
 }
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 impl ProofOutput {
     /// Converts the entire proof output to a JSON string with standard attribute names.
     ///
