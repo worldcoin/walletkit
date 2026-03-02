@@ -122,7 +122,7 @@ pub enum WalletKitError {
     /// # TODO
     /// This is a temporary variant to capture all errors from OPRF nodes until
     /// typed errors are rolled out from OPRF nodes.
-    #[error("nullifier_generation_failed: {errors}")]
+    #[error("nullifier_generation_failed: {error}")]
     NullifierGenerationFailed {
         /// The error message from the OPRF client.
         ///
