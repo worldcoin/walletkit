@@ -88,34 +88,3 @@ async fn test_authenticator_integration() {
     let packed_account_data = authenticator.packed_account_data();
     println!("Created World ID with packed account data: {packed_account_data:?}",);
 }
-
-#[tokio::test]
-async fn paolos_test() {
-    // Install default crypto provider for rustls
-    let _ = rustls::crypto::ring::default_provider().install_default();
-
-    let store = common::create_test_credential_store();
-    let paths = store.storage_paths().unwrap();
-    cache_embedded_groth16_material(paths.clone()).expect("cache groth16 material");
-
-    //  let x = InitializingAuthenticator::register_with_defaults(&[1u], rpc_url, environment, region, recovery_address)
-
-    // When account doesn't exist, this should fail
-    let authenticator = Authenticator::init_with_defaults(
-        &[1u8; 32],
-        None,
-        &Environment::Staging,
-        None,
-        paths.clone(),
-        store.clone(),
-    )
-    .await
-    .unwrap();
-
-    let err = authenticator
-        .generate_credential_blinding_factor_remote(1)
-        .await
-        .unwrap_err();
-    dbg!(&err);
-    dbg!(err.to_string());
-}
