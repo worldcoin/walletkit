@@ -52,6 +52,7 @@ tokio = { version = "1", features = ["sync"] }
 zeroize = "1"
 uuid = { version = "1.10", features = ["v4"], optional = true }
 uniffi = { workspace = true, features = ["build", "tokio"] }
+taceo-oprf = { version = "0.7", default-features = false, features = ["client"] }
 world-id-core = { workspace = true, features = [
   "authenticator",
   "embed-zkeys",

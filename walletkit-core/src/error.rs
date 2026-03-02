@@ -117,6 +117,19 @@ pub enum WalletKitError {
         error: String,
     },
 
+    /// Not enough OPRF nodes responded during nullifier generation
+    ///
+    /// # TODO
+    /// This is a temporary variant to capture all errors from OPRF nodes until
+    /// typed errors are rolled out from OPRF nodes.
+    #[error("nullifier_generation_failed: {errors}")]
+    NullifierGenerationFailed {
+        /// The error message from the OPRF client.
+        ///
+        /// This is likely to be a list of errors from each OPRF node.
+        error: String,
+    },
+
     /// An unexpected error occurred
     #[error("unexpected_error: {error}")]
     Generic {
@@ -176,6 +189,18 @@ impl From<StorageError> for WalletKitError {
 impl From<AuthenticatorError> for WalletKitError {
     fn from(error: AuthenticatorError) -> Self {
         match error {
+            AuthenticatorError::ProofError(
+                world_id_core::proof::ProofError::OprfError(
+                    taceo_oprf::client::Error::NotEnoughOprfResponses(
+                        threshold,
+                        ref errors,
+                    ),
+                ),
+            ) => Self::NullifierGenerationFailed {
+                error: format!(
+                    "Could not reach {threshold} OPRF responses: {errors:?}"
+                ),
+            },
             AuthenticatorError::AccountDoesNotExist => Self::AccountDoesNotExist,
             AuthenticatorError::AccountAlreadyExists => Self::AccountAlreadyExists,
 
