@@ -9,7 +9,7 @@ use alloy::signers::local::PrivateKeySigner;
 use walletkit_core::defaults::WORLD_ID_REGISTRY;
 use walletkit_core::error::WalletKitError;
 use walletkit_core::storage::cache_embedded_groth16_material;
-use walletkit_core::{Authenticator, Environment, InitializingAuthenticator};
+use walletkit_core::{Authenticator, Environment};
 use world_id_core::world_id_registry::WorldIdRegistry;
 
 fn setup_anvil() -> AnvilInstance {
