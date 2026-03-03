@@ -25,6 +25,12 @@ walletkit-core = { version = "0.6.5", path = "walletkit-core", default-features 
 uniffi = { version = "0.31", features = ["build", "tokio"] }
 world-id-core = { version = "0.4.4", default-features = false }
 
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[workspace.lints.rust]
+warnings = "deny"
+
 [profile.release]
 opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.

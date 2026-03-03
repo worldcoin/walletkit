@@ -67,7 +67,7 @@ pub fn open_encrypted(
 /// `SQLITE_NOTADB` on the first page read.
 fn apply_key(conn: &Connection, k_intermediate: &Zeroizing<[u8; 32]>) -> DbResult<()> {
     // Hex-encode the key and build the PRAGMA. Both are zeroized on drop.
-    let key_hex = Zeroizing::new(hex::encode(&*k_intermediate));
+    let key_hex = Zeroizing::new(hex::encode(k_intermediate));
     let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", key_hex.as_str()));
 
     // execute_batch_zeroized ensures the internal CString copy of the PRAGMA

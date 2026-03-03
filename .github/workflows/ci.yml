@@ -37,7 +37,7 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   swift-build-and-test:
     name: Swift Build & Foreign Binding Tests

@@ -105,6 +105,9 @@ semaphore = ["semaphore-rs/depth_30"]
 # This feature flag adds support to operate with such external nullifiers.
 legacy-nullifiers = []
 
+[lints]
+workspace = true
+
 [package.metadata.docs.rs]
 no-default-features = true
 features = ["issuers", "storage"]
