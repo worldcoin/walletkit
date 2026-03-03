@@ -1,11 +1,11 @@
 use crate::error::WalletKitError;
 
 use alloy_core::sol_types::SolValue;
-use semaphore_rs::{hash_to_field, identity, packed_proof::PackedProof, protocol::Proof};
 #[cfg(feature = "semaphore")]
 use semaphore_rs::protocol::{generate_nullifier_hash, generate_proof};
-
-use semaphore_rs::MODULUS;
+use semaphore_rs::{
+    hash_to_field, identity, packed_proof::PackedProof, protocol::Proof, MODULUS,
+};
 
 use serde::Serialize;
 
