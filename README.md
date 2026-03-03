@@ -79,6 +79,24 @@ This will:
 
 In your consuming project, ensure `mavenLocal()` is included in your repositories and update your dependency version to the SNAPSHOT version (e.g., `0.3.1-SNAPSHOT`).
 
+## Development
+
+### Linting
+
+WalletKit uses feature flags (e.g. `semaphore`, `storage`) that gate code paths with `#[cfg]`. To catch warnings across all configurations, run clippy three ways:
+
+```bash
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+```
+
+CI runs all three checks. Formatting:
+
+```bash
+cargo fmt -- --check
+```
+
 ## Overview
 
 WalletKit is broken down into separate crates, offering the following functionality.
