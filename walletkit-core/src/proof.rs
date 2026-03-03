@@ -321,40 +321,47 @@ impl ProofOutput {
 ///
 /// # Errors
 /// Returns an error if proof generation fails
+#[cfg(feature = "semaphore")]
 pub fn generate_proof_with_semaphore_identity(
     identity: &identity::Identity,
     merkle_tree_proof: &MerkleTreeProof,
     context: &ProofContext,
 ) -> Result<ProofOutput, WalletKitError> {
-    #[cfg(not(feature = "semaphore"))]
-    {
-        let _ = (identity, merkle_tree_proof, context);
-        return Err(WalletKitError::SemaphoreNotEnabled);
-    }
+    let merkle_root = merkle_tree_proof.merkle_root;
 
-    #[cfg(feature = "semaphore")]
-    {
-        let merkle_root = merkle_tree_proof.merkle_root;
+    let external_nullifier_hash = context.external_nullifier.into();
+    let nullifier_hash =
+        generate_nullifier_hash(identity, external_nullifier_hash).into();
 
-        let external_nullifier_hash = context.external_nullifier.into();
-        let nullifier_hash =
-            generate_nullifier_hash(identity, external_nullifier_hash).into();
+    let proof = generate_proof(
+        identity,
+        merkle_tree_proof.as_poseidon_proof(),
+        external_nullifier_hash,
+        context.signal_hash.into(),
+    )?;
 
-        let proof = generate_proof(
-            identity,
-            merkle_tree_proof.as_poseidon_proof(),
-            external_nullifier_hash,
-            context.signal_hash.into(),
-        )?;
+    Ok(ProofOutput {
+        merkle_root,
+        nullifier_hash,
+        raw_proof: proof,
+        proof: PackedProof::from(proof),
+        credential_type: context.credential_type,
+    })
+}
 
-        Ok(ProofOutput {
-            merkle_root,
-            nullifier_hash,
-            raw_proof: proof,
-            proof: PackedProof::from(proof),
-            credential_type: context.credential_type,
-        })
-    }
+/// Generates a Semaphore ZKP for a specific Semaphore identity using the relevant provided context.
+///
+/// **Requires the `semaphore` feature flag.**
+///
+/// # Errors
+/// Returns `SemaphoreNotEnabled` when the `semaphore` feature is not enabled.
+#[cfg(not(feature = "semaphore"))]
+pub const fn generate_proof_with_semaphore_identity(
+    _identity: &identity::Identity,
+    _merkle_tree_proof: &MerkleTreeProof,
+    _context: &ProofContext,
+) -> Result<ProofOutput, WalletKitError> {
+    Err(WalletKitError::SemaphoreNotEnabled)
 }
 
 #[cfg(test)]
