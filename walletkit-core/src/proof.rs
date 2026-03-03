@@ -329,28 +329,34 @@ pub fn generate_proof_with_semaphore_identity(
     context: &ProofContext,
 ) -> Result<ProofOutput, WalletKitError> {
     #[cfg(not(feature = "semaphore"))]
-    return Err(WalletKitError::SemaphoreNotEnabled);
+    {
+        let _ = (identity, merkle_tree_proof, context);
+        return Err(WalletKitError::SemaphoreNotEnabled);
+    }
 
-    let merkle_root = merkle_tree_proof.merkle_root; // clone the value
+    #[cfg(feature = "semaphore")]
+    {
+        let merkle_root = merkle_tree_proof.merkle_root;
 
-    let external_nullifier_hash = context.external_nullifier.into();
-    let nullifier_hash =
-        generate_nullifier_hash(identity, external_nullifier_hash).into();
+        let external_nullifier_hash = context.external_nullifier.into();
+        let nullifier_hash =
+            generate_nullifier_hash(identity, external_nullifier_hash).into();
 
-    let proof = generate_proof(
-        identity,
-        merkle_tree_proof.as_poseidon_proof(),
-        external_nullifier_hash,
-        context.signal_hash.into(),
-    )?;
+        let proof = generate_proof(
+            identity,
+            merkle_tree_proof.as_poseidon_proof(),
+            external_nullifier_hash,
+            context.signal_hash.into(),
+        )?;
 
-    Ok(ProofOutput {
-        merkle_root,
-        nullifier_hash,
-        raw_proof: proof,
-        proof: PackedProof::from(proof),
-        credential_type: context.credential_type,
-    })
+        Ok(ProofOutput {
+            merkle_root,
+            nullifier_hash,
+            raw_proof: proof,
+            proof: PackedProof::from(proof),
+            credential_type: context.credential_type,
+        })
+    }
 }
 
 #[cfg(test)]
