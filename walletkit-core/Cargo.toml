@@ -49,6 +49,9 @@ strum = { version = "0.27", features = ["derive"] }
 subtle = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["sync"] }
+tracing = "0.1"
+tracing-log = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zeroize = "1"
 uuid = { version = "1.10", features = ["v4"], optional = true }
 uniffi = { workspace = true, features = ["build", "tokio"] }
@@ -78,7 +81,7 @@ rustls = { version = "0.23", features = ["ring"] }
 taceo-oprf = { version = "0.7", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 rand = "0.8"
 [features]
 default = ["common-apps", "semaphore", "storage", "issuers"]

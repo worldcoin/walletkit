@@ -115,26 +115,35 @@ async fn example() {
 
 ## 🛠️ Logging
 
-WalletKit includes logging functionality that can be integrated with foreign language bindings. The logging system allows you to capture debug information and operational logs from the library.
+WalletKit uses `tracing` internally for all first-party logging and instrumentation.
+To integrate with iOS/Android logging systems, initialize WalletKit logging with a
+foreign `Logger` bridge.
+
+`Logger` is intentionally minimal and level-aware:
+
+- `log(level, message)` receives all log messages.
+- `level` is one of: `Trace`, `Debug`, `Info`, `Warn`, `Error`.
+
+This preserves severity semantics for native apps while still allowing
+forwarding to Datadog, Crashlytics, `os_log`, Android `Log`, or any custom sink.
 
 ### Basic Usage
 
-Implement the `Logger` trait and set it as the global logger:
+Implement the `Logger` trait and initialize logging once at app startup:
 
 ```rust
-use walletkit_core::logger::{Logger, LogLevel, set_logger};
+use walletkit_core::logger::{init_logging, LogLevel, Logger};
 use std::sync::Arc;
 
 struct MyLogger;
 
 impl Logger for MyLogger {
     fn log(&self, level: LogLevel, message: String) {
-        println!("[{:?}] {}", level, message);
+        println!("[{level:?}] {message}");
     }
 }
 
-// Set the logger once at application startup
-set_logger(Arc::new(MyLogger));
+init_logging(Arc::new(MyLogger), Some(LogLevel::Debug));
 ```
 
 ### Swift Integration
@@ -144,14 +153,23 @@ class WalletKitLoggerBridge: WalletKit.Logger {
     static let shared = WalletKitLoggerBridge()
 
     func log(level: WalletKit.LogLevel, message: String) {
-        // Forward to your app's logging system
-        Log.log(level.toCoreLevel(), message)
+        switch level {
+        case .trace, .debug:
+            Log.debug(message)
+        case .info:
+            Log.info(message)
+        case .warn:
+            Log.warn(message)
+        case .error:
+            Log.error(message)
+        @unknown default:
+            Log.error(message)
+        }
     }
 }
 
-// Set up the logger in your app delegate
-public func setupWalletKitLogger() {
-    WalletKit.setLogger(logger: WalletKitLoggerBridge.shared)
+public func setupWalletKitLogging() {
+    WalletKit.initLogging(logger: WalletKitLoggerBridge.shared, level: .debug)
 }
 ```
 
@@ -164,13 +182,20 @@ class WalletKitLoggerBridge : WalletKit.Logger {
     }
 
     override fun log(level: WalletKit.LogLevel, message: String) {
-        // Forward to your app's logging system
-        Log.log(level.toCoreLevel(), message)
+        when (level) {
+            WalletKit.LogLevel.TRACE, WalletKit.LogLevel.DEBUG ->
+                Log.d("WalletKit", message)
+            WalletKit.LogLevel.INFO ->
+                Log.i("WalletKit", message)
+            WalletKit.LogLevel.WARN ->
+                Log.w("WalletKit", message)
+            WalletKit.LogLevel.ERROR ->
+                Log.e("WalletKit", message)
+        }
     }
 }
 
-// Set up the logger in your application
-fun setupWalletKitLogger() {
-    WalletKit.setLogger(WalletKitLoggerBridge.shared)
+fun setupWalletKitLogging() {
+    WalletKit.initLogging(WalletKitLoggerBridge.shared, WalletKit.LogLevel.DEBUG)
 }
 ```
