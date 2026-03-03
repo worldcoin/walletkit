@@ -36,8 +36,14 @@ jobs:
       - name: Check code formatting
         run: cargo fmt -- --check
 
-      - name: Run clippy
+      - name: Run clippy (all features)
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run clippy (default features)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run clippy (no default features)
+        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
   swift-build-and-test:
     name: Swift Build & Foreign Binding Tests
