@@ -1,4 +1,5 @@
 #![cfg(feature = "storage")]
+#![allow(missing_docs)]
 
 mod common;
 

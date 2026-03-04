@@ -44,6 +44,10 @@ use super::error::{DbError, DbResult};
 /// open -> key -> verify -> configure (WAL + foreign keys).
 ///
 /// See the [module-level documentation](self) for the full encryption flow.
+///
+/// # Errors
+///
+/// Returns `DbError` if opening, keying, or configuring the connection fails.
 pub fn open_encrypted(
     path: &Path,
     k_intermediate: &Zeroizing<[u8; 32]>,
@@ -67,7 +71,7 @@ pub fn open_encrypted(
 /// `SQLITE_NOTADB` on the first page read.
 fn apply_key(conn: &Connection, k_intermediate: &Zeroizing<[u8; 32]>) -> DbResult<()> {
     // Hex-encode the key and build the PRAGMA. Both are zeroized on drop.
-    let key_hex = Zeroizing::new(hex::encode(&*k_intermediate));
+    let key_hex = Zeroizing::new(hex::encode(k_intermediate));
     let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", key_hex.as_str()));
 
     // execute_batch_zeroized ensures the internal CString copy of the PRAGMA
@@ -110,6 +114,10 @@ fn configure_connection(conn: &Connection) -> DbResult<()> {
 }
 
 /// Runs `PRAGMA integrity_check` and returns whether the database is healthy.
+///
+/// # Errors
+///
+/// Returns `DbError` if the integrity check query fails.
 pub fn integrity_check(conn: &Connection) -> DbResult<bool> {
     let result = conn.query_row("PRAGMA integrity_check;", &[], |stmt| {
         Ok(stmt.column_text(0))
