@@ -33,7 +33,6 @@ nursery = { level = "deny", priority = -1 }
 [workspace.lints.rust]
 missing_docs = "deny"
 dead_code = "deny"
-warnings = "deny"
 
 [profile.release]
 opt-level = 'z' # Optimize for size.
