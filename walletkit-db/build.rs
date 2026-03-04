@@ -7,8 +7,11 @@
 //! On WASM targets compilation is skipped because `sqlite-wasm-rs` provides
 //! the pre-compiled WASM binary.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+use sha2::{Digest, Sha256};
 
 // Pinned sqlite3mc release.
 const SQLITE3MC_VERSION: &str = "2.2.7";
@@ -16,6 +19,9 @@ const SQLITE_VERSION: &str = "3.51.2";
 const DOWNLOAD_URL: &str = "https://github.com/utelle/SQLite3MultipleCiphers/releases/download/v2.2.7/sqlite3mc-2.2.7-sqlite-3.51.2-amalgamation.zip";
 const EXPECTED_SHA256: &str =
     "8e84aadc53bc09bda9cd307745a178191e7783e1b6478d74ffbcdf6a04f98085";
+
+/// Files we need from the zip archive.
+const NEEDED_FILES: &[&str] = &["sqlite3mc_amalgamation.c", "sqlite3mc_amalgamation.h"];
 
 fn main() {
     build_sqlite3mc();
@@ -66,17 +72,9 @@ fn download(dest: &Path) {
 
 /// Verifies the SHA-256 checksum of the downloaded zip.
 fn verify_checksum(zip_path: &Path) {
-    // Try shasum (macOS) then sha256sum (Linux/CI).
-    let output = Command::new("shasum")
-        .args(["-a", "256"])
-        .arg(zip_path)
-        .output()
-        .or_else(|_| Command::new("sha256sum").arg(zip_path).output())
-        .expect("failed to run shasum or sha256sum -- is one installed?");
-
-    assert!(output.status.success(), "checksum command failed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let actual_hash = stdout.split_whitespace().next().unwrap_or("");
+    let data = std::fs::read(zip_path).expect("failed to read zip for checksum");
+    let hash = Sha256::digest(&data);
+    let actual_hash = format!("{hash:x}");
     assert_eq!(
         actual_hash, EXPECTED_SHA256,
         "sqlite3mc checksum mismatch!\n  expected: {EXPECTED_SHA256}\n  actual:   {actual_hash}\n\
@@ -84,17 +82,23 @@ fn verify_checksum(zip_path: &Path) {
     );
 }
 
-/// Extracts the two needed files from the zip into `dest_dir`.
+/// Extracts the needed files from the zip into `dest_dir`.
 fn extract(zip_path: &Path, dest_dir: &Path) {
-    let status = Command::new("unzip")
-        .args(["-o", "-j"]) // overwrite, junk paths (flatten)
-        .arg(zip_path)
-        .args(["sqlite3mc_amalgamation.c", "sqlite3mc_amalgamation.h"])
-        .arg("-d")
-        .arg(dest_dir)
-        .status()
-        .expect("failed to run unzip -- is it installed?");
-    assert!(status.success(), "unzip failed with status {status}");
+    let file = std::fs::File::open(zip_path).expect("failed to open zip");
+    let mut archive = zip::ZipArchive::new(file).expect("failed to read zip archive");
+
+    for name in NEEDED_FILES {
+        let mut entry = archive
+            .by_name(name)
+            .unwrap_or_else(|e| panic!("file {name} not found in zip: {e}"));
+        let dest_path = dest_dir.join(name);
+        let mut buf = Vec::with_capacity(usize::try_from(entry.size()).unwrap_or(0));
+        entry
+            .read_to_end(&mut buf)
+            .unwrap_or_else(|e| panic!("failed to read {name} from zip: {e}"));
+        std::fs::write(&dest_path, &buf)
+            .unwrap_or_else(|e| panic!("failed to write {}: {e}", dest_path.display()));
+    }
 }
 
 /// Compiles the sqlite3mc amalgamation into a static library.
