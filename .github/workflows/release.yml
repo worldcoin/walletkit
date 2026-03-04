@@ -135,7 +135,7 @@ jobs:
 
   prepare-kotlin:
     name: Prepare Kotlin
-    runs-on: ubuntu-22.04-32core
+    runs-on: arc-public-8xlarge-amd64-runner
     needs: [pre-release-checks]
     permissions:
       contents: write # to upload artifacts

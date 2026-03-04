@@ -75,7 +75,7 @@ jobs:
 
   kotlin-build-and-test:
     name: Kotlin Build & Foreign Binding Tests
-    runs-on: ubuntu-latest
+    runs-on: arc-public-8xlarge-amd64-runner # uses the same runner as the release workflow to ensure consistency
     permissions:
       contents: read
 
@@ -103,7 +103,7 @@ jobs:
 
   test:
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on: arc-public-xlarge-arm64-runner
     permissions:
       contents: read
 
