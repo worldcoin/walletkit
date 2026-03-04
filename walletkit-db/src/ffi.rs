@@ -50,7 +50,7 @@ const SQLITE_ERROR: i32 = 1;
 ///
 /// All methods perform the underlying FFI call and convert the result to safe
 /// Rust types. The database is closed when the handle is dropped.
-pub(super) struct RawDb {
+pub struct RawDb {
     ptr: *mut c_void,
 }
 
@@ -59,7 +59,7 @@ pub(super) struct RawDb {
 /// The lifetime `'db` ties the statement to the [`RawDb`] that created it,
 /// ensuring at the type level that the statement cannot outlive the database.
 /// The statement is finalized when the handle is dropped.
-pub(super) struct RawStmt<'db> {
+pub struct RawStmt<'db> {
     ptr: *mut c_void,
     /// Borrowed database handle — used only to extract error messages via
     /// `sqlite3_errmsg`.
@@ -165,6 +165,7 @@ impl RawDb {
         // Zeroize the CString buffer that held the sensitive SQL before freeing.
         let mut bytes = c_sql.into_bytes_with_nul();
         bytes.zeroize();
+        drop(bytes);
 
         if rc == SQLITE_OK as c_int {
             return Ok(());

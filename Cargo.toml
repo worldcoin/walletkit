@@ -26,9 +26,13 @@ uniffi = { version = "0.31", features = ["build", "tokio"] }
 world-id-core = { version = "0.4.4", default-features = false }
 
 [workspace.lints.clippy]
-all = { level = "warn", priority = -1 }
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
 
 [workspace.lints.rust]
+missing_docs = "deny"
+dead_code = "deny"
 warnings = "deny"
 
 [profile.release]

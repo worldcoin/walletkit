@@ -19,13 +19,18 @@ pub enum StepResult<'stmt, 'conn> {
 ///
 /// Values read through this guard are valid for the current row only.
 /// Calling `step`, `reset`, or dropping/finalizing the statement invalidates
-/// SQLite's internal row pointers.
+/// `SQLite`'s internal row pointers.
 pub struct Row<'stmt, 'conn> {
     stmt: &'stmt Statement<'conn>,
 }
 
 impl Row<'_, '_> {
     /// Reads a column as `i64`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx` exceeds `i32::MAX`.
+    #[must_use]
     pub fn column_i64(&self, idx: usize) -> i64 {
         self.stmt
             .raw
@@ -33,6 +38,11 @@ impl Row<'_, '_> {
     }
 
     /// Reads a column as a blob. Returns an empty `Vec` for NULL.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx` exceeds `i32::MAX`.
+    #[must_use]
     pub fn column_blob(&self, idx: usize) -> Vec<u8> {
         self.stmt
             .raw
@@ -40,6 +50,11 @@ impl Row<'_, '_> {
     }
 
     /// Reads a column as a UTF-8 string. Returns an empty string for NULL.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx` exceeds `i32::MAX`.
+    #[must_use]
     pub fn column_text(&self, idx: usize) -> String {
         self.stmt
             .raw
@@ -47,7 +62,12 @@ impl Row<'_, '_> {
     }
 
     /// Returns `true` if the column is SQL NULL.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `idx` exceeds `i32::MAX`.
     #[allow(dead_code)]
+    #[must_use]
     pub fn is_column_null(&self, idx: usize) -> bool {
         self.stmt
             .raw
@@ -72,6 +92,14 @@ impl<'conn> Statement<'conn> {
     }
 
     /// Binds a slice of [`Value`]s to the statement parameters (1-indexed).
+    ///
+    /// # Errors
+    ///
+    /// Returns `DbError` if any bind call fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the number of values exceeds `i32::MAX`.
     pub fn bind_values(&mut self, values: &[Value]) -> DbResult<()> {
         for (i, val) in values.iter().enumerate() {
             let idx = i32::try_from(i + 1).expect("parameter index overflow");
@@ -86,6 +114,10 @@ impl<'conn> Statement<'conn> {
     }
 
     /// Executes a single step.
+    ///
+    /// # Errors
+    ///
+    /// Returns `DbError` if the step fails.
     pub fn step<'stmt>(&'stmt mut self) -> DbResult<StepResult<'stmt, 'conn>> {
         let rc = self.raw.step()?;
         if rc == ffi::SQLITE_ROW {

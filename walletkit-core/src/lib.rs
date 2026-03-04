@@ -11,13 +11,6 @@
 //!     println!("{}", proof.to_json().unwrap()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
 //! }
 //! ```
-#![deny(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    missing_docs,
-    dead_code
-)]
 
 use strum::{Display, EnumString};
 
