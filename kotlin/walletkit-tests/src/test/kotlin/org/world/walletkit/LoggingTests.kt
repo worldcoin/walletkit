@@ -1,11 +1,11 @@
 package org.world.walletkit
 
-import kotlin.test.Test
-import kotlin.test.assertTrue
 import uniffi.walletkit_core.LogLevel
 import uniffi.walletkit_core.Logger
 import uniffi.walletkit_core.emitLog
 import uniffi.walletkit_core.initLogging
+import kotlin.test.Test
+import kotlin.test.assertTrue
 
 private class CapturingLogger : Logger {
     private val lock = Any()

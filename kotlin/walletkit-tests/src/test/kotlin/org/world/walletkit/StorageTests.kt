@@ -1,5 +1,13 @@
 package org.world.walletkit
 
+import uniffi.walletkit_core.AtomicBlobStore
+import uniffi.walletkit_core.Credential
+import uniffi.walletkit_core.CredentialStore
+import uniffi.walletkit_core.DeviceKeystore
+import uniffi.walletkit_core.FieldElement
+import uniffi.walletkit_core.StorageException
+import uniffi.walletkit_core.StoragePaths
+import uniffi.walletkit_core.StorageProvider
 import java.io.File
 import java.security.SecureRandom
 import java.util.UUID
@@ -14,14 +22,6 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import uniffi.walletkit_core.AtomicBlobStore
-import uniffi.walletkit_core.Credential
-import uniffi.walletkit_core.CredentialStore
-import uniffi.walletkit_core.DeviceKeystore
-import uniffi.walletkit_core.FieldElement
-import uniffi.walletkit_core.StorageException
-import uniffi.walletkit_core.StoragePaths
-import uniffi.walletkit_core.StorageProvider
 
 class AtomicBlobStoreTests {
     @Test
