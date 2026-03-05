@@ -24,8 +24,8 @@ class AndroidAtomicBlobStore(
     override fun writeAtomic(path: String, bytes: ByteArray) {
         val file = File(baseDir, path)
         val parent = file.parentFile
-        if (parent != null && !parent.exists()) {
-            parent.mkdirs()
+        if (parent != null && !parent.exists() && !parent.mkdirs()) {
+            throw StorageException.BlobStore("failed to create parent directory")
         }
         val temp = File(
             parent ?: baseDir,
@@ -40,7 +40,11 @@ class AndroidAtomicBlobStore(
                 temp.copyTo(file, overwrite = true)
                 temp.delete()
             }
+        } catch (error: StorageException) {
+            cleanupTempFile(temp)
+            throw error
         } catch (error: Exception) {
+            cleanupTempFile(temp)
             throw StorageException.BlobStore("write failed: ${error.message}")
         }
     }
@@ -52,6 +56,12 @@ class AndroidAtomicBlobStore(
         }
         if (!file.delete()) {
             throw StorageException.BlobStore("delete failed")
+        }
+    }
+
+    private fun cleanupTempFile(temp: File) {
+        if (temp.exists()) {
+            temp.delete()
         }
     }
 }
