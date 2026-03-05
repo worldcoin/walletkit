@@ -45,6 +45,12 @@ impl Credential {
     pub const fn issuer_schema_id(&self) -> u64 {
         self.0.issuer_schema_id
     }
+
+    /// Returns the credential's expiration timestamp (unix seconds).
+    #[must_use]
+    pub const fn expires_at(&self) -> u64 {
+        self.0.expires_at
+    }
 }
 
 impl Credential {

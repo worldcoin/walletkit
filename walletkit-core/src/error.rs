@@ -1,10 +1,8 @@
 use thiserror::Error;
-
-use world_id_core::primitives::PrimitiveError;
+use world_id_core::{primitives::PrimitiveError, AuthenticatorError};
 
 #[cfg(feature = "storage")]
 use crate::storage::StorageError;
-use world_id_core::AuthenticatorError;
 
 /// Error outputs from `WalletKit`
 #[derive(Debug, Error, uniffi::Error)]
@@ -156,6 +154,7 @@ impl From<PrimitiveError> for WalletKitError {
     }
 }
 
+#[cfg(feature = "semaphore")]
 impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     fn from(error: semaphore_rs::protocol::ProofError) -> Self {
         Self::ProofGeneration {

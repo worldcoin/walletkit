@@ -11,7 +11,7 @@ export CARGO_HOME="${CARGO_HOME:-/tmp/.cargo}"
 if [ -z "$1" ]; then
     echo "Error: Version parameter is required"
     echo "Usage: ./build_android_local.sh <version>"
-    echo "Example: ./build_android_local.sh 0.2.1-SNAPSHOT"
+    echo "Example: ./build_android_local.sh 0.2.1"
     exit 1
 fi
 
