@@ -127,6 +127,7 @@ fn test_store_credential_without_associated_data() {
     assert_eq!(records[0].credential_id, credential_id);
     assert_eq!(records[0].issuer_schema_id, 10);
     assert_eq!(records[0].expires_at, 2000);
+    assert!(!records[0].is_expired);
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -154,6 +155,7 @@ fn test_store_credential_with_associated_data() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].issuer_schema_id, 11);
     assert_eq!(records[0].expires_at, 2000);
+    assert!(!records[0].is_expired);
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -247,7 +249,7 @@ fn test_list_credentials_by_issuer() {
 }
 
 #[test]
-fn test_list_credentials_excludes_expired() {
+fn test_list_credentials_marks_expired() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
@@ -264,9 +266,92 @@ fn test_list_credentials_excludes_expired() {
         None,
         1000,
     )
+    .expect("store expired credential");
+    db.store_credential(
+        &guard,
+        301,
+        sample_blinding_factor(),
+        1,
+        2000,
+        b"active".to_vec(),
+        None,
+        1000,
+    )
+    .expect("store active credential");
+
+    let records = db.list_credentials(None, 1000).expect("list credentials");
+    assert_eq!(records.len(), 2);
+    assert!(records.iter().any(|record| record.is_expired));
+    assert!(records.iter().any(|record| !record.is_expired));
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn test_list_credentials_by_issuer_includes_expired() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x0Au8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    db.store_credential(
+        &guard,
+        500,
+        sample_blinding_factor(),
+        1,
+        900,
+        b"expired".to_vec(),
+        None,
+        1000,
+    )
     .expect("store credential");
+
+    let records = db
+        .list_credentials(Some(500), 1000)
+        .expect("list credentials");
+    assert_eq!(records.len(), 1);
+    assert!(records[0].is_expired);
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn test_delete_credential_by_id() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x0Bu8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let credential_id = db
+        .store_credential(
+            &guard,
+            400,
+            sample_blinding_factor(),
+            1,
+            2000,
+            b"to-delete".to_vec(),
+            None,
+            1000,
+        )
+        .expect("store credential");
+
+    let deleted = db
+        .delete_credential(&guard, credential_id)
+        .expect("delete credential");
+    assert!(deleted);
+
     let records = db.list_credentials(None, 1000).expect("list credentials");
     assert!(records.is_empty());
+
+    let deleted_again = db
+        .delete_credential(&guard, credential_id)
+        .expect("delete credential again");
+    assert!(!deleted_again);
+
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }

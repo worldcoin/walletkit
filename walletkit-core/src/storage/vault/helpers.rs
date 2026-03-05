@@ -23,10 +23,12 @@ pub(super) fn map_record(row: &Row<'_, '_>) -> StorageResult<CredentialRecord> {
     let credential_id = row.column_i64(0);
     let issuer_schema_id = row.column_i64(1);
     let expires_at = row.column_i64(2);
+    let is_expired = row.column_i64(3);
     Ok(CredentialRecord {
         credential_id: to_u64(credential_id, "credential_id")?,
         issuer_schema_id: to_u64(issuer_schema_id, "issuer_schema_id")?,
         expires_at: to_u64(expires_at, "expires_at")?,
+        is_expired: is_expired != 0,
     })
 }
 

@@ -38,6 +38,7 @@ fn test_storage_flow_end_to_end() {
     assert_eq!(record.credential_id, credential_id);
     assert_eq!(record.issuer_schema_id, 7);
     assert_eq!(record.expires_at, 1_800_000_000);
+    assert!(!record.is_expired);
 
     store
         .merkle_cache_put(vec![9, 9], 100, 10)

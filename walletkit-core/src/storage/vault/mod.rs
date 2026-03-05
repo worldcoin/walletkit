@@ -186,7 +186,13 @@ impl VaultDb {
         to_u64(credential_id, "credential_id")
     }
 
-    /// Lists active credential metadata, optionally filtered by issuer schema.
+    /// Lists credential metadata, optionally filtered by issuer schema.
+    ///
+    /// Results include both active and expired credentials. Expiry status is
+    /// reported via [`CredentialRecord::is_expired`] and uses
+    /// `now >= expires_at` semantics.
+    ///
+    /// Results are ordered by `updated_at` descending (most recent first).
     ///
     /// # Errors
     ///
@@ -196,48 +202,72 @@ impl VaultDb {
         issuer_schema_id: Option<u64>,
         now: u64,
     ) -> StorageResult<Vec<CredentialRecord>> {
-        let expires = to_i64(now, "now")?;
+        let now_i64 = to_i64(now, "now")?;
         let issuer_schema_id_i64 = issuer_schema_id
             .map(|value| to_i64(value, "issuer_schema_id"))
             .transpose()?;
 
         let mut records = Vec::new();
 
-        if let Some(issuer_id) = issuer_schema_id_i64 {
-            let sql = "SELECT
+        let (sql, binds) = if let Some(issuer_id) = issuer_schema_id_i64 {
+            (
+                "SELECT
                     cr.credential_id,
                     cr.issuer_schema_id,
-                    cr.expires_at
+                    cr.expires_at,
+                    CASE WHEN cr.expires_at <= ?1 THEN 1 ELSE 0 END AS is_expired
                  FROM credential_records cr
-                 WHERE cr.expires_at > ?1
-                   AND cr.issuer_schema_id = ?2
-                 ORDER BY cr.updated_at DESC";
-            let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
-            stmt.bind_values(params![expires, issuer_id])
-                .map_err(|err| map_db_err(&err))?;
-            while let StepResult::Row(row) =
-                stmt.step().map_err(|err| map_db_err(&err))?
-            {
-                records.push(map_record(&row)?);
-            }
+                 WHERE cr.issuer_schema_id = ?2
+                 ORDER BY cr.updated_at DESC",
+                params![now_i64, issuer_id],
+            )
         } else {
-            let sql = "SELECT
+            (
+                "SELECT
                     cr.credential_id,
                     cr.issuer_schema_id,
-                    cr.expires_at
+                    cr.expires_at,
+                    CASE WHEN cr.expires_at <= ?1 THEN 1 ELSE 0 END AS is_expired
                  FROM credential_records cr
-                 WHERE cr.expires_at > ?1
-                 ORDER BY cr.updated_at DESC";
-            let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
-            stmt.bind_values(params![expires])
-                .map_err(|err| map_db_err(&err))?;
-            while let StepResult::Row(row) =
-                stmt.step().map_err(|err| map_db_err(&err))?
-            {
-                records.push(map_record(&row)?);
-            }
+                 ORDER BY cr.updated_at DESC",
+                params![now_i64],
+            )
+        };
+
+        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(binds).map_err(|err| map_db_err(&err))?;
+
+        while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
+            records.push(map_record(&row)?);
         }
+
         Ok(records)
+    }
+
+    /// Deletes a credential record by ID.
+    ///
+    /// Returns `true` when a record was deleted, `false` when the credential did
+    /// not exist.
+    ///
+    /// Note: this removes only the row in `credential_records`. Referenced blobs
+    /// in `blob_objects` are intentionally retained (deduplicated storage).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete query fails.
+    pub fn delete_credential(
+        &mut self,
+        _lock: &StorageLockGuard,
+        credential_id: u64,
+    ) -> StorageResult<bool> {
+        let credential_id_i64 = to_i64(credential_id, "credential_id")?;
+        self.conn
+            .execute(
+                "DELETE FROM credential_records WHERE credential_id = ?1",
+                params![credential_id_i64],
+            )
+            .map_err(|err| map_db_err(&err))
+            .map(|changed| changed > 0)
     }
 
     /// Retrieves the credential bytes and blinding factor by issuer schema ID.
