@@ -208,35 +208,20 @@ impl VaultDb {
             .transpose()?;
 
         let mut records = Vec::new();
+        let issuer_filter = issuer_schema_id_i64.map_or(Value::Null, Value::Integer);
 
-        let (sql, binds) = if let Some(issuer_id) = issuer_schema_id_i64 {
-            (
-                "SELECT
-                    cr.credential_id,
-                    cr.issuer_schema_id,
-                    cr.expires_at,
-                    CASE WHEN cr.expires_at <= ?1 THEN 1 ELSE 0 END AS is_expired
-                 FROM credential_records cr
-                 WHERE cr.issuer_schema_id = ?2
-                 ORDER BY cr.updated_at DESC",
-                params![now_i64, issuer_id],
-            )
-        } else {
-            (
-                "SELECT
-                    cr.credential_id,
-                    cr.issuer_schema_id,
-                    cr.expires_at,
-                    CASE WHEN cr.expires_at <= ?1 THEN 1 ELSE 0 END AS is_expired
-                 FROM credential_records cr
-                 ORDER BY cr.updated_at DESC",
-                params![now_i64],
-            )
-        };
+        let sql = "SELECT
+                cr.credential_id,
+                cr.issuer_schema_id,
+                cr.expires_at,
+                CASE WHEN cr.expires_at <= ?1 THEN 1 ELSE 0 END AS is_expired
+             FROM credential_records cr
+             WHERE (?2 IS NULL OR cr.issuer_schema_id = ?2)
+             ORDER BY cr.updated_at DESC";
 
         let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
-        stmt.bind_values(binds).map_err(|err| map_db_err(&err))?;
-
+        stmt.bind_values(&[Value::Integer(now_i64), issuer_filter])
+            .map_err(|err| map_db_err(&err))?;
         while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
             records.push(map_record(&row)?);
         }
