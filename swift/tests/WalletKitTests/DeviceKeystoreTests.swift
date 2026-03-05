@@ -46,4 +46,25 @@ final class DeviceKeystoreTests: XCTestCase {
             )
         )
     }
+
+    func testReopenWithSameIdentityCanOpenCiphertext() throws {
+        let service = uniqueKeystoreService()
+        defer { deleteKeychainItem(service: service, account: account) }
+
+        let firstKeystore = TestIOSDeviceKeystore(service: service, account: account)
+        let secondKeystore = TestIOSDeviceKeystore(service: service, account: account)
+        let associatedData = Data("ad".utf8)
+        let plaintext = Data("hello".utf8)
+
+        let ciphertext = try firstKeystore.seal(
+            associatedData: associatedData,
+            plaintext: plaintext
+        )
+        let opened = try secondKeystore.openSealed(
+            associatedData: associatedData,
+            ciphertext: ciphertext
+        )
+
+        XCTAssertEqual(opened, plaintext)
+    }
 }

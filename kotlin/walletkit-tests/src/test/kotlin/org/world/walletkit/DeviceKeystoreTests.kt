@@ -27,4 +27,18 @@ class DeviceKeystoreTests {
             keystore.openSealed("ad-2".encodeToByteArray(), ciphertext)
         }
     }
+
+    @Test
+    fun reopenWithSameKeyMaterialCanOpenCiphertext() {
+        val keyBytes = randomKeystoreKeyBytes()
+        val firstKeystore = InMemoryDeviceKeystore(keyBytes)
+        val secondKeystore = InMemoryDeviceKeystore(keyBytes)
+        val associatedData = "ad".encodeToByteArray()
+        val plaintext = "hello".encodeToByteArray()
+
+        val ciphertext = firstKeystore.seal(associatedData, plaintext)
+        val opened = secondKeystore.openSealed(associatedData, ciphertext)
+
+        assertTrue(opened.contentEquals(plaintext))
+    }
 }

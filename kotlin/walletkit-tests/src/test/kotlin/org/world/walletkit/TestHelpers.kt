@@ -20,6 +20,8 @@ fun tempDirectory(): File {
     return dir
 }
 
+fun randomKeystoreKeyBytes(): ByteArray = ByteArray(32).also { SecureRandom().nextBytes(it) }
+
 fun sampleCredential(
     issuerSchemaId: ULong = 7UL,
     expiresAt: ULong = 1_800_000_000UL,
@@ -33,8 +35,10 @@ fun sampleCredential(
 
 fun sampleBlindingFactor(): FieldElement = FieldElement.fromU64(17UL)
 
-class InMemoryDeviceKeystore : DeviceKeystore {
-    private val keyBytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
+class InMemoryDeviceKeystore(
+    keyBytes: ByteArray = randomKeystoreKeyBytes(),
+) : DeviceKeystore {
+    private val keyBytes = keyBytes.copyOf()
 
     override fun seal(
         associatedData: ByteArray,
@@ -117,12 +121,12 @@ class FileBlobStore(
 
 class InMemoryStorageProvider(
     private val root: File,
+    private val keystoreImpl: DeviceKeystore = InMemoryDeviceKeystore(),
 ) : StorageProvider {
-    private val keystore = InMemoryDeviceKeystore()
     private val blobStore = FileBlobStore(File(root, "worldid"))
     private val paths = StoragePaths.fromRoot(root.absolutePath)
 
-    override fun keystore(): DeviceKeystore = keystore
+    override fun keystore(): DeviceKeystore = keystoreImpl
 
     override fun blobStore(): AtomicBlobStore = blobStore
 

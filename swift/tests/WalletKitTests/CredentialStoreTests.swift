@@ -57,6 +57,37 @@ final class CredentialStoreTests: XCTestCase {
         }
     }
 
+    func testInitIsIdempotentForSameLeafIndex() throws {
+        let root = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let service = uniqueKeystoreService()
+        defer { deleteKeychainItem(service: service, account: account) }
+
+        let store = try CredentialStore.newWithComponents(
+            paths: StoragePaths.fromRoot(root: root.path),
+            keystore: TestIOSDeviceKeystore(service: service, account: account),
+            blobStore: TestIOSAtomicBlobStore(
+                baseURL: root.appendingPathComponent("worldid", isDirectory: true)
+            )
+        )
+
+        try store.`init`(leafIndex: 42, now: 100)
+        let credentialId = try store.storeCredential(
+            credential: sampleCredential(),
+            blindingFactor: sampleBlindingFactor(),
+            expiresAt: 1_800_000_000,
+            associatedData: nil,
+            now: 100
+        )
+
+        try store.`init`(leafIndex: 42, now: 101)
+
+        let records = try store.listCredentials(issuerSchemaId: Optional<UInt64>.none, now: 102)
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0].credentialId, credentialId)
+    }
+
     func testStoreAndCacheFlows() throws {
         let root = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -141,5 +172,130 @@ final class CredentialStoreTests: XCTestCase {
         let filtered = try store.listCredentials(issuerSchemaId: 7, now: 102)
         XCTAssertEqual(filtered.count, 1)
         XCTAssertEqual(filtered[0].issuerSchemaId, 7)
+    }
+
+    func testExpiredCredentialsAreFilteredOut() throws {
+        let root = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let service = uniqueKeystoreService()
+        defer { deleteKeychainItem(service: service, account: account) }
+
+        let store = try CredentialStore.newWithComponents(
+            paths: StoragePaths.fromRoot(root: root.path),
+            keystore: TestIOSDeviceKeystore(service: service, account: account),
+            blobStore: TestIOSAtomicBlobStore(
+                baseURL: root.appendingPathComponent("worldid", isDirectory: true)
+            )
+        )
+
+        try store.`init`(leafIndex: 42, now: 100)
+        _ = try store.storeCredential(
+            credential: sampleCredential(issuerSchemaId: 7, expiresAt: 120),
+            blindingFactor: sampleBlindingFactor(),
+            expiresAt: 120,
+            associatedData: nil,
+            now: 100
+        )
+        _ = try store.storeCredential(
+            credential: sampleCredential(issuerSchemaId: 8, expiresAt: 1_800_000_000),
+            blindingFactor: sampleBlindingFactor(),
+            expiresAt: 1_800_000_000,
+            associatedData: nil,
+            now: 101
+        )
+
+        let records = try store.listCredentials(issuerSchemaId: Optional<UInt64>.none, now: 121)
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0].issuerSchemaId, 8)
+    }
+
+    func testStoragePathsMatchWorldIdLayout() throws {
+        let root = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let service = uniqueKeystoreService()
+        defer { deleteKeychainItem(service: service, account: account) }
+
+        let store = try CredentialStore.newWithComponents(
+            paths: StoragePaths.fromRoot(root: root.path),
+            keystore: TestIOSDeviceKeystore(service: service, account: account),
+            blobStore: TestIOSAtomicBlobStore(
+                baseURL: root.appendingPathComponent("worldid", isDirectory: true)
+            )
+        )
+
+        let paths = try store.storagePaths()
+        XCTAssertEqual(paths.rootPathString(), root.path)
+        XCTAssertTrue(paths.worldidDirPathString().hasSuffix("/worldid"))
+        XCTAssertTrue(paths.vaultDbPathString().hasSuffix("/worldid/account.vault.sqlite"))
+        XCTAssertTrue(paths.cacheDbPathString().hasSuffix("/worldid/account.cache.sqlite"))
+        XCTAssertTrue(paths.lockPathString().hasSuffix("/worldid/lock"))
+    }
+
+    func testMerkleCachePutRefreshesExistingEntry() throws {
+        let root = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let service = uniqueKeystoreService()
+        defer { deleteKeychainItem(service: service, account: account) }
+
+        let store = try CredentialStore.newWithComponents(
+            paths: StoragePaths.fromRoot(root: root.path),
+            keystore: TestIOSDeviceKeystore(service: service, account: account),
+            blobStore: TestIOSAtomicBlobStore(
+                baseURL: root.appendingPathComponent("worldid", isDirectory: true)
+            )
+        )
+
+        try store.`init`(leafIndex: 42, now: 100)
+        try store.merkleCachePut(proofBytes: Data([1, 2, 3]), now: 100, ttlSeconds: 10)
+        try store.merkleCachePut(proofBytes: Data([4, 5, 6]), now: 101, ttlSeconds: 60)
+
+        let cached = try store.merkleCacheGet(validUntil: 120)
+        XCTAssertEqual(cached, Data([4, 5, 6]))
+    }
+
+    func testReopenPersistsVaultAndCache() throws {
+        let root = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let service = uniqueKeystoreService()
+        defer { deleteKeychainItem(service: service, account: account) }
+
+        let firstStore = try CredentialStore.newWithComponents(
+            paths: StoragePaths.fromRoot(root: root.path),
+            keystore: TestIOSDeviceKeystore(service: service, account: account),
+            blobStore: TestIOSAtomicBlobStore(
+                baseURL: root.appendingPathComponent("worldid", isDirectory: true)
+            )
+        )
+        try firstStore.`init`(leafIndex: 42, now: 100)
+        let credentialId = try firstStore.storeCredential(
+            credential: sampleCredential(),
+            blindingFactor: sampleBlindingFactor(),
+            expiresAt: 1_800_000_000,
+            associatedData: nil,
+            now: 100
+        )
+        let proofBytes = Data([9, 9, 9])
+        try firstStore.merkleCachePut(proofBytes: proofBytes, now: 100, ttlSeconds: 60)
+
+        let reopenedStore = try CredentialStore.newWithComponents(
+            paths: StoragePaths.fromRoot(root: root.path),
+            keystore: TestIOSDeviceKeystore(service: service, account: account),
+            blobStore: TestIOSAtomicBlobStore(
+                baseURL: root.appendingPathComponent("worldid", isDirectory: true)
+            )
+        )
+        try reopenedStore.`init`(leafIndex: 42, now: 101)
+
+        let records = try reopenedStore.listCredentials(
+            issuerSchemaId: Optional<UInt64>.none,
+            now: 102
+        )
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records[0].credentialId, credentialId)
+        XCTAssertEqual(try reopenedStore.merkleCacheGet(validUntil: 120), proofBytes)
     }
 }
