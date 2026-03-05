@@ -22,6 +22,15 @@ final class AtomicBlobStoreTests: XCTestCase {
         let afterDelete = try store.read(path: path)
         XCTAssertNil(afterDelete)
     }
+
+    func testDeleteMissingFileIsNoOp() throws {
+        let root = makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = TestIOSAtomicBlobStore(baseURL: root)
+
+        XCTAssertNoThrow(try store.delete(path: "missing.bin"))
+    }
 }
 
 final class CredentialStoreTests: XCTestCase {
@@ -286,7 +295,7 @@ final class TestIOSAtomicBlobStore: AtomicBlobStore {
     func delete(path: String) throws {
         let url = baseURL.appendingPathComponent(path)
         guard fileManager.fileExists(atPath: url.path) else {
-            throw StorageError.BlobStore("delete failed: file not found")
+            return
         }
         do {
             try fileManager.removeItem(at: url)

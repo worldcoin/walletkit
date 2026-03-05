@@ -37,7 +37,7 @@ public final class IOSAtomicBlobStore: AtomicBlobStore {
     public func delete(path: String) throws {
         let url = baseURL.appendingPathComponent(path)
         guard fileManager.fileExists(atPath: url.path) else {
-            throw StorageError.BlobStore("delete failed: file not found")
+            return
         }
         do {
             try fileManager.removeItem(at: url)
