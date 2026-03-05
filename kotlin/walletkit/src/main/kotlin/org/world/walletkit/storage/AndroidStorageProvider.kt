@@ -4,9 +4,9 @@ import android.content.Context
 import java.io.File
 import uniffi.walletkit_core.AtomicBlobStore
 import uniffi.walletkit_core.DeviceKeystore
+import uniffi.walletkit_core.StorageException
 import uniffi.walletkit_core.StoragePaths
 import uniffi.walletkit_core.StorageProvider
-import uniffi.walletkit_core.StorageException
 
 class AndroidStorageProvider(
     private val rootDir: File,

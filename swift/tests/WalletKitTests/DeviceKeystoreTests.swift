@@ -11,7 +11,7 @@ final class DeviceKeystoreTests: XCTestCase {
         let service = uniqueKeystoreService()
         defer { deleteKeychainItem(service: service, account: account) }
 
-        let keystore = IOSDeviceKeystore(service: service, account: account)
+        let keystore = TestIOSDeviceKeystore(service: service, account: account)
         let associatedData = Data("ad".utf8)
         let plaintext = Data("hello".utf8)
 
@@ -31,7 +31,7 @@ final class DeviceKeystoreTests: XCTestCase {
         let service = uniqueKeystoreService()
         defer { deleteKeychainItem(service: service, account: account) }
 
-        let keystore = IOSDeviceKeystore(service: service, account: account)
+        let keystore = TestIOSDeviceKeystore(service: service, account: account)
         let plaintext = Data("secret".utf8)
 
         let ciphertext = try keystore.seal(

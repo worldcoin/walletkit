@@ -7,7 +7,7 @@ final class AtomicBlobStoreTests: XCTestCase {
         let root = makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let store = IOSAtomicBlobStore(baseURL: root)
+        let store = TestIOSAtomicBlobStore(baseURL: root)
         let path = "account_keys.bin"
         let payload = Data([1, 2, 3, 4])
 
