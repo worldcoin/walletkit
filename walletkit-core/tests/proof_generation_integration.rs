@@ -1,4 +1,3 @@
-#![cfg(feature = "storage")]
 #![allow(
     missing_docs,
     clippy::missing_errors_doc,
@@ -7,6 +6,7 @@
     clippy::similar_names,
     clippy::too_many_lines
 )]
+#![cfg(feature = "storage")]
 
 //! End-to-end integration test for `Authenticator::generate_proof` (World ID v4)
 //! using **staging infrastructure** (real OPRF nodes, indexer, gateway, on-chain registries).
