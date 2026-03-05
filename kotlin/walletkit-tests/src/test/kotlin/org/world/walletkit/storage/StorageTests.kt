@@ -6,13 +6,179 @@ import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFails
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import uniffi.walletkit_core.AtomicBlobStore
 import uniffi.walletkit_core.Credential
+import uniffi.walletkit_core.CredentialStore
 import uniffi.walletkit_core.DeviceKeystore
 import uniffi.walletkit_core.FieldElement
 import uniffi.walletkit_core.StorageException
 import uniffi.walletkit_core.StoragePaths
 import uniffi.walletkit_core.StorageProvider
+
+class AtomicBlobStoreTests {
+    @Test
+    fun writeReadDelete() {
+        val root = tempDirectory()
+        val store = FileBlobStore(root)
+        val path = "account_keys.bin"
+        val payload = byteArrayOf(1, 2, 3, 4)
+
+        store.writeAtomic(path, payload)
+        val readBack = store.read(path)
+        assertEquals(payload.toList(), readBack?.toList())
+
+        store.delete(path)
+        assertNull(store.read(path))
+
+        root.deleteRecursively()
+    }
+}
+
+class CredentialStoreTests {
+    @Test
+    fun methodsRequireInit() {
+        val root = tempDirectory()
+        val provider = InMemoryStorageProvider(root)
+        val store = CredentialStore.fromProviderArc(provider)
+
+        assertFailsWith<StorageException.NotInitialized> {
+            store.listCredentials(issuerSchemaId = null, now = 100UL)
+        }
+        assertFailsWith<StorageException.NotInitialized> {
+            store.merkleCacheGet(validUntil = 100UL)
+        }
+
+        root.deleteRecursively()
+    }
+
+    @Test
+    fun storeAndCacheFlows() {
+        val root = tempDirectory()
+        val provider = InMemoryStorageProvider(root)
+        val store = CredentialStore.fromProviderArc(provider)
+
+        store.`init`(leafIndex = 42UL, now = 100UL)
+        assertNull(store.merkleCacheGet(validUntil = 100UL))
+
+        val credentialId =
+            store.storeCredential(
+                credential = sampleCredential(),
+                blindingFactor = sampleBlindingFactor(),
+                expiresAt = 1_800_000_000UL,
+                associatedData = byteArrayOf(4, 5, 6),
+                now = 100UL,
+            )
+
+        val records = store.listCredentials(issuerSchemaId = null, now = 101UL)
+        assertEquals(1, records.size)
+        val record = records[0]
+        assertEquals(credentialId, record.credentialId)
+        assertEquals(7UL, record.issuerSchemaId)
+        assertEquals(1_800_000_000UL, record.expiresAt)
+
+        val proofBytes = byteArrayOf(9, 9, 9)
+        store.merkleCachePut(
+            proofBytes = proofBytes,
+            now = 100UL,
+            ttlSeconds = 60UL,
+        )
+        val cached =
+            store.merkleCacheGet(
+                validUntil = 110UL,
+            )
+        assertContentEquals(proofBytes, assertNotNull(cached))
+        val expired = store.merkleCacheGet(validUntil = 161UL)
+        assertNull(expired)
+
+        root.deleteRecursively()
+    }
+
+    @Test
+    fun reopenPersistsVaultAndCache() {
+        val root = tempDirectory()
+        val keyBytes = randomKeystoreKeyBytes()
+        val firstStore =
+            CredentialStore.fromProviderArc(
+                InMemoryStorageProvider(root, InMemoryDeviceKeystore(keyBytes)),
+            )
+
+        firstStore.`init`(leafIndex = 42UL, now = 100UL)
+        val credentialId =
+            firstStore.storeCredential(
+                credential = sampleCredential(),
+                blindingFactor = sampleBlindingFactor(),
+                expiresAt = 1_800_000_000UL,
+                associatedData = null,
+                now = 100UL,
+            )
+        val proofBytes = byteArrayOf(9, 9, 9)
+        firstStore.merkleCachePut(
+            proofBytes = proofBytes,
+            now = 100UL,
+            ttlSeconds = 60UL,
+        )
+
+        val reopenedStore =
+            CredentialStore.fromProviderArc(
+                InMemoryStorageProvider(root, InMemoryDeviceKeystore(keyBytes)),
+            )
+        reopenedStore.`init`(leafIndex = 42UL, now = 101UL)
+
+        val records = reopenedStore.listCredentials(issuerSchemaId = null, now = 102UL)
+        assertEquals(1, records.size)
+        assertEquals(credentialId, records.single().credentialId)
+        assertContentEquals(proofBytes, assertNotNull(reopenedStore.merkleCacheGet(validUntil = 120UL)))
+
+        root.deleteRecursively()
+    }
+}
+
+class DeviceKeystoreTests {
+    @Test
+    fun sealAndOpenRoundTrip() {
+        val keystore = InMemoryDeviceKeystore()
+        val associatedData = "ad".encodeToByteArray()
+        val plaintext = "hello".encodeToByteArray()
+
+        val ciphertext = keystore.seal(associatedData, plaintext)
+        val opened = keystore.openSealed(associatedData, ciphertext)
+
+        assertTrue(opened.contentEquals(plaintext))
+    }
+
+    @Test
+    fun associatedDataMismatchFails() {
+        val keystore = InMemoryDeviceKeystore()
+        val plaintext = "secret".encodeToByteArray()
+        val ciphertext = keystore.seal("ad-1".encodeToByteArray(), plaintext)
+
+        assertFails {
+            keystore.openSealed("ad-2".encodeToByteArray(), ciphertext)
+        }
+    }
+
+    @Test
+    fun reopenWithSameKeyMaterialCanOpenCiphertext() {
+        val keyBytes = randomKeystoreKeyBytes()
+        val firstKeystore = InMemoryDeviceKeystore(keyBytes)
+        val secondKeystore = InMemoryDeviceKeystore(keyBytes)
+        val associatedData = "ad".encodeToByteArray()
+        val plaintext = "hello".encodeToByteArray()
+
+        val ciphertext = firstKeystore.seal(associatedData, plaintext)
+        val opened = secondKeystore.openSealed(associatedData, ciphertext)
+
+        assertTrue(opened.contentEquals(plaintext))
+    }
+}
 
 fun tempDirectory(): File {
     val dir = File(System.getProperty("java.io.tmpdir"), "walletkit-tests-${UUID.randomUUID()}")
