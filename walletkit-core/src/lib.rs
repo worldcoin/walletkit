@@ -1,14 +1,45 @@
 //! `walletkit-core` contains the basic primitives for using a World ID.
 //! It enables basic usage of a World ID to generate ZKPs using different credentials.
 //!
-//! # Examples
-//! ```rust
-//! use walletkit_core::{proof::ProofContext, CredentialType, Environment, world_id::WorldId};
-//! async fn example() {
-//!     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
-//!     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Orb);
-//!     let proof = world_id.generate_proof(&context).await.unwrap();
-//!     println!("{}", proof.to_json().unwrap()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
+//! # Example
+//!
+//! ```rust,no_run
+//! use std::sync::Arc;
+//! use walletkit_core::requests::ProofRequest;
+//! use walletkit_core::storage::{
+//!     cache_embedded_groth16_material, CredentialStore, StoragePaths,
+//! };
+//! use walletkit_core::{Authenticator, Environment};
+//!
+//! /// Platform layer provides a [`CredentialStore`] backed by a
+//! /// device-specific [`StorageProvider`](walletkit_core::storage::StorageProvider).
+//! async fn generate_world_id_proof(
+//!     store: Arc<CredentialStore>,
+//! ) -> Result<(), Box<dyn std::error::Error>> {
+//!     // Cache Groth16 proving material to disk (idempotent).
+//!     let paths = Arc::new(StoragePaths::from_root("/data/walletkit".into()));
+//!     cache_embedded_groth16_material(paths.clone())?;
+//!
+//!     // Initialize an authenticator for an already-registered World ID.
+//!     let seed = b"my_secret_seed_at_length_32_bytes!";
+//!     let authenticator = Authenticator::init_with_defaults(
+//!         seed,
+//!         None, // uses default RPC URL
+//!         &Environment::Staging,
+//!         None, // uses default region
+//!         paths,
+//!         store,
+//!     )
+//!     .await?;
+//!
+//!     // Parse an incoming proof request from a relying party.
+//!     let json = r#"{ "id": "req_01", "version": 1, "credentials": [] }"#;
+//!     let request = ProofRequest::from_json(json)?;
+//!
+//!     // Generate a zero-knowledge proof and serialise the response.
+//!     let response = authenticator.generate_proof(&request, None).await?;
+//!     println!("{}", response.to_json()?);
+//!     Ok(())
 //! }
 //! ```
 
@@ -89,6 +120,16 @@ pub mod requests;
 pub mod issuers;
 
 /// Legacy World ID 3.0 Proofs
+///
+/// # Example
+/// ```rust
+/// use walletkit_core::{proof::ProofContext, CredentialType, Environment, world_id::WorldId};
+/// async fn example() {
+///     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Orb);
+///     let proof = world_id.generate_proof(&context).await.unwrap();
+///     println!("{}", proof.to_json().unwrap()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
+/// }
 #[cfg(feature = "v3")]
 pub mod v3;
 
@@ -96,6 +137,7 @@ pub mod v3;
 // Private modules
 ////////////////////////////////////////////////////////////////////////////////
 
+#[cfg(any(feature = "issuers", feature = "storage"))]
 mod http_request;
 pub(crate) mod primitives;
 

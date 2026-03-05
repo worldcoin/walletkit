@@ -1,7 +1,6 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
 use alloy_primitives::Address;
-use rand::rngs::OsRng;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
@@ -21,6 +20,9 @@ use crate::{
     requests::{ProofRequest, ProofResponse},
     Environment, FieldElement, Region, U256Wrapper,
 };
+
+#[cfg(feature = "storage")]
+use rand::rngs::OsRng;
 
 #[cfg(feature = "storage")]
 mod with_storage;
@@ -520,6 +522,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_init_with_config_and_storage() {
+        // Install default crypto provider for rustls
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let mut mock_server = mockito::Server::new_async().await;
 
         // Mock eth_call to return account data indicating account exists
