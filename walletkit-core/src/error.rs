@@ -48,7 +48,7 @@ pub enum WalletKitError {
     },
 
     /// Unhandled error generating a Zero-Knowledge Proof
-    #[error("proof_generation_error")]
+    #[error("proof_generation_error: {error}")]
     ProofGeneration {
         /// The error message from the proof generation
         error: String,
@@ -194,6 +194,10 @@ impl From<AuthenticatorError> for WalletKitError {
                 status: Some(status.as_u16()),
             },
             AuthenticatorError::PrimitiveError(error) => Self::from(error),
+
+            AuthenticatorError::ProofError(error) => Self::ProofGeneration {
+                error: error.to_string(),
+            },
 
             _ => Self::AuthenticatorError {
                 error: error.to_string(),
