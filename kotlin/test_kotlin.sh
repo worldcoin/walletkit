@@ -13,7 +13,9 @@ YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KOTLIN_DIR="$ROOT_DIR/kotlin"
+
+TEST_RESULTS_DIR="$ROOT_DIR/kotlin/walletkit-tests/build/test-results/test"
+rm -rf "$TEST_RESULTS_DIR"
 
 cd "$ROOT_DIR"
 
@@ -43,10 +45,7 @@ echo -e "${BLUE}🔨 Step 1: Building Kotlin bindings with build_kotlin.sh${NC}"
 echo -e "${GREEN}✅ Kotlin bindings built${NC}"
 
 echo -e "${BLUE}📦 Step 2: Setting up Gradle test environment${NC}"
-cd "$KOTLIN_DIR"
-
-TEST_RESULTS_DIR="$(pwd -P)/walletkit-tests/build/test-results/test"
-rm -rf "$TEST_RESULTS_DIR"
+cd "$ROOT_DIR/kotlin"
 
 # Generate Gradle wrapper if missing
 if [ ! -f "gradlew" ]; then
@@ -77,9 +76,7 @@ echo ""
 echo -e "${BLUE}🧪 Step 3: Running Kotlin tests with verbose output...${NC}"
 echo ""
 
-# Avoid reusing configuration cache entries from a different checkout, which can
-# redirect build outputs away from the current workspace and hide successful runs.
-./gradlew --no-daemon --no-configuration-cache walletkit-tests:test --info --continue
+./gradlew --no-daemon walletkit-tests:test --info --continue
 
 echo ""
 echo "📊 Test Results Summary:"

@@ -33,6 +33,8 @@ class LoggingTests {
         initLogging(logger, LogLevel.INFO)
         emitLog(LogLevel.INFO, "bridge test")
 
+        // Log delivery happens on a dedicated background thread, so give it
+        // a moment to flush through the channel.
         Thread.sleep(50)
 
         val entries = logger.snapshot()
