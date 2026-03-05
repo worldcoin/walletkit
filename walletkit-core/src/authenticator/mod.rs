@@ -341,6 +341,7 @@ impl Authenticator {
         let credential_list = self.store.list_credentials(None, now)?;
         let credential_list = credential_list
             .into_iter()
+            .filter(|cred| !cred.is_expired)
             .map(|cred| cred.issuer_schema_id)
             .collect::<std::collections::HashSet<_>>();
         let credentials_to_prove = proof_request

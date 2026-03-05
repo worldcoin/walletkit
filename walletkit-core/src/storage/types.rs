@@ -56,6 +56,10 @@ pub struct CredentialRecord {
     pub issuer_schema_id: u64,
     /// Expiry timestamp (seconds).
     pub expires_at: u64,
+    /// Whether the credential is expired at query time (`now >= expires_at`).
+    ///
+    /// This value is computed when listing credentials and is not persisted.
+    pub is_expired: bool,
 }
 
 /// FFI-friendly replay guard result kind.
