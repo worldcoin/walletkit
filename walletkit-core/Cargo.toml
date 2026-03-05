@@ -29,11 +29,11 @@ ctor = "0.2"
 hex = "0.4"
 hkdf = { version = "0.12", optional = true }
 log = "0.4"
-rand = { version = "0.8" }
-reqwest = { version = "0.13", default-features = false, features = [
+rand = { version = "0.8", optional = true }
+reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "brotli",
-  "rustls",
+  "rustls-tls",
 ] }
 ruint = { version = "1.17", default-features = false, features = [
   "alloc",
@@ -49,26 +49,20 @@ strum = { version = "0.27", features = ["derive"] }
 subtle = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["sync"] }
+tracing = "0.1"
+tracing-log = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zeroize = "1"
 uuid = { version = "1.10", features = ["v4"], optional = true }
 uniffi = { workspace = true, features = ["build", "tokio"] }
+taceo-oprf = { version = "0.7", default-features = false, features = ["client"] }
 world-id-core = { workspace = true, features = [
   "authenticator",
   "embed-zkeys",
   "zstd-compress-zkeys",
 ] }
 ciborium = { version = "0.2.2", optional = true }
-
-# for Android, OpenSSL gets bundled through openssl-sys
-[target.'cfg(target_os = "android")'.dependencies]
-rusqlite = { version = "0.32", default-features = false, features = [
-  "bundled-sqlcipher-vendored-openssl",
-], optional = true }
-
-[target.'cfg(not(target_os = "android"))'.dependencies]
-rusqlite = { version = "0.32", default-features = false, features = [
-  "bundled-sqlcipher",
-], optional = true }
+walletkit-db = { path = "../walletkit-db", optional = true }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [
@@ -85,11 +79,11 @@ eyre = "0.6"
 mockito = "1.6"
 regex = "1.11"
 rustls = { version = "0.23", features = ["ring"] }
-taceo-oprf = { version = "0.5", default-features = false }
+taceo-oprf = { version = "0.7", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+rand = "0.8"
 [features]
 default = ["issuers", "storage"]
 
@@ -98,7 +92,14 @@ default = ["issuers", "storage"]
 # ship with compressed keys. But this is disabled for tests.
 compress-zkeys = ["world-id-core/compress-zkeys"]
 issuers = ["dep:base64"]
-storage = ["dep:ciborium", "dep:hkdf", "dep:rusqlite", "dep:sha2", "dep:uuid"]
+storage = [
+    "dep:ciborium",
+    "dep:hkdf",
+    "dep:rand",
+    "dep:sha2",
+    "dep:uuid",
+    "dep:walletkit-db",
+]
 
 # SECTION: V3 Feature Flags
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
@@ -108,6 +109,9 @@ semaphore = ["semaphore-rs/depth_30"]
 v3 = ["semaphore", "legacy-nullifiers"]
 
 
+
+[lints]
+workspace = true
 
 [package.metadata.docs.rs]
 no-default-features = true

@@ -80,7 +80,7 @@ pub enum WalletKitError {
     UnauthorizedAuthenticator,
 
     /// An unexpected error occurred with the Authenticator
-    #[error("unexpected_authenticator_error")]
+    #[error("unexpected_authenticator_error: {error}")]
     AuthenticatorError {
         /// The error message from the authenticator
         error: String,
@@ -114,6 +114,19 @@ pub enum WalletKitError {
     #[error("groth16_material_embedded_load")]
     Groth16MaterialEmbeddedLoad {
         /// Underlying error message.
+        error: String,
+    },
+
+    /// Not enough OPRF nodes responded during nullifier generation
+    ///
+    /// # TODO
+    /// This is a temporary variant to capture all errors from OPRF nodes until
+    /// typed errors are rolled out from OPRF nodes.
+    #[error("nullifier_generation_failed: {error}")]
+    NullifierGenerationFailed {
+        /// The error message from the OPRF client.
+        ///
+        /// This is likely to be a list of errors from each OPRF node.
         error: String,
     },
 
@@ -176,6 +189,18 @@ impl From<StorageError> for WalletKitError {
 impl From<AuthenticatorError> for WalletKitError {
     fn from(error: AuthenticatorError) -> Self {
         match error {
+            AuthenticatorError::ProofError(
+                world_id_core::proof::ProofError::OprfError(
+                    taceo_oprf::client::Error::NotEnoughOprfResponses(
+                        threshold,
+                        ref errors,
+                    ),
+                ),
+            ) => Self::NullifierGenerationFailed {
+                error: format!(
+                    "Could not reach {threshold} OPRF responses: {errors:?}"
+                ),
+            },
             AuthenticatorError::AccountDoesNotExist => Self::AccountDoesNotExist,
             AuthenticatorError::AccountAlreadyExists => Self::AccountAlreadyExists,
 

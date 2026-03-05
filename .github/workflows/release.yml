@@ -135,8 +135,11 @@ jobs:
 
   prepare-kotlin:
     name: Prepare Kotlin
-    runs-on: ubuntu-22.04-32core
+    runs-on: arc-public-8xlarge-amd64-runner
     needs: [pre-release-checks]
+    env:
+      CARGO_HOME: /home/runner/_work/_cargo
+      RUSTUP_HOME: /home/runner/_work/_rustup
     permissions:
       contents: write # to upload artifacts
 
@@ -151,6 +154,9 @@ jobs:
           - target: i686-linux-android
 
     steps:
+      - name: Add Cargo to PATH
+        run: echo "$CARGO_HOME/bin" >> $GITHUB_PATH
+
       - name: Checkout code
         uses: actions/checkout@v6
         with:

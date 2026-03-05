@@ -1,4 +1,12 @@
 #![cfg(feature = "storage")]
+#![allow(
+    missing_docs,
+    clippy::missing_errors_doc,
+    clippy::missing_panics_doc,
+    clippy::must_use_candidate,
+    clippy::similar_names,
+    clippy::too_many_lines
+)]
 
 //! End-to-end integration test for `Authenticator::generate_proof` (World ID v4)
 //! using **staging infrastructure** (real OPRF nodes, indexer, gateway, on-chain registries).
@@ -9,7 +17,7 @@
 //! - Staging OPRF key-gen must have picked up both registrations
 //!
 //! Run with:
-//!   cargo test --test proof_generation_integration --features default -- --ignored
+//!   `cargo test --test proof_generation_integration --features default -- --ignored`
 
 mod common;
 
@@ -49,12 +57,12 @@ const RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
 /// Issuer schema ID registered on the staging `CredentialSchemaIssuerRegistry`.
 const ISSUER_SCHEMA_ID: u64 = 47;
 
-/// EdDSA private key (32 bytes) for the registered issuer.
+/// `EdDSA` private key (32 bytes) for the registered issuer.
 const ISSUER_EDDSA_KEY: [u8; 32] = alloy::primitives::hex!(
     "1111111111111111111111111111111111111111111111111111111111111111"
 );
 
-/// WorldIDVerifier proxy contract address on staging (World Chain Mainnet 480).
+/// `WorldIDVerifier` proxy contract address on staging (World Chain Mainnet 480).
 const WORLD_ID_VERIFIER: alloy::primitives::Address =
     alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
 

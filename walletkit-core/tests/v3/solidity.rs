@@ -1,3 +1,5 @@
+#![allow(missing_docs, clippy::cast_sign_loss)]
+
 #[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
 use alloy::primitives::Address;
 use alloy::{

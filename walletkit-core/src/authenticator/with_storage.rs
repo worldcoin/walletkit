@@ -58,7 +58,7 @@ impl Authenticator {
             self.store
                 .merkle_cache_put(payload, now, MERKLE_PROOF_VALIDITY_SECONDS)
         {
-            log::error!("Failed to cache Merkle inclusion proof: {e}");
+            tracing::error!("Failed to cache Merkle inclusion proof: {e}");
         }
 
         Ok((inclusion_proof, authenticator_keyset))

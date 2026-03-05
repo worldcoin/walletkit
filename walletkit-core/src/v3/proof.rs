@@ -1,13 +1,11 @@
 use crate::{error::WalletKitError, U256Wrapper};
 
 use alloy_core::sol_types::SolValue;
+#[cfg(feature = "semaphore")]
+use semaphore_rs::protocol::{generate_nullifier_hash, generate_proof};
 use semaphore_rs::{
-    hash_to_field, identity,
-    packed_proof::PackedProof,
-    protocol::{generate_nullifier_hash, generate_proof, Proof},
+    hash_to_field, identity, packed_proof::PackedProof, protocol::Proof, MODULUS,
 };
-
-use semaphore_rs::MODULUS;
 
 use serde::Serialize;
 
@@ -321,15 +319,13 @@ impl ProofOutput {
 ///
 /// # Errors
 /// Returns an error if proof generation fails
+#[cfg(feature = "semaphore")]
 pub fn generate_proof_with_semaphore_identity(
     identity: &identity::Identity,
     merkle_tree_proof: &MerkleTreeProof,
     context: &ProofContext,
 ) -> Result<ProofOutput, WalletKitError> {
-    #[cfg(not(feature = "semaphore"))]
-    return Err(WalletKitError::SemaphoreNotEnabled);
-
-    let merkle_root = merkle_tree_proof.merkle_root; // clone the value
+    let merkle_root = merkle_tree_proof.merkle_root;
 
     let external_nullifier_hash = context.external_nullifier.into();
     let nullifier_hash =
@@ -349,6 +345,21 @@ pub fn generate_proof_with_semaphore_identity(
         proof: PackedProof::from(proof),
         credential_type: context.credential_type,
     })
+}
+
+/// Generates a Semaphore ZKP for a specific Semaphore identity using the relevant provided context.
+///
+/// **Requires the `semaphore` feature flag.**
+///
+/// # Errors
+/// Returns `SemaphoreNotEnabled` when the `semaphore` feature is not enabled.
+#[cfg(not(feature = "semaphore"))]
+pub const fn generate_proof_with_semaphore_identity(
+    _identity: &identity::Identity,
+    _merkle_tree_proof: &MerkleTreeProof,
+    _context: &ProofContext,
+) -> Result<ProofOutput, WalletKitError> {
+    Err(WalletKitError::SemaphoreNotEnabled)
 }
 
 #[cfg(test)]

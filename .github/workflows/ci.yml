@@ -36,8 +36,14 @@ jobs:
       - name: Check code formatting
         run: cargo fmt -- --check
 
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features
+      - name: Run clippy (all features)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run clippy (default features)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run clippy (no default features)
+        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
   swift-build-and-test:
     name: Swift Build & Foreign Binding Tests
@@ -75,7 +81,7 @@ jobs:
 
   kotlin-build-and-test:
     name: Kotlin Build & Foreign Binding Tests
-    runs-on: ubuntu-latest
+    runs-on: arc-public-8xlarge-amd64-runner # uses the same runner as the release workflow to ensure consistency
     permissions:
       contents: read
 
@@ -88,8 +94,11 @@ jobs:
         with:
           toolchain: 1.92.0
 
-      - name: Build and test Kotlin bindings
-        run: ./kotlin/test_kotlin.sh
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
 
       - name: Install ktlint
         run: |
@@ -97,13 +106,16 @@ jobs:
           chmod a+x ktlint &&
           sudo mv ktlint /usr/local/bin/
 
+      - name: Build and test Kotlin bindings
+        run: ./kotlin/test_kotlin.sh
+
       - name: Lint Kotlin Tests
         run: |
           ktlint kotlin/walletkit-tests/src/test/kotlin
 
   test:
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on: arc-public-xlarge-arm64-runner
     permissions:
       contents: read
 
