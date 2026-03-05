@@ -2,102 +2,28 @@
 
 use std::sync::{Arc, Mutex};
 
+use world_id_core::FieldElement as CoreFieldElement;
+
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
-use super::types::{
-    CredentialId, CredentialRecord, CredentialRecordFfi, CredentialStatus, Nullifier,
-    ProofDisclosureResult, ProofDisclosureResultFfi, RequestId,
-};
+use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
-
-/// Public-facing storage API used by `WalletKit` v4 flows.
-pub trait CredentialStorage {
-    /// Initializes storage and validates the account leaf index.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if storage initialization fails or the leaf index is invalid.
-    fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()>;
-
-    /// Lists active credentials, optionally filtered by issuer schema ID.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the credential query fails.
-    fn list_credentials(
-        &self,
-        issuer_schema_id: Option<u64>,
-        now: u64,
-    ) -> StorageResult<Vec<CredentialRecord>>;
-
-    /// Stores a credential and optional associated data.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the credential cannot be stored.
-    #[allow(clippy::too_many_arguments)]
-    fn store_credential(
-        &mut self,
-        issuer_schema_id: u64,
-        status: CredentialStatus,
-        subject_blinding_factor: [u8; 32],
-        genesis_issued_at: u64,
-        expires_at: Option<u64>,
-        credential_blob: Vec<u8>,
-        associated_data: Option<Vec<u8>>,
-        now: u64,
-    ) -> StorageResult<CredentialId>;
-
-    /// Fetches a cached Merkle proof if available.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the cache lookup fails.
-    fn merkle_cache_get(
-        &self,
-        registry_kind: u8,
-        root: [u8; 32],
-        now: u64,
-    ) -> StorageResult<Option<Vec<u8>>>;
-
-    /// Inserts a cached Merkle proof with a TTL.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the cache insert fails.
-    fn merkle_cache_put(
-        &mut self,
-        registry_kind: u8,
-        root: [u8; 32],
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<()>;
-
-    /// Enforces replay safety for proof disclosure.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the nullifier is already disclosed or the cache
-    /// operation fails.
-    fn begin_proof_disclosure(
-        &mut self,
-        request_id: RequestId,
-        nullifier: Nullifier,
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<ProofDisclosureResult>;
-}
+use crate::{Credential, FieldElement};
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
-#[derive(uniffi::Object)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
+}
+
+impl std::fmt::Debug for CredentialStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialStore").finish()
+    }
 }
 
 struct CredentialStoreInner {
@@ -164,14 +90,14 @@ impl CredentialStoreInner {
     }
 }
 
-#[uniffi::export]
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
 impl CredentialStore {
     /// Creates a new storage handle from explicit components.
     ///
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     pub fn new_with_components(
         paths: Arc<StoragePaths>,
         keystore: Arc<dyn DeviceKeystore>,
@@ -189,7 +115,7 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[uniffi::constructor]
+    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn from_provider_arc(
         provider: Arc<dyn StorageProvider>,
@@ -219,7 +145,7 @@ impl CredentialStore {
         inner.init(leaf_index, now)
     }
 
-    /// Lists active credentials, optionally filtered by issuer schema ID.
+    /// Lists active credential metadata, optionally filtered by issuer schema ID.
     ///
     /// # Errors
     ///
@@ -228,9 +154,8 @@ impl CredentialStore {
         &self,
         issuer_schema_id: Option<u64>,
         now: u64,
-    ) -> StorageResult<Vec<CredentialRecordFfi>> {
-        let records = self.lock_inner()?.list_credentials(issuer_schema_id, now)?;
-        Ok(records.into_iter().map(CredentialRecordFfi::from).collect())
+    ) -> StorageResult<Vec<CredentialRecord>> {
+        self.lock_inner()?.list_credentials(issuer_schema_id, now)
     }
 
     /// Stores a credential and optional associated data.
@@ -238,49 +163,30 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the credential cannot be stored.
-    #[allow(clippy::too_many_arguments)]
     pub fn store_credential(
         &self,
-        issuer_schema_id: u64,
-        status: CredentialStatus,
-        subject_blinding_factor: Vec<u8>,
-        genesis_issued_at: u64,
-        expires_at: Option<u64>,
-        credential_blob: Vec<u8>,
+        credential: &Credential,
+        blinding_factor: &FieldElement,
+        expires_at: u64,
         associated_data: Option<Vec<u8>>,
         now: u64,
-    ) -> StorageResult<Vec<u8>> {
-        let subject_blinding_factor = parse_fixed_bytes::<32>(
-            subject_blinding_factor,
-            "subject_blinding_factor",
-        )?;
-        let credential_id = self.lock_inner()?.store_credential(
-            issuer_schema_id,
-            status,
-            subject_blinding_factor,
-            genesis_issued_at,
+    ) -> StorageResult<u64> {
+        self.lock_inner()?.store_credential(
+            credential,
+            blinding_factor,
             expires_at,
-            credential_blob,
             associated_data,
             now,
-        )?;
-        Ok(credential_id.to_vec())
+        )
     }
 
-    /// Fetches a cached Merkle proof if available.
+    /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
     ///
     /// # Errors
     ///
     /// Returns an error if the cache lookup fails.
-    pub fn merkle_cache_get(
-        &self,
-        registry_kind: u8,
-        root: Vec<u8>,
-        now: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        let root = parse_fixed_bytes::<32>(root, "root")?;
-        self.lock_inner()?
-            .merkle_cache_get(registry_kind, root, now)
+    pub fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
+        self.lock_inner()?.merkle_cache_get(valid_until)
     }
 
     /// Inserts a cached Merkle proof with a TTL.
@@ -290,60 +196,16 @@ impl CredentialStore {
     /// Returns an error if the cache insert fails.
     pub fn merkle_cache_put(
         &self,
-        registry_kind: u8,
-        root: Vec<u8>,
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        let root = parse_fixed_bytes::<32>(root, "root")?;
-        self.lock_inner()?.merkle_cache_put(
-            registry_kind,
-            root,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
-    }
-
-    /// Enforces replay safety for proof disclosure.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the disclosure conflicts or storage fails.
-    pub fn begin_proof_disclosure(
-        &self,
-        request_id: Vec<u8>,
-        nullifier: Vec<u8>,
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<ProofDisclosureResultFfi> {
-        let request_id = parse_fixed_bytes::<32>(request_id, "request_id")?;
-        let nullifier = parse_fixed_bytes::<32>(nullifier, "nullifier")?;
-        let result = self.lock_inner()?.begin_proof_disclosure(
-            request_id,
-            nullifier,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )?;
-        Ok(ProofDisclosureResultFfi::from(result))
+        self.lock_inner()?
+            .merkle_cache_put(proof_bytes, now, ttl_seconds)
     }
 }
 
-fn parse_fixed_bytes<const N: usize>(
-    bytes: Vec<u8>,
-    label: &str,
-) -> StorageResult<[u8; N]> {
-    bytes.try_into().map_err(|bytes: Vec<u8>| {
-        StorageError::Serialization(format!(
-            "{label} length mismatch: expected {N}, got {}",
-            bytes.len()
-        ))
-    })
-}
-
+/// Implementation not exposed to foreign bindings
 impl CredentialStore {
     fn lock_inner(
         &self,
@@ -352,9 +214,54 @@ impl CredentialStore {
             .lock()
             .map_err(|_| StorageError::Lock("storage mutex poisoned".to_string()))
     }
+
+    /// Retrieves a full credential including raw bytes by issuer schema ID.
+    ///
+    /// Returns the most recent non-expired credential matching the issuer schema ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the credential query fails.
+    pub fn get_credential(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<(Credential, FieldElement)>> {
+        self.lock_inner()?.get_credential(issuer_schema_id, now)
+    }
+
+    /// Checks whether a replay guard entry exists for the given nullifier.
+    ///
+    /// # Returns
+    /// - bool: true if a replay guard entry exists (hence signalling a nullifier replay), false otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    pub fn is_nullifier_replay(
+        &self,
+        nullifier: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<bool> {
+        self.lock_inner()?.is_nullifier_replay(nullifier, now)
+    }
+
+    /// After a proof has been successfully generated, creates a replay guard entry
+    /// locally to avoid future replays of the same nullifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    pub fn replay_guard_set(
+        &self,
+        nullifier: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<()> {
+        self.lock_inner()?.replay_guard_set(nullifier, now)
+    }
 }
 
-impl CredentialStorage for CredentialStoreInner {
+impl CredentialStoreInner {
     fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
         let guard = self.guard()?;
         if let Some(state) = &mut self.state {
@@ -369,10 +276,9 @@ impl CredentialStorage for CredentialStoreInner {
             &guard,
             now,
         )?;
-        let vault =
-            VaultDb::new(&self.paths.vault_db_path(), keys.intermediate_key(), &guard)?;
-        let cache =
-            CacheDb::new(&self.paths.cache_db_path(), keys.intermediate_key(), &guard)?;
+        let k_intermediate = keys.intermediate_key();
+        let vault = VaultDb::new(&self.paths.vault_db_path(), &k_intermediate, &guard)?;
+        let cache = CacheDb::new(&self.paths.cache_db_path(), &k_intermediate, &guard)?;
         let mut state = StorageState {
             keys,
             vault,
@@ -393,23 +299,59 @@ impl CredentialStorage for CredentialStoreInner {
         state.vault.list_credentials(issuer_schema_id, now)
     }
 
+    fn get_credential(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<(Credential, FieldElement)>> {
+        let state = self.state()?;
+        if let Some((credential_bytes, blinding_factor_bytes)) = state
+            .vault
+            .fetch_credential_and_blinding_factor(issuer_schema_id, now)?
+        {
+            let credential = Credential::from_bytes(credential_bytes).map_err(|e| {
+                StorageError::Serialization(format!(
+                    "Critical. Failed to deserialize credential: {e}"
+                ))
+            })?;
+
+            let blinding_factor = CoreFieldElement::from_be_bytes(
+                &blinding_factor_bytes.try_into().map_err(|_| {
+                    StorageError::Serialization(
+                        "Critical. Blinding factor has invalid length".to_string(),
+                    )
+                })?,
+            )
+            .map_err(|e| {
+                StorageError::Serialization(format!(
+                    "Critical. Failed to deserialize blinding factor: {e}"
+                ))
+            })?;
+            return Ok(Some((credential, blinding_factor.into())));
+        }
+        Ok(None)
+    }
+
     fn store_credential(
         &mut self,
-        issuer_schema_id: u64,
-        status: CredentialStatus,
-        subject_blinding_factor: [u8; 32],
-        genesis_issued_at: u64,
-        expires_at: Option<u64>,
-        credential_blob: Vec<u8>,
+        credential: &Credential,
+        blinding_factor: &FieldElement,
+        expires_at: u64,
         associated_data: Option<Vec<u8>>,
         now: u64,
-    ) -> StorageResult<CredentialId> {
+    ) -> StorageResult<u64> {
+        let issuer_schema_id = credential.issuer_schema_id();
+        let genesis_issued_at = credential.genesis_issued_at();
+        let credential_blob = credential
+            .to_bytes()
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        let subject_blinding_factor = blinding_factor.to_bytes();
+
         let guard = self.guard()?;
         let state = self.state_mut()?;
         state.vault.store_credential(
             &guard,
             issuer_schema_id,
-            status,
             subject_blinding_factor,
             genesis_issued_at,
             expires_at,
@@ -419,57 +361,57 @@ impl CredentialStorage for CredentialStoreInner {
         )
     }
 
-    fn merkle_cache_get(
-        &self,
-        registry_kind: u8,
-        root: [u8; 32],
-        now: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
+    fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
         let state = self.state()?;
-        state
-            .cache
-            .merkle_cache_get(registry_kind, root, state.leaf_index, now)
+        state.cache.merkle_cache_get(valid_until)
     }
 
     fn merkle_cache_put(
         &mut self,
-        registry_kind: u8,
-        root: [u8; 32],
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
         let guard = self.guard()?;
         let state = self.state_mut()?;
-        state.cache.merkle_cache_put(
-            &guard,
-            registry_kind,
-            root,
-            state.leaf_index,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
+        state
+            .cache
+            .merkle_cache_put(&guard, proof_bytes, now, ttl_seconds)
     }
 
-    fn begin_proof_disclosure(
-        &mut self,
-        request_id: RequestId,
-        nullifier: Nullifier,
-        proof_bytes: Vec<u8>,
+    /// Checks whether a replay guard entry exists for the given nullifier.
+    ///
+    /// # Returns
+    /// - bool: true if a replay guard entry exists (hence signalling a nullifier replay), false otherwise.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    fn is_nullifier_replay(
+        &self,
+        nullifier: CoreFieldElement,
         now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<ProofDisclosureResult> {
+    ) -> StorageResult<bool> {
+        let nullifier = nullifier.to_be_bytes();
+        let state = self.state()?;
+        state.cache.is_nullifier_replay(nullifier, now)
+    }
+
+    /// After a proof has been successfully generated, creates a replay guard entry
+    /// locally to avoid future replays of the same nullifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    fn replay_guard_set(
+        &mut self,
+        nullifier: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<()> {
         let guard = self.guard()?;
+        let nullifier = nullifier.to_be_bytes();
         let state = self.state_mut()?;
-        state.cache.begin_proof_disclosure(
-            &guard,
-            request_id,
-            nullifier,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
+        state.cache.replay_guard_set(&guard, nullifier, now)
     }
 }
 
@@ -512,83 +454,229 @@ impl CredentialStore {
     }
 }
 
-impl CredentialStorage for CredentialStore {
-    fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
-        let mut inner = self.lock_inner()?;
-        inner.init(leaf_index, now)
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::tests_utils::{
+        cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
+    };
+
+    #[test]
+    fn test_replay_guard_field_element_serialization() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        // Create a FieldElement from a known value
+        let nullifier = CoreFieldElement::from(123_456_789u64);
+
+        // Set a replay guard
+        inner
+            .replay_guard_set(nullifier, 1000)
+            .expect("set replay guard");
+
+        // The same FieldElement should be properly serialized and found after the grace period
+        let exists_after_grace = inner
+            .is_nullifier_replay(nullifier, 1601)
+            .expect("check replay guard");
+        assert!(
+            exists_after_grace,
+            "Replay guard should exist after grace period (10 minutes)"
+        );
+
+        cleanup_test_storage(&root);
     }
 
-    fn list_credentials(
-        &self,
-        issuer_schema_id: Option<u64>,
-        now: u64,
-    ) -> StorageResult<Vec<CredentialRecord>> {
-        let inner = self.lock_inner()?;
-        inner.list_credentials(issuer_schema_id, now)
+    #[test]
+    fn test_replay_guard_grace_period() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        let nullifier = CoreFieldElement::from(999u64);
+        let set_time = 1000u64;
+
+        // Set a replay guard at time 1000
+        inner
+            .replay_guard_set(nullifier, set_time)
+            .expect("set replay guard");
+
+        // Within grace period (< 10 minutes): should return false
+        // Grace period is 600 seconds (10 minutes)
+        let check_time_1min = set_time + 60; // 1 minute later
+        let exists_1min = inner
+            .is_nullifier_replay(nullifier, check_time_1min)
+            .expect("check at 1 minute");
+        assert!(
+            !exists_1min,
+            "Replay guard should NOT be enforced during grace period (1 minute)"
+        );
+
+        let check_time_ten_min = set_time + 601; // 10 minutes later
+        let exists_ten_min = inner
+            .is_nullifier_replay(nullifier, check_time_ten_min)
+            .expect("check at 9 minutes");
+        assert!(
+            exists_ten_min,
+            "Replay guard should be enforced during grace period (10 minutes)"
+        );
+
+        cleanup_test_storage(&root);
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn store_credential(
-        &mut self,
-        issuer_schema_id: u64,
-        status: CredentialStatus,
-        subject_blinding_factor: [u8; 32],
-        genesis_issued_at: u64,
-        expires_at: Option<u64>,
-        credential_blob: Vec<u8>,
-        associated_data: Option<Vec<u8>>,
-        now: u64,
-    ) -> StorageResult<CredentialId> {
-        let mut inner = self.lock_inner()?;
-        inner.store_credential(
-            issuer_schema_id,
-            status,
-            subject_blinding_factor,
-            genesis_issued_at,
-            expires_at,
-            credential_blob,
-            associated_data,
-            now,
-        )
+    #[test]
+    fn test_replay_guard_expiration() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        let nullifier = CoreFieldElement::from(555u64);
+        let set_time = 3000u64;
+
+        // Set a replay guard at time 3000
+        inner
+            .replay_guard_set(nullifier, set_time)
+            .expect("set replay guard");
+
+        // After expiration (> 1 year): should return false
+        let one_year_seconds = 365 * 24 * 60 * 60; // 31,536,000 seconds
+
+        // Just before expiration: should still exist
+        let check_time_before_exp = set_time + one_year_seconds - 1;
+        let exists_before_exp = inner
+            .is_nullifier_replay(nullifier, check_time_before_exp)
+            .expect("check before expiration");
+        assert!(
+            exists_before_exp,
+            "Replay guard SHOULD exist just before expiration"
+        );
+
+        // After expiration: should not exist
+        let check_time_at_exp = set_time + one_year_seconds + 1;
+        let exists_at_exp = inner
+            .is_nullifier_replay(nullifier, check_time_at_exp)
+            .expect("check at expiration");
+        assert!(
+            !exists_at_exp,
+            "Replay guard should NOT exist at expiration (1 year)"
+        );
+
+        cleanup_test_storage(&root);
     }
 
-    fn merkle_cache_get(
-        &self,
-        registry_kind: u8,
-        root: [u8; 32],
-        now: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        let inner = self.lock_inner()?;
-        inner.merkle_cache_get(registry_kind, root, now)
+    #[test]
+    fn test_replay_guard_idempotency() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store).unwrap();
+        inner.init(42, 1000).expect("init storage");
+
+        let nullifier = CoreFieldElement::from(12345u64);
+        let first_set_time = 1000u64;
+
+        // Set a replay guard at time 1000
+        inner.replay_guard_set(nullifier, first_set_time).unwrap();
+
+        // Try to set the same nullifier again at time 1060 (5 minutes later)
+        let second_set_time = first_set_time + 300;
+        inner
+            .replay_guard_set(nullifier, second_set_time)
+            .expect("second set should be idempotent");
+
+        // Check at time 1601 (10+ minutes from first set)
+        // This is past the grace period from the FIRST insertion
+        let check_time_after_grace = first_set_time + 601;
+        let exists_after_grace = inner
+            .is_nullifier_replay(nullifier, check_time_after_grace)
+            .expect("check after grace");
+        assert!(
+            exists_after_grace,
+            "Replay guard SHOULD be enforced - past grace period from FIRST insertion"
+        );
+
+        cleanup_test_storage(&root);
     }
 
-    fn merkle_cache_put(
-        &mut self,
-        registry_kind: u8,
-        root: [u8; 32],
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<()> {
-        let mut inner = self.lock_inner()?;
-        inner.merkle_cache_put(registry_kind, root, proof_bytes, now, ttl_seconds)
-    }
+    #[test]
+    fn test_get_credential() {
+        use world_id_core::Credential as CoreCredential;
 
-    fn begin_proof_disclosure(
-        &mut self,
-        request_id: RequestId,
-        nullifier: Nullifier,
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<ProofDisclosureResult> {
-        let mut inner = self.lock_inner()?;
-        inner.begin_proof_disclosure(
-            request_id,
-            nullifier,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        // Store a test credential
+        let issuer_schema_id = 123u64;
+        let blinding_factor = FieldElement::from(42u64);
+        let expires_at = 2000u64;
+        let core_cred = CoreCredential::new()
+            .issuer_schema_id(issuer_schema_id)
+            .genesis_issued_at(1000);
+        let credential: Credential = core_cred.into();
+        let associated_data = Some(vec![6, 7, 8]);
+
+        inner
+            .store_credential(
+                &credential,
+                &blinding_factor,
+                expires_at,
+                associated_data,
+                1000,
+            )
+            .expect("store credential");
+
+        // Retrieve the credential
+        let (credential, _blinding_factor) = inner
+            .get_credential(issuer_schema_id, 1000)
+            .expect("get credential")
+            .expect("credential should exist");
+
+        // Verify the retrieved data
+        assert_eq!(credential.issuer_schema_id(), issuer_schema_id);
+
+        // Verify non-existent credential returns None
+        let non_existent = inner
+            .get_credential(999u64, 1000)
+            .expect("get credential query should succeed");
+        assert!(
+            non_existent.is_none(),
+            "Non-existent credential should return None"
+        );
+
+        // Verify expired credential returns None
+        let expired = inner
+            .get_credential(issuer_schema_id, 2001)
+            .expect("get credential query should succeed");
+        assert!(expired.is_none(), "Expired credential should return None");
+
+        cleanup_test_storage(&root);
     }
 }

@@ -1,6 +1,7 @@
 //! Key hierarchy management for credential storage.
 
 use rand::{rngs::OsRng, RngCore};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use super::{
     envelope::AccountKeyEnvelope,
@@ -13,6 +14,7 @@ use super::{
 /// In-memory account keys derived from the account key envelope.
 ///
 /// Keys are held in memory for the lifetime of the storage handle.
+#[derive(Zeroize, ZeroizeOnDrop)]
 #[allow(clippy::struct_field_names)]
 pub struct StorageKeys {
     intermediate_key: [u8; 32],
@@ -33,11 +35,13 @@ impl StorageKeys {
     ) -> StorageResult<Self> {
         if let Some(bytes) = blob_store.read(ACCOUNT_KEYS_FILENAME.to_string())? {
             let envelope = AccountKeyEnvelope::deserialize(&bytes)?;
-            let k_intermediate_bytes = keystore.open_sealed(
+            let wrapped_k_intermediate = envelope.wrapped_k_intermediate.clone();
+            let k_intermediate_bytes = Zeroizing::new(keystore.open_sealed(
                 ACCOUNT_KEY_ENVELOPE_AD.to_vec(),
-                envelope.wrapped_k_intermediate,
-            )?;
-            let k_intermediate = parse_key_32(&k_intermediate_bytes, "K_intermediate")?;
+                wrapped_k_intermediate,
+            )?);
+            let k_intermediate =
+                parse_key_32(k_intermediate_bytes.as_slice(), "K_intermediate")?;
             Ok(Self {
                 intermediate_key: k_intermediate,
             })
@@ -54,10 +58,11 @@ impl StorageKeys {
         }
     }
 
-    /// Returns the intermediate key. Treat this as sensitive material.
+    /// Returns the intermediate key wrapped in [`Zeroizing`] so the caller's
+    /// copy is automatically zeroed on drop. Treat this as sensitive material.
     #[must_use]
-    pub const fn intermediate_key(&self) -> [u8; 32] {
-        self.intermediate_key
+    pub fn intermediate_key(&self) -> Zeroizing<[u8; 32]> {
+        Zeroizing::new(self.intermediate_key)
     }
 }
 

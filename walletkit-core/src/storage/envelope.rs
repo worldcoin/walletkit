@@ -1,12 +1,13 @@
 //! Account key envelope persistence helpers.
 
 use serde::{Deserialize, Serialize};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::error::{StorageError, StorageResult};
 
 const ENVELOPE_VERSION: u32 = 1;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub(crate) struct AccountKeyEnvelope {
     pub(crate) version: u32,
     pub(crate) wrapped_k_intermediate: Vec<u8>,
@@ -25,12 +26,14 @@ impl AccountKeyEnvelope {
     }
 
     pub(crate) fn serialize(&self) -> StorageResult<Vec<u8>> {
-        bincode::serialize(self)
-            .map_err(|err| StorageError::Serialization(err.to_string()))
+        let mut bytes = Vec::new();
+        ciborium::ser::into_writer(self, &mut bytes)
+            .map_err(|err| StorageError::Serialization(err.to_string()))?;
+        Ok(bytes)
     }
 
     pub(crate) fn deserialize(bytes: &[u8]) -> StorageResult<Self> {
-        let envelope: Self = bincode::deserialize(bytes)
+        let envelope: Self = ciborium::de::from_reader(bytes)
             .map_err(|err| StorageError::Serialization(err.to_string()))?;
         if envelope.version != ENVELOPE_VERSION {
             return Err(StorageError::UnsupportedEnvelopeVersion(envelope.version));

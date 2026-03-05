@@ -11,15 +11,21 @@
 //!     println!("{}", proof.to_json().unwrap()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
 //! }
 //! ```
-#![deny(
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    missing_docs,
-    dead_code
-)]
 
-use strum::EnumString;
+use strum::{Display, EnumString};
+
+/// Library initialization function called automatically on load.
+///
+/// Installs the ring crypto provider as the default for rustls.
+/// Uses the `ctor` crate to ensure this runs when the dynamic library loads,
+/// before any user code executes.
+#[cfg(not(test))]
+#[ctor::ctor]
+fn init() {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("Failed to install default crypto provider");
+}
 
 /// Represents the environment in which a World ID is being presented and used.
 ///
@@ -33,6 +39,21 @@ pub enum Environment {
     Staging,
     /// Live production environment. World ID Tree: `id.worldcoin.eth`
     Production,
+}
+
+/// Region for node selection.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum, EnumString, Display,
+)]
+#[strum(serialize_all = "lowercase")]
+pub enum Region {
+    /// United States
+    Us,
+    /// Europe (default)
+    #[default]
+    Eu,
+    /// Asia-Pacific
+    Ap,
 }
 
 pub(crate) mod primitives;
@@ -49,16 +70,23 @@ pub mod logger;
 mod u256;
 pub use u256::U256Wrapper;
 
+mod field_element;
+pub use field_element::FieldElement;
+
+mod credential;
+pub use credential::Credential;
+
 /// Credential storage primitives for World ID v4.
+#[cfg(feature = "storage")]
 pub mod storage;
 
-#[cfg(feature = "v4")]
 mod authenticator;
-#[cfg(feature = "v4")]
 pub use authenticator::{Authenticator, InitializingAuthenticator, RegistrationStatus};
 
-#[cfg(feature = "v4")]
-pub(crate) mod defaults;
+/// Default configuration values for each [`Environment`].
+pub mod defaults;
+
+pub mod requests;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Legacy modules
@@ -74,11 +102,15 @@ pub mod proof;
 #[cfg(feature = "common-apps")]
 pub mod common_apps;
 
+/// Credential issuers for World ID (NFC, etc.)
+#[cfg(feature = "issuers")]
+pub mod issuers;
+
 ////////////////////////////////////////////////////////////////////////////////
 // Private modules
 ////////////////////////////////////////////////////////////////////////////////
 
+mod http_request;
 mod merkle_tree;
-mod request;
 
 uniffi::setup_scaffolding!("walletkit_core");

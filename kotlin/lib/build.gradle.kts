@@ -46,7 +46,7 @@ afterEvaluate {
         publications {
             create<MavenPublication>("maven") {
                 groupId = "org.world"
-                artifactId = "walletkit-android"
+                artifactId = "walletkit"
 
                 version = if (project.hasProperty("versionName")) {
                     project.property("versionName") as String

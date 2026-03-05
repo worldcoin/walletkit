@@ -1,7 +1,7 @@
 use semaphore_rs::poseidon_tree::Proof;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::WalletKitError, request::Request, u256::U256Wrapper};
+use crate::{error::WalletKitError, http_request::Request, u256::U256Wrapper};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,7 +56,7 @@ impl MerkleTreeProof {
         };
 
         let request = Request::new();
-        let http_response = request.post(url.clone(), body).await?;
+        let http_response = request.handle(request.post(&url).json(&body)).await?;
 
         let status = http_response.status();
 

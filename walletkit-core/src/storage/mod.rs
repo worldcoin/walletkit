@@ -4,25 +4,25 @@ pub mod cache;
 pub mod credential_storage;
 pub mod envelope;
 pub mod error;
+pub mod groth16_cache;
 pub mod keys;
 pub mod lock;
 pub mod paths;
-pub(crate) mod sqlcipher;
 pub mod traits;
 pub mod types;
 pub mod vault;
 
 pub use cache::CacheDb;
-pub use credential_storage::{CredentialStorage, CredentialStore};
+pub use credential_storage::CredentialStore;
 pub use error::{StorageError, StorageResult};
+pub use groth16_cache::cache_embedded_groth16_material;
 pub use keys::StorageKeys;
 pub use lock::{StorageLock, StorageLockGuard};
 pub use paths::StoragePaths;
 pub use traits::{AtomicBlobStore, DeviceKeystore, StorageProvider};
 pub use types::{
-    BlobKind, ContentId, CredentialId, CredentialRecord, CredentialRecordFfi,
-    CredentialStatus, Nullifier, ProofDisclosureKind, ProofDisclosureResult,
-    ProofDisclosureResultFfi, RequestId,
+    BlobKind, ContentId, CredentialRecord, Nullifier, ReplayGuardKind,
+    ReplayGuardResult, RequestId,
 };
 pub use vault::VaultDb;
 

@@ -17,9 +17,9 @@ Thank you for your interest in contributing to our project! This document provid
    curl -L https://foundry.paradigm.xyz | bash
    foundryup
    ```
-3. Run tests to ensure everything is working as expected. It's important to run with `all-features` as integration tests have dependencies on non-default features.
+3. Run tests to ensure everything is working as expected. Note: `compress-zkeys` is excluded because ARK point decompression is expensive and only needed for release builds.
    ```bash
-   cargo test --all --all-features
+   cargo test --workspace
    ```
 
 ## Code of Conduct

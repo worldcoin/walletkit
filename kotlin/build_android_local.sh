@@ -19,17 +19,19 @@ VERSION="$1"
 echo "Using version: $VERSION"
 
 # Build using kotlin/build.sh
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 echo "Building WalletKit SDK..."
-cd kotlin
 ./build.sh
 
 # Publish to Maven Local
 echo "Publishing to Maven Local..."
-./gradlew :lib:publishToMavenLocal -PversionName="$VERSION"
+./gradlew :walletkit:publishToMavenLocal -PversionName="$VERSION"
 
 echo ""
 echo "✅ Successfully published $VERSION to Maven Local!"
-echo "Published to: ~/.m2/repository/org/world/walletkit-android/$VERSION/"
+echo "Published to: ~/.m2/repository/org/world/walletkit/$VERSION/"
 echo ""
 echo "To use in your project:"
-echo "  implementation 'org.world:walletkit-android:$VERSION'"
+echo "  implementation 'org.world:walletkit:$VERSION'"

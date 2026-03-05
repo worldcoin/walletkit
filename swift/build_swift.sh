@@ -11,8 +11,8 @@ PROJECT_ROOT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_PATH="$PROJECT_ROOT_PATH/swift" # The base path for the Swift build
 PACKAGE_NAME="walletkit"
 TARGET_DIR="$PROJECT_ROOT_PATH/target"
-FEATURES="v4"
 SUPPORT_SOURCES_DIR="$BASE_PATH/support"
+CARGO_FEATURES="compress-zkeys"
 
 # Default values
 OUTPUT_DIR="$BASE_PATH" # Default to BASE_PATH if not provided
@@ -67,19 +67,18 @@ mkdir -p "$SWIFT_HEADERS_DIR"
 echo "Building Rust packages for iOS targets..."
 
 export IPHONEOS_DEPLOYMENT_TARGET="13.0"
-export RUSTFLAGS="-C link-arg=-Wl,-application_extension"
+export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
+                  -C link-arg=-Wl,-dead_strip \
+                  -C link-arg=-Wl,-dead_strip_dylibs \
+                  -C embed-bitcode=no"
 
 # Build for all iOS targets
 cargo build --package $PACKAGE_NAME --target aarch64-apple-ios-sim --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
-  --features "$FEATURES"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" --features "$CARGO_FEATURES"
 cargo build --package $PACKAGE_NAME --target aarch64-apple-ios --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
-  --features "$FEATURES"
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" --features "$CARGO_FEATURES"
 cargo build --package $PACKAGE_NAME --target x86_64-apple-ios --release \
-  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" \
-  --features "$FEATURES"
-
+  --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" --features "$CARGO_FEATURES"
 echo "Rust packages built. Combining simulator targets into universal binary..."
 
 # Create universal binary for simulators
@@ -103,6 +102,11 @@ cargo run -p uniffi-bindgen --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" \
 
 # Move generated Swift file to Sources directory
 mv $BASE_PATH/ios_build/bindings/walletkit_core.swift ${SWIFT_SOURCES_DIR}/walletkit.swift
+
+# Temporary workaround for UniFFI Swift callback vtable ASan crash.
+# Upstream fix: https://github.com/mozilla/uniffi-rs/pull/2821
+# Remove this once the upstream PR is merged and released.
+python3 "$BASE_PATH/patch_uniffi_swift_vtables.py" "${SWIFT_SOURCES_DIR}/walletkit.swift"
 
 # Copy support Swift sources for the WalletKit module.
 if [ -d "$SUPPORT_SOURCES_DIR" ]; then

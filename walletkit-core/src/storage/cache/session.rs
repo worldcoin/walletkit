@@ -1,62 +1,61 @@
 //! Session key cache helpers.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::storage::error::StorageResult;
+use crate::storage::error::{StorageError, StorageResult};
+use walletkit_db::Connection;
 
-use super::util::{expiry_timestamp, map_db_err, parse_fixed_bytes, to_i64};
+use super::util::{
+    cache_entry_times, get_cache_entry, parse_fixed_bytes, prune_expired_entries,
+    session_cache_key, upsert_cache_entry,
+};
 
+/// Fetches a cached session key if it is still valid.
+///
+/// # Errors
+///
+/// Returns an error if the query fails or the cached bytes are malformed.
 pub(super) fn get(
     conn: &Connection,
     rp_id: [u8; 32],
-    now: u64,
 ) -> StorageResult<Option<[u8; 32]>> {
-    let now_i64 = to_i64(now, "now")?;
-    let raw: Option<Vec<u8>> = conn
-        .query_row(
-            "SELECT k_session
-             FROM session_keys
-             WHERE rp_id = ?1
-               AND expires_at > ?2",
-            params![rp_id.as_ref(), now_i64],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|err| map_db_err(&err))?;
+    let now = current_unix_timestamp()?;
+    let key = session_cache_key(rp_id);
+    let raw = get_cache_entry(conn, key.as_slice(), now, None)?;
     match raw {
         Some(bytes) => Ok(Some(parse_fixed_bytes::<32>(&bytes, "k_session")?)),
         None => Ok(None),
     }
 }
 
+/// Stores a session key with a TTL.
+///
+/// # Errors
+///
+/// Returns an error if pruning or insert fails.
 pub(super) fn put(
     conn: &Connection,
     rp_id: [u8; 32],
     k_session: [u8; 32],
-    now: u64,
     ttl_seconds: u64,
 ) -> StorageResult<()> {
-    prune_expired(conn, now)?;
-    let expires_at = expiry_timestamp(now, ttl_seconds);
-    let expires_at_i64 = to_i64(expires_at, "expires_at")?;
-    conn.execute(
-        "INSERT OR REPLACE INTO session_keys (
-            rp_id,
-            k_session,
-            expires_at
-         ) VALUES (?1, ?2, ?3)",
-        params![rp_id.as_ref(), k_session.as_ref(), expires_at_i64],
-    )
-    .map_err(|err| map_db_err(&err))?;
-    Ok(())
+    let now = current_unix_timestamp()?;
+    let key = session_cache_key(rp_id);
+    prune_expired_entries(conn, now)?;
+    let times = cache_entry_times(now, ttl_seconds)?;
+    upsert_cache_entry(conn, key.as_slice(), k_session.as_ref(), times)
 }
 
-fn prune_expired(conn: &Connection, now: u64) -> StorageResult<()> {
-    let now_i64 = to_i64(now, "now")?;
-    conn.execute(
-        "DELETE FROM session_keys WHERE expires_at <= ?1",
-        params![now_i64],
-    )
-    .map_err(|err| map_db_err(&err))?;
-    Ok(())
+/// Returns the current unix timestamp in seconds.
+///
+/// # Errors
+///
+/// Returns an error if system time is before the unix epoch.
+fn current_unix_timestamp() -> StorageResult<u64> {
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| {
+            StorageError::CacheDb(format!("system time before unix epoch: {err}"))
+        })?;
+    Ok(duration.as_secs())
 }

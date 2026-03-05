@@ -1,57 +1,73 @@
 use alloy_primitives::{address, Address};
-use world_id_core::primitives::{Config, PrimitiveError};
+use world_id_core::primitives::Config;
 
-use crate::{error::WalletKitError, Environment};
+use crate::{error::WalletKitError, Environment, Region};
 
+/// The World ID Registry contract address on World Chain Mainnet.
 pub static WORLD_ID_REGISTRY: Address =
-    address!("0xb64a1F443C9a18Cd3865C3c9Be871946617C0d75");
+    address!("0x8556d07D75025f286fe757C7EeEceC40D54FA16D");
 
+const OPRF_NODE_COUNT: usize = 5;
+
+/// Generates the list of OPRF node URLs for a given region and environment.
+fn oprf_node_urls(region: Region, environment: &Environment) -> Vec<String> {
+    let env_segment = match environment {
+        Environment::Staging => ".staging",
+        Environment::Production => "",
+    };
+
+    (0..OPRF_NODE_COUNT)
+        .map(|i| {
+            format!("https://node{i}.{region}{env_segment}.world.oprf.taceo.network")
+        })
+        .collect()
+}
+
+fn indexer_url(region: Region, environment: &Environment) -> String {
+    let domain = match environment {
+        Environment::Staging => "worldcoin.dev",
+        Environment::Production => "world.org",
+    };
+    format!("https://indexer.{region}.id-infra.{domain}")
+}
+
+/// Build a [`Config`] from well-known defaults for a given [`Environment`].
 pub trait DefaultConfig {
+    /// Returns a config populated with the default URLs and addresses for the given environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`WalletKitError`] if the configuration cannot be constructed (e.g. invalid RPC URL).
     fn from_environment(
         environment: &Environment,
         rpc_url: Option<String>,
+        region: Option<Region>,
     ) -> Result<Self, WalletKitError>
     where
         Self: Sized;
-}
-
-fn map_config_error(e: PrimitiveError) -> WalletKitError {
-    if let PrimitiveError::InvalidInput { attribute, reason } = e {
-        return WalletKitError::InvalidInput { attribute, reason };
-    }
-    WalletKitError::Generic {
-        error: format!("Config initialization error: {e}"),
-    }
 }
 
 impl DefaultConfig for Config {
     fn from_environment(
         environment: &Environment,
         rpc_url: Option<String>,
+        region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
-        // TODO: Add all correct values
+        let region = region.unwrap_or_default();
+
         match environment {
             Environment::Staging => Self::new(
                 rpc_url,
                 480, // Staging also runs on World Chain Mainnet by default
                 WORLD_ID_REGISTRY,
-                "https://world-id-indexer.stage-crypto.worldcoin.org".to_string(),
-                "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
-                vec![],
-                2,
+                indexer_url(region, environment),
+                "https://gateway.id-infra.worldcoin.dev".to_string(),
+                oprf_node_urls(region, environment),
+                3,
             )
-            .map_err(map_config_error),
+            .map_err(WalletKitError::from),
 
-            Environment::Production => Self::new(
-                rpc_url,
-                480,
-                WORLD_ID_REGISTRY,
-                "https://world-id-indexer.crypto.worldcoin.org".to_string(),
-                "https://world-id-gateway.crypto.worldcoin.org".to_string(),
-                vec![],
-                2,
-            )
-            .map_err(map_config_error),
+            Environment::Production => todo!("There is no production environment yet"),
         }
     }
 }

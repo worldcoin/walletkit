@@ -1,7 +1,9 @@
 use thiserror::Error;
 
+use world_id_core::primitives::PrimitiveError;
+
+#[cfg(feature = "storage")]
 use crate::storage::StorageError;
-#[cfg(feature = "v4")]
 use world_id_core::AuthenticatorError;
 
 /// Error outputs from `WalletKit`
@@ -46,7 +48,7 @@ pub enum WalletKitError {
     },
 
     /// Unhandled error generating a Zero-Knowledge Proof
-    #[error("proof_generation_error")]
+    #[error("proof_generation_error: {error}")]
     ProofGeneration {
         /// The error message from the proof generation
         error: String,
@@ -78,9 +80,40 @@ pub enum WalletKitError {
     UnauthorizedAuthenticator,
 
     /// An unexpected error occurred with the Authenticator
-    #[error("unexpected_authenticator_error")]
+    #[error("unexpected_authenticator_error: {error}")]
     AuthenticatorError {
         /// The error message from the authenticator
+        error: String,
+    },
+
+    /// The request could not be fulfilled with the credentials the user has available
+    #[error("unfulfillable_request")]
+    UnfulfillableRequest,
+
+    /// The response generated didn't match the request
+    ///
+    /// This occurs if the response doesn't match the requested proofs - e.g. by ids
+    /// or doesn't satisfy the contraints declared in the request
+    #[error("invalid response: {0}")]
+    ResponseValidation(String),
+
+    /// The generated nullifier has already been used in a proof submission and cannot be used again
+    #[error("nullifier_replay")]
+    NullifierReplay,
+
+    /// Cached Groth16 material could not be parsed or verified.
+    #[error("groth16_material_cache_invalid")]
+    Groth16MaterialCacheInvalid {
+        /// Input path(s) used for loading.
+        path: String,
+        /// Underlying error message.
+        error: String,
+    },
+
+    /// Failed to load embedded Groth16 material.
+    #[error("groth16_material_embedded_load")]
+    Groth16MaterialEmbeddedLoad {
+        /// Underlying error message.
         error: String,
     },
 
@@ -100,6 +133,29 @@ impl From<reqwest::Error> for WalletKitError {
     }
 }
 
+impl From<PrimitiveError> for WalletKitError {
+    fn from(error: PrimitiveError) -> Self {
+        match error {
+            PrimitiveError::InvalidInput { attribute, reason } => {
+                Self::InvalidInput { attribute, reason }
+            }
+            PrimitiveError::Serialization(error) => Self::SerializationError { error },
+            PrimitiveError::Deserialization(reason) => Self::InvalidInput {
+                attribute: "deserialization".to_string(),
+                reason,
+            },
+            PrimitiveError::NotInField => Self::InvalidInput {
+                attribute: "field_element".to_string(),
+                reason: "Provided value is not in the field".to_string(),
+            },
+            PrimitiveError::OutOfBounds => Self::InvalidInput {
+                attribute: "index".to_string(),
+                reason: "Provided index is out of bounds".to_string(),
+            },
+        }
+    }
+}
+
 impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     fn from(error: semaphore_rs::protocol::ProofError) -> Self {
         Self::ProofGeneration {
@@ -108,6 +164,7 @@ impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     }
 }
 
+#[cfg(feature = "storage")]
 impl From<StorageError> for WalletKitError {
     fn from(error: StorageError) -> Self {
         Self::Generic {
@@ -116,7 +173,6 @@ impl From<StorageError> for WalletKitError {
     }
 }
 
-#[cfg(feature = "v4")]
 impl From<AuthenticatorError> for WalletKitError {
     fn from(error: AuthenticatorError) -> Self {
         match error {
@@ -137,17 +193,11 @@ impl From<AuthenticatorError> for WalletKitError {
                 error: body,
                 status: Some(status.as_u16()),
             },
-            AuthenticatorError::PrimitiveError(error) => {
-                use world_id_core::primitives::PrimitiveError;
-                match error {
-                    PrimitiveError::InvalidInput { attribute, reason } => {
-                        Self::InvalidInput { attribute, reason }
-                    }
-                    _ => Self::Generic {
-                        error: error.to_string(),
-                    },
-                }
-            }
+            AuthenticatorError::PrimitiveError(error) => Self::from(error),
+
+            AuthenticatorError::ProofError(error) => Self::ProofGeneration {
+                error: error.to_string(),
+            },
 
             _ => Self::AuthenticatorError {
                 error: error.to_string(),

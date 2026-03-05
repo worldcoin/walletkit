@@ -19,7 +19,7 @@ dependencies {
 sourceSets {
     test {
         kotlin.srcDirs(
-            "$rootDir/walletkit-android/src/main/java/uniffi/walletkit_core"
+            "$rootDir/walletkit/src/main/java/uniffi/walletkit_core"
         )
     }
 }

@@ -6,7 +6,8 @@ use thiserror::Error;
 pub type StorageResult<T> = Result<T, StorageError>;
 
 /// Errors raised by credential storage primitives.
-#[derive(Debug, Error, uniffi::Error)]
+#[derive(Debug, Error)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Error))]
 pub enum StorageError {
     /// Errors coming from the device keystore.
     #[error("keystore error: {0}")]
@@ -69,11 +70,19 @@ pub enum StorageError {
     #[error("credential not found")]
     CredentialNotFound,
 
+    /// Corrupted cache entry
+    #[error("corrupted cache entry at {key_prefix}")]
+    CorruptedCacheEntry {
+        /// The prefix of the corrupted cache entry (identifies the type of entry).
+        key_prefix: u8,
+    },
+
     /// Unexpected `UniFFI` callback error.
     #[error("unexpected uniffi callback error: {0}")]
     UnexpectedUniFFICallbackError(String),
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<uniffi::UnexpectedUniFFICallbackError> for StorageError {
     fn from(error: uniffi::UnexpectedUniFFICallbackError) -> Self {
         Self::UnexpectedUniFFICallbackError(error.reason)

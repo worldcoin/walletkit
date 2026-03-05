@@ -26,9 +26,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "walletkit"
-
-// The actual library
-include(":walletkit-android")
-
-// "Foreign Tests" (i.e. unit tests which are not bundled in the library)
-include(":walletkit-tests")
+include("walletkit")
+include("walletkit-tests")

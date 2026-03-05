@@ -2,41 +2,12 @@
 
 use super::error::{StorageError, StorageResult};
 
-/// Status of a stored credential.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-#[repr(u8)]
-pub enum CredentialStatus {
-    /// Credential is active and can be used.
-    Active = 1,
-    /// Credential has been revoked.
-    Revoked = 2,
-    /// Credential has expired.
-    Expired = 3,
-}
-
-impl CredentialStatus {
-    pub(crate) const fn as_i64(self) -> i64 {
-        self as i64
-    }
-}
-
-impl TryFrom<i64> for CredentialStatus {
-    type Error = StorageError;
-
-    fn try_from(value: i64) -> StorageResult<Self> {
-        match value {
-            1 => Ok(Self::Active),
-            2 => Ok(Self::Revoked),
-            3 => Ok(Self::Expired),
-            _ => Err(StorageError::VaultDb(format!(
-                "invalid credential status {value}"
-            ))),
-        }
-    }
-}
-
 /// Kind of blob stored in the vault.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+///
+/// Blob records (stored in the `blob_objects` table) carry a kind tag that
+/// distinguishes credential payloads from associated data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
 #[repr(u8)]
 pub enum BlobKind {
     /// Credential blob payload.
@@ -66,115 +37,43 @@ impl TryFrom<i64> for BlobKind {
 /// Content identifier for stored blobs.
 pub type ContentId = [u8; 32];
 
-/// Credential identifier.
-pub type CredentialId = [u8; 16];
-
-/// Request identifier for proof disclosure.
+/// Request identifier for replay guard.
 pub type RequestId = [u8; 32];
 
 /// Nullifier identifier used for replay safety.
 pub type Nullifier = [u8; 32];
 
-/// In-memory representation of a stored credential.
+/// In-memory representation of stored credential metadata.
+///
+/// This is intentionally small and excludes blobs; full credential payloads can
+/// be fetched separately to avoid heavy list queries.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Record))]
 pub struct CredentialRecord {
     /// Credential identifier.
-    pub credential_id: CredentialId,
+    pub credential_id: u64,
     /// Issuer schema identifier.
     pub issuer_schema_id: u64,
-    /// Current credential status.
-    pub status: CredentialStatus,
-    /// Subject blinding factor tied to the credential subject.
-    pub subject_blinding_factor: [u8; 32],
-    /// Genesis issuance timestamp (seconds).
-    pub genesis_issued_at: u64,
-    /// Optional expiry timestamp (seconds).
-    pub expires_at: Option<u64>,
-    /// Last updated timestamp (seconds).
-    pub updated_at: u64,
-    /// Raw credential blob bytes.
-    pub credential_blob: Vec<u8>,
-    /// Optional associated data blob bytes.
-    pub associated_data: Option<Vec<u8>>,
+    /// Expiry timestamp (seconds).
+    pub expires_at: u64,
 }
 
-/// FFI-friendly credential record.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct CredentialRecordFfi {
-    /// Credential identifier.
-    pub credential_id: Vec<u8>,
-    /// Issuer schema identifier.
-    pub issuer_schema_id: u64,
-    /// Current credential status.
-    pub status: CredentialStatus,
-    /// Subject blinding factor tied to the credential subject.
-    pub subject_blinding_factor: Vec<u8>,
-    /// Genesis issuance timestamp (seconds).
-    pub genesis_issued_at: u64,
-    /// Optional expiry timestamp (seconds).
-    pub expires_at: Option<u64>,
-    /// Last updated timestamp (seconds).
-    pub updated_at: u64,
-    /// Raw credential blob bytes.
-    pub credential_blob: Vec<u8>,
-    /// Optional associated data blob bytes.
-    pub associated_data: Option<Vec<u8>>,
-}
-
-/// Result of proof disclosure enforcement.
+/// FFI-friendly replay guard result kind.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ProofDisclosureResult {
-    /// Stored bytes for the first disclosure of a request.
-    Fresh(Vec<u8>),
-    /// Stored bytes replayed for an existing request.
-    Replay(Vec<u8>),
-}
-
-/// FFI-friendly proof disclosure result kind.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
-pub enum ProofDisclosureKind {
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
+pub enum ReplayGuardKind {
     /// Stored bytes for the first disclosure of a request.
     Fresh,
     /// Stored bytes replayed for an existing request.
     Replay,
 }
 
-/// FFI-friendly proof disclosure result.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct ProofDisclosureResultFfi {
+/// Replay guard result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Record))]
+pub struct ReplayGuardResult {
     /// Result kind.
-    pub kind: ProofDisclosureKind,
+    pub kind: ReplayGuardKind,
     /// Stored proof package bytes.
     pub bytes: Vec<u8>,
-}
-
-impl From<CredentialRecord> for CredentialRecordFfi {
-    fn from(record: CredentialRecord) -> Self {
-        Self {
-            credential_id: record.credential_id.to_vec(),
-            issuer_schema_id: record.issuer_schema_id,
-            status: record.status,
-            subject_blinding_factor: record.subject_blinding_factor.to_vec(),
-            genesis_issued_at: record.genesis_issued_at,
-            expires_at: record.expires_at,
-            updated_at: record.updated_at,
-            credential_blob: record.credential_blob,
-            associated_data: record.associated_data,
-        }
-    }
-}
-
-impl From<ProofDisclosureResult> for ProofDisclosureResultFfi {
-    fn from(result: ProofDisclosureResult) -> Self {
-        match result {
-            ProofDisclosureResult::Fresh(bytes) => Self {
-                kind: ProofDisclosureKind::Fresh,
-                bytes,
-            },
-            ProofDisclosureResult::Replay(bytes) => Self {
-                kind: ProofDisclosureKind::Replay,
-                bytes,
-            },
-        }
-    }
 }

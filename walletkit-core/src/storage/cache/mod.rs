@@ -2,11 +2,10 @@
 
 use std::path::Path;
 
-use rusqlite::Connection;
-
 use crate::storage::error::StorageResult;
 use crate::storage::lock::StorageLockGuard;
-use crate::storage::types::ProofDisclosureResult;
+use walletkit_db::Connection;
+use zeroize::Zeroizing;
 
 mod maintenance;
 mod merkle;
@@ -16,6 +15,9 @@ mod session;
 mod util;
 
 /// Encrypted cache database wrapper.
+///
+/// Stores non-authoritative, regenerable data (proof cache, session keys, replay guard)
+/// to improve performance without affecting correctness if rebuilt.
 #[derive(Debug)]
 pub struct CacheDb {
     conn: Connection,
@@ -24,75 +26,69 @@ pub struct CacheDb {
 impl CacheDb {
     /// Opens or creates the encrypted cache database at `path`.
     ///
+    /// If integrity checks fail, the cache is rebuilt since its contents can be
+    /// regenerated from authoritative sources.
+    ///
     /// # Errors
     ///
     /// Returns an error if the database cannot be opened or rebuilt.
     pub fn new(
         path: &Path,
-        k_intermediate: [u8; 32],
+        k_intermediate: &Zeroizing<[u8; 32]>,
         _lock: &StorageLockGuard,
     ) -> StorageResult<Self> {
         let conn = maintenance::open_or_rebuild(path, k_intermediate)?;
         Ok(Self { conn })
     }
 
-    /// Fetches a cached Merkle proof if available.
+    /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
+    ///
+    /// Returns `None` when missing or expired so callers can refetch from the
+    /// indexer without relying on stale proofs.
     ///
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub fn merkle_cache_get(
-        &self,
-        registry_kind: u8,
-        root: [u8; 32],
-        leaf_index: u64,
-        now: u64,
-    ) -> StorageResult<Option<Vec<u8>>> {
-        merkle::get(&self.conn, registry_kind, root, leaf_index, now)
+    pub fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
+        merkle::get(&self.conn, valid_until)
     }
 
     /// Inserts a cached Merkle proof with a TTL.
+    /// Uses the database current time for `inserted_at`.
+    ///
+    /// Existing entries for the same (registry, root, leaf index) are replaced.
     ///
     /// # Errors
     ///
     /// Returns an error if the insert fails.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn merkle_cache_put(
         &mut self,
         _lock: &StorageLockGuard,
-        registry_kind: u8,
-        root: [u8; 32],
-        leaf_index: u64,
         proof_bytes: Vec<u8>,
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        merkle::put(
-            &self.conn,
-            registry_kind,
-            root,
-            leaf_index,
-            proof_bytes.as_ref(),
-            now,
-            ttl_seconds,
-        )
+        merkle::put(&self.conn, proof_bytes.as_ref(), now, ttl_seconds)
     }
 
     /// Fetches a cached session key if present.
     ///
+    /// This value is the per-RP session seed (aka `session_id_r_seed` in the
+    /// protocol). It is derived from `K_intermediate` and `rp_id` and is used to
+    /// derive the per-session `r` that feeds the sessionId commitment. The cache
+    /// is an optional performance hint and may be missing or expired.
+    ///
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub fn session_key_get(
-        &self,
-        rp_id: [u8; 32],
-        now: u64,
-    ) -> StorageResult<Option<[u8; 32]>> {
-        session::get(&self.conn, rp_id, now)
+    pub fn session_key_get(&self, rp_id: [u8; 32]) -> StorageResult<Option<[u8; 32]>> {
+        session::get(&self.conn, rp_id)
     }
 
     /// Stores a session key with a TTL.
+    ///
+    /// The key is cached per relying party (`rp_id`) and replaced on insert.
     ///
     /// # Errors
     ///
@@ -102,44 +98,50 @@ impl CacheDb {
         _lock: &StorageLockGuard,
         rp_id: [u8; 32],
         k_session: [u8; 32],
-        now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        session::put(&self.conn, rp_id, k_session, now, ttl_seconds)
+        session::put(&self.conn, rp_id, k_session, ttl_seconds)
     }
 
-    /// Enforces replay safety for proof disclosure.
+    /// Checks whether a replay guard entry exists for the given nullifier.
+    ///
+    /// # Returns
+    /// - bool: true if a replay guard entry exists (hence signalling a nullifier replay), false otherwise.
     ///
     /// # Errors
     ///
-    /// Returns an error if the disclosure conflicts with an existing nullifier.
-    pub fn begin_proof_disclosure(
+    /// Returns an error if the query to the cache unexpectedly fails.
+    pub fn is_nullifier_replay(
+        &self,
+        nullifier: [u8; 32],
+        now: u64,
+    ) -> StorageResult<bool> {
+        nullifiers::is_nullifier_replay(&self.conn, nullifier, now)
+    }
+
+    /// After a proof has been successfully generated, creates a replay guard entry
+    /// locally to avoid future replays of the same nullifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query to the cache unexpectedly fails.
+    pub fn replay_guard_set(
         &mut self,
         _lock: &StorageLockGuard,
-        request_id: [u8; 32],
         nullifier: [u8; 32],
-        proof_bytes: Vec<u8>,
         now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<ProofDisclosureResult> {
-        nullifiers::begin_proof_disclosure(
-            &mut self.conn,
-            request_id,
-            nullifier,
-            proof_bytes,
-            now,
-            ttl_seconds,
-        )
+    ) -> StorageResult<()> {
+        nullifiers::replay_guard_set(&self.conn, nullifier, now)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::error::StorageError;
     use crate::storage::lock::StorageLock;
     use std::fs;
     use std::path::PathBuf;
+    use std::time::Duration;
     use uuid::Uuid;
 
     fn temp_cache_path() -> PathBuf {
@@ -169,13 +171,13 @@ mod tests {
     #[test]
     fn test_cache_create_and_open() {
         let path = temp_cache_path();
-        let key = [0x11u8; 32];
+        let key = Zeroizing::new([0x11u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
-        let db = CacheDb::new(&path, key, &guard).expect("create cache");
+        let db = CacheDb::new(&path, &key, &guard).expect("create cache");
         drop(db);
-        CacheDb::new(&path, key, &guard).expect("open cache");
+        CacheDb::new(&path, &key, &guard).expect("open cache");
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }
@@ -183,21 +185,21 @@ mod tests {
     #[test]
     fn test_cache_rebuild_on_corruption() {
         let path = temp_cache_path();
-        let key = [0x22u8; 32];
+        let key = Zeroizing::new([0x22u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
+        let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
         let rp_id = [0x01u8; 32];
         let k_session = [0x02u8; 32];
-        db.session_key_put(&guard, rp_id, k_session, 100, 1000)
+        db.session_key_put(&guard, rp_id, k_session, 1000)
             .expect("put session key");
         drop(db);
 
         fs::write(&path, b"corrupt").expect("corrupt cache file");
 
-        let db = CacheDb::new(&path, key, &guard).expect("rebuild cache");
-        let value = db.session_key_get(rp_id, 200).expect("get session key");
+        let db = CacheDb::new(&path, &key, &guard).expect("rebuild cache");
+        let value = db.session_key_get(rp_id).expect("get session key");
         assert!(value.is_none());
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
@@ -206,21 +208,17 @@ mod tests {
     #[test]
     fn test_merkle_cache_ttl() {
         let path = temp_cache_path();
-        let key = [0x33u8; 32];
+        let key = Zeroizing::new([0x33u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
-        let root = [0xABu8; 32];
-        db.merkle_cache_put(&guard, 1, root, 42, vec![1, 2, 3], 100, 10)
+        let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
+        db.merkle_cache_put(&guard, vec![1, 2, 3], 100, 10)
             .expect("put merkle proof");
-        let hit = db
-            .merkle_cache_get(1, root, 42, 105)
-            .expect("get merkle proof");
+        let valid_until = 105;
+        let hit = db.merkle_cache_get(valid_until).expect("get merkle proof");
         assert!(hit.is_some());
-        let miss = db
-            .merkle_cache_get(1, root, 42, 111)
-            .expect("get merkle proof");
+        let miss = db.merkle_cache_get(111).expect("get merkle proof");
         assert!(miss.is_none());
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
@@ -229,101 +227,20 @@ mod tests {
     #[test]
     fn test_session_cache_ttl() {
         let path = temp_cache_path();
-        let key = [0x44u8; 32];
+        let key = Zeroizing::new([0x44u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
+        let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
         let rp_id = [0x55u8; 32];
         let k_session = [0x66u8; 32];
-        db.session_key_put(&guard, rp_id, k_session, 100, 10)
+        db.session_key_put(&guard, rp_id, k_session, 1)
             .expect("put session key");
-        let hit = db.session_key_get(rp_id, 105).expect("get session key");
+        let hit = db.session_key_get(rp_id).expect("get session key");
         assert!(hit.is_some());
-        let miss = db.session_key_get(rp_id, 111).expect("get session key");
+        std::thread::sleep(Duration::from_secs(2));
+        let miss = db.session_key_get(rp_id).expect("get session key");
         assert!(miss.is_none());
-        cleanup_cache_files(&path);
-        cleanup_lock_file(&lock_path);
-    }
-
-    #[test]
-    fn test_disclosure_replay_returns_original_bytes() {
-        let path = temp_cache_path();
-        let key = [0x77u8; 32];
-        let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
-        let request_id = [0x10u8; 32];
-        let nullifier = [0x20u8; 32];
-        let first = vec![1, 2, 3];
-        let second = vec![9, 9, 9];
-
-        let fresh = db
-            .begin_proof_disclosure(
-                &guard,
-                request_id,
-                nullifier,
-                first.clone(),
-                100,
-                1000,
-            )
-            .expect("first disclosure");
-        assert_eq!(fresh, ProofDisclosureResult::Fresh(first.clone()));
-
-        let replay = db
-            .begin_proof_disclosure(&guard, request_id, nullifier, second, 101, 1000)
-            .expect("replay disclosure");
-        assert_eq!(replay, ProofDisclosureResult::Replay(first));
-        cleanup_cache_files(&path);
-        cleanup_lock_file(&lock_path);
-    }
-
-    #[test]
-    fn test_disclosure_nullifier_conflict_errors() {
-        let path = temp_cache_path();
-        let key = [0x88u8; 32];
-        let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
-        let request_id_a = [0x01u8; 32];
-        let request_id_b = [0x02u8; 32];
-        let nullifier = [0x03u8; 32];
-
-        db.begin_proof_disclosure(&guard, request_id_a, nullifier, vec![4], 100, 1000)
-            .expect("first disclosure");
-
-        let err = db
-            .begin_proof_disclosure(&guard, request_id_b, nullifier, vec![5], 101, 1000)
-            .expect_err("nullifier conflict");
-        match err {
-            StorageError::NullifierAlreadyDisclosed => {}
-            other => panic!("unexpected error: {other}"),
-        }
-        cleanup_cache_files(&path);
-        cleanup_lock_file(&lock_path);
-    }
-
-    #[test]
-    fn test_disclosure_expiry_allows_new_insert() {
-        let path = temp_cache_path();
-        let key = [0x99u8; 32];
-        let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, key, &guard).expect("create cache");
-        let request_id_a = [0x0Au8; 32];
-        let request_id_b = [0x0Bu8; 32];
-        let nullifier = [0x0Cu8; 32];
-
-        db.begin_proof_disclosure(&guard, request_id_a, nullifier, vec![7], 100, 10)
-            .expect("first disclosure");
-
-        let fresh = db
-            .begin_proof_disclosure(&guard, request_id_b, nullifier, vec![8], 111, 10)
-            .expect("second disclosure after expiry");
-        assert_eq!(fresh, ProofDisclosureResult::Fresh(vec![8]));
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }
