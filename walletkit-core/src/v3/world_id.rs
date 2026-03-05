@@ -1,15 +1,14 @@
-use crate::{error::WalletKitError, proof::generate_proof_with_semaphore_identity};
+use crate::{error::WalletKitError, u256::U256Wrapper, Environment};
 
 use secrecy::{ExposeSecret, SecretBox};
 use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
 use subtle::ConstantTimeEq;
 
-use crate::{
+use super::{
     credential_type::CredentialType,
     merkle_tree::MerkleTreeProof,
+    proof::generate_proof_with_semaphore_identity,
     proof::{ProofContext, ProofOutput},
-    u256::U256Wrapper,
-    Environment,
 };
 
 /// A base World ID identity which can be used to generate World ID Proofs for different credentials.
