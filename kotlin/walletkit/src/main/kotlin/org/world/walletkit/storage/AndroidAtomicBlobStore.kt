@@ -33,12 +33,8 @@ class AndroidAtomicBlobStore(
         )
         try {
             temp.writeBytes(bytes)
-            if (file.exists() && !file.delete()) {
-                throw StorageException.BlobStore("failed to remove existing file")
-            }
             if (!temp.renameTo(file)) {
-                temp.copyTo(file, overwrite = true)
-                temp.delete()
+                throw StorageException.BlobStore("failed to atomically replace existing file")
             }
         } catch (error: StorageException) {
             cleanupTempFile(temp)
