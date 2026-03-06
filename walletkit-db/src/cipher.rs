@@ -168,6 +168,13 @@ pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()
 /// **Note:** If new tables are added to the vault schema, the SQL
 /// statements below must be updated to include them.
 ///
+/// **Schema migration:** The import SQL assumes the backup was created with
+/// the same schema version as the target database. If the vault schema
+/// evolves (e.g. new columns with `NOT NULL` constraints), restoring an
+/// older backup into a newer schema will fail or produce incomplete data.
+/// When that happens, this function will need version-aware import logic
+/// or a schema compatibility check.
+///
 /// # Errors
 ///
 /// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
