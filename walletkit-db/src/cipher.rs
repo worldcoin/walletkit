@@ -157,9 +157,8 @@ pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()
 /// encrypted database.
 ///
 /// The source database is `ATTACH`ed with an empty key and its contents are
-/// copied into the main database within a transaction. Existing data in the
-/// target tables (`credential_records`, `blob_objects`) is preserved —
-/// rows from the backup are inserted, skipping duplicates.
+/// copied into the main (empty) encrypted database. This is intended for
+/// restore on a fresh install where the vault tables exist but contain no data.
 ///
 /// See [`export_plaintext_copy`] for why `ATTACH` + SQL is used instead of
 /// the `sqlite3_backup` API.
@@ -171,6 +170,32 @@ pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()
 ///
 /// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
 pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<()> {
+    let source_str = source_path.to_string_lossy();
+    let attach_sql = format!(
+        "ATTACH DATABASE '{}' AS backup KEY '';",
+        source_str.replace('\'', "''")
+    );
+    conn.execute_batch(&attach_sql)?;
+
+    let result = conn.execute_batch(
+        "INSERT INTO blob_objects (content_id, blob_kind, created_at, bytes)
+             SELECT content_id, blob_kind, created_at, bytes FROM backup.blob_objects;
+         INSERT INTO credential_records
+             (credential_id, issuer_schema_id, subject_blinding_factor,
+              genesis_issued_at, expires_at, updated_at,
+              credential_blob_cid, associated_data_cid)
+             SELECT credential_id, issuer_schema_id, subject_blinding_factor,
+                    genesis_issued_at, expires_at, updated_at,
+                    credential_blob_cid, associated_data_cid
+             FROM backup.credential_records;",
+    );
+
+    let detach_result = conn.execute_batch("DETACH DATABASE backup;");
+
+    result?;
+    detach_result?;
+    Ok(())
+}
 
 /// Runs `PRAGMA integrity_check` and returns whether the database is healthy.
 ///
