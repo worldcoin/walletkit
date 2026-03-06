@@ -17,15 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run release-plz
-        uses: release-plz/action@f708778669256143d984cce4b23592637532e040 # v0.5.119 (https://github.com/release-plz/action/releases/tag/v0.5.127)
+        uses: release-plz/action@f708778669256143d984cce4b23592637532e040 # v0.5.127 (https://github.com/release-plz/action/releases/tag/v0.5.127)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
