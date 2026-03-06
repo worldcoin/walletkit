@@ -166,7 +166,8 @@ where
             message = metadata.name().to_string();
         }
 
-        let formatted = format!("{} {message}", metadata.target());
+        let formatted =
+            sanitize_hex_secrets(&format!("{} {message}", metadata.target()));
 
         if let Ok(sender) = sender.lock() {
             let _ = sender.send(LogEvent {
@@ -282,5 +283,119 @@ pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
 
     if tracing::subscriber::set_global_default(subscriber).is_ok() {
         let _ = LOGGING_INITIALIZED.set(());
+    }
+}
+
+/// Minimum contiguous hex digits to treat as a potential secret.
+const HEX_SECRET_MIN_LEN: usize = 12;
+
+/// Replaces hex sequences of [`HEX_SECRET_MIN_LEN`] or more digits with a
+/// redacted form showing only the first and last two hex characters.
+/// An optional `0x`/`0X` prefix is preserved in the output.
+fn sanitize_hex_secrets(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let len = bytes.len();
+    let mut out = String::with_capacity(len);
+    let mut i = 0;
+
+    while i < len {
+        let has_prefix = i + 1 < len
+            && bytes[i] == b'0'
+            && (bytes[i + 1] == b'x' || bytes[i + 1] == b'X');
+        let digit_start = if has_prefix { i + 2 } else { i };
+
+        let mut j = digit_start;
+        while j < len && bytes[j].is_ascii_hexdigit() {
+            j += 1;
+        }
+
+        let hex_len = j - digit_start;
+        if hex_len >= HEX_SECRET_MIN_LEN {
+            if has_prefix {
+                out.push_str("0x");
+            }
+            out.push(char::from(bytes[digit_start]));
+            out.push(char::from(bytes[digit_start + 1]));
+            out.push_str("..");
+            out.push(char::from(bytes[j - 2]));
+            out.push(char::from(bytes[j - 1]));
+            i = j;
+        } else {
+            out.push(char::from(bytes[i]));
+            i += 1;
+        }
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn short_hex_passes_through() {
+        let input = "tx hash is abcdef1234567890";
+        assert_eq!(sanitize_hex_secrets(input), input);
+    }
+
+    #[test]
+    fn long_hex_is_redacted() {
+        // 48 hex chars
+        let input = "key=deadbeefcafebabe1234567890abcdef1234567890abcdef end";
+        assert_eq!(sanitize_hex_secrets(input), "key=de..ef end");
+    }
+
+    #[test]
+    fn hex_with_0x_prefix() {
+        let input = "addr 0xdeadbeefcafebabe1234567890abcdef1234567890abcdef end";
+        assert_eq!(sanitize_hex_secrets(input), "addr 0xde..ef end");
+    }
+
+    #[test]
+    fn multiple_secrets_redacted() {
+        let a = "a".repeat(32);
+        let b = "b".repeat(32);
+        let input = format!("x={a} y={b}");
+        assert_eq!(sanitize_hex_secrets(&input), "x=aa..aa y=bb..bb");
+    }
+
+    #[test]
+    fn exactly_threshold_is_redacted() {
+        let input = "abcdef1234567890abcdef1234567890"; // 32 hex chars
+        assert_eq!(sanitize_hex_secrets(input), "ab..90");
+    }
+
+    #[test]
+    fn below_threshold_passes() {
+        let input = "abcdef12345"; // 11 hex chars
+        assert_eq!(sanitize_hex_secrets(input), input);
+    }
+
+    #[test]
+    fn no_hex_passes_through() {
+        let input = "hello world, no hex here!";
+        assert_eq!(sanitize_hex_secrets(input), input);
+    }
+
+    #[test]
+    fn empty_string() {
+        assert_eq!(sanitize_hex_secrets(""), "");
+    }
+
+    #[test]
+    fn uppercase_hex_redacted() {
+        let input = "DEADBEEFCAFEBABE1234567890ABCDEF1234567890ABCDEF";
+        assert_eq!(sanitize_hex_secrets(input), "DE..EF");
+    }
+
+    #[test]
+    fn mixed_text_and_hex() {
+        let secret = "f".repeat(64);
+        let input = format!("user=alice secret={secret} action=login");
+        assert_eq!(
+            sanitize_hex_secrets(&input),
+            "user=alice secret=ff..ff action=login"
+        );
     }
 }
