@@ -139,9 +139,11 @@ pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()
     );
     conn.execute_batch(&attach_sql)?;
 
+    // vault_meta is intentionally excluded: on restore, the destination vault
+    // already has its own vault_meta (created by ensure_schema + init_leaf_index)
+    // with the authoritative leaf_index from the authenticator.
     let result = conn.execute_batch(
-        "CREATE TABLE backup.vault_meta AS SELECT * FROM vault_meta;
-         CREATE TABLE backup.credential_records AS SELECT * FROM credential_records;
+        "CREATE TABLE backup.credential_records AS SELECT * FROM credential_records;
          CREATE TABLE backup.blob_objects AS SELECT * FROM blob_objects;",
     );
 
