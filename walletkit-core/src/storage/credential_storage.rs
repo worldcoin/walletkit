@@ -203,6 +203,37 @@ impl CredentialStore {
         self.lock_inner()?
             .merkle_cache_put(proof_bytes, now, ttl_seconds)
     }
+
+    /// Exports a plaintext (unencrypted) copy of the vault for backup.
+    ///
+    /// The returned path points to a transient file that the caller **must**
+    /// delete after the backup sync completes. The file contains the full
+    /// vault schema and data without the `sqlite3mc` encryption layer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the export fails.
+    pub fn export_vault_for_backup(&self) -> StorageResult<String> {
+        self.lock_inner()?.export_vault_for_backup()
+    }
+
+    /// Imports credentials from a plaintext vault backup produced by
+    /// [`export_vault_for_backup`](Self::export_vault_for_backup).
+    ///
+    /// The store must already be initialized via [`init`](Self::init).
+    /// Existing credentials are preserved; rows from the backup that
+    /// already exist (by primary key) are skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the import fails.
+    pub fn import_vault_from_backup(
+        &self,
+        backup_path: String,
+    ) -> StorageResult<()> {
+        self.lock_inner()?
+            .import_vault_from_backup(&backup_path)
+    }
 }
 
 /// Implementation not exposed to foreign bindings
@@ -412,6 +443,21 @@ impl CredentialStoreInner {
         let nullifier = nullifier.to_be_bytes();
         let state = self.state_mut()?;
         state.cache.replay_guard_set(&guard, nullifier, now)
+    }
+
+    fn export_vault_for_backup(&self) -> StorageResult<String> {
+        let guard = self.guard()?;
+        let state = self.state()?;
+        let dest = self.paths.vault_backup_path();
+        state.vault.export_plaintext(&dest, &guard)?;
+        Ok(dest.to_string_lossy().to_string())
+    }
+
+    fn import_vault_from_backup(&self, backup_path: &str) -> StorageResult<()> {
+        let guard = self.guard()?;
+        let state = self.state()?;
+        let source = std::path::Path::new(backup_path);
+        state.vault.import_plaintext(source, &guard)
     }
 }
 
