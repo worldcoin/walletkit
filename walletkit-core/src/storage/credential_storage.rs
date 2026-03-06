@@ -791,6 +791,96 @@ mod tests {
     }
 
     #[test]
+    fn test_export_and_import_multiple_credentials_with_associated_data() {
+        use world_id_core::Credential as CoreCredential;
+
+        let src_root = temp_root_path();
+        let src_provider = InMemoryStorageProvider::new(&src_root);
+        let src_paths = src_provider.paths().as_ref().clone();
+        let mut src_inner = CredentialStoreInner::new(
+            src_paths,
+            src_provider.keystore(),
+            src_provider.blob_store(),
+        )
+        .expect("create src inner");
+        src_inner.init(42, 1000).expect("init src storage");
+
+        // Store credential A (schema 100) without associated data
+        let cred_a: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        src_inner
+            .store_credential(&cred_a, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store cred A");
+
+        // Store credential B (schema 200) with associated data
+        let cred_b: Credential = CoreCredential::new()
+            .issuer_schema_id(200)
+            .genesis_issued_at(2000)
+            .into();
+        let associated_data = b"extra-payload-for-cred-b".to_vec();
+        src_inner
+            .store_credential(
+                &cred_b,
+                &FieldElement::from(13u64),
+                9999,
+                Some(associated_data),
+                2000,
+            )
+            .expect("store cred B");
+
+        // Store credential C (schema 300) without associated data
+        let cred_c: Credential = CoreCredential::new()
+            .issuer_schema_id(300)
+            .genesis_issued_at(3000)
+            .into();
+        src_inner
+            .store_credential(&cred_c, &FieldElement::from(42u64), 9999, None, 3000)
+            .expect("store cred C");
+
+        // Verify source has 3 credentials
+        let src_list = src_inner.list_credentials(None, 1000).expect("list src");
+        assert_eq!(src_list.len(), 3);
+
+        // Export and import into fresh store
+        let backup_path = src_inner.export_vault_for_backup().expect("export vault");
+
+        let dst_root = temp_root_path();
+        let dst_provider = InMemoryStorageProvider::new(&dst_root);
+        let dst_paths = dst_provider.paths().as_ref().clone();
+        let mut dst_inner = CredentialStoreInner::new(
+            dst_paths,
+            dst_provider.keystore(),
+            dst_provider.blob_store(),
+        )
+        .expect("create dst inner");
+        dst_inner.init(42, 1000).expect("init dst storage");
+
+        dst_inner
+            .import_vault_from_backup(&backup_path)
+            .expect("import vault");
+
+        // Verify all 3 credentials were imported
+        let dst_list = dst_inner.list_credentials(None, 1000).expect("list dst");
+        assert_eq!(dst_list.len(), 3);
+
+        // Verify each credential is retrievable by schema ID
+        for schema_id in [100u64, 200, 300] {
+            let (cred, _) = dst_inner
+                .get_credential(schema_id, 1000)
+                .expect("get credential")
+                .expect("credential should exist");
+            assert_eq!(cred.issuer_schema_id(), schema_id);
+        }
+
+        // Clean up
+        std::fs::remove_file(&backup_path).ok();
+        cleanup_test_storage(&src_root);
+        cleanup_test_storage(&dst_root);
+    }
+
+    #[test]
     fn test_import_vault_backup_into_non_empty_vault_fails() {
         use world_id_core::Credential as CoreCredential;
 
