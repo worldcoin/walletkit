@@ -725,4 +725,74 @@ mod tests {
 
         cleanup_test_storage(&root);
     }
+
+    #[test]
+    fn test_export_and_import_vault_backup() {
+        use world_id_core::Credential as CoreCredential;
+
+        // --- Source store: create and populate ---
+        let src_root = temp_root_path();
+        let src_provider = InMemoryStorageProvider::new(&src_root);
+        let src_paths = src_provider.paths().as_ref().clone();
+        let src_keystore = src_provider.keystore();
+        let src_blob_store = src_provider.blob_store();
+
+        let mut src_inner =
+            CredentialStoreInner::new(src_paths, src_keystore, src_blob_store)
+                .expect("create src inner");
+        src_inner.init(42, 1000).expect("init src storage");
+
+        let issuer_schema_id = 100u64;
+        let blinding_factor = FieldElement::from(7u64);
+        let expires_at = 9999u64;
+        let core_cred = CoreCredential::new()
+            .issuer_schema_id(issuer_schema_id)
+            .genesis_issued_at(1000);
+        let credential: Credential = core_cred.into();
+
+        // Store a credential in the source store
+        src_inner
+            .store_credential(&credential, &blinding_factor, expires_at, None, 1000)
+            .expect("store credential");
+
+        // Export plaintext vault
+        let backup_path = src_inner
+            .export_vault_for_backup()
+            .expect("export vault");
+
+        // Verify the export file exists
+        assert!(
+            std::path::Path::new(&backup_path).exists(),
+            "backup file should exist on disk"
+        );
+
+        // --- Destination store: create empty, then import ---
+        let dst_root = temp_root_path();
+        let dst_provider = InMemoryStorageProvider::new(&dst_root);
+        let dst_paths = dst_provider.paths().as_ref().clone();
+        let dst_keystore = dst_provider.keystore();
+        let dst_blob_store = dst_provider.blob_store();
+
+        let mut dst_inner =
+            CredentialStoreInner::new(dst_paths, dst_keystore, dst_blob_store)
+                .expect("create dst inner");
+        dst_inner.init(42, 1000).expect("init dst storage");
+
+        // Import from the backup
+        dst_inner
+            .import_vault_from_backup(&backup_path)
+            .expect("import vault");
+
+        // Verify credential was imported
+        let (imported_cred, _) = dst_inner
+            .get_credential(issuer_schema_id, 1000)
+            .expect("get credential")
+            .expect("imported credential should exist");
+        assert_eq!(imported_cred.issuer_schema_id(), issuer_schema_id);
+
+        // Clean up
+        std::fs::remove_file(&backup_path).ok();
+        cleanup_test_storage(&src_root);
+        cleanup_test_storage(&dst_root);
+    }
 }
