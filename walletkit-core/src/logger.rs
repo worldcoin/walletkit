@@ -167,7 +167,7 @@ where
         }
 
         let formatted =
-            sanitize_hex_secrets(&format!("{} {message}", metadata.target()));
+            sanitize_hex_secrets(format!("{} {message}", metadata.target()));
 
         if let Ok(sender) = sender.lock() {
             let _ = sender.send(LogEvent {
@@ -292,7 +292,13 @@ const HEX_SECRET_MIN_LEN: usize = 12;
 /// Replaces hex sequences of [`HEX_SECRET_MIN_LEN`] or more digits with a
 /// redacted form showing only the first and last two hex characters.
 /// An optional `0x`/`0X` prefix is preserved in the output.
-fn sanitize_hex_secrets(input: &str) -> String {
+///
+/// Returns `input` unmodified (zero-allocation) when no redaction is needed.
+fn sanitize_hex_secrets(input: String) -> String {
+    if !has_long_hex_run(input.as_bytes()) {
+        return input;
+    }
+
     let bytes = input.as_bytes();
     let len = bytes.len();
     let mut out = String::with_capacity(len);
@@ -320,6 +326,9 @@ fn sanitize_hex_secrets(input: &str) -> String {
             out.push(char::from(bytes[j - 2]));
             out.push(char::from(bytes[j - 1]));
             i = j;
+        } else if j > i {
+            out.push_str(&input[i..j]);
+            i = j;
         } else {
             out.push(char::from(bytes[i]));
             i += 1;
@@ -329,27 +338,41 @@ fn sanitize_hex_secrets(input: &str) -> String {
     out
 }
 
+fn has_long_hex_run(bytes: &[u8]) -> bool {
+    let mut run: usize = 0;
+    for &b in bytes {
+        if b.is_ascii_hexdigit() {
+            run += 1;
+            if run >= HEX_SECRET_MIN_LEN {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn short_hex_passes_through() {
-        let input = "tx hash is abcdef1234567890";
-        assert_eq!(sanitize_hex_secrets(input), input);
+        let input = "tx hash is abcdef1";
+        assert_eq!(sanitize_hex_secrets(input.to_string()), input);
     }
 
     #[test]
     fn long_hex_is_redacted() {
-        // 48 hex chars
         let input = "key=deadbeefcafebabe1234567890abcdef1234567890abcdef end";
-        assert_eq!(sanitize_hex_secrets(input), "key=de..ef end");
+        assert_eq!(sanitize_hex_secrets(input.to_string()), "key=de..ef end");
     }
 
     #[test]
     fn hex_with_0x_prefix() {
         let input = "addr 0xdeadbeefcafebabe1234567890abcdef1234567890abcdef end";
-        assert_eq!(sanitize_hex_secrets(input), "addr 0xde..ef end");
+        assert_eq!(sanitize_hex_secrets(input.to_string()), "addr 0xde..ef end");
     }
 
     #[test]
@@ -357,36 +380,36 @@ mod tests {
         let a = "a".repeat(32);
         let b = "b".repeat(32);
         let input = format!("x={a} y={b}");
-        assert_eq!(sanitize_hex_secrets(&input), "x=aa..aa y=bb..bb");
+        assert_eq!(sanitize_hex_secrets(input), "x=aa..aa y=bb..bb");
     }
 
     #[test]
     fn exactly_threshold_is_redacted() {
-        let input = "abcdef1234567890abcdef1234567890"; // 32 hex chars
-        assert_eq!(sanitize_hex_secrets(input), "ab..90");
+        let input = "a".repeat(HEX_SECRET_MIN_LEN);
+        assert_eq!(sanitize_hex_secrets(input), "aa..aa");
     }
 
     #[test]
     fn below_threshold_passes() {
-        let input = "abcdef12345"; // 11 hex chars
-        assert_eq!(sanitize_hex_secrets(input), input);
+        let input = "a".repeat(HEX_SECRET_MIN_LEN - 1);
+        assert_eq!(sanitize_hex_secrets(input.clone()), input);
     }
 
     #[test]
     fn no_hex_passes_through() {
         let input = "hello world, no hex here!";
-        assert_eq!(sanitize_hex_secrets(input), input);
+        assert_eq!(sanitize_hex_secrets(input.to_string()), input);
     }
 
     #[test]
     fn empty_string() {
-        assert_eq!(sanitize_hex_secrets(""), "");
+        assert_eq!(sanitize_hex_secrets(String::new()), "");
     }
 
     #[test]
     fn uppercase_hex_redacted() {
         let input = "DEADBEEFCAFEBABE1234567890ABCDEF1234567890ABCDEF";
-        assert_eq!(sanitize_hex_secrets(input), "DE..EF");
+        assert_eq!(sanitize_hex_secrets(input.to_string()), "DE..EF");
     }
 
     #[test]
@@ -394,8 +417,16 @@ mod tests {
         let secret = "f".repeat(64);
         let input = format!("user=alice secret={secret} action=login");
         assert_eq!(
-            sanitize_hex_secrets(&input),
+            sanitize_hex_secrets(input),
             "user=alice secret=ff..ff action=login"
         );
+    }
+
+    #[test]
+    fn no_alloc_when_clean() {
+        let input = String::from("no secrets here");
+        let ptr = input.as_ptr();
+        let output = sanitize_hex_secrets(input);
+        assert_eq!(output.as_ptr(), ptr, "should return same allocation");
     }
 }
