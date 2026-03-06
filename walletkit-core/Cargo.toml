@@ -59,7 +59,7 @@ world-id-core = { workspace = true, features = [
   "zstd-compress-zkeys",
 ] }
 ciborium = { version = "0.2.2", optional = true }
-walletkit-db = { path = "../walletkit-db", optional = true }
+walletkit-db = { workspace = true, optional = true }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [
