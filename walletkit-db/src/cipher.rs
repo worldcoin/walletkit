@@ -177,7 +177,8 @@ pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<
     );
     conn.execute_batch(&attach_sql)?;
 
-    let result = conn.execute_batch(
+    let tx = conn.transaction()?;
+    let result = tx.execute_batch(
         "INSERT INTO blob_objects (content_id, blob_kind, created_at, bytes)
              SELECT content_id, blob_kind, created_at, bytes FROM backup.blob_objects;
          INSERT INTO credential_records
@@ -190,11 +191,18 @@ pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<
              FROM backup.credential_records;",
     );
 
-    let detach_result = conn.execute_batch("DETACH DATABASE backup;");
-
-    result?;
-    detach_result?;
-    Ok(())
+    match result {
+        Ok(()) => {
+            tx.commit()?;
+            conn.execute_batch("DETACH DATABASE backup;")?;
+            Ok(())
+        }
+        Err(e) => {
+            drop(tx);
+            let _ = conn.execute_batch("DETACH DATABASE backup;");
+            Err(e)
+        }
+    }
 }
 
 /// Runs `PRAGMA integrity_check` and returns whether the database is healthy.
