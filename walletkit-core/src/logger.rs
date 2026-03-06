@@ -438,10 +438,7 @@ mod tests {
     fn utf8_preserved_alongside_hex_redaction() {
         let secret = "a".repeat(32);
         let input = format!("clé={secret} résumé");
-        assert_eq!(
-            sanitize_hex_secrets(input),
-            "clé=aa..aa résumé"
-        );
+        assert_eq!(sanitize_hex_secrets(input), "clé=aa..aa résumé");
     }
 
     #[test]
