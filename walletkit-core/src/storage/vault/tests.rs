@@ -272,6 +272,74 @@ fn test_list_credentials_excludes_expired() {
 }
 
 #[test]
+fn test_danger_delete_all_credentials() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x0Cu8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    db.store_credential(
+        &guard,
+        100,
+        sample_blinding_factor(),
+        1,
+        2000,
+        b"cred-a".to_vec(),
+        None,
+        1000,
+    )
+    .expect("store credential 1");
+    db.store_credential(
+        &guard,
+        200,
+        sample_blinding_factor(),
+        2,
+        2000,
+        b"cred-b".to_vec(),
+        None,
+        1000,
+    )
+    .expect("store credential 2");
+
+    let deleted = db.danger_delete_all_credentials(&guard).expect("delete all");
+    assert_eq!(deleted, 2);
+
+    let records = db.list_credentials(None, 1000).expect("list credentials");
+    assert!(records.is_empty());
+
+    let blob_count = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
+            Ok(stmt.column_i64(0))
+        })
+        .map_err(|err| map_db_err(&err))
+        .expect("count blobs");
+    assert_eq!(blob_count, 0);
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn test_danger_delete_all_credentials_empty() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x0Du8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+
+    let deleted = db
+        .danger_delete_all_credentials(&guard)
+        .expect("delete all on empty");
+    assert_eq!(deleted, 0);
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
 fn test_vault_integrity_check() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
