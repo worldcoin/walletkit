@@ -1,8 +1,7 @@
 [package]
 name = "walletkit-db"
 description = "Internal SQLite wrapper crate for WalletKit storage."
-publish = false
-
+publish = true
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
