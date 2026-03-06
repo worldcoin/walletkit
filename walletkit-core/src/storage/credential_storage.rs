@@ -227,12 +227,8 @@ impl CredentialStore {
     ///
     /// Returns an error if the store is not initialized or the import fails.
     #[allow(clippy::needless_pass_by_value)] // uniffi requires owned String
-    pub fn import_vault_from_backup(
-        &self,
-        backup_path: String,
-    ) -> StorageResult<()> {
-        self.lock_inner()?
-            .import_vault_from_backup(&backup_path)
+    pub fn import_vault_from_backup(&self, backup_path: String) -> StorageResult<()> {
+        self.lock_inner()?.import_vault_from_backup(&backup_path)
     }
 }
 
@@ -756,9 +752,7 @@ mod tests {
             .expect("store credential");
 
         // Export plaintext vault
-        let backup_path = src_inner
-            .export_vault_for_backup()
-            .expect("export vault");
+        let backup_path = src_inner.export_vault_for_backup().expect("export vault");
 
         // Verify the export file exists
         assert!(
@@ -806,9 +800,8 @@ mod tests {
         let keystore = provider.keystore();
         let blob_store = provider.blob_store();
 
-        let mut inner =
-            CredentialStoreInner::new(paths, keystore, blob_store)
-                .expect("create inner");
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
         let blinding_factor = FieldElement::from(7u64);
@@ -822,9 +815,7 @@ mod tests {
             .expect("store credential");
 
         // Export the vault
-        let backup_path = inner
-            .export_vault_for_backup()
-            .expect("export vault");
+        let backup_path = inner.export_vault_for_backup().expect("export vault");
 
         // Importing into the same (non-empty) vault should fail because of
         // primary key conflicts — the import uses plain INSERT, not INSERT OR IGNORE.

@@ -126,7 +126,9 @@ impl StoragePaths {
     /// Returns the path to the plaintext vault backup as a string.
     #[must_use]
     pub fn plaintext_vault_backup_path_string(&self) -> String {
-        self.plaintext_vault_backup_path().to_string_lossy().to_string()
+        self.plaintext_vault_backup_path()
+            .to_string_lossy()
+            .to_string()
     }
 
     /// Returns the path to the cache database as a string.
