@@ -285,4 +285,40 @@ impl VaultDb {
     pub fn check_integrity(&self) -> StorageResult<bool> {
         cipher::integrity_check(&self.conn).map_err(|e| map_db_err(&e))
     }
+
+    /// Exports a plaintext (unencrypted) copy of the vault to `dest`.
+    ///
+    /// The caller is responsible for deleting the exported file after use.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the export fails.
+    pub fn export_plaintext(
+        &self,
+        dest: &Path,
+        _lock: &StorageLockGuard,
+    ) -> StorageResult<()> {
+        // Remove any stale export from a previous failed run.
+        if dest.exists() {
+            std::fs::remove_file(dest).map_err(|e| {
+                StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
+            })?;
+        }
+        cipher::export_plaintext_copy(&self.conn, dest).map_err(|e| map_db_err(&e))
+    }
+
+    /// Imports credentials from a plaintext (unencrypted) vault backup.
+    ///
+    /// Rows that already exist (by primary key) are skipped.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the import fails.
+    pub fn import_plaintext(
+        &self,
+        source: &Path,
+        _lock: &StorageLockGuard,
+    ) -> StorageResult<()> {
+        cipher::import_plaintext_copy(&self.conn, source).map_err(|e| map_db_err(&e))
+    }
 }

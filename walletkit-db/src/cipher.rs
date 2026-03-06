@@ -113,6 +113,51 @@ fn configure_connection(conn: &Connection) -> DbResult<()> {
     )
 }
 
+/// Creates a plaintext (unencrypted) copy of an already-open encrypted database.
+///
+/// The copy is produced by `ATTACH`-ing a new unencrypted database and copying
+/// all user tables (schema + data) via SQL. The destination file must not
+/// already exist.
+///
+/// # Errors
+///
+/// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
+pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()> {
+    let dest_str = dest_path.to_string_lossy();
+    // ATTACH with an empty key creates an unencrypted database.
+    let attach_sql = format!(
+        "ATTACH DATABASE '{}' AS backup KEY '';",
+        dest_str.replace('\'', "''")
+    );
+    conn.execute_batch(&attach_sql)?;
+
+    let result = conn.execute_batch(
+        "CREATE TABLE backup.vault_meta AS SELECT * FROM vault_meta;
+         CREATE TABLE backup.credential_records AS SELECT * FROM credential_records;
+         CREATE TABLE backup.blob_objects AS SELECT * FROM blob_objects;",
+    );
+
+    // Always detach, even if the copy failed.
+    let detach_result = conn.execute_batch("DETACH DATABASE backup;");
+
+    result?;
+    detach_result?;
+    Ok(())
+}
+
+/// Imports data from a plaintext (unencrypted) database into an already-open
+/// encrypted database.
+///
+/// The source database is `ATTACH`ed with an empty key and its contents are
+/// copied into the main database within a transaction. Existing data in the
+/// target tables (`credential_records`, `blob_objects`) is preserved —
+/// rows from the backup are inserted, skipping duplicates.
+///
+/// # Errors
+///
+/// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
+pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<()> {
+
 /// Runs `PRAGMA integrity_check` and returns whether the database is healthy.
 ///
 /// # Errors
