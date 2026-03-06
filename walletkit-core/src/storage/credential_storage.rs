@@ -448,7 +448,7 @@ impl CredentialStoreInner {
     fn export_vault_for_backup(&self) -> StorageResult<String> {
         let guard = self.guard()?;
         let state = self.state()?;
-        let dest = self.paths.vault_backup_path();
+        let dest = self.paths.plaintext_vault_backup_path();
         state.vault.export_plaintext(&dest, &guard)?;
         Ok(dest.to_string_lossy().to_string())
     }
