@@ -291,7 +291,7 @@ const HEX_SECRET_MIN_LEN: usize = 12;
 
 /// Replaces hex sequences of [`HEX_SECRET_MIN_LEN`] or more digits with a
 /// redacted form showing only the first and last two hex characters.
-/// An optional `0x`/`0X` prefix is preserved in the output.
+/// An optional `0x` prefix is preserved in the output.
 ///
 /// Returns `input` unmodified (zero-allocation) when no redaction is needed.
 fn sanitize_hex_secrets(input: String) -> String {
@@ -330,8 +330,20 @@ fn sanitize_hex_secrets(input: String) -> String {
             out.push_str(&input[i..j]);
             i = j;
         } else {
-            out.push(char::from(bytes[i]));
-            i += 1;
+            // Copy one full UTF-8 character. Non-ASCII leading bytes
+            // are never hex digits, so `i` is always at a char boundary.
+            let b = bytes[i];
+            let char_len = if b < 0x80 {
+                1
+            } else if b < 0xE0 {
+                2
+            } else if b < 0xF0 {
+                3
+            } else {
+                4
+            };
+            out.push_str(&input[i..i + char_len]);
+            i += char_len;
         }
     }
 
@@ -420,6 +432,22 @@ mod tests {
             sanitize_hex_secrets(input),
             "user=alice secret=ff..ff action=login"
         );
+    }
+
+    #[test]
+    fn utf8_preserved_alongside_hex_redaction() {
+        let secret = "a".repeat(32);
+        let input = format!("clé={secret} résumé");
+        assert_eq!(
+            sanitize_hex_secrets(input),
+            "clé=aa..aa résumé"
+        );
+    }
+
+    #[test]
+    fn multibyte_utf8_no_hex() {
+        let input = "café naïve 日本語".to_string();
+        assert_eq!(sanitize_hex_secrets(input.clone()), input);
     }
 
     #[test]
