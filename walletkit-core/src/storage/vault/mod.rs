@@ -307,9 +307,8 @@ impl VaultDb {
         cipher::export_plaintext_copy(&self.conn, dest).map_err(|e| map_db_err(&e))
     }
 
-    /// Imports credentials from a plaintext (unencrypted) vault backup.
-    ///
-    /// Rows that already exist (by primary key) are skipped.
+    /// Imports credentials from a plaintext (unencrypted) vault backup into
+    /// an empty vault. Intended for restore on a fresh install.
     ///
     /// # Errors
     ///

@@ -221,12 +221,12 @@ impl CredentialStore {
     /// [`export_vault_for_backup`](Self::export_vault_for_backup).
     ///
     /// The store must already be initialized via [`init`](Self::init).
-    /// Existing credentials are preserved; rows from the backup that
-    /// already exist (by primary key) are skipped.
+    /// Intended for restore on a fresh install where the vault is empty.
     ///
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the import fails.
+    #[allow(clippy::needless_pass_by_value)] // uniffi requires owned String
     pub fn import_vault_from_backup(
         &self,
         backup_path: String,
@@ -794,5 +794,44 @@ mod tests {
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);
+    }
+
+    #[test]
+    fn test_import_vault_backup_into_non_empty_vault_fails() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner =
+            CredentialStoreInner::new(paths, keystore, blob_store)
+                .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        let blinding_factor = FieldElement::from(7u64);
+        let core_cred = CoreCredential::new()
+            .issuer_schema_id(100u64)
+            .genesis_issued_at(1000);
+        let credential: Credential = core_cred.into();
+
+        inner
+            .store_credential(&credential, &blinding_factor, 9999, None, 1000)
+            .expect("store credential");
+
+        // Export the vault
+        let backup_path = inner
+            .export_vault_for_backup()
+            .expect("export vault");
+
+        // Importing into the same (non-empty) vault should fail because of
+        // primary key conflicts — the import uses plain INSERT, not INSERT OR IGNORE.
+        let result = inner.import_vault_from_backup(&backup_path);
+        assert!(result.is_err(), "import into non-empty vault should fail");
+
+        std::fs::remove_file(&backup_path).ok();
+        cleanup_test_storage(&root);
     }
 }
