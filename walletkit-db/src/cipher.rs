@@ -119,6 +119,14 @@ fn configure_connection(conn: &Connection) -> DbResult<()> {
 /// all user tables (schema + data) via SQL. The destination file must not
 /// already exist.
 ///
+/// We use `ATTACH` + SQL instead of the `sqlite3_backup` API because
+/// `sqlite3mc` requires both source and destination to share the same
+/// encryption configuration. Since the destination is unencrypted, the
+/// backup API cannot be used.
+///
+/// **Note:** If new tables are added to the vault schema, the SQL
+/// statements below must be updated to include them.
+///
 /// # Errors
 ///
 /// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
@@ -152,6 +160,12 @@ pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()
 /// copied into the main database within a transaction. Existing data in the
 /// target tables (`credential_records`, `blob_objects`) is preserved —
 /// rows from the backup are inserted, skipping duplicates.
+///
+/// See [`export_plaintext_copy`] for why `ATTACH` + SQL is used instead of
+/// the `sqlite3_backup` API.
+///
+/// **Note:** If new tables are added to the vault schema, the SQL
+/// statements below must be updated to include them.
 ///
 /// # Errors
 ///
