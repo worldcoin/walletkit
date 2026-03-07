@@ -777,12 +777,13 @@ mod tests {
             .import_vault_from_backup(&backup_path)
             .expect("import vault");
 
-        // Verify credential was imported
-        let (imported_cred, _) = dst_inner
+        // Verify credential data matches what was stored
+        let (imported_cred, imported_bf) = dst_inner
             .get_credential(issuer_schema_id, 1000)
             .expect("get credential")
             .expect("imported credential should exist");
         assert_eq!(imported_cred.issuer_schema_id(), issuer_schema_id);
+        assert_eq!(imported_bf.to_bytes(), blinding_factor.to_bytes());
 
         // Clean up
         std::fs::remove_file(&backup_path).ok();
@@ -865,14 +866,27 @@ mod tests {
         let dst_list = dst_inner.list_credentials(None, 1000).expect("list dst");
         assert_eq!(dst_list.len(), 3);
 
-        // Verify each credential is retrievable by schema ID
-        for schema_id in [100u64, 200, 300] {
-            let (cred, _) = dst_inner
-                .get_credential(schema_id, 1000)
-                .expect("get credential")
-                .expect("credential should exist");
-            assert_eq!(cred.issuer_schema_id(), schema_id);
-        }
+        // Verify credential data matches what was stored
+        let (cred_a, bf_a) = dst_inner
+            .get_credential(100, 1000)
+            .expect("get cred A")
+            .expect("cred A should exist");
+        assert_eq!(cred_a.issuer_schema_id(), 100);
+        assert_eq!(bf_a.to_bytes(), FieldElement::from(7u64).to_bytes());
+
+        let (cred_b, bf_b) = dst_inner
+            .get_credential(200, 2000)
+            .expect("get cred B")
+            .expect("cred B should exist");
+        assert_eq!(cred_b.issuer_schema_id(), 200);
+        assert_eq!(bf_b.to_bytes(), FieldElement::from(13u64).to_bytes());
+
+        let (cred_c, bf_c) = dst_inner
+            .get_credential(300, 3000)
+            .expect("get cred C")
+            .expect("cred C should exist");
+        assert_eq!(cred_c.issuer_schema_id(), 300);
+        assert_eq!(bf_c.to_bytes(), FieldElement::from(42u64).to_bytes());
 
         // Clean up
         std::fs::remove_file(&backup_path).ok();
