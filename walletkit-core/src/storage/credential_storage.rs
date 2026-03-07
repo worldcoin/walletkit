@@ -907,8 +907,8 @@ mod tests {
         // Export the vault
         let backup_path = inner.export_vault_for_backup().expect("export vault");
 
-        // Importing into the same (non-empty) vault should fail because of
-        // primary key conflicts — the import uses plain INSERT, not INSERT OR IGNORE.
+        // Importing into a non-empty vault should fail — the import checks that
+        // destination tables are empty before inserting.
         let result = inner.import_vault_from_backup(&backup_path);
         assert!(result.is_err(), "import into non-empty vault should fail");
 

@@ -190,9 +190,24 @@ pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<
     );
     conn.execute_batch(&attach_sql)?;
 
-    // Wrap in a transaction so the restore is atomic — if any INSERT fails,
-    // everything is rolled back and the vault stays empty for a retry.
+    // Verify the destination tables are empty before importing. Importing into
+    // a non-empty vault could silently merge data if primary keys don't collide.
     let result = (|| {
+        for table in BACKUP_TABLES {
+            let count: i64 =
+                conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), &[], |row| {
+                    Ok(row.column_i64(0))
+                })?;
+            if count > 0 {
+                return Err(DbError::new(
+                    -1,
+                    format!("cannot import into non-empty table: {table}"),
+                ));
+            }
+        }
+
+        // Wrap in a transaction so the restore is atomic — if any INSERT fails,
+        // everything is rolled back and the vault stays empty for a retry.
         let tx = conn.transaction()?;
         for table in BACKUP_TABLES {
             tx.execute_batch(&format!(
