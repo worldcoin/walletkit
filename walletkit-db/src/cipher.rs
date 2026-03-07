@@ -113,10 +113,20 @@ fn configure_connection(conn: &Connection) -> DbResult<()> {
     )
 }
 
+/// Tables included in plaintext vault backups.
+///
+/// `vault_meta` is intentionally excluded: on restore, the destination vault
+/// already has its own `vault_meta` (created by `ensure_schema` + `init_leaf_index`)
+/// with the authoritative `leaf_index` from the authenticator.
+///
+/// **Note:** If new tables are added to the vault schema, this list must be
+/// updated to include them.
+const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
+
 /// Creates a plaintext (unencrypted) copy of an already-open encrypted database.
 ///
 /// The copy is produced by `ATTACH`-ing a new unencrypted database and copying
-/// all user tables (schema + data) via SQL. The destination file must not
+/// all rows via `CREATE TABLE ... AS SELECT *`. The destination file must not
 /// already exist.
 ///
 /// We use `ATTACH` + SQL instead of the `sqlite3_backup` API because
@@ -124,28 +134,26 @@ fn configure_connection(conn: &Connection) -> DbResult<()> {
 /// encryption configuration. Since the destination is unencrypted, the
 /// backup API cannot be used.
 ///
-/// **Note:** If new tables are added to the vault schema, the SQL
-/// statements below must be updated to include them.
-///
 /// # Errors
 ///
 /// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
 pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()> {
     let dest_str = dest_path.to_string_lossy();
-    // ATTACH with an empty key creates an unencrypted database.
     let attach_sql = format!(
         "ATTACH DATABASE '{}' AS backup KEY '';",
         dest_str.replace('\'', "''")
     );
     conn.execute_batch(&attach_sql)?;
 
-    // vault_meta is intentionally excluded: on restore, the destination vault
-    // already has its own vault_meta (created by ensure_schema + init_leaf_index)
-    // with the authoritative leaf_index from the authenticator.
-    let result = conn.execute_batch(
-        "CREATE TABLE backup.credential_records AS SELECT * FROM credential_records;
-         CREATE TABLE backup.blob_objects AS SELECT * FROM blob_objects;",
-    );
+    let result = (|| {
+        let tx = conn.transaction()?;
+        for table in BACKUP_TABLES {
+            tx.execute_batch(&format!(
+                "CREATE TABLE backup.{table} AS SELECT * FROM {table};"
+            ))?;
+        }
+        tx.commit()
+    })();
 
     // Always detach, even if the copy failed.
     let detach_result = conn.execute_batch("DETACH DATABASE backup;");
@@ -165,15 +173,11 @@ pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()
 /// See [`export_plaintext_copy`] for why `ATTACH` + SQL is used instead of
 /// the `sqlite3_backup` API.
 ///
-/// **Note:** If new tables are added to the vault schema, the SQL
-/// statements below must be updated to include them.
-///
-/// **Schema migration:** The import SQL assumes the backup was created with
-/// the same schema version as the target database. If the vault schema
-/// evolves (e.g. new columns with `NOT NULL` constraints), restoring an
-/// older backup into a newer schema will fail or produce incomplete data.
-/// When that happens, this function will need version-aware import logic
-/// or a schema compatibility check.
+/// **Schema migration:** The import uses `SELECT *`, so column changes are
+/// handled automatically as long as both sides share the same schema. If the
+/// vault schema evolves (e.g. new columns with `NOT NULL` constraints),
+/// restoring an older backup into a newer schema will fail. When that happens,
+/// this function will need version-aware import logic.
 ///
 /// # Errors
 ///
@@ -186,19 +190,19 @@ pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<
     );
     conn.execute_batch(&attach_sql)?;
 
-    let result = conn.execute_batch(
-        "INSERT INTO blob_objects (content_id, blob_kind, created_at, bytes)
-             SELECT content_id, blob_kind, created_at, bytes FROM backup.blob_objects;
-         INSERT INTO credential_records
-             (credential_id, issuer_schema_id, subject_blinding_factor,
-              genesis_issued_at, expires_at, updated_at,
-              credential_blob_cid, associated_data_cid)
-             SELECT credential_id, issuer_schema_id, subject_blinding_factor,
-                    genesis_issued_at, expires_at, updated_at,
-                    credential_blob_cid, associated_data_cid
-             FROM backup.credential_records;",
-    );
+    // Wrap in a transaction so the restore is atomic — if any INSERT fails,
+    // everything is rolled back and the vault stays empty for a retry.
+    let result = (|| {
+        let tx = conn.transaction()?;
+        for table in BACKUP_TABLES {
+            tx.execute_batch(&format!(
+                "INSERT INTO {table} SELECT * FROM backup.{table};"
+            ))?;
+        }
+        tx.commit()
+    })();
 
+    // Always detach, even if the import failed.
     let detach_result = conn.execute_batch("DETACH DATABASE backup;");
 
     result?;
