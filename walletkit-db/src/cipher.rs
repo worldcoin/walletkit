@@ -183,6 +183,13 @@ pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()
 ///
 /// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
 pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<()> {
+    if !source_path.exists() {
+        return Err(DbError::new(
+            -1,
+            format!("backup file does not exist: {}", source_path.display()),
+        ));
+    }
+
     let source_str = source_path.to_string_lossy();
     let attach_sql = format!(
         "ATTACH DATABASE '{}' AS backup KEY '';",

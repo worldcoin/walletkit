@@ -915,4 +915,22 @@ mod tests {
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&root);
     }
+
+    #[test]
+    fn test_import_vault_backup_missing_file_fails() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        let result = inner.import_vault_from_backup("/nonexistent/path/vault.sqlite");
+        assert!(result.is_err(), "import from missing file should fail");
+
+        cleanup_test_storage(&root);
+    }
 }
