@@ -928,6 +928,14 @@ mod tests {
         let result = inner.import_vault_from_backup(&backup_path);
         assert!(result.is_err(), "import into non-empty vault should fail");
 
+        // Verify existing data is unchanged after the failed import.
+        let (cred, bf) = inner
+            .get_credential(100, 1000)
+            .expect("get credential after failed import")
+            .expect("credential should still exist");
+        assert_eq!(cred.issuer_schema_id(), 100);
+        assert_eq!(bf.to_bytes(), blinding_factor.to_bytes());
+
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&root);
     }
