@@ -957,4 +957,78 @@ mod tests {
 
         cleanup_test_storage(&root);
     }
+
+    #[test]
+    fn test_import_vault_backup_transaction_atomicity() {
+        use walletkit_db::Connection;
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        let blinding_factor = FieldElement::from(7u64);
+        let core_cred = CoreCredential::new()
+            .issuer_schema_id(100u64)
+            .genesis_issued_at(1000);
+        let credential: Credential = core_cred.into();
+
+        inner
+            .store_credential(&credential, &blinding_factor, 9999, None, 1000)
+            .expect("store credential");
+
+        // Export a valid backup
+        let backup_path = inner.export_vault_for_backup().expect("export vault");
+
+        // Corrupt blob_objects in the backup — this should not be the first table
+        // in BACKUP_TABLES (see walletkit-db/src/cipher.rs) so that earlier
+        // tables' INSERTs succeed before this one fails, actually testing
+        // transaction rollback. The backup tables have no constraints
+        // (CREATE TABLE AS SELECT), so the NULL PK insert succeeds here but
+        // will be rejected by the destination's NOT NULL PRIMARY KEY.
+        let backup_conn =
+            Connection::open(std::path::Path::new(&backup_path), false).expect("open backup");
+        backup_conn
+            .execute(
+                "INSERT INTO blob_objects (content_id, blob_kind, created_at, bytes)
+                 VALUES (NULL, 1, 2000, X'CAFE')",
+                &[],
+            )
+            .expect("insert corrupt row");
+        drop(backup_conn);
+
+        // Create a fresh destination vault and attempt the import
+        let dst_root = temp_root_path();
+        let dst_provider = InMemoryStorageProvider::new(&dst_root);
+        let dst_paths = dst_provider.paths().as_ref().clone();
+        let mut dst_inner = CredentialStoreInner::new(
+            dst_paths,
+            dst_provider.keystore(),
+            dst_provider.blob_store(),
+        )
+        .expect("create dst inner");
+        dst_inner.init(42, 1000).expect("init dst storage");
+
+        let result = dst_inner.import_vault_from_backup(&backup_path);
+        assert!(result.is_err(), "import with corrupt backup should fail");
+
+        // Verify the destination vault is still empty — the transaction should
+        // have rolled back the credential_records INSERT that succeeded before
+        // blob_objects failed.
+        let dst_list = dst_inner.list_credentials(None, 1000).expect("list dst");
+        assert!(
+            dst_list.is_empty(),
+            "destination should be empty after failed import (transaction rolled back)"
+        );
+
+        std::fs::remove_file(&backup_path).ok();
+        cleanup_test_storage(&root);
+        cleanup_test_storage(&dst_root);
+    }
 }
