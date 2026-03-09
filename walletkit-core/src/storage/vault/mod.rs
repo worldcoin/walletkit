@@ -310,6 +310,9 @@ impl VaultDb {
     /// Imports credentials from a plaintext (unencrypted) vault backup into
     /// an empty vault. Intended for restore on a fresh install.
     ///
+    /// The caller is responsible for deleting the source file after the
+    /// import completes.
+    ///
     /// # Errors
     ///
     /// Returns an error if the import fails.

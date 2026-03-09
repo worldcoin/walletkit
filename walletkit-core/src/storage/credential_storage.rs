@@ -222,11 +222,13 @@ impl CredentialStore {
     ///
     /// The store must already be initialized via [`init`](Self::init).
     /// Intended for restore on a fresh install where the vault is empty.
+    /// The caller is responsible for deleting the source file after the
+    /// import completes.
     ///
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the import fails.
-    #[allow(clippy::needless_pass_by_value)] // uniffi requires owned String
+    #[expect(clippy::needless_pass_by_value, reason = "non-owned strings cannot be lifted via UniFFI")]
     pub fn import_vault_from_backup(&self, backup_path: String) -> StorageResult<()> {
         self.lock_inner()?.import_vault_from_backup(&backup_path)
     }
