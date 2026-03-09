@@ -121,7 +121,7 @@ fn configure_connection(conn: &Connection) -> DbResult<()> {
 ///
 /// **Note:** If new tables are added to the vault schema, this list must be
 /// updated to include them.
-const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
+pub const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
 
 /// Creates a plaintext (unencrypted) copy of an already-open encrypted database.
 ///

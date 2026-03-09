@@ -960,6 +960,7 @@ mod tests {
 
     #[test]
     fn test_import_vault_backup_transaction_atomicity() {
+        use walletkit_db::cipher::BACKUP_TABLES;
         use walletkit_db::Connection;
         use world_id_core::Credential as CoreCredential;
 
@@ -986,12 +987,17 @@ mod tests {
         // Export a valid backup
         let backup_path = inner.export_vault_for_backup().expect("export vault");
 
-        // Corrupt blob_objects in the backup — this should not be the first table
-        // in BACKUP_TABLES (see walletkit-db/src/cipher.rs) so that earlier
-        // tables' INSERTs succeed before this one fails, actually testing
-        // transaction rollback. The backup tables have no constraints
-        // (CREATE TABLE AS SELECT), so the NULL PK insert succeeds here but
-        // will be rejected by the destination's NOT NULL PRIMARY KEY.
+        // Corrupt the *last* table in BACKUP_TABLES inside the backup.
+        // We target the last table so that earlier tables' INSERTs succeed
+        // before this one fails, actually testing transaction rollback.
+        // The backup tables have no constraints (CREATE TABLE AS SELECT),
+        // so the NULL PK insert succeeds here but will be rejected by the
+        // destination's NOT NULL PRIMARY KEY.
+        assert_eq!(
+            *BACKUP_TABLES.last().unwrap(),
+            "blob_objects",
+            "update this test if BACKUP_TABLES order changes"
+        );
         let backup_conn =
             Connection::open(std::path::Path::new(&backup_path), false).expect("open backup");
         backup_conn
