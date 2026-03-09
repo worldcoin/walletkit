@@ -228,7 +228,10 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the import fails.
-    #[expect(clippy::needless_pass_by_value, reason = "non-owned strings cannot be lifted via UniFFI")]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "non-owned strings cannot be lifted via UniFFI"
+    )]
     pub fn import_vault_from_backup(&self, backup_path: String) -> StorageResult<()> {
         self.lock_inner()?.import_vault_from_backup(&backup_path)
     }
@@ -998,8 +1001,8 @@ mod tests {
             "blob_objects",
             "update this test if BACKUP_TABLES order changes"
         );
-        let backup_conn =
-            Connection::open(std::path::Path::new(&backup_path), false).expect("open backup");
+        let backup_conn = Connection::open(std::path::Path::new(&backup_path), false)
+            .expect("open backup");
         backup_conn
             .execute(
                 "INSERT INTO blob_objects (content_id, blob_kind, created_at, bytes)
