@@ -287,7 +287,7 @@ pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
 }
 
 /// Minimum contiguous hex digits to treat as a potential secret.
-const HEX_SECRET_MIN_LEN: usize = 12;
+const HEX_SECRET_MIN_LEN: usize = 21;
 
 /// Replaces hex sequences of [`HEX_SECRET_MIN_LEN`] or more digits with a
 /// redacted form showing only the first and last two hex characters.
@@ -332,18 +332,9 @@ fn sanitize_hex_secrets(input: String) -> String {
         } else {
             // Copy one full UTF-8 character. Non-ASCII leading bytes
             // are never hex digits, so `i` is always at a char boundary.
-            let b = bytes[i];
-            let char_len = if b < 0x80 {
-                1
-            } else if b < 0xE0 {
-                2
-            } else if b < 0xF0 {
-                3
-            } else {
-                4
-            };
-            out.push_str(&input[i..i + char_len]);
-            i += char_len;
+            let next = input.ceil_char_boundary(i + 1);
+            out.push_str(&input[i..next]);
+            i = next;
         }
     }
 
