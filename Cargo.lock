@@ -4465,7 +4465,8 @@ checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 [[package]]
 name = "ruint-uniffi"
 version = "0.1.0"
-source = "git+https://github.com/paolodamico/ruint-uniffi?rev=628a0dbd58cbaa5d71d7bc2c803f9bd8ef494567#628a0dbd58cbaa5d71d7bc2c803f9bd8ef494567"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b989deb2971c9a1477169044d08fd28ab0963ed1142d4b10cbb251859e9b800e"
 dependencies = [
  "ruint",
  "serde",
