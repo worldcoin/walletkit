@@ -800,7 +800,9 @@ mod tests {
         let export_dir = temp_root_path();
         std::fs::create_dir_all(&export_dir).expect("create export dir");
         let export_dir_str = export_dir.to_string_lossy().to_string();
-        let backup_path = src_inner.export_vault_for_backup(&export_dir_str).expect("export vault");
+        let backup_path = src_inner
+            .export_vault_for_backup(&export_dir_str)
+            .expect("export vault");
 
         // Verify the export file exists
         assert!(
@@ -897,7 +899,9 @@ mod tests {
         let export_dir = temp_root_path();
         std::fs::create_dir_all(&export_dir).expect("create export dir");
         let export_dir_str = export_dir.to_string_lossy().to_string();
-        let backup_path = src_inner.export_vault_for_backup(&export_dir_str).expect("export vault");
+        let backup_path = src_inner
+            .export_vault_for_backup(&export_dir_str)
+            .expect("export vault");
 
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
@@ -975,7 +979,9 @@ mod tests {
         let export_dir = temp_root_path();
         std::fs::create_dir_all(&export_dir).expect("create export dir");
         let export_dir_str = export_dir.to_string_lossy().to_string();
-        let backup_path = inner.export_vault_for_backup(&export_dir_str).expect("export vault");
+        let backup_path = inner
+            .export_vault_for_backup(&export_dir_str)
+            .expect("export vault");
 
         // Importing into a non-empty vault should fail — the import checks that
         // destination tables are empty before inserting.
@@ -1043,7 +1049,9 @@ mod tests {
         let export_dir = temp_root_path();
         std::fs::create_dir_all(&export_dir).expect("create export dir");
         let export_dir_str = export_dir.to_string_lossy().to_string();
-        let backup_path = inner.export_vault_for_backup(&export_dir_str).expect("export vault");
+        let backup_path = inner
+            .export_vault_for_backup(&export_dir_str)
+            .expect("export vault");
 
         // Corrupt the *last* table in BACKUP_TABLES inside the backup.
         // We target the last table so that earlier tables' INSERTs succeed
@@ -1189,5 +1197,4 @@ mod tests {
 
         cleanup_test_storage(&root);
     }
-
 }
