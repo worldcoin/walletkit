@@ -81,7 +81,7 @@ impl WorldId {
     ///     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
     ///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Device);
     ///     let proof = world_id.generate_proof(&context).await.unwrap();
-    ///     assert_eq!(proof.nullifier_hash.to_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
+    ///     assert_eq!(proof.nullifier_hash.to_padded_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
     /// # })
     /// ```
     /// note: running the doctest example above requires an HTTP connection to the sequencer.
