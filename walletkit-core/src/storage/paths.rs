@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 const VAULT_FILENAME: &str = "account.vault.sqlite";
-const PLAINTEXT_VAULT_BACKUP_FILENAME: &str = "vault_backup_plaintext.sqlite";
+pub(crate) const PLAINTEXT_VAULT_BACKUP_FILENAME: &str = "vault_backup_plaintext.sqlite";
 const CACHE_FILENAME: &str = "account.cache.sqlite";
 const LOCK_FILENAME: &str = "lock";
 const GROTH16_DIRNAME: &str = "groth16";
@@ -45,12 +45,6 @@ impl StoragePaths {
     #[must_use]
     pub fn vault_db_path(&self) -> PathBuf {
         self.worldid_dir.join(VAULT_FILENAME)
-    }
-
-    /// Returns the path to the plaintext vault backup (transient, for backup export).
-    #[must_use]
-    pub fn plaintext_vault_backup_path(&self) -> PathBuf {
-        self.worldid_dir.join(PLAINTEXT_VAULT_BACKUP_FILENAME)
     }
 
     /// Returns the path to the cache database.
@@ -121,14 +115,6 @@ impl StoragePaths {
     #[must_use]
     pub fn vault_db_path_string(&self) -> String {
         self.vault_db_path().to_string_lossy().to_string()
-    }
-
-    /// Returns the path to the plaintext vault backup as a string.
-    #[must_use]
-    pub fn plaintext_vault_backup_path_string(&self) -> String {
-        self.plaintext_vault_backup_path()
-            .to_string_lossy()
-            .to_string()
     }
 
     /// Returns the path to the cache database as a string.
