@@ -203,6 +203,27 @@ impl CredentialStore {
         self.lock_inner()?
             .merkle_cache_put(proof_bytes, now, ttl_seconds)
     }
+
+    /// **Development only.** Permanently deletes all stored credentials and their
+    /// associated blob data from the vault.
+    ///
+    /// This is a destructive, unrecoverable operation intended for use in
+    /// development and testing environments only. Do not call this in production.
+    ///
+    /// Preserves storage metadata (leaf index, schema version), so the store
+    /// remains initialized and ready to accept new credentials after the call.
+    ///
+    /// # Returns
+    ///
+    /// The number of credentials deleted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete operation fails.
+    pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
+        let mut inner = self.lock_inner()?;
+        inner.danger_delete_all_credentials()
+    }
 }
 
 /// Implementation not exposed to foreign bindings
@@ -412,6 +433,17 @@ impl CredentialStoreInner {
         let nullifier = nullifier.to_be_bytes();
         let state = self.state_mut()?;
         state.cache.replay_guard_set(&guard, nullifier, now)
+    }
+
+    /// Deletes all stored credentials from the vault.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete operation fails.
+    fn danger_delete_all_credentials(&mut self) -> StorageResult<u64> {
+        let guard = self.guard()?;
+        let state = self.state_mut()?;
+        state.vault.danger_delete_all_credentials(&guard)
     }
 }
 
@@ -676,6 +708,99 @@ mod tests {
             .get_credential(issuer_schema_id, 2001)
             .expect("get credential query should succeed");
         assert!(expired.is_none(), "Expired credential should return None");
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_danger_delete_all_credentials() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        let blinding_factor = FieldElement::from(42u64);
+        for issuer_id in [100u64, 200u64] {
+            let cred: Credential = CoreCredential::new()
+                .issuer_schema_id(issuer_id)
+                .genesis_issued_at(1000)
+                .into();
+            inner
+                .store_credential(&cred, &blinding_factor, 2000, None, 1000)
+                .expect("store credential");
+        }
+
+        let deleted = inner.danger_delete_all_credentials().expect("delete all");
+        assert_eq!(deleted, 2);
+
+        let remaining = inner.list_credentials(None, 1000).expect("list");
+        assert!(remaining.is_empty());
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_danger_delete_all_credentials_empty() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        let deleted = inner
+            .danger_delete_all_credentials()
+            .expect("delete all on empty");
+        assert_eq!(deleted, 0);
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_danger_delete_all_credentials_then_store() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let paths = provider.paths().as_ref().clone();
+        let keystore = provider.keystore();
+        let blob_store = provider.blob_store();
+
+        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+            .expect("create inner");
+        inner.init(42, 1000).expect("init storage");
+
+        let blinding_factor = FieldElement::from(42u64);
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100u64)
+            .genesis_issued_at(1000)
+            .into();
+        inner
+            .store_credential(&cred, &blinding_factor, 2000, None, 1000)
+            .expect("store credential");
+
+        inner.danger_delete_all_credentials().expect("delete all");
+
+        let new_cred: Credential = CoreCredential::new()
+            .issuer_schema_id(200u64)
+            .genesis_issued_at(1000)
+            .into();
+        inner
+            .store_credential(&new_cred, &blinding_factor, 2000, None, 1000)
+            .expect("store after delete");
+
+        let list = inner.list_credentials(None, 1000).expect("list");
+        assert_eq!(list.len(), 1);
 
         cleanup_test_storage(&root);
     }
