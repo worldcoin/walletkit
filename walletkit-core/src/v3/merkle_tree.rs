@@ -1,7 +1,10 @@
+use std::str::FromStr;
+
+use ruint_uniffi::Uint256;
 use semaphore_rs::poseidon_tree::Proof;
 use serde::{Deserialize, Serialize};
 
-use crate::{error::WalletKitError, http_request::Request, u256::U256Wrapper};
+use crate::{error::WalletKitError, http_request::Request};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,7 +16,7 @@ struct SequencerBody {
 #[serde(rename_all = "camelCase")]
 struct InclusionProofResponse {
     status: String, // we explicitly don't type this to avoid failing on unknown statuses when this wouldn't be an issue
-    root: U256Wrapper,
+    root: Uint256,
     proof: Proof,
 }
 
@@ -24,7 +27,7 @@ const MINED_STATUS: &str = "mined"; // https://github.com/worldcoin/signup-seque
 #[allow(clippy::module_name_repetitions)]
 pub struct MerkleTreeProof {
     poseidon_proof: Proof,
-    pub merkle_root: U256Wrapper,
+    pub merkle_root: Uint256,
 }
 
 impl MerkleTreeProof {
@@ -44,7 +47,7 @@ impl MerkleTreeProof {
     /// Will throw an error if the request fails or parsing the response fails.
     #[uniffi::constructor]
     pub async fn from_identity_commitment(
-        identity_commitment: &U256Wrapper,
+        identity_commitment: &Uint256,
         sequencer_host: &str,
         require_mined_proof: bool,
     ) -> Result<Self, WalletKitError> {
@@ -52,7 +55,7 @@ impl MerkleTreeProof {
 
         // TODO: Cache inclusion proof for 10-15 mins
         let body = SequencerBody {
-            identity_commitment: identity_commitment.to_hex_string(),
+            identity_commitment: identity_commitment.to_padded_hex_string(),
         };
 
         let request = Request::new();
@@ -109,12 +112,12 @@ impl MerkleTreeProof {
 
         Ok(Self {
             poseidon_proof: proof,
-            merkle_root: U256Wrapper::try_from_hex_string(merkle_root).map_err(
-                |_| WalletKitError::InvalidInput {
+            merkle_root: Uint256::from_str(merkle_root).map_err(|_| {
+                WalletKitError::InvalidInput {
                     attribute: "merkle_root".to_string(),
-                    reason: "Invalid hex encoded number".to_string(),
-                },
-            )?,
+                    reason: "invalid number".to_string(),
+                }
+            })?,
         })
     }
 }
@@ -155,7 +158,7 @@ mod tests {
 
         assert_eq!(
             merkle_proof.merkle_root,
-            U256Wrapper::try_from_hex_string(
+            Uint256::from_str(
                 "0x2f3a95b6df9074a19bf46e2308d7f5696e9dca49e0d64ef49a1425bbf40e0c02"
             )
             .unwrap()
