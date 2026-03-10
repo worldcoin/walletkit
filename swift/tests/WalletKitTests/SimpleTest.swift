@@ -37,6 +37,7 @@ final class SimpleTest: XCTestCase {
             Thread.sleep(forTimeInterval: 0.05)
         }
 
+
         XCTAssertFalse(entries.isEmpty, "expected at least one bridged log entry")
 
         let hasBridgedMessage = entries.contains { level, message in
