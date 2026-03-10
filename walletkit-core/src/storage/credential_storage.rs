@@ -210,11 +210,18 @@ impl CredentialStore {
     /// delete after the backup sync completes. The file contains the full
     /// vault schema and data without the `sqlite3mc` encryption layer.
     ///
+    /// `dest_dir` is the directory where the plaintext backup file will be
+    /// written.
+    ///
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the export fails.
-    pub fn export_vault_for_backup(&self) -> StorageResult<String> {
-        self.lock_inner()?.export_vault_for_backup()
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "non-owned strings cannot be lifted via UniFFI"
+    )]
+    pub fn export_vault_for_backup(&self, dest_dir: String) -> StorageResult<String> {
+        self.lock_inner()?.export_vault_for_backup(&dest_dir)
     }
 
     /// Imports credentials from a plaintext vault backup produced by
@@ -467,10 +474,11 @@ impl CredentialStoreInner {
         state.cache.replay_guard_set(&guard, nullifier, now)
     }
 
-    fn export_vault_for_backup(&self) -> StorageResult<String> {
+    fn export_vault_for_backup(&self, dest_dir: &str) -> StorageResult<String> {
         let guard = self.guard()?;
         let state = self.state()?;
-        let dest = self.paths.plaintext_vault_backup_path();
+        let dest = std::path::PathBuf::from(dest_dir)
+            .join(crate::storage::paths::PLAINTEXT_VAULT_BACKUP_FILENAME);
         state.vault.export_plaintext(&dest, &guard)?;
         Ok(dest.to_string_lossy().to_string())
     }
@@ -788,8 +796,11 @@ mod tests {
             .store_credential(&credential, &blinding_factor, expires_at, None, 1000)
             .expect("store credential");
 
-        // Export plaintext vault
-        let backup_path = src_inner.export_vault_for_backup().expect("export vault");
+        // Export plaintext vault to a separate directory
+        let export_dir = temp_root_path();
+        std::fs::create_dir_all(&export_dir).expect("create export dir");
+        let export_dir_str = export_dir.to_string_lossy().to_string();
+        let backup_path = src_inner.export_vault_for_backup(&export_dir_str).expect("export vault");
 
         // Verify the export file exists
         assert!(
@@ -825,6 +836,7 @@ mod tests {
         // Clean up
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&src_root);
+        cleanup_test_storage(&export_dir);
         cleanup_test_storage(&dst_root);
     }
 
@@ -882,7 +894,10 @@ mod tests {
         assert_eq!(src_list.len(), 3);
 
         // Export and import into fresh store
-        let backup_path = src_inner.export_vault_for_backup().expect("export vault");
+        let export_dir = temp_root_path();
+        std::fs::create_dir_all(&export_dir).expect("create export dir");
+        let export_dir_str = export_dir.to_string_lossy().to_string();
+        let backup_path = src_inner.export_vault_for_backup(&export_dir_str).expect("export vault");
 
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
@@ -928,6 +943,7 @@ mod tests {
         // Clean up
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&src_root);
+        cleanup_test_storage(&export_dir);
         cleanup_test_storage(&dst_root);
     }
 
@@ -956,7 +972,10 @@ mod tests {
             .expect("store credential");
 
         // Export the vault
-        let backup_path = inner.export_vault_for_backup().expect("export vault");
+        let export_dir = temp_root_path();
+        std::fs::create_dir_all(&export_dir).expect("create export dir");
+        let export_dir_str = export_dir.to_string_lossy().to_string();
+        let backup_path = inner.export_vault_for_backup(&export_dir_str).expect("export vault");
 
         // Importing into a non-empty vault should fail — the import checks that
         // destination tables are empty before inserting.
@@ -973,6 +992,7 @@ mod tests {
 
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&root);
+        cleanup_test_storage(&export_dir);
     }
 
     #[test]
@@ -1020,7 +1040,10 @@ mod tests {
             .expect("store credential");
 
         // Export a valid backup
-        let backup_path = inner.export_vault_for_backup().expect("export vault");
+        let export_dir = temp_root_path();
+        std::fs::create_dir_all(&export_dir).expect("create export dir");
+        let export_dir_str = export_dir.to_string_lossy().to_string();
+        let backup_path = inner.export_vault_for_backup(&export_dir_str).expect("export vault");
 
         // Corrupt the *last* table in BACKUP_TABLES inside the backup.
         // We target the last table so that earlier tables' INSERTs succeed
@@ -1070,6 +1093,7 @@ mod tests {
 
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&root);
+        cleanup_test_storage(&export_dir);
         cleanup_test_storage(&dst_root);
     }
 
@@ -1165,4 +1189,5 @@ mod tests {
 
         cleanup_test_storage(&root);
     }
+
 }
