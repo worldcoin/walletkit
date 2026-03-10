@@ -113,6 +113,125 @@ fn configure_connection(conn: &Connection) -> DbResult<()> {
     )
 }
 
+/// Tables included in plaintext vault backups.
+///
+/// `vault_meta` is intentionally excluded: on restore, the destination vault
+/// already has its own `vault_meta` (created by `ensure_schema` + `init_leaf_index`)
+/// with the authoritative `leaf_index` from the authenticator.
+///
+/// **Note:** If new tables are added to the vault schema, this list must be
+/// updated to include them.
+pub const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
+
+/// Creates a plaintext (unencrypted) copy of an already-open encrypted database.
+///
+/// The copy is produced by `ATTACH`-ing a new unencrypted database and copying
+/// all rows via `CREATE TABLE ... AS SELECT *`. The destination file must not
+/// already exist.
+///
+/// We use `ATTACH` + SQL instead of the `sqlite3_backup` API because
+/// `sqlite3mc` requires both source and destination to share the same
+/// encryption configuration. Since the destination is unencrypted, the
+/// backup API cannot be used.
+///
+/// # Errors
+///
+/// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
+pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()> {
+    let dest_str = dest_path.to_string_lossy();
+    let attach_sql = format!(
+        "ATTACH DATABASE '{}' AS backup KEY '';",
+        dest_str.replace('\'', "''")
+    );
+    conn.execute_batch(&attach_sql)?;
+
+    let result = (|| {
+        let tx = conn.transaction()?;
+        for table in BACKUP_TABLES {
+            tx.execute_batch(&format!(
+                "CREATE TABLE backup.{table} AS SELECT * FROM {table};"
+            ))?;
+        }
+        tx.commit()
+    })();
+
+    // Always detach, even if the copy failed.
+    let detach_result = conn.execute_batch("DETACH DATABASE backup;");
+
+    result?;
+    detach_result?;
+    Ok(())
+}
+
+/// Imports data from a plaintext (unencrypted) database into an already-open
+/// encrypted database.
+///
+/// The source database is `ATTACH`ed with an empty key and its contents are
+/// copied into the main (empty) encrypted database. This is intended for
+/// restore on a fresh install where the vault tables exist but contain no data.
+///
+/// See [`export_plaintext_copy`] for why `ATTACH` + SQL is used instead of
+/// the `sqlite3_backup` API.
+///
+/// **Schema migration:** The import uses `SELECT *`, so column changes are
+/// handled automatically as long as both sides share the same schema. If the
+/// vault schema evolves (e.g. new columns with `NOT NULL` constraints),
+/// restoring an older backup into a newer schema will fail. When that happens,
+/// this function will need version-aware import logic.
+///
+/// # Errors
+///
+/// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
+pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<()> {
+    if !source_path.exists() {
+        return Err(DbError::new(
+            -1,
+            format!("backup file does not exist: {}", source_path.display()),
+        ));
+    }
+
+    let source_str = source_path.to_string_lossy();
+    let attach_sql = format!(
+        "ATTACH DATABASE '{}' AS backup KEY '';",
+        source_str.replace('\'', "''")
+    );
+    conn.execute_batch(&attach_sql)?;
+
+    // Verify the destination tables are empty before importing. Importing into
+    // a non-empty vault could silently merge data if primary keys don't collide.
+    let result = (|| {
+        for table in BACKUP_TABLES {
+            let count: i64 =
+                conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), &[], |row| {
+                    Ok(row.column_i64(0))
+                })?;
+            if count > 0 {
+                return Err(DbError::new(
+                    -1,
+                    format!("cannot import into non-empty table: {table}"),
+                ));
+            }
+        }
+
+        // Wrap in a transaction so the restore is atomic — if any INSERT fails,
+        // everything is rolled back and the vault stays empty for a retry.
+        let tx = conn.transaction()?;
+        for table in BACKUP_TABLES {
+            tx.execute_batch(&format!(
+                "INSERT INTO {table} SELECT * FROM backup.{table};"
+            ))?;
+        }
+        tx.commit()
+    })();
+
+    // Always detach, even if the import failed.
+    let detach_result = conn.execute_batch("DETACH DATABASE backup;");
+
+    result?;
+    detach_result?;
+    Ok(())
+}
+
 /// Runs `PRAGMA integrity_check` and returns whether the database is healthy.
 ///
 /// # Errors
