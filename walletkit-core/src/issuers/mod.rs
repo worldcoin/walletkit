@@ -1,4 +1,4 @@
-//! Credential issuers for World ID.
+//! Logic for different specific issuers of Credentials in World ID.
 
 mod tfh_nfc;
 

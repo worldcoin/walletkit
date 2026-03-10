@@ -1,10 +1,12 @@
-#![cfg(feature = "storage")]
+//! Common utilities for integration tests.
+
 #![allow(
     missing_docs,
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
     clippy::must_use_candidate
 )]
+#![cfg(feature = "storage")]
 
 //! Common test utilities shared across integration tests.
 

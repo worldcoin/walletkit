@@ -277,6 +277,32 @@ impl VaultDb {
         }
     }
 
+    /// **Development only.** Permanently deletes all credentials and their
+    /// associated blob data from the vault.
+    ///
+    /// This is a destructive, unrecoverable operation. Do not call in production.
+    /// Vault metadata (leaf index, schema version) is preserved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete operation fails.
+    pub fn danger_delete_all_credentials(
+        &mut self,
+        _lock: &StorageLockGuard,
+    ) -> StorageResult<u64> {
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+
+        let deleted = tx
+            .execute("DELETE FROM credential_records", &[])
+            .map_err(|err| map_db_err(&err))?;
+
+        tx.execute("DELETE FROM blob_objects", &[])
+            .map_err(|err| map_db_err(&err))?;
+
+        tx.commit().map_err(|err| map_db_err(&err))?;
+        Ok(deleted as u64)
+    }
+
     /// Runs an integrity check on the vault database.
     ///
     /// # Errors
@@ -284,5 +310,43 @@ impl VaultDb {
     /// Returns an error if the check cannot be executed.
     pub fn check_integrity(&self) -> StorageResult<bool> {
         cipher::integrity_check(&self.conn).map_err(|e| map_db_err(&e))
+    }
+
+    /// Exports a plaintext (unencrypted) copy of the vault to `dest`.
+    ///
+    /// The caller is responsible for deleting the exported file after use.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the export fails.
+    pub fn export_plaintext(
+        &self,
+        dest: &Path,
+        _lock: &StorageLockGuard,
+    ) -> StorageResult<()> {
+        // Remove any stale export from a previous failed run.
+        if dest.exists() {
+            std::fs::remove_file(dest).map_err(|e| {
+                StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
+            })?;
+        }
+        cipher::export_plaintext_copy(&self.conn, dest).map_err(|e| map_db_err(&e))
+    }
+
+    /// Imports credentials from a plaintext (unencrypted) vault backup into
+    /// an empty vault. Intended for restore on a fresh install.
+    ///
+    /// The caller is responsible for deleting the source file after the
+    /// import completes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the import fails.
+    pub fn import_plaintext(
+        &self,
+        source: &Path,
+        _lock: &StorageLockGuard,
+    ) -> StorageResult<()> {
+        cipher::import_plaintext_copy(&self.conn, source).map_err(|e| map_db_err(&e))
     }
 }

@@ -1,26 +1,33 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
+use crate::{
+    defaults::DefaultConfig, error::WalletKitError,
+    primitives::ParseFromForeignBinding, Environment, FieldElement, Region,
+    U256Wrapper,
+};
 use alloy_primitives::Address;
-use rand::rngs::OsRng;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::Config,
-    requests::{ProofResponse as CoreProofResponse, ResponseItem},
     Authenticator as CoreAuthenticator, Credential as CoreCredential,
-    FieldElement as CoreFieldElement,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
 #[cfg(feature = "storage")]
-use crate::storage::{CredentialStore, StoragePaths};
-use crate::{
-    defaults::DefaultConfig,
-    error::WalletKitError,
-    primitives::ParseFromForeignBinding,
-    requests::{ProofRequest, ProofResponse},
-    Environment, FieldElement, Region, U256Wrapper,
+use world_id_core::{
+    requests::{ProofResponse as CoreProofResponse, ResponseItem},
+    FieldElement as CoreFieldElement,
 };
+
+#[cfg(feature = "storage")]
+use crate::storage::{CredentialStore, StoragePaths};
+
+#[cfg(feature = "storage")]
+use crate::requests::{ProofRequest, ProofResponse};
+
+#[cfg(feature = "storage")]
+use rand::rngs::OsRng;
 
 #[cfg(feature = "storage")]
 mod with_storage;

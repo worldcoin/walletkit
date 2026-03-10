@@ -28,7 +28,6 @@ final class SimpleTest: XCTestCase {
         // a moment to flush through the channel.
         Thread.sleep(forTimeInterval: 1)
 
-        let entries = logger.snapshot()
         XCTAssertFalse(entries.isEmpty, "expected at least one bridged log entry")
 
         let hasBridgedMessage = entries.contains { level, message in
