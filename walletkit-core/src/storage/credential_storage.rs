@@ -178,13 +178,15 @@ impl CredentialStore {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        self.lock_inner()?.store_credential(
+        let id = self.lock_inner()?.store_credential(
             credential,
             blinding_factor,
             expires_at,
             associated_data,
             now,
-        )
+        )?;
+        self.notify_vault_changed();
+        Ok(id)
     }
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
@@ -268,7 +270,13 @@ impl CredentialStore {
     /// Returns an error if the delete operation fails.
     pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
         let mut inner = self.lock_inner()?;
-        inner.danger_delete_all_credentials()
+        let count = inner.danger_delete_all_credentials()?;
+        drop(inner);
+        if count > 0 {
+            self.notify_vault_changed();
+        }
+        Ok(count)
+    }
     }
 }
 
@@ -280,6 +288,38 @@ impl CredentialStore {
         self.inner
             .lock()
             .map_err(|_| StorageError::Lock("storage mutex poisoned".to_string()))
+    }
+
+    /// Exports the vault and notifies the backup manager, if one is set.
+    ///
+    /// This is called after any vault mutation (store, delete) so the host
+    /// app can sync the updated vault to the backup.
+    fn notify_vault_changed(&self) {
+        // Clone the manager and dest_dir out of their locks so we don't hold
+        // them while doing the export (which re-locks `inner`).
+        let manager = self
+            .backup_manager
+            .lock()
+            .ok()
+            .and_then(|g| g.clone());
+        let dest_dir = self
+            .backup_dest_dir
+            .lock()
+            .ok()
+            .and_then(|g| g.clone());
+
+        // No-op if the host app hasn't registered a backup manager yet.
+        let (Some(manager), Some(dest_dir)) = (manager, dest_dir) else {
+            return;
+        };
+
+        // Export a plaintext snapshot of the vault and hand the path to the
+        // host app (e.g. iOS) so it can sync to Bedrock. The host is
+        // responsible for deleting the file after the sync completes.
+        match self.lock_inner().and_then(|inner| inner.export_vault_for_backup(&dest_dir)) {
+            Ok(vault_path) => manager.on_vault_changed(vault_path),
+            Err(e) => tracing::error!("Failed to export vault for backup notification: {e}"),
+        }
     }
 
     /// Retrieves a full credential including raw bytes by issuer schema ID.
