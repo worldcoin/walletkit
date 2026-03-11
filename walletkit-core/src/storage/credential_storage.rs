@@ -214,9 +214,13 @@ impl CredentialStore {
 
     /// Exports a plaintext (unencrypted) copy of the vault for backup.
     ///
-    /// The returned path points to a transient file that the caller **must**
-    /// delete after the backup sync completes. The file contains the full
-    /// vault schema and data without the `sqlite3mc` encryption layer.
+    /// The returned path points to a transient file containing the full vault
+    /// schema and data without the `sqlite3mc` encryption layer. The caller
+    /// is responsible for deleting the file after use.
+    ///
+    /// **Note:** when a [`WalletKitBackupManager`] is registered, vault
+    /// mutations call this internally and delete the file automatically after
+    /// the callback returns. This public method is for manual / one-off exports.
     ///
     /// `dest_dir` is the directory where the plaintext backup file will be
     /// written.
