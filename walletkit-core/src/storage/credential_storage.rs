@@ -301,10 +301,9 @@ impl CredentialStore {
         manager: Arc<dyn WalletKitBackupManager>,
         dest_dir: String,
     ) -> StorageResult<()> {
-        let mut guard = self
-            .backup
-            .lock()
-            .map_err(|_| StorageError::Lock("backup config mutex poisoned".to_string()))?;
+        let mut guard = self.backup.lock().map_err(|_| {
+            StorageError::Lock("backup config mutex poisoned".to_string())
+        })?;
         *guard = Some(BackupConfig { manager, dest_dir });
         Ok(())
     }
@@ -329,10 +328,10 @@ impl CredentialStore {
     fn notify_vault_changed(&self) {
         // Clone the config out of its lock so we don't hold it while doing
         // the export (which re-locks `inner`).
-        let config = self.backup.lock().ok().and_then(|g| {
-            g.as_ref()
-                .map(|c| (c.manager.clone(), c.dest_dir.clone()))
-        });
+        let config =
+            self.backup.lock().ok().and_then(|g| {
+                g.as_ref().map(|c| (c.manager.clone(), c.dest_dir.clone()))
+            });
 
         // No-op if the host app hasn't registered a backup manager yet.
         let Some((manager, dest_dir)) = config else {
@@ -572,10 +571,8 @@ impl CredentialStoreInner {
         // Use a unique filename per export so that concurrent calls to
         // `notify_vault_changed` don't race on the same file — one thread's
         // callback could still be reading while another overwrites or deletes.
-        let filename = format!(
-            "vault_backup_plaintext_{}.sqlite",
-            uuid::Uuid::new_v4()
-        );
+        let filename =
+            format!("vault_backup_plaintext_{}.sqlite", uuid::Uuid::new_v4());
         let dest = std::path::PathBuf::from(dest_dir).join(filename);
         state.vault.export_plaintext(&dest, &guard)?;
         Ok(dest.to_string_lossy().to_string())
@@ -1347,7 +1344,10 @@ mod tests {
 
         let manager = MockBackupManager::new();
         store
-            .set_backup_manager(manager.clone(), export_dir.to_string_lossy().to_string())
+            .set_backup_manager(
+                manager.clone(),
+                export_dir.to_string_lossy().to_string(),
+            )
             .expect("set backup manager");
 
         (store, manager, root, export_dir)
