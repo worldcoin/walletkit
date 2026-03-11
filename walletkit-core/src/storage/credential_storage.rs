@@ -163,12 +163,11 @@ impl CredentialStore {
 
     /// Deletes a credential by ID.
     ///
-    /// Returns `true` when the credential existed and was deleted.
-    ///
     /// # Errors
     ///
-    /// Returns an error if the delete operation fails.
-    pub fn delete_credential(&self, credential_id: u64) -> StorageResult<bool> {
+    /// Returns an error if the delete operation fails or the credential ID does
+    /// not exist.
+    pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
         self.lock_inner()?.delete_credential(credential_id)
     }
 
@@ -373,7 +372,7 @@ impl CredentialStoreInner {
         state.vault.list_credentials(issuer_schema_id, now)
     }
 
-    fn delete_credential(&mut self, credential_id: u64) -> StorageResult<bool> {
+    fn delete_credential(&mut self, credential_id: u64) -> StorageResult<()> {
         let guard = self.guard()?;
         let state = self.state_mut()?;
         state.vault.delete_credential(&guard, credential_id)

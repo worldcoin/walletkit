@@ -231,28 +231,60 @@ impl VaultDb {
 
     /// Deletes a credential record by ID.
     ///
-    /// Returns `true` when a record was deleted, `false` when the credential did
-    /// not exist.
-    ///
-    /// Note: this removes only the row in `credential_records`. Referenced blobs
-    /// in `blob_objects` are intentionally retained (deduplicated storage).
+    /// Deleting a credential also removes orphaned `credential_blob_cid` and
+    /// `associated_data_cid` blobs when no records reference them.
     ///
     /// # Errors
     ///
-    /// Returns an error if the delete query fails.
+    /// Returns an error if the delete query fails or the credential ID does not
+    /// exist.
     pub fn delete_credential(
         &mut self,
         _lock: &StorageLockGuard,
         credential_id: u64,
-    ) -> StorageResult<bool> {
+    ) -> StorageResult<()> {
         let credential_id_i64 = to_i64(credential_id, "credential_id")?;
-        self.conn
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+
+        let deleted = tx
             .execute(
                 "DELETE FROM credential_records WHERE credential_id = ?1",
                 params![credential_id_i64],
             )
-            .map_err(|err| map_db_err(&err))
-            .map(|changed| changed > 0)
+            .map_err(|err| map_db_err(&err))?;
+
+        if deleted == 0 {
+            return Err(StorageError::CredentialIdNotFound { credential_id });
+        }
+
+        // Delete orphaned credential blobs
+        tx.execute(
+            "DELETE FROM blob_objects
+             WHERE blob_kind = ?1
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM credential_records cr
+                   WHERE cr.credential_blob_cid = blob_objects.content_id
+               )",
+            params![BlobKind::CredentialBlob.as_i64()],
+        )
+        .map_err(|err| map_db_err(&err))?;
+
+        // Delete orphaned associated data blobs
+        tx.execute(
+            "DELETE FROM blob_objects
+             WHERE blob_kind = ?1
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM credential_records cr
+                   WHERE cr.associated_data_cid = blob_objects.content_id
+               )",
+            params![BlobKind::AssociatedData.as_i64()],
+        )
+        .map_err(|err| map_db_err(&err))?;
+
+        tx.commit().map_err(|err| map_db_err(&err))?;
+        Ok(())
     }
 
     /// Retrieves the credential bytes and blinding factor by issuer schema ID.
