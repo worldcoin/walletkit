@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/worldcoin/walletkit/compare/v0.9.0...v0.10.0) - 2026-03-11
+
+### Other
+
+- pass explicit `dest_dir` for vault backup export ([#282](https://github.com/worldcoin/walletkit/pull/282))
+
 ## [0.9.0](https://github.com/worldcoin/walletkit/compare/v0.8.0...v0.9.0) - 2026-03-11
 
 ### Added
