@@ -1,7 +1,6 @@
 //! Storage facade implementing the credential storage API.
 
 use std::sync::{Arc, Mutex};
-use tracing;
 
 use world_id_core::FieldElement as CoreFieldElement;
 
@@ -185,7 +184,7 @@ impl CredentialStore {
             associated_data,
             now,
         )?;
-        self.notify_vault_changed();
+        self.notify_vault_changed()?;
         Ok(id)
     }
 
@@ -273,7 +272,7 @@ impl CredentialStore {
         let count = inner.danger_delete_all_credentials()?;
         drop(inner);
         if count > 0 {
-            self.notify_vault_changed();
+            self.notify_vault_changed()?;
         }
         Ok(count)
     }
@@ -316,7 +315,7 @@ impl CredentialStore {
     ///
     /// This is called after any vault mutation (store, delete) so the host
     /// app can sync the updated vault to the backup.
-    fn notify_vault_changed(&self) {
+    fn notify_vault_changed(&self) -> StorageResult<()> {
         // Clone the manager and dest_dir out of their locks so we don't hold
         // them while doing the export (which re-locks `inner`).
         let manager = self
@@ -332,16 +331,15 @@ impl CredentialStore {
 
         // No-op if the host app hasn't registered a backup manager yet.
         let (Some(manager), Some(dest_dir)) = (manager, dest_dir) else {
-            return;
+            return Ok(());
         };
 
         // Export a plaintext snapshot of the vault and hand the path to the
         // host app (e.g. iOS) so it can sync to Bedrock. The host is
         // responsible for deleting the file after the sync completes.
-        match self.lock_inner().and_then(|inner| inner.export_vault_for_backup(&dest_dir)) {
-            Ok(vault_path) => manager.on_vault_changed(vault_path),
-            Err(e) => tracing::error!("Failed to export vault for backup notification: {e}"),
-        }
+        let vault_path = self.lock_inner().and_then(|inner| inner.export_vault_for_backup(&dest_dir))?;
+        manager.on_vault_changed(vault_path);
+        Ok(())
     }
 
     /// Retrieves a full credential including raw bytes by issuer schema ID.
@@ -616,6 +614,8 @@ impl CredentialStore {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
@@ -1269,5 +1269,159 @@ mod tests {
         assert_eq!(list.len(), 1);
 
         cleanup_test_storage(&root);
+    }
+
+    /// Mock backup manager that records each `on_vault_changed` call.
+    struct MockBackupManager {
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl MockBackupManager {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                calls: Mutex::new(Vec::new()),
+            })
+        }
+
+        fn call_count(&self) -> usize {
+            self.calls.lock().unwrap().len()
+        }
+
+        fn last_path(&self) -> Option<String> {
+            self.calls.lock().unwrap().last().cloned()
+        }
+    }
+
+    impl WalletKitBackupManager for MockBackupManager {
+        fn on_vault_changed(&self, vault_file_path: String) {
+            self.calls.lock().unwrap().push(vault_file_path);
+        }
+    }
+
+    /// Helper: create an initialized `CredentialStore` with a temp directory
+    /// for backup exports.
+    fn setup_store_with_backup() -> (CredentialStore, Arc<MockBackupManager>, PathBuf, PathBuf) {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init store");
+
+        let export_dir = temp_root_path();
+        std::fs::create_dir_all(&export_dir).expect("create export dir");
+
+        let manager = MockBackupManager::new();
+        store.set_backup_manager(
+            manager.clone(),
+            export_dir.to_string_lossy().to_string(),
+        );
+
+        (store, manager, root, export_dir)
+    }
+
+    #[test]
+    fn test_store_credential_triggers_backup_notification() {
+        use world_id_core::Credential as CoreCredential;
+
+        let (store, manager, root, export_dir) = setup_store_with_backup();
+
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+
+        assert_eq!(manager.call_count(), 1);
+        let path = manager.last_path().unwrap();
+        assert!(
+            std::path::Path::new(&path).exists(),
+            "exported vault file should exist at {path}"
+        );
+
+        cleanup_test_storage(&root);
+        cleanup_test_storage(&export_dir);
+    }
+
+    #[test]
+    fn test_no_backup_notification_without_manager() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init store");
+
+        // No backup manager registered — should not panic.
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_delete_all_triggers_backup_notification() {
+        use world_id_core::Credential as CoreCredential;
+
+        let (store, manager, root, export_dir) = setup_store_with_backup();
+
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+        assert_eq!(manager.call_count(), 1);
+
+        store
+            .danger_delete_all_credentials()
+            .expect("delete all");
+        assert_eq!(manager.call_count(), 2);
+
+        cleanup_test_storage(&root);
+        cleanup_test_storage(&export_dir);
+    }
+
+    #[test]
+    fn test_delete_all_empty_skips_backup_notification() {
+        let (store, manager, root, export_dir) = setup_store_with_backup();
+
+        // No credentials stored — delete returns 0, no notification expected.
+        let deleted = store
+            .danger_delete_all_credentials()
+            .expect("delete all on empty");
+        assert_eq!(deleted, 0);
+        assert_eq!(manager.call_count(), 0);
+
+        cleanup_test_storage(&root);
+        cleanup_test_storage(&export_dir);
+    }
+
+    #[test]
+    fn test_multiple_stores_trigger_multiple_notifications() {
+        use world_id_core::Credential as CoreCredential;
+
+        let (store, manager, root, export_dir) = setup_store_with_backup();
+
+        for schema_id in [100u64, 200, 300] {
+            let cred: Credential = CoreCredential::new()
+                .issuer_schema_id(schema_id)
+                .genesis_issued_at(1000)
+                .into();
+            store
+                .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+                .expect("store credential");
+        }
+
+        assert_eq!(manager.call_count(), 3);
+
+        cleanup_test_storage(&root);
+        cleanup_test_storage(&export_dir);
     }
 }
