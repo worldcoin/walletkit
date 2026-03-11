@@ -14,12 +14,17 @@ use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
 use crate::{Credential, FieldElement};
 
+/// Configuration for vault backup notifications.
+struct BackupConfig {
+    manager: Arc<dyn WalletKitBackupManager>,
+    dest_dir: String,
+}
+
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
-    backup_manager: Mutex<Option<Arc<dyn WalletKitBackupManager>>>,
-    backup_dest_dir: Mutex<Option<String>>,
+    backup: Mutex<Option<BackupConfig>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -109,8 +114,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup_manager: Mutex::new(None),
-            backup_dest_dir: Mutex::new(None),
+            backup: Mutex::new(None),
         })
     }
 
@@ -127,8 +131,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup_manager: Mutex::new(None),
-            backup_dest_dir: Mutex::new(None),
+            backup: Mutex::new(None),
         })
     }
 
@@ -184,7 +187,7 @@ impl CredentialStore {
             associated_data,
             now,
         )?;
-        self.notify_vault_changed()?;
+        self.notify_vault_changed();
         Ok(id)
     }
 
@@ -276,7 +279,7 @@ impl CredentialStore {
         let count = inner.danger_delete_all_credentials()?;
         drop(inner);
         if count > 0 {
-            self.notify_vault_changed()?;
+            self.notify_vault_changed();
         }
         Ok(count)
     }
@@ -284,24 +287,26 @@ impl CredentialStore {
     /// Registers a backup manager callback and the directory where exported
     /// vault files should be written.
     ///
-    /// After any vault mutation (credential stored, deleted, etc.), the store
-    /// will export a plaintext vault to `dest_dir` and call
+    /// After a vault mutation ([`store_credential`](Self::store_credential),
+    /// [`danger_delete_all_credentials`](Self::danger_delete_all_credentials)),
+    /// the store will export a plaintext vault to `dest_dir` and call
     /// [`WalletKitBackupManager::on_vault_changed`] with the file path.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "non-owned strings cannot be lifted via UniFFI"
-    )]
+    /// Backup failures are logged but do not affect the mutation result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backup config mutex is poisoned.
     pub fn set_backup_manager(
         &self,
         manager: Arc<dyn WalletKitBackupManager>,
         dest_dir: String,
-    ) {
-        if let Ok(mut guard) = self.backup_manager.lock() {
-            *guard = Some(manager);
-        }
-        if let Ok(mut guard) = self.backup_dest_dir.lock() {
-            *guard = Some(dest_dir);
-        }
+    ) -> StorageResult<()> {
+        let mut guard = self
+            .backup
+            .lock()
+            .map_err(|_| StorageError::Lock("backup config mutex poisoned".to_string()))?;
+        *guard = Some(BackupConfig { manager, dest_dir });
+        Ok(())
     }
 }
 
@@ -599,8 +604,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup_manager: Mutex::new(None),
-            backup_dest_dir: Mutex::new(None),
+            backup: Mutex::new(None),
         })
     }
 
@@ -617,8 +621,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup_manager: Mutex::new(None),
-            backup_dest_dir: Mutex::new(None),
+            backup: Mutex::new(None),
         })
     }
 
@@ -1337,10 +1340,9 @@ mod tests {
         std::fs::create_dir_all(&export_dir).expect("create export dir");
 
         let manager = MockBackupManager::new();
-        store.set_backup_manager(
-            manager.clone(),
-            export_dir.to_string_lossy().to_string(),
-        );
+        store
+            .set_backup_manager(manager.clone(), export_dir.to_string_lossy().to_string())
+            .expect("set backup manager");
 
         (store, manager, root, export_dir)
     }
