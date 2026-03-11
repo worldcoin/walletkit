@@ -29,8 +29,3 @@ git_release_enable = false
 changelog_update = false
 release = true
 publish = true
-
-[[package]]
-name = "uniffi-bindgen"
-release = false
-publish = false
