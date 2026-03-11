@@ -394,7 +394,9 @@ fn test_delete_credential_by_id() {
         .delete_credential(&guard, credential_id)
         .expect_err("delete credential again should fail");
     match err {
-        StorageError::CredentialIdNotFound { credential_id: missing_id } => {
+        StorageError::CredentialIdNotFound {
+            credential_id: missing_id,
+        } => {
             assert_eq!(missing_id, credential_id)
         }
         _ => panic!("unexpected error: {err}"),
