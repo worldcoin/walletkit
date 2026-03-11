@@ -318,16 +318,8 @@ impl CredentialStore {
     fn notify_vault_changed(&self) -> StorageResult<()> {
         // Clone the manager and dest_dir out of their locks so we don't hold
         // them while doing the export (which re-locks `inner`).
-        let manager = self
-            .backup_manager
-            .lock()
-            .ok()
-            .and_then(|g| g.clone());
-        let dest_dir = self
-            .backup_dest_dir
-            .lock()
-            .ok()
-            .and_then(|g| g.clone());
+        let manager = self.backup_manager.lock().ok().and_then(|g| g.clone());
+        let dest_dir = self.backup_dest_dir.lock().ok().and_then(|g| g.clone());
 
         // No-op if the host app hasn't registered a backup manager yet.
         let (Some(manager), Some(dest_dir)) = (manager, dest_dir) else {
@@ -337,7 +329,9 @@ impl CredentialStore {
         // Export a plaintext snapshot of the vault. The file is sensitive
         // (unencrypted), so we wrap it in a guard that deletes it on drop —
         // no matter how we exit (normal return, `?`, or panic).
-        let vault_path = self.lock_inner().and_then(|inner| inner.export_vault_for_backup(&dest_dir))?;
+        let vault_path = self
+            .lock_inner()
+            .and_then(|inner| inner.export_vault_for_backup(&dest_dir))?;
 
         struct CleanupFile(String);
         impl Drop for CleanupFile {
@@ -1318,7 +1312,8 @@ mod tests {
 
     /// Helper: create an initialized `CredentialStore` with a temp directory
     /// for backup exports.
-    fn setup_store_with_backup() -> (CredentialStore, Arc<MockBackupManager>, PathBuf, PathBuf) {
+    fn setup_store_with_backup(
+    ) -> (CredentialStore, Arc<MockBackupManager>, PathBuf, PathBuf) {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
@@ -1401,9 +1396,7 @@ mod tests {
             .expect("store credential");
         assert_eq!(manager.call_count(), 1);
 
-        store
-            .danger_delete_all_credentials()
-            .expect("delete all");
+        store.danger_delete_all_credentials().expect("delete all");
         assert_eq!(manager.call_count(), 2);
 
         cleanup_test_storage(&root);
