@@ -569,8 +569,14 @@ impl CredentialStoreInner {
     fn export_vault_for_backup(&self, dest_dir: &str) -> StorageResult<String> {
         let guard = self.guard()?;
         let state = self.state()?;
-        let dest = std::path::PathBuf::from(dest_dir)
-            .join(crate::storage::paths::PLAINTEXT_VAULT_BACKUP_FILENAME);
+        // Use a unique filename per export so that concurrent calls to
+        // `notify_vault_changed` don't race on the same file — one thread's
+        // callback could still be reading while another overwrites or deletes.
+        let filename = format!(
+            "vault_backup_plaintext_{}.sqlite",
+            uuid::Uuid::new_v4()
+        );
+        let dest = std::path::PathBuf::from(dest_dir).join(filename);
         state.vault.export_plaintext(&dest, &guard)?;
         Ok(dest.to_string_lossy().to_string())
     }
