@@ -3,6 +3,7 @@ git_release_enable = true
 git_release_type = "auto"
 pr_labels = ["release"]
 release = false
+publish = false
 changelog_update = true
 
 [[package]]
@@ -11,6 +12,7 @@ git_tag_name = "v{{ version }}"
 git_release_name = "v{{ version }}"
 changelog_include = ["walletkit-core", "walletkit-db"]
 release = true
+publish = true
 
 [[package]]
 name = "walletkit-core"
@@ -18,6 +20,7 @@ git_tag_enable = false
 git_release_enable = false
 changelog_update = false
 release = true
+publish = true
 
 [[package]]
 name = "walletkit-db"
@@ -25,7 +28,4 @@ git_tag_enable = false
 git_release_enable = false
 changelog_update = false
 release = true
-
-[[package]]
-name = "uniffi-bindgen"
-release = false
+publish = true
