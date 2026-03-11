@@ -334,10 +334,22 @@ impl CredentialStore {
             return Ok(());
         };
 
-        // Export a plaintext snapshot of the vault and hand the path to the
-        // host app (e.g. iOS) so it can sync to Bedrock. The host is
-        // responsible for deleting the file after the sync completes.
+        // Export a plaintext snapshot of the vault. The file is sensitive
+        // (unencrypted), so we wrap it in a guard that deletes it on drop —
+        // no matter how we exit (normal return, `?`, or panic).
         let vault_path = self.lock_inner().and_then(|inner| inner.export_vault_for_backup(&dest_dir))?;
+
+        struct CleanupFile(String);
+        impl Drop for CleanupFile {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let _cleanup = CleanupFile(vault_path.clone());
+
+        // Hand the path to the host app (e.g. iOS) so it can copy/upload
+        // the vault to Bedrock. The host must finish with the file during
+        // this synchronous call — the guard deletes it on return.
         manager.on_vault_changed(vault_path);
         Ok(())
     }
@@ -1271,9 +1283,10 @@ mod tests {
         cleanup_test_storage(&root);
     }
 
-    /// Mock backup manager that records each `on_vault_changed` call.
+    /// Mock backup manager that records each `on_vault_changed` call and
+    /// whether the file existed at the time of the callback.
     struct MockBackupManager {
-        calls: Mutex<Vec<String>>,
+        calls: Mutex<Vec<(String, bool)>>,
     }
 
     impl MockBackupManager {
@@ -1288,13 +1301,18 @@ mod tests {
         }
 
         fn last_path(&self) -> Option<String> {
-            self.calls.lock().unwrap().last().cloned()
+            self.calls.lock().unwrap().last().map(|(p, _)| p.clone())
+        }
+
+        fn last_file_existed(&self) -> bool {
+            self.calls.lock().unwrap().last().map_or(false, |(_, e)| *e)
         }
     }
 
     impl WalletKitBackupManager for MockBackupManager {
         fn on_vault_changed(&self, vault_file_path: String) {
-            self.calls.lock().unwrap().push(vault_file_path);
+            let existed = std::path::Path::new(&vault_file_path).exists();
+            self.calls.lock().unwrap().push((vault_file_path, existed));
         }
     }
 
@@ -1333,10 +1351,14 @@ mod tests {
             .expect("store credential");
 
         assert_eq!(manager.call_count(), 1);
+        assert!(
+            manager.last_file_existed(),
+            "exported vault file should exist during the callback"
+        );
         let path = manager.last_path().unwrap();
         assert!(
-            std::path::Path::new(&path).exists(),
-            "exported vault file should exist at {path}"
+            !std::path::Path::new(&path).exists(),
+            "exported vault file should be cleaned up after the callback"
         );
 
         cleanup_test_storage(&root);
