@@ -1,5 +1,6 @@
-use crate::{error::WalletKitError, u256::U256Wrapper, Environment};
+use crate::{error::WalletKitError, Environment};
 
+use ruint_uniffi::Uint256;
 use secrecy::{ExposeSecret, SecretBox};
 use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
 use subtle::ConstantTimeEq;
@@ -45,7 +46,7 @@ impl WorldId {
     ///
     /// [Protocol Reference](https://docs.semaphore.pse.dev/V2/technical-reference/circuits#nullifier-hash).
     #[must_use]
-    pub fn generate_nullifier_hash(&self, context: &ProofContext) -> U256Wrapper {
+    pub fn generate_nullifier_hash(&self, context: &ProofContext) -> Uint256 {
         let identity = self.semaphore_identity_for_credential(&context.credential_type);
         generate_nullifier_hash(&identity, *context.external_nullifier).into()
     }
@@ -57,10 +58,7 @@ impl WorldId {
     /// The identity commitment is the public part of a World ID. It is what gets inserted into the membership set on-chain. Identity commitments
     /// are not directly used in proof verification.
     #[must_use]
-    pub fn get_identity_commitment(
-        &self,
-        credential_type: &CredentialType,
-    ) -> U256Wrapper {
+    pub fn get_identity_commitment(&self, credential_type: &CredentialType) -> Uint256 {
         let identity = self.semaphore_identity_for_credential(credential_type);
         identity.commitment().into()
     }
@@ -83,7 +81,7 @@ impl WorldId {
     ///     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
     ///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Device);
     ///     let proof = world_id.generate_proof(&context).await.unwrap();
-    ///     assert_eq!(proof.nullifier_hash.to_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
+    ///     assert_eq!(proof.nullifier_hash.to_padded_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
     /// # })
     /// ```
     /// note: running the doctest example above requires an HTTP connection to the sequencer.
@@ -168,25 +166,25 @@ mod tests {
         let context = ProofContext::new("app_id", None, None, CredentialType::Orb);
         let nullifier_hash = world_id.generate_nullifier_hash(&context);
         assert_eq!(
-            nullifier_hash.to_hex_string(),
+            nullifier_hash.to_padded_hex_string(),
             "0x1359a81e3a42dc1c34786cbefbcc672a3d730510dba7a3be9941b207b0cf52fa"
         );
 
         assert_eq!(
             world_id
                 .get_identity_commitment(&CredentialType::Orb)
-                .to_hex_string(),
+                .to_padded_hex_string(),
             "0x000352340ece4a3509b5a053118e289300e9e9677d135ae1a625219a10923a7e"
         );
 
         assert_eq!(
-            context.signal_hash.to_hex_string(),
+            context.signal_hash.to_padded_hex_string(),
             "0x00c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a4"
         );
 
         let proof = world_id.generate_proof(&context).await.unwrap();
         assert_eq!(
-            proof.nullifier_hash.to_hex_string(),
+            proof.nullifier_hash.to_padded_hex_string(),
             "0x1359a81e3a42dc1c34786cbefbcc672a3d730510dba7a3be9941b207b0cf52fa"
         );
 
@@ -217,20 +215,20 @@ mod tests {
         assert_eq!(
             world_id
                 .get_identity_commitment(&CredentialType::Device)
-                .to_hex_string(),
+                .to_padded_hex_string(),
             // note this identity commitment is different from the `Orb` credential
             // (deliberate from the identity trapdoor, to maintain privacy between credentials)
             "0x1a060ef75540e13711f074b779a419c126ab5a89d2c2e7d01e64dfd121e44671"
         );
 
         assert_eq!(
-            context.signal_hash.to_hex_string(),
+            context.signal_hash.to_padded_hex_string(),
             "0x00109ceebc907a38c59ec1c982a480d7d2373fc7c58b604a5430988fc08e346e"
         );
 
         let proof = world_id.generate_proof(&context).await.unwrap();
         assert_eq!(
-            proof.nullifier_hash.to_hex_string(),
+            proof.nullifier_hash.to_padded_hex_string(),
             // nullifier hash is the same as the `Orb` credential to maintain a single representation of the user
             "0x1359a81e3a42dc1c34786cbefbcc672a3d730510dba7a3be9941b207b0cf52fa"
         );
@@ -254,9 +252,9 @@ mod tests {
             WorldId::new(b"not_a_real_secret", &Environment::Staging);
 
         // this is the expected SHA-256 of the secret (computed externally)
-        let expected_hash: U256Wrapper = uint!(88026203285206540949013074047154212280150971633012190779810764227609557184952_U256).into();
+        let expected_hash: Uint256 = uint!(88026203285206540949013074047154212280150971633012190779810764227609557184952_U256).into();
 
-        let bytes = expected_hash.to_hex_string();
+        let bytes = expected_hash.to_padded_hex_string();
 
         let mut result = [0_u8; 64];
         result[..].copy_from_slice(&bytes.as_bytes()[2..]); // we slice the first 2 chars to remove the 0x

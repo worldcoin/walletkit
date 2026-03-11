@@ -3,9 +3,9 @@
 use crate::{
     defaults::DefaultConfig, error::WalletKitError,
     primitives::ParseFromForeignBinding, Environment, FieldElement, Region,
-    U256Wrapper,
 };
 use alloy_primitives::Address;
+use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
@@ -136,7 +136,7 @@ impl Authenticator {
     /// The packed account data is a 256 bit integer which includes the user's leaf index, their recovery counter,
     /// and their pubkey id/commitment.
     #[must_use]
-    pub fn packed_account_data(&self) -> U256Wrapper {
+    pub fn packed_account_data(&self) -> Uint256 {
         self.inner.packed_account_data.into()
     }
 
@@ -163,7 +163,7 @@ impl Authenticator {
     /// Will error if the provided RPC URL is not valid or if there are RPC call failures.
     pub async fn get_packed_account_data_remote(
         &self,
-    ) -> Result<U256Wrapper, WalletKitError> {
+    ) -> Result<Uint256, WalletKitError> {
         let client = reqwest::Client::new(); // TODO: reuse client
         let packed_account_data = CoreAuthenticator::get_packed_account_data(
             self.inner.onchain_address(),

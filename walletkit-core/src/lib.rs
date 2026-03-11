@@ -93,9 +93,6 @@ pub mod error;
 /// Contains logging functionality that can be integrated with foreign language bindings.
 pub mod logger;
 
-mod u256;
-pub use u256::U256Wrapper;
-
 mod field_element;
 pub use field_element::FieldElement;
 
@@ -142,3 +139,5 @@ mod http_request;
 pub(crate) mod primitives;
 
 uniffi::setup_scaffolding!("walletkit_core");
+
+ruint_uniffi::register_types!(Uint256);

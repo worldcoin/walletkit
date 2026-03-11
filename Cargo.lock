@@ -4463,6 +4463,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48fd7bd8a6377e15ad9d42a8ec25371b94ddc67abe7c8b9127bec79bebaaae18"
 
 [[package]]
+name = "ruint-uniffi"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b989deb2971c9a1477169044d08fd28ab0963ed1142d4b10cbb251859e9b800e"
+dependencies = [
+ "ruint",
+ "serde",
+]
+
+[[package]]
 name = "rustc-demangle"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6374,6 +6384,7 @@ dependencies = [
  "regex",
  "reqwest 0.12.28",
  "ruint",
+ "ruint-uniffi",
  "rustls 0.23.37",
  "secrecy",
  "semaphore-rs",

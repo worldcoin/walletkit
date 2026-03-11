@@ -1,6 +1,7 @@
-use crate::{error::WalletKitError, U256Wrapper};
+use crate::error::WalletKitError;
 
 use alloy_core::sol_types::SolValue;
+use ruint_uniffi::Uint256;
 #[cfg(feature = "semaphore")]
 use semaphore_rs::protocol::{generate_nullifier_hash, generate_proof};
 use semaphore_rs::{
@@ -20,12 +21,12 @@ use super::{credential_type::CredentialType, merkle_tree::MerkleTreeProof};
 pub struct ProofContext {
     /// The `external_nullifier` is the computed result of a specific context for which a World ID Proof is generated.
     /// It is used in the Sempahore ZK circuit and in the computation of the `nullifier_hash` to guarantee uniqueness in a privacy-preserving way.
-    pub external_nullifier: U256Wrapper,
+    pub external_nullifier: Uint256,
     /// Represents the specific credential to be used for a World ID Proof.
     pub credential_type: CredentialType,
     /// The hashed signal which is included in the ZKP and committed to in the proof.
     /// When verifying the proof, the same signal must be provided.
-    pub signal_hash: U256Wrapper,
+    pub signal_hash: Uint256,
     /// Whether the request requires a mined on-chain proof.
     pub require_mined_proof: bool,
 }
@@ -83,7 +84,7 @@ impl ProofContext {
         credential_type: CredentialType,
     ) -> Self {
         let signal_hash =
-            U256Wrapper::from(hash_to_field(signal.unwrap_or_default().as_slice()));
+            Uint256::from(hash_to_field(signal.unwrap_or_default().as_slice()));
 
         Self::new_from_signal_hash_unchecked(
             app_id,
@@ -117,7 +118,7 @@ impl ProofContext {
         app_id: &str,
         action: Option<Vec<u8>>,
         credential_type: CredentialType,
-        signal_hash: &U256Wrapper,
+        signal_hash: &Uint256,
     ) -> Result<Self, WalletKitError> {
         if signal_hash.0 >= MODULUS {
             return Err(WalletKitError::InvalidNumber);
@@ -133,13 +134,13 @@ impl ProofContext {
 
     /// Get the raw external nullifier for this context.
     #[must_use]
-    pub const fn get_external_nullifier(&self) -> U256Wrapper {
+    pub const fn get_external_nullifier(&self) -> Uint256 {
         self.external_nullifier
     }
 
     /// Get the signal hash for this context.
     #[must_use]
-    pub const fn get_signal_hash(&self) -> U256Wrapper {
+    pub const fn get_signal_hash(&self) -> Uint256 {
         self.signal_hash
     }
 
@@ -156,7 +157,7 @@ impl ProofContext {
         app_id: &str,
         action: Option<Vec<u8>>,
         credential_type: CredentialType,
-        signal_hash: &U256Wrapper,
+        signal_hash: &Uint256,
     ) -> Self {
         let mut pre_image = hash_to_field(app_id.as_bytes()).abi_encode_packed();
 
@@ -202,7 +203,7 @@ impl ProofContext {
         signal: Option<Vec<u8>>,
         require_mined_proof: bool,
     ) -> Self {
-        let external_nullifier: U256Wrapper = hash_to_field(external_nullifier).into();
+        let external_nullifier: Uint256 = hash_to_field(external_nullifier).into();
         Self {
             external_nullifier,
             credential_type,
@@ -233,7 +234,7 @@ impl ProofContext {
     /// - Returns an error if the external nullifier is not a valid number in the field.
     #[uniffi::constructor]
     pub fn legacy_new_from_raw_external_nullifier(
-        external_nullifier: &U256Wrapper,
+        external_nullifier: &Uint256,
         credential_type: CredentialType,
         signal: Option<Vec<u8>>,
         require_mined_proof: bool,
@@ -262,10 +263,10 @@ impl ProofContext {
 pub struct ProofOutput {
     /// The root hash of the Merkle tree used to prove membership. This root hash should match published hashes in the World ID
     ///     protocol contract in Ethereum mainnet. See [address book](https://docs.world.org/world-id/reference/address-book).
-    pub merkle_root: U256Wrapper,
+    pub merkle_root: Uint256,
     /// Represents the unique identifier for a specific context (app & action) and World ID. A World ID holder will always generate
     /// the same `nullifier_hash` for the same context.
-    pub nullifier_hash: U256Wrapper,
+    pub nullifier_hash: Uint256,
     /// The raw zero-knowledge proof.
     #[serde(skip_serializing)]
     pub raw_proof: Proof,
@@ -290,13 +291,13 @@ impl ProofOutput {
 
     /// Exposes the nullifier hash to foreign code. Struct fields are not directly exposed to foreign code.
     #[must_use]
-    pub const fn get_nullifier_hash(&self) -> U256Wrapper {
+    pub const fn get_nullifier_hash(&self) -> Uint256 {
         self.nullifier_hash
     }
 
     /// Exposes the merkle root to foreign code. Struct fields are not directly exposed to foreign code.
     #[must_use]
-    pub const fn get_merkle_root(&self) -> U256Wrapper {
+    pub const fn get_merkle_root(&self) -> Uint256 {
         self.merkle_root
     }
 
@@ -378,7 +379,7 @@ mod external_nullifier_tests {
             CredentialType::Orb,
         );
         assert_eq!(
-            context.external_nullifier.to_hex_string(),
+            context.external_nullifier.to_padded_hex_string(),
             "0x0073e4a6b670e81dc619b1f8703aa7491dc5aaadf75409aba0ac2414014c0227"
         );
 
@@ -390,7 +391,7 @@ mod external_nullifier_tests {
             CredentialType::Orb,
         );
         assert_eq!(
-            context.external_nullifier.to_hex_string(),
+            context.external_nullifier.to_padded_hex_string(),
             "0x0073e4a6b670e81dc619b1f8703aa7491dc5aaadf75409aba0ac2414014c0227"
         );
     }
@@ -406,7 +407,7 @@ mod external_nullifier_tests {
             CredentialType::Orb,
         );
         assert_eq!(
-            context.external_nullifier.to_hex_string(),
+            context.external_nullifier.to_padded_hex_string(),
             "0x00d8b157e767dc59faa533120ed0ce34fc51a71937292ea8baed6ee6f4fda866"
         );
     }
@@ -444,7 +445,7 @@ mod external_nullifier_tests {
             CredentialType::Orb,
         );
         assert_eq!(
-            context.external_nullifier.to_hex_string(),
+            context.external_nullifier.to_padded_hex_string(),
             // expected output obtained from Solidity
             "0x00f974ff06219e8ca992073d8bbe05084f81250dbd8f37cae733f24fcc0c5ffd"
         );
@@ -467,7 +468,7 @@ mod external_nullifier_tests {
             CredentialType::Orb,
         );
         assert_eq!(
-            context.external_nullifier.to_hex_string(),
+            context.external_nullifier.to_padded_hex_string(),
             // expected output obtained from Solidity
             "0x005b49f95e822c7c37f4f043421689b11f880e617faa5cd0391803bc9bcc63c0"
         );
@@ -487,7 +488,7 @@ mod external_nullifier_tests {
         // reference: <https://worldchain-mainnet.explorer.alchemy.com/tx/0x974e70f125abe3b6abaa0b3fb9cb067c09cee359b08fa847487d6623377308fd>
         let expected = uint!(377593556987874043165400752883455722895901692332643678318174569531027326541_U256);
         assert_eq!(
-            context.external_nullifier.to_hex_string(),
+            context.external_nullifier.to_padded_hex_string(),
             format!("{expected:#066x}")
         );
     }
@@ -517,7 +518,7 @@ mod external_nullifier_tests {
         // transaction example for RGD 48: <https://worldscan.org/tx/0xbad696a88c5425a22af18ea6d00efca78ae0f5c5cceade21597adf60126a5fc4>
         let expected = uint!(13569385457497991651199724805705614201555076328004753598373935625927319879728_U256);
         assert_eq!(
-            context.external_nullifier.to_hex_string(),
+            context.external_nullifier.to_padded_hex_string(),
             format!("{expected:#066x}")
         );
     }
@@ -570,7 +571,7 @@ mod signal_tests {
         let external_nullifier = context.get_external_nullifier();
         assert_eq!(external_nullifier, context.external_nullifier);
         assert_eq!(
-            external_nullifier.to_hex_string(),
+            external_nullifier.to_padded_hex_string(),
             "0x00dd12b56cebf29593d6d3208a061bbb19e60152c56045f277a15989d25d5215"
         );
     }
@@ -588,7 +589,7 @@ mod signal_tests {
         let signal_hash = context.get_signal_hash();
         assert_eq!(signal_hash, context.signal_hash);
 
-        let expected_hash = U256Wrapper::from(hash_to_field(signal.as_bytes()));
+        let expected_hash = Uint256::from(hash_to_field(signal.as_bytes()));
         assert_eq!(signal_hash, expected_hash);
     }
 
@@ -641,7 +642,7 @@ mod proof_tests {
         );
 
         assert_eq!(
-            U256Wrapper::from(identity.commitment()).to_hex_string(),
+            Uint256::from(identity.commitment()).to_padded_hex_string(),
             "0x1a060ef75540e13711f074b779a419c126ab5a89d2c2e7d01e64dfd121e44671"
         );
 
@@ -654,12 +655,12 @@ mod proof_tests {
         .unwrap();
 
         assert_eq!(
-            zkp.merkle_root.to_hex_string(),
+            zkp.merkle_root.to_padded_hex_string(),
             "0x2f3a95b6df9074a19bf46e2308d7f5696e9dca49e0d64ef49a1425bbf40e0c02"
         );
 
         assert_eq!(
-            zkp.nullifier_hash.to_hex_string(),
+            zkp.nullifier_hash.to_padded_hex_string(),
             "0x11d194ff98df5c8e239e6b6e33cce7fb1b419344cb13e064350a917970c8fea4"
         );
 
@@ -717,11 +718,11 @@ mod proof_tests {
         assert!(re.is_match(parsed_json["proof"].as_str().unwrap()));
 
         assert_eq!(
-            zkp.get_nullifier_hash().to_hex_string(),
+            zkp.get_nullifier_hash().to_padded_hex_string(),
             parsed_json["nullifier_hash"].as_str().unwrap()
         );
         assert_eq!(
-            zkp.get_merkle_root().to_hex_string(),
+            zkp.get_merkle_root().to_padded_hex_string(),
             parsed_json["merkle_root"].as_str().unwrap()
         );
         assert_eq!(

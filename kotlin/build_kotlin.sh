@@ -8,7 +8,7 @@ PROJECT_ROOT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KOTLIN_DIR="$PROJECT_ROOT_PATH/kotlin"
 JAVA_SRC_DIR="$KOTLIN_DIR/walletkit/src/main/java"
 LIBS_DIR="$KOTLIN_DIR/libs"
-CARGO_FEATURES="compress-zkeys"
+CARGO_FEATURES="compress-zkeys,v3"
 
 # Clean previous artifacts
 rm -rf "$JAVA_SRC_DIR" "$LIBS_DIR"
