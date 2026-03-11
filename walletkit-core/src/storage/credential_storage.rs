@@ -363,7 +363,9 @@ impl CredentialStore {
         // Hand the path to the host app (e.g. iOS) so it can copy/upload
         // the vault to Bedrock. The host must finish with the file during
         // this synchronous call — the guard deletes it on return.
-        manager.on_vault_changed(vault_path);
+        if let Err(e) = manager.on_vault_changed(vault_path) {
+            tracing::error!("Backup manager on_vault_changed failed: {e}");
+        }
     }
 
     /// Retrieves a full credential including raw bytes by issuer schema ID.
@@ -1324,9 +1326,10 @@ mod tests {
     }
 
     impl WalletKitBackupManager for MockBackupManager {
-        fn on_vault_changed(&self, vault_file_path: String) {
+        fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()> {
             let existed = std::path::Path::new(&vault_file_path).exists();
             self.calls.lock().unwrap().push((vault_file_path, existed));
+            Ok(())
         }
     }
 

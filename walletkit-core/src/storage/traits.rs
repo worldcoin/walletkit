@@ -93,7 +93,7 @@ pub trait StorageProvider: Send + Sync {
 /// has changed and needs to be synced to the backup.
 ///
 /// The host app (e.g. iOS) implements this trait and passes it to
-/// [`CredentialStore::set_backup_manager`]. WalletKit calls
+/// `CredentialStore::set_backup_manager`. WalletKit calls
 /// [`on_vault_changed`](WalletKitBackupManager::on_vault_changed) after
 /// `store_credential` and `danger_delete_all_credentials`, passing the path
 /// to a freshly-exported plaintext vault file.
@@ -108,5 +108,12 @@ pub trait WalletKitBackupManager: Send + Sync {
     /// `vault_file_path` is the path to the exported plaintext vault file.
     /// The file is deleted automatically when this method returns, so the
     /// implementor must finish reading or copying it before returning.
-    fn on_vault_changed(&self, vault_file_path: String);
+    ///
+    /// # Errors
+    ///
+    /// Returning `Err` is treated as best-effort — the error is logged but
+    /// does not affect the vault mutation that triggered this call. Returning
+    /// `Result` (rather than `()`) ensures that host-side exceptions are
+    /// translated into a Rust `Err` by UniFFI instead of panicking.
+    fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()>;
 }
