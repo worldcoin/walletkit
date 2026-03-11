@@ -315,27 +315,38 @@ impl CredentialStore {
             .map_err(|_| StorageError::Lock("storage mutex poisoned".to_string()))
     }
 
-    /// Exports the vault and notifies the backup manager, if one is set.
+    /// Best-effort export + notification to the backup manager, if one is set.
     ///
-    /// This is called after any vault mutation (store, delete) so the host
-    /// app can sync the updated vault to the backup.
-    fn notify_vault_changed(&self) -> StorageResult<()> {
-        // Clone the manager and dest_dir out of their locks so we don't hold
-        // them while doing the export (which re-locks `inner`).
-        let manager = self.backup_manager.lock().ok().and_then(|g| g.clone());
-        let dest_dir = self.backup_dest_dir.lock().ok().and_then(|g| g.clone());
+    /// Called after any vault mutation (store, delete) so the host app can
+    /// sync the updated vault to its backup. Failures are logged but never
+    /// propagated — the vault mutation has already succeeded and callers
+    /// should not see an error from a backup side-effect.
+    fn notify_vault_changed(&self) {
+        // Clone the config out of its lock so we don't hold it while doing
+        // the export (which re-locks `inner`).
+        let config = self.backup.lock().ok().and_then(|g| {
+            g.as_ref()
+                .map(|c| (c.manager.clone(), c.dest_dir.clone()))
+        });
 
         // No-op if the host app hasn't registered a backup manager yet.
-        let (Some(manager), Some(dest_dir)) = (manager, dest_dir) else {
-            return Ok(());
+        let Some((manager, dest_dir)) = config else {
+            return;
         };
 
         // Export a plaintext snapshot of the vault. The file is sensitive
         // (unencrypted), so we wrap it in a guard that deletes it on drop —
-        // no matter how we exit (normal return, `?`, or panic).
-        let vault_path = self
+        // no matter how we exit (normal return, early return, or panic).
+        let vault_path = match self
             .lock_inner()
-            .and_then(|inner| inner.export_vault_for_backup(&dest_dir))?;
+            .and_then(|inner| inner.export_vault_for_backup(&dest_dir))
+        {
+            Ok(path) => path,
+            Err(e) => {
+                tracing::error!("Failed to export vault for backup: {e}");
+                return;
+            }
+        };
 
         struct CleanupFile(String);
         impl Drop for CleanupFile {
@@ -349,7 +360,6 @@ impl CredentialStore {
         // the vault to Bedrock. The host must finish with the file during
         // this synchronous call — the guard deletes it on return.
         manager.on_vault_changed(vault_path);
-        Ok(())
     }
 
     /// Retrieves a full credential including raw bytes by issuer schema ID.
