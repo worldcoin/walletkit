@@ -301,10 +301,9 @@ impl CredentialStore {
         manager: Arc<dyn WalletKitBackupManager>,
         dest_dir: String,
     ) -> StorageResult<()> {
-        let mut guard = self.backup.lock().map_err(|_| {
+        *self.backup.lock().map_err(|_| {
             StorageError::Lock("backup config mutex poisoned".to_string())
-        })?;
-        *guard = Some(BackupConfig { manager, dest_dir });
+        })? = Some(BackupConfig { manager, dest_dir });
         Ok(())
     }
 }
@@ -352,13 +351,15 @@ impl CredentialStore {
             }
         };
 
-        struct CleanupFile(String);
-        impl Drop for CleanupFile {
-            fn drop(&mut self) {
-                let _ = std::fs::remove_file(&self.0);
+        let _cleanup = {
+            struct CleanupFile(String);
+            impl Drop for CleanupFile {
+                fn drop(&mut self) {
+                    let _ = std::fs::remove_file(&self.0);
+                }
             }
-        }
-        let _cleanup = CleanupFile(vault_path.clone());
+            CleanupFile(vault_path.clone())
+        };
 
         // Hand the path to the host app (e.g. iOS) so it can copy/upload
         // the vault to Bedrock. The host must finish with the file during
@@ -1321,7 +1322,7 @@ mod tests {
         }
 
         fn last_file_existed(&self) -> bool {
-            self.calls.lock().unwrap().last().map_or(false, |(_, e)| *e)
+            self.calls.lock().unwrap().last().is_some_and(|(_, e)| *e)
         }
     }
 
