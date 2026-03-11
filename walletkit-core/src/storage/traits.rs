@@ -88,3 +88,22 @@ pub trait StorageProvider: Send + Sync {
     /// Returns the storage paths selected by the platform.
     fn paths(&self) -> Arc<StoragePaths>;
 }
+
+/// Callback interface for notifying the host app that the credential vault
+/// has changed and needs to be synced to the backup.
+///
+/// The host app (e.g. iOS) implements this trait and passes it to
+/// [`CredentialStore::set_backup_manager`]. WalletKit calls
+/// [`on_vault_changed`](WalletKitBackupManager::on_vault_changed) after any
+/// mutation that affects the vault (credential stored, deleted, etc.),
+/// passing the path to a freshly-exported plaintext vault file. The host app
+/// is responsible for syncing this file to the backup and deleting it
+/// afterwards.
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+pub trait WalletKitBackupManager: Send + Sync {
+    /// Called after the vault has been mutated and exported.
+    ///
+    /// `vault_file_path` is the absolute path to the exported plaintext vault
+    /// file. The implementor should sync it to the backup and then delete it.
+    fn on_vault_changed(&self, vault_file_path: String);
+}

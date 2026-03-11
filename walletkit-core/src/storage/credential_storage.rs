@@ -1,6 +1,7 @@
 //! Storage facade implementing the credential storage API.
 
 use std::sync::{Arc, Mutex};
+use tracing;
 
 use world_id_core::FieldElement as CoreFieldElement;
 
@@ -9,7 +10,7 @@ use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
 use super::traits::StorageProvider;
-use super::traits::{AtomicBlobStore, DeviceKeystore};
+use super::traits::{AtomicBlobStore, DeviceKeystore, WalletKitBackupManager};
 use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
 use crate::{Credential, FieldElement};
@@ -18,6 +19,8 @@ use crate::{Credential, FieldElement};
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
+    backup_manager: Mutex<Option<Arc<dyn WalletKitBackupManager>>>,
+    backup_dest_dir: Mutex<Option<String>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -107,6 +110,8 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            backup_manager: Mutex::new(None),
+            backup_dest_dir: Mutex::new(None),
         })
     }
 
@@ -123,6 +128,8 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
         Ok(Self {
             inner: Mutex::new(inner),
+            backup_manager: Mutex::new(None),
+            backup_dest_dir: Mutex::new(None),
         })
     }
 
@@ -512,6 +519,8 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            backup_manager: Mutex::new(None),
+            backup_dest_dir: Mutex::new(None),
         })
     }
 
@@ -528,6 +537,8 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            backup_manager: Mutex::new(None),
+            backup_dest_dir: Mutex::new(None),
         })
     }
 
