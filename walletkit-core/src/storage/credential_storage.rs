@@ -277,6 +277,28 @@ impl CredentialStore {
         }
         Ok(count)
     }
+
+    /// Registers a backup manager callback and the directory where exported
+    /// vault files should be written.
+    ///
+    /// After any vault mutation (credential stored, deleted, etc.), the store
+    /// will export a plaintext vault to `dest_dir` and call
+    /// [`WalletKitBackupManager::on_vault_changed`] with the file path.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "non-owned strings cannot be lifted via UniFFI"
+    )]
+    pub fn set_backup_manager(
+        &self,
+        manager: Arc<dyn WalletKitBackupManager>,
+        dest_dir: String,
+    ) {
+        if let Ok(mut guard) = self.backup_manager.lock() {
+            *guard = Some(manager);
+        }
+        if let Ok(mut guard) = self.backup_dest_dir.lock() {
+            *guard = Some(dest_dir);
+        }
     }
 }
 
