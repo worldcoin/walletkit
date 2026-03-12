@@ -25,6 +25,12 @@ struct BackupConfig {
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
     backup: Mutex<Option<BackupConfig>>,
+    /// Serialises the export-and-notify path so that concurrent vault
+    /// mutations deliver backups in order. Without this, two overlapping
+    /// calls to `notify_vault_changed` can race: the slower callback
+    /// (carrying older state) can finish after the faster one, causing
+    /// the host to overwrite a newer backup with a stale snapshot.
+    notify_lock: Mutex<()>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -115,6 +121,7 @@ impl CredentialStore {
         Ok(Self {
             inner: Mutex::new(inner),
             backup: Mutex::new(None),
+            notify_lock: Mutex::new(()),
         })
     }
 
@@ -132,6 +139,7 @@ impl CredentialStore {
         Ok(Self {
             inner: Mutex::new(inner),
             backup: Mutex::new(None),
+            notify_lock: Mutex::new(()),
         })
     }
 
@@ -325,6 +333,9 @@ impl CredentialStore {
     /// propagated — the vault mutation has already succeeded and callers
     /// should not see an error from a backup side-effect.
     fn notify_vault_changed(&self) {
+        // Serialise the entire export+callback path. See `notify_lock` docs.
+        let _notify_guard = self.notify_lock.lock().ok();
+
         // Clone the config out of its lock so we don't hold it while doing
         // the export (which re-locks `inner`).
         let config =
@@ -616,6 +627,7 @@ impl CredentialStore {
         Ok(Self {
             inner: Mutex::new(inner),
             backup: Mutex::new(None),
+            notify_lock: Mutex::new(()),
         })
     }
 
@@ -633,6 +645,7 @@ impl CredentialStore {
         Ok(Self {
             inner: Mutex::new(inner),
             backup: Mutex::new(None),
+            notify_lock: Mutex::new(()),
         })
     }
 
