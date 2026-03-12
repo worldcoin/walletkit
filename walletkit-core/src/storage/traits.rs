@@ -95,7 +95,7 @@ pub trait StorageProvider: Send + Sync {
 /// The host app (e.g. iOS) implements this trait and passes it to
 /// `CredentialStore::set_backup_manager`. `WalletKit` calls
 /// [`on_vault_changed`](WalletKitBackupManager::on_vault_changed) after
-/// `store_credential` and `danger_delete_all_credentials`, passing the path
+/// `store_credential`, `delete_credential`, and `danger_delete_all_credentials`, passing the path
 /// to a freshly-exported plaintext vault file.
 ///
 /// **Important:** the exported file is deleted automatically when this

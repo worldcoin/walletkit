@@ -189,7 +189,9 @@ impl CredentialStore {
     /// Returns an error if the delete operation fails or the credential ID does
     /// not exist.
     pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
-        self.lock_inner()?.delete_credential(credential_id)
+        self.lock_inner()?.delete_credential(credential_id)?;
+        self.notify_vault_changed();
+        Ok(())
     }
 
     /// Stores a credential and optional associated data.
