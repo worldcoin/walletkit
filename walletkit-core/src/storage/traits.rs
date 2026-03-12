@@ -101,6 +101,12 @@ pub trait StorageProvider: Send + Sync {
 /// **Important:** the exported file is deleted automatically when this
 /// callback returns. The implementor must copy or upload the file contents
 /// synchronously during this call.
+///
+/// **Warning:** the implementor must **not** call back into
+/// `CredentialStore` (e.g. `store_credential`, `delete_credential`) from
+/// within `on_vault_changed`. Doing so will deadlock because the
+/// notification path holds an internal lock for the duration of the
+/// callback.
 #[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 pub trait WalletKitBackupManager: Send + Sync {
     /// Directory where plaintext vault exports are written before the
