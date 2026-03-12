@@ -6,8 +6,14 @@ mod proof;
 mod wallet;
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
+use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
+use walletkit_core::Authenticator;
+
+use crate::provider::create_fs_credential_store;
 
 /// `WalletKit` CLI — developer tool for World ID wallet operations.
 #[derive(Parser)]
@@ -18,7 +24,12 @@ pub struct Cli {
     pub root: Option<PathBuf>,
 
     /// 32-byte authenticator seed as hex (required for auth commands).
-    #[arg(long, env = "WALLETKIT_SEED", global = true, conflicts_with = "random_seed")]
+    #[arg(
+        long,
+        env = "WALLETKIT_SEED",
+        global = true,
+        conflicts_with = "random_seed"
+    )]
     pub seed: Option<String>,
 
     /// Generate a fresh random seed for quick testing.
@@ -78,7 +89,8 @@ fn resolve_root(cli: &Cli) -> eyre::Result<PathBuf> {
     if let Some(ref root) = cli.root {
         Ok(root.clone())
     } else {
-        let home = dirs::home_dir().ok_or_else(|| eyre::eyre!("cannot determine home directory"))?;
+        let home = dirs::home_dir()
+            .ok_or_else(|| eyre::eyre!("cannot determine home directory"))?;
         Ok(home.join(".walletkit"))
     }
 }
@@ -89,7 +101,10 @@ fn resolve_seed(cli: &Cli) -> eyre::Result<Vec<u8>> {
         let bytes = hex::decode(hex_seed.trim_start_matches("0x"))
             .map_err(|e| eyre::eyre!("invalid hex seed: {e}"))?;
         if bytes.len() != 32 {
-            return Err(eyre::eyre!("seed must be exactly 32 bytes, got {}", bytes.len()));
+            return Err(eyre::eyre!(
+                "seed must be exactly 32 bytes, got {}",
+                bytes.len()
+            ));
         }
         Ok(bytes)
     } else if cli.random_seed {
@@ -124,6 +139,38 @@ fn resolve_region(cli: &Cli) -> eyre::Result<Option<walletkit_core::Region>> {
         Some("ap") => Ok(Some(walletkit_core::Region::Ap)),
         Some(other) => Err(eyre::eyre!("unknown region: {other}")),
     }
+}
+
+/// Initializes an authenticator and credential store from CLI args.
+pub(crate) async fn init_authenticator(
+    cli: &Cli,
+) -> eyre::Result<(Arc<Authenticator>, Arc<CredentialStore>)> {
+    let root = resolve_root(cli)?;
+    let seed = resolve_seed(cli)?;
+    let env = resolve_environment(cli)?;
+    let region = resolve_region(cli)?;
+
+    let store = create_fs_credential_store(&root)?;
+    let paths = store.storage_paths()?;
+    cache_embedded_groth16_material(paths.clone())?;
+
+    let authenticator = Authenticator::init_with_defaults(
+        &seed,
+        cli.rpc_url.clone(),
+        &env,
+        region,
+        paths,
+        store.clone(),
+    )
+    .await
+    .map_err(|e| eyre::eyre!("authenticator init failed: {e}"))?;
+
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    authenticator
+        .init_storage(now)
+        .map_err(|e| eyre::eyre!("storage init failed: {e}"))?;
+
+    Ok((Arc::new(authenticator), store))
 }
 
 /// Top-level command dispatch.

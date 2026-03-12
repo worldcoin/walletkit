@@ -16,6 +16,24 @@ pub enum WalletCommand {
     Paths,
     /// Check wallet health: root exists, Groth16 cached, databases openable.
     Doctor,
+    /// Export the vault to a plaintext backup file.
+    Export {
+        /// Destination directory for the backup file.
+        #[arg(long)]
+        dest: String,
+    },
+    /// Import credentials from a vault backup file.
+    Import {
+        /// Path to the backup file.
+        #[arg(long)]
+        backup: String,
+    },
+    /// Permanently delete ALL credentials. Requires --confirm.
+    DangerClear {
+        /// Confirm the destructive operation.
+        #[arg(long)]
+        confirm: bool,
+    },
 }
 
 fn run_init(cli: &Cli) -> eyre::Result<()> {
@@ -80,7 +98,9 @@ fn run_doctor(cli: &Cli) -> eyre::Result<()> {
         && paths.query_graph_path().exists()
         && paths.nullifier_graph_path().exists();
     if !groth16_ok {
-        issues.push("Groth16 material not cached (run `walletkit wallet init`)".to_string());
+        issues.push(
+            "Groth16 material not cached (run `walletkit wallet init`)".to_string(),
+        );
     }
 
     let vault_ok = paths.vault_db_path().exists();
@@ -100,8 +120,14 @@ fn run_doctor(cli: &Cli) -> eyre::Result<()> {
     } else if healthy {
         println!("Wallet is healthy at {}", root.display());
         println!("  groth16 cached: yes");
-        println!("  vault db:       {}", if vault_ok { "present" } else { "missing" });
-        println!("  cache db:       {}", if cache_ok { "present" } else { "missing" });
+        println!(
+            "  vault db:       {}",
+            if vault_ok { "present" } else { "missing" }
+        );
+        println!(
+            "  cache db:       {}",
+            if cache_ok { "present" } else { "missing" }
+        );
     } else {
         println!("Wallet issues found:");
         for issue in &issues {
@@ -117,10 +143,63 @@ fn run_doctor(cli: &Cli) -> eyre::Result<()> {
     Ok(())
 }
 
+fn run_export(cli: &Cli, dest: &str) -> eyre::Result<()> {
+    let root = resolve_root(cli)?;
+    let store = create_fs_credential_store(&root)?;
+    let backup_path = store
+        .export_vault_for_backup(dest.to_string())
+        .map_err(|e| eyre::eyre!("export failed: {e}"))?;
+
+    if cli.json {
+        output::print_json_data(
+            &serde_json::json!({ "backup_path": backup_path }),
+            true,
+        );
+    } else {
+        println!("Vault exported to {backup_path}");
+    }
+    Ok(())
+}
+
+fn run_import(cli: &Cli, backup: &str) -> eyre::Result<()> {
+    let root = resolve_root(cli)?;
+    let store = create_fs_credential_store(&root)?;
+    store
+        .import_vault_from_backup(backup.to_string())
+        .map_err(|e| eyre::eyre!("import failed: {e}"))?;
+
+    output::print_success("Vault imported successfully.", cli.json);
+    Ok(())
+}
+
+fn run_danger_clear(cli: &Cli, confirm: bool) -> eyre::Result<()> {
+    if !confirm {
+        return Err(eyre::eyre!(
+            "this will permanently delete ALL credentials; pass --confirm to proceed"
+        ));
+    }
+
+    let root = resolve_root(cli)?;
+    let store = create_fs_credential_store(&root)?;
+    let deleted = store
+        .danger_delete_all_credentials()
+        .map_err(|e| eyre::eyre!("danger clear failed: {e}"))?;
+
+    if cli.json {
+        output::print_json_data(&serde_json::json!({ "deleted": deleted }), true);
+    } else {
+        println!("Deleted {deleted} credential(s).");
+    }
+    Ok(())
+}
+
 pub fn run(cli: &Cli, action: &WalletCommand) -> eyre::Result<()> {
     match action {
         WalletCommand::Init => run_init(cli),
         WalletCommand::Paths => run_paths(cli),
         WalletCommand::Doctor => run_doctor(cli),
+        WalletCommand::Export { dest } => run_export(cli, dest),
+        WalletCommand::Import { backup } => run_import(cli, backup),
+        WalletCommand::DangerClear { confirm } => run_danger_clear(cli, *confirm),
     }
 }

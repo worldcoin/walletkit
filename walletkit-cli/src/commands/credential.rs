@@ -11,6 +11,7 @@ use walletkit_core::{Credential, FieldElement};
 use crate::output;
 use crate::provider::create_fs_credential_store;
 
+use super::init_authenticator;
 use super::{resolve_root, Cli};
 
 #[derive(Subcommand)]
@@ -47,6 +48,21 @@ pub enum CredentialCommand {
         /// Credential ID to delete.
         #[arg(long)]
         credential_id: u64,
+    },
+    /// Issue a credential: generate blinding factor via OPRF, then store.
+    Issue {
+        /// Issuer schema ID.
+        #[arg(long)]
+        issuer_schema_id: u64,
+        /// Path to credential file, or `-` for stdin.
+        #[arg(long)]
+        credential: String,
+        /// Expiration timestamp (unix seconds).
+        #[arg(long)]
+        expires_at: u64,
+        /// Optional associated data (base64-encoded).
+        #[arg(long)]
+        associated_data: Option<String>,
     },
     /// Refresh an NFC credential via the TFH issuer.
     RefreshNfc {
@@ -238,6 +254,53 @@ async fn run_refresh_nfc(
     Ok(())
 }
 
+async fn run_issue(
+    cli: &Cli,
+    issuer_schema_id: u64,
+    credential: &str,
+    expires_at: u64,
+    associated_data: Option<&str>,
+) -> eyre::Result<()> {
+    let (authenticator, store) = init_authenticator(cli).await?;
+
+    let bf = authenticator
+        .generate_credential_blinding_factor_remote(issuer_schema_id)
+        .await
+        .map_err(|e| eyre::eyre!("blinding factor generation failed: {e}"))?;
+
+    let cred_bytes = read_file_or_stdin(credential)?;
+    let cred = Credential::from_bytes(cred_bytes)
+        .map_err(|e| eyre::eyre!("invalid credential: {e}"))?;
+
+    let ad = associated_data
+        .map(|b64| {
+            use base64::Engine;
+            base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| eyre::eyre!("invalid base64 associated_data: {e}"))
+        })
+        .transpose()?;
+
+    let now = now_secs()?;
+    let id = store
+        .store_credential(&cred, &bf, expires_at, ad, now)
+        .map_err(|e| eyre::eyre!("store credential failed: {e}"))?;
+
+    if cli.json {
+        output::print_json_data(
+            &serde_json::json!({
+                "credential_id": id,
+                "blinding_factor": bf.to_hex_string(),
+            }),
+            true,
+        );
+    } else {
+        println!("Credential issued (id={id})");
+        println!("  blinding_factor: {}", bf.to_hex_string());
+    }
+    Ok(())
+}
+
 pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
     match action {
         CredentialCommand::Import {
@@ -252,6 +315,21 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
             *expires_at,
             associated_data.as_deref(),
         ),
+        CredentialCommand::Issue {
+            issuer_schema_id,
+            credential,
+            expires_at,
+            associated_data,
+        } => {
+            run_issue(
+                cli,
+                *issuer_schema_id,
+                credential,
+                *expires_at,
+                associated_data.as_deref(),
+            )
+            .await
+        }
         CredentialCommand::List { issuer_schema_id } => {
             run_list(cli, *issuer_schema_id)
         }

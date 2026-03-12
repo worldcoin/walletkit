@@ -10,11 +10,7 @@ use std::process::Command;
 
 fn walletkit_bin() -> PathBuf {
     let path = PathBuf::from(env!("CARGO_BIN_EXE_walletkit"));
-    assert!(
-        path.exists(),
-        "binary not found at {}",
-        path.display()
-    );
+    assert!(path.exists(), "binary not found at {}", path.display());
     path
 }
 
@@ -45,14 +41,24 @@ fn help_exits_zero() {
 fn wallet_paths_prints_json() {
     let root = temp_root();
     let output = Command::new(walletkit_bin())
-        .args(["--root", root.to_str().unwrap(), "--json", "wallet", "paths"])
+        .args([
+            "--root",
+            root.to_str().unwrap(),
+            "--json",
+            "wallet",
+            "paths",
+        ])
         .output()
         .expect("failed to run");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("invalid json");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("invalid json");
     assert_eq!(parsed["ok"], true);
-    assert!(parsed["data"]["root"].as_str().unwrap().contains("walletkit-cli-test-"));
+    assert!(parsed["data"]["root"]
+        .as_str()
+        .unwrap()
+        .contains("walletkit-cli-test-"));
     cleanup(&root);
 }
 
@@ -86,18 +92,13 @@ fn wallet_init_creates_groth16_material() {
 fn wallet_init_json_output() {
     let root = temp_root();
     let output = Command::new(walletkit_bin())
-        .args([
-            "--root",
-            root.to_str().unwrap(),
-            "--json",
-            "wallet",
-            "init",
-        ])
+        .args(["--root", root.to_str().unwrap(), "--json", "wallet", "init"])
         .output()
         .expect("failed to run");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("invalid json");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("invalid json");
     assert_eq!(parsed["ok"], true);
     assert!(parsed["data"]["groth16_dir"].as_str().is_some());
     cleanup(&root);
@@ -113,12 +114,19 @@ fn wallet_doctor_reports_healthy_after_init() {
         .expect("failed to run init");
 
     let output = Command::new(walletkit_bin())
-        .args(["--root", root.to_str().unwrap(), "--json", "wallet", "doctor"])
+        .args([
+            "--root",
+            root.to_str().unwrap(),
+            "--json",
+            "wallet",
+            "doctor",
+        ])
         .output()
         .expect("failed to run doctor");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("invalid json");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("invalid json");
     assert_eq!(parsed["ok"], true);
     assert_eq!(parsed["data"]["healthy"], true);
     assert_eq!(parsed["data"]["groth16_cached"], true);
@@ -131,12 +139,19 @@ fn wallet_doctor_reports_issues_without_init() {
     let root = temp_root();
 
     let output = Command::new(walletkit_bin())
-        .args(["--root", root.to_str().unwrap(), "--json", "wallet", "doctor"])
+        .args([
+            "--root",
+            root.to_str().unwrap(),
+            "--json",
+            "wallet",
+            "doctor",
+        ])
         .output()
         .expect("failed to run doctor");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("invalid json");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("invalid json");
     assert_eq!(parsed["data"]["groth16_cached"], false);
 
     cleanup(&root);
@@ -218,12 +233,7 @@ fn credential_list_on_empty_wallet() {
         .expect("failed init");
 
     let output = Command::new(walletkit_bin())
-        .args([
-            "--root",
-            root.to_str().unwrap(),
-            "credential",
-            "list",
-        ])
+        .args(["--root", root.to_str().unwrap(), "credential", "list"])
         .output()
         .expect("failed to run");
 

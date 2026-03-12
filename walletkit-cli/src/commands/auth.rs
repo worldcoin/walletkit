@@ -1,16 +1,13 @@
 //! `walletkit auth` subcommands — authenticator lifecycle and registration.
 
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use clap::Subcommand;
-use walletkit_core::storage::cache_embedded_groth16_material;
-use walletkit_core::{Authenticator, InitializingAuthenticator, RegistrationStatus};
+use walletkit_core::{InitializingAuthenticator, RegistrationStatus};
 
 use crate::output;
-use crate::provider::create_fs_credential_store;
 
-use super::{resolve_environment, resolve_region, resolve_root, resolve_seed, Cli};
+use super::{
+    init_authenticator, resolve_environment, resolve_region, resolve_seed, Cli,
+};
 
 #[derive(Subcommand)]
 pub enum AuthCommand {
@@ -47,37 +44,6 @@ pub enum AuthCommand {
         #[arg(long)]
         blinding_factor: String,
     },
-}
-
-async fn init_authenticator(
-    cli: &Cli,
-) -> eyre::Result<(Arc<Authenticator>, Arc<walletkit_core::storage::CredentialStore>)> {
-    let root = resolve_root(cli)?;
-    let seed = resolve_seed(cli)?;
-    let env = resolve_environment(cli)?;
-    let region = resolve_region(cli)?;
-
-    let store = create_fs_credential_store(&root)?;
-    let paths = store.storage_paths()?;
-    cache_embedded_groth16_material(paths.clone())?;
-
-    let authenticator = Authenticator::init_with_defaults(
-        &seed,
-        cli.rpc_url.clone(),
-        &env,
-        region,
-        paths,
-        store.clone(),
-    )
-    .await
-    .map_err(|e| eyre::eyre!("authenticator init failed: {e}"))?;
-
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    authenticator
-        .init_storage(now)
-        .map_err(|e| eyre::eyre!("storage init failed: {e}"))?;
-
-    Ok((Arc::new(authenticator), store))
 }
 
 async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result<()> {
@@ -154,7 +120,9 @@ async fn run_register_wait(
             _ => {
                 let status_str = format!("{status:?}");
                 if !cli.json {
-                    eprintln!("Status: {status_str} — polling again in {poll_interval}s...");
+                    eprintln!(
+                        "Status: {status_str} — polling again in {poll_interval}s..."
+                    );
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(poll_interval)).await;
             }
@@ -238,7 +206,10 @@ pub async fn run(cli: &Cli, action: &AuthCommand) -> eyre::Result<()> {
             let hex = bf.to_hex_string();
 
             if cli.json {
-                output::print_json_data(&serde_json::json!({ "blinding_factor": hex }), true);
+                output::print_json_data(
+                    &serde_json::json!({ "blinding_factor": hex }),
+                    true,
+                );
             } else {
                 println!("{hex}");
             }

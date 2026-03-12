@@ -119,7 +119,9 @@ fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
 
 pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
     match action {
-        ProofCommand::Generate { request, now } => run_generate(cli, request, *now).await,
+        ProofCommand::Generate { request, now } => {
+            run_generate(cli, request, *now).await
+        }
         ProofCommand::InspectRequest { request } => run_inspect_request(cli, request),
     }
 }
