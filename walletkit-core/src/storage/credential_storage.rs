@@ -1468,6 +1468,33 @@ mod tests {
     }
 
     #[test]
+    fn test_delete_credential_triggers_backup_notification() {
+        use world_id_core::Credential as CoreCredential;
+
+        let (store, manager, root, export_dir) = setup_store_with_backup();
+
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+        assert_eq!(manager.call_count(), 1);
+
+        let credentials = store.list_credentials(None, 1000).expect("list");
+        let credential_id = credentials[0].credential_id;
+
+        store
+            .delete_credential(credential_id)
+            .expect("delete credential");
+        assert_eq!(manager.call_count(), 2);
+
+        cleanup_test_storage(&root);
+        cleanup_test_storage(&export_dir);
+    }
+
+    #[test]
     fn test_delete_all_empty_skips_backup_notification() {
         let (store, manager, root, export_dir) = setup_store_with_backup();
 
