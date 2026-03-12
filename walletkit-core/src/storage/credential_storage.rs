@@ -1548,9 +1548,10 @@ mod tests {
             "exported vault file should be cleaned up after the callback"
         );
 
-        // Vault contents are unchanged — still one credential.
+        // Vault contents are unchanged — still the same credential.
         let credentials = store.list_credentials(None, 1000).expect("list");
         assert_eq!(credentials.len(), 1);
+        assert_eq!(credentials[0].issuer_schema_id, 100);
 
         cleanup_test_storage(&root);
         cleanup_test_storage(&export_dir);
