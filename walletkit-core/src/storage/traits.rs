@@ -114,6 +114,6 @@ pub trait WalletKitBackupManager: Send + Sync {
     /// Returning `Err` is treated as best-effort — the error is logged but
     /// does not affect the vault mutation that triggered this call. Returning
     /// `Result` (rather than `()`) ensures that host-side exceptions are
-    /// translated into a Rust `Err` by UniFFI instead of panicking.
+    /// translated into a Rust `Err` by `UniFFI` instead of panicking.
     fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()>;
 }

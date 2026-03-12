@@ -355,7 +355,12 @@ impl CredentialStore {
             struct CleanupFile(String);
             impl Drop for CleanupFile {
                 fn drop(&mut self) {
-                    let _ = std::fs::remove_file(&self.0);
+                    if let Err(e) = std::fs::remove_file(&self.0) {
+                        tracing::error!(
+                            "Failed to delete plaintext vault backup {}: {e}",
+                            self.0
+                        );
+                    }
                 }
             }
             CleanupFile(vault_path.clone())
