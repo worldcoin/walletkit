@@ -245,29 +245,7 @@ impl CredentialStore {
     /// Exports a plaintext (unencrypted) copy of the vault for backup.
     ///
     /// The returned path points to a transient file containing the full vault
-    /// schema and data without the `sqlite3mc` encryption layer. The caller
-    /// is responsible for deleting the file after use.
-    ///
-    /// **Note:** when a [`WalletKitBackupManager`] is registered, vault
-    /// mutations call this internally and delete the file automatically after
-    /// the callback returns. This public method is for manual / one-off exports.
-    ///
-    /// `dest_dir` is the directory where the plaintext backup file will be
-    /// written.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the store is not initialized or the export fails.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "non-owned strings cannot be lifted via UniFFI"
-    )]
-    pub fn export_vault_for_backup(&self, dest_dir: String) -> StorageResult<String> {
-        self.lock_inner()?.export_vault_for_backup(&dest_dir)
-    }
-
-    /// Imports credentials from a plaintext vault backup produced by
-    /// [`export_vault_for_backup`](Self::export_vault_for_backup).
+    /// Imports credentials from a plaintext vault backup.
     ///
     /// The store must already be initialized via [`init`](Self::init).
     /// Intended for restore on a fresh install where the vault is empty.
