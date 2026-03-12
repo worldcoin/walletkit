@@ -5,13 +5,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Subcommand;
 use walletkit_core::requests::ProofRequest;
-use walletkit_core::storage::cache_embedded_groth16_material;
-use walletkit_core::Authenticator;
 
 use crate::output;
-use crate::provider::create_fs_credential_store;
 
-use super::{resolve_environment, resolve_region, resolve_root, resolve_seed, Cli};
+use super::{init_authenticator, Cli};
 
 #[derive(Subcommand)]
 pub enum ProofCommand {
@@ -43,25 +40,7 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<String> {
 }
 
 async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Result<()> {
-    let root = resolve_root(cli)?;
-    let seed = resolve_seed(cli)?;
-    let env = resolve_environment(cli)?;
-    let region = resolve_region(cli)?;
-
-    let store = create_fs_credential_store(&root)?;
-    let paths = store.storage_paths()?;
-    cache_embedded_groth16_material(paths.clone())?;
-
-    let authenticator = Authenticator::init_with_defaults(
-        &seed,
-        cli.rpc_url.clone(),
-        &env,
-        region,
-        paths,
-        store.clone(),
-    )
-    .await
-    .map_err(|e| eyre::eyre!("authenticator init failed: {e}"))?;
+    let (authenticator, _store) = init_authenticator(cli).await?;
 
     let ts = now.unwrap_or_else(|| {
         SystemTime::now()
@@ -69,10 +48,6 @@ async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Resul
             .expect("system time after epoch")
             .as_secs()
     });
-
-    authenticator
-        .init_storage(ts)
-        .map_err(|e| eyre::eyre!("storage init failed: {e}"))?;
 
     let json_str = read_file_or_stdin(request)?;
     let proof_request = ProofRequest::from_json(&json_str)

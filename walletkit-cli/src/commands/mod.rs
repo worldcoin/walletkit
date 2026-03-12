@@ -44,6 +44,15 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub region: Option<String>,
 
+    /// Path to a custom config JSON file (overrides --environment and --region).
+    #[arg(
+        long,
+        env = "WALLETKIT_CONFIG",
+        global = true,
+        conflicts_with_all = ["environment", "region"]
+    )]
+    pub config: Option<PathBuf>,
+
     /// RPC URL for World Chain.
     #[arg(long, env = "WORLDCHAIN_RPC_URL", global = true)]
     pub rpc_url: Option<String>,
@@ -141,29 +150,49 @@ fn resolve_region(cli: &Cli) -> eyre::Result<Option<walletkit_core::Region>> {
     }
 }
 
+/// Reads the custom config JSON file, if `--config` was provided.
+pub(crate) fn resolve_config(cli: &Cli) -> eyre::Result<Option<String>> {
+    match &cli.config {
+        Some(path) => {
+            let json = std::fs::read_to_string(path).map_err(|e| {
+                eyre::eyre!("failed to read config file {}: {e}", path.display())
+            })?;
+            Ok(Some(json))
+        }
+        None => Ok(None),
+    }
+}
+
 /// Initializes an authenticator and credential store from CLI args.
 pub(crate) async fn init_authenticator(
     cli: &Cli,
 ) -> eyre::Result<(Arc<Authenticator>, Arc<CredentialStore>)> {
     let root = resolve_root(cli)?;
     let seed = resolve_seed(cli)?;
-    let env = resolve_environment(cli)?;
-    let region = resolve_region(cli)?;
+    let config_json = resolve_config(cli)?;
 
     let store = create_fs_credential_store(&root)?;
     let paths = store.storage_paths()?;
     cache_embedded_groth16_material(paths.clone())?;
 
-    let authenticator = Authenticator::init_with_defaults(
-        &seed,
-        cli.rpc_url.clone(),
-        &env,
-        region,
-        paths,
-        store.clone(),
-    )
-    .await
-    .map_err(|e| eyre::eyre!("authenticator init failed: {e}"))?;
+    let authenticator = if let Some(ref config) = config_json {
+        Authenticator::init(&seed, config, paths, store.clone())
+            .await
+            .map_err(|e| eyre::eyre!("authenticator init failed: {e}"))?
+    } else {
+        let env = resolve_environment(cli)?;
+        let region = resolve_region(cli)?;
+        Authenticator::init_with_defaults(
+            &seed,
+            cli.rpc_url.clone(),
+            &env,
+            region,
+            paths,
+            store.clone(),
+        )
+        .await
+        .map_err(|e| eyre::eyre!("authenticator init failed: {e}"))?
+    };
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     authenticator

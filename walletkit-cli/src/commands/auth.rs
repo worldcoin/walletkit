@@ -6,7 +6,8 @@ use walletkit_core::{InitializingAuthenticator, RegistrationStatus};
 use crate::output;
 
 use super::{
-    init_authenticator, resolve_environment, resolve_region, resolve_seed, Cli,
+    init_authenticator, resolve_config, resolve_environment, resolve_region,
+    resolve_seed, Cli,
 };
 
 #[derive(Subcommand)]
@@ -48,18 +49,29 @@ pub enum AuthCommand {
 
 async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result<()> {
     let seed = resolve_seed(cli)?;
-    let env = resolve_environment(cli)?;
-    let region = resolve_region(cli)?;
+    let config_json = resolve_config(cli)?;
 
-    let init_auth = InitializingAuthenticator::register_with_defaults(
-        &seed,
-        cli.rpc_url.clone(),
-        &env,
-        region,
-        recovery_address.map(String::from),
-    )
-    .await
-    .map_err(|e| eyre::eyre!("registration failed: {e}"))?;
+    let init_auth = if let Some(ref config) = config_json {
+        InitializingAuthenticator::register(
+            &seed,
+            config,
+            recovery_address.map(String::from),
+        )
+        .await
+        .map_err(|e| eyre::eyre!("registration failed: {e}"))?
+    } else {
+        let env = resolve_environment(cli)?;
+        let region = resolve_region(cli)?;
+        InitializingAuthenticator::register_with_defaults(
+            &seed,
+            cli.rpc_url.clone(),
+            &env,
+            region,
+            recovery_address.map(String::from),
+        )
+        .await
+        .map_err(|e| eyre::eyre!("registration failed: {e}"))?
+    };
 
     let status = init_auth
         .poll_status()
@@ -81,18 +93,29 @@ async fn run_register_wait(
     poll_interval: u64,
 ) -> eyre::Result<()> {
     let seed = resolve_seed(cli)?;
-    let env = resolve_environment(cli)?;
-    let region = resolve_region(cli)?;
+    let config_json = resolve_config(cli)?;
 
-    let init_auth = InitializingAuthenticator::register_with_defaults(
-        &seed,
-        cli.rpc_url.clone(),
-        &env,
-        region,
-        recovery_address.map(String::from),
-    )
-    .await
-    .map_err(|e| eyre::eyre!("registration failed: {e}"))?;
+    let init_auth = if let Some(ref config) = config_json {
+        InitializingAuthenticator::register(
+            &seed,
+            config,
+            recovery_address.map(String::from),
+        )
+        .await
+        .map_err(|e| eyre::eyre!("registration failed: {e}"))?
+    } else {
+        let env = resolve_environment(cli)?;
+        let region = resolve_region(cli)?;
+        InitializingAuthenticator::register_with_defaults(
+            &seed,
+            cli.rpc_url.clone(),
+            &env,
+            region,
+            recovery_address.map(String::from),
+        )
+        .await
+        .map_err(|e| eyre::eyre!("registration failed: {e}"))?
+    };
 
     loop {
         let status = init_auth
