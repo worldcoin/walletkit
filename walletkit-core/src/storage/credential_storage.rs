@@ -1518,4 +1518,57 @@ mod tests {
         cleanup_test_storage(&root);
         cleanup_test_storage(&export_dir);
     }
+
+    #[test]
+    fn test_sync_backup_triggers_notification_without_mutation() {
+        use world_id_core::Credential as CoreCredential;
+
+        let (store, manager, root, export_dir) = setup_store_with_backup();
+
+        // Store a credential so the vault is non-empty.
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+        assert_eq!(manager.call_count(), 1);
+
+        // sync_backup triggers a notification without mutating the vault.
+        store.sync_backup();
+        assert_eq!(manager.call_count(), 2);
+        assert!(
+            manager.last_file_existed(),
+            "exported vault file should exist during the callback"
+        );
+        let path = manager.last_path().unwrap();
+        assert!(
+            !std::path::Path::new(&path).exists(),
+            "exported vault file should be cleaned up after the callback"
+        );
+
+        // Vault contents are unchanged — still one credential.
+        let credentials = store.list_credentials(None, 1000).expect("list");
+        assert_eq!(credentials.len(), 1);
+
+        cleanup_test_storage(&root);
+        cleanup_test_storage(&export_dir);
+    }
+
+    #[test]
+    fn test_sync_backup_on_empty_vault() {
+        let (store, manager, root, export_dir) = setup_store_with_backup();
+
+        // sync_backup on an empty vault should still trigger a notification.
+        store.sync_backup();
+        assert_eq!(manager.call_count(), 1);
+        assert!(
+            manager.last_file_existed(),
+            "exported vault file should exist during the callback"
+        );
+
+        cleanup_test_storage(&root);
+        cleanup_test_storage(&export_dir);
+    }
 }
