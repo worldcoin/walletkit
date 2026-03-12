@@ -313,8 +313,17 @@ impl CredentialStore {
     /// that were stored before the backup was set up. The registered
     /// [`WalletKitBackupManager`] receives the same `on_vault_changed`
     /// callback as after a normal vault mutation.
-    pub fn sync_backup(&self) {
-        self.notify_vault_changed();
+    ///
+    /// Unlike the automatic notifications after vault mutations (which are
+    /// best-effort), this method propagates errors so the host app can
+    /// detect and handle failures during the initial backup.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no backup manager is configured, if the vault
+    /// export fails, or if the backup manager callback fails.
+    pub fn sync_backup(&self) -> StorageResult<()> {
+        self.export_and_notify_backup()
     }
 }
 
@@ -335,33 +344,38 @@ impl CredentialStore {
     /// propagated — the vault mutation has already succeeded and callers
     /// should not see an error from a backup side-effect.
     fn notify_vault_changed(&self) {
+        if let Err(e) = self.export_and_notify_backup() {
+            tracing::error!("Backup sync failed (best-effort): {e}");
+        }
+    }
+
+    /// Exports the vault and notifies the registered backup manager.
+    ///
+    /// This is the shared implementation used by both the best-effort
+    /// [`notify_vault_changed`](Self::notify_vault_changed) (which logs
+    /// and swallows errors) and [`sync_backup`](Self::sync_backup) (which
+    /// propagates them).
+    fn export_and_notify_backup(&self) -> StorageResult<()> {
         // Hold the backup lock for the entire export+callback path. This
         // serializes concurrent notifications so backups are delivered in
-        // mutation order. Recover the guard on poison — the manager is
-        // still valid after a prior panic.
-        let guard = self
-            .backup
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // mutation order.
+        let guard = self.backup.lock().map_err(|_| {
+            StorageError::Lock("backup config mutex poisoned".to_string())
+        })?;
 
         let dest_dir = guard.dest_dir();
         if dest_dir.is_empty() {
-            return; // NoopBackupManager — nothing to do.
+            return Err(StorageError::Keystore(
+                "no backup manager configured".to_string(),
+            ));
         }
 
         // Export a plaintext snapshot of the vault. The file is sensitive
         // (unencrypted), so we wrap it in a guard that deletes it on drop —
         // no matter how we exit (normal return, early return, or panic).
-        let vault_path = match self
+        let vault_path = self
             .lock_inner()
-            .and_then(|inner| inner.export_vault_for_backup(&dest_dir))
-        {
-            Ok(path) => path,
-            Err(e) => {
-                tracing::error!("Failed to export vault for backup: {e}");
-                return;
-            }
-        };
+            .and_then(|inner| inner.export_vault_for_backup(&dest_dir))?;
 
         let _cleanup = {
             struct CleanupFile(String);
@@ -381,9 +395,7 @@ impl CredentialStore {
         // Hand the path to the host app (e.g. iOS) so it can copy/upload
         // the vault to Bedrock. The host must finish with the file during
         // this synchronous call — the guard deletes it on return.
-        if let Err(e) = guard.on_vault_changed(vault_path) {
-            tracing::error!("Backup manager on_vault_changed failed: {e}");
-        }
+        guard.on_vault_changed(vault_path)
     }
 
     /// Retrieves a full credential including raw bytes by issuer schema ID.
@@ -1536,7 +1548,7 @@ mod tests {
         assert_eq!(manager.call_count(), 1);
 
         // sync_backup triggers a notification without mutating the vault.
-        store.sync_backup();
+        store.sync_backup().expect("sync_backup");
         assert_eq!(manager.call_count(), 2);
         assert!(
             manager.last_file_existed(),
@@ -1562,7 +1574,7 @@ mod tests {
         let (store, manager, root, export_dir) = setup_store_with_backup();
 
         // sync_backup on an empty vault should still trigger a notification.
-        store.sync_backup();
+        store.sync_backup().expect("sync_backup");
         assert_eq!(manager.call_count(), 1);
         assert!(
             manager.last_file_existed(),
