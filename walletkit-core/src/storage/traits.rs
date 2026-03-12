@@ -88,3 +88,42 @@ pub trait StorageProvider: Send + Sync {
     /// Returns the storage paths selected by the platform.
     fn paths(&self) -> Arc<StoragePaths>;
 }
+
+/// Callback interface for notifying the host app that the credential vault
+/// has changed and needs to be synced to the backup.
+///
+/// The host app (e.g. iOS) implements this trait and passes it to
+/// `CredentialStore::set_backup_manager`. `WalletKit` calls
+/// [`on_vault_changed`](WalletKitBackupManager::on_vault_changed) after
+/// `store_credential`, `delete_credential`, and `danger_delete_all_credentials`, passing the path
+/// to a freshly-exported plaintext vault file.
+///
+/// **Important:** the exported file is deleted automatically when this
+/// callback returns. The implementor must copy or upload the file contents
+/// synchronously during this call.
+///
+/// **Warning:** the implementor must **not** call back into
+/// `CredentialStore` (e.g. `store_credential`, `delete_credential`) from
+/// within `on_vault_changed`. Doing so will deadlock because the
+/// notification path holds an internal lock for the duration of the
+/// callback.
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+pub trait WalletKitBackupManager: Send + Sync {
+    /// Directory where plaintext vault exports are written before the
+    /// callback is invoked.
+    fn dest_dir(&self) -> String;
+
+    /// Called after the vault has been mutated and exported.
+    ///
+    /// `vault_file_path` is the path to the exported plaintext vault file.
+    /// The file is deleted automatically when this method returns, so the
+    /// implementor must finish reading or copying it before returning.
+    ///
+    /// # Errors
+    ///
+    /// Returning `Err` is treated as best-effort — the error is logged but
+    /// does not affect the vault mutation that triggered this call. Returning
+    /// `Result` (rather than `()`) ensures that host-side exceptions are
+    /// translated into a Rust `Err` by `UniFFI` instead of panicking.
+    fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()>;
+}

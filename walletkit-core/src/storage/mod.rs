@@ -19,7 +19,9 @@ pub use groth16_cache::cache_embedded_groth16_material;
 pub use keys::StorageKeys;
 pub use lock::{StorageLock, StorageLockGuard};
 pub use paths::StoragePaths;
-pub use traits::{AtomicBlobStore, DeviceKeystore, StorageProvider};
+pub use traits::{
+    AtomicBlobStore, DeviceKeystore, StorageProvider, WalletKitBackupManager,
+};
 pub use types::{
     BlobKind, ContentId, CredentialRecord, Nullifier, ReplayGuardKind,
     ReplayGuardResult, RequestId,

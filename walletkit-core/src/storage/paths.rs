@@ -3,8 +3,6 @@
 use std::path::{Path, PathBuf};
 
 const VAULT_FILENAME: &str = "account.vault.sqlite";
-pub(crate) const PLAINTEXT_VAULT_BACKUP_FILENAME: &str =
-    "vault_backup_plaintext.sqlite";
 const CACHE_FILENAME: &str = "account.cache.sqlite";
 const LOCK_FILENAME: &str = "lock";
 const GROTH16_DIRNAME: &str = "groth16";
