@@ -306,6 +306,16 @@ impl CredentialStore {
         })? = manager;
         Ok(())
     }
+
+    /// Triggers a one-off backup sync without mutating the vault.
+    ///
+    /// Call this at initial backup creation to catch up any credentials
+    /// that were stored before the backup was set up. The registered
+    /// [`WalletKitBackupManager`] receives the same `on_vault_changed`
+    /// callback as after a normal vault mutation.
+    pub fn sync_backup(&self) {
+        self.notify_vault_changed();
+    }
 }
 
 /// Implementation not exposed to foreign bindings
