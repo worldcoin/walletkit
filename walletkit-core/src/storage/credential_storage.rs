@@ -337,6 +337,14 @@ impl CredentialStore {
     ///
     /// Called after vault mutations and by [`sync_backup`](Self::sync_backup).
     /// Returns `Ok(())` if no backup manager is configured (noop).
+    ///
+    /// **Note:** errors from the backup callback are propagated to the caller.
+    /// Because this runs *after* the vault mutation has been committed, a
+    /// returned `Err` does not mean the mutation failed — only the backup
+    /// notification. Callers should inspect the error and handle it according
+    /// to its nature (e.g. log it, schedule a backup retry via
+    /// [`sync_backup`](Self::sync_backup), or surface it to the user) rather
+    /// than retrying the already-committed mutation.
     fn notify_vault_changed(&self) -> StorageResult<()> {
         // Hold the backup lock for the entire export+callback path. This
         // serializes concurrent notifications so backups are delivered in
