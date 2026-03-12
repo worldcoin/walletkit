@@ -127,6 +127,7 @@ fn test_store_credential_without_associated_data() {
     assert_eq!(records[0].credential_id, credential_id);
     assert_eq!(records[0].issuer_schema_id, 10);
     assert_eq!(records[0].expires_at, 2000);
+    assert!(!records[0].is_expired);
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -154,6 +155,7 @@ fn test_store_credential_with_associated_data() {
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].issuer_schema_id, 11);
     assert_eq!(records[0].expires_at, 2000);
+    assert!(!records[0].is_expired);
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -173,28 +175,30 @@ fn test_content_id_deduplication() {
     let guard = lock.lock().expect("lock");
     let key = Zeroizing::new([0x07u8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
-    db.store_credential(
-        &guard,
-        12,
-        sample_blinding_factor(),
-        1,
-        2000,
-        b"same".to_vec(),
-        None,
-        1000,
-    )
-    .expect("store credential");
-    db.store_credential(
-        &guard,
-        12,
-        sample_blinding_factor(),
-        1,
-        2000,
-        b"same".to_vec(),
-        None,
-        1001,
-    )
-    .expect("store credential");
+    let first_id = db
+        .store_credential(
+            &guard,
+            12,
+            sample_blinding_factor(),
+            1,
+            2000,
+            b"same".to_vec(),
+            None,
+            1000,
+        )
+        .expect("store credential");
+    let second_id = db
+        .store_credential(
+            &guard,
+            12,
+            sample_blinding_factor(),
+            1,
+            2000,
+            b"same".to_vec(),
+            None,
+            1001,
+        )
+        .expect("store credential");
     let count = db
         .conn
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
@@ -203,6 +207,31 @@ fn test_content_id_deduplication() {
         .map_err(|err| map_db_err(&err))
         .expect("count blobs");
     assert_eq!(count, 1);
+
+    db.delete_credential(&guard, first_id)
+        .expect("delete first credential");
+
+    let count_after_first_delete = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
+            Ok(stmt.column_i64(0))
+        })
+        .map_err(|err| map_db_err(&err))
+        .expect("count blobs after first delete");
+    assert_eq!(count_after_first_delete, 1);
+
+    db.delete_credential(&guard, second_id)
+        .expect("delete second credential");
+
+    let count_after_second_delete = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
+            Ok(stmt.column_i64(0))
+        })
+        .map_err(|err| map_db_err(&err))
+        .expect("count blobs after second delete");
+    assert_eq!(count_after_second_delete, 0);
+
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -247,7 +276,7 @@ fn test_list_credentials_by_issuer() {
 }
 
 #[test]
-fn test_list_credentials_excludes_expired() {
+fn test_list_credentials_marks_expired() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
@@ -264,9 +293,166 @@ fn test_list_credentials_excludes_expired() {
         None,
         1000,
     )
+    .expect("store expired credential");
+    db.store_credential(
+        &guard,
+        301,
+        sample_blinding_factor(),
+        1,
+        2000,
+        b"active".to_vec(),
+        None,
+        1000,
+    )
+    .expect("store active credential");
+
+    let records = db.list_credentials(None, 1000).expect("list credentials");
+    assert_eq!(records.len(), 2);
+    assert!(records.iter().any(|record| record.is_expired));
+    assert!(records.iter().any(|record| !record.is_expired));
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn test_list_credentials_by_issuer_includes_expired() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x0Au8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    db.store_credential(
+        &guard,
+        500,
+        sample_blinding_factor(),
+        1,
+        900,
+        b"expired".to_vec(),
+        None,
+        1000,
+    )
     .expect("store credential");
+
+    let records = db
+        .list_credentials(Some(500), 1000)
+        .expect("list credentials");
+    assert_eq!(records.len(), 1);
+    assert!(records[0].is_expired);
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn test_delete_credential_by_id() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x0Bu8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let credential_id = db
+        .store_credential(
+            &guard,
+            400,
+            sample_blinding_factor(),
+            1,
+            2000,
+            b"to-delete".to_vec(),
+            None,
+            1000,
+        )
+        .expect("store credential");
+
+    let blob_count_before = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
+            Ok(stmt.column_i64(0))
+        })
+        .map_err(|err| map_db_err(&err))
+        .expect("count blobs before delete");
+    assert_eq!(blob_count_before, 1);
+
+    db.delete_credential(&guard, credential_id)
+        .expect("delete credential");
+
     let records = db.list_credentials(None, 1000).expect("list credentials");
     assert!(records.is_empty());
+
+    let blob_count_after = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
+            Ok(stmt.column_i64(0))
+        })
+        .map_err(|err| map_db_err(&err))
+        .expect("count blobs after delete");
+    assert_eq!(blob_count_after, 0);
+
+    let err = db
+        .delete_credential(&guard, credential_id)
+        .expect_err("delete credential again should fail");
+    match err {
+        StorageError::CredentialIdNotFound {
+            credential_id: missing_id,
+        } => {
+            assert_eq!(missing_id, credential_id);
+        }
+        _ => panic!("unexpected error: {err}"),
+    }
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn test_delete_credential_cleans_up_orphaned_associated_data() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x0Cu8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+
+    let credential_id = db
+        .store_credential(
+            &guard,
+            401,
+            sample_blinding_factor(),
+            1,
+            2000,
+            b"credential-with-associated".to_vec(),
+            Some(b"associated-delete".to_vec()),
+            1000,
+        )
+        .expect("store credential");
+
+    let associated_before = db
+        .conn
+        .query_row(
+            "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
+            params![BlobKind::AssociatedData.as_i64()],
+            |stmt| Ok(stmt.column_i64(0)),
+        )
+        .map_err(|err| map_db_err(&err))
+        .expect("count associated data before delete");
+    assert_eq!(associated_before, 1);
+
+    db.delete_credential(&guard, credential_id)
+        .expect("delete credential");
+
+    let associated_after = db
+        .conn
+        .query_row(
+            "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
+            params![BlobKind::AssociatedData.as_i64()],
+            |stmt| Ok(stmt.column_i64(0)),
+        )
+        .map_err(|err| map_db_err(&err))
+        .expect("count associated data after delete");
+    assert_eq!(associated_after, 0);
+
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }

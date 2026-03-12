@@ -186,7 +186,13 @@ impl VaultDb {
         to_u64(credential_id, "credential_id")
     }
 
-    /// Lists active credential metadata, optionally filtered by issuer schema.
+    /// Lists credential metadata, optionally filtered by issuer schema.
+    ///
+    /// Results include both active and expired credentials. Expiry status is
+    /// reported via [`CredentialRecord::is_expired`] and uses
+    /// `now >= expires_at` semantics.
+    ///
+    /// Results are ordered by `updated_at` descending (most recent first).
     ///
     /// # Errors
     ///
@@ -196,48 +202,89 @@ impl VaultDb {
         issuer_schema_id: Option<u64>,
         now: u64,
     ) -> StorageResult<Vec<CredentialRecord>> {
-        let expires = to_i64(now, "now")?;
+        let now_i64 = to_i64(now, "now")?;
         let issuer_schema_id_i64 = issuer_schema_id
             .map(|value| to_i64(value, "issuer_schema_id"))
             .transpose()?;
 
         let mut records = Vec::new();
+        let issuer_filter = issuer_schema_id_i64.map_or(Value::Null, Value::Integer);
 
-        if let Some(issuer_id) = issuer_schema_id_i64 {
-            let sql = "SELECT
-                    cr.credential_id,
-                    cr.issuer_schema_id,
-                    cr.expires_at
-                 FROM credential_records cr
-                 WHERE cr.expires_at > ?1
-                   AND cr.issuer_schema_id = ?2
-                 ORDER BY cr.updated_at DESC";
-            let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
-            stmt.bind_values(params![expires, issuer_id])
-                .map_err(|err| map_db_err(&err))?;
-            while let StepResult::Row(row) =
-                stmt.step().map_err(|err| map_db_err(&err))?
-            {
-                records.push(map_record(&row)?);
-            }
-        } else {
-            let sql = "SELECT
-                    cr.credential_id,
-                    cr.issuer_schema_id,
-                    cr.expires_at
-                 FROM credential_records cr
-                 WHERE cr.expires_at > ?1
-                 ORDER BY cr.updated_at DESC";
-            let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
-            stmt.bind_values(params![expires])
-                .map_err(|err| map_db_err(&err))?;
-            while let StepResult::Row(row) =
-                stmt.step().map_err(|err| map_db_err(&err))?
-            {
-                records.push(map_record(&row)?);
-            }
+        let sql = "SELECT
+                cr.credential_id,
+                cr.issuer_schema_id,
+                cr.expires_at,
+                CASE WHEN cr.expires_at <= ?1 THEN 1 ELSE 0 END AS is_expired
+             FROM credential_records cr
+             WHERE (?2 IS NULL OR cr.issuer_schema_id = ?2)
+             ORDER BY cr.updated_at DESC";
+
+        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(&[Value::Integer(now_i64), issuer_filter])
+            .map_err(|err| map_db_err(&err))?;
+        while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
+            records.push(map_record(&row)?);
         }
+
         Ok(records)
+    }
+
+    /// Deletes a credential record by ID.
+    ///
+    /// Deleting a credential also removes orphaned `credential_blob_cid` and
+    /// `associated_data_cid` blobs when no records reference them.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete query fails or the credential ID does not
+    /// exist.
+    pub fn delete_credential(
+        &mut self,
+        _lock: &StorageLockGuard,
+        credential_id: u64,
+    ) -> StorageResult<()> {
+        let credential_id_i64 = to_i64(credential_id, "credential_id")?;
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+
+        let deleted = tx
+            .execute(
+                "DELETE FROM credential_records WHERE credential_id = ?1",
+                params![credential_id_i64],
+            )
+            .map_err(|err| map_db_err(&err))?;
+
+        if deleted == 0 {
+            return Err(StorageError::CredentialIdNotFound { credential_id });
+        }
+
+        // Delete orphaned credential blobs
+        tx.execute(
+            "DELETE FROM blob_objects
+             WHERE blob_kind = ?1
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM credential_records cr
+                   WHERE cr.credential_blob_cid = blob_objects.content_id
+               )",
+            params![BlobKind::CredentialBlob.as_i64()],
+        )
+        .map_err(|err| map_db_err(&err))?;
+
+        // Delete orphaned associated data blobs
+        tx.execute(
+            "DELETE FROM blob_objects
+             WHERE blob_kind = ?1
+               AND NOT EXISTS (
+                   SELECT 1
+                   FROM credential_records cr
+                   WHERE cr.associated_data_cid = blob_objects.content_id
+               )",
+            params![BlobKind::AssociatedData.as_i64()],
+        )
+        .map_err(|err| map_db_err(&err))?;
+
+        tx.commit().map_err(|err| map_db_err(&err))?;
+        Ok(())
     }
 
     /// Retrieves the credential bytes and blinding factor by issuer schema ID.

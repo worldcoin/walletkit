@@ -166,7 +166,10 @@ impl CredentialStore {
         inner.init(leaf_index, now)
     }
 
-    /// Lists active credential metadata, optionally filtered by issuer schema ID.
+    /// Lists credential metadata, optionally filtered by issuer schema ID.
+    ///
+    /// Results include both active and expired credentials. Expiry status is
+    /// reported via [`CredentialRecord::is_expired`].
     ///
     /// # Errors
     ///
@@ -177,6 +180,16 @@ impl CredentialStore {
         now: u64,
     ) -> StorageResult<Vec<CredentialRecord>> {
         self.lock_inner()?.list_credentials(issuer_schema_id, now)
+    }
+
+    /// Deletes a credential by ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete operation fails or the credential ID does
+    /// not exist.
+    pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
+        self.lock_inner()?.delete_credential(credential_id)
     }
 
     /// Stores a credential and optional associated data.
@@ -462,6 +475,12 @@ impl CredentialStoreInner {
     ) -> StorageResult<Vec<CredentialRecord>> {
         let state = self.state()?;
         state.vault.list_credentials(issuer_schema_id, now)
+    }
+
+    fn delete_credential(&mut self, credential_id: u64) -> StorageResult<()> {
+        let guard = self.guard()?;
+        let state = self.state_mut()?;
+        state.vault.delete_credential(&guard, credential_id)
     }
 
     fn get_credential(
