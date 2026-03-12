@@ -70,6 +70,13 @@ pub enum StorageError {
     #[error("credential not found")]
     CredentialNotFound,
 
+    /// Credential ID not found when deleting from the vault.
+    #[error("credential id not found: {credential_id}")]
+    CredentialIdNotFound {
+        /// Credential ID provided by the caller.
+        credential_id: u64,
+    },
+
     /// Corrupted cache entry
     #[error("corrupted cache entry at {key_prefix}")]
     CorruptedCacheEntry {
