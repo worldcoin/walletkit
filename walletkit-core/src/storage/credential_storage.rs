@@ -14,23 +14,29 @@ use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
 use crate::{Credential, FieldElement};
 
-/// Configuration for vault backup notifications.
-struct BackupConfig {
-    manager: Arc<dyn WalletKitBackupManager>,
-    dest_dir: String,
+/// No-op backup manager used as the default before the host app registers
+/// a real implementation. All methods are no-ops.
+struct NoopBackupManager;
+
+impl WalletKitBackupManager for NoopBackupManager {
+    fn dest_dir(&self) -> String {
+        String::new()
+    }
+
+    fn on_vault_changed(&self, _vault_file_path: String) -> StorageResult<()> {
+        Ok(())
+    }
 }
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
-    backup: Mutex<Option<BackupConfig>>,
-    /// Serialises the export-and-notify path so that concurrent vault
-    /// mutations deliver backups in order. Without this, two overlapping
-    /// calls to `notify_vault_changed` can race: the slower callback
-    /// (carrying older state) can finish after the faster one, causing
-    /// the host to overwrite a newer backup with a stale snapshot.
-    notify_lock: Mutex<()>,
+    /// Holds the active backup manager. Defaults to [`NoopBackupManager`].
+    /// The lock is held for the entire export+callback path inside
+    /// `notify_vault_changed`, which serializes concurrent notifications
+    /// so that backups are always delivered in mutation order.
+    backup: Mutex<Arc<dyn WalletKitBackupManager>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -120,8 +126,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(None),
-            notify_lock: Mutex::new(()),
+            backup: Mutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -138,8 +143,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(None),
-            notify_lock: Mutex::new(()),
+            backup: Mutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -292,26 +296,21 @@ impl CredentialStore {
         Ok(count)
     }
 
-    /// Registers a backup manager callback and the directory where exported
-    /// vault files should be written.
-    ///
-    /// After a vault mutation ([`store_credential`](Self::store_credential),
-    /// [`danger_delete_all_credentials`](Self::danger_delete_all_credentials)),
-    /// the store will export a plaintext vault to `dest_dir` and call
-    /// [`WalletKitBackupManager::on_vault_changed`] with the file path.
+    /// Registers a backup manager that will be notified after vault mutations
+    /// ([`store_credential`](Self::store_credential),
+    /// [`danger_delete_all_credentials`](Self::danger_delete_all_credentials)).
     /// Backup failures are logged but do not affect the mutation result.
     ///
     /// # Errors
     ///
-    /// Returns an error if the backup config mutex is poisoned.
+    /// Returns an error if the backup mutex is poisoned.
     pub fn set_backup_manager(
         &self,
         manager: Arc<dyn WalletKitBackupManager>,
-        dest_dir: String,
     ) -> StorageResult<()> {
         *self.backup.lock().map_err(|_| {
             StorageError::Lock("backup config mutex poisoned".to_string())
-        })? = Some(BackupConfig { manager, dest_dir });
+        })? = manager;
         Ok(())
     }
 }
@@ -333,26 +332,16 @@ impl CredentialStore {
     /// propagated — the vault mutation has already succeeded and callers
     /// should not see an error from a backup side-effect.
     fn notify_vault_changed(&self) {
-        // Serialise the entire export+callback path. See `notify_lock` docs.
-        // Recover the guard even if the mutex was poisoned by a prior panic —
-        // the inner `()` value is always valid, and dropping the guard would
-        // permanently disable serialization for all future calls.
-        let _notify_guard = self.notify_lock.lock().unwrap_or_else(|e| e.into_inner());
+        // Hold the backup lock for the entire export+callback path. This
+        // serializes concurrent notifications so backups are delivered in
+        // mutation order. Recover the guard on poison — the manager is
+        // still valid after a prior panic.
+        let guard = self.backup.lock().unwrap_or_else(|e| e.into_inner());
 
-        // Clone the config out of its lock so we don't hold it while doing
-        // the export (which re-locks `inner`). Same poison-recovery logic:
-        // the config itself is still valid after a panic.
-        let config = self
-            .backup
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .as_ref()
-            .map(|c| (c.manager.clone(), c.dest_dir.clone()));
-
-        // No-op if the host app hasn't registered a backup manager yet.
-        let Some((manager, dest_dir)) = config else {
-            return;
-        };
+        let dest_dir = guard.dest_dir();
+        if dest_dir.is_empty() {
+            return; // NoopBackupManager — nothing to do.
+        }
 
         // Export a plaintext snapshot of the vault. The file is sensitive
         // (unencrypted), so we wrap it in a guard that deletes it on drop —
@@ -386,7 +375,7 @@ impl CredentialStore {
         // Hand the path to the host app (e.g. iOS) so it can copy/upload
         // the vault to Bedrock. The host must finish with the file during
         // this synchronous call — the guard deletes it on return.
-        if let Err(e) = manager.on_vault_changed(vault_path) {
+        if let Err(e) = guard.on_vault_changed(vault_path) {
             tracing::error!("Backup manager on_vault_changed failed: {e}");
         }
     }
@@ -632,8 +621,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(None),
-            notify_lock: Mutex::new(()),
+            backup: Mutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -650,8 +638,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(None),
-            notify_lock: Mutex::new(()),
+            backup: Mutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -1327,12 +1314,14 @@ mod tests {
     /// Mock backup manager that records each `on_vault_changed` call and
     /// whether the file existed at the time of the callback.
     struct MockBackupManager {
+        export_dir: String,
         calls: Mutex<Vec<(String, bool)>>,
     }
 
     impl MockBackupManager {
-        fn new() -> Arc<Self> {
+        fn new(export_dir: String) -> Arc<Self> {
             Arc::new(Self {
+                export_dir,
                 calls: Mutex::new(Vec::new()),
             })
         }
@@ -1351,6 +1340,10 @@ mod tests {
     }
 
     impl WalletKitBackupManager for MockBackupManager {
+        fn dest_dir(&self) -> String {
+            self.export_dir.clone()
+        }
+
         fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()> {
             let existed = std::path::Path::new(&vault_file_path).exists();
             self.calls.lock().unwrap().push((vault_file_path, existed));
@@ -1370,12 +1363,9 @@ mod tests {
         let export_dir = temp_root_path();
         std::fs::create_dir_all(&export_dir).expect("create export dir");
 
-        let manager = MockBackupManager::new();
+        let manager = MockBackupManager::new(export_dir.to_string_lossy().to_string());
         store
-            .set_backup_manager(
-                manager.clone(),
-                export_dir.to_string_lossy().to_string(),
-            )
+            .set_backup_manager(manager.clone())
             .expect("set backup manager");
 
         (store, manager, root, export_dir)

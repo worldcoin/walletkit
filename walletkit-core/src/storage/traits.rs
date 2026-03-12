@@ -103,6 +103,10 @@ pub trait StorageProvider: Send + Sync {
 /// synchronously during this call.
 #[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 pub trait WalletKitBackupManager: Send + Sync {
+    /// Directory where plaintext vault exports are written before the
+    /// callback is invoked.
+    fn dest_dir(&self) -> String;
+
     /// Called after the vault has been mutated and exported.
     ///
     /// `vault_file_path` is the path to the exported plaintext vault file.
