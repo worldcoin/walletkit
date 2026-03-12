@@ -51,6 +51,16 @@ impl Credential {
     pub const fn expires_at(&self) -> u64 {
         self.0.expires_at
     }
+
+    /// Returns the credential's `associated_data_hash` field element.
+    ///
+    /// This is a Poseidon2 commitment to the associated data (e.g. a PCP archive)
+    /// set by the issuer at issuance time. Returns `FieldElement::ZERO` if no
+    /// associated data was committed to.
+    #[must_use]
+    pub fn associated_data_hash(&self) -> FieldElement {
+        self.0.associated_data_hash.into()
+    }
 }
 
 impl Credential {
