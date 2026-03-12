@@ -334,14 +334,23 @@ impl CredentialStore {
     /// should not see an error from a backup side-effect.
     fn notify_vault_changed(&self) {
         // Serialise the entire export+callback path. See `notify_lock` docs.
-        let _notify_guard = self.notify_lock.lock().ok();
+        // Recover the guard even if the mutex was poisoned by a prior panic —
+        // the inner `()` value is always valid, and dropping the guard would
+        // permanently disable serialization for all future calls.
+        let _notify_guard = self
+            .notify_lock
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         // Clone the config out of its lock so we don't hold it while doing
-        // the export (which re-locks `inner`).
-        let config =
-            self.backup.lock().ok().and_then(|g| {
-                g.as_ref().map(|c| (c.manager.clone(), c.dest_dir.clone()))
-            });
+        // the export (which re-locks `inner`). Same poison-recovery logic:
+        // the config itself is still valid after a panic.
+        let config = self
+            .backup
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(|c| (c.manager.clone(), c.dest_dir.clone()));
 
         // No-op if the host app hasn't registered a backup manager yet.
         let Some((manager, dest_dir)) = config else {
