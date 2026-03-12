@@ -190,8 +190,7 @@ impl CredentialStore {
     /// not exist.
     pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
         self.lock_inner()?.delete_credential(credential_id)?;
-        self.notify_vault_changed();
-        Ok(())
+        self.notify_vault_changed()
     }
 
     /// Stores a credential and optional associated data.
@@ -214,7 +213,7 @@ impl CredentialStore {
             associated_data,
             now,
         )?;
-        self.notify_vault_changed();
+        self.notify_vault_changed()?;
         Ok(id)
     }
 
@@ -284,15 +283,15 @@ impl CredentialStore {
         let count = inner.danger_delete_all_credentials()?;
         drop(inner);
         if count > 0 {
-            self.notify_vault_changed();
+            self.notify_vault_changed()?;
         }
         Ok(count)
     }
 
     /// Registers a backup manager that will be notified after vault mutations
     /// ([`store_credential`](Self::store_credential),
+    /// [`delete_credential`](Self::delete_credential),
     /// [`danger_delete_all_credentials`](Self::danger_delete_all_credentials)).
-    /// Backup failures are logged but do not affect the mutation result.
     ///
     /// # Errors
     ///
@@ -314,16 +313,12 @@ impl CredentialStore {
     /// [`WalletKitBackupManager`] receives the same `on_vault_changed`
     /// callback as after a normal vault mutation.
     ///
-    /// Unlike the automatic notifications after vault mutations (which are
-    /// best-effort), this method propagates errors so the host app can
-    /// detect and handle failures during the initial backup.
-    ///
     /// # Errors
     ///
     /// Returns an error if no backup manager is configured, if the vault
     /// export fails, or if the backup manager callback fails.
     pub fn sync_backup(&self) -> StorageResult<()> {
-        self.export_and_notify_backup()
+        self.notify_vault_changed()
     }
 }
 
@@ -337,25 +332,12 @@ impl CredentialStore {
             .map_err(|_| StorageError::Lock("storage mutex poisoned".to_string()))
     }
 
-    /// Best-effort export + notification to the backup manager, if one is set.
+    /// Exports a plaintext vault snapshot and notifies the registered backup
+    /// manager via [`on_vault_changed`](WalletKitBackupManager::on_vault_changed).
     ///
-    /// Called after any vault mutation (store, delete) so the host app can
-    /// sync the updated vault to its backup. Failures are logged but never
-    /// propagated — the vault mutation has already succeeded and callers
-    /// should not see an error from a backup side-effect.
-    fn notify_vault_changed(&self) {
-        if let Err(e) = self.export_and_notify_backup() {
-            tracing::error!("Backup sync failed (best-effort): {e}");
-        }
-    }
-
-    /// Exports the vault and notifies the registered backup manager.
-    ///
-    /// This is the shared implementation used by both the best-effort
-    /// [`notify_vault_changed`](Self::notify_vault_changed) (which logs
-    /// and swallows errors) and [`sync_backup`](Self::sync_backup) (which
-    /// propagates them).
-    fn export_and_notify_backup(&self) -> StorageResult<()> {
+    /// Called after vault mutations and by [`sync_backup`](Self::sync_backup).
+    /// Returns `Ok(())` if no backup manager is configured (noop).
+    fn notify_vault_changed(&self) -> StorageResult<()> {
         // Hold the backup lock for the entire export+callback path. This
         // serializes concurrent notifications so backups are delivered in
         // mutation order.
@@ -365,9 +347,7 @@ impl CredentialStore {
 
         let dest_dir = guard.dest_dir();
         if dest_dir.is_empty() {
-            return Err(StorageError::Keystore(
-                "no backup manager configured".to_string(),
-            ));
+            return Ok(()); // NoopBackupManager — nothing to do.
         }
 
         // Export a plaintext snapshot of the vault. The file is sensitive
