@@ -337,10 +337,7 @@ impl CredentialStore {
         // Recover the guard even if the mutex was poisoned by a prior panic —
         // the inner `()` value is always valid, and dropping the guard would
         // permanently disable serialization for all future calls.
-        let _notify_guard = self
-            .notify_lock
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let _notify_guard = self.notify_lock.lock().unwrap_or_else(|e| e.into_inner());
 
         // Clone the config out of its lock so we don't hold it while doing
         // the export (which re-locks `inner`). Same poison-recovery logic:
