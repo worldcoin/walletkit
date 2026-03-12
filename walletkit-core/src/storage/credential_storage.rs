@@ -349,7 +349,10 @@ impl CredentialStore {
         // serializes concurrent notifications so backups are delivered in
         // mutation order. Recover the guard on poison — the manager is
         // still valid after a prior panic.
-        let guard = self.backup.lock().unwrap_or_else(|e| e.into_inner());
+        let guard = self
+            .backup
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let dest_dir = guard.dest_dir();
         if dest_dir.is_empty() {
