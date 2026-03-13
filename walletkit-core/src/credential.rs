@@ -11,18 +11,17 @@ use crate::FieldElement;
 ///
 /// Encapsulates the credential and exposes accessors for fields that FFI
 /// callers need.
-#[derive(Debug, Clone)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
+#[derive(Debug, Clone, uniffi::Object)]
 pub struct Credential(CoreCredential);
 
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
+#[uniffi::export]
 impl Credential {
     /// Deserializes a `Credential` from a JSON byte blob.
     ///
     /// # Errors
     ///
     /// Returns an error if the bytes cannot be deserialized.
-    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
+    #[uniffi::constructor]
     #[allow(clippy::needless_pass_by_value)]
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, WalletKitError> {
         let credential: CoreCredential =

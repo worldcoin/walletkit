@@ -43,16 +43,16 @@ impl NfcRefreshResultRaw {
 }
 
 /// TFH NFC credential issuer API client
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
+#[derive(uniffi::Object)]
 pub struct TfhNfcIssuer {
     base_url: String,
     request: Request,
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
+#[uniffi::export]
 impl TfhNfcIssuer {
     /// Create a new TFH NFC issuer for the specified environment
-    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
+    #[uniffi::constructor]
     #[must_use]
     pub fn new(environment: &Environment) -> Self {
         let base_url = match environment {
@@ -68,7 +68,7 @@ impl TfhNfcIssuer {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(async_runtime = "tokio"))]
+#[uniffi::export(async_runtime = "tokio")]
 impl TfhNfcIssuer {
     /// Refresh an NFC credential (migrate PCP to v4).
     ///

@@ -1,8 +1,10 @@
 use std::{
     fmt,
     sync::{mpsc, Arc, Mutex, OnceLock},
-    thread,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::thread;
 
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{
@@ -57,15 +59,14 @@ use tracing_subscriber::{
 ///
 /// WalletKit.initLogging(logger: WalletKitLoggerBridge.shared, level: .debug)
 /// ```
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+#[uniffi::export(with_foreign)]
 pub trait Logger: Sync + Send {
     /// Receives a log `message` with its corresponding `level`.
     fn log(&self, level: LogLevel, message: String);
 }
 
 /// Enumeration of possible log levels for foreign logger callbacks.
-#[derive(Debug, Clone, Copy)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
+#[derive(Debug, Clone, Copy, uniffi::Enum)]
 pub enum LogLevel {
     /// Very detailed diagnostic messages.
     Trace,
@@ -134,6 +135,8 @@ struct LogEvent {
 // queue — and the dedicated delivery thread calls `Logger::log` from a clean
 // stack with no active FFI frames.
 static LOG_CHANNEL: OnceLock<Mutex<mpsc::Sender<LogEvent>>> = OnceLock::new();
+#[cfg(target_arch = "wasm32")]
+static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
 static LOGGING_INITIALIZED: OnceLock<()> = OnceLock::new();
 
 impl<S> Layer<S> for ForeignLoggerLayer
@@ -141,9 +144,15 @@ where
     S: Subscriber + for<'span> LookupSpan<'span>,
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+        #[cfg(not(target_arch = "wasm32"))]
         let Some(sender) = LOG_CHANNEL.get() else {
             return;
         };
+
+        #[cfg(target_arch = "wasm32")]
+        if LOGGER_INSTANCE.get().is_none() {
+            return;
+        }
 
         let mut visitor = EventFieldVisitor::default();
         event.record(&mut visitor);
@@ -170,6 +179,12 @@ where
         let formatted =
             sanitize_hex_secrets(format!("{} {message}", metadata.target()));
 
+        #[cfg(target_arch = "wasm32")]
+        if let Some(logger) = LOGGER_INSTANCE.get() {
+            logger.log(log_level(*metadata.level()), formatted.clone());
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
         if let Ok(sender) = sender.lock() {
             let _ = sender.send(LogEvent {
                 level: log_level(*metadata.level()),
@@ -259,23 +274,31 @@ pub fn emit_log(level: LogLevel, message: String) {
 /// # Panics
 ///
 /// Panics if the dedicated logger delivery thread cannot be spawned.
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
+#[uniffi::export]
 pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
     if LOGGING_INITIALIZED.get().is_some() {
         return;
     }
 
-    let (tx, rx) = mpsc::channel::<LogEvent>();
-    let _ = LOG_CHANNEL.set(Mutex::new(tx));
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let (tx, rx) = mpsc::channel::<LogEvent>();
+        let _ = LOG_CHANNEL.set(Mutex::new(tx));
 
-    thread::Builder::new()
-        .name("walletkit-logger".into())
-        .spawn(move || {
-            for event in rx {
-                logger.log(event.level, event.message);
-            }
-        })
-        .expect("failed to spawn walletkit logger thread");
+        thread::Builder::new()
+            .name("walletkit-logger".into())
+            .spawn(move || {
+                for event in rx {
+                    logger.log(event.level, event.message);
+                }
+            })
+            .expect("failed to spawn walletkit logger thread");
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = LOGGER_INSTANCE.set(logger);
+    }
 
     let _ = tracing_log::LogTracer::init();
 

@@ -6,8 +6,7 @@ use thiserror::Error;
 pub type StorageResult<T> = Result<T, StorageError>;
 
 /// Errors raised by credential storage primitives.
-#[derive(Debug, Error)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Error))]
+#[derive(Debug, Error, uniffi::Error)]
 pub enum StorageError {
     /// Errors coming from the device keystore.
     #[error("keystore error: {0}")]
