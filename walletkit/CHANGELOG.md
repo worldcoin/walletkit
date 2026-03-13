@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/worldcoin/walletkit/compare/v0.9.1...v0.10.0) - 2026-03-12
+
+### Added
+
+- notify host on vault mutations for backup sync ([#292](https://github.com/worldcoin/walletkit/pull/292))
+
+### Other
+
+- expose associated_data_hash ([#297](https://github.com/worldcoin/walletkit/pull/297))
+- include expired credentials in list + add delete by ID ([#273](https://github.com/worldcoin/walletkit/pull/273))
+
 ## [0.9.1](https://github.com/worldcoin/walletkit/compare/v0.9.0...v0.9.1) - 2026-03-11
 
 ### Other
