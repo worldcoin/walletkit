@@ -209,7 +209,7 @@ pub(crate) async fn init_authenticator(
 /// Top-level command dispatch.
 pub async fn run(cli: Cli) -> eyre::Result<()> {
     match &cli.command {
-        Command::Wallet { action } => wallet::run(&cli, action),
+        Command::Wallet { action } => wallet::run(&cli, action).await,
         Command::Auth { action } => auth::run(&cli, action).await,
         Command::Credential { action } => credential::run(&cli, action).await,
         Command::Proof { action } => proof::run(&cli, action).await,

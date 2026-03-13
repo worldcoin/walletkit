@@ -5,14 +5,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Subcommand;
 use walletkit_core::issuers::TfhNfcIssuer;
-use walletkit_core::storage::cache_embedded_groth16_material;
 use walletkit_core::{Credential, FieldElement};
 
 use crate::output;
-use crate::provider::create_fs_credential_store;
 
-use super::init_authenticator;
-use super::{resolve_root, Cli};
+use super::{init_authenticator, Cli};
 
 #[derive(Subcommand)]
 pub enum CredentialCommand {
@@ -98,17 +95,14 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<Vec<u8>> {
     }
 }
 
-fn run_import(
+async fn run_import(
     cli: &Cli,
     credential: &str,
     blinding_factor: &str,
     expires_at: u64,
     associated_data: Option<&str>,
 ) -> eyre::Result<()> {
-    let root = resolve_root(cli)?;
-    let store = create_fs_credential_store(&root)?;
-    let paths = store.storage_paths()?;
-    cache_embedded_groth16_material(paths)?;
+    let (_authenticator, store) = init_authenticator(cli).await?;
 
     let cred_bytes = read_file_or_stdin(credential)?;
     let cred = Credential::from_bytes(cred_bytes)
@@ -149,9 +143,8 @@ fn run_import(
     Ok(())
 }
 
-fn run_list(cli: &Cli, issuer_schema_id: Option<u64>) -> eyre::Result<()> {
-    let root = resolve_root(cli)?;
-    let store = create_fs_credential_store(&root)?;
+async fn run_list(cli: &Cli, issuer_schema_id: Option<u64>) -> eyre::Result<()> {
+    let (_authenticator, store) = init_authenticator(cli).await?;
     let now = now_secs()?;
     let records = store
         .list_credentials(issuer_schema_id, now)
@@ -190,9 +183,8 @@ fn run_list(cli: &Cli, issuer_schema_id: Option<u64>) -> eyre::Result<()> {
     Ok(())
 }
 
-fn run_show(cli: &Cli, issuer_schema_id: u64) -> eyre::Result<()> {
-    let root = resolve_root(cli)?;
-    let store = create_fs_credential_store(&root)?;
+async fn run_show(cli: &Cli, issuer_schema_id: u64) -> eyre::Result<()> {
+    let (_authenticator, store) = init_authenticator(cli).await?;
     let now = now_secs()?;
     let result = store
         .get_credential(issuer_schema_id, now)
@@ -323,7 +315,7 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
             blinding_factor,
             *expires_at,
             associated_data.as_deref(),
-        ),
+        ).await,
         CredentialCommand::Issue {
             issuer_schema_id,
             credential,
@@ -340,14 +332,13 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
             .await
         }
         CredentialCommand::List { issuer_schema_id } => {
-            run_list(cli, *issuer_schema_id)
+            run_list(cli, *issuer_schema_id).await
         }
         CredentialCommand::Show { issuer_schema_id } => {
-            run_show(cli, *issuer_schema_id)
+            run_show(cli, *issuer_schema_id).await
         }
         CredentialCommand::Delete { credential_id } => {
-            let root = resolve_root(cli)?;
-            let store = create_fs_credential_store(&root)?;
+            let (_authenticator, store) = init_authenticator(cli).await?;
             store
                 .delete_credential(*credential_id)
                 .map_err(|e| eyre::eyre!("delete credential failed: {e}"))?;

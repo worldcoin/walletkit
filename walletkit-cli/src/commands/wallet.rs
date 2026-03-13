@@ -6,7 +6,7 @@ use walletkit_core::storage::{cache_embedded_groth16_material, StoragePaths};
 use crate::output;
 use crate::provider::create_fs_credential_store;
 
-use super::{resolve_root, Cli};
+use super::{init_authenticator, resolve_root, Cli};
 
 #[derive(Subcommand)]
 pub enum WalletCommand {
@@ -46,8 +46,6 @@ fn run_init(cli: &Cli) -> eyre::Result<()> {
     let data = serde_json::json!({
         "root": root.display().to_string(),
         "worldid_dir": paths.worldid_dir_path_string(),
-        "vault_db": paths.vault_db_path_string(),
-        "cache_db": paths.cache_db_path_string(),
         "groth16_dir": paths.groth16_dir_path_string(),
     });
 
@@ -56,8 +54,6 @@ fn run_init(cli: &Cli) -> eyre::Result<()> {
     } else {
         println!("Wallet initialized at {}", root.display());
         println!("  worldid dir:  {}", paths.worldid_dir_path_string());
-        println!("  vault db:     {}", paths.vault_db_path_string());
-        println!("  cache db:     {}", paths.cache_db_path_string());
         println!("  groth16 dir:  {}", paths.groth16_dir_path_string());
     }
     Ok(())
@@ -122,11 +118,19 @@ fn run_doctor(cli: &Cli) -> eyre::Result<()> {
         println!("  groth16 cached: yes");
         println!(
             "  vault db:       {}",
-            if vault_ok { "present" } else { "missing" }
+            if vault_ok {
+                "present"
+            } else {
+                "not yet created (run auth register-wait)"
+            }
         );
         println!(
             "  cache db:       {}",
-            if cache_ok { "present" } else { "missing" }
+            if cache_ok {
+                "present"
+            } else {
+                "not yet created (run auth register-wait)"
+            }
         );
     } else {
         println!("Wallet issues found:");
@@ -143,9 +147,8 @@ fn run_doctor(cli: &Cli) -> eyre::Result<()> {
     Ok(())
 }
 
-fn run_export(cli: &Cli, dest: &str) -> eyre::Result<()> {
-    let root = resolve_root(cli)?;
-    let store = create_fs_credential_store(&root)?;
+async fn run_export(cli: &Cli, dest: &str) -> eyre::Result<()> {
+    let (_authenticator, store) = init_authenticator(cli).await?;
     let backup_path = store
         .export_vault_for_backup(dest.to_string())
         .map_err(|e| eyre::eyre!("export failed: {e}"))?;
@@ -161,9 +164,8 @@ fn run_export(cli: &Cli, dest: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-fn run_import(cli: &Cli, backup: &str) -> eyre::Result<()> {
-    let root = resolve_root(cli)?;
-    let store = create_fs_credential_store(&root)?;
+async fn run_import(cli: &Cli, backup: &str) -> eyre::Result<()> {
+    let (_authenticator, store) = init_authenticator(cli).await?;
     store
         .import_vault_from_backup(backup.to_string())
         .map_err(|e| eyre::eyre!("import failed: {e}"))?;
@@ -172,15 +174,14 @@ fn run_import(cli: &Cli, backup: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-fn run_danger_clear(cli: &Cli, confirm: bool) -> eyre::Result<()> {
+async fn run_danger_clear(cli: &Cli, confirm: bool) -> eyre::Result<()> {
     if !confirm {
         return Err(eyre::eyre!(
             "this will permanently delete ALL credentials; pass --confirm to proceed"
         ));
     }
 
-    let root = resolve_root(cli)?;
-    let store = create_fs_credential_store(&root)?;
+    let (_authenticator, store) = init_authenticator(cli).await?;
     let deleted = store
         .danger_delete_all_credentials()
         .map_err(|e| eyre::eyre!("danger clear failed: {e}"))?;
@@ -193,13 +194,13 @@ fn run_danger_clear(cli: &Cli, confirm: bool) -> eyre::Result<()> {
     Ok(())
 }
 
-pub fn run(cli: &Cli, action: &WalletCommand) -> eyre::Result<()> {
+pub async fn run(cli: &Cli, action: &WalletCommand) -> eyre::Result<()> {
     match action {
         WalletCommand::Init => run_init(cli),
         WalletCommand::Paths => run_paths(cli),
         WalletCommand::Doctor => run_doctor(cli),
-        WalletCommand::Export { dest } => run_export(cli, dest),
-        WalletCommand::Import { backup } => run_import(cli, backup),
-        WalletCommand::DangerClear { confirm } => run_danger_clear(cli, *confirm),
+        WalletCommand::Export { dest } => run_export(cli, dest).await,
+        WalletCommand::Import { backup } => run_import(cli, backup).await,
+        WalletCommand::DangerClear { confirm } => run_danger_clear(cli, *confirm).await,
     }
 }

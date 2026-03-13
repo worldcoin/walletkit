@@ -4,12 +4,18 @@ use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use alloy::providers::ProviderBuilder;
+use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
+use alloy_primitives::U160;
 use clap::Subcommand;
 use eyre::WrapErr as _;
+use rand::rngs::OsRng;
+use taceo_oprf::types::OprfKeyId;
 use walletkit_core::requests::ProofRequest;
+use world_id_core::primitives::{rp::RpId, FieldElement};
 use world_id_core::requests::{
-    ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse,
+    ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, RequestItem,
+    RequestVersion,
 };
 
 use crate::output;
@@ -57,6 +63,18 @@ pub enum ProofCommand {
         /// Path to proof request JSON, or `-` for stdin.
         #[arg(long)]
         request: String,
+    },
+    /// Generate a signed test proof request using hardcoded staging RP keys.
+    GenerateTestRequest {
+        /// Issuer schema ID to request a proof for.
+        #[arg(long)]
+        issuer_schema_id: u64,
+        /// Signal string for the proof request.
+        #[arg(long, default_value = "test_signal")]
+        signal: String,
+        /// Seconds from now until the request expires.
+        #[arg(long, default_value = "300")]
+        expires_in: u64,
     },
     /// Verify a previously generated proof on-chain via the WorldIDVerifier contract.
     Verify {
@@ -258,12 +276,85 @@ async fn run_verify(
     Ok(())
 }
 
+/// Staging RP ID registered on the `RpRegistry` contract.
+const STAGING_RP_ID: u64 = 46;
+
+/// ECDSA private key for the staging RP (secp256k1).
+const STAGING_RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
+    "1111111111111111111111111111111111111111111111111111111111111111"
+);
+
+fn run_generate_test_request(
+    cli: &Cli,
+    issuer_schema_id: u64,
+    signal: &str,
+    expires_in: u64,
+) -> eyre::Result<()> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_secs();
+
+    let nonce = FieldElement::random(&mut OsRng);
+    let created_at = now;
+    let expires_at = now + expires_in;
+
+    let signer = PrivateKeySigner::from_bytes(&STAGING_RP_SIGNING_KEY.into())
+        .map_err(|e| eyre::eyre!("failed to create signer: {e}"))?;
+
+    let msg = world_id_core::primitives::rp::compute_rp_signature_msg(
+        *nonce,
+        created_at,
+        expires_at,
+    );
+    let signature = signer
+        .sign_message_sync(&msg)
+        .map_err(|e| eyre::eyre!("signing failed: {e}"))?;
+
+    let request = CoreProofRequest {
+        id: "test_request".to_string(),
+        version: RequestVersion::V1,
+        created_at,
+        expires_at,
+        rp_id: RpId::new(STAGING_RP_ID),
+        oprf_key_id: OprfKeyId::new(U160::from(STAGING_RP_ID)),
+        session_id: None,
+        action: Some(FieldElement::from(1u64)),
+        signature,
+        nonce,
+        requests: vec![RequestItem::new(
+            "test".to_string(),
+            issuer_schema_id,
+            Some(signal.to_string()),
+            None,
+            None,
+        )],
+        constraints: None,
+    };
+
+    let json = serde_json::to_string_pretty(&request)?;
+
+    if cli.json {
+        let parsed: serde_json::Value = serde_json::from_str(&json)?;
+        output::print_json_data(&parsed, true);
+    } else {
+        println!("{json}");
+    }
+
+    Ok(())
+}
+
 pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
     match action {
         ProofCommand::Generate { request, now } => {
             run_generate(cli, request, *now).await
         }
         ProofCommand::InspectRequest { request } => run_inspect_request(cli, request),
+        ProofCommand::GenerateTestRequest {
+            issuer_schema_id,
+            signal,
+            expires_in,
+        } => run_generate_test_request(cli, *issuer_schema_id, signal, *expires_in),
         ProofCommand::Verify {
             request,
             response,
