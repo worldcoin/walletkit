@@ -65,6 +65,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub verbose: bool,
 
+    /// Print per-network-call latency summary after the command.
+    #[arg(long, global = true)]
+    pub latency: bool,
+
     #[command(subcommand)]
     pub command: Command,
 }

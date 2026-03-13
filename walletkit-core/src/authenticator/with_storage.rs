@@ -3,6 +3,8 @@ use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
 use world_id_core::primitives::merkle::MerkleInclusionProof;
 use world_id_core::primitives::TREE_DEPTH;
 
+use tracing::Instrument;
+
 use crate::error::WalletKitError;
 
 use super::Authenticator;
@@ -36,32 +38,36 @@ impl Authenticator {
         (MerkleInclusionProof<TREE_DEPTH>, AuthenticatorPublicKeySet),
         WalletKitError,
     > {
-        // If there is a cached inclusion proof, return it
-        if let Some(bytes) = self.store.merkle_cache_get(now)? {
-            if let Some(cached) = CachedInclusionProof::deserialize(&bytes) {
-                if cached.inclusion_proof.leaf_index == self.leaf_index() {
-                    return Ok((cached.inclusion_proof, cached.authenticator_keyset));
+        async {
+            // If there is a cached inclusion proof, return it
+            if let Some(bytes) = self.store.merkle_cache_get(now)? {
+                if let Some(cached) = CachedInclusionProof::deserialize(&bytes) {
+                    if cached.inclusion_proof.leaf_index == self.leaf_index() {
+                        return Ok((cached.inclusion_proof, cached.authenticator_keyset));
+                    }
                 }
             }
+
+            // Otherwise, fetch from the indexer and cache it
+            let (inclusion_proof, authenticator_keyset) =
+                self.inner.fetch_inclusion_proof().await?;
+            let payload = CachedInclusionProof {
+                inclusion_proof: inclusion_proof.clone(),
+                authenticator_keyset: authenticator_keyset.clone(),
+            };
+            let payload = payload.serialize()?;
+
+            if let Err(e) =
+                self.store
+                    .merkle_cache_put(payload, now, MERKLE_PROOF_VALIDITY_SECONDS)
+            {
+                tracing::error!("Failed to cache Merkle inclusion proof: {e}");
+            }
+
+            Ok((inclusion_proof, authenticator_keyset))
         }
-
-        // Otherwise, fetch from the indexer and cache it
-        let (inclusion_proof, authenticator_keyset) =
-            self.inner.fetch_inclusion_proof().await?;
-        let payload = CachedInclusionProof {
-            inclusion_proof: inclusion_proof.clone(),
-            authenticator_keyset: authenticator_keyset.clone(),
-        };
-        let payload = payload.serialize()?;
-
-        if let Err(e) =
-            self.store
-                .merkle_cache_put(payload, now, MERKLE_PROOF_VALIDITY_SECONDS)
-        {
-            tracing::error!("Failed to cache Merkle inclusion proof: {e}");
-        }
-
-        Ok((inclusion_proof, authenticator_keyset))
+        .instrument(tracing::info_span!(target: "walletkit_latency", "indexer_inclusion_proof"))
+        .await
     }
 }
 

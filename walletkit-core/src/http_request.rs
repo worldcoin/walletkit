@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use backon::{ExponentialBuilder, Retryable};
 use reqwest::{Method, RequestBuilder, Response};
+use tracing::Instrument;
 
 use crate::error::WalletKitError;
 
@@ -56,29 +57,40 @@ impl Request {
         &self,
         request_builder: RequestBuilder,
     ) -> Result<Response, WalletKitError> {
-        if request_builder.try_clone().is_none() {
-            return execute_request_builder(request_builder)
-                .await
-                .map_err(Into::into);
+        let url = request_builder
+            .try_clone()
+            .and_then(|rb| rb.build().ok())
+            .map(|r| r.url().to_string())
+            .unwrap_or_default();
+        let span = tracing::info_span!(target: "walletkit_latency", "http", url = %url);
+
+        async {
+            if request_builder.try_clone().is_none() {
+                return execute_request_builder(request_builder)
+                    .await
+                    .map_err(Into::into);
+            }
+
+            let backoff = ExponentialBuilder::default()
+                .with_min_delay(Duration::from_millis(200))
+                .with_max_delay(Duration::from_secs(2))
+                .with_max_times(self.max_retries as usize);
+
+            let template = request_builder;
+
+            (|| async {
+                let request_builder = template.try_clone().expect(
+                    "request_builder must be cloneable after initial handle() guard",
+                );
+                execute_request_builder(request_builder).await
+            })
+            .retry(backoff)
+            .when(|err: &RequestHandleError| err.is_retryable())
+            .await
+            .map_err(Into::into)
         }
-
-        let backoff = ExponentialBuilder::default()
-            .with_min_delay(Duration::from_millis(200))
-            .with_max_delay(Duration::from_secs(2))
-            .with_max_times(self.max_retries as usize);
-
-        let template = request_builder;
-
-        (|| async {
-            let request_builder = template.try_clone().expect(
-                "request_builder must be cloneable after initial handle() guard",
-            );
-            execute_request_builder(request_builder).await
-        })
-        .retry(backoff)
-        .when(|err: &RequestHandleError| err.is_retryable())
+        .instrument(span)
         .await
-        .map_err(Into::into)
     }
 }
 

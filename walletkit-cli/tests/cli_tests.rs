@@ -379,3 +379,48 @@ fn credential_delete_nonexistent_id() {
         "unexpected panic on nonexistent credential delete: {stderr}"
     );
 }
+
+#[test]
+fn latency_flag_on_wallet_paths() {
+    let root = temp_root();
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "--latency",
+            "wallet",
+            "paths",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn latency_json_on_wallet_paths() {
+    let root = temp_root();
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "--latency",
+            "--json",
+            "wallet",
+            "paths",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("invalid json");
+    assert_eq!(parsed["ok"], true);
+}
