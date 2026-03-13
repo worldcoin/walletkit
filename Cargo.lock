@@ -6379,9 +6379,9 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tracing-subscriber 0.3.23",
- "uuid",
  "walletkit-core",
  "world-id-core",
 ]

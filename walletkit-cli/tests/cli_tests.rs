@@ -14,13 +14,8 @@ fn walletkit_bin() -> PathBuf {
     path
 }
 
-fn temp_root() -> PathBuf {
-    let id = uuid::Uuid::new_v4();
-    std::env::temp_dir().join(format!("walletkit-cli-test-{id}"))
-}
-
-fn cleanup(root: &PathBuf) {
-    let _ = std::fs::remove_dir_all(root);
+fn temp_root() -> tempfile::TempDir {
+    tempfile::tempdir().expect("failed to create temp dir")
 }
 
 #[test]
@@ -43,7 +38,7 @@ fn wallet_paths_prints_json() {
     let output = Command::new(walletkit_bin())
         .args([
             "--root",
-            root.to_str().unwrap(),
+            root.path().to_str().unwrap(),
             "--json",
             "wallet",
             "paths",
@@ -55,18 +50,51 @@ fn wallet_paths_prints_json() {
     let parsed: serde_json::Value =
         serde_json::from_str(&stdout).expect("invalid json");
     assert_eq!(parsed["ok"], true);
-    assert!(parsed["data"]["root"]
-        .as_str()
-        .unwrap()
-        .contains("walletkit-cli-test-"));
-    cleanup(&root);
+    assert!(parsed["data"]["root"].as_str().unwrap().len() > 0);
+}
+
+#[test]
+fn wallet_paths_json_has_all_keys() {
+    let root = temp_root();
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "--json",
+            "wallet",
+            "paths",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("invalid json");
+    let data = &parsed["data"];
+    for key in &[
+        "root",
+        "worldid_dir",
+        "vault_db",
+        "cache_db",
+        "lock",
+        "groth16_dir",
+        "query_zkey",
+        "nullifier_zkey",
+        "query_graph",
+        "nullifier_graph",
+    ] {
+        assert!(
+            data[key].as_str().is_some(),
+            "missing key '{key}' in wallet paths JSON output"
+        );
+    }
 }
 
 #[test]
 fn wallet_init_creates_groth16_material() {
     let root = temp_root();
     let output = Command::new(walletkit_bin())
-        .args(["--root", root.to_str().unwrap(), "wallet", "init"])
+        .args(["--root", root.path().to_str().unwrap(), "wallet", "init"])
         .output()
         .expect("failed to run");
     assert!(
@@ -77,22 +105,26 @@ fn wallet_init_creates_groth16_material() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Wallet initialized"));
 
-    let groth16_dir = root.join("worldid").join("groth16");
+    let groth16_dir = root.path().join("worldid").join("groth16");
     assert!(groth16_dir.join("OPRFQuery.arks.zkey").exists());
     assert!(groth16_dir.join("OPRFNullifier.arks.zkey").exists());
     assert!(groth16_dir.join("OPRFQueryGraph.bin").exists());
     assert!(groth16_dir.join("OPRFNullifierGraph.bin").exists());
 
-    assert!(root.join(".device_key").exists());
-
-    cleanup(&root);
+    assert!(root.path().join(".device_key").exists());
 }
 
 #[test]
 fn wallet_init_json_output() {
     let root = temp_root();
     let output = Command::new(walletkit_bin())
-        .args(["--root", root.to_str().unwrap(), "--json", "wallet", "init"])
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "--json",
+            "wallet",
+            "init",
+        ])
         .output()
         .expect("failed to run");
     assert!(output.status.success());
@@ -101,7 +133,6 @@ fn wallet_init_json_output() {
         serde_json::from_str(&stdout).expect("invalid json");
     assert_eq!(parsed["ok"], true);
     assert!(parsed["data"]["groth16_dir"].as_str().is_some());
-    cleanup(&root);
 }
 
 #[test]
@@ -109,14 +140,14 @@ fn wallet_doctor_reports_healthy_after_init() {
     let root = temp_root();
 
     Command::new(walletkit_bin())
-        .args(["--root", root.to_str().unwrap(), "wallet", "init"])
+        .args(["--root", root.path().to_str().unwrap(), "wallet", "init"])
         .output()
         .expect("failed to run init");
 
     let output = Command::new(walletkit_bin())
         .args([
             "--root",
-            root.to_str().unwrap(),
+            root.path().to_str().unwrap(),
             "--json",
             "wallet",
             "doctor",
@@ -130,8 +161,6 @@ fn wallet_doctor_reports_healthy_after_init() {
     assert_eq!(parsed["ok"], true);
     assert_eq!(parsed["data"]["healthy"], true);
     assert_eq!(parsed["data"]["groth16_cached"], true);
-
-    cleanup(&root);
 }
 
 #[test]
@@ -141,7 +170,7 @@ fn wallet_doctor_reports_issues_without_init() {
     let output = Command::new(walletkit_bin())
         .args([
             "--root",
-            root.to_str().unwrap(),
+            root.path().to_str().unwrap(),
             "--json",
             "wallet",
             "doctor",
@@ -153,8 +182,6 @@ fn wallet_doctor_reports_issues_without_init() {
     let parsed: serde_json::Value =
         serde_json::from_str(&stdout).expect("invalid json");
     assert_eq!(parsed["data"]["groth16_cached"], false);
-
-    cleanup(&root);
 }
 
 #[test]
@@ -162,7 +189,7 @@ fn auth_without_seed_fails() {
     let root = temp_root();
 
     let output = Command::new(walletkit_bin())
-        .args(["--root", root.to_str().unwrap(), "auth", "info"])
+        .args(["--root", root.path().to_str().unwrap(), "auth", "info"])
         .output()
         .expect("failed to run");
     assert!(!output.status.success());
@@ -171,7 +198,52 @@ fn auth_without_seed_fails() {
         stderr.contains("--seed") || stderr.contains("random-seed"),
         "expected seed error, got: {stderr}"
     );
-    cleanup(&root);
+}
+
+#[test]
+fn seed_invalid_hex_fails() {
+    let root = temp_root();
+
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "--seed",
+            "zzzzzz",
+            "auth",
+            "info",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("invalid hex seed"),
+        "expected hex parse error, got: {stderr}"
+    );
+}
+
+#[test]
+fn seed_wrong_length_fails() {
+    let root = temp_root();
+
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "--seed",
+            "0102",
+            "auth",
+            "info",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("32 bytes"),
+        "expected length error, got: {stderr}"
+    );
 }
 
 #[test]
@@ -179,14 +251,14 @@ fn random_seed_prints_seed() {
     let root = temp_root();
 
     Command::new(walletkit_bin())
-        .args(["--root", root.to_str().unwrap(), "wallet", "init"])
+        .args(["--root", root.path().to_str().unwrap(), "wallet", "init"])
         .output()
         .expect("failed to run init");
 
     let output = Command::new(walletkit_bin())
         .args([
             "--root",
-            root.to_str().unwrap(),
+            root.path().to_str().unwrap(),
             "--random-seed",
             "auth",
             "init",
@@ -199,8 +271,6 @@ fn random_seed_prints_seed() {
         stderr.contains("Generated random seed: 0x") || !output.status.success(),
         "expected seed in stderr or network error, got: {stderr}"
     );
-
-    cleanup(&root);
 }
 
 #[test]
@@ -228,12 +298,17 @@ fn credential_list_on_empty_wallet() {
     let root = temp_root();
 
     Command::new(walletkit_bin())
-        .args(["--root", root.to_str().unwrap(), "wallet", "init"])
+        .args(["--root", root.path().to_str().unwrap(), "wallet", "init"])
         .output()
         .expect("failed init");
 
     let output = Command::new(walletkit_bin())
-        .args(["--root", root.to_str().unwrap(), "credential", "list"])
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "credential",
+            "list",
+        ])
         .output()
         .expect("failed to run");
 
@@ -244,6 +319,63 @@ fn credential_list_on_empty_wallet() {
         stdout.contains("No credentials stored") || stderr.contains("not initialized"),
         "expected empty list or not-initialized error, stdout: {stdout}, stderr: {stderr}"
     );
+}
 
-    cleanup(&root);
+#[test]
+fn credential_list_json_on_empty_wallet() {
+    let root = temp_root();
+
+    Command::new(walletkit_bin())
+        .args(["--root", root.path().to_str().unwrap(), "wallet", "init"])
+        .output()
+        .expect("failed init");
+
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "--json",
+            "credential",
+            "list",
+        ])
+        .output()
+        .expect("failed to run");
+
+    if output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: serde_json::Value =
+            serde_json::from_str(&stdout).expect("invalid json");
+        assert_eq!(parsed["ok"], true);
+        assert!(parsed["data"].is_array(), "expected data to be an array");
+        assert_eq!(parsed["data"].as_array().unwrap().len(), 0);
+    }
+}
+
+#[test]
+fn credential_delete_nonexistent_id() {
+    let root = temp_root();
+
+    Command::new(walletkit_bin())
+        .args(["--root", root.path().to_str().unwrap(), "wallet", "init"])
+        .output()
+        .expect("failed init");
+
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "credential",
+            "delete",
+            "--credential-id",
+            "99999",
+        ])
+        .output()
+        .expect("failed to run");
+
+    // Should either succeed (idempotent delete) or fail with a clear error — not panic.
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("panicked"),
+        "unexpected panic on nonexistent credential delete: {stderr}"
+    );
 }

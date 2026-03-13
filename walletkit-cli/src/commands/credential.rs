@@ -79,12 +79,21 @@ fn now_secs() -> eyre::Result<u64> {
     Ok(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())
 }
 
+const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
+
 fn read_file_or_stdin(path: &str) -> eyre::Result<Vec<u8>> {
     if path == "-" {
         let mut buf = Vec::new();
-        std::io::stdin().read_to_end(&mut buf)?;
+        std::io::stdin()
+            .take(MAX_INPUT_BYTES)
+            .read_to_end(&mut buf)?;
         Ok(buf)
     } else {
+        let meta = std::fs::metadata(path)
+            .map_err(|e| eyre::eyre!("cannot read {path}: {e}"))?;
+        if meta.len() > MAX_INPUT_BYTES {
+            return Err(eyre::eyre!("input file too large (max 10 MiB)"));
+        }
         Ok(std::fs::read(path)?)
     }
 }

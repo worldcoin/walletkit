@@ -146,7 +146,12 @@ impl AtomicBlobStore for FsAtomicBlobStore {
     fn delete(&self, path: String) -> Result<(), StorageError> {
         let full = self.base.join(&path);
         match fs::remove_file(&full) {
-            Ok(()) | Err(_) => Ok(()),
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(StorageError::BlobStore(format!(
+                "delete {}: {e}",
+                full.display()
+            ))),
         }
     }
 }

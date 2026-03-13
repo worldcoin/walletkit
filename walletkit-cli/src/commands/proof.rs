@@ -18,6 +18,8 @@ use super::{init_authenticator, Cli};
 
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
 
+const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
+
 const WORLD_ID_VERIFIER: alloy::primitives::Address =
     alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
 
@@ -64,15 +66,25 @@ pub enum ProofCommand {
         /// Path to the proof response JSON, or `-` for stdin.
         #[arg(long)]
         response: String,
+        /// Override the WorldID verifier contract address (default: mainnet).
+        #[arg(long)]
+        verifier_address: Option<String>,
     },
 }
 
 fn read_file_or_stdin(path: &str) -> eyre::Result<String> {
     if path == "-" {
         let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf)?;
+        std::io::stdin()
+            .take(MAX_INPUT_BYTES)
+            .read_to_string(&mut buf)?;
         Ok(buf)
     } else {
+        let meta = std::fs::metadata(path)
+            .map_err(|e| eyre::eyre!("cannot read {path}: {e}"))?;
+        if meta.len() > MAX_INPUT_BYTES {
+            return Err(eyre::eyre!("input file too large (max 10 MiB)"));
+        }
         Ok(std::fs::read_to_string(path)?)
     }
 }
@@ -130,7 +142,12 @@ fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn run_verify(cli: &Cli, request_path: &str, response_path: &str) -> eyre::Result<()> {
+async fn run_verify(
+    cli: &Cli,
+    request_path: &str,
+    response_path: &str,
+    verifier_address: Option<&str>,
+) -> eyre::Result<()> {
     let request_json = read_file_or_stdin(request_path)?;
     let response_json = read_file_or_stdin(response_path)?;
 
@@ -145,11 +162,17 @@ async fn run_verify(cli: &Cli, request_path: &str, response_path: &str) -> eyre:
 
     let rpc_url = cli.rpc_url.as_deref().unwrap_or(DEFAULT_RPC_URL);
     let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-    let verifier = IWorldIDVerifier::new(WORLD_ID_VERIFIER, &provider);
+    let verifier_addr = match verifier_address {
+        Some(addr) => addr
+            .parse::<alloy::primitives::Address>()
+            .map_err(|e| eyre::eyre!("invalid verifier address: {e}"))?,
+        None => WORLD_ID_VERIFIER,
+    };
+    let verifier = IWorldIDVerifier::new(verifier_addr, &provider);
 
-    let action = proof_request
-        .action
-        .ok_or_else(|| eyre::eyre!("proof request has no action (session proofs not supported)"))?;
+    let action = proof_request.action.ok_or_else(|| {
+        eyre::eyre!("proof request has no action (session proofs not supported)")
+    })?;
     let nonce = proof_request.nonce;
     let rp_id = proof_request.rp_id.into_inner();
 
@@ -237,8 +260,14 @@ async fn run_verify(cli: &Cli, request_path: &str, response_path: &str) -> eyre:
 
 pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
     match action {
-        ProofCommand::Generate { request, now } => run_generate(cli, request, *now).await,
+        ProofCommand::Generate { request, now } => {
+            run_generate(cli, request, *now).await
+        }
         ProofCommand::InspectRequest { request } => run_inspect_request(cli, request),
-        ProofCommand::Verify { request, response } => run_verify(cli, request, response).await,
+        ProofCommand::Verify {
+            request,
+            response,
+            verifier_address,
+        } => run_verify(cli, request, response, verifier_address.as_deref()).await,
     }
 }
