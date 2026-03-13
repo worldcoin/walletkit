@@ -1,14 +1,43 @@
-//! `walletkit proof` subcommands — proof generation and inspection.
+//! `walletkit proof` subcommands — proof generation, inspection, and on-chain verification.
 
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use alloy::providers::ProviderBuilder;
+use alloy::sol;
 use clap::Subcommand;
+use eyre::WrapErr as _;
 use walletkit_core::requests::ProofRequest;
+use world_id_core::requests::{
+    ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse,
+};
 
 use crate::output;
 
 use super::{init_authenticator, Cli};
+
+const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
+
+const WORLD_ID_VERIFIER: alloy::primitives::Address =
+    alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
+
+sol!(
+    #[allow(clippy::too_many_arguments)]
+    #[sol(rpc)]
+    interface IWorldIDVerifier {
+        function verify(
+            uint256 nullifier,
+            uint256 action,
+            uint64 rpId,
+            uint256 nonce,
+            uint256 signalHash,
+            uint64 expiresAtMin,
+            uint64 issuerSchemaId,
+            uint256 credentialGenesisIssuedAtMin,
+            uint256[5] calldata zeroKnowledgeProof
+        ) external view;
+    }
+);
 
 #[derive(Subcommand)]
 pub enum ProofCommand {
@@ -26,6 +55,15 @@ pub enum ProofCommand {
         /// Path to proof request JSON, or `-` for stdin.
         #[arg(long)]
         request: String,
+    },
+    /// Verify a previously generated proof on-chain via the WorldIDVerifier contract.
+    Verify {
+        /// Path to the original proof request JSON, or `-` for stdin.
+        #[arg(long)]
+        request: String,
+        /// Path to the proof response JSON, or `-` for stdin.
+        #[arg(long)]
+        response: String,
     },
 }
 
@@ -92,11 +130,115 @@ fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
     Ok(())
 }
 
+async fn run_verify(cli: &Cli, request_path: &str, response_path: &str) -> eyre::Result<()> {
+    let request_json = read_file_or_stdin(request_path)?;
+    let response_json = read_file_or_stdin(response_path)?;
+
+    let proof_request: CoreProofRequest =
+        serde_json::from_str(&request_json).wrap_err("invalid proof request")?;
+    let proof_response: CoreProofResponse =
+        serde_json::from_str(&response_json).wrap_err("invalid proof response")?;
+
+    if let Some(ref err) = proof_response.error {
+        return Err(eyre::eyre!("proof response contains error: {err}"));
+    }
+
+    let rpc_url = cli.rpc_url.as_deref().unwrap_or(DEFAULT_RPC_URL);
+    let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+    let verifier = IWorldIDVerifier::new(WORLD_ID_VERIFIER, &provider);
+
+    let action = proof_request
+        .action
+        .ok_or_else(|| eyre::eyre!("proof request has no action (session proofs not supported)"))?;
+    let nonce = proof_request.nonce;
+    let rp_id = proof_request.rp_id.into_inner();
+
+    let mut results = Vec::new();
+
+    for response_item in &proof_response.responses {
+        let request_item = proof_request
+            .find_request_by_issuer_schema_id(response_item.issuer_schema_id)
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "no matching request item for issuer_schema_id={}",
+                    response_item.issuer_schema_id
+                )
+            })?;
+
+        let nullifier = response_item
+            .nullifier
+            .ok_or_else(|| eyre::eyre!("response item missing nullifier"))?;
+
+        let result = verifier
+            .verify(
+                nullifier.into(),
+                action.into(),
+                rp_id,
+                nonce.into(),
+                request_item.signal_hash().into(),
+                response_item.expires_at_min,
+                response_item.issuer_schema_id,
+                request_item
+                    .genesis_issued_at_min
+                    .unwrap_or_default()
+                    .try_into()?,
+                response_item.proof.as_ethereum_representation(),
+            )
+            .call()
+            .await;
+
+        let verified = result.is_ok();
+        let error_msg = result.err().map(|e| format!("{e:#}"));
+
+        results.push(serde_json::json!({
+            "issuer_schema_id": response_item.issuer_schema_id,
+            "identifier": response_item.identifier,
+            "verified": verified,
+            "error": error_msg,
+        }));
+
+        if !cli.json {
+            if verified {
+                println!(
+                    "  [PASS] {} (issuer_schema_id={})",
+                    response_item.identifier, response_item.issuer_schema_id
+                );
+            } else {
+                println!(
+                    "  [FAIL] {} (issuer_schema_id={}): {}",
+                    response_item.identifier,
+                    response_item.issuer_schema_id,
+                    error_msg.as_deref().unwrap_or("unknown")
+                );
+            }
+        }
+    }
+
+    let all_passed = results.iter().all(|r| r["verified"] == true);
+
+    if cli.json {
+        output::print_json_data(
+            &serde_json::json!({
+                "verified": all_passed,
+                "results": results,
+            }),
+            true,
+        );
+    } else if all_passed {
+        println!("All proofs verified on-chain.");
+    }
+
+    if !all_passed {
+        std::process::exit(1);
+    }
+
+    Ok(())
+}
+
 pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
     match action {
-        ProofCommand::Generate { request, now } => {
-            run_generate(cli, request, *now).await
-        }
+        ProofCommand::Generate { request, now } => run_generate(cli, request, *now).await,
         ProofCommand::InspectRequest { request } => run_inspect_request(cli, request),
+        ProofCommand::Verify { request, response } => run_verify(cli, request, response).await,
     }
 }
