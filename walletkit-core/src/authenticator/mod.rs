@@ -202,6 +202,17 @@ impl Authenticator {
     ) -> FieldElement {
         CoreCredential::compute_sub(self.inner.leaf_index(), blinding_factor.0).into()
     }
+
+    /// Signs an arbitrary challenge with the authenticator's on-chain key.
+    ///
+    /// # Warning
+    /// This is considered a dangerous operation because it leaks the user's on-chain key,
+    /// hence its `leaf_index`. The only acceptable use is to prove the user's `leaf_index`
+    /// to a Recovery Agent. The Recovery Agent is the only party beyond the user who needs
+    /// to know the `leaf_index`.
+    pub fn danger_sign_challenge(&self, challenge: &[u8]) -> Vec<u8> {
+        self.inner.danger_sign_challenge(challenge)
+    }
 }
 
 #[cfg(not(feature = "storage"))]
