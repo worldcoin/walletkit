@@ -153,7 +153,7 @@ pub mod v3;
 // Private modules
 ////////////////////////////////////////////////////////////////////////////////
 
-#[cfg(any(feature = "issuers", feature = "storage"))]
+#[cfg(any(feature = "issuers", feature = "v3"))]
 mod http_request;
 pub(crate) mod primitives;
 
