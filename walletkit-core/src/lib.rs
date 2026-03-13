@@ -160,4 +160,5 @@ pub(crate) mod primitives;
 #[cfg(not(target_arch = "wasm32"))]
 uniffi::setup_scaffolding!("walletkit_core");
 
+#[cfg(not(target_arch = "wasm32"))]
 ruint_uniffi::register_types!(Uint256);
