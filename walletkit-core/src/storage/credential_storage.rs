@@ -41,7 +41,7 @@ impl Drop for CleanupFile {
 }
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
+#[derive(uniffi::Object)]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
     /// Channel sender for the vault-changed notification thread.
@@ -120,14 +120,14 @@ impl CredentialStoreInner {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
+#[uniffi::export]
 impl CredentialStore {
     /// Creates a new storage handle from explicit components.
     ///
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
+    #[uniffi::constructor]
     pub fn new_with_components(
         paths: Arc<StoragePaths>,
         keystore: Arc<dyn DeviceKeystore>,
@@ -147,7 +147,7 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
+    #[uniffi::constructor]
     #[allow(clippy::needless_pass_by_value)]
     pub fn from_provider_arc(
         provider: Arc<dyn StorageProvider>,

@@ -15,7 +15,7 @@ use world_id_core::primitives::TREE_DEPTH;
 #[cfg(not(target_arch = "wasm32"))]
 const MERKLE_PROOF_VALIDITY_SECONDS: u64 = 60 * 15;
 
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
+#[uniffi::export]
 impl Authenticator {
     /// Initializes storage using the authenticator's leaf index.
     ///

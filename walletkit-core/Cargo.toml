@@ -32,6 +32,7 @@ rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 ruint = { version = "1.17", default-features = false, features = ["alloc"] }
 ruint-uniffi = { version = "0.1", features = ["serde"] }
+uniffi = { workspace = true, features = ["build", "tokio"] }
 secrecy = "0.10"
 semaphore-rs = { version = "0.5", optional = true }
 serde = "1"
@@ -62,7 +63,6 @@ walletkit-db = { workspace = true }
 ctor = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["brotli", "rustls-tls"] }
 rustls = { version = "0.23", features = ["ring"] }
-uniffi = { workspace = true, features = ["build", "tokio"] }
 
 [dev-dependencies]
 alloy = { version = "1", default-features = false, features = [
