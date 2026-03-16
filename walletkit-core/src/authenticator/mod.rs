@@ -1,10 +1,8 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
 use crate::{
-    defaults::{self, DefaultConfig},
-    error::WalletKitError,
-    primitives::ParseFromForeignBinding,
-    Environment, FieldElement, Region,
+    defaults::DefaultConfig, error::WalletKitError,
+    primitives::ParseFromForeignBinding, Environment, FieldElement, Region,
 };
 use alloy_primitives::Address;
 use ruint_uniffi::Uint256;
@@ -127,7 +125,6 @@ fn load_nullifier_material_from_cache(
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator {
     inner: CoreAuthenticator,
-    environment: Option<Environment>,
     #[cfg(feature = "storage")]
     store: Arc<CredentialStore>,
 }
@@ -205,15 +202,6 @@ impl Authenticator {
     ) -> FieldElement {
         CoreCredential::compute_sub(self.inner.leaf_index(), blinding_factor.0).into()
     }
-
-    /// Returns the TFH Recovery Agent address for this authenticator's environment, or `None`
-    /// if the authenticator was initialised with a raw config (environment unknown).
-    #[must_use]
-    pub fn tfh_recovery_agent_address(&self) -> Option<String> {
-        self.environment
-            .as_ref()
-            .map(|env| defaults::tfh_recovery_agent_address(env).to_string())
-    }
 }
 
 #[cfg(not(feature = "storage"))]
@@ -240,7 +228,6 @@ impl Authenticator {
                 .await?;
         Ok(Self {
             inner: authenticator,
-            environment: Some(environment.clone()),
         })
     }
 
@@ -264,7 +251,6 @@ impl Authenticator {
                 .await?;
         Ok(Self {
             inner: authenticator,
-            environment: None,
         })
     }
 }
@@ -296,7 +282,6 @@ impl Authenticator {
                 .await?;
         Ok(Self {
             inner: authenticator,
-            environment: Some(environment.clone()),
             store,
         })
     }
@@ -327,7 +312,6 @@ impl Authenticator {
                 .await?;
         Ok(Self {
             inner: authenticator,
-            environment: None,
             store,
         })
     }

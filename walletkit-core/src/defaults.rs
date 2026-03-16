@@ -7,21 +7,27 @@ use crate::{error::WalletKitError, Environment, Region};
 pub static WORLD_ID_REGISTRY: Address =
     address!("0x8556d07D75025f286fe757C7EeEceC40D54FA16D");
 
-/// The TFH Recovery Agent contract address on the staging environment.
-pub static TFH_RECOVERY_AGENT_ADDRESS_STAGING: Address =
+/// The PoH Recovery Agent contract address on the staging environment.
+pub static POH_RECOVERY_AGENT_ADDRESS_STAGING: Address =
     address!("0xE2946556E4Bc67E687f202F032b56f5d63c76f83");
 
-/// The TFH Recovery Agent contract address on the production environment.
-pub static TFH_RECOVERY_AGENT_ADDRESS_PRODUCTION: Address =
+/// The PoH Recovery Agent contract address on the production environment.
+pub static POH_RECOVERY_AGENT_ADDRESS_PRODUCTION: Address =
     address!("0x1312C524D85717dfAB70a6D25de7b30CC68B4d9d");
 
-/// Returns the TFH Recovery Agent address for the given [`Environment`].
+/// Returns the PoH Recovery Agent address for the given [`Environment`] as a hex string.
+///
+/// The PoH Recovery Agent is a contract users can optionally designate when registering
+/// a World ID. If they lose access to all authenticators, the agent can sign a recovery
+/// transaction to restore their account.
+#[uniffi::export]
 #[must_use]
-pub fn tfh_recovery_agent_address(environment: &Environment) -> Address {
+pub fn poh_recovery_agent_address(environment: Environment) -> String {
     match environment {
-        Environment::Staging => TFH_RECOVERY_AGENT_ADDRESS_STAGING,
-        Environment::Production => TFH_RECOVERY_AGENT_ADDRESS_PRODUCTION,
+        Environment::Staging => POH_RECOVERY_AGENT_ADDRESS_STAGING,
+        Environment::Production => POH_RECOVERY_AGENT_ADDRESS_PRODUCTION,
     }
+    .to_string()
 }
 
 const OPRF_NODE_COUNT: usize = 5;
