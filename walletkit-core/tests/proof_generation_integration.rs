@@ -36,7 +36,7 @@ use taceo_oprf::types::OprfKeyId;
 use walletkit_core::{
     defaults::DefaultConfig, Authenticator, Environment, Groth16Materials,
 };
-use world_id_core::primitives::{rp::RpId, FieldElement};
+use world_id_core::primitives::{rp::RpId, FieldElement, Nullifier};
 use world_id_core::{
     requests::{ProofRequest, RequestItem, RequestVersion},
     Authenticator as CoreAuthenticator, EdDSAPrivateKey,
@@ -267,7 +267,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let nullifier = response_item
         .nullifier
         .expect("uniqueness proof should have nullifier");
-    assert_ne!(nullifier, FieldElement::ZERO);
+    assert_ne!(nullifier, Nullifier::new(FieldElement::ZERO));
 
     eprintln!("Phase 4 complete: proof generated (nullifier={nullifier:?})");
 
