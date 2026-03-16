@@ -46,7 +46,7 @@ sha2 = { version = "0.10", optional = true }
 strum = { version = "0.27", features = ["derive"] }
 subtle = "2"
 thiserror = "2"
-parking_lot = "0.12"
+parking_lot = { version = "0.12", optional = true }
 tokio = { version = "1", features = ["sync"] }
 tracing = "0.1"
 tracing-log = "0.2"
@@ -95,6 +95,7 @@ issuers = ["dep:base64"]
 storage = [
     "dep:ciborium",
     "dep:hkdf",
+    "dep:parking_lot",
     "dep:rand",
     "dep:sha2",
     "dep:uuid",
