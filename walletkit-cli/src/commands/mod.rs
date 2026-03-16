@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
+use eyre::WrapErr as _;
 use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
 use walletkit_core::Authenticator;
 
@@ -112,13 +113,8 @@ fn resolve_root(cli: &Cli) -> eyre::Result<PathBuf> {
 fn resolve_seed(cli: &Cli) -> eyre::Result<Vec<u8>> {
     if let Some(ref hex_seed) = cli.seed {
         let bytes = hex::decode(hex_seed.trim_start_matches("0x"))
-            .map_err(|e| eyre::eyre!("invalid hex seed: {e}"))?;
-        if bytes.len() != 32 {
-            return Err(eyre::eyre!(
-                "seed must be exactly 32 bytes, got {}",
-                bytes.len()
-            ));
-        }
+            .wrap_err("invalid hex seed")?;
+        eyre::ensure!(bytes.len() == 32, "seed must be exactly 32 bytes, got {}", bytes.len());
         Ok(bytes)
     } else if cli.random_seed {
         use rand::RngCore;
@@ -135,20 +131,13 @@ fn resolve_seed(cli: &Cli) -> eyre::Result<Vec<u8>> {
         let seed_path = root.join("seed");
         if seed_path.exists() {
             let hex_str = std::fs::read_to_string(&seed_path)
-                .map_err(|e| eyre::eyre!("failed to read seed file: {e}"))?;
+                .wrap_err("failed to read seed file")?;
             let bytes = hex::decode(hex_str.trim())
-                .map_err(|e| eyre::eyre!("invalid hex in seed file: {e}"))?;
-            if bytes.len() != 32 {
-                return Err(eyre::eyre!(
-                    "seed file must contain exactly 32 bytes, got {}",
-                    bytes.len()
-                ));
-            }
+                .wrap_err("invalid hex in seed file")?;
+            eyre::ensure!(bytes.len() == 32, "seed file must contain exactly 32 bytes, got {}", bytes.len());
             Ok(bytes)
         } else {
-            Err(eyre::eyre!(
-                "no seed found; run `walletkit wallet init` first, or pass --seed"
-            ))
+            eyre::bail!("no seed found; run `walletkit wallet init` first, or pass --seed")
         }
     }
 }
@@ -158,7 +147,7 @@ fn resolve_environment(cli: &Cli) -> eyre::Result<walletkit_core::Environment> {
     match cli.environment.to_lowercase().as_str() {
         "staging" => Ok(walletkit_core::Environment::Staging),
         "production" => Ok(walletkit_core::Environment::Production),
-        other => Err(eyre::eyre!("unknown environment: {other}")),
+        other => eyre::bail!("unknown environment: {other}"),
     }
 }
 
@@ -169,7 +158,7 @@ fn resolve_region(cli: &Cli) -> eyre::Result<Option<walletkit_core::Region>> {
         Some("eu") => Ok(Some(walletkit_core::Region::Eu)),
         Some("us") => Ok(Some(walletkit_core::Region::Us)),
         Some("ap") => Ok(Some(walletkit_core::Region::Ap)),
-        Some(other) => Err(eyre::eyre!("unknown region: {other}")),
+        Some(other) => eyre::bail!("unknown region: {other}"),
     }
 }
 
@@ -177,9 +166,8 @@ fn resolve_region(cli: &Cli) -> eyre::Result<Option<walletkit_core::Region>> {
 pub(crate) fn resolve_config(cli: &Cli) -> eyre::Result<Option<String>> {
     match &cli.config {
         Some(path) => {
-            let json = std::fs::read_to_string(path).map_err(|e| {
-                eyre::eyre!("failed to read config file {}: {e}", path.display())
-            })?;
+            let json = std::fs::read_to_string(path)
+                .wrap_err_with(|| format!("failed to read config file {}", path.display()))?;
             Ok(Some(json))
         }
         None => Ok(None),
@@ -201,7 +189,7 @@ pub(crate) async fn init_authenticator(
     let authenticator = if let Some(ref config) = config_json {
         Authenticator::init(&seed, config, &paths, store.clone())
             .await
-            .map_err(|e| eyre::eyre!("authenticator init failed: {e}"))?
+            .wrap_err("authenticator init failed")?
     } else {
         let env = resolve_environment(cli)?;
         let region = resolve_region(cli)?;
@@ -214,13 +202,13 @@ pub(crate) async fn init_authenticator(
             store.clone(),
         )
         .await
-        .map_err(|e| eyre::eyre!("authenticator init failed: {e}"))?
+        .wrap_err("authenticator init failed")?
     };
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     authenticator
         .init_storage(now)
-        .map_err(|e| eyre::eyre!("storage init failed: {e}"))?;
+        .wrap_err("storage init failed")?;
 
     Ok((Arc::new(authenticator), store))
 }

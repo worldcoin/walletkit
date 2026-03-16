@@ -1,6 +1,7 @@
 //! `walletkit auth` subcommands — authenticator lifecycle and registration.
 
 use clap::Subcommand;
+use eyre::WrapErr as _;
 use walletkit_core::error::WalletKitError;
 use walletkit_core::{InitializingAuthenticator, RegistrationStatus};
 
@@ -68,13 +69,13 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
             output::print_success("Already registered.", cli.json);
             return Ok(());
         }
-        Err(e) => return Err(eyre::eyre!("registration failed: {e}")),
+        Err(e) => return Err(e).wrap_err("registration failed"),
     };
 
     let status = init_auth
         .poll_status()
         .await
-        .map_err(|e| eyre::eyre!("poll failed: {e}"))?;
+        .wrap_err("poll failed")?;
     let status_str = format!("{status:?}");
 
     if cli.json {
@@ -121,14 +122,14 @@ async fn run_register_wait(
             output::print_success("Already registered.", cli.json);
             return Ok(());
         }
-        Err(e) => return Err(eyre::eyre!("registration failed: {e}")),
+        Err(e) => return Err(e).wrap_err("registration failed"),
     };
 
     loop {
         let status = init_auth
             .poll_status()
             .await
-            .map_err(|e| eyre::eyre!("poll failed: {e}"))?;
+            .wrap_err("poll failed")?;
 
         match &status {
             RegistrationStatus::Finalized => {
@@ -143,9 +144,7 @@ async fn run_register_wait(
                 return Ok(());
             }
             RegistrationStatus::Failed { error, error_code } => {
-                return Err(eyre::eyre!(
-                    "registration failed: {error} (code: {error_code:?})"
-                ));
+                eyre::bail!("registration failed: {error} (code: {error_code:?})");
             }
             _ => {
                 let status_str = format!("{status:?}");
@@ -208,7 +207,7 @@ pub async fn run(cli: &Cli, action: &AuthCommand) -> eyre::Result<()> {
             let remote = authenticator
                 .get_packed_account_data_remote()
                 .await
-                .map_err(|e| eyre::eyre!("remote fetch failed: {e}"))?;
+                .wrap_err("remote fetch failed")?;
             let local = authenticator.packed_account_data();
             let matches = remote.to_string() == local.to_string();
 

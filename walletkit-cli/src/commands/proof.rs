@@ -99,10 +99,8 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<String> {
         Ok(buf)
     } else {
         let meta = std::fs::metadata(path)
-            .map_err(|e| eyre::eyre!("cannot read {path}: {e}"))?;
-        if meta.len() > MAX_INPUT_BYTES {
-            return Err(eyre::eyre!("input file too large (max 10 MiB)"));
-        }
+            .wrap_err_with(|| format!("cannot read {path}"))?;
+        eyre::ensure!(meta.len() <= MAX_INPUT_BYTES, "input file too large (max 10 MiB)");
         Ok(std::fs::read_to_string(path)?)
     }
 }
@@ -119,16 +117,16 @@ async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Resul
 
     let json_str = read_file_or_stdin(request)?;
     let proof_request = ProofRequest::from_json(&json_str)
-        .map_err(|e| eyre::eyre!("invalid proof request: {e}"))?;
+        .wrap_err("invalid proof request")?;
 
     let response = authenticator
         .generate_proof(&proof_request, Some(ts))
         .await
-        .map_err(|e| eyre::eyre!("proof generation failed: {e}"))?;
+        .wrap_err("proof generation failed")?;
 
     let response_json = response
         .to_json()
-        .map_err(|e| eyre::eyre!("response serialization failed: {e}"))?;
+        .wrap_err("response serialization failed")?;
 
     if cli.json {
         let parsed: serde_json::Value = serde_json::from_str(&response_json)?;
@@ -142,7 +140,7 @@ async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Resul
 fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
     let json_str = read_file_or_stdin(request)?;
     let proof_request = ProofRequest::from_json(&json_str)
-        .map_err(|e| eyre::eyre!("invalid proof request: {e}"))?;
+        .wrap_err("invalid proof request")?;
 
     if cli.json {
         let normalized: serde_json::Value = serde_json::from_str(&json_str)?;
@@ -175,7 +173,7 @@ async fn run_verify(
         serde_json::from_str(&response_json).wrap_err("invalid proof response")?;
 
     if let Some(ref err) = proof_response.error {
-        return Err(eyre::eyre!("proof response contains error: {err}"));
+        eyre::bail!("proof response contains error: {err}");
     }
 
     let rpc_url = cli.rpc_url.as_deref().unwrap_or(DEFAULT_RPC_URL);
@@ -183,7 +181,7 @@ async fn run_verify(
     let verifier_addr = match verifier_address {
         Some(addr) => addr
             .parse::<alloy::primitives::Address>()
-            .map_err(|e| eyre::eyre!("invalid verifier address: {e}"))?,
+            .wrap_err("invalid verifier address")?,
         None => WORLD_ID_VERIFIER,
     };
     let verifier = IWorldIDVerifier::new(verifier_addr, &provider);
@@ -300,7 +298,7 @@ fn run_generate_test_request(
     let expires_at = now + expires_in;
 
     let signer = PrivateKeySigner::from_bytes(&STAGING_RP_SIGNING_KEY.into())
-        .map_err(|e| eyre::eyre!("failed to create signer: {e}"))?;
+        .wrap_err("failed to create signer")?;
 
     let action = FieldElement::from(1u64);
     let msg = world_id_core::primitives::rp::compute_rp_signature_msg(
@@ -308,7 +306,7 @@ fn run_generate_test_request(
     );
     let signature = signer
         .sign_message_sync(&msg)
-        .map_err(|e| eyre::eyre!("signing failed: {e}"))?;
+        .wrap_err("signing failed")?;
 
     let request = CoreProofRequest {
         id: "test_request".to_string(),

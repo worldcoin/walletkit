@@ -1,6 +1,7 @@
 //! `walletkit wallet` subcommands — local setup and inspection.
 
 use clap::Subcommand;
+use eyre::WrapErr as _;
 use walletkit_core::storage::{cache_embedded_groth16_material, StoragePaths};
 
 use crate::output;
@@ -166,11 +167,11 @@ async fn run_export(cli: &Cli, dest: &str) -> eyre::Result<()> {
     let (_authenticator, store) = init_authenticator(cli).await?;
     let backup_bytes = store
         .export_vault_for_backup()
-        .map_err(|e| eyre::eyre!("export failed: {e}"))?;
+        .wrap_err("export failed")?;
 
     let backup_path = std::path::Path::new(dest).join("vault_backup.bin");
     std::fs::write(&backup_path, &backup_bytes)
-        .map_err(|e| eyre::eyre!("failed to write backup file: {e}"))?;
+        .wrap_err("failed to write backup file")?;
 
     let backup_path = backup_path.display().to_string();
     if cli.json {
@@ -187,26 +188,22 @@ async fn run_export(cli: &Cli, dest: &str) -> eyre::Result<()> {
 async fn run_import(cli: &Cli, backup: &str) -> eyre::Result<()> {
     let (_authenticator, store) = init_authenticator(cli).await?;
     let backup_bytes = std::fs::read(backup)
-        .map_err(|e| eyre::eyre!("failed to read backup file: {e}"))?;
+        .wrap_err("failed to read backup file")?;
     store
         .import_vault_from_backup(backup_bytes)
-        .map_err(|e| eyre::eyre!("import failed: {e}"))?;
+        .wrap_err("import failed")?;
 
     output::print_success("Vault imported successfully.", cli.json);
     Ok(())
 }
 
 async fn run_danger_clear(cli: &Cli, confirm: bool) -> eyre::Result<()> {
-    if !confirm {
-        return Err(eyre::eyre!(
-            "this will permanently delete ALL credentials; pass --confirm to proceed"
-        ));
-    }
+    eyre::ensure!(confirm, "this will permanently delete ALL credentials; pass --confirm to proceed");
 
     let (_authenticator, store) = init_authenticator(cli).await?;
     let deleted = store
         .danger_delete_all_credentials()
-        .map_err(|e| eyre::eyre!("danger clear failed: {e}"))?;
+        .wrap_err("danger clear failed")?;
 
     if cli.json {
         output::print_json_data(&serde_json::json!({ "deleted": deleted }), true);

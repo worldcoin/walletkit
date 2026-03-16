@@ -4,6 +4,7 @@ use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Subcommand;
+use eyre::WrapErr as _;
 use walletkit_core::{Credential, FieldElement};
 
 use crate::output;
@@ -91,10 +92,8 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<Vec<u8>> {
         Ok(buf)
     } else {
         let meta = std::fs::metadata(path)
-            .map_err(|e| eyre::eyre!("cannot read {path}: {e}"))?;
-        if meta.len() > MAX_INPUT_BYTES {
-            return Err(eyre::eyre!("input file too large (max 10 MiB)"));
-        }
+            .wrap_err_with(|| format!("cannot read {path}"))?;
+        eyre::ensure!(meta.len() <= MAX_INPUT_BYTES, "input file too large (max 10 MiB)");
         Ok(std::fs::read(path)?)
     }
 }
@@ -110,24 +109,24 @@ async fn run_import(
 
     let cred_bytes = read_file_or_stdin(credential)?;
     let cred = Credential::from_bytes(cred_bytes)
-        .map_err(|e| eyre::eyre!("invalid credential: {e}"))?;
+        .wrap_err("invalid credential")?;
 
     let bf = FieldElement::try_from_hex_string(blinding_factor)
-        .map_err(|e| eyre::eyre!("invalid blinding factor: {e}"))?;
+        .wrap_err("invalid blinding factor")?;
 
     let ad = associated_data
         .map(|b64| {
             use base64::Engine;
             base64::engine::general_purpose::STANDARD
                 .decode(b64)
-                .map_err(|e| eyre::eyre!("invalid base64 associated_data: {e}"))
+                .wrap_err("invalid base64 associated_data")
         })
         .transpose()?;
 
     let now = now_secs()?;
     let id = store
         .store_credential(&cred, &bf, expires_at, ad, now)
-        .map_err(|e| eyre::eyre!("store credential failed: {e}"))?;
+        .wrap_err("store credential failed")?;
 
     if cli.json {
         output::print_json_data(
@@ -152,7 +151,7 @@ async fn run_list(cli: &Cli, issuer_schema_id: Option<u64>) -> eyre::Result<()> 
     let now = now_secs()?;
     let records = store
         .list_credentials(issuer_schema_id, now)
-        .map_err(|e| eyre::eyre!("list credentials failed: {e}"))?;
+        .wrap_err("list credentials failed")?;
 
     if cli.json {
         let items: Vec<serde_json::Value> = records
@@ -192,7 +191,7 @@ async fn run_show(cli: &Cli, issuer_schema_id: u64) -> eyre::Result<()> {
     let now = now_secs()?;
     let result = store
         .get_credential(issuer_schema_id, now)
-        .map_err(|e| eyre::eyre!("get credential failed: {e}"))?;
+        .wrap_err("get credential failed")?;
 
     match result {
         Some((cred, bf)) => {
@@ -228,25 +227,25 @@ async fn run_issue(
     let bf = authenticator
         .generate_credential_blinding_factor_remote(issuer_schema_id)
         .await
-        .map_err(|e| eyre::eyre!("blinding factor generation failed: {e}"))?;
+        .wrap_err("blinding factor generation failed")?;
 
     let cred_bytes = read_file_or_stdin(credential)?;
     let cred = Credential::from_bytes(cred_bytes)
-        .map_err(|e| eyre::eyre!("invalid credential: {e}"))?;
+        .wrap_err("invalid credential")?;
 
     let ad = associated_data
         .map(|b64| {
             use base64::Engine;
             base64::engine::general_purpose::STANDARD
                 .decode(b64)
-                .map_err(|e| eyre::eyre!("invalid base64 associated_data: {e}"))
+                .wrap_err("invalid base64 associated_data")
         })
         .transpose()?;
 
     let now = now_secs()?;
     let id = store
         .store_credential(&cred, &bf, expires_at, ad, now)
-        .map_err(|e| eyre::eyre!("store credential failed: {e}"))?;
+        .wrap_err("store credential failed")?;
 
     if cli.json {
         output::print_json_data(
@@ -273,7 +272,7 @@ async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
     let bf = authenticator
         .generate_credential_blinding_factor_remote(FAUX_ISSUER_SCHEMA_ID)
         .await
-        .map_err(|e| eyre::eyre!("blinding factor generation failed: {e}"))?;
+        .wrap_err("blinding factor generation failed")?;
 
     // Step 2: Compute sub from blinding factor
     let sub = authenticator.compute_credential_sub(&bf);
@@ -291,34 +290,34 @@ async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
         .json(&serde_json::json!({ "sub": sub_hex }))
         .send()
         .await
-        .map_err(|e| eyre::eyre!("faux issuer request failed: {e}"))?;
+        .wrap_err("faux issuer request failed")?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(eyre::eyre!("faux issuer returned {status}: {body}"));
+        eyre::bail!("faux issuer returned {status}: {body}");
     }
 
     let body: serde_json::Value = resp
         .json()
         .await
-        .map_err(|e| eyre::eyre!("failed to parse faux issuer response: {e}"))?;
+        .wrap_err("failed to parse faux issuer response")?;
 
     let cred_value = body.get("credential").ok_or_else(|| {
         eyre::eyre!("faux issuer response missing 'credential' field")
     })?;
 
     let cred_bytes = serde_json::to_vec(cred_value)
-        .map_err(|e| eyre::eyre!("failed to serialize credential: {e}"))?;
+        .wrap_err("failed to serialize credential")?;
     let cred = Credential::from_bytes(cred_bytes)
-        .map_err(|e| eyre::eyre!("invalid credential from faux issuer: {e}"))?;
+        .wrap_err("invalid credential from faux issuer")?;
     let expires_at = cred.expires_at();
 
     // Step 4: Store the credential
     let now = now_secs()?;
     let id = store
         .store_credential(&cred, &bf, expires_at, None, now)
-        .map_err(|e| eyre::eyre!("store credential failed: {e}"))?;
+        .wrap_err("store credential failed")?;
 
     if cli.json {
         output::print_json_data(
@@ -383,7 +382,7 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
             let bf = authenticator
                 .generate_credential_blinding_factor_remote(*issuer_schema_id)
                 .await
-                .map_err(|e| eyre::eyre!("blinding factor generation failed: {e}"))?;
+                .wrap_err("blinding factor generation failed")?;
             let hex = bf.to_hex_string();
 
             if cli.json {
@@ -399,7 +398,7 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
         CredentialCommand::ComputeSub { blinding_factor } => {
             let (authenticator, _store) = init_authenticator(cli).await?;
             let bf = FieldElement::try_from_hex_string(blinding_factor)
-                .map_err(|e| eyre::eyre!("invalid blinding factor: {e}"))?;
+                .wrap_err("invalid blinding factor")?;
             let sub = authenticator.compute_credential_sub(&bf);
             let hex = sub.to_hex_string();
 
@@ -414,7 +413,7 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
             let (_authenticator, store) = init_authenticator(cli).await?;
             store
                 .delete_credential(*credential_id)
-                .map_err(|e| eyre::eyre!("delete credential failed: {e}"))?;
+                .wrap_err("delete credential failed")?;
             output::print_success(
                 &format!("Credential {credential_id} deleted."),
                 cli.json,
