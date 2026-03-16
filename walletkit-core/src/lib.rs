@@ -72,12 +72,12 @@ pub enum Environment {
     Production,
 }
 
-/// Methods exported to Swift/Kotlin via UniFFI.
+/// Methods exported to Swift/Kotlin via `UniFFI`.
 #[uniffi::export]
 impl Environment {
-    /// Returns the PoH Recovery Agent contract address for this environment.
+    /// Returns the `PoH` Recovery Agent contract address for this environment.
     ///
-    /// The PoH Recovery Agent is a contract users can optionally designate when
+    /// The `PoH` Recovery Agent is a contract users can optionally designate when
     /// registering a World ID. If they lose access to all authenticators, the
     /// agent can sign a recovery transaction to restore their account.
     #[must_use]
