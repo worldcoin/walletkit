@@ -100,7 +100,7 @@ pub trait StorageProvider: Send + Sync {
 ///
 /// **Important:** the exported file is deleted automatically when this
 /// callback returns. The implementor must copy or upload the file contents
-/// synchronously during this call.
+/// before returning from `on_vault_changed`.
 ///
 /// **Warning:** the implementor must **not** call back into
 /// `CredentialStore` (e.g. `store_credential`, `delete_credential`) from
@@ -108,6 +108,7 @@ pub trait StorageProvider: Send + Sync {
 /// notification path holds an internal lock for the duration of the
 /// callback.
 #[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+#[async_trait::async_trait]
 pub trait WalletKitBackupManager: Send + Sync {
     /// Directory where plaintext vault exports are written before the
     /// callback is invoked.
@@ -125,5 +126,5 @@ pub trait WalletKitBackupManager: Send + Sync {
     /// does not affect the vault mutation that triggered this call. Returning
     /// `Result` (rather than `()`) ensures that host-side exceptions are
     /// translated into a Rust `Err` by `UniFFI` instead of panicking.
-    fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()>;
+    async fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()>;
 }

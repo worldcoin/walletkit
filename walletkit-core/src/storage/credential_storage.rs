@@ -2,6 +2,8 @@
 
 use std::sync::{Arc, Mutex};
 
+use tokio::sync::Mutex as AsyncMutex;
+
 use world_id_core::FieldElement as CoreFieldElement;
 
 use super::error::{StorageError, StorageResult};
@@ -18,12 +20,13 @@ use crate::{Credential, FieldElement};
 /// a real implementation. All methods are no-ops.
 struct NoopBackupManager;
 
+#[async_trait::async_trait]
 impl WalletKitBackupManager for NoopBackupManager {
     fn dest_dir(&self) -> String {
         String::new()
     }
 
-    fn on_vault_changed(&self, _vault_file_path: String) -> StorageResult<()> {
+    async fn on_vault_changed(&self, _vault_file_path: String) -> StorageResult<()> {
         Ok(())
     }
 }
@@ -36,7 +39,10 @@ pub struct CredentialStore {
     /// The lock is held for the entire export+callback path inside
     /// `notify_vault_changed`, which serializes concurrent notifications
     /// so that backups are always delivered in mutation order.
-    backup: Mutex<Arc<dyn WalletKitBackupManager>>,
+    ///
+    /// Uses a `tokio::sync::Mutex` because the lock is held across the
+    /// `.await` on `on_vault_changed`.
+    backup: AsyncMutex<Arc<dyn WalletKitBackupManager>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -126,7 +132,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(Arc::new(NoopBackupManager)),
+            backup: AsyncMutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -143,7 +149,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(Arc::new(NoopBackupManager)),
+            backup: AsyncMutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -188,9 +194,9 @@ impl CredentialStore {
     ///
     /// Returns an error if the delete operation fails or the credential ID does
     /// not exist.
-    pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
+    pub async fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
         self.lock_inner()?.delete_credential(credential_id)?;
-        self.notify_vault_changed();
+        self.notify_vault_changed().await;
         Ok(())
     }
 
@@ -199,7 +205,7 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the credential cannot be stored.
-    pub fn store_credential(
+    pub async fn store_credential(
         &self,
         credential: &Credential,
         blinding_factor: &FieldElement,
@@ -214,7 +220,7 @@ impl CredentialStore {
             associated_data,
             now,
         )?;
-        self.notify_vault_changed();
+        self.notify_vault_changed().await;
         Ok(id)
     }
 
@@ -279,12 +285,13 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the delete operation fails.
-    pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
-        let mut inner = self.lock_inner()?;
-        let count = inner.danger_delete_all_credentials()?;
-        drop(inner);
+    pub async fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
+        let count = {
+            let mut inner = self.lock_inner()?;
+            inner.danger_delete_all_credentials()?
+        };
         if count > 0 {
-            self.notify_vault_changed();
+            self.notify_vault_changed().await;
         }
         Ok(count)
     }
@@ -297,13 +304,11 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the backup mutex is poisoned.
-    pub fn set_backup_manager(
+    pub async fn set_backup_manager(
         &self,
         manager: Arc<dyn WalletKitBackupManager>,
     ) -> StorageResult<()> {
-        *self.backup.lock().map_err(|_| {
-            StorageError::Lock("backup config mutex poisoned".to_string())
-        })? = manager;
+        *self.backup.lock().await = manager;
         Ok(())
     }
 }
@@ -324,15 +329,11 @@ impl CredentialStore {
     /// sync the updated vault to its backup. Failures are logged but never
     /// propagated — the vault mutation has already succeeded and callers
     /// should not see an error from a backup side-effect.
-    fn notify_vault_changed(&self) {
+    async fn notify_vault_changed(&self) {
         // Hold the backup lock for the entire export+callback path. This
         // serializes concurrent notifications so backups are delivered in
-        // mutation order. Recover the guard on poison — the manager is
-        // still valid after a prior panic.
-        let guard = self
-            .backup
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // mutation order.
+        let guard = self.backup.lock().await;
 
         let dest_dir = guard.dest_dir();
         if dest_dir.is_empty() {
@@ -369,9 +370,9 @@ impl CredentialStore {
         };
 
         // Hand the path to the host app (e.g. iOS) so it can copy/upload
-        // the vault to Bedrock. The host must finish with the file during
-        // this synchronous call — the guard deletes it on return.
-        if let Err(e) = guard.on_vault_changed(vault_path) {
+        // the vault. The cleanup guard deletes the file when this method
+        // returns.
+        if let Err(e) = guard.on_vault_changed(vault_path).await {
             tracing::error!("Backup manager on_vault_changed failed: {e}");
         }
     }
@@ -623,7 +624,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(Arc::new(NoopBackupManager)),
+            backup: AsyncMutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -640,7 +641,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(Arc::new(NoopBackupManager)),
+            backup: AsyncMutex::new(Arc::new(NoopBackupManager)),
         })
     }
 

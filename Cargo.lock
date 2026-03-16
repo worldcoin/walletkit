@@ -6368,6 +6368,7 @@ dependencies = [
  "alloy",
  "alloy-core",
  "alloy-primitives",
+ "async-trait",
  "backon",
  "base64 0.22.1",
  "chacha20poly1305",

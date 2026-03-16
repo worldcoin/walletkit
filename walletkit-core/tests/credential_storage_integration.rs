@@ -8,8 +8,8 @@ use walletkit_core::storage::CredentialStore;
 use walletkit_core::Credential;
 use world_id_core::{Credential as CoreCredential, FieldElement as CoreFieldElement};
 
-#[test]
-fn test_storage_flow_end_to_end() {
+#[tokio::test]
+async fn test_storage_flow_end_to_end() {
     let root = common::temp_root();
     let provider = common::InMemoryStorageProvider::new(&root);
     let store = CredentialStore::from_provider(&provider).expect("store");
@@ -30,6 +30,7 @@ fn test_storage_flow_end_to_end() {
             Some(vec![4, 5, 6]),
             100,
         )
+        .await
         .expect("store credential");
 
     let records = store.list_credentials(None, 101).expect("list credentials");

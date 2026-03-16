@@ -205,6 +205,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
             None,
             now,
         )
+        .await
         .wrap_err("store_credential failed")?;
 
     eprintln!("Phase 3 complete: credential issued and stored");
