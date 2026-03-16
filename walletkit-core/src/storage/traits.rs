@@ -121,15 +121,12 @@ pub trait WalletKitBackupManager: Send + Sync {
     ///
     /// # Errors
     ///
-    /// Returning `Err` propagates the error to the caller of the vault
-    /// mutation (e.g. `store_credential`, `delete_credential`). Because the
-    /// vault mutation has already been committed by the time this callback
-    /// runs, callers should be aware that an `Err` result does **not** mean
-    /// the mutation failed — only that the backup notification failed.
-    /// Callers should inspect the returned error and handle it according to
-    /// its nature (e.g. log it, schedule a backup retry via
-    /// [`sync_backup`](crate::storage::CredentialStore::sync_backup), or
-    /// surface it to the user) rather than retrying the already-committed
-    /// mutation.
+    /// Errors returned here are **logged but not propagated** to the caller
+    /// of the vault mutation. The vault mutation has already been committed
+    /// by the time this callback runs, so a failure here only means the
+    /// backup sync failed — the credential data is safe. The host app can
+    /// schedule a retry via
+    /// [`sync_backup`](crate::storage::CredentialStore::sync_backup) if
+    /// needed.
     fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()>;
 }

@@ -188,7 +188,8 @@ impl CredentialStore {
     /// not exist.
     pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
         self.lock_inner().delete_credential(credential_id)?;
-        self.notify_vault_changed()
+        self.notify_vault_changed();
+        Ok(())
     }
 
     /// Stores a credential and optional associated data.
@@ -211,7 +212,7 @@ impl CredentialStore {
             associated_data,
             now,
         )?;
-        self.notify_vault_changed()?;
+        self.notify_vault_changed();
         Ok(id)
     }
 
@@ -281,7 +282,7 @@ impl CredentialStore {
         let count = inner.danger_delete_all_credentials()?;
         drop(inner);
         if count > 0 {
-            self.notify_vault_changed()?;
+            self.notify_vault_changed();
         }
         Ok(count)
     }
@@ -305,12 +306,11 @@ impl CredentialStore {
     /// [`WalletKitBackupManager`] receives the same `on_vault_changed`
     /// callback as after a normal vault mutation.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if no backup manager is configured, if the vault
-    /// export fails, or if the backup manager callback fails.
-    pub fn sync_backup(&self) -> StorageResult<()> {
-        self.notify_vault_changed()
+    /// Errors from the vault export or backup callback are logged but not
+    /// propagated — the caller can schedule a retry via another
+    /// `sync_backup` call if needed.
+    pub fn sync_backup(&self) {
+        self.notify_vault_changed();
     }
 }
 
@@ -328,14 +328,11 @@ impl CredentialStore {
     /// Called after vault mutations and by [`sync_backup`](Self::sync_backup).
     /// Returns `Ok(())` if no backup manager is configured (noop).
     ///
-    /// **Note:** errors from the backup callback are propagated to the caller.
-    /// Because this runs *after* the vault mutation has been committed, a
-    /// returned `Err` does not mean the mutation failed — only the backup
-    /// notification. Callers should inspect the error and handle it according
-    /// to its nature (e.g. log it, schedule a backup retry via
-    /// [`sync_backup`](Self::sync_backup), or surface it to the user) rather
-    /// than retrying the already-committed mutation.
-    fn notify_vault_changed(&self) -> StorageResult<()> {
+    /// Backup callback errors are logged but **not** propagated, because the
+    /// vault mutation has already been committed by the time this runs.
+    /// Propagating would cause callers to see a failed result for a mutation
+    /// that actually succeeded, leading to incorrect retries.
+    fn notify_vault_changed(&self) {
         // Hold the backup lock for the entire export+callback path. This
         // serializes concurrent notifications so backups are delivered in
         // mutation order.
@@ -343,15 +340,19 @@ impl CredentialStore {
 
         let dest_dir = guard.dest_dir();
         if dest_dir.is_empty() {
-            return Ok(()); // NoopBackupManager — nothing to do.
+            return; // NoopBackupManager — nothing to do.
         }
 
         // Export a plaintext snapshot of the vault. The file is sensitive
         // (unencrypted), so we wrap it in a guard that deletes it on drop —
         // no matter how we exit (normal return, early return, or panic).
-        let vault_path = self
-            .lock_inner()
-            .export_vault_for_backup(&dest_dir)?;
+        let vault_path = match self.lock_inner().export_vault_for_backup(&dest_dir) {
+            Ok(path) => path,
+            Err(e) => {
+                tracing::error!("Vault export for backup failed: {e}");
+                return;
+            }
+        };
 
         let _cleanup = {
             struct CleanupFile(String);
@@ -368,10 +369,12 @@ impl CredentialStore {
             CleanupFile(vault_path.clone())
         };
 
-        // Hand the path to the hostI' app (e.g. iOS) so it can copy/upload
+        // Hand the path to the host app (e.g. iOS) so it can copy/upload
         // the vault to Bedrock. The host must finish with the file during
         // this synchronous call — the guard deletes it on return.
-        guard.on_vault_changed(vault_path)
+        if let Err(e) = guard.on_vault_changed(vault_path) {
+            tracing::error!("Backup callback failed (vault mutation already committed): {e}");
+        }
     }
 
     /// Retrieves a full credential including raw bytes by issuer schema ID.
@@ -1518,7 +1521,7 @@ mod tests {
         assert_eq!(manager.call_count(), 1);
 
         // sync_backup triggers a notification without mutating the vault.
-        store.sync_backup().expect("sync_backup");
+        store.sync_backup();
         assert_eq!(manager.call_count(), 2);
         assert!(
             manager.last_file_existed(),
@@ -1544,7 +1547,7 @@ mod tests {
         let (store, manager, root, export_dir) = setup_store_with_backup();
 
         // sync_backup on an empty vault should still trigger a notification.
-        store.sync_backup().expect("sync_backup");
+        store.sync_backup();
         assert_eq!(manager.call_count(), 1);
         assert!(
             manager.last_file_existed(),
