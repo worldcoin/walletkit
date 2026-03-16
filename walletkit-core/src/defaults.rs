@@ -7,44 +7,15 @@ use crate::{error::WalletKitError, Environment, Region};
 pub static WORLD_ID_REGISTRY: Address =
     address!("0x8556d07D75025f286fe757C7EeEceC40D54FA16D");
 
-/// The TFH (Tools for Humanity) Recovery Agent contract address on the **staging** environment.
-///
-/// This is the default recovery agent address for World IDs created in the staging
-/// environment. See [`tfh_recovery_agent_address`] for a helper that selects the
-/// appropriate address by [`Environment`].
+/// The TFH Recovery Agent contract address on the staging environment.
 pub static TFH_RECOVERY_AGENT_ADDRESS_STAGING: Address =
     address!("0xE2946556E4Bc67E687f202F032b56f5d63c76f83");
 
-/// The TFH (Tools for Humanity) Recovery Agent contract address on the **production** environment.
-///
-/// This is the default recovery agent address for World IDs created in the production
-/// environment. See [`tfh_recovery_agent_address`] for a helper that selects the
-/// appropriate address by [`Environment`].
+/// The TFH Recovery Agent contract address on the production environment.
 pub static TFH_RECOVERY_AGENT_ADDRESS_PRODUCTION: Address =
     address!("0x1312C524D85717dfAB70a6D25de7b30CC68B4d9d");
 
 /// Returns the TFH Recovery Agent address for the given [`Environment`].
-///
-/// The recovery agent is a smart contract operated by Tools for Humanity that users
-/// can optionally designate when registering a World ID. If a user loses access to all
-/// of their authenticators, the recovery agent can sign a recovery transaction on their
-/// behalf, restoring access to the same World ID account.
-///
-/// Designating a recovery agent is optional — pass the returned address as the
-/// `recovery_address` argument to [`crate::InitializingAuthenticator::register_with_defaults`]
-/// (or the equivalent `register` constructors) to opt in to TFH-assisted recovery.
-///
-/// # Examples
-///
-/// ```rust
-/// use walletkit_core::{defaults::tfh_recovery_agent_address, Environment};
-///
-/// let staging = tfh_recovery_agent_address(&Environment::Staging);
-/// assert_eq!(staging.to_string(), "0xE2946556E4Bc67E687f202F032b56f5d63c76f83");
-///
-/// let production = tfh_recovery_agent_address(&Environment::Production);
-/// assert_eq!(production.to_string(), "0x1312C524D85717dfAB70a6D25de7b30CC68B4d9d");
-/// ```
 #[must_use]
 pub fn tfh_recovery_agent_address(environment: &Environment) -> Address {
     match environment {
