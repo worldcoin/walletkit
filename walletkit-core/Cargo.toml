@@ -32,7 +32,7 @@ rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json"] }
 ruint = { version = "1.17", default-features = false, features = ["alloc"] }
 ruint-uniffi = { version = "0.1", features = ["serde"] }
-uniffi = { workspace = true, features = ["build", "tokio"] }
+uniffi = { workspace = true }
 secrecy = "0.10"
 semaphore-rs = { version = "0.5.1", optional = true }
 serde = "1"
@@ -86,7 +86,7 @@ rand = "0.8"
 
 
 [features]
-default = ["common-apps", "semaphore", "issuers"]
+default = ["issuers"]
 
 # Enables point-compression on all verifying keys. This results in ~2x smaller bundle size, but decompression is very expensive,
 # using it requires proper handling to ensure decompression is done once and cached. By default walletkit-swift and walletkit-android
@@ -95,7 +95,6 @@ compress-zkeys = ["world-id-core/compress-zkeys"]
 issuers = ["dep:base64"]
 
 # SECTION: V3 Feature Flags
-common-apps = []
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
 # This feature flag adds support to operate with such external nullifiers.
 legacy-nullifiers = []
