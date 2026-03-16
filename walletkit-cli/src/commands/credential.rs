@@ -60,6 +60,8 @@ pub enum CredentialCommand {
         #[arg(long)]
         associated_data: Option<String>,
     },
+    /// Issue a test credential from the staging faux issuer (issuer schema 128).
+    IssueTest,
 }
 
 fn now_secs() -> eyre::Result<u64> {
@@ -249,6 +251,84 @@ async fn run_issue(
     Ok(())
 }
 
+const FAUX_ISSUER_URL: &str = "https://faux-issuer.us.id-infra.worldcoin.dev/issue";
+const FAUX_ISSUER_SCHEMA_ID: u64 = 128;
+
+async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
+    let (authenticator, store) = init_authenticator(cli).await?;
+
+    // Step 1: OPRF to get blinding factor
+    let bf = authenticator
+        .generate_credential_blinding_factor_remote(FAUX_ISSUER_SCHEMA_ID)
+        .await
+        .map_err(|e| eyre::eyre!("blinding factor generation failed: {e}"))?;
+
+    // Step 2: Compute sub from blinding factor
+    let sub = authenticator.compute_credential_sub(&bf);
+    let sub_hex = sub.to_hex_string();
+
+    if !cli.json {
+        println!("Computed sub: {sub_hex}");
+        println!("Requesting credential from faux issuer...");
+    }
+
+    // Step 3: POST to faux issuer
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(FAUX_ISSUER_URL)
+        .json(&serde_json::json!({ "sub": sub_hex }))
+        .send()
+        .await
+        .map_err(|e| eyre::eyre!("faux issuer request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(eyre::eyre!(
+            "faux issuer returned {status}: {body}"
+        ));
+    }
+
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| eyre::eyre!("failed to parse faux issuer response: {e}"))?;
+
+    let cred_value = body
+        .get("credential")
+        .ok_or_else(|| eyre::eyre!("faux issuer response missing 'credential' field"))?;
+
+    let cred_bytes = serde_json::to_vec(cred_value)
+        .map_err(|e| eyre::eyre!("failed to serialize credential: {e}"))?;
+    let cred = Credential::from_bytes(cred_bytes)
+        .map_err(|e| eyre::eyre!("invalid credential from faux issuer: {e}"))?;
+    let expires_at = cred.expires_at();
+
+    // Step 4: Store the credential
+    let now = now_secs()?;
+    let id = store
+        .store_credential(&cred, &bf, expires_at, None, now)
+        .map_err(|e| eyre::eyre!("store credential failed: {e}"))?;
+
+    if cli.json {
+        output::print_json_data(
+            &serde_json::json!({
+                "credential_id": id,
+                "issuer_schema_id": FAUX_ISSUER_SCHEMA_ID,
+                "expires_at": expires_at,
+                "blinding_factor": bf.to_hex_string(),
+            }),
+            true,
+        );
+    } else {
+        println!("Credential issued from faux issuer (id={id})");
+        println!("  issuer_schema_id: {FAUX_ISSUER_SCHEMA_ID}");
+        println!("  expires_at: {expires_at}");
+        println!("  blinding_factor: {}", bf.to_hex_string());
+    }
+    Ok(())
+}
+
 pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
     match action {
         CredentialCommand::Import {
@@ -284,6 +364,7 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
         CredentialCommand::Show { issuer_schema_id } => {
             run_show(cli, *issuer_schema_id).await
         }
+        CredentialCommand::IssueTest => run_issue_test(cli).await,
         CredentialCommand::Delete { credential_id } => {
             let (_authenticator, store) = init_authenticator(cli).await?;
             store
