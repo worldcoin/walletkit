@@ -1342,12 +1342,13 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl WalletKitBackupManager for MockBackupManager {
         fn dest_dir(&self) -> String {
             self.export_dir.clone()
         }
 
-        fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()> {
+        async fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()> {
             let existed = std::path::Path::new(&vault_file_path).exists();
             self.calls.lock().unwrap().push((vault_file_path, existed));
             Ok(())
@@ -1356,7 +1357,7 @@ mod tests {
 
     /// Helper: create an initialized `CredentialStore` with a temp directory
     /// for backup exports.
-    fn setup_store_with_backup(
+    async fn setup_store_with_backup(
     ) -> (CredentialStore, Arc<MockBackupManager>, PathBuf, PathBuf) {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
@@ -1369,16 +1370,17 @@ mod tests {
         let manager = MockBackupManager::new(export_dir.to_string_lossy().to_string());
         store
             .set_backup_manager(manager.clone())
+            .await
             .expect("set backup manager");
 
         (store, manager, root, export_dir)
     }
 
-    #[test]
-    fn test_store_credential_triggers_backup_notification() {
+    #[tokio::test]
+    async fn test_store_credential_triggers_backup_notification() {
         use world_id_core::Credential as CoreCredential;
 
-        let (store, manager, root, export_dir) = setup_store_with_backup();
+        let (store, manager, root, export_dir) = setup_store_with_backup().await;
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -1386,6 +1388,7 @@ mod tests {
             .into();
         store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .await
             .expect("store credential");
 
         assert_eq!(manager.call_count(), 1);
@@ -1403,8 +1406,8 @@ mod tests {
         cleanup_test_storage(&export_dir);
     }
 
-    #[test]
-    fn test_no_backup_notification_without_manager() {
+    #[tokio::test]
+    async fn test_no_backup_notification_without_manager() {
         use world_id_core::Credential as CoreCredential;
 
         let root = temp_root_path();
@@ -1419,16 +1422,17 @@ mod tests {
             .into();
         store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .await
             .expect("store credential");
 
         cleanup_test_storage(&root);
     }
 
-    #[test]
-    fn test_delete_all_triggers_backup_notification() {
+    #[tokio::test]
+    async fn test_delete_all_triggers_backup_notification() {
         use world_id_core::Credential as CoreCredential;
 
-        let (store, manager, root, export_dir) = setup_store_with_backup();
+        let (store, manager, root, export_dir) = setup_store_with_backup().await;
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -1436,21 +1440,25 @@ mod tests {
             .into();
         store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .await
             .expect("store credential");
         assert_eq!(manager.call_count(), 1);
 
-        store.danger_delete_all_credentials().expect("delete all");
+        store
+            .danger_delete_all_credentials()
+            .await
+            .expect("delete all");
         assert_eq!(manager.call_count(), 2);
 
         cleanup_test_storage(&root);
         cleanup_test_storage(&export_dir);
     }
 
-    #[test]
-    fn test_delete_credential_triggers_backup_notification() {
+    #[tokio::test]
+    async fn test_delete_credential_triggers_backup_notification() {
         use world_id_core::Credential as CoreCredential;
 
-        let (store, manager, root, export_dir) = setup_store_with_backup();
+        let (store, manager, root, export_dir) = setup_store_with_backup().await;
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -1458,6 +1466,7 @@ mod tests {
             .into();
         store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .await
             .expect("store credential");
         assert_eq!(manager.call_count(), 1);
 
@@ -1466,6 +1475,7 @@ mod tests {
 
         store
             .delete_credential(credential_id)
+            .await
             .expect("delete credential");
         assert_eq!(manager.call_count(), 2);
 
@@ -1473,13 +1483,14 @@ mod tests {
         cleanup_test_storage(&export_dir);
     }
 
-    #[test]
-    fn test_delete_all_empty_skips_backup_notification() {
-        let (store, manager, root, export_dir) = setup_store_with_backup();
+    #[tokio::test]
+    async fn test_delete_all_empty_skips_backup_notification() {
+        let (store, manager, root, export_dir) = setup_store_with_backup().await;
 
         // No credentials stored — delete returns 0, no notification expected.
         let deleted = store
             .danger_delete_all_credentials()
+            .await
             .expect("delete all on empty");
         assert_eq!(deleted, 0);
         assert_eq!(manager.call_count(), 0);
@@ -1488,11 +1499,11 @@ mod tests {
         cleanup_test_storage(&export_dir);
     }
 
-    #[test]
-    fn test_multiple_stores_trigger_multiple_notifications() {
+    #[tokio::test]
+    async fn test_multiple_stores_trigger_multiple_notifications() {
         use world_id_core::Credential as CoreCredential;
 
-        let (store, manager, root, export_dir) = setup_store_with_backup();
+        let (store, manager, root, export_dir) = setup_store_with_backup().await;
 
         for schema_id in [100u64, 200, 300] {
             let cred: Credential = CoreCredential::new()
@@ -1501,6 +1512,7 @@ mod tests {
                 .into();
             store
                 .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+                .await
                 .expect("store credential");
         }
 
