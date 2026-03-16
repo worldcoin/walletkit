@@ -25,8 +25,7 @@ async fn main() {
 
     // Build the subscriber with optional latency layer.
     let env_filter = if cli.verbose {
-        EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| EnvFilter::new("debug"))
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"))
     } else {
         EnvFilter::new("warn")
     };

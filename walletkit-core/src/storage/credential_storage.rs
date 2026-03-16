@@ -288,22 +288,6 @@ impl CredentialStore {
     ///
     /// The store must already be initialized via [`init`](Self::init).
     /// Intended for restore on a fresh install where the vault is empty.
-    ///
-    /// Exports the vault to a plaintext backup file in the given directory.
-    ///
-    /// Returns the full path to the created backup file.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the store is not initialized or the export fails.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "non-owned strings cannot be lifted via UniFFI"
-    )]
-    pub fn export_vault_for_backup(&self, dest_dir: String) -> StorageResult<String> {
-        self.lock_inner()?.export_vault_for_backup(&dest_dir)
-    }
-
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the import fails.

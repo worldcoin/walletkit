@@ -302,10 +302,9 @@ fn run_generate_test_request(
     let signer = PrivateKeySigner::from_bytes(&STAGING_RP_SIGNING_KEY.into())
         .map_err(|e| eyre::eyre!("failed to create signer: {e}"))?;
 
+    let action = FieldElement::from(1u64);
     let msg = world_id_core::primitives::rp::compute_rp_signature_msg(
-        *nonce,
-        created_at,
-        expires_at,
+        *nonce, created_at, expires_at, Some(*action),
     );
     let signature = signer
         .sign_message_sync(&msg)
@@ -325,7 +324,7 @@ fn run_generate_test_request(
         requests: vec![RequestItem::new(
             "test".to_string(),
             issuer_schema_id,
-            Some(signal.to_string()),
+            Some(signal.as_bytes().to_vec()),
             None,
             None,
         )],

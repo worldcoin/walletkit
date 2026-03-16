@@ -62,7 +62,9 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
 
     let init_auth = match result {
         Ok(auth) => auth,
-        Err(WalletKitError::AccountAlreadyExists) => {
+        Err(WalletKitError::NetworkError { ref error, .. })
+            if error.contains("authenticator_already_exists") =>
+        {
             output::print_success("Already registered.", cli.json);
             return Ok(());
         }
@@ -113,7 +115,9 @@ async fn run_register_wait(
 
     let init_auth = match result {
         Ok(auth) => auth,
-        Err(WalletKitError::AccountAlreadyExists) => {
+        Err(WalletKitError::NetworkError { ref error, .. })
+            if error.contains("authenticator_already_exists") =>
+        {
             output::print_success("Already registered.", cli.json);
             return Ok(());
         }

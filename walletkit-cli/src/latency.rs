@@ -26,7 +26,8 @@ impl LatencyLayer {
 
 impl<S> Layer<S> for LatencyLayer
 where
-    S: tracing::Subscriber + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
+    S: tracing::Subscriber
+        + for<'lookup> tracing_subscriber::registry::LookupSpan<'lookup>,
 {
     fn on_new_span(
         &self,
@@ -71,12 +72,20 @@ pub fn print_report(entries: &LatencyEntries, json: bool) {
                 })
             })
             .collect();
-        eprintln!("{}", serde_json::to_string_pretty(&items).unwrap_or_default());
+        eprintln!(
+            "{}",
+            serde_json::to_string_pretty(&items).unwrap_or_default()
+        );
     } else {
         eprintln!("\nLatency:");
         let max_name_len = entries.iter().map(|(n, _)| n.len()).max().unwrap_or(0);
         for (name, dur) in entries.iter() {
-            eprintln!("  {:<width$}  {:>6}ms", name, dur.as_millis(), width = max_name_len);
+            eprintln!(
+                "  {:<width$}  {:>6}ms",
+                name,
+                dur.as_millis(),
+                width = max_name_len
+            );
         }
     }
 }

@@ -43,7 +43,10 @@ impl Authenticator {
             if let Some(bytes) = self.store.merkle_cache_get(now)? {
                 if let Some(cached) = CachedInclusionProof::deserialize(&bytes) {
                     if cached.inclusion_proof.leaf_index == self.leaf_index() {
-                        return Ok((cached.inclusion_proof, cached.authenticator_keyset));
+                        return Ok((
+                            cached.inclusion_proof,
+                            cached.authenticator_keyset,
+                        ));
                     }
                 }
             }
@@ -66,7 +69,9 @@ impl Authenticator {
 
             Ok((inclusion_proof, authenticator_keyset))
         }
-        .instrument(tracing::info_span!(target: "walletkit_latency", "indexer_inclusion_proof"))
+        .instrument(
+            tracing::info_span!(target: "walletkit_latency", "indexer_inclusion_proof"),
+        )
         .await
     }
 }

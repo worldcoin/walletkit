@@ -41,7 +41,7 @@ fn run_init(cli: &Cli) -> eyre::Result<()> {
     std::fs::create_dir_all(&root)?;
     let store = create_fs_credential_store(&root)?;
     let paths = store.storage_paths()?;
-    cache_embedded_groth16_material(paths.clone())?;
+    cache_embedded_groth16_material(&paths)?;
 
     // Generate and persist a 32-byte seed if one doesn't exist yet.
     let seed_path = root.join("seed");
@@ -164,10 +164,15 @@ fn run_doctor(cli: &Cli) -> eyre::Result<()> {
 
 async fn run_export(cli: &Cli, dest: &str) -> eyre::Result<()> {
     let (_authenticator, store) = init_authenticator(cli).await?;
-    let backup_path = store
-        .export_vault_for_backup(dest.to_string())
+    let backup_bytes = store
+        .export_vault_for_backup()
         .map_err(|e| eyre::eyre!("export failed: {e}"))?;
 
+    let backup_path = std::path::Path::new(dest).join("vault_backup.bin");
+    std::fs::write(&backup_path, &backup_bytes)
+        .map_err(|e| eyre::eyre!("failed to write backup file: {e}"))?;
+
+    let backup_path = backup_path.display().to_string();
     if cli.json {
         output::print_json_data(
             &serde_json::json!({ "backup_path": backup_path }),
@@ -181,8 +186,10 @@ async fn run_export(cli: &Cli, dest: &str) -> eyre::Result<()> {
 
 async fn run_import(cli: &Cli, backup: &str) -> eyre::Result<()> {
     let (_authenticator, store) = init_authenticator(cli).await?;
+    let backup_bytes = std::fs::read(backup)
+        .map_err(|e| eyre::eyre!("failed to read backup file: {e}"))?;
     store
-        .import_vault_from_backup(backup.to_string())
+        .import_vault_from_backup(backup_bytes)
         .map_err(|e| eyre::eyre!("import failed: {e}"))?;
 
     output::print_success("Vault imported successfully.", cli.json);

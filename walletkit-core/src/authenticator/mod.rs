@@ -6,8 +6,8 @@ use crate::{
 };
 use alloy_primitives::Address;
 use ruint_uniffi::Uint256;
-use tracing::Instrument;
 use std::sync::Arc;
+use tracing::Instrument;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::Config,
@@ -176,7 +176,9 @@ impl Authenticator {
             .await?;
             Ok(packed_account_data.into())
         }
-        .instrument(tracing::info_span!(target: "walletkit_latency", "rpc_account_data"))
+        .instrument(
+            tracing::info_span!(target: "walletkit_latency", "rpc_account_data"),
+        )
         .await
     }
 
@@ -199,7 +201,9 @@ impl Authenticator {
                 .await
                 .map(Into::into)?)
         }
-        .instrument(tracing::info_span!(target: "walletkit_latency", "oprf_blinding_factor"))
+        .instrument(
+            tracing::info_span!(target: "walletkit_latency", "oprf_blinding_factor"),
+        )
         .await
     }
 
@@ -512,7 +516,9 @@ impl InitializingAuthenticator {
 
             Ok(Self(initializing_authenticator))
         }
-        .instrument(tracing::info_span!(target: "walletkit_latency", "gateway_register"))
+        .instrument(
+            tracing::info_span!(target: "walletkit_latency", "gateway_register"),
+        )
         .await
     }
 
@@ -533,18 +539,21 @@ impl InitializingAuthenticator {
             let recovery_address =
                 Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-            let config =
-                Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+            let config = Config::from_json(config).map_err(|_| {
+                WalletKitError::InvalidInput {
                     attribute: "config".to_string(),
                     reason: "Invalid config".to_string(),
-                })?;
+                }
+            })?;
 
             let initializing_authenticator =
                 CoreAuthenticator::register(seed, config, recovery_address).await?;
 
             Ok(Self(initializing_authenticator))
         }
-        .instrument(tracing::info_span!(target: "walletkit_latency", "gateway_register"))
+        .instrument(
+            tracing::info_span!(target: "walletkit_latency", "gateway_register"),
+        )
         .await
     }
 

@@ -196,10 +196,10 @@ pub(crate) async fn init_authenticator(
 
     let store = create_fs_credential_store(&root)?;
     let paths = store.storage_paths()?;
-    cache_embedded_groth16_material(paths.clone())?;
+    cache_embedded_groth16_material(&paths)?;
 
     let authenticator = if let Some(ref config) = config_json {
-        Authenticator::init(&seed, config, paths, store.clone())
+        Authenticator::init(&seed, config, &paths, store.clone())
             .await
             .map_err(|e| eyre::eyre!("authenticator init failed: {e}"))?
     } else {
@@ -210,7 +210,7 @@ pub(crate) async fn init_authenticator(
             cli.rpc_url.clone(),
             &env,
             region,
-            paths,
+            &paths,
             store.clone(),
         )
         .await

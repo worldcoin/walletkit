@@ -296,9 +296,7 @@ async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(eyre::eyre!(
-            "faux issuer returned {status}: {body}"
-        ));
+        return Err(eyre::eyre!("faux issuer returned {status}: {body}"));
     }
 
     let body: serde_json::Value = resp
@@ -306,9 +304,9 @@ async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
         .await
         .map_err(|e| eyre::eyre!("failed to parse faux issuer response: {e}"))?;
 
-    let cred_value = body
-        .get("credential")
-        .ok_or_else(|| eyre::eyre!("faux issuer response missing 'credential' field"))?;
+    let cred_value = body.get("credential").ok_or_else(|| {
+        eyre::eyre!("faux issuer response missing 'credential' field")
+    })?;
 
     let cred_bytes = serde_json::to_vec(cred_value)
         .map_err(|e| eyre::eyre!("failed to serialize credential: {e}"))?;
@@ -348,13 +346,16 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
             blinding_factor,
             expires_at,
             associated_data,
-        } => run_import(
-            cli,
-            credential,
-            blinding_factor,
-            *expires_at,
-            associated_data.as_deref(),
-        ).await,
+        } => {
+            run_import(
+                cli,
+                credential,
+                blinding_factor,
+                *expires_at,
+                associated_data.as_deref(),
+            )
+            .await
+        }
         CredentialCommand::Issue {
             issuer_schema_id,
             credential,
