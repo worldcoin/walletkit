@@ -62,6 +62,18 @@ pub enum CredentialCommand {
     },
     /// Issue a test credential from the staging faux issuer (issuer schema 128).
     IssueTest,
+    /// Generate a credential blinding factor via OPRF nodes.
+    BlindingFactor {
+        /// Issuer schema ID.
+        #[arg(long)]
+        issuer_schema_id: u64,
+    },
+    /// Compute a credential sub from a blinding factor.
+    ComputeSub {
+        /// Blinding factor as hex.
+        #[arg(long)]
+        blinding_factor: String,
+    },
 }
 
 fn now_secs() -> eyre::Result<u64> {
@@ -365,6 +377,38 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
             run_show(cli, *issuer_schema_id).await
         }
         CredentialCommand::IssueTest => run_issue_test(cli).await,
+        CredentialCommand::BlindingFactor { issuer_schema_id } => {
+            let (authenticator, _store) = init_authenticator(cli).await?;
+            let bf = authenticator
+                .generate_credential_blinding_factor_remote(*issuer_schema_id)
+                .await
+                .map_err(|e| eyre::eyre!("blinding factor generation failed: {e}"))?;
+            let hex = bf.to_hex_string();
+
+            if cli.json {
+                output::print_json_data(
+                    &serde_json::json!({ "blinding_factor": hex }),
+                    true,
+                );
+            } else {
+                println!("{hex}");
+            }
+            Ok(())
+        }
+        CredentialCommand::ComputeSub { blinding_factor } => {
+            let (authenticator, _store) = init_authenticator(cli).await?;
+            let bf = FieldElement::try_from_hex_string(blinding_factor)
+                .map_err(|e| eyre::eyre!("invalid blinding factor: {e}"))?;
+            let sub = authenticator.compute_credential_sub(&bf);
+            let hex = sub.to_hex_string();
+
+            if cli.json {
+                output::print_json_data(&serde_json::json!({ "sub": hex }), true);
+            } else {
+                println!("{hex}");
+            }
+            Ok(())
+        }
         CredentialCommand::Delete { credential_id } => {
             let (_authenticator, store) = init_authenticator(cli).await?;
             store

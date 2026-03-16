@@ -34,8 +34,6 @@ Global options: `--environment` (staging/production), `--json` (machine-readable
 | `init` | Initialize authenticator for an already-registered World ID |
 | `info` | Print leaf index, on-chain address, and packed account data |
 | `remote-account-data` | Fetch on-chain account data and compare with local |
-| `blinding-factor` | Generate a credential blinding factor via OPRF |
-| `compute-sub` | Compute a credential sub from a blinding factor |
 
 ### `credential` — Credential management
 
@@ -47,6 +45,8 @@ Global options: `--environment` (staging/production), `--json` (machine-readable
 | `list` | List stored credentials |
 | `show` | Show details of the latest credential for an issuer schema |
 | `delete` | Delete a credential by ID |
+| `blinding-factor` | Generate a credential blinding factor via OPRF |
+| `compute-sub` | Compute a credential sub from a blinding factor |
 
 ### `proof` — Proof generation and verification
 

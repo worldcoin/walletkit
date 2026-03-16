@@ -34,18 +34,6 @@ pub enum AuthCommand {
     Info,
     /// Fetch packed account data from on-chain and compare with local.
     RemoteAccountData,
-    /// Generate a credential blinding factor via OPRF nodes.
-    BlindingFactor {
-        /// Issuer schema ID.
-        #[arg(long)]
-        issuer_schema_id: u64,
-    },
-    /// Compute a credential sub from a blinding factor.
-    ComputeSub {
-        /// Blinding factor as hex.
-        #[arg(long)]
-        blinding_factor: String,
-    },
 }
 
 async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result<()> {
@@ -232,38 +220,6 @@ pub async fn run(cli: &Cli, action: &AuthCommand) -> eyre::Result<()> {
                 println!("Local packed account data:  {local}");
                 println!("Remote packed account data: {remote}");
                 println!("Match: {}", if matches { "yes" } else { "NO" });
-            }
-            Ok(())
-        }
-        AuthCommand::BlindingFactor { issuer_schema_id } => {
-            let (authenticator, _store) = init_authenticator(cli).await?;
-            let bf = authenticator
-                .generate_credential_blinding_factor_remote(*issuer_schema_id)
-                .await
-                .map_err(|e| eyre::eyre!("blinding factor generation failed: {e}"))?;
-            let hex = bf.to_hex_string();
-
-            if cli.json {
-                output::print_json_data(
-                    &serde_json::json!({ "blinding_factor": hex }),
-                    true,
-                );
-            } else {
-                println!("{hex}");
-            }
-            Ok(())
-        }
-        AuthCommand::ComputeSub { blinding_factor } => {
-            let (authenticator, _store) = init_authenticator(cli).await?;
-            let bf = walletkit_core::FieldElement::try_from_hex_string(blinding_factor)
-                .map_err(|e| eyre::eyre!("invalid blinding factor: {e}"))?;
-            let sub = authenticator.compute_credential_sub(&bf);
-            let hex = sub.to_hex_string();
-
-            if cli.json {
-                output::print_json_data(&serde_json::json!({ "sub": hex }), true);
-            } else {
-                println!("{hex}");
             }
             Ok(())
         }
