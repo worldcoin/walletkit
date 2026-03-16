@@ -4757,7 +4757,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "ark-bn254 0.4.0",
  "ark-ec 0.4.2",
@@ -4800,7 +4800,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-ark-circom"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "ark-bn254 0.4.0",
  "ark-crypto-primitives 0.4.0",
@@ -4821,7 +4821,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-ark-zkey"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "ark-bn254 0.4.0",
  "ark-ec 0.4.2",
@@ -4837,12 +4837,12 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-depth-config"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 
 [[package]]
 name = "semaphore-rs-depth-macros"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "itertools 0.13.0",
  "proc-macro2",
@@ -4854,7 +4854,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-hasher"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "bytemuck",
 ]
@@ -4862,7 +4862,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-keccak"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "semaphore-rs-hasher",
  "tiny-keccak",
@@ -4871,7 +4871,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-poseidon"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "ark-bn254 0.4.0",
  "ark-ff 0.4.2",
@@ -4883,7 +4883,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-proof"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "alloy-core",
  "ark-bn254 0.4.0",
@@ -4902,7 +4902,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-storage"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "bytemuck",
  "color-eyre",
@@ -4913,7 +4913,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-trees"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "ark-bn254 0.4.0",
  "ark-ec 0.4.2",
@@ -4924,6 +4924,7 @@ dependencies = [
  "bytemuck",
  "color-eyre",
  "derive-where",
+ "getrandom 0.2.17",
  "hex",
  "hex-literal",
  "itertools 0.13.0",
@@ -4942,7 +4943,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-utils"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "hex",
  "serde",
@@ -4952,7 +4953,7 @@ dependencies = [
 [[package]]
 name = "semaphore-rs-witness"
 version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
+source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=main#c324183db598e4deb65061556789498616616d62"
 dependencies = [
  "ark-bn254 0.4.0",
  "ark-ff 0.4.2",
