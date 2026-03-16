@@ -88,7 +88,6 @@ pub enum StorageError {
     UnexpectedUniFFICallbackError(String),
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl From<uniffi::UnexpectedUniFFICallbackError> for StorageError {
     fn from(error: uniffi::UnexpectedUniFFICallbackError) -> Self {
         Self::UnexpectedUniFFICallbackError(error.reason)

@@ -2,17 +2,12 @@ use crate::error::WalletKitError;
 
 use super::Authenticator;
 
-#[cfg(not(target_arch = "wasm32"))]
 use serde::{Deserialize, Serialize};
-#[cfg(not(target_arch = "wasm32"))]
 use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
-#[cfg(not(target_arch = "wasm32"))]
 use world_id_core::primitives::merkle::{AccountInclusionProof, MerkleInclusionProof};
-#[cfg(not(target_arch = "wasm32"))]
 use world_id_core::primitives::TREE_DEPTH;
 
 /// The amount of time a Merkle inclusion proof remains valid in the cache.
-#[cfg(not(target_arch = "wasm32"))]
 const MERKLE_PROOF_VALIDITY_SECONDS: u64 = 60 * 15;
 
 #[uniffi::export]
@@ -42,7 +37,6 @@ impl Authenticator {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 impl Authenticator {
     /// Fetches a [`MerkleInclusionProof`] from the indexer, or from cache if it's available and fresh.
     ///

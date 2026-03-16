@@ -173,7 +173,6 @@ impl Authenticator {
     ///
     /// - Will generally error if there are network issues or if the OPRF Nodes return an error.
     /// - Raises an error if the OPRF Nodes configuration is not correctly set.
-    #[cfg(not(target_arch = "wasm32"))]
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "oprf_blinding_factor",
@@ -392,7 +391,6 @@ impl Authenticator {
     ///
     /// # Errors
     /// Returns an error if proof generation fails.
-    #[cfg(not(target_arch = "wasm32"))]
     pub async fn generate_proof(
         &self,
         proof_request: &ProofRequest,
@@ -401,13 +399,24 @@ impl Authenticator {
         let now = if let Some(n) = now {
             n
         } else {
-            let start = std::time::SystemTime::now();
-            start
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| WalletKitError::Generic {
-                    error: format!("Critical. Unable to determine SystemTime: {e}"),
-                })?
-                .as_secs()
+            #[cfg(target_arch = "wasm32")]
+            {
+                return Err(WalletKitError::InvalidInput {
+                    attribute: "now".to_string(),
+                    reason: "`now` must be provided on wasm32 targets".to_string(),
+                });
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let start = std::time::SystemTime::now();
+                start
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|e| WalletKitError::Generic {
+                        error: format!("Critical. Unable to determine SystemTime: {e}"),
+                    })?
+                    .as_secs()
+            }
         };
 
         // Build CredentialInput list from storage
