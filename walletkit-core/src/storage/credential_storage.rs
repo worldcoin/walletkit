@@ -292,10 +292,7 @@ impl CredentialStore {
     /// [`delete_credential`](Self::delete_credential),
     /// [`danger_delete_all_credentials`](Self::danger_delete_all_credentials)).
     ///
-    pub fn set_backup_manager(
-        &self,
-        manager: Arc<dyn WalletKitBackupManager>,
-    ) {
+    pub fn set_backup_manager(&self, manager: Arc<dyn WalletKitBackupManager>) {
         *self.backup.lock() = manager;
     }
 
@@ -316,9 +313,7 @@ impl CredentialStore {
 
 /// Implementation not exposed to foreign bindings
 impl CredentialStore {
-    fn lock_inner(
-        &self,
-    ) -> parking_lot::MutexGuard<'_, CredentialStoreInner> {
+    fn lock_inner(&self) -> parking_lot::MutexGuard<'_, CredentialStoreInner> {
         self.inner.lock()
     }
 
@@ -373,7 +368,9 @@ impl CredentialStore {
         // the vault to Bedrock. The host must finish with the file during
         // this synchronous call — the guard deletes it on return.
         if let Err(e) = guard.on_vault_changed(vault_path) {
-            tracing::error!("Backup callback failed (vault mutation already committed): {e}");
+            tracing::error!(
+                "Backup callback failed (vault mutation already committed): {e}"
+            );
         }
     }
 
@@ -1330,11 +1327,17 @@ mod tests {
         }
 
         fn last_path(&self) -> Option<String> {
-            self.calls.lock().last().map(|(p, _): &(String, bool)| p.clone())
+            self.calls
+                .lock()
+                .last()
+                .map(|(p, _): &(String, bool)| p.clone())
         }
 
         fn last_file_existed(&self) -> bool {
-            self.calls.lock().last().is_some_and(|(_, e): &(String, bool)| *e)
+            self.calls
+                .lock()
+                .last()
+                .is_some_and(|(_, e): &(String, bool)| *e)
         }
     }
 
