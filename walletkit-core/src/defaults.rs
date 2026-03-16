@@ -15,19 +15,11 @@ pub static POH_RECOVERY_AGENT_ADDRESS_STAGING: Address =
 pub static POH_RECOVERY_AGENT_ADDRESS_PRODUCTION: Address =
     address!("0x1312C524D85717dfAB70a6D25de7b30CC68B4d9d");
 
-/// Returns the PoH Recovery Agent address for the given [`Environment`] as a hex string.
-///
-/// The PoH Recovery Agent is a contract users can optionally designate when registering
-/// a World ID. If they lose access to all authenticators, the agent can sign a recovery
-/// transaction to restore their account.
-#[uniffi::export]
-#[must_use]
-pub fn poh_recovery_agent_address(environment: Environment) -> String {
+pub(crate) fn poh_recovery_agent_address(environment: &Environment) -> Address {
     match environment {
         Environment::Staging => POH_RECOVERY_AGENT_ADDRESS_STAGING,
         Environment::Production => POH_RECOVERY_AGENT_ADDRESS_PRODUCTION,
     }
-    .to_string()
 }
 
 const OPRF_NODE_COUNT: usize = 5;
