@@ -98,15 +98,15 @@ pub trait StorageProvider: Send + Sync {
 /// `store_credential`, `delete_credential`, and `danger_delete_all_credentials`, passing the path
 /// to a freshly-exported plaintext vault file.
 ///
-/// **Important:** the exported file is deleted automatically when this
-/// callback returns. The implementor must copy or upload the file contents
-/// before returning from `on_vault_changed`.
+/// **Important:** the exported file is deleted automatically when the
+/// `on_vault_changed` future completes. The implementor must finish
+/// reading or uploading the file before the future resolves.
 ///
 /// **Warning:** the implementor must **not** call back into
-/// `CredentialStore` (e.g. `store_credential`, `delete_credential`) from
-/// within `on_vault_changed`. Doing so will deadlock because the
-/// notification path holds an internal lock for the duration of the
-/// callback.
+/// `CredentialStore` (e.g. `store_credential`, `delete_credential`,
+/// `set_backup_manager`) from within `on_vault_changed`. Doing so will
+/// deadlock because the notification path holds an internal lock for
+/// the duration of the callback.
 #[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 #[async_trait::async_trait]
 pub trait WalletKitBackupManager: Send + Sync {
@@ -117,7 +117,7 @@ pub trait WalletKitBackupManager: Send + Sync {
     /// Called after the vault has been mutated and exported.
     ///
     /// `vault_file_path` is the path to the exported plaintext vault file.
-    /// The file is deleted automatically when this method returns, so the
+    /// The file is deleted automatically when this future completes, so the
     /// implementor must finish reading or copying it before returning.
     ///
     /// # Errors
