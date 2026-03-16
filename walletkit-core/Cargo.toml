@@ -48,7 +48,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zeroize = "1"
 uuid = { version = "1.10", features = ["v4"] }
 uniffi = { workspace = true }
-taceo-oprf = { version = "0.7", default-features = false, features = ["client"] }
+taceo-oprf = { version = "0.7.1", default-features = false, features = ["client"] }
 world-id-core = { workspace = true, features = [
   "authenticator",
   "embed-zkeys",
