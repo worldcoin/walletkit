@@ -114,7 +114,11 @@ fn resolve_seed(cli: &Cli) -> eyre::Result<Vec<u8>> {
     if let Some(ref hex_seed) = cli.seed {
         let bytes = hex::decode(hex_seed.trim_start_matches("0x"))
             .wrap_err("invalid hex seed")?;
-        eyre::ensure!(bytes.len() == 32, "seed must be exactly 32 bytes, got {}", bytes.len());
+        eyre::ensure!(
+            bytes.len() == 32,
+            "seed must be exactly 32 bytes, got {}",
+            bytes.len()
+        );
         Ok(bytes)
     } else if cli.random_seed {
         use rand::RngCore;
@@ -132,12 +136,18 @@ fn resolve_seed(cli: &Cli) -> eyre::Result<Vec<u8>> {
         if seed_path.exists() {
             let hex_str = std::fs::read_to_string(&seed_path)
                 .wrap_err("failed to read seed file")?;
-            let bytes = hex::decode(hex_str.trim())
-                .wrap_err("invalid hex in seed file")?;
-            eyre::ensure!(bytes.len() == 32, "seed file must contain exactly 32 bytes, got {}", bytes.len());
+            let bytes =
+                hex::decode(hex_str.trim()).wrap_err("invalid hex in seed file")?;
+            eyre::ensure!(
+                bytes.len() == 32,
+                "seed file must contain exactly 32 bytes, got {}",
+                bytes.len()
+            );
             Ok(bytes)
         } else {
-            eyre::bail!("no seed found; run `walletkit wallet init` first, or pass --seed")
+            eyre::bail!(
+                "no seed found; run `walletkit wallet init` first, or pass --seed"
+            )
         }
     }
 }
@@ -166,8 +176,9 @@ fn resolve_region(cli: &Cli) -> eyre::Result<Option<walletkit_core::Region>> {
 pub(crate) fn resolve_config(cli: &Cli) -> eyre::Result<Option<String>> {
     match &cli.config {
         Some(path) => {
-            let json = std::fs::read_to_string(path)
-                .wrap_err_with(|| format!("failed to read config file {}", path.display()))?;
+            let json = std::fs::read_to_string(path).wrap_err_with(|| {
+                format!("failed to read config file {}", path.display())
+            })?;
             Ok(Some(json))
         }
         None => Ok(None),

@@ -198,7 +198,10 @@ async fn run_import(cli: &Cli, backup: &str) -> eyre::Result<()> {
 }
 
 async fn run_danger_clear(cli: &Cli, confirm: bool) -> eyre::Result<()> {
-    eyre::ensure!(confirm, "this will permanently delete ALL credentials; pass --confirm to proceed");
+    eyre::ensure!(
+        confirm,
+        "this will permanently delete ALL credentials; pass --confirm to proceed"
+    );
 
     let (_authenticator, store) = init_authenticator(cli).await?;
     let deleted = store

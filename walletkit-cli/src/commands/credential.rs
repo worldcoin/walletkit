@@ -91,9 +91,12 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<Vec<u8>> {
             .read_to_end(&mut buf)?;
         Ok(buf)
     } else {
-        let meta = std::fs::metadata(path)
-            .wrap_err_with(|| format!("cannot read {path}"))?;
-        eyre::ensure!(meta.len() <= MAX_INPUT_BYTES, "input file too large (max 10 MiB)");
+        let meta =
+            std::fs::metadata(path).wrap_err_with(|| format!("cannot read {path}"))?;
+        eyre::ensure!(
+            meta.len() <= MAX_INPUT_BYTES,
+            "input file too large (max 10 MiB)"
+        );
         Ok(std::fs::read(path)?)
     }
 }
@@ -108,8 +111,7 @@ async fn run_import(
     let (_authenticator, store) = init_authenticator(cli).await?;
 
     let cred_bytes = read_file_or_stdin(credential)?;
-    let cred = Credential::from_bytes(cred_bytes)
-        .wrap_err("invalid credential")?;
+    let cred = Credential::from_bytes(cred_bytes).wrap_err("invalid credential")?;
 
     let bf = FieldElement::try_from_hex_string(blinding_factor)
         .wrap_err("invalid blinding factor")?;
@@ -230,8 +232,7 @@ async fn run_issue(
         .wrap_err("blinding factor generation failed")?;
 
     let cred_bytes = read_file_or_stdin(credential)?;
-    let cred = Credential::from_bytes(cred_bytes)
-        .wrap_err("invalid credential")?;
+    let cred = Credential::from_bytes(cred_bytes).wrap_err("invalid credential")?;
 
     let ad = associated_data
         .map(|b64| {
@@ -307,8 +308,8 @@ async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
         eyre::eyre!("faux issuer response missing 'credential' field")
     })?;
 
-    let cred_bytes = serde_json::to_vec(cred_value)
-        .wrap_err("failed to serialize credential")?;
+    let cred_bytes =
+        serde_json::to_vec(cred_value).wrap_err("failed to serialize credential")?;
     let cred = Credential::from_bytes(cred_bytes)
         .wrap_err("invalid credential from faux issuer")?;
     let expires_at = cred.expires_at();

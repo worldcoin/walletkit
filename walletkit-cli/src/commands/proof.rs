@@ -98,9 +98,12 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<String> {
             .read_to_string(&mut buf)?;
         Ok(buf)
     } else {
-        let meta = std::fs::metadata(path)
-            .wrap_err_with(|| format!("cannot read {path}"))?;
-        eyre::ensure!(meta.len() <= MAX_INPUT_BYTES, "input file too large (max 10 MiB)");
+        let meta =
+            std::fs::metadata(path).wrap_err_with(|| format!("cannot read {path}"))?;
+        eyre::ensure!(
+            meta.len() <= MAX_INPUT_BYTES,
+            "input file too large (max 10 MiB)"
+        );
         Ok(std::fs::read_to_string(path)?)
     }
 }
@@ -116,8 +119,8 @@ async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Resul
     });
 
     let json_str = read_file_or_stdin(request)?;
-    let proof_request = ProofRequest::from_json(&json_str)
-        .wrap_err("invalid proof request")?;
+    let proof_request =
+        ProofRequest::from_json(&json_str).wrap_err("invalid proof request")?;
 
     let response = authenticator
         .generate_proof(&proof_request, Some(ts))
@@ -139,8 +142,8 @@ async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Resul
 
 fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
     let json_str = read_file_or_stdin(request)?;
-    let proof_request = ProofRequest::from_json(&json_str)
-        .wrap_err("invalid proof request")?;
+    let proof_request =
+        ProofRequest::from_json(&json_str).wrap_err("invalid proof request")?;
 
     if cli.json {
         let normalized: serde_json::Value = serde_json::from_str(&json_str)?;
@@ -304,9 +307,7 @@ fn run_generate_test_request(
     let msg = world_id_core::primitives::rp::compute_rp_signature_msg(
         *nonce, created_at, expires_at, Some(*action),
     );
-    let signature = signer
-        .sign_message_sync(&msg)
-        .wrap_err("signing failed")?;
+    let signature = signer.sign_message_sync(&msg).wrap_err("signing failed")?;
 
     let request = CoreProofRequest {
         id: "test_request".to_string(),

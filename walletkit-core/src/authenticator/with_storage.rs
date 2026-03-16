@@ -29,7 +29,11 @@ impl Authenticator {
     /// # Errors
     ///
     /// Returns an error if fetching or caching the proof fails.
-    #[tracing::instrument(target = "walletkit_latency", name = "indexer_inclusion_proof", skip_all)]
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "indexer_inclusion_proof",
+        skip_all
+    )]
     pub(crate) async fn fetch_inclusion_proof_with_cache(
         &self,
         now: u64,
@@ -41,10 +45,7 @@ impl Authenticator {
         if let Some(bytes) = self.store.merkle_cache_get(now)? {
             if let Some(cached) = CachedInclusionProof::deserialize(&bytes) {
                 if cached.inclusion_proof.leaf_index == self.leaf_index() {
-                    return Ok((
-                        cached.inclusion_proof,
-                        cached.authenticator_keyset,
-                    ));
+                    return Ok((cached.inclusion_proof, cached.authenticator_keyset));
                 }
             }
         }

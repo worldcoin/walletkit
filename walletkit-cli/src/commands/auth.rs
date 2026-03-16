@@ -72,10 +72,7 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
         Err(e) => return Err(e).wrap_err("registration failed"),
     };
 
-    let status = init_auth
-        .poll_status()
-        .await
-        .wrap_err("poll failed")?;
+    let status = init_auth.poll_status().await.wrap_err("poll failed")?;
     let status_str = format!("{status:?}");
 
     if cli.json {
@@ -126,10 +123,7 @@ async fn run_register_wait(
     };
 
     loop {
-        let status = init_auth
-            .poll_status()
-            .await
-            .wrap_err("poll failed")?;
+        let status = init_auth.poll_status().await.wrap_err("poll failed")?;
 
         match &status {
             RegistrationStatus::Finalized => {
