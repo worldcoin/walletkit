@@ -341,7 +341,8 @@ impl CredentialStore {
         // Export a plaintext snapshot of the vault. The file is sensitive
         // (unencrypted), so we wrap it in a guard that deletes it on drop —
         // no matter how we exit (normal return, early return, or panic).
-        let vault_path = match self.lock_inner().export_vault_for_backup(&dest_dir) {
+        let export_result = self.lock_inner().export_vault_for_backup(&dest_dir);
+        let vault_path = match export_result {
             Ok(path) => path,
             Err(e) => {
                 tracing::error!("Vault export for backup failed: {e}");
