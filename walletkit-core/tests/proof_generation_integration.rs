@@ -148,7 +148,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     // Phase 2: Authenticator init with walletkit wrapper
     // ----------------------------------------------------------------
     let store = common::create_test_credential_store();
-    let paths = store.storage_paths().wrap_err("storage_paths failed")?;
+    let paths = store.storage_paths();
     cache_embedded_groth16_material(paths.clone())
         .wrap_err("cache_embedded_groth16_material failed")?;
 

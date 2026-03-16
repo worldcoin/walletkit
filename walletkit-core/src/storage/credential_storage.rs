@@ -1,6 +1,8 @@
 //! Storage facade implementing the credential storage API.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use world_id_core::FieldElement as CoreFieldElement;
 
@@ -148,12 +150,8 @@ impl CredentialStore {
     }
 
     /// Returns the storage paths used by this handle.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the storage mutex is poisoned.
-    pub fn storage_paths(&self) -> StorageResult<Arc<StoragePaths>> {
-        self.lock_inner().map(|inner| Arc::new(inner.paths.clone()))
+    pub fn storage_paths(&self) -> Arc<StoragePaths> {
+        Arc::new(self.lock_inner().paths.clone())
     }
 
     /// Initializes storage and validates the account leaf index.
@@ -162,7 +160,7 @@ impl CredentialStore {
     ///
     /// Returns an error if initialization fails or the leaf index mismatches.
     pub fn init(&self, leaf_index: u64, now: u64) -> StorageResult<()> {
-        let mut inner = self.lock_inner()?;
+        let mut inner = self.lock_inner();
         inner.init(leaf_index, now)
     }
 
@@ -179,7 +177,7 @@ impl CredentialStore {
         issuer_schema_id: Option<u64>,
         now: u64,
     ) -> StorageResult<Vec<CredentialRecord>> {
-        self.lock_inner()?.list_credentials(issuer_schema_id, now)
+        self.lock_inner().list_credentials(issuer_schema_id, now)
     }
 
     /// Deletes a credential by ID.
@@ -189,7 +187,7 @@ impl CredentialStore {
     /// Returns an error if the delete operation fails or the credential ID does
     /// not exist.
     pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
-        self.lock_inner()?.delete_credential(credential_id)?;
+        self.lock_inner().delete_credential(credential_id)?;
         self.notify_vault_changed()
     }
 
@@ -206,7 +204,7 @@ impl CredentialStore {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        let id = self.lock_inner()?.store_credential(
+        let id = self.lock_inner().store_credential(
             credential,
             blinding_factor,
             expires_at,
@@ -223,7 +221,7 @@ impl CredentialStore {
     ///
     /// Returns an error if the cache lookup fails.
     pub fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
-        self.lock_inner()?.merkle_cache_get(valid_until)
+        self.lock_inner().merkle_cache_get(valid_until)
     }
 
     /// Inserts a cached Merkle proof with a TTL.
@@ -237,7 +235,7 @@ impl CredentialStore {
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        self.lock_inner()?
+        self.lock_inner()
             .merkle_cache_put(proof_bytes, now, ttl_seconds)
     }
 
@@ -259,7 +257,7 @@ impl CredentialStore {
         reason = "non-owned strings cannot be lifted via UniFFI"
     )]
     pub fn import_vault_from_backup(&self, backup_path: String) -> StorageResult<()> {
-        self.lock_inner()?.import_vault_from_backup(&backup_path)
+        self.lock_inner().import_vault_from_backup(&backup_path)
     }
 
     /// **Development only.** Permanently deletes all stored credentials and their
@@ -279,7 +277,7 @@ impl CredentialStore {
     ///
     /// Returns an error if the delete operation fails.
     pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
-        let mut inner = self.lock_inner()?;
+        let mut inner = self.lock_inner();
         let count = inner.danger_delete_all_credentials()?;
         drop(inner);
         if count > 0 {
@@ -293,17 +291,11 @@ impl CredentialStore {
     /// [`delete_credential`](Self::delete_credential),
     /// [`danger_delete_all_credentials`](Self::danger_delete_all_credentials)).
     ///
-    /// # Errors
-    ///
-    /// Returns an error if the backup mutex is poisoned.
     pub fn set_backup_manager(
         &self,
         manager: Arc<dyn WalletKitBackupManager>,
-    ) -> StorageResult<()> {
-        *self.backup.lock().map_err(|_| {
-            StorageError::Lock("backup config mutex poisoned".to_string())
-        })? = manager;
-        Ok(())
+    ) {
+        *self.backup.lock() = manager;
     }
 
     /// Triggers a one-off backup sync without mutating the vault.
@@ -326,10 +318,8 @@ impl CredentialStore {
 impl CredentialStore {
     fn lock_inner(
         &self,
-    ) -> StorageResult<std::sync::MutexGuard<'_, CredentialStoreInner>> {
-        self.inner
-            .lock()
-            .map_err(|_| StorageError::Lock("storage mutex poisoned".to_string()))
+    ) -> parking_lot::MutexGuard<'_, CredentialStoreInner> {
+        self.inner.lock()
     }
 
     /// Exports a plaintext vault snapshot and notifies the registered backup
@@ -349,9 +339,7 @@ impl CredentialStore {
         // Hold the backup lock for the entire export+callback path. This
         // serializes concurrent notifications so backups are delivered in
         // mutation order.
-        let guard = self.backup.lock().map_err(|_| {
-            StorageError::Lock("backup config mutex poisoned".to_string())
-        })?;
+        let guard = self.backup.lock();
 
         let dest_dir = guard.dest_dir();
         if dest_dir.is_empty() {
@@ -363,7 +351,7 @@ impl CredentialStore {
         // no matter how we exit (normal return, early return, or panic).
         let vault_path = self
             .lock_inner()
-            .and_then(|inner| inner.export_vault_for_backup(&dest_dir))?;
+            .export_vault_for_backup(&dest_dir)?;
 
         let _cleanup = {
             struct CleanupFile(String);
@@ -380,7 +368,7 @@ impl CredentialStore {
             CleanupFile(vault_path.clone())
         };
 
-        // Hand the path to the host app (e.g. iOS) so it can copy/upload
+        // Hand the path to the hostI' app (e.g. iOS) so it can copy/upload
         // the vault to Bedrock. The host must finish with the file during
         // this synchronous call — the guard deletes it on return.
         guard.on_vault_changed(vault_path)
@@ -398,7 +386,7 @@ impl CredentialStore {
         issuer_schema_id: u64,
         now: u64,
     ) -> StorageResult<Option<(Credential, FieldElement)>> {
-        self.lock_inner()?.get_credential(issuer_schema_id, now)
+        self.lock_inner().get_credential(issuer_schema_id, now)
     }
 
     /// Checks whether a replay guard entry exists for the given nullifier.
@@ -414,7 +402,7 @@ impl CredentialStore {
         nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<bool> {
-        self.lock_inner()?.is_nullifier_replay(nullifier, now)
+        self.lock_inner().is_nullifier_replay(nullifier, now)
     }
 
     /// After a proof has been successfully generated, creates a replay guard entry
@@ -428,7 +416,7 @@ impl CredentialStore {
         nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
-        self.lock_inner()?.replay_guard_set(nullifier, now)
+        self.lock_inner().replay_guard_set(nullifier, now)
     }
 }
 
@@ -655,12 +643,8 @@ impl CredentialStore {
     }
 
     /// Returns the storage paths used by this handle.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the storage mutex is poisoned.
-    pub fn paths(&self) -> StorageResult<StoragePaths> {
-        self.lock_inner().map(|inner| inner.paths.clone())
+    pub fn paths(&self) -> StoragePaths {
+        self.lock_inner().paths.clone()
     }
 }
 
@@ -1339,15 +1323,15 @@ mod tests {
         }
 
         fn call_count(&self) -> usize {
-            self.calls.lock().unwrap().len()
+            self.calls.lock().len()
         }
 
         fn last_path(&self) -> Option<String> {
-            self.calls.lock().unwrap().last().map(|(p, _)| p.clone())
+            self.calls.lock().last().map(|(p, _): &(String, bool)| p.clone())
         }
 
         fn last_file_existed(&self) -> bool {
-            self.calls.lock().unwrap().last().is_some_and(|(_, e)| *e)
+            self.calls.lock().last().is_some_and(|(_, e): &(String, bool)| *e)
         }
     }
 
@@ -1358,7 +1342,7 @@ mod tests {
 
         fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()> {
             let existed = std::path::Path::new(&vault_file_path).exists();
-            self.calls.lock().unwrap().push((vault_file_path, existed));
+            self.calls.lock().push((vault_file_path, existed));
             Ok(())
         }
     }
@@ -1376,9 +1360,7 @@ mod tests {
         std::fs::create_dir_all(&export_dir).expect("create export dir");
 
         let manager = MockBackupManager::new(export_dir.to_string_lossy().to_string());
-        store
-            .set_backup_manager(manager.clone())
-            .expect("set backup manager");
+        store.set_backup_manager(manager.clone());
 
         (store, manager, root, export_dir)
     }
