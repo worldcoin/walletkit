@@ -43,10 +43,24 @@ fn run_init(cli: &Cli) -> eyre::Result<()> {
     let paths = store.storage_paths()?;
     cache_embedded_groth16_material(paths.clone())?;
 
+    // Generate and persist a 32-byte seed if one doesn't exist yet.
+    let seed_path = root.join("seed");
+    let seed_hex = if seed_path.exists() {
+        std::fs::read_to_string(&seed_path)?.trim().to_string()
+    } else {
+        use rand::RngCore;
+        let mut seed = vec![0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut seed);
+        let hex = hex::encode(&seed);
+        std::fs::write(&seed_path, &hex)?;
+        hex
+    };
+
     let data = serde_json::json!({
         "root": root.display().to_string(),
         "worldid_dir": paths.worldid_dir_path_string(),
         "groth16_dir": paths.groth16_dir_path_string(),
+        "seed": seed_hex,
     });
 
     if cli.json {
@@ -55,6 +69,7 @@ fn run_init(cli: &Cli) -> eyre::Result<()> {
         println!("Wallet initialized at {}", root.display());
         println!("  worldid dir:  {}", paths.worldid_dir_path_string());
         println!("  groth16 dir:  {}", paths.groth16_dir_path_string());
+        println!("  seed:         {seed_hex}");
     }
     Ok(())
 }

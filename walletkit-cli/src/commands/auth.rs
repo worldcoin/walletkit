@@ -1,6 +1,7 @@
 //! `walletkit auth` subcommands — authenticator lifecycle and registration.
 
 use clap::Subcommand;
+use walletkit_core::error::WalletKitError;
 use walletkit_core::{InitializingAuthenticator, RegistrationStatus};
 
 use crate::output;
@@ -51,14 +52,13 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
     let seed = resolve_seed(cli)?;
     let config_json = resolve_config(cli)?;
 
-    let init_auth = if let Some(ref config) = config_json {
+    let result = if let Some(ref config) = config_json {
         InitializingAuthenticator::register(
             &seed,
             config,
             recovery_address.map(String::from),
         )
         .await
-        .map_err(|e| eyre::eyre!("registration failed: {e}"))?
     } else {
         let env = resolve_environment(cli)?;
         let region = resolve_region(cli)?;
@@ -70,7 +70,15 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
             recovery_address.map(String::from),
         )
         .await
-        .map_err(|e| eyre::eyre!("registration failed: {e}"))?
+    };
+
+    let init_auth = match result {
+        Ok(auth) => auth,
+        Err(WalletKitError::AccountAlreadyExists) => {
+            output::print_success("Already registered.", cli.json);
+            return Ok(());
+        }
+        Err(e) => return Err(eyre::eyre!("registration failed: {e}")),
     };
 
     let status = init_auth
@@ -95,14 +103,13 @@ async fn run_register_wait(
     let seed = resolve_seed(cli)?;
     let config_json = resolve_config(cli)?;
 
-    let init_auth = if let Some(ref config) = config_json {
+    let result = if let Some(ref config) = config_json {
         InitializingAuthenticator::register(
             &seed,
             config,
             recovery_address.map(String::from),
         )
         .await
-        .map_err(|e| eyre::eyre!("registration failed: {e}"))?
     } else {
         let env = resolve_environment(cli)?;
         let region = resolve_region(cli)?;
@@ -114,7 +121,15 @@ async fn run_register_wait(
             recovery_address.map(String::from),
         )
         .await
-        .map_err(|e| eyre::eyre!("registration failed: {e}"))?
+    };
+
+    let init_auth = match result {
+        Ok(auth) => auth,
+        Err(WalletKitError::AccountAlreadyExists) => {
+            output::print_success("Already registered.", cli.json);
+            return Ok(());
+        }
+        Err(e) => return Err(eyre::eyre!("registration failed: {e}")),
     };
 
     loop {

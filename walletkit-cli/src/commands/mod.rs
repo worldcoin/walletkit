@@ -130,7 +130,26 @@ fn resolve_seed(cli: &Cli) -> eyre::Result<Vec<u8>> {
         }
         Ok(seed)
     } else {
-        Err(eyre::eyre!("provide --seed <hex> or --random-seed"))
+        // Fallback: read persisted seed from <root>/seed
+        let root = resolve_root(cli)?;
+        let seed_path = root.join("seed");
+        if seed_path.exists() {
+            let hex_str = std::fs::read_to_string(&seed_path)
+                .map_err(|e| eyre::eyre!("failed to read seed file: {e}"))?;
+            let bytes = hex::decode(hex_str.trim())
+                .map_err(|e| eyre::eyre!("invalid hex in seed file: {e}"))?;
+            if bytes.len() != 32 {
+                return Err(eyre::eyre!(
+                    "seed file must contain exactly 32 bytes, got {}",
+                    bytes.len()
+                ));
+            }
+            Ok(bytes)
+        } else {
+            Err(eyre::eyre!(
+                "no seed found; run `walletkit wallet init` first, or pass --seed"
+            ))
+        }
     }
 }
 

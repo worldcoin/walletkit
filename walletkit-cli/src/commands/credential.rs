@@ -4,7 +4,6 @@ use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Subcommand;
-use walletkit_core::issuers::TfhNfcIssuer;
 use walletkit_core::{Credential, FieldElement};
 
 use crate::output;
@@ -60,15 +59,6 @@ pub enum CredentialCommand {
         /// Optional associated data (base64-encoded).
         #[arg(long)]
         associated_data: Option<String>,
-    },
-    /// Refresh an NFC credential via the TFH issuer.
-    RefreshNfc {
-        /// Path to request body JSON, or `-` for stdin.
-        #[arg(long)]
-        request_body: String,
-        /// Additional HTTP headers as key=value pairs.
-        #[arg(long)]
-        header: Vec<String>,
     },
 }
 
@@ -212,49 +202,6 @@ async fn run_show(cli: &Cli, issuer_schema_id: u64) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn run_refresh_nfc(
-    cli: &Cli,
-    request_body: &str,
-    headers: &[String],
-) -> eyre::Result<()> {
-    let env = super::resolve_environment(cli)?;
-    let issuer = TfhNfcIssuer::new(&env);
-
-    let body = read_file_or_stdin(request_body)?;
-    let body_str = String::from_utf8(body)
-        .map_err(|e| eyre::eyre!("request body is not valid UTF-8: {e}"))?;
-
-    let mut header_map = std::collections::HashMap::new();
-    for h in headers {
-        let (k, v) = h.split_once('=').ok_or_else(|| {
-            eyre::eyre!("invalid header format, expected key=value: {h}")
-        })?;
-        header_map.insert(k.to_string(), v.to_string());
-    }
-
-    let credential = issuer
-        .refresh_nfc_credential(&body_str, header_map)
-        .await
-        .map_err(|e| eyre::eyre!("NFC refresh failed: {e}"))?;
-
-    let data = serde_json::json!({
-        "issuer_schema_id": credential.issuer_schema_id(),
-        "sub": credential.sub().to_hex_string(),
-        "expires_at": credential.expires_at(),
-    });
-
-    if cli.json {
-        output::print_json_data(&data, true);
-    } else {
-        println!("NFC credential received:");
-        println!("  issuer_schema_id: {}", credential.issuer_schema_id());
-        println!("  expires_at:       {}", credential.expires_at());
-        println!("  sub:              {}", credential.sub().to_hex_string());
-        println!("\nUse `walletkit credential import` to store this credential.");
-    }
-    Ok(())
-}
-
 async fn run_issue(
     cli: &Cli,
     issuer_schema_id: u64,
@@ -348,9 +295,5 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
             );
             Ok(())
         }
-        CredentialCommand::RefreshNfc {
-            request_body,
-            header,
-        } => run_refresh_nfc(cli, request_body, header).await,
     }
 }
