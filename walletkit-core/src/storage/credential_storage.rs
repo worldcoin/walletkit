@@ -303,7 +303,9 @@ impl CredentialStore {
     ///
     /// # Errors
     ///
-    /// Returns an error if the backup mutex is poisoned.
+    /// This method is infallible. The `Result` return type exists so that
+    /// `UniFFI` translates host-side exceptions into Rust errors rather than
+    /// panicking.
     pub async fn set_backup_manager(
         &self,
         manager: Arc<dyn WalletKitBackupManager>,
