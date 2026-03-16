@@ -7,7 +7,6 @@ use crate::{
 use alloy_primitives::Address;
 use ruint_uniffi::Uint256;
 use std::sync::Arc;
-use tracing::Instrument;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::Config,
@@ -162,24 +161,19 @@ impl Authenticator {
     ///
     /// # Errors
     /// Will error if the provided RPC URL is not valid or if there are RPC call failures.
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_account_data", skip_all)]
     pub async fn get_packed_account_data_remote(
         &self,
     ) -> Result<Uint256, WalletKitError> {
-        async {
-            let client = reqwest::Client::new(); // TODO: reuse client
-            let packed_account_data = CoreAuthenticator::get_packed_account_data(
-                self.inner.onchain_address(),
-                self.inner.registry().as_deref(),
-                &self.inner.config,
-                &client,
-            )
-            .await?;
-            Ok(packed_account_data.into())
-        }
-        .instrument(
-            tracing::info_span!(target: "walletkit_latency", "rpc_account_data"),
+        let client = reqwest::Client::new(); // TODO: reuse client
+        let packed_account_data = CoreAuthenticator::get_packed_account_data(
+            self.inner.onchain_address(),
+            self.inner.registry().as_deref(),
+            &self.inner.config,
+            &client,
         )
-        .await
+        .await?;
+        Ok(packed_account_data.into())
     }
 
     /// Generates a blinding factor for a Credential sub (through OPRF Nodes).
@@ -190,21 +184,16 @@ impl Authenticator {
     ///
     /// - Will generally error if there are network issues or if the OPRF Nodes return an error.
     /// - Raises an error if the OPRF Nodes configuration is not correctly set.
+    #[tracing::instrument(target = "walletkit_latency", name = "oprf_blinding_factor", skip_all)]
     pub async fn generate_credential_blinding_factor_remote(
         &self,
         issuer_schema_id: u64,
     ) -> Result<FieldElement, WalletKitError> {
-        async {
-            Ok(self
-                .inner
-                .generate_credential_blinding_factor(issuer_schema_id)
-                .await
-                .map(Into::into)?)
-        }
-        .instrument(
-            tracing::info_span!(target: "walletkit_latency", "oprf_blinding_factor"),
-        )
-        .await
+        Ok(self
+            .inner
+            .generate_credential_blinding_factor(issuer_schema_id)
+            .await
+            .map(Into::into)?)
     }
 
     /// Compute the `sub` for a credential from the authenticator's leaf index and a `blinding_factor`.
@@ -297,6 +286,7 @@ impl Authenticator {
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
     #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init_with_defaults(
         seed: &[u8],
         rpc_url: Option<String>,
@@ -305,19 +295,15 @@ impl Authenticator {
         paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        async {
-            let config = Config::from_environment(environment, rpc_url, region)?;
-            let authenticator = CoreAuthenticator::init(seed, config).await?;
-            let (query_material, nullifier_material) = load_cached_materials(paths)?;
-            let authenticator =
-                authenticator.with_proof_materials(query_material, nullifier_material);
-            Ok(Self {
-                inner: authenticator,
-                store,
-            })
-        }
-        .instrument(tracing::info_span!(target: "walletkit_latency", "rpc_init"))
-        .await
+        let config = Config::from_environment(environment, rpc_url, region)?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_cached_materials(paths)?;
+        let authenticator =
+            authenticator.with_proof_materials(query_material, nullifier_material);
+        Ok(Self {
+            inner: authenticator,
+            store,
+        })
     }
 
     /// Initializes a new Authenticator from a seed and config.
@@ -328,29 +314,26 @@ impl Authenticator {
     /// # Errors
     /// Will error if the provided seed is not valid or if the config is not valid.
     #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init(
         seed: &[u8],
         config: &str,
         paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        async {
-            let config =
-                Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
-                    attribute: "config".to_string(),
-                    reason: "Invalid config".to_string(),
-                })?;
-            let authenticator = CoreAuthenticator::init(seed, config).await?;
-            let (query_material, nullifier_material) = load_cached_materials(paths)?;
-            let authenticator =
-                authenticator.with_proof_materials(query_material, nullifier_material);
-            Ok(Self {
-                inner: authenticator,
-                store,
-            })
-        }
-        .instrument(tracing::info_span!(target: "walletkit_latency", "rpc_init"))
-        .await
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+                attribute: "config".to_string(),
+                reason: "Invalid config".to_string(),
+            })?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_cached_materials(paths)?;
+        let authenticator =
+            authenticator.with_proof_materials(query_material, nullifier_material);
+        Ok(Self {
+            inner: authenticator,
+            store,
+        })
     }
 
     /// Generates a proof for the given proof request.
@@ -498,6 +481,7 @@ impl InitializingAuthenticator {
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
     #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "gateway_register", skip_all)]
     pub async fn register_with_defaults(
         seed: &[u8],
         rpc_url: Option<String>,
@@ -505,21 +489,15 @@ impl InitializingAuthenticator {
         region: Option<Region>,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
-        async {
-            let recovery_address =
-                Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
+        let recovery_address =
+            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-            let config = Config::from_environment(environment, rpc_url, region)?;
+        let config = Config::from_environment(environment, rpc_url, region)?;
 
-            let initializing_authenticator =
-                CoreAuthenticator::register(seed, config, recovery_address).await?;
+        let initializing_authenticator =
+            CoreAuthenticator::register(seed, config, recovery_address).await?;
 
-            Ok(Self(initializing_authenticator))
-        }
-        .instrument(
-            tracing::info_span!(target: "walletkit_latency", "gateway_register"),
-        )
-        .await
+        Ok(Self(initializing_authenticator))
     }
 
     /// Registers a new World ID.
@@ -530,44 +508,36 @@ impl InitializingAuthenticator {
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
     #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "gateway_register", skip_all)]
     pub async fn register(
         seed: &[u8],
         config: &str,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
-        async {
-            let recovery_address =
-                Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
+        let recovery_address =
+            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-            let config = Config::from_json(config).map_err(|_| {
-                WalletKitError::InvalidInput {
-                    attribute: "config".to_string(),
-                    reason: "Invalid config".to_string(),
-                }
-            })?;
+        let config = Config::from_json(config).map_err(|_| {
+            WalletKitError::InvalidInput {
+                attribute: "config".to_string(),
+                reason: "Invalid config".to_string(),
+            }
+        })?;
 
-            let initializing_authenticator =
-                CoreAuthenticator::register(seed, config, recovery_address).await?;
+        let initializing_authenticator =
+            CoreAuthenticator::register(seed, config, recovery_address).await?;
 
-            Ok(Self(initializing_authenticator))
-        }
-        .instrument(
-            tracing::info_span!(target: "walletkit_latency", "gateway_register"),
-        )
-        .await
+        Ok(Self(initializing_authenticator))
     }
 
     /// Polls the registration status from the gateway.
     ///
     /// # Errors
     /// Will error if the network request fails or the gateway returns an error.
+    #[tracing::instrument(target = "walletkit_latency", name = "gateway_poll", skip_all)]
     pub async fn poll_status(&self) -> Result<RegistrationStatus, WalletKitError> {
-        async {
-            let status = self.0.poll_status().await?;
-            Ok(status.into())
-        }
-        .instrument(tracing::info_span!(target: "walletkit_latency", "gateway_poll"))
-        .await
+        let status = self.0.poll_status().await?;
+        Ok(status.into())
     }
 }
 
