@@ -14,6 +14,10 @@ use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
 use crate::{Credential, FieldElement};
 
+/// Filename prefix for temporary plaintext vault exports used during
+/// backup export and import. A UUID is appended to avoid collisions.
+const VAULT_BACKUP_TEMP_PREFIX: &str = "vault_backup_plaintext_";
+
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
@@ -243,22 +247,26 @@ impl CredentialStore {
         bytes
     }
 
-    /// Imports credentials from a plaintext vault backup.
+    /// Imports credentials from an in-memory plaintext vault backup.
     ///
     /// The store must already be initialized via [`init`](Self::init).
     /// Intended for restore on a fresh install where the vault is empty.
-    /// The caller is responsible for deleting the source file after the
-    /// import completes.
     ///
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the import fails.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "non-owned strings cannot be lifted via UniFFI"
-    )]
-    pub fn import_vault_from_backup(&self, backup_path: String) -> StorageResult<()> {
-        self.lock_inner()?.import_vault_from_backup(&backup_path)
+    pub fn import_vault_from_backup(&self, backup_bytes: Vec<u8>) -> StorageResult<()> {
+        let inner = self.lock_inner()?;
+        let path = inner.write_temp_backup_file(&backup_bytes)?;
+
+        let result = inner.import_vault_from_file(&path);
+
+        // Always clean up the temp file.
+        if let Err(e) = std::fs::remove_file(&path) {
+            tracing::error!("Failed to delete temp vault import {path}: {e}");
+        }
+
+        result
     }
 
     /// **Development only.** Permanently deletes all stored credentials and their
