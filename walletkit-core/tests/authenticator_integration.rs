@@ -7,7 +7,7 @@ use alloy::node_bindings::AnvilInstance;
 use alloy::primitives::U256;
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
-use walletkit_core::defaults::WORLD_ID_REGISTRY;
+use walletkit_core::defaults::STAGING_WORLD_ID_REGISTRY;
 use walletkit_core::error::WalletKitError;
 use walletkit_core::storage::cache_embedded_groth16_material;
 use walletkit_core::{Authenticator, Environment};
@@ -60,7 +60,7 @@ async fn test_authenticator_integration() {
         .wallet(signer)
         .connect_http(anvil.endpoint_url());
 
-    let registry = WorldIdRegistry::new(WORLD_ID_REGISTRY, &provider);
+    let registry = WorldIdRegistry::new(STAGING_WORLD_ID_REGISTRY, &provider);
 
     let tx = registry
         .createAccount(
