@@ -1178,7 +1178,7 @@ mod tests {
             .expect("store credential");
 
         let bytes = store.export_vault_for_backup().expect("export vault");
-        assert!(!bytes.is_empty(), "exported vault should not be empty");
+        assert!(bytes.len() >= 16, "exported vault too small to be a valid SQLite database");
 
         // Verify the bytes are a valid SQLite database (magic header).
         assert_eq!(
