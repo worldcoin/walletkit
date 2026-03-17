@@ -10,8 +10,8 @@ use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState, GatewayStatusResponse},
     primitives::Config,
-    Authenticator as CoreAuthenticator, Credential as CoreCredential,
-    EdDSAPublicKey, InitializingAuthenticator as CoreInitializingAuthenticator,
+    Authenticator as CoreAuthenticator, Credential as CoreCredential, EdDSAPublicKey,
+    InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
 #[cfg(feature = "storage")]
@@ -125,9 +125,7 @@ fn load_nullifier_material_from_cache(
 ///
 /// # Errors
 /// Returns an error if the bytes are not exactly 32 bytes or cannot be decompressed.
-fn parse_compressed_pubkey(
-    bytes: &[u8],
-) -> Result<EdDSAPublicKey, WalletKitError> {
+fn parse_compressed_pubkey(bytes: &[u8]) -> Result<EdDSAPublicKey, WalletKitError> {
     let compressed: [u8; 32] =
         bytes.try_into().map_err(|_| WalletKitError::InvalidInput {
             attribute: "new_authenticator_pubkey_bytes".to_string(),
@@ -270,10 +268,15 @@ impl Authenticator {
         new_authenticator_pubkey_bytes: Vec<u8>,
         new_authenticator_address: String,
     ) -> Result<String, WalletKitError> {
-        let new_address =
-            Address::parse_from_ffi(&new_authenticator_address, "new_authenticator_address")?;
+        let new_address = Address::parse_from_ffi(
+            &new_authenticator_address,
+            "new_authenticator_address",
+        )?;
         let new_pubkey = parse_compressed_pubkey(&new_authenticator_pubkey_bytes)?;
-        Ok(self.inner.insert_authenticator(new_pubkey, new_address).await?)
+        Ok(self
+            .inner
+            .insert_authenticator(new_pubkey, new_address)
+            .await?)
     }
 
     /// Updates an existing authenticator slot with a new authenticator.
@@ -303,12 +306,19 @@ impl Authenticator {
         new_authenticator_pubkey_bytes: Vec<u8>,
         index: u32,
     ) -> Result<String, WalletKitError> {
-        let old_address =
-            Address::parse_from_ffi(&old_authenticator_address, "old_authenticator_address")?;
-        let new_address =
-            Address::parse_from_ffi(&new_authenticator_address, "new_authenticator_address")?;
+        let old_address = Address::parse_from_ffi(
+            &old_authenticator_address,
+            "old_authenticator_address",
+        )?;
+        let new_address = Address::parse_from_ffi(
+            &new_authenticator_address,
+            "new_authenticator_address",
+        )?;
         let new_pubkey = parse_compressed_pubkey(&new_authenticator_pubkey_bytes)?;
-        Ok(self.inner.update_authenticator(old_address, new_address, new_pubkey, index).await?)
+        Ok(self
+            .inner
+            .update_authenticator(old_address, new_address, new_pubkey, index)
+            .await?)
     }
 
     /// Removes an authenticator from the account.
@@ -350,11 +360,7 @@ impl Authenticator {
         &self,
         request_id: String,
     ) -> Result<RegistrationStatus, WalletKitError> {
-        let url = format!(
-            "{}/status/{}",
-            self.inner.config.gateway_url(),
-            request_id
-        );
+        let url = format!("{}/status/{}", self.inner.config.gateway_url(), request_id);
         let client = reqwest::Client::new(); // TODO: reuse client
         let resp = client.get(&url).send().await?;
         let status = resp.status();
@@ -694,8 +700,9 @@ mod tests {
     use world_id_core::OnchainKeyRepresentable;
 
     fn test_pubkey(seed_byte: u8) -> EdDSAPublicKey {
-        let signer = world_id_core::primitives::Signer::from_seed_bytes(&[seed_byte; 32])
-            .unwrap();
+        let signer =
+            world_id_core::primitives::Signer::from_seed_bytes(&[seed_byte; 32])
+                .unwrap();
         signer.offchain_signer_pubkey()
     }
 
@@ -736,7 +743,6 @@ mod tests {
         let recovered = parse_compressed_pubkey(&bytes).unwrap();
         assert_eq!(original.pk, recovered.pk);
     }
-
 }
 
 // ── Storage-dependent tests ──
@@ -853,11 +859,11 @@ mod storage_tests {
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
-        cache_embedded_groth16_material(store.storage_paths().expect("paths"))
+        cache_embedded_groth16_material(&store.storage_paths().expect("paths"))
             .expect("cache material");
 
         let paths = store.storage_paths().expect("paths");
-        let auth = Authenticator::init(&seed, &config, paths, Arc::new(store))
+        let auth = Authenticator::init(&seed, &config, &paths, Arc::new(store))
             .await
             .unwrap();
 
@@ -916,20 +922,21 @@ mod storage_tests {
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
-        cache_embedded_groth16_material(store.storage_paths().expect("paths"))
+        cache_embedded_groth16_material(&store.storage_paths().expect("paths"))
             .expect("cache material");
 
         let paths = store.storage_paths().expect("paths");
-        let auth = Authenticator::init(&seed, &config, paths, Arc::new(store))
+        let auth = Authenticator::init(&seed, &config, &paths, Arc::new(store))
             .await
             .unwrap();
 
-        let result = auth
-            .poll_operation_status("req_bad".to_string())
-            .await;
+        let result = auth.poll_operation_status("req_bad".to_string()).await;
         assert!(matches!(
             result,
-            Err(WalletKitError::NetworkError { status: Some(500), .. })
+            Err(WalletKitError::NetworkError {
+                status: Some(500),
+                ..
+            })
         ));
 
         mock.assert_async().await;
