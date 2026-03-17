@@ -10,7 +10,7 @@ See [TESTING.md](TESTING.md) for a full smoke-test walkthrough.
 walletkit [OPTIONS] <COMMAND>
 ```
 
-Global options: `--environment` (staging/production), `--json` (machine-readable output), `--root` (custom data dir), `--rpc-url` (World Chain RPC).
+Global options: `--environment` (staging/production), `--json` (machine-readable output), `--root` (custom data dir), `--rpc-url` (World Chain RPC), `--config` (custom config JSON, overrides environment/region), `--latency` (print per-call latency summary).
 
 ## Commands
 
