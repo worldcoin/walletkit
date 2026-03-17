@@ -240,7 +240,7 @@ impl CredentialStore {
     }
 
     /// Exports the current vault as an in-memory plaintext (unencrypted)
-    /// SQLite database for backup.
+    /// `SQLite` database for backup.
     ///
     /// The host app is responsible for persisting or uploading the returned
     /// bytes
@@ -273,6 +273,10 @@ impl CredentialStore {
     ///
     /// Returns an error if the store is not initialized or the import fails.
     #[cfg(not(target_arch = "wasm32"))]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Vec<u8> required for UniFFI lifting"
+    )]
     pub fn import_vault_from_backup(&self, backup_bytes: Vec<u8>) -> StorageResult<()> {
         // Write the temp file without holding the store lock — only the
         // SQLCipher import needs the lock, and the temp path is UUID-unique.
@@ -563,9 +567,8 @@ impl CredentialStoreInner {
     #[cfg(not(target_arch = "wasm32"))]
     fn cleanup_stale_backup_files(&self) {
         let dir = self.paths.worldid_dir();
-        let entries = match std::fs::read_dir(dir) {
-            Ok(entries) => entries,
-            Err(_) => return,
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
         };
         for entry in entries.flatten() {
             if let Some(name) = entry.file_name().to_str() {
