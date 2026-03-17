@@ -5,6 +5,10 @@ use crate::{error::WalletKitError, Environment, Region};
 
 /// The World ID Registry contract address on World Chain Mainnet.
 pub static WORLD_ID_REGISTRY: Address =
+    address!("0x0000000000aE079eB8a274cD51c0f44a9E4d67d4");
+
+/// The **Staging** World ID Registry contract address also on World Chain Mainnet.
+pub static STAGING_WORLD_ID_REGISTRY: Address =
     address!("0x8556d07D75025f286fe757C7EeEceC40D54FA16D");
 
 const OPRF_NODE_COUNT: usize = 5;
@@ -58,8 +62,8 @@ impl DefaultConfig for Config {
         match environment {
             Environment::Staging => Self::new(
                 rpc_url,
-                480, // Staging also runs on World Chain Mainnet by default
-                WORLD_ID_REGISTRY,
+                480, // Staging also runs on World Chain Mainnet
+                STAGING_WORLD_ID_REGISTRY,
                 indexer_url(region, environment),
                 "https://gateway.id-infra.worldcoin.dev".to_string(),
                 oprf_node_urls(region, environment),
@@ -67,7 +71,16 @@ impl DefaultConfig for Config {
             )
             .map_err(WalletKitError::from),
 
-            Environment::Production => todo!("There is no production environment yet"),
+            Environment::Production => Self::new(
+                rpc_url,
+                480,
+                WORLD_ID_REGISTRY,
+                indexer_url(region, environment),
+                "https://gateway.id-infra.world.org".to_string(),
+                oprf_node_urls(region, environment),
+                3,
+            )
+            .map_err(WalletKitError::from),
         }
     }
 }
