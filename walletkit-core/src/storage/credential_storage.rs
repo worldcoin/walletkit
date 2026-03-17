@@ -249,6 +249,10 @@ impl CredentialStore {
     ///
     /// Returns an error if the store is not initialized or the export fails.
     #[cfg(not(target_arch = "wasm32"))]
+    #[expect(
+        clippy::significant_drop_tightening,
+        reason = "lock held intentionally for the full operation to prevent concurrent cleanup from deleting in-use temp files"
+    )]
     pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
         let inner = self.lock_inner()?;
         inner.cleanup_stale_backup_files();
