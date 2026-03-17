@@ -2,7 +2,7 @@
 //!
 //! This is a dev-local provider — the device keystore is a no-op passthrough
 //! since encryption at the keystore layer adds no value for local development.
-//! The SQLCipher databases are still encrypted with a random `K_intermediate`.
+//! The `SQLCipher` databases are still encrypted with a random `K_intermediate`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -106,15 +106,15 @@ pub struct FsStorageProvider {
 
 impl FsStorageProvider {
     /// Creates a new provider rooted at the given directory.
-    pub fn open(root: &Path) -> eyre::Result<Self> {
+    pub fn open(root: &Path) -> Self {
         let keystore = Arc::new(NoopDeviceKeystore);
         let blob_store = Arc::new(FsAtomicBlobStore::new(root));
         let paths = Arc::new(StoragePaths::new(root));
-        Ok(Self {
+        Self {
             keystore,
             blob_store,
             paths,
-        })
+        }
     }
 }
 
@@ -134,7 +134,7 @@ impl StorageProvider for FsStorageProvider {
 
 /// Creates a `CredentialStore` backed by the filesystem at `root`.
 pub fn create_fs_credential_store(root: &Path) -> eyre::Result<Arc<CredentialStore>> {
-    let provider = FsStorageProvider::open(root)?;
+    let provider = FsStorageProvider::open(root);
     let store = CredentialStore::from_provider(&provider)?;
     Ok(Arc::new(store))
 }
