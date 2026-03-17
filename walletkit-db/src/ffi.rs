@@ -567,8 +567,11 @@ mod raw {
         n: c_int,
         destructor: isize,
     ) -> c_int {
-        // WASM bindings use typed destructor callbacks; all callers pass SQLITE_TRANSIENT.
-        let _ = destructor;
+        // WASM bindings use typed destructor callbacks instead of SQLite's
+        // sentinel `isize` values. This shim only supports `SQLITE_TRANSIENT`,
+        // which matches all current callers and ensures SQLite copies the data
+        // immediately.
+        assert_eq!(destructor, super::SQLITE_TRANSIENT);
         wasm::sqlite3_bind_blob(stmt.cast(), index, value, n, wasm::SQLITE_TRANSIENT())
     }
     pub unsafe fn sqlite3_bind_text(
@@ -578,8 +581,11 @@ mod raw {
         n: c_int,
         destructor: isize,
     ) -> c_int {
-        // WASM bindings use typed destructor callbacks; all callers pass SQLITE_TRANSIENT.
-        let _ = destructor;
+        // WASM bindings use typed destructor callbacks instead of SQLite's
+        // sentinel `isize` values. This shim only supports `SQLITE_TRANSIENT`,
+        // which matches all current callers and ensures SQLite copies the text
+        // immediately.
+        assert_eq!(destructor, super::SQLITE_TRANSIENT);
         wasm::sqlite3_bind_text(
             stmt.cast(),
             index,
