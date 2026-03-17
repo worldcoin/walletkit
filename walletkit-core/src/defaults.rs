@@ -7,11 +7,11 @@ use crate::{error::WalletKitError, Environment, Region};
 pub static WORLD_ID_REGISTRY: Address =
     address!("0x8556d07D75025f286fe757C7EeEceC40D54FA16D");
 
-/// The `PoH` Recovery Agent address on the staging environment.
+/// The `PoH` Recovery Agent contract address on the staging environment.
 pub static POH_RECOVERY_AGENT_ADDRESS_STAGING: Address =
     address!("0x8df366ed8ef894f0d1d25dc21b7e36e2d97a7140");
 
-/// The `PoH` Recovery Agent address on the production environment.
+/// The `PoH` Recovery Agent contract address on the production environment.
 pub static POH_RECOVERY_AGENT_ADDRESS_PRODUCTION: Address =
     address!("0x00000000CBBA8Cb46C8CD414B62213F1B334fC59");
 
