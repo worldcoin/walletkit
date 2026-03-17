@@ -16,12 +16,15 @@ use crate::{Credential, FieldElement};
 
 /// Filename prefix for temporary plaintext vault exports used during
 /// backup export and import. A UUID is appended to avoid collisions.
+#[cfg(not(target_arch = "wasm32"))]
 const VAULT_BACKUP_TEMP_PREFIX: &str = "vault_backup_plaintext_";
 
 /// RAII guard that deletes a sensitive plaintext file on drop — regardless
 /// of whether we exit normally, return early, or panic.
+#[cfg(not(target_arch = "wasm32"))]
 struct CleanupFile(String);
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Drop for CleanupFile {
     fn drop(&mut self) {
         if let Err(e) = std::fs::remove_file(&self.0) {
@@ -245,6 +248,7 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the export fails.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
         let inner = self.lock_inner()?;
         let path = inner.export_vault_for_backup_to_file()?;
@@ -263,6 +267,7 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the import fails.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn import_vault_from_backup(&self, backup_bytes: Vec<u8>) -> StorageResult<()> {
         let inner = self.lock_inner()?;
         let path = inner.write_temp_backup_file(&backup_bytes)?;
@@ -509,6 +514,7 @@ impl CredentialStoreInner {
 
     /// Exports the vault to a temporary plaintext file in the worldid directory.
     /// Returns the path to the file. The caller is responsible for cleanup.
+    #[cfg(not(target_arch = "wasm32"))]
     fn export_vault_for_backup_to_file(&self) -> StorageResult<String> {
         let guard = self.guard()?;
         let state = self.state()?;
@@ -519,6 +525,7 @@ impl CredentialStoreInner {
 
     /// Writes raw bytes to a temporary file in the worldid directory.
     /// Returns the path. The caller is responsible for cleanup.
+    #[cfg(not(target_arch = "wasm32"))]
     fn write_temp_backup_file(&self, bytes: &[u8]) -> StorageResult<String> {
         let dest = self.temp_backup_path();
         std::fs::write(&dest, bytes).map_err(|e| {
@@ -528,6 +535,7 @@ impl CredentialStoreInner {
     }
 
     /// Imports from a plaintext vault file on disk.
+    #[cfg(not(target_arch = "wasm32"))]
     fn import_vault_from_file(&self, backup_path: &str) -> StorageResult<()> {
         let guard = self.guard()?;
         let state = self.state()?;
@@ -536,6 +544,7 @@ impl CredentialStoreInner {
     }
 
     /// Returns a unique temp file path in the worldid directory for backup operations.
+    #[cfg(not(target_arch = "wasm32"))]
     fn temp_backup_path(&self) -> std::path::PathBuf {
         let filename = format!(
             "{}{}.sqlite",
