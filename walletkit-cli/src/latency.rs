@@ -57,7 +57,9 @@ where
 
 /// Prints the latency report to stderr.
 pub fn print_report(entries: &LatencyEntries, json: bool) {
-    let entries = entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    let entries = entries
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if entries.is_empty() {
         return;
     }
