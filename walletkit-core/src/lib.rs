@@ -3,22 +3,19 @@
 //!
 //! # Example
 //!
-//! ```rust,no_run
+//! ```rust,ignore
+//! // Note: `Groth16Materials::from_embedded` requires the `embed-zkeys` Cargo feature.
+//! // On native targets you can alternatively use `Groth16Materials::from_cache` after
+//! // calling `storage::cache_embedded_groth16_material` to populate the on-disk cache.
 //! use std::sync::Arc;
 //! use walletkit_core::requests::ProofRequest;
-//! use walletkit_core::storage::{
-//!     cache_embedded_groth16_material, CredentialStore, StoragePaths,
-//! };
-//! use walletkit_core::{Authenticator, Environment};
+//! use walletkit_core::storage::CredentialStore;
+//! use walletkit_core::{Authenticator, Environment, Groth16Materials};
 //!
-//! /// Platform layer provides a [`CredentialStore`] backed by a
-//! /// device-specific [`StorageProvider`](walletkit_core::storage::StorageProvider).
 //! async fn generate_world_id_proof(
 //!     store: Arc<CredentialStore>,
 //! ) -> Result<(), Box<dyn std::error::Error>> {
-//!     // Cache Groth16 proving material to disk (idempotent).
-//!     let paths = StoragePaths::from_root("/data/walletkit".into());
-//!     cache_embedded_groth16_material(&paths)?;
+//!     let materials = Arc::new(Groth16Materials::from_embedded()?);
 //!
 //!     // Initialize an authenticator for an already-registered World ID.
 //!     let seed = b"my_secret_seed_at_length_32_bytes!";
@@ -27,7 +24,7 @@
 //!         None, // uses default RPC URL
 //!         &Environment::Staging,
 //!         None, // uses default region
-//!         &paths,
+//!         materials,
 //!         store,
 //!     )
 //!     .await?;
