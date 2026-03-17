@@ -107,7 +107,6 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -124,7 +123,6 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -170,9 +168,7 @@ impl CredentialStore {
     /// Returns an error if the delete operation fails or the credential ID does
     /// not exist.
     pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
-        self.lock_inner()?.delete_credential(credential_id)?;
-        self.notify_vault_changed();
-        Ok(())
+        self.lock_inner()?.delete_credential(credential_id)
     }
 
     /// Stores a credential and optional associated data.
@@ -188,15 +184,13 @@ impl CredentialStore {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        let id = self.lock_inner()?.store_credential(
+        self.lock_inner()?.store_credential(
             credential,
             blinding_factor,
             expires_at,
             associated_data,
             now,
-        )?;
-        self.notify_vault_changed();
-        Ok(id)
+        )
     }
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
@@ -223,9 +217,32 @@ impl CredentialStore {
             .merkle_cache_put(proof_bytes, now, ttl_seconds)
     }
 
-    /// Exports a plaintext (unencrypted) copy of the vault for backup.
+    /// Exports the current vault as an in-memory plaintext (unencrypted)
+    /// SQLite database for backup.
     ///
-    /// The returned path points to a transient file containing the full vault
+    /// The host app is responsible for persisting or uploading the returned
+    /// bytes (e.g. writing to a temporary file and handing it to the platform
+    /// backup system).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the export fails.
+    pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
+        let inner = self.lock_inner()?;
+        let path = inner.export_vault_for_backup_to_file()?;
+
+        let bytes = std::fs::read(&path).map_err(|e| {
+            StorageError::VaultDb(format!("failed to read exported vault: {e}"))
+        });
+
+        // Always clean up the temp file, even if the read failed.
+        if let Err(e) = std::fs::remove_file(&path) {
+            tracing::error!("Failed to delete temp vault export {path}: {e}");
+        }
+
+        bytes
+    }
+
     /// Imports credentials from a plaintext vault backup.
     ///
     /// The store must already be initialized via [`init`](Self::init).
@@ -261,31 +278,7 @@ impl CredentialStore {
     ///
     /// Returns an error if the delete operation fails.
     pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
-        let mut inner = self.lock_inner()?;
-        let count = inner.danger_delete_all_credentials()?;
-        drop(inner);
-        if count > 0 {
-            self.notify_vault_changed();
-        }
-        Ok(count)
-    }
-
-    /// Registers a backup manager that will be notified after vault mutations
-    /// ([`store_credential`](Self::store_credential),
-    /// [`danger_delete_all_credentials`](Self::danger_delete_all_credentials)).
-    /// Backup failures are logged but do not affect the mutation result.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the backup mutex is poisoned.
-    pub fn set_backup_manager(
-        &self,
-        manager: Arc<dyn WalletKitBackupManager>,
-    ) -> StorageResult<()> {
-        *self.backup.lock().map_err(|_| {
-            StorageError::Lock("backup config mutex poisoned".to_string())
-        })? = manager;
-        Ok(())
+        self.lock_inner()?.danger_delete_all_credentials()
     }
 }
 
@@ -297,64 +290,6 @@ impl CredentialStore {
         self.inner
             .lock()
             .map_err(|_| StorageError::Lock("storage mutex poisoned".to_string()))
-    }
-
-    /// Best-effort export + notification to the backup manager, if one is set.
-    ///
-    /// Called after any vault mutation (store, delete) so the host app can
-    /// sync the updated vault to its backup. Failures are logged but never
-    /// propagated — the vault mutation has already succeeded and callers
-    /// should not see an error from a backup side-effect.
-    fn notify_vault_changed(&self) {
-        // Hold the backup lock for the entire export+callback path. This
-        // serializes concurrent notifications so backups are delivered in
-        // mutation order. Recover the guard on poison — the manager is
-        // still valid after a prior panic.
-        let guard = self
-            .backup
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-
-        let dest_dir = guard.dest_dir();
-        if dest_dir.is_empty() {
-            return; // NoopBackupManager — nothing to do.
-        }
-
-        // Export a plaintext snapshot of the vault. The file is sensitive
-        // (unencrypted), so we wrap it in a guard that deletes it on drop —
-        // no matter how we exit (normal return, early return, or panic).
-        let vault_path = match self
-            .lock_inner()
-            .and_then(|inner| inner.export_vault_for_backup(&dest_dir))
-        {
-            Ok(path) => path,
-            Err(e) => {
-                tracing::error!("Failed to export vault for backup: {e}");
-                return;
-            }
-        };
-
-        let _cleanup = {
-            struct CleanupFile(String);
-            impl Drop for CleanupFile {
-                fn drop(&mut self) {
-                    if let Err(e) = std::fs::remove_file(&self.0) {
-                        tracing::error!(
-                            "Failed to delete plaintext vault backup {}: {e}",
-                            self.0
-                        );
-                    }
-                }
-            }
-            CleanupFile(vault_path.clone())
-        };
-
-        // Hand the path to the host app (e.g. iOS) so it can copy/upload
-        // the vault to Bedrock. The host must finish with the file during
-        // this synchronous call — the guard deletes it on return.
-        if let Err(e) = guard.on_vault_changed(vault_path) {
-            tracing::error!("Backup manager on_vault_changed failed: {e}");
-        }
     }
 
     /// Retrieves a full credential including raw bytes by issuer schema ID.
@@ -562,15 +497,14 @@ impl CredentialStoreInner {
         state.cache.replay_guard_set(&guard, nullifier, now)
     }
 
-    fn export_vault_for_backup(&self, dest_dir: &str) -> StorageResult<String> {
+    /// Exports the vault to a temporary plaintext file in the worldid directory.
+    /// Returns the path to the file. The caller is responsible for cleanup.
+    fn export_vault_for_backup_to_file(&self) -> StorageResult<String> {
         let guard = self.guard()?;
         let state = self.state()?;
-        // Use a unique filename per export so that concurrent calls to
-        // `notify_vault_changed` don't race on the same file — one thread's
-        // callback could still be reading while another overwrites or deletes.
         let filename =
             format!("vault_backup_plaintext_{}.sqlite", uuid::Uuid::new_v4());
-        let dest = std::path::PathBuf::from(dest_dir).join(filename);
+        let dest = self.paths.worldid_dir().join(filename);
         state.vault.export_plaintext(&dest, &guard)?;
         Ok(dest.to_string_lossy().to_string())
     }
@@ -604,7 +538,6 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -621,7 +554,6 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
-            backup: Mutex::new(Arc::new(NoopBackupManager)),
         })
     }
 
@@ -637,8 +569,6 @@ impl CredentialStore {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
@@ -892,12 +822,9 @@ mod tests {
             .store_credential(&credential, &blinding_factor, expires_at, None, 1000)
             .expect("store credential");
 
-        // Export plaintext vault to a separate directory
-        let export_dir = temp_root_path();
-        std::fs::create_dir_all(&export_dir).expect("create export dir");
-        let export_dir_str = export_dir.to_string_lossy().to_string();
+        // Export plaintext vault
         let backup_path = src_inner
-            .export_vault_for_backup(&export_dir_str)
+            .export_vault_for_backup_to_file()
             .expect("export vault");
 
         // Verify the export file exists
@@ -934,7 +861,6 @@ mod tests {
         // Clean up
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&src_root);
-        cleanup_test_storage(&export_dir);
         cleanup_test_storage(&dst_root);
     }
 
@@ -992,11 +918,8 @@ mod tests {
         assert_eq!(src_list.len(), 3);
 
         // Export and import into fresh store
-        let export_dir = temp_root_path();
-        std::fs::create_dir_all(&export_dir).expect("create export dir");
-        let export_dir_str = export_dir.to_string_lossy().to_string();
         let backup_path = src_inner
-            .export_vault_for_backup(&export_dir_str)
+            .export_vault_for_backup_to_file()
             .expect("export vault");
 
         let dst_root = temp_root_path();
@@ -1043,7 +966,6 @@ mod tests {
         // Clean up
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&src_root);
-        cleanup_test_storage(&export_dir);
         cleanup_test_storage(&dst_root);
     }
 
@@ -1072,11 +994,8 @@ mod tests {
             .expect("store credential");
 
         // Export the vault
-        let export_dir = temp_root_path();
-        std::fs::create_dir_all(&export_dir).expect("create export dir");
-        let export_dir_str = export_dir.to_string_lossy().to_string();
         let backup_path = inner
-            .export_vault_for_backup(&export_dir_str)
+            .export_vault_for_backup_to_file()
             .expect("export vault");
 
         // Importing into a non-empty vault should fail — the import checks that
@@ -1094,7 +1013,6 @@ mod tests {
 
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&root);
-        cleanup_test_storage(&export_dir);
     }
 
     #[test]
@@ -1142,11 +1060,8 @@ mod tests {
             .expect("store credential");
 
         // Export a valid backup
-        let export_dir = temp_root_path();
-        std::fs::create_dir_all(&export_dir).expect("create export dir");
-        let export_dir_str = export_dir.to_string_lossy().to_string();
         let backup_path = inner
-            .export_vault_for_backup(&export_dir_str)
+            .export_vault_for_backup_to_file()
             .expect("export vault");
 
         // Corrupt the *last* table in BACKUP_TABLES inside the backup.
@@ -1197,7 +1112,6 @@ mod tests {
 
         std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&root);
-        cleanup_test_storage(&export_dir);
         cleanup_test_storage(&dst_root);
     }
 
@@ -1294,97 +1208,8 @@ mod tests {
         cleanup_test_storage(&root);
     }
 
-    /// Mock backup manager that records each `on_vault_changed` call and
-    /// whether the file existed at the time of the callback.
-    struct MockBackupManager {
-        export_dir: String,
-        calls: Mutex<Vec<(String, bool)>>,
-    }
-
-    impl MockBackupManager {
-        fn new(export_dir: String) -> Arc<Self> {
-            Arc::new(Self {
-                export_dir,
-                calls: Mutex::new(Vec::new()),
-            })
-        }
-
-        fn call_count(&self) -> usize {
-            self.calls.lock().unwrap().len()
-        }
-
-        fn last_path(&self) -> Option<String> {
-            self.calls.lock().unwrap().last().map(|(p, _)| p.clone())
-        }
-
-        fn last_file_existed(&self) -> bool {
-            self.calls.lock().unwrap().last().is_some_and(|(_, e)| *e)
-        }
-    }
-
-    impl WalletKitBackupManager for MockBackupManager {
-        fn dest_dir(&self) -> String {
-            self.export_dir.clone()
-        }
-
-        fn on_vault_changed(&self, vault_file_path: String) -> StorageResult<()> {
-            let existed = std::path::Path::new(&vault_file_path).exists();
-            self.calls.lock().unwrap().push((vault_file_path, existed));
-            Ok(())
-        }
-    }
-
-    /// Helper: create an initialized `CredentialStore` with a temp directory
-    /// for backup exports.
-    fn setup_store_with_backup(
-    ) -> (CredentialStore, Arc<MockBackupManager>, PathBuf, PathBuf) {
-        let root = temp_root_path();
-        let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init store");
-
-        let export_dir = temp_root_path();
-        std::fs::create_dir_all(&export_dir).expect("create export dir");
-
-        let manager = MockBackupManager::new(export_dir.to_string_lossy().to_string());
-        store
-            .set_backup_manager(manager.clone())
-            .expect("set backup manager");
-
-        (store, manager, root, export_dir)
-    }
-
     #[test]
-    fn test_store_credential_triggers_backup_notification() {
-        use world_id_core::Credential as CoreCredential;
-
-        let (store, manager, root, export_dir) = setup_store_with_backup();
-
-        let cred: Credential = CoreCredential::new()
-            .issuer_schema_id(100)
-            .genesis_issued_at(1000)
-            .into();
-        store
-            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
-            .expect("store credential");
-
-        assert_eq!(manager.call_count(), 1);
-        assert!(
-            manager.last_file_existed(),
-            "exported vault file should exist during the callback"
-        );
-        let path = manager.last_path().unwrap();
-        assert!(
-            !std::path::Path::new(&path).exists(),
-            "exported vault file should be cleaned up after the callback"
-        );
-
-        cleanup_test_storage(&root);
-        cleanup_test_storage(&export_dir);
-    }
-
-    #[test]
-    fn test_no_backup_notification_without_manager() {
+    fn test_export_vault_for_backup_returns_bytes() {
         use world_id_core::Credential as CoreCredential;
 
         let root = temp_root_path();
@@ -1392,7 +1217,6 @@ mod tests {
         let store = CredentialStore::from_provider(&provider).expect("create store");
         store.init(42, 1000).expect("init store");
 
-        // No backup manager registered — should not panic.
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
             .genesis_issued_at(1000)
@@ -1401,92 +1225,62 @@ mod tests {
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
 
+        let bytes = store.export_vault_for_backup().expect("export vault");
+        assert!(!bytes.is_empty(), "exported vault should not be empty");
+
+        // Verify the bytes are a valid SQLite database (magic header).
+        assert_eq!(
+            &bytes[..16],
+            b"SQLite format 3\0",
+            "exported bytes should be a valid SQLite database"
+        );
+
         cleanup_test_storage(&root);
     }
 
     #[test]
-    fn test_delete_all_triggers_backup_notification() {
+    fn test_export_vault_for_backup_roundtrip() {
         use world_id_core::Credential as CoreCredential;
 
-        let (store, manager, root, export_dir) = setup_store_with_backup();
+        let src_root = temp_root_path();
+        let src_provider = InMemoryStorageProvider::new(&src_root);
+        let src_store =
+            CredentialStore::from_provider(&src_provider).expect("create store");
+        src_store.init(42, 1000).expect("init store");
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
             .genesis_issued_at(1000)
             .into();
-        store
+        src_store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
-        assert_eq!(manager.call_count(), 1);
 
-        store.danger_delete_all_credentials().expect("delete all");
-        assert_eq!(manager.call_count(), 2);
+        let bytes = src_store.export_vault_for_backup().expect("export vault");
 
-        cleanup_test_storage(&root);
-        cleanup_test_storage(&export_dir);
-    }
+        // Write to a temp file and import into a fresh store.
+        let backup_path = src_root.join("roundtrip_backup.sqlite");
+        std::fs::write(&backup_path, &bytes).expect("write backup file");
 
-    #[test]
-    fn test_delete_credential_triggers_backup_notification() {
-        use world_id_core::Credential as CoreCredential;
+        let dst_root = temp_root_path();
+        let dst_provider = InMemoryStorageProvider::new(&dst_root);
+        let dst_store =
+            CredentialStore::from_provider(&dst_provider).expect("create dst store");
+        dst_store.init(42, 1000).expect("init dst store");
 
-        let (store, manager, root, export_dir) = setup_store_with_backup();
+        dst_store
+            .import_vault_from_backup(backup_path.to_string_lossy().to_string())
+            .expect("import vault");
 
-        let cred: Credential = CoreCredential::new()
-            .issuer_schema_id(100)
-            .genesis_issued_at(1000)
-            .into();
-        store
-            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
-            .expect("store credential");
-        assert_eq!(manager.call_count(), 1);
+        let (imported_cred, imported_bf) = dst_store
+            .get_credential(100, 1000)
+            .expect("get credential")
+            .expect("credential should exist");
+        assert_eq!(imported_cred.issuer_schema_id(), 100);
+        assert_eq!(imported_bf.to_bytes(), FieldElement::from(7u64).to_bytes());
 
-        let credentials = store.list_credentials(None, 1000).expect("list");
-        let credential_id = credentials[0].credential_id;
-
-        store
-            .delete_credential(credential_id)
-            .expect("delete credential");
-        assert_eq!(manager.call_count(), 2);
-
-        cleanup_test_storage(&root);
-        cleanup_test_storage(&export_dir);
-    }
-
-    #[test]
-    fn test_delete_all_empty_skips_backup_notification() {
-        let (store, manager, root, export_dir) = setup_store_with_backup();
-
-        // No credentials stored — delete returns 0, no notification expected.
-        let deleted = store
-            .danger_delete_all_credentials()
-            .expect("delete all on empty");
-        assert_eq!(deleted, 0);
-        assert_eq!(manager.call_count(), 0);
-
-        cleanup_test_storage(&root);
-        cleanup_test_storage(&export_dir);
-    }
-
-    #[test]
-    fn test_multiple_stores_trigger_multiple_notifications() {
-        use world_id_core::Credential as CoreCredential;
-
-        let (store, manager, root, export_dir) = setup_store_with_backup();
-
-        for schema_id in [100u64, 200, 300] {
-            let cred: Credential = CoreCredential::new()
-                .issuer_schema_id(schema_id)
-                .genesis_issued_at(1000)
-                .into();
-            store
-                .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
-                .expect("store credential");
-        }
-
-        assert_eq!(manager.call_count(), 3);
-
-        cleanup_test_storage(&root);
-        cleanup_test_storage(&export_dir);
+        std::fs::remove_file(&backup_path).ok();
+        cleanup_test_storage(&src_root);
+        cleanup_test_storage(&dst_root);
     }
 }
