@@ -9,34 +9,15 @@ use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
 use super::traits::StorageProvider;
-use super::traits::{AtomicBlobStore, DeviceKeystore, WalletKitBackupManager};
+use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
 use crate::{Credential, FieldElement};
-
-/// No-op backup manager used as the default before the host app registers
-/// a real implementation. All methods are no-ops.
-struct NoopBackupManager;
-
-impl WalletKitBackupManager for NoopBackupManager {
-    fn dest_dir(&self) -> String {
-        String::new()
-    }
-
-    fn on_vault_changed(&self, _vault_file_path: String) -> StorageResult<()> {
-        Ok(())
-    }
-}
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
-    /// Holds the active backup manager. Defaults to [`NoopBackupManager`].
-    /// The lock is held for the entire export+callback path inside
-    /// `notify_vault_changed`, which serializes concurrent notifications
-    /// so that backups are always delivered in mutation order.
-    backup: Mutex<Arc<dyn WalletKitBackupManager>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
