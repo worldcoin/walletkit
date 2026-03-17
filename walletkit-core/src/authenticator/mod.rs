@@ -8,10 +8,10 @@ use alloy_primitives::Address;
 use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
-    api_types::{GatewayErrorCode, GatewayRequestState},
+    api_types::{GatewayErrorCode, GatewayRequestState, GatewayStatusResponse},
     primitives::Config,
     Authenticator as CoreAuthenticator, Credential as CoreCredential,
-    InitializingAuthenticator as CoreInitializingAuthenticator,
+    EdDSAPublicKey, InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
 #[cfg(feature = "storage")]
@@ -121,6 +121,29 @@ fn load_nullifier_material_from_cache(
     ))
 }
 
+/// Parses a compressed off-chain `EdDSA` public key from a 32-byte little-endian byte slice.
+///
+/// # Errors
+/// Returns an error if the bytes are not exactly 32 bytes or cannot be decompressed.
+fn parse_compressed_pubkey(
+    bytes: &[u8],
+) -> Result<EdDSAPublicKey, WalletKitError> {
+    let compressed: [u8; 32] =
+        bytes.try_into().map_err(|_| WalletKitError::InvalidInput {
+            attribute: "new_authenticator_pubkey_bytes".to_string(),
+            reason: format!(
+                "Expected 32 bytes for compressed public key, got {}",
+                bytes.len()
+            ),
+        })?;
+    EdDSAPublicKey::from_compressed_bytes(compressed).map_err(|e| {
+        WalletKitError::InvalidInput {
+            attribute: "new_authenticator_pubkey_bytes".to_string(),
+            reason: format!("Invalid compressed public key: {e}"),
+        }
+    })
+}
+
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator {
@@ -219,6 +242,137 @@ impl Authenticator {
     ) -> Result<Vec<u8>, WalletKitError> {
         let signature = self.inner.danger_sign_challenge(challenge)?;
         Ok(signature.as_bytes().to_vec())
+    }
+
+    /// Inserts a new authenticator to the account.
+    ///
+    /// The current authenticator signs the request to authorize adding a new authenticator.
+    /// The new authenticator will be registered in the `WorldIDRegistry` contract and can
+    /// subsequently sign operations on behalf of the same World ID.
+    ///
+    /// # Arguments
+    /// * `new_authenticator_pubkey_bytes` - The compressed off-chain `EdDSA` public key of the new
+    ///   authenticator (32 bytes, little-endian).
+    /// * `new_authenticator_address` - The on-chain Ethereum address (hex string) of the new
+    ///   authenticator.
+    ///
+    /// # Returns
+    /// A gateway request ID that can be used with [`poll_operation_status`](Self::poll_operation_status)
+    /// to track the on-chain finalization of the operation.
+    ///
+    /// # Errors
+    /// - Will error if the compressed public key bytes are invalid or not 32 bytes.
+    /// - Will error if the address string is not a valid hex address.
+    /// - Will error if there are network issues communicating with the indexer or gateway.
+    /// - Will error if the maximum number of authenticators has been reached.
+    pub async fn insert_authenticator(
+        &self,
+        new_authenticator_pubkey_bytes: Vec<u8>,
+        new_authenticator_address: String,
+    ) -> Result<String, WalletKitError> {
+        let new_address =
+            Address::parse_from_ffi(&new_authenticator_address, "new_authenticator_address")?;
+        let new_pubkey = parse_compressed_pubkey(&new_authenticator_pubkey_bytes)?;
+        Ok(self.inner.insert_authenticator(new_pubkey, new_address).await?)
+    }
+
+    /// Updates an existing authenticator slot with a new authenticator.
+    ///
+    /// The current authenticator signs the request to authorize replacing the authenticator
+    /// at the specified slot index.
+    ///
+    /// # Arguments
+    /// * `old_authenticator_address` - The on-chain address (hex string) of the authenticator being replaced.
+    /// * `new_authenticator_address` - The on-chain address (hex string) of the new authenticator.
+    /// * `new_authenticator_pubkey_bytes` - The compressed off-chain `EdDSA` public key of the new
+    ///   authenticator (32 bytes, little-endian).
+    /// * `index` - The pubkey slot index of the authenticator being replaced.
+    ///
+    /// # Returns
+    /// A gateway request ID that can be used with [`poll_operation_status`](Self::poll_operation_status).
+    ///
+    /// # Errors
+    /// - Will error if the compressed public key bytes are invalid.
+    /// - Will error if the address strings are not valid hex addresses.
+    /// - Will error if the index is out of bounds.
+    /// - Will error if there are network issues.
+    pub async fn update_authenticator(
+        &self,
+        old_authenticator_address: String,
+        new_authenticator_address: String,
+        new_authenticator_pubkey_bytes: Vec<u8>,
+        index: u32,
+    ) -> Result<String, WalletKitError> {
+        let old_address =
+            Address::parse_from_ffi(&old_authenticator_address, "old_authenticator_address")?;
+        let new_address =
+            Address::parse_from_ffi(&new_authenticator_address, "new_authenticator_address")?;
+        let new_pubkey = parse_compressed_pubkey(&new_authenticator_pubkey_bytes)?;
+        Ok(self.inner.update_authenticator(old_address, new_address, new_pubkey, index).await?)
+    }
+
+    /// Removes an authenticator from the account.
+    ///
+    /// The current authenticator signs the request to authorize removing the authenticator
+    /// at the specified slot index. An authenticator can remove itself or any other authenticator
+    /// on the same account.
+    ///
+    /// # Arguments
+    /// * `authenticator_address` - The on-chain address (hex string) of the authenticator to remove.
+    /// * `index` - The pubkey slot index of the authenticator being removed.
+    ///
+    /// # Returns
+    /// A gateway request ID that can be used with [`poll_operation_status`](Self::poll_operation_status).
+    ///
+    /// # Errors
+    /// - Will error if the address string is not a valid hex address.
+    /// - Will error if the index is out of bounds or there is no authenticator at that slot.
+    /// - Will error if there are network issues.
+    pub async fn remove_authenticator(
+        &self,
+        authenticator_address: String,
+        index: u32,
+    ) -> Result<String, WalletKitError> {
+        let auth_address =
+            Address::parse_from_ffi(&authenticator_address, "authenticator_address")?;
+        Ok(self.inner.remove_authenticator(auth_address, index).await?)
+    }
+
+    /// Polls the status of a gateway operation (insert, update, or remove authenticator).
+    ///
+    /// Use the request ID returned by [`insert_authenticator`](Self::insert_authenticator),
+    /// [`update_authenticator`](Self::update_authenticator), or
+    /// [`remove_authenticator`](Self::remove_authenticator) to track the operation.
+    ///
+    /// # Errors
+    /// Will error if the network request fails or the gateway returns an error.
+    pub async fn poll_operation_status(
+        &self,
+        request_id: String,
+    ) -> Result<RegistrationStatus, WalletKitError> {
+        let url = format!(
+            "{}/status/{}",
+            self.inner.config.gateway_url(),
+            request_id
+        );
+        let client = reqwest::Client::new(); // TODO: reuse client
+        let resp = client.get(&url).send().await?;
+        let status = resp.status();
+
+        if status.is_success() {
+            let body: GatewayStatusResponse = resp.json().await?;
+            Ok(body.status.into())
+        } else {
+            let body = resp
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("Unable to read response body: {e}"));
+            Err(WalletKitError::NetworkError {
+                url,
+                error: body,
+                status: Some(status.as_u16()),
+            })
+        }
     }
 }
 
@@ -534,8 +688,61 @@ impl InitializingAuthenticator {
     }
 }
 
-#[cfg(all(test, feature = "storage"))]
+#[cfg(test)]
 mod tests {
+    use super::*;
+    use world_id_core::OnchainKeyRepresentable;
+
+    fn test_pubkey(seed_byte: u8) -> EdDSAPublicKey {
+        let signer = world_id_core::primitives::Signer::from_seed_bytes(&[seed_byte; 32])
+            .unwrap();
+        signer.offchain_signer_pubkey()
+    }
+
+    fn compressed_pubkey_bytes(seed_byte: u8) -> Vec<u8> {
+        let pk = test_pubkey(seed_byte);
+        let u256 = pk.to_ethereum_representation().unwrap();
+        u256.to_le_bytes_vec()
+    }
+
+    // ── Compressed pubkey parsing ──
+
+    #[test]
+    fn test_parse_compressed_pubkey_valid() {
+        let bytes = compressed_pubkey_bytes(1);
+        assert_eq!(bytes.len(), 32);
+        let result = parse_compressed_pubkey(&bytes);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_compressed_pubkey_wrong_length() {
+        let short = vec![0u8; 16];
+        let result = parse_compressed_pubkey(&short);
+        assert!(matches!(
+            result,
+            Err(WalletKitError::InvalidInput { attribute, .. })
+                if attribute == "new_authenticator_pubkey_bytes"
+        ));
+    }
+
+    #[test]
+    fn test_parse_compressed_pubkey_roundtrip() {
+        let original = test_pubkey(42);
+        let bytes = {
+            let u256 = original.to_ethereum_representation().unwrap();
+            u256.to_le_bytes_vec()
+        };
+        let recovered = parse_compressed_pubkey(&bytes).unwrap();
+        assert_eq!(original.pk, recovered.pk);
+    }
+
+}
+
+// ── Storage-dependent tests ──
+
+#[cfg(all(test, feature = "storage"))]
+mod storage_tests {
     use super::*;
     use crate::storage::cache_embedded_groth16_material;
     use crate::storage::tests_utils::{
@@ -591,6 +798,143 @@ mod tests {
             .await
             .unwrap();
         drop(mock_server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_poll_operation_status_finalized() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/status/req_abc")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "request_id": "req_abc",
+                    "kind": "insert_authenticator",
+                    "status": { "state": "finalized", "tx_hash": "0x1234" }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        // Create an Authenticator pointing at this mock server
+        let mut rpc_server = mockito::Server::new_async().await;
+        rpc_server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let seed = [3u8; 32];
+        let config = Config::new(
+            Some(rpc_server.url()),
+            480,
+            address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
+            "https://unused-indexer.example.com".to_string(),
+            server.url(),
+            vec![],
+            2,
+        )
+        .unwrap();
+        let config = serde_json::to_string(&config).unwrap();
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("store");
+        store.init(42, 100).expect("init storage");
+        cache_embedded_groth16_material(store.storage_paths().expect("paths"))
+            .expect("cache material");
+
+        let paths = store.storage_paths().expect("paths");
+        let auth = Authenticator::init(&seed, &config, paths, Arc::new(store))
+            .await
+            .unwrap();
+
+        let status = auth
+            .poll_operation_status("req_abc".to_string())
+            .await
+            .unwrap();
+        assert!(matches!(status, RegistrationStatus::Finalized));
+
+        mock.assert_async().await;
+        drop(server);
+        drop(rpc_server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_poll_operation_status_gateway_error() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/status/req_bad")
+            .with_status(500)
+            .with_body("internal server error")
+            .create_async()
+            .await;
+
+        let mut rpc_server = mockito::Server::new_async().await;
+        rpc_server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let seed = [4u8; 32];
+        let config = Config::new(
+            Some(rpc_server.url()),
+            480,
+            address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
+            "https://unused-indexer.example.com".to_string(),
+            server.url(),
+            vec![],
+            2,
+        )
+        .unwrap();
+        let config = serde_json::to_string(&config).unwrap();
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("store");
+        store.init(42, 100).expect("init storage");
+        cache_embedded_groth16_material(store.storage_paths().expect("paths"))
+            .expect("cache material");
+
+        let paths = store.storage_paths().expect("paths");
+        let auth = Authenticator::init(&seed, &config, paths, Arc::new(store))
+            .await
+            .unwrap();
+
+        let result = auth
+            .poll_operation_status("req_bad".to_string())
+            .await;
+        assert!(matches!(
+            result,
+            Err(WalletKitError::NetworkError { status: Some(500), .. })
+        ));
+
+        mock.assert_async().await;
+        drop(server);
+        drop(rpc_server);
         cleanup_test_storage(&root);
     }
 }
