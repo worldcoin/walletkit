@@ -157,14 +157,14 @@ pub(super) fn get_cache_entry(
     if let Some(insertion_before) = insertion_before {
         let insertion_before = to_i64(insertion_before, "insertion_before")?;
         conn.query_row_optional(
-            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2 AND inserted_at < ?3",
+            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at >= ?2 AND inserted_at < ?3",
             params![key, now, insertion_before],
             |stmt| Ok(stmt.column_blob(0)),
         )
         .map_err(|err| map_db_err(&err))
     } else {
         conn.query_row_optional(
-            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2",
+            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at >= ?2",
             params![key, now],
             |stmt| Ok(stmt.column_blob(0)),
         )
@@ -184,7 +184,7 @@ pub(super) fn get_cache_entry_tx(
     if let Some(insertion_before) = insertion_before {
         let insertion_before = to_i64(insertion_before, "insertion_before")?;
         let mut stmt = tx.prepare(
-            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2 AND inserted_at < ?3",
+            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at >= ?2 AND inserted_at < ?3",
         ).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![key, now, insertion_before])
             .map_err(|err| map_db_err(&err))?;
@@ -194,7 +194,7 @@ pub(super) fn get_cache_entry_tx(
         }
     } else {
         let mut stmt = tx.prepare(
-            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at > ?2",
+            "SELECT value_bytes FROM cache_entries WHERE key_bytes = ?1 AND expires_at >= ?2",
         ).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![key, now])
             .map_err(|err| map_db_err(&err))?;
