@@ -250,9 +250,13 @@ impl CredentialStore {
     /// Returns an error if the store is not initialized or the export fails.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
-        let inner = self.lock_inner()?;
-        inner.cleanup_stale_backup_files();
-        let path = inner.export_vault_for_backup_to_file()?;
+        // Hold the lock only for the SQLCipher export; release it before
+        // the filesystem read and cleanup since the temp path is UUID-unique.
+        let path = {
+            let inner = self.lock_inner()?;
+            inner.cleanup_stale_backup_files();
+            inner.export_vault_for_backup_to_file()?
+        };
         let _cleanup = CleanupFile(path.clone());
 
         std::fs::read(&path).map_err(|e| {
@@ -270,12 +274,16 @@ impl CredentialStore {
     /// Returns an error if the store is not initialized or the import fails.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn import_vault_from_backup(&self, backup_bytes: Vec<u8>) -> StorageResult<()> {
-        let inner = self.lock_inner()?;
-        inner.cleanup_stale_backup_files();
-        let path = inner.write_temp_backup_file(&backup_bytes)?;
+        // Write the temp file without holding the store lock — only the
+        // SQLCipher import needs the lock, and the temp path is UUID-unique.
+        let path = {
+            let inner = self.lock_inner()?;
+            inner.cleanup_stale_backup_files();
+            inner.write_temp_backup_file(&backup_bytes)?
+        };
         let _cleanup = CleanupFile(path.clone());
 
-        inner.import_vault_from_file(&path)
+        self.lock_inner()?.import_vault_from_file(&path)
     }
 
     /// **Development only.** Permanently deletes all stored credentials and their
@@ -1332,7 +1340,8 @@ mod tests {
 
         // Simulate stale temp files left by a previous crash.
         let worldid_dir = store.storage_paths().unwrap().worldid_dir().to_path_buf();
-        let stale_path = worldid_dir.join(format!("{VAULT_BACKUP_TEMP_PREFIX}stale.sqlite"));
+        let stale_path =
+            worldid_dir.join(format!("{VAULT_BACKUP_TEMP_PREFIX}stale.sqlite"));
         std::fs::write(&stale_path, b"stale plaintext data").expect("write stale file");
         assert!(stale_path.exists(), "stale file should exist before export");
 
