@@ -1,10 +1,32 @@
 //! Unit tests for the safe `SQLite` db wrapper.
 
+use std::sync::OnceLock;
+
 use super::*;
 use secrecy::SecretBox;
 
+/// Ensures sqlite3mc's global codec registration is complete before any test
+/// body runs.
+///
+/// sqlite3mc registers its cipher implementations the first time
+/// `sqlite3_open_v2` is called.  When the test binary runs all tests in
+/// parallel threads, two threads can race inside that one-time
+/// initialization and one of them sees an "unknown cipher 'chacha20'"
+/// error even though chacha20 is compiled in.
+///
+/// Calling this at the start of every test ensures exactly one thread
+/// performs the first open (all others block on the `OnceLock`) so that
+/// by the time any test-specific code runs, sqlite3mc is fully initialized.
+fn init_sqlite() {
+    static INIT: OnceLock<()> = OnceLock::new();
+    INIT.get_or_init(|| {
+        drop(Connection::open_in_memory().expect("sqlite3mc pre-init"));
+    });
+}
+
 #[test]
 fn test_open_in_memory() {
+    init_sqlite();
     let conn = Connection::open_in_memory().expect("open in-memory db");
     conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT);")
         .expect("create table");
@@ -23,6 +45,7 @@ fn test_open_in_memory() {
 
 #[test]
 fn test_query_row_optional_none() {
+    init_sqlite();
     let conn = Connection::open_in_memory().expect("open in-memory db");
     conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY);")
         .expect("create table");
@@ -36,6 +59,7 @@ fn test_query_row_optional_none() {
 
 #[test]
 fn test_transaction_commit() {
+    init_sqlite();
     let conn = Connection::open_in_memory().expect("open in-memory db");
     conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY);")
         .expect("create table");
@@ -55,6 +79,7 @@ fn test_transaction_commit() {
 
 #[test]
 fn test_transaction_rollback_on_drop() {
+    init_sqlite();
     let conn = Connection::open_in_memory().expect("open in-memory db");
     conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY);")
         .expect("create table");
@@ -74,6 +99,7 @@ fn test_transaction_rollback_on_drop() {
 
 #[test]
 fn test_blob_round_trip() {
+    init_sqlite();
     let conn = Connection::open_in_memory().expect("open in-memory db");
     conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, data BLOB);")
         .expect("create table");
@@ -93,6 +119,7 @@ fn test_blob_round_trip() {
 
 #[test]
 fn test_null_handling() {
+    init_sqlite();
     let conn = Connection::open_in_memory().expect("open in-memory db");
     conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT);")
         .expect("create table");
@@ -111,6 +138,7 @@ fn test_null_handling() {
 
 #[test]
 fn test_cipher_encrypted_round_trip() {
+    init_sqlite();
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().join("cipher-test.sqlite");
     let key = SecretBox::init_with(|| [0xABu8; 32]);
@@ -148,6 +176,7 @@ fn test_cipher_encrypted_round_trip() {
 
 #[test]
 fn test_integrity_check() {
+    init_sqlite();
     let conn = Connection::open_in_memory().expect("open in-memory db");
     let ok = cipher::integrity_check(&conn).expect("check");
     assert!(ok);
