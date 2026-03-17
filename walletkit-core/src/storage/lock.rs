@@ -9,9 +9,9 @@
 
 use std::path::Path;
 
-use super::error::StorageResult;
 #[cfg(not(target_arch = "wasm32"))]
 use super::error::StorageError;
+use super::error::StorageResult;
 
 // WASM: no-op lock (single-threaded worker, SQLITE_THREADSAFE=0)
 

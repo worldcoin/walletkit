@@ -1,9 +1,9 @@
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{mpsc, Mutex};
 use std::{
     fmt,
     sync::{Arc, OnceLock},
 };
-#[cfg(not(target_arch = "wasm32"))]
-use std::sync::{mpsc, Mutex};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::thread;
