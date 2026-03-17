@@ -251,6 +251,7 @@ impl CredentialStore {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
         let inner = self.lock_inner()?;
+        inner.cleanup_stale_backup_files();
         let path = inner.export_vault_for_backup_to_file()?;
         let _cleanup = CleanupFile(path.clone());
 
@@ -270,6 +271,7 @@ impl CredentialStore {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn import_vault_from_backup(&self, backup_bytes: Vec<u8>) -> StorageResult<()> {
         let inner = self.lock_inner()?;
+        inner.cleanup_stale_backup_files();
         let path = inner.write_temp_backup_file(&backup_bytes)?;
         let _cleanup = CleanupFile(path.clone());
 
@@ -528,9 +530,14 @@ impl CredentialStoreInner {
     #[cfg(not(target_arch = "wasm32"))]
     fn write_temp_backup_file(&self, bytes: &[u8]) -> StorageResult<String> {
         let dest = self.temp_backup_path();
-        std::fs::write(&dest, bytes).map_err(|e| {
-            StorageError::VaultDb(format!("failed to write temp backup file: {e}"))
-        })?;
+        if let Err(e) = std::fs::write(&dest, bytes) {
+            // Best-effort cleanup of any partial write to avoid leaking
+            // plaintext data on disk (e.g. after ENOSPC).
+            let _ = std::fs::remove_file(&dest);
+            return Err(StorageError::VaultDb(format!(
+                "failed to write temp backup file: {e}"
+            )));
+        }
         Ok(dest.to_string_lossy().to_string())
     }
 
@@ -541,6 +548,29 @@ impl CredentialStoreInner {
         let state = self.state()?;
         let source = std::path::Path::new(backup_path);
         state.vault.import_plaintext(source, &guard)
+    }
+
+    /// Removes any stale plaintext backup temp files left behind by a
+    /// previous crash or hard kill. Best-effort — errors are logged.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn cleanup_stale_backup_files(&self) {
+        let dir = self.paths.worldid_dir();
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => return,
+        };
+        for entry in entries.flatten() {
+            if let Some(name) = entry.file_name().to_str() {
+                if name.starts_with(VAULT_BACKUP_TEMP_PREFIX) {
+                    if let Err(e) = std::fs::remove_file(entry.path()) {
+                        tracing::error!(
+                            "Failed to clean up stale backup file {}: {e}",
+                            entry.path().display()
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /// Returns a unique temp file path in the worldid directory for backup operations.
@@ -1243,5 +1273,92 @@ mod tests {
 
         cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);
+    }
+
+    #[test]
+    fn test_export_cleans_up_temp_file() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init store");
+
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+
+        let _bytes = store.export_vault_for_backup().expect("export vault");
+
+        // After export, no temp files should remain in the worldid directory.
+        let worldid_dir = store.storage_paths().unwrap().worldid_dir().to_path_buf();
+        let stale: Vec<_> = std::fs::read_dir(&worldid_dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .is_some_and(|n| n.starts_with(VAULT_BACKUP_TEMP_PREFIX))
+            })
+            .collect();
+        assert!(
+            stale.is_empty(),
+            "temp backup files should be cleaned up after export, found: {stale:?}"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_stale_backup_files_cleaned_on_next_operation() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init store");
+
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+
+        // Simulate stale temp files left by a previous crash.
+        let worldid_dir = store.storage_paths().unwrap().worldid_dir().to_path_buf();
+        let stale_path = worldid_dir.join(format!("{VAULT_BACKUP_TEMP_PREFIX}stale.sqlite"));
+        std::fs::write(&stale_path, b"stale plaintext data").expect("write stale file");
+        assert!(stale_path.exists(), "stale file should exist before export");
+
+        // The next backup operation should clean up the stale file.
+        let _bytes = store.export_vault_for_backup().expect("export vault");
+
+        assert!(
+            !stale_path.exists(),
+            "stale backup file should be cleaned up during export"
+        );
+
+        // Also verify no other temp files linger.
+        let remaining: Vec<_> = std::fs::read_dir(&worldid_dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .is_some_and(|n| n.starts_with(VAULT_BACKUP_TEMP_PREFIX))
+            })
+            .collect();
+        assert!(
+            remaining.is_empty(),
+            "no temp backup files should remain after export, found: {remaining:?}"
+        );
+
+        cleanup_test_storage(&root);
     }
 }
