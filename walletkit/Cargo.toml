@@ -28,6 +28,9 @@ default = ["issuers"]
 semaphore = ["walletkit-core/semaphore"]
 compress-zkeys = ["walletkit-core/compress-zkeys"]
 issuers = ["walletkit-core/issuers"]
+# Embeds zkeys into the binary, enabling `Groth16Materials::from_embedded`.
+# See walletkit-core's `embed-zkeys` feature for details.
+embed-zkeys = ["walletkit-core/embed-zkeys"]
 
 # v3 features
 v3 = ["walletkit-core/v3"]

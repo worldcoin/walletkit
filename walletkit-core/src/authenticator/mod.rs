@@ -26,7 +26,7 @@ mod with_storage;
 
 /// Pre-loaded Groth16 proving material (query circuit + nullifier circuit).
 ///
-/// Construct via [`Groth16Materials::from_embedded`] (all platforms) or
+/// Construct via [`Groth16Materials::from_embedded`] (requires the `embed-zkeys` feature) or
 /// [`Groth16Materials::from_cache`] (native only, loads from filesystem).
 #[derive(Clone, uniffi::Object)]
 pub struct Groth16Materials {
@@ -40,12 +40,17 @@ impl std::fmt::Debug for Groth16Materials {
     }
 }
 
+/// Constructors that require embedded zkeys compiled into the binary.
+///
+/// Enable the `embed-zkeys` Cargo feature to activate these.
+#[cfg(feature = "embed-zkeys")]
 #[uniffi::export]
 impl Groth16Materials {
     /// Loads Groth16 material from the embedded (compiled-in) zkeys and graphs.
     ///
-    /// This works on every platform including WASM. The material is baked into
-    /// the binary at compile time so no filesystem access is required.
+    /// Requires the `embed-zkeys` feature. The material is baked into the binary at
+    /// compile time so no filesystem access is required, and this works on every
+    /// platform including WASM.
     ///
     /// # Errors
     ///
@@ -67,10 +72,17 @@ impl Groth16Materials {
             nullifier: Arc::new(nullifier),
         })
     }
+}
 
+/// Constructors that load Groth16 material from the native filesystem.
+///
+/// Not available on WASM targets (no filesystem access).
+#[cfg(not(target_arch = "wasm32"))]
+#[uniffi::export]
+impl Groth16Materials {
     /// Loads Groth16 material from cached files on disk.
     ///
-    /// Use [`cache_embedded_groth16_material`](crate::storage::cache_embedded_groth16_material)
+    /// Use `storage::cache_embedded_groth16_material` (requires the `embed-zkeys` feature)
     /// to populate the cache before calling this.
     ///
     /// Not available on WASM (no filesystem).
@@ -78,7 +90,6 @@ impl Groth16Materials {
     /// # Errors
     ///
     /// Returns an error if the cached files cannot be read or verified.
-    #[cfg(not(target_arch = "wasm32"))]
     #[uniffi::constructor]
     #[allow(clippy::needless_pass_by_value)]
     pub fn from_cache(paths: Arc<StoragePaths>) -> Result<Self, WalletKitError> {
@@ -735,6 +746,7 @@ mod tests {
         assert!(RecoveryData::from_seed(&[]).is_err());
     }
 
+    #[cfg(feature = "embed-zkeys")]
     #[tokio::test]
     async fn test_init_with_config_and_materials() {
         let _ = rustls::crypto::ring::default_provider().install_default();

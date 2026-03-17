@@ -1,7 +1,9 @@
 use std::{
     fmt,
-    sync::{mpsc, Arc, Mutex, OnceLock},
+    sync::{Arc, OnceLock},
 };
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{mpsc, Mutex};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::thread;
@@ -119,6 +121,10 @@ impl tracing::field::Visit for EventFieldVisitor {
 /// Forwards walletkit tracing events to the foreign logger.
 struct ForeignLoggerLayer;
 
+// On native targets, log events flow through a channel to avoid making FFI
+// calls from within a UniFFI future-poll context.  On WASM the Logger is
+// called directly because there is no background thread support.
+#[cfg(not(target_arch = "wasm32"))]
 struct LogEvent {
     level: LogLevel,
     message: String,
@@ -134,6 +140,7 @@ struct LogEvent {
 // the tracing layer never makes an FFI call — it only pushes to an in-process
 // queue — and the dedicated delivery thread calls `Logger::log` from a clean
 // stack with no active FFI frames.
+#[cfg(not(target_arch = "wasm32"))]
 static LOG_CHANNEL: OnceLock<Mutex<mpsc::Sender<LogEvent>>> = OnceLock::new();
 #[cfg(target_arch = "wasm32")]
 static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
