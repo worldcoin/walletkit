@@ -23,10 +23,24 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
+use std::sync::{Mutex, OnceLock};
 
 use zeroize::Zeroize;
 
 use super::error::{DbError, DbResult};
+
+// sqlite3mc_cipher_name() in SQLite3MultipleCiphers uses a process-global static
+// char buffer and returns a raw pointer into it. When multiple threads call
+// sqlite3_open_v2 concurrently, they race on this shared buffer, causing
+// intermittent "unknown cipher 'chacha20'" errors even though the cipher is valid.
+//
+// This mutex serializes all sqlite3_open_v2 calls to prevent the race.
+// Upstream bug: https://github.com/utelle/SQLite3MultipleCiphers/issues/228
+// This workaround can be removed once a fixed sqlite3mc release is integrated.
+fn open_mutex() -> &'static Mutex<()> {
+    static OPEN_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
+    OPEN_MUTEX.get_or_init(|| Mutex::new(()))
+}
 
 // -- SQLite constants (plain `i32`, no C types leaked to callers) -------------
 
@@ -81,13 +95,23 @@ impl RawDb {
 
         // Safety: c_path is a valid null-terminated string. ptr is a local
         // out-pointer that SQLite writes to. VFS is null (use default).
-        let rc = unsafe {
-            raw::sqlite3_open_v2(
-                c_path.as_ptr(),
-                &raw mut ptr,
-                flags as c_int,
-                std::ptr::null(),
-            )
+        //
+        // The lock serializes concurrent open calls to avoid the sqlite3mc
+        // cipher-name race (see `open_mutex` for details). It is released as
+        // soon as sqlite3_open_v2 returns — operations on established
+        // connections do not need serialization.
+        let rc = {
+            let _guard = open_mutex()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            unsafe {
+                raw::sqlite3_open_v2(
+                    c_path.as_ptr(),
+                    &raw mut ptr,
+                    flags as c_int,
+                    std::ptr::null(),
+                )
+            }
         };
 
         if rc != SQLITE_OK as c_int {
