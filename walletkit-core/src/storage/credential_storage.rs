@@ -18,6 +18,21 @@ use crate::{Credential, FieldElement};
 /// backup export and import. A UUID is appended to avoid collisions.
 const VAULT_BACKUP_TEMP_PREFIX: &str = "vault_backup_plaintext_";
 
+/// RAII guard that deletes a sensitive plaintext file on drop — regardless
+/// of whether we exit normally, return early, or panic.
+struct CleanupFile(String);
+
+impl Drop for CleanupFile {
+    fn drop(&mut self) {
+        if let Err(e) = std::fs::remove_file(&self.0) {
+            tracing::error!(
+                "Failed to delete plaintext vault temp file {}: {e}",
+                self.0
+            );
+        }
+    }
+}
+
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
@@ -225,8 +240,7 @@ impl CredentialStore {
     /// SQLite database for backup.
     ///
     /// The host app is responsible for persisting or uploading the returned
-    /// bytes (e.g. writing to a temporary file and handing it to the platform
-    /// backup system).
+    /// bytes
     ///
     /// # Errors
     ///
@@ -234,17 +248,11 @@ impl CredentialStore {
     pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
         let inner = self.lock_inner()?;
         let path = inner.export_vault_for_backup_to_file()?;
+        let _cleanup = CleanupFile(path.clone());
 
-        let bytes = std::fs::read(&path).map_err(|e| {
+        std::fs::read(&path).map_err(|e| {
             StorageError::VaultDb(format!("failed to read exported vault: {e}"))
-        });
-
-        // Always clean up the temp file, even if the read failed.
-        if let Err(e) = std::fs::remove_file(&path) {
-            tracing::error!("Failed to delete temp vault export {path}: {e}");
-        }
-
-        bytes
+        })
     }
 
     /// Imports credentials from an in-memory plaintext vault backup.
@@ -258,15 +266,9 @@ impl CredentialStore {
     pub fn import_vault_from_backup(&self, backup_bytes: Vec<u8>) -> StorageResult<()> {
         let inner = self.lock_inner()?;
         let path = inner.write_temp_backup_file(&backup_bytes)?;
+        let _cleanup = CleanupFile(path.clone());
 
-        let result = inner.import_vault_from_file(&path);
-
-        // Always clean up the temp file.
-        if let Err(e) = std::fs::remove_file(&path) {
-            tracing::error!("Failed to delete temp vault import {path}: {e}");
-        }
-
-        result
+        inner.import_vault_from_file(&path)
     }
 
     /// **Development only.** Permanently deletes all stored credentials and their
@@ -956,8 +958,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store =
-            CredentialStore::from_provider(&provider).expect("create store");
+        let store = CredentialStore::from_provider(&provider).expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let blinding_factor = FieldElement::from(7u64);
@@ -991,8 +992,7 @@ mod tests {
     fn test_import_vault_backup_invalid_bytes_fails() {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store =
-            CredentialStore::from_provider(&provider).expect("create store");
+        let store = CredentialStore::from_provider(&provider).expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let result = store.import_vault_from_backup(b"not a sqlite database".to_vec());
@@ -1033,8 +1033,7 @@ mod tests {
             "blob_objects",
             "update this test if BACKUP_TABLES order changes"
         );
-        let backup_conn = Connection::open(&corrupt_path, false)
-            .expect("open backup");
+        let backup_conn = Connection::open(&corrupt_path, false).expect("open backup");
         backup_conn
             .execute(
                 "INSERT INTO blob_objects (content_id, blob_kind, created_at, bytes)
