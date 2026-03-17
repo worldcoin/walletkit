@@ -101,9 +101,7 @@ impl RawDb {
         // soon as sqlite3_open_v2 returns — operations on established
         // connections do not need serialization.
         let rc = {
-            let _guard = open_mutex()
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
+            let _guard = open_mutex().lock().unwrap_or_else(|e| e.into_inner());
             unsafe {
                 raw::sqlite3_open_v2(
                     c_path.as_ptr(),
