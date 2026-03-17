@@ -91,7 +91,13 @@ impl Groth16Materials {
     ///
     /// Returns an error if the cached files cannot be read or verified.
     #[uniffi::constructor]
-    #[allow(clippy::needless_pass_by_value)]
+    // `Arc<StoragePaths>` must be taken by value: UniFFI constructors receive
+    // object arguments as owned `Arc`s across the FFI boundary, so passing by
+    // reference is not an option here.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI constructors require owned Arc arguments"
+    )]
     pub fn from_cache(paths: Arc<StoragePaths>) -> Result<Self, WalletKitError> {
         let query_zkey = paths.query_zkey_path();
         let nullifier_zkey = paths.nullifier_zkey_path();
