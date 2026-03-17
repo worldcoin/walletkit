@@ -510,18 +510,37 @@ impl CredentialStoreInner {
     fn export_vault_for_backup_to_file(&self) -> StorageResult<String> {
         let guard = self.guard()?;
         let state = self.state()?;
-        let filename =
-            format!("vault_backup_plaintext_{}.sqlite", uuid::Uuid::new_v4());
-        let dest = self.paths.worldid_dir().join(filename);
+        let dest = self.temp_backup_path();
         state.vault.export_plaintext(&dest, &guard)?;
         Ok(dest.to_string_lossy().to_string())
     }
 
-    fn import_vault_from_backup(&self, backup_path: &str) -> StorageResult<()> {
+    /// Writes raw bytes to a temporary file in the worldid directory.
+    /// Returns the path. The caller is responsible for cleanup.
+    fn write_temp_backup_file(&self, bytes: &[u8]) -> StorageResult<String> {
+        let dest = self.temp_backup_path();
+        std::fs::write(&dest, bytes).map_err(|e| {
+            StorageError::VaultDb(format!("failed to write temp backup file: {e}"))
+        })?;
+        Ok(dest.to_string_lossy().to_string())
+    }
+
+    /// Imports from a plaintext vault file on disk.
+    fn import_vault_from_file(&self, backup_path: &str) -> StorageResult<()> {
         let guard = self.guard()?;
         let state = self.state()?;
         let source = std::path::Path::new(backup_path);
         state.vault.import_plaintext(source, &guard)
+    }
+
+    /// Returns a unique temp file path in the worldid directory for backup operations.
+    fn temp_backup_path(&self) -> std::path::PathBuf {
+        let filename = format!(
+            "{}{}.sqlite",
+            VAULT_BACKUP_TEMP_PREFIX,
+            uuid::Uuid::new_v4()
+        );
+        self.paths.worldid_dir().join(filename)
     }
 
     /// Deletes all stored credentials from the vault.
@@ -805,69 +824,43 @@ mod tests {
     fn test_export_and_import_vault_backup() {
         use world_id_core::Credential as CoreCredential;
 
-        // --- Source store: create and populate ---
         let src_root = temp_root_path();
         let src_provider = InMemoryStorageProvider::new(&src_root);
-        let src_paths = src_provider.paths().as_ref().clone();
-        let src_keystore = src_provider.keystore();
-        let src_blob_store = src_provider.blob_store();
-
-        let mut src_inner =
-            CredentialStoreInner::new(src_paths, src_keystore, src_blob_store)
-                .expect("create src inner");
-        src_inner.init(42, 1000).expect("init src storage");
+        let src_store =
+            CredentialStore::from_provider(&src_provider).expect("create src store");
+        src_store.init(42, 1000).expect("init src storage");
 
         let issuer_schema_id = 100u64;
         let blinding_factor = FieldElement::from(7u64);
-        let expires_at = 9999u64;
-        let core_cred = CoreCredential::new()
+        let cred: Credential = CoreCredential::new()
             .issuer_schema_id(issuer_schema_id)
-            .genesis_issued_at(1000);
-        let credential: Credential = core_cred.into();
+            .genesis_issued_at(1000)
+            .into();
 
-        // Store a credential in the source store
-        src_inner
-            .store_credential(&credential, &blinding_factor, expires_at, None, 1000)
+        src_store
+            .store_credential(&cred, &blinding_factor, 9999, None, 1000)
             .expect("store credential");
 
-        // Export plaintext vault
-        let backup_path = src_inner
-            .export_vault_for_backup_to_file()
-            .expect("export vault");
+        let bytes = src_store.export_vault_for_backup().expect("export vault");
+        assert!(!bytes.is_empty());
 
-        // Verify the export file exists
-        assert!(
-            std::path::Path::new(&backup_path).exists(),
-            "backup file should exist on disk"
-        );
-
-        // --- Destination store: create empty, then import ---
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
-        let dst_paths = dst_provider.paths().as_ref().clone();
-        let dst_keystore = dst_provider.keystore();
-        let dst_blob_store = dst_provider.blob_store();
+        let dst_store =
+            CredentialStore::from_provider(&dst_provider).expect("create dst store");
+        dst_store.init(42, 1000).expect("init dst storage");
 
-        let mut dst_inner =
-            CredentialStoreInner::new(dst_paths, dst_keystore, dst_blob_store)
-                .expect("create dst inner");
-        dst_inner.init(42, 1000).expect("init dst storage");
-
-        // Import from the backup
-        dst_inner
-            .import_vault_from_backup(&backup_path)
+        dst_store
+            .import_vault_from_backup(bytes)
             .expect("import vault");
 
-        // Verify credential data matches what was stored
-        let (imported_cred, imported_bf) = dst_inner
+        let (imported_cred, imported_bf) = dst_store
             .get_credential(issuer_schema_id, 1000)
             .expect("get credential")
             .expect("imported credential should exist");
         assert_eq!(imported_cred.issuer_schema_id(), issuer_schema_id);
         assert_eq!(imported_bf.to_bytes(), blinding_factor.to_bytes());
 
-        // Clean up
-        std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);
     }
@@ -878,21 +871,16 @@ mod tests {
 
         let src_root = temp_root_path();
         let src_provider = InMemoryStorageProvider::new(&src_root);
-        let src_paths = src_provider.paths().as_ref().clone();
-        let mut src_inner = CredentialStoreInner::new(
-            src_paths,
-            src_provider.keystore(),
-            src_provider.blob_store(),
-        )
-        .expect("create src inner");
-        src_inner.init(42, 1000).expect("init src storage");
+        let src_store =
+            CredentialStore::from_provider(&src_provider).expect("create src store");
+        src_store.init(42, 1000).expect("init src storage");
 
         // Store credential A (schema 100) without associated data
         let cred_a: Credential = CoreCredential::new()
             .issuer_schema_id(100)
             .genesis_issued_at(1000)
             .into();
-        src_inner
+        src_store
             .store_credential(&cred_a, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store cred A");
 
@@ -901,13 +889,12 @@ mod tests {
             .issuer_schema_id(200)
             .genesis_issued_at(2000)
             .into();
-        let associated_data = b"extra-payload-for-cred-b".to_vec();
-        src_inner
+        src_store
             .store_credential(
                 &cred_b,
                 &FieldElement::from(13u64),
                 9999,
-                Some(associated_data),
+                Some(b"extra-payload-for-cred-b".to_vec()),
                 2000,
             )
             .expect("store cred B");
@@ -917,62 +904,48 @@ mod tests {
             .issuer_schema_id(300)
             .genesis_issued_at(3000)
             .into();
-        src_inner
+        src_store
             .store_credential(&cred_c, &FieldElement::from(42u64), 9999, None, 3000)
             .expect("store cred C");
 
-        // Verify source has 3 credentials
-        let src_list = src_inner.list_credentials(None, 1000).expect("list src");
-        assert_eq!(src_list.len(), 3);
+        assert_eq!(src_store.list_credentials(None, 1000).unwrap().len(), 3);
 
         // Export and import into fresh store
-        let backup_path = src_inner
-            .export_vault_for_backup_to_file()
-            .expect("export vault");
+        let bytes = src_store.export_vault_for_backup().expect("export vault");
 
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
-        let dst_paths = dst_provider.paths().as_ref().clone();
-        let mut dst_inner = CredentialStoreInner::new(
-            dst_paths,
-            dst_provider.keystore(),
-            dst_provider.blob_store(),
-        )
-        .expect("create dst inner");
-        dst_inner.init(42, 1000).expect("init dst storage");
+        let dst_store =
+            CredentialStore::from_provider(&dst_provider).expect("create dst store");
+        dst_store.init(42, 1000).expect("init dst storage");
 
-        dst_inner
-            .import_vault_from_backup(&backup_path)
+        dst_store
+            .import_vault_from_backup(bytes)
             .expect("import vault");
 
-        // Verify all 3 credentials were imported
-        let dst_list = dst_inner.list_credentials(None, 1000).expect("list dst");
-        assert_eq!(dst_list.len(), 3);
+        assert_eq!(dst_store.list_credentials(None, 1000).unwrap().len(), 3);
 
-        // Verify credential data matches what was stored
-        let (cred_a, bf_a) = dst_inner
+        let (cred_a, bf_a) = dst_store
             .get_credential(100, 1000)
             .expect("get cred A")
             .expect("cred A should exist");
         assert_eq!(cred_a.issuer_schema_id(), 100);
         assert_eq!(bf_a.to_bytes(), FieldElement::from(7u64).to_bytes());
 
-        let (cred_b, bf_b) = dst_inner
+        let (cred_b, bf_b) = dst_store
             .get_credential(200, 2000)
             .expect("get cred B")
             .expect("cred B should exist");
         assert_eq!(cred_b.issuer_schema_id(), 200);
         assert_eq!(bf_b.to_bytes(), FieldElement::from(13u64).to_bytes());
 
-        let (cred_c, bf_c) = dst_inner
+        let (cred_c, bf_c) = dst_store
             .get_credential(300, 3000)
             .expect("get cred C")
             .expect("cred C should exist");
         assert_eq!(cred_c.issuer_schema_id(), 300);
         assert_eq!(bf_c.to_bytes(), FieldElement::from(42u64).to_bytes());
 
-        // Clean up
-        std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);
     }
@@ -983,60 +956,47 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
-        let blob_store = provider.blob_store();
-
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
-            .expect("create inner");
-        inner.init(42, 1000).expect("init storage");
+        let store =
+            CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
 
         let blinding_factor = FieldElement::from(7u64);
-        let core_cred = CoreCredential::new()
+        let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100u64)
-            .genesis_issued_at(1000);
-        let credential: Credential = core_cred.into();
+            .genesis_issued_at(1000)
+            .into();
 
-        inner
-            .store_credential(&credential, &blinding_factor, 9999, None, 1000)
+        store
+            .store_credential(&cred, &blinding_factor, 9999, None, 1000)
             .expect("store credential");
 
-        // Export the vault
-        let backup_path = inner
-            .export_vault_for_backup_to_file()
-            .expect("export vault");
+        let bytes = store.export_vault_for_backup().expect("export vault");
 
-        // Importing into a non-empty vault should fail — the import checks that
-        // destination tables are empty before inserting.
-        let result = inner.import_vault_from_backup(&backup_path);
+        // Importing into a non-empty vault should fail.
+        let result = store.import_vault_from_backup(bytes);
         assert!(result.is_err(), "import into non-empty vault should fail");
 
         // Verify existing data is unchanged after the failed import.
-        let (cred, bf) = inner
+        let (cred, bf) = store
             .get_credential(100, 1000)
             .expect("get credential after failed import")
             .expect("credential should still exist");
         assert_eq!(cred.issuer_schema_id(), 100);
         assert_eq!(bf.to_bytes(), blinding_factor.to_bytes());
 
-        std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&root);
     }
 
     #[test]
-    fn test_import_vault_backup_missing_file_fails() {
+    fn test_import_vault_backup_invalid_bytes_fails() {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
-        let blob_store = provider.blob_store();
+        let store =
+            CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
-            .expect("create inner");
-        inner.init(42, 1000).expect("init storage");
-
-        let result = inner.import_vault_from_backup("/nonexistent/path/vault.sqlite");
-        assert!(result.is_err(), "import from missing file should fail");
+        let result = store.import_vault_from_backup(b"not a sqlite database".to_vec());
+        assert!(result.is_err(), "import from invalid bytes should fail");
 
         cleanup_test_storage(&root);
     }
@@ -1047,43 +1007,33 @@ mod tests {
         use walletkit_db::Connection;
         use world_id_core::Credential as CoreCredential;
 
-        let root = temp_root_path();
-        let provider = InMemoryStorageProvider::new(&root);
-        let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
-        let blob_store = provider.blob_store();
+        let src_root = temp_root_path();
+        let src_provider = InMemoryStorageProvider::new(&src_root);
+        let src_store =
+            CredentialStore::from_provider(&src_provider).expect("create src store");
+        src_store.init(42, 1000).expect("init src storage");
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
-            .expect("create inner");
-        inner.init(42, 1000).expect("init storage");
-
-        let blinding_factor = FieldElement::from(7u64);
-        let core_cred = CoreCredential::new()
+        let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100u64)
-            .genesis_issued_at(1000);
-        let credential: Credential = core_cred.into();
-
-        inner
-            .store_credential(&credential, &blinding_factor, 9999, None, 1000)
+            .genesis_issued_at(1000)
+            .into();
+        src_store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
 
-        // Export a valid backup
-        let backup_path = inner
-            .export_vault_for_backup_to_file()
-            .expect("export vault");
+        // Export as bytes, write to a temp file so we can corrupt it.
+        let bytes = src_store.export_vault_for_backup().expect("export vault");
+        let corrupt_path = src_root.join("corrupt_backup.sqlite");
+        std::fs::write(&corrupt_path, &bytes).expect("write backup");
 
-        // Corrupt the *last* table in BACKUP_TABLES inside the backup.
-        // We target the last table so that earlier tables' INSERTs succeed
-        // before this one fails, actually testing transaction rollback.
-        // The backup tables have no constraints (CREATE TABLE AS SELECT),
-        // so the NULL PK insert succeeds here but will be rejected by the
-        // destination's NOT NULL PRIMARY KEY.
+        // Corrupt the *last* table in BACKUP_TABLES. Earlier INSERTs succeed
+        // before this one fails, testing transaction rollback.
         assert_eq!(
             *BACKUP_TABLES.last().unwrap(),
             "blob_objects",
             "update this test if BACKUP_TABLES order changes"
         );
-        let backup_conn = Connection::open(std::path::Path::new(&backup_path), false)
+        let backup_conn = Connection::open(&corrupt_path, false)
             .expect("open backup");
         backup_conn
             .execute(
@@ -1094,32 +1044,27 @@ mod tests {
             .expect("insert corrupt row");
         drop(backup_conn);
 
-        // Create a fresh destination vault and attempt the import
+        // Read corrupted file back as bytes
+        let corrupt_bytes = std::fs::read(&corrupt_path).expect("read corrupt backup");
+
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
-        let dst_paths = dst_provider.paths().as_ref().clone();
-        let mut dst_inner = CredentialStoreInner::new(
-            dst_paths,
-            dst_provider.keystore(),
-            dst_provider.blob_store(),
-        )
-        .expect("create dst inner");
-        dst_inner.init(42, 1000).expect("init dst storage");
+        let dst_store =
+            CredentialStore::from_provider(&dst_provider).expect("create dst store");
+        dst_store.init(42, 1000).expect("init dst storage");
 
-        let result = dst_inner.import_vault_from_backup(&backup_path);
+        let result = dst_store.import_vault_from_backup(corrupt_bytes);
         assert!(result.is_err(), "import with corrupt backup should fail");
 
-        // Verify the destination vault is still empty — the transaction should
-        // have rolled back the credential_records INSERT that succeeded before
-        // blob_objects failed.
-        let dst_list = dst_inner.list_credentials(None, 1000).expect("list dst");
+        // The transaction should have rolled back — destination is still empty.
+        let dst_list = dst_store.list_credentials(None, 1000).expect("list dst");
         assert!(
             dst_list.is_empty(),
             "destination should be empty after failed import (transaction rolled back)"
         );
 
-        std::fs::remove_file(&backup_path).ok();
-        cleanup_test_storage(&root);
+        std::fs::remove_file(&corrupt_path).ok();
+        cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);
     }
 
@@ -1265,11 +1210,9 @@ mod tests {
             .expect("store credential");
 
         let bytes = src_store.export_vault_for_backup().expect("export vault");
+        assert!(!bytes.is_empty(), "exported bytes should not be empty");
 
-        // Write to a temp file and import into a fresh store.
-        let backup_path = src_root.join("roundtrip_backup.sqlite");
-        std::fs::write(&backup_path, &bytes).expect("write backup file");
-
+        // Import the raw bytes into a fresh store via the public API.
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
         let dst_store =
@@ -1277,8 +1220,8 @@ mod tests {
         dst_store.init(42, 1000).expect("init dst store");
 
         dst_store
-            .import_vault_from_backup(backup_path.to_string_lossy().to_string())
-            .expect("import vault");
+            .import_vault_from_backup(bytes)
+            .expect("import vault from bytes");
 
         let (imported_cred, imported_bf) = dst_store
             .get_credential(100, 1000)
@@ -1287,7 +1230,6 @@ mod tests {
         assert_eq!(imported_cred.issuer_schema_id(), 100);
         assert_eq!(imported_bf.to_bytes(), FieldElement::from(7u64).to_bytes());
 
-        std::fs::remove_file(&backup_path).ok();
         cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);
     }
