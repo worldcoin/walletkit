@@ -76,6 +76,10 @@ jobs:
           toolchain: 1.92.0
           targets: wasm32-unknown-unknown
 
+      # clang-18 (LLVM 18) is the minimum version that supports the C23
+      # [[noreturn]] attribute syntax used in sqlite-wasm-rs's wasm-shim.h.
+      # The system clang on Ubuntu (clang-14) predates C23 attribute support
+      # and fails to compile the shim, so we must install a newer toolchain explicitly.
       - name: Install LLVM toolchain for WASM C build
         shell: bash
         run: |
