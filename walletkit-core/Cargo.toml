@@ -115,4 +115,7 @@ workspace = true
 
 [package.metadata.docs.rs]
 no-default-features = true
-features = ["issuers", "embed-zkeys"]
+# embed-zkeys is intentionally excluded: docs.rs builds have no network
+# access, and world-id-core/embed-zkeys downloads circuit files at compile
+# time. The crate-level doc example is marked `ignore` for this reason.
+features = ["issuers"]
