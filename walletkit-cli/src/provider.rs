@@ -1,98 +1,39 @@
 //! Filesystem-backed storage provider for the CLI.
 //!
-//! This is a dev-local provider — the device keystore uses XChaCha20-Poly1305
-//! with a randomly generated key stored as a plain file alongside the data.
-//! This is NOT suitable for production use.
+//! This is a dev-local provider — the device keystore is a no-op passthrough
+//! since encryption at the keystore layer adds no value for local development.
+//! The SQLCipher databases are still encrypted with a random `K_intermediate`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use chacha20poly1305::aead::{Aead, KeyInit, Payload};
-use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
-use rand::rngs::OsRng;
-use rand::RngCore;
 use walletkit_core::storage::{
     AtomicBlobStore, CredentialStore, DeviceKeystore, StorageError, StoragePaths,
     StorageProvider,
 };
 
-const KEYSTORE_FILENAME: &str = ".device_key";
-
-/// Filesystem-backed device keystore.
+/// No-op device keystore that passes data through without encryption.
 ///
-/// Stores a 32-byte encryption key in a plain file. Suitable only for
-/// development and testing.
-pub struct FsDeviceKeystore {
-    key: [u8; 32],
-}
+/// Suitable only for development and testing. In production, the real
+/// `DeviceKeystore` is backed by the platform's secure enclave.
+pub struct NoopDeviceKeystore;
 
-impl FsDeviceKeystore {
-    /// Loads or creates the device key at `root/.device_key`.
-    pub fn open(root: &Path) -> eyre::Result<Self> {
-        let key_path = root.join(KEYSTORE_FILENAME);
-        let key = if key_path.exists() {
-            let bytes = fs::read(&key_path)?;
-            let key: [u8; 32] = bytes
-                .try_into()
-                .map_err(|_| eyre::eyre!("corrupt device key file"))?;
-            key
-        } else {
-            let mut key = [0u8; 32];
-            OsRng.fill_bytes(&mut key);
-            fs::create_dir_all(root)?;
-            fs::write(&key_path, key)?;
-            key
-        };
-        Ok(Self { key })
-    }
-}
-
-impl DeviceKeystore for FsDeviceKeystore {
+impl DeviceKeystore for NoopDeviceKeystore {
     fn seal(
         &self,
-        associated_data: Vec<u8>,
+        _associated_data: Vec<u8>,
         plaintext: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
-        let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.key));
-        let mut nonce_bytes = [0u8; 24];
-        OsRng.fill_bytes(&mut nonce_bytes);
-        let ciphertext = cipher
-            .encrypt(
-                XNonce::from_slice(&nonce_bytes),
-                Payload {
-                    msg: &plaintext,
-                    aad: &associated_data,
-                },
-            )
-            .map_err(|e| StorageError::Crypto(e.to_string()))?;
-        let mut out = Vec::with_capacity(24 + ciphertext.len());
-        out.extend_from_slice(&nonce_bytes);
-        out.extend_from_slice(&ciphertext);
-        Ok(out)
+        Ok(plaintext)
     }
 
     fn open_sealed(
         &self,
-        associated_data: Vec<u8>,
+        _associated_data: Vec<u8>,
         ciphertext: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
-        if ciphertext.len() < 24 {
-            return Err(StorageError::InvalidEnvelope(
-                "ciphertext too short".to_string(),
-            ));
-        }
-        let (nonce, payload) = ciphertext.split_at(24);
-        let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.key));
-        cipher
-            .decrypt(
-                XNonce::from_slice(nonce),
-                Payload {
-                    msg: payload,
-                    aad: &associated_data,
-                },
-            )
-            .map_err(|e| StorageError::Crypto(e.to_string()))
+        Ok(ciphertext)
     }
 }
 
@@ -158,7 +99,7 @@ impl AtomicBlobStore for FsAtomicBlobStore {
 
 /// Filesystem storage provider that ties together all components.
 pub struct FsStorageProvider {
-    keystore: Arc<FsDeviceKeystore>,
+    keystore: Arc<NoopDeviceKeystore>,
     blob_store: Arc<FsAtomicBlobStore>,
     paths: Arc<StoragePaths>,
 }
@@ -166,7 +107,7 @@ pub struct FsStorageProvider {
 impl FsStorageProvider {
     /// Creates a new provider rooted at the given directory.
     pub fn open(root: &Path) -> eyre::Result<Self> {
-        let keystore = Arc::new(FsDeviceKeystore::open(root)?);
+        let keystore = Arc::new(NoopDeviceKeystore);
         let blob_store = Arc::new(FsAtomicBlobStore::new(root));
         let paths = Arc::new(StoragePaths::new(root));
         Ok(Self {

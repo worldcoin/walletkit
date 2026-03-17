@@ -19,6 +19,7 @@ use crate::provider::create_fs_credential_store;
 /// `WalletKit` CLI — developer tool for World ID wallet operations.
 #[derive(Parser)]
 #[command(name = "walletkit", version, about)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
     /// Wallet data directory.
     #[arg(long, env = "WALLETKIT_ROOT", global = true)]
@@ -173,7 +174,7 @@ fn resolve_region(cli: &Cli) -> eyre::Result<Option<walletkit_core::Region>> {
 }
 
 /// Reads the custom config JSON file, if `--config` was provided.
-pub(crate) fn resolve_config(cli: &Cli) -> eyre::Result<Option<String>> {
+pub fn resolve_config(cli: &Cli) -> eyre::Result<Option<String>> {
     match &cli.config {
         Some(path) => {
             let json = std::fs::read_to_string(path).wrap_err_with(|| {
@@ -186,7 +187,7 @@ pub(crate) fn resolve_config(cli: &Cli) -> eyre::Result<Option<String>> {
 }
 
 /// Initializes an authenticator and credential store from CLI args.
-pub(crate) async fn init_authenticator(
+pub async fn init_authenticator(
     cli: &Cli,
 ) -> eyre::Result<(Arc<Authenticator>, Arc<CredentialStore>)> {
     let root = resolve_root(cli)?;

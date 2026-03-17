@@ -76,7 +76,7 @@ pub enum ProofCommand {
         #[arg(long, default_value = "300")]
         expires_in: u64,
     },
-    /// Verify a previously generated proof on-chain via the WorldIDVerifier contract.
+    /// Verify a previously generated proof on-chain via the `WorldIDVerifier` contract.
     Verify {
         /// Path to the original proof request JSON, or `-` for stdin.
         #[arg(long)]
@@ -84,7 +84,7 @@ pub enum ProofCommand {
         /// Path to the proof response JSON, or `-` for stdin.
         #[arg(long)]
         response: String,
-        /// Override the WorldID verifier contract address (default: mainnet).
+        /// Override the `WorldID` verifier contract address (default: mainnet).
         #[arg(long)]
         verifier_address: Option<String>,
     },
@@ -187,7 +187,7 @@ async fn run_verify(
             .wrap_err("invalid verifier address")?,
         None => WORLD_ID_VERIFIER,
     };
-    let verifier = IWorldIDVerifier::new(verifier_addr, &provider);
+    let verifier_contract = IWorldIDVerifier::new(verifier_addr, &provider);
 
     let action = proof_request.action.ok_or_else(|| {
         eyre::eyre!("proof request has no action (session proofs not supported)")
@@ -211,7 +211,7 @@ async fn run_verify(
             .nullifier
             .ok_or_else(|| eyre::eyre!("response item missing nullifier"))?;
 
-        let result = verifier
+        let result = verifier_contract
             .verify(
                 nullifier.into(),
                 action.into(),

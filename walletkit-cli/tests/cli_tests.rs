@@ -50,7 +50,7 @@ fn wallet_paths_prints_json() {
     let parsed: serde_json::Value =
         serde_json::from_str(&stdout).expect("invalid json");
     assert_eq!(parsed["ok"], true);
-    assert!(parsed["data"]["root"].as_str().unwrap().len() > 0);
+    assert!(!parsed["data"]["root"].as_str().unwrap().is_empty());
 }
 
 #[test]

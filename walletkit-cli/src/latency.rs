@@ -19,7 +19,7 @@ pub struct LatencyLayer {
 struct TimingStarted(Instant);
 
 impl LatencyLayer {
-    pub fn new(entries: LatencyEntries) -> Self {
+    pub const fn new(entries: LatencyEntries) -> Self {
         Self { entries }
     }
 }
@@ -57,7 +57,7 @@ where
 
 /// Prints the latency report to stderr.
 pub fn print_report(entries: &LatencyEntries, json: bool) {
-    let entries = entries.lock().unwrap_or_else(|e| e.into_inner());
+    let entries = entries.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if entries.is_empty() {
         return;
     }
