@@ -269,6 +269,44 @@ pub fn emit_log(level: LogLevel, message: String) {
     }
 }
 
+/// Native platform initializer: wires the foreign logger to a dedicated
+/// delivery thread via an mpsc channel.
+///
+/// The channel decouples `ForeignLoggerLayer::on_event` (called from inside
+/// `UniFFI`'s future-poll machinery) from the actual FFI call to `Logger::log`.
+/// Invoking a `UniFFI` foreign callback synchronously while a `UniFFI` frame is
+/// already on the stack causes an `EXC_BAD_ACCESS`; the background thread avoids
+/// that by delivering events from a clean, FFI-free call stack.
+///
+/// # Panics
+///
+/// Panics if the background thread cannot be spawned.
+#[cfg(not(target_arch = "wasm32"))]
+fn init_logging_native(logger: Arc<dyn Logger>) {
+    let (tx, rx) = mpsc::channel::<LogEvent>();
+    let _ = LOG_CHANNEL.set(Mutex::new(tx));
+
+    thread::Builder::new()
+        .name("walletkit-logger".into())
+        .spawn(move || {
+            for event in rx {
+                logger.log(event.level, event.message);
+            }
+        })
+        .expect("failed to spawn walletkit logger thread");
+}
+
+/// WASM platform initializer: stores the logger directly so that
+/// `ForeignLoggerLayer::on_event` can call it synchronously.
+///
+/// On WASM there is no background-thread risk: the runtime is
+/// single-threaded and cooperative, so no UniFFI future-poll frame can be
+/// on the stack when a tracing event fires.
+#[cfg(target_arch = "wasm32")]
+fn init_logging_wasm(logger: Arc<dyn Logger>) {
+    let _ = LOGGER_INSTANCE.set(logger);
+}
+
 /// Initializes `WalletKit` tracing and registers a foreign logger sink.
 ///
 /// `level` controls the minimum severity for `WalletKit` and its direct
@@ -280,7 +318,7 @@ pub fn emit_log(level: LogLevel, message: String) {
 ///
 /// # Panics
 ///
-/// Panics if the dedicated logger delivery thread cannot be spawned.
+/// Panics if the dedicated logger delivery thread cannot be spawned (native only).
 #[uniffi::export]
 pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
     if LOGGING_INITIALIZED.get().is_some() {
@@ -288,24 +326,10 @@ pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        let (tx, rx) = mpsc::channel::<LogEvent>();
-        let _ = LOG_CHANNEL.set(Mutex::new(tx));
-
-        thread::Builder::new()
-            .name("walletkit-logger".into())
-            .spawn(move || {
-                for event in rx {
-                    logger.log(event.level, event.message);
-                }
-            })
-            .expect("failed to spawn walletkit logger thread");
-    }
+    init_logging_native(logger);
 
     #[cfg(target_arch = "wasm32")]
-    {
-        let _ = LOGGER_INSTANCE.set(logger);
-    }
+    init_logging_wasm(logger);
 
     let _ = tracing_log::LogTracer::init();
 
