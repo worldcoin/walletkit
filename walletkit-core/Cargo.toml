@@ -53,7 +53,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zeroize = "1"
 uuid = { version = "1.10", features = ["v4"], optional = true }
 uniffi = { workspace = true }
-taceo-oprf = { version = "0.7", default-features = false, features = ["client"] }
+
 world-id-core = { workspace = true, features = [
   "authenticator",
   "embed-zkeys",
@@ -77,6 +77,7 @@ dotenvy = "0.15.7"
 eyre = "0.6"
 mockito = "1.6"
 regex = "1.11"
+taceo-oprf = { version = "0.8", default-features = false, features = ["types"] } # TODO: remove once OprfKeyId gets removed from request
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
