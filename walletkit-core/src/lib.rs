@@ -17,8 +17,8 @@
 //!     store: Arc<CredentialStore>,
 //! ) -> Result<(), Box<dyn std::error::Error>> {
 //!     // Cache Groth16 proving material to disk (idempotent).
-//!     let paths = Arc::new(StoragePaths::from_root("/data/walletkit".into()));
-//!     cache_embedded_groth16_material(paths.clone())?;
+//!     let paths = StoragePaths::from_root("/data/walletkit".into());
+//!     cache_embedded_groth16_material(&paths)?;
 //!
 //!     // Initialize an authenticator for an already-registered World ID.
 //!     let seed = b"my_secret_seed_at_length_32_bytes!";
