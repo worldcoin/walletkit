@@ -296,7 +296,7 @@ impl Authenticator {
     pub async fn init(
         seed: &[u8],
         config: &str,
-        paths: Arc<StoragePaths>,
+        paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config =
@@ -306,8 +306,7 @@ impl Authenticator {
             })?;
 
         let authenticator = CoreAuthenticator::init(seed, config).await?;
-        let (query_material, nullifier_material) =
-            load_cached_materials(paths.as_ref())?;
+        let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
             authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
