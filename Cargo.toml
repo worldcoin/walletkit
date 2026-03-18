@@ -55,3 +55,30 @@ opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.
 panic = "abort"
 debug = false
+
+# ── Vendored patches ─────────────────────────────────────────────────────────
+#
+# world-id-authenticator v0.5.2 ships with `default = ["embed-zkeys"]`, which
+# propagates `world-id-proof/embed-zkeys` into the dependency graph even when
+# that feature is not explicitly requested.  `world-id-proof/embed-zkeys`
+# triggers a build-script network download of circuit files (~100 MB from
+# raw.githubusercontent.com), making the `cargo check --target
+# wasm32-unknown-unknown` CI step unreliable whenever that host cannot reach
+# GitHub's raw content CDN.
+#
+# This patch vendors the crate with `default = []` so that embed-zkeys is only
+# activated when our own `embed-zkeys` feature is explicitly enabled (which
+# goes through `world-id-core/embed-zkeys` → `world-id-proof/embed-zkeys`
+# directly, bypassing world-id-authenticator's defaults entirely).
+#
+# The source is a verbatim copy of world-id-authenticator v0.5.2 with only the
+# `[features] default` line changed.  Update the vendor copy whenever
+# world-id-authenticator is bumped.
+[patch.crates-io]
+world-id-authenticator = { path = "vendor/world-id-authenticator" }
+# world-id-proof v0.5.2 ships with `default = ["embed-zkeys"]`, so any
+# dependency that activates it with default-features (including world-id-core
+# itself) triggers a build-script network download of circuit files.  This
+# patch sets `default = []` so the download only happens when embed-zkeys is
+# explicitly requested via our own `embed-zkeys` feature flag.
+world-id-proof = { path = "vendor/world-id-proof" }
