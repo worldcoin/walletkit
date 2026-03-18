@@ -565,11 +565,11 @@ mod tests {
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
-        cache_embedded_groth16_material(store.storage_paths().expect("paths"))
+        cache_embedded_groth16_material(&store.storage_paths().expect("paths"))
             .expect("cache material");
 
         let paths = store.storage_paths().expect("paths");
-        Authenticator::init(&seed, &config, paths, Arc::new(store))
+        Authenticator::init(&seed, &config, &paths, Arc::new(store))
             .await
             .unwrap();
         drop(mock_server);
