@@ -145,7 +145,7 @@ jobs:
         # we don't do --all-features because `compress-zkeys` is very expensive for the CI and doesn't need to be tested on every PR
         # we add the remainder of non-default features to include them in tests
         run: |
-          cargo test --workspace --features walletkit-core/legacy-nullifiers
+          cargo test --workspace --features walletkit-core/legacy-nullifiers --features walletkit-core/v3
 
       - name: Build non-default features
         run: |
