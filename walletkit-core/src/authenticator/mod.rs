@@ -26,7 +26,7 @@ mod with_storage;
 
 /// Pre-loaded Groth16 proving material (query circuit + nullifier circuit).
 ///
-/// Construct via [`Groth16Materials::from_embedded`] (requires the `embed-zkeys` feature) or
+/// Construct via `Groth16Materials::from_embedded` (requires the `embed-zkeys` feature) or
 /// [`Groth16Materials::from_cache`] (native only, loads from filesystem).
 #[derive(Clone, uniffi::Object)]
 pub struct Groth16Materials {
