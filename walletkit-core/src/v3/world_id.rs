@@ -74,7 +74,7 @@ impl WorldId {
     ///
     /// # Example
     /// ```rust
-    /// use walletkit_core::{proof::ProofContext, CredentialType, Environment, world_id::WorldId};
+    /// use walletkit_core::v3::{proof::ProofContext, CredentialType, Environment, world_id::WorldId};
     /// use std::sync::Arc;
     ///
     /// # tokio_test::block_on(async {
