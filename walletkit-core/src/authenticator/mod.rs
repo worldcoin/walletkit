@@ -271,10 +271,14 @@ impl Authenticator {
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
+        paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_cached_materials(paths)?;
+        let authenticator =
+            authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
             store,

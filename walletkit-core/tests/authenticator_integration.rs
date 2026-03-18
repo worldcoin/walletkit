@@ -45,6 +45,7 @@ async fn test_authenticator_integration() {
         Some(anvil.endpoint()),
         &Environment::Staging,
         None,
+        &paths,
         store.clone(),
     )
     .await
@@ -80,6 +81,7 @@ async fn test_authenticator_integration() {
         Some(anvil.endpoint()),
         &Environment::Staging,
         None,
+        &paths,
         store,
     )
     .await

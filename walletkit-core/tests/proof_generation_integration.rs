@@ -153,6 +153,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         Some(rpc_url.clone()),
         &Environment::Staging,
         None,
+        &paths,
         store.clone(),
     )
     .await
