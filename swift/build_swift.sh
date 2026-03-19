@@ -67,9 +67,14 @@ mkdir -p "$SWIFT_HEADERS_DIR"
 echo "Building Rust packages for iOS targets..."
 
 export IPHONEOS_DEPLOYMENT_TARGET="13.0"
-# Use cmake builder for aws-lc-sys to avoid iOS cross-compilation errors
-# (the default cc-rs builder compiles Linux-only code on iOS targets)
-export AWS_LC_SYS_CMAKE_BUILDER=1
+# Workaround: aws-lc-sys's urandom.c uses Linux-only RNDGETENTCNT and ioctl
+# which don't exist in the iOS SDK. Define the missing macro and suppress the
+# implicit function declaration error so the file compiles (the code path is
+# never reached at runtime since ring is the active crypto provider, not aws-lc).
+AWS_LC_CFLAGS="-DRNDGETENTCNT=2 -Wno-implicit-function-declaration"
+export CFLAGS_aarch64_apple_ios="$AWS_LC_CFLAGS"
+export CFLAGS_aarch64_apple_ios_sim="$AWS_LC_CFLAGS"
+export CFLAGS_x86_64_apple_ios="$AWS_LC_CFLAGS"
 export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
                   -C link-arg=-Wl,-dead_strip \
                   -C link-arg=-Wl,-dead_strip_dylibs \
