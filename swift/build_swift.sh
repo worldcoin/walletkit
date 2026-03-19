@@ -66,6 +66,41 @@ mkdir -p "$SWIFT_HEADERS_DIR"
 
 echo "Building Rust packages for iOS targets..."
 
+# Fetch crate sources so we can patch them before building.
+cargo fetch --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml"
+
+# Upstream fix: aws-lc's target.h doesn't include <TargetConditionals.h>,
+# so OPENSSL_IOS is never defined on toolchains where TARGET_OS_IPHONE
+# is not a compiler builtin (Xcode 16.2). This causes the build to fall
+# through to the Linux urandom path, which fails to compile on iOS.
+# Two patches until the upstream PR lands:
+# https://github.com/aws/aws-lc/pull/3111
+#
+# 1. target.h: include <TargetConditionals.h> so OPENSSL_IOS is defined
+# 2. urandom.c: guard RNDGETENTCNT/ioctl behind OPENSSL_LINUX (defensive)
+for aws_lc_dir in "$HOME"/.cargo/registry/src/*/aws-lc-sys-*/aws-lc; do
+  target_h="$aws_lc_dir/include/openssl/target.h"
+  urandom_c="$aws_lc_dir/crypto/rand_extra/urandom.c"
+
+  if [ -f "$target_h" ] && ! grep -q "TargetConditionals.h" "$target_h"; then
+    echo "Patching aws-lc target.h: $target_h"
+    sed -i '' 's|^#if defined(__APPLE__)$|#if defined(__APPLE__)\
+#if !defined(__ASSEMBLER__)\
+#include <TargetConditionals.h>\
+#endif|' "$target_h"
+  fi
+
+  if [ -f "$urandom_c" ] && ! grep -q "OPENSSL_LINUX.*RNDGETENTCNT" "$urandom_c"; then
+    echo "Patching aws-lc urandom.c: $urandom_c"
+    sed -i '' '/^static void ensure_dev_urandom_is_initialized(void) {$/,/^}$/ {
+      /^  \/\/ On platforms where/i\
+#if defined(OPENSSL_LINUX)
+      /^  random_flavor_state = STATE_READY;/i\
+#endif  // OPENSSL_LINUX
+    }' "$urandom_c"
+  fi
+done
+
 export IPHONEOS_DEPLOYMENT_TARGET="13.0"
 export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
                   -C link-arg=-Wl,-dead_strip \
