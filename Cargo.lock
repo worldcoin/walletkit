@@ -1477,6 +1477,12 @@ checksum = "4c7f02d4ea65f2c1853089ffd8d2787bdbc63de2f0d29dedbcf8ccdfa0ccd4cf"
 
 [[package]]
 name = "base64"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
+
+[[package]]
+name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
@@ -1957,7 +1963,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2412,6 +2418,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "embed-doc-image"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af36f591236d9d822425cb6896595658fa558fcebf5ee8accac1d4b92c47166e"
+dependencies = [
+ "base64 0.13.1",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "embedded-io"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2774,6 +2792,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
+name = "gloo-net"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c06f627b1a58ca3d42b45d6104bf1e1a03799df472df00988b6ba21accc10580"
+dependencies = [
+ "futures-channel",
+ "futures-core",
+ "futures-sink",
+ "gloo-utils",
+ "http 1.4.0",
+ "js-sys",
+ "pin-project",
+ "thiserror 1.0.69",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "gloo-timers"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2783,6 +2820,17 @@ dependencies = [
  "futures-core",
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "gloo-utils"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5555354113b18c547c1d3a98fbf7fb32a9ff4f6fa112ce823a21641a0ba3aa"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]
@@ -3136,7 +3184,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.2",
  "tokio",
  "tower-service",
  "tracing",
@@ -4072,7 +4120,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.37",
- "socket2 0.5.10",
+ "socket2 0.6.2",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4109,7 +4157,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.2",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -5523,9 +5571,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf"
-version = "0.7.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "412211d4d43aeb060c369a69213bd7ae941f769cc4361df83195d2a7936f22d5"
+checksum = "be862ba49094098f945f1375f704a2c47b4e267a6e564462a43ad142b4b1469e"
 dependencies = [
  "taceo-oprf-client",
  "taceo-oprf-core",
@@ -5534,13 +5582,15 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-client"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42bbcb77821be63e228fa7ad408f03b212f91011c4ac5d4122d5a22126bcfc57"
+checksum = "696c4b03e8b570d1d0486f7bc2273b85951b316d7f720fc2f95e79f2b053f649"
 dependencies = [
  "ark-ec 0.5.0",
  "ciborium",
  "futures",
+ "getrandom 0.2.17",
+ "gloo-net",
  "http 1.4.0",
  "serde",
  "taceo-ark-babyjubjub",
@@ -5556,9 +5606,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-core"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8105a6fa70adb6872ea2eef5ad21bfc5c943d90dc43332347ec021cd44987cb"
+checksum = "e55cbbe8357f837939f9cec171f44a217db4d897bea679521d555a24296ee39b"
 dependencies = [
  "ark-ec 0.5.0",
  "ark-ff 0.5.0",
@@ -5578,9 +5628,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-types"
-version = "0.9.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "278668dc50fdfb2ec5e9391031b8b98690d1b230da483e4ce15bdb52ede4acca"
+checksum = "540ce620b9d45c2c3d417c8f4b0c82e112f2621f2419e1c9fd207b8d5a3310d4"
 dependencies = [
  "alloy",
  "ark-ff 0.5.0",
@@ -6625,7 +6675,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7027,9 +7077,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-authenticator"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75a2f1c50923bc65b243355f4663e1ab6bbfa9f8ac918a7db65003cead2600f0"
+checksum = "07d061f3e1150294b0eaab3c3a8311343c144995097c6f08cd7babbe8610faca"
 dependencies = [
  "alloy",
  "anyhow",
@@ -7057,9 +7107,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-core"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4212c964ed123b51202435a98695bce9b228b40f4f39f6e77ccfb1d32a83208a"
+checksum = "a88fbe3660167654a014924faeeec87d7aebb9ff13a43dbb51958045f0aa3ed6"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -7069,9 +7119,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-primitives"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13939e35b7f9a77ad4f7cf268a1a5cd29597a4cb60377395457eafd8df0b5839"
+checksum = "022157c68f1c49bb3d7256b9199174d6de6cc9d4b07c5ea757f2f6b35597b4a2"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -7079,6 +7129,7 @@ dependencies = [
  "ark-ff 0.5.0",
  "ark-groth16 0.5.0",
  "arrayvec",
+ "embed-doc-image",
  "eyre",
  "getrandom 0.2.17",
  "hex",
@@ -7105,9 +7156,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-proof"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf858169c8dec236c7e95661381829cc270d8c70d8eb34b3bb9312fa0cad0097"
+checksum = "091e4902d84a827900db7f030fc6bb3f9705e0abe6d20aca943148727bb625b8"
 dependencies = [
  "ark-bn254 0.5.0",
  "ark-ec 0.5.0",
@@ -7118,6 +7169,7 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "reqwest 0.12.28",
+ "serde",
  "taceo-ark-babyjubjub",
  "taceo-circom-types",
  "taceo-eddsa-babyjubjub",

@@ -131,15 +131,11 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
             .wrap_err("failed to load embedded nullifier material")?,
     );
 
-    let core_authenticator = CoreAuthenticator::init_or_register(
-        &seed,
-        config,
-        query_material,
-        nullifier_material,
-        Some(recovery_address),
-    )
-    .await
-    .wrap_err("account creation/init failed")?;
+    let core_authenticator =
+        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
+            .await
+            .wrap_err("account creation/init failed")?
+            .with_proof_materials(query_material, nullifier_material);
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -149,7 +145,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     // ----------------------------------------------------------------
     let store = common::create_test_credential_store();
     let paths = store.storage_paths().wrap_err("storage_paths failed")?;
-    cache_embedded_groth16_material(paths.clone())
+    cache_embedded_groth16_material(&paths)
         .wrap_err("cache_embedded_groth16_material failed")?;
 
     let authenticator = Authenticator::init_with_defaults(
@@ -157,7 +153,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         Some(rpc_url.clone()),
         &Environment::Staging,
         None,
-        paths,
+        &paths,
         store.clone(),
     )
     .await
@@ -221,7 +217,10 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let action = FieldElement::from(1u64);
 
     let rp_msg = world_id_core::primitives::rp::compute_rp_signature_msg(
-        *nonce, created_at, expires_at,
+        *nonce,
+        created_at,
+        expires_at,
+        Some(*action),
     );
     let signature = rp_signer
         .sign_message_sync(&rp_msg)
@@ -243,7 +242,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         requests: vec![RequestItem {
             identifier: "credential identifier".to_string(),
             issuer_schema_id: ISSUER_SCHEMA_ID,
-            signal: Some("my_signal".to_string()),
+            signal: Some(b"my_signal".to_vec()),
             genesis_issued_at_min: None,
             expires_at_min: None,
         }],

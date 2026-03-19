@@ -37,7 +37,7 @@ async fn test_authenticator_integration() {
     let authenticator_seeder = PrivateKeySigner::random();
     let store = common::create_test_credential_store();
     let paths = store.storage_paths().unwrap();
-    cache_embedded_groth16_material(paths.clone()).expect("cache groth16 material");
+    cache_embedded_groth16_material(&paths).expect("cache groth16 material");
 
     // When account doesn't exist, this should fail
     let authenticator = Authenticator::init_with_defaults(
@@ -45,7 +45,7 @@ async fn test_authenticator_integration() {
         Some(anvil.endpoint()),
         &Environment::Staging,
         None,
-        paths.clone(),
+        &paths,
         store.clone(),
     )
     .await
@@ -81,7 +81,7 @@ async fn test_authenticator_integration() {
         Some(anvil.endpoint()),
         &Environment::Staging,
         None,
-        paths,
+        &paths,
         store,
     )
     .await

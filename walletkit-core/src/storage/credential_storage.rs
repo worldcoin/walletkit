@@ -153,8 +153,8 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the storage mutex is poisoned.
-    pub fn storage_paths(&self) -> StorageResult<Arc<StoragePaths>> {
-        self.lock_inner().map(|inner| Arc::new(inner.paths.clone()))
+    pub fn storage_paths(&self) -> StorageResult<StoragePaths> {
+        self.lock_inner().map(|inner| inner.paths.clone())
     }
 
     /// Initializes storage and validates the account leaf index.
