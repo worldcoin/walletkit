@@ -71,8 +71,9 @@ export IPHONEOS_DEPLOYMENT_TARGET="13.0"
 # <linux/random.h>) and ioctl (implicit, from <sys/ioctl.h>) which aren't
 # available when cross-compiling for iOS. Define the missing macro and suppress
 # the implicit function declaration error. These flags are scoped to aws-lc-sys
-# only (via AWS_LC_SYS_ prefix) so they don't affect other crates. The code
-# path is never reached at runtime since ring is the active crypto provider.
+# only (via AWS_LC_SYS_ prefix) so they don't affect other crates. The
+# RNDGETENTCNT/ioctl code path is Linux-specific and never reached on iOS,
+# where aws-lc uses SecRandomCopyBytes/getentropy() for entropy instead.
 export AWS_LC_SYS_CFLAGS="-DRNDGETENTCNT=2 -Wno-implicit-function-declaration"
 export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
                   -C link-arg=-Wl,-dead_strip \
