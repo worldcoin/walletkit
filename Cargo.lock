@@ -1434,8 +1434,7 @@ dependencies = [
 [[package]]
 name = "aws-lc-sys"
 version = "0.38.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4321e568ed89bb5a7d291a7f37997c2c0df89809d7b6d12062c81ddb54aa782e"
+source = "git+https://github.com/lukejmann/aws-lc-rs.git?branch=fix%2Fios-cross-compilation#abb62ace27c5804e04081387db1faa90386d6d56"
 dependencies = [
  "cc",
  "cmake",
