@@ -37,6 +37,9 @@ nursery = { level = "deny", priority = -1 }
 missing_docs = "deny"
 dead_code = "deny"
 
+[patch.crates-io]
+aws-lc-sys = { git = "https://github.com/lukejmann/aws-lc-rs.git", branch = "fix/ios-cross-compilation" }
+
 [profile.release]
 opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.
