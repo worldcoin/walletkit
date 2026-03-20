@@ -335,10 +335,7 @@ impl CredentialStore {
     ///
     /// **Warning:** the listener **must not** call back into this
     /// `CredentialStore` — doing so will deadlock.
-    pub fn set_vault_changed_listener(
-        &self,
-        listener: Arc<dyn VaultChangedListener>,
-    ) {
+    pub fn set_vault_changed_listener(&self, listener: Arc<dyn VaultChangedListener>) {
         let (tx, rx) = mpsc::channel();
 
         std::thread::Builder::new()
@@ -1465,7 +1462,11 @@ mod tests {
         // Give the delivery thread time to process.
         std::thread::sleep(std::time::Duration::from_millis(50));
 
-        assert_eq!(count.load(Ordering::SeqCst), 1, "listener should be notified once");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "listener should be notified once"
+        );
 
         cleanup_test_storage(&root);
     }
@@ -1505,7 +1506,11 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(50));
 
         // store + delete = 2 notifications
-        assert_eq!(count.load(Ordering::SeqCst), 2, "listener should be notified twice");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            2,
+            "listener should be notified twice"
+        );
 
         cleanup_test_storage(&root);
     }
@@ -1537,7 +1542,11 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_millis(50));
 
-        assert_eq!(count.load(Ordering::SeqCst), 0, "listener should not be notified on failure");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            0,
+            "listener should not be notified on failure"
+        );
 
         cleanup_test_storage(&root);
     }
