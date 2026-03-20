@@ -95,6 +95,12 @@ pub trait StorageProvider: Send + Sync {
 /// is delivered on a dedicated background thread to avoid re-entering the
 /// UniFFI call stack (see `logger.rs` for rationale).
 ///
+/// # Expected usage
+///
+/// The host app should treat this as a trigger to take actions when teh vault state
+/// has mutated. It should contain synchronous actions only.
+/// # Safety
+///
 /// **Warning:** implementors **must not** call back into [`CredentialStore`]
 /// from [`on_vault_changed`](VaultChangedListener::on_vault_changed) — doing
 /// so will deadlock.
