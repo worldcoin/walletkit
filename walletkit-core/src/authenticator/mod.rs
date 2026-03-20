@@ -210,6 +210,9 @@ impl Authenticator {
     /// hence its `leaf_index`. The only acceptable use is to prove the user's `leaf_index`
     /// to a Recovery Agent. The Recovery Agent is the only party beyond the user who needs
     /// to know the `leaf_index`.
+    ///
+    /// # Errors
+    /// May error if very unexpectedly the signing process fails. Not expected.
     pub fn danger_sign_challenge(
         &self,
         challenge: &[u8],
@@ -587,6 +590,69 @@ mod tests {
         Authenticator::init(&seed, &config, &paths, Arc::new(store))
             .await
             .unwrap();
+        drop(mock_server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_danger_sign_challenge() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let mut mock_server = mockito::Server::new_async().await;
+        mock_server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let seed = [2u8; 32];
+        let config = Config::new(
+            Some(mock_server.url()),
+            480,
+            address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
+            "https://world-id-indexer.stage-crypto.worldcoin.org".to_string(),
+            "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
+            vec![],
+            2,
+        )
+        .unwrap();
+        let config = serde_json::to_string(&config).unwrap();
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("store");
+        store.init(42, 100).expect("init storage");
+        cache_embedded_groth16_material(&store.storage_paths().expect("paths"))
+            .expect("cache material");
+        let paths = store.storage_paths().expect("paths");
+        let authenticator =
+            Authenticator::init(&seed, &config, &paths, Arc::new(store))
+                .await
+                .unwrap();
+
+        let challenge = b"test challenge for recovery agent";
+        let signature_bytes = authenticator.danger_sign_challenge(challenge).unwrap();
+
+        // Signature should be 65 bytes (r: 32, s: 32, v: 1)
+        assert_eq!(signature_bytes.len(), 65);
+
+        // Verify the signature recovers to the authenticator's on-chain address
+        let sig = alloy::signers::Signature::try_from(signature_bytes.as_slice())
+            .expect("valid signature");
+        let recovered = sig
+            .recover_address_from_msg(challenge)
+            .expect("recovery succeeds");
+        assert_eq!(recovered.to_string(), authenticator.onchain_address(),);
+
         drop(mock_server);
         cleanup_test_storage(&root);
     }
