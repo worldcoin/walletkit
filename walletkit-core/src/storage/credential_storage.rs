@@ -1,6 +1,6 @@
 //! Storage facade implementing the credential storage API.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 
 use world_id_core::FieldElement as CoreFieldElement;
 
@@ -9,7 +9,7 @@ use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
 use super::traits::StorageProvider;
-use super::traits::{AtomicBlobStore, DeviceKeystore};
+use super::traits::{AtomicBlobStore, DeviceKeystore, VaultChangedListener};
 use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
 use crate::{Credential, FieldElement};
@@ -40,6 +40,9 @@ impl Drop for CleanupFile {
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
+    /// Channel sender for the vault-changed notification thread.
+    /// Kept outside `inner` so we can notify after releasing the storage mutex.
+    vault_changed_tx: Mutex<Option<mpsc::Sender<()>>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -129,6 +132,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -145,6 +149,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
         Ok(Self {
             inner: Mutex::new(inner),
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -190,7 +195,11 @@ impl CredentialStore {
     /// Returns an error if the delete operation fails or the credential ID does
     /// not exist.
     pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
-        self.lock_inner()?.delete_credential(credential_id)
+        let result = self.lock_inner()?.delete_credential(credential_id);
+        if result.is_ok() {
+            self.notify_vault_changed();
+        }
+        result
     }
 
     /// Stores a credential and optional associated data.
@@ -206,13 +215,17 @@ impl CredentialStore {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        self.lock_inner()?.store_credential(
+        let result = self.lock_inner()?.store_credential(
             credential,
             blinding_factor,
             expires_at,
             associated_data,
             now,
-        )
+        );
+        if result.is_ok() {
+            self.notify_vault_changed();
+        }
+        result
     }
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
@@ -309,6 +322,17 @@ impl CredentialStore {
 
 /// Implementation not exposed to foreign bindings
 impl CredentialStore {
+    /// Best-effort notification to the registered vault-changed listener.
+    fn notify_vault_changed(&self) {
+        if let Ok(guard) = self.vault_changed_tx.lock() {
+            if let Some(tx) = guard.as_ref() {
+                if tx.send(()).is_err() {
+                    tracing::warn!("vault-changed listener disconnected");
+                }
+            }
+        }
+    }
+
     fn lock_inner(
         &self,
     ) -> StorageResult<std::sync::MutexGuard<'_, CredentialStoreInner>> {
@@ -613,6 +637,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -629,6 +654,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
