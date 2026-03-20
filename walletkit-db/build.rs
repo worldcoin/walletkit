@@ -83,43 +83,19 @@ fn verify_checksum(zip_path: &Path) {
 }
 
 fn extract(zip_path: &Path, dest_dir: &Path) {
-    // The release amalgamation zip has a flat structure — no top-level prefix.
     let file = std::fs::File::open(zip_path).expect("failed to open zip");
     let mut archive = zip::ZipArchive::new(file).expect("failed to read zip archive");
 
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).expect("failed to read zip entry");
-        let raw_name = entry.name().to_owned();
-
-        if raw_name.is_empty() {
-            continue;
-        }
-
-        // Zip-slip guard (belt-and-suspenders alongside the SHA-256 check).
-        if raw_name.contains("..") || raw_name.starts_with('/') {
-            panic!("zip entry with unsafe path rejected: {raw_name}");
-        }
-
-        let dest_path = dest_dir.join(&raw_name);
-        if entry.is_dir() {
-            std::fs::create_dir_all(&dest_path).unwrap_or_else(|e| {
-                panic!("failed to create dir {}: {e}", dest_path.display())
-            });
-        } else {
-            if let Some(parent) = dest_path.parent() {
-                std::fs::create_dir_all(parent).unwrap_or_else(|e| {
-                    panic!("failed to create dir {}: {e}", parent.display())
-                });
-            }
-            let mut buf =
-                Vec::with_capacity(usize::try_from(entry.size()).unwrap_or(0));
-            entry
-                .read_to_end(&mut buf)
-                .unwrap_or_else(|e| panic!("failed to read {raw_name} from zip: {e}"));
-            std::fs::write(&dest_path, &buf).unwrap_or_else(|e| {
-                panic!("failed to write {}: {e}", dest_path.display())
-            });
-        }
+    for name in ["sqlite3mc_amalgamation.c", "sqlite3mc_amalgamation.h"] {
+        let mut entry = archive
+            .by_name(name)
+            .unwrap_or_else(|e| panic!("failed to find {name} in zip: {e}"));
+        let mut buf = Vec::with_capacity(usize::try_from(entry.size()).unwrap_or(0));
+        entry
+            .read_to_end(&mut buf)
+            .unwrap_or_else(|e| panic!("failed to read {name} from zip: {e}"));
+        std::fs::write(dest_dir.join(name), &buf)
+            .unwrap_or_else(|e| panic!("failed to write {name}: {e}"));
     }
 }
 
