@@ -66,16 +66,26 @@ mkdir -p "$SWIFT_HEADERS_DIR"
 
 echo "Building Rust packages for iOS targets..."
 
+# Fetch crate sources so we can patch them before building.
+cargo fetch --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml"
+
+# Upstream fix: aws-lc's target.h doesn't include <TargetConditionals.h>,
+# so OPENSSL_IOS is never defined on toolchains where TARGET_OS_IPHONE
+# is not a compiler builtin (Xcode 16.2). This causes the build to fall
+# through to the Linux urandom path, which fails to compile on iOS.
+# Patch the source in the cargo registry until the upstream PR lands:
+# https://github.com/aws/aws-lc/pull/3111
+for target_h in "$HOME"/.cargo/registry/src/*/aws-lc-sys-*/aws-lc/include/openssl/target.h; do
+  if [ -f "$target_h" ] && ! grep -q "TargetConditionals.h" "$target_h"; then
+    echo "Patching aws-lc target.h: $target_h"
+    sed -i '' 's|^#if defined(__APPLE__)$|#if defined(__APPLE__)\
+#if !defined(__ASSEMBLER__)\
+#include <TargetConditionals.h>\
+#endif|' "$target_h"
+  fi
+done
+
 export IPHONEOS_DEPLOYMENT_TARGET="13.0"
-# Workaround: aws-lc-sys's urandom.c references the Linux-only RNDGETENTCNT
-# macro (from <linux/random.h>) and calls ioctl() without including
-# <sys/ioctl.h>, both of which cause compilation errors on iOS. We define
-# RNDGETENTCNT as a stub and suppress the implicit function declaration error.
-# These flags are scoped to aws-lc-sys only (via AWS_LC_SYS_ prefix) so they
-# don't affect other crates. The RNDGETENTCNT/ioctl code path is Linux-specific
-# and never reached on iOS, where aws-lc uses SecRandomCopyBytes/getentropy()
-# for entropy instead.
-export AWS_LC_SYS_CFLAGS="-DRNDGETENTCNT=2 -Wno-implicit-function-declaration"
 export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
                   -C link-arg=-Wl,-dead_strip \
                   -C link-arg=-Wl,-dead_strip_dylibs \
