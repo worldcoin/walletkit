@@ -595,7 +595,8 @@ mod tests {
     }
 
     /// Verify the method exists on Authenticator with the expected signature. We don't
-    /// test the whole functionality because that's the responsibility of `world-id-authenticator`
+    /// test the whole functionality because that's the responsibility of `world-id-authenticator` and
+    /// initializing the whole authenticator is expensive
     #[test]
     fn test_danger_sign_challenge_is_exported() {
         let _: fn(&Authenticator, &[u8]) -> Result<Vec<u8>, WalletKitError> =
