@@ -237,10 +237,10 @@ impl Authenticator {
         region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_embedded_materials()?;
         let authenticator =
-            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
-                .await?;
+            authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
         })
@@ -260,10 +260,10 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_embedded_materials()?;
         let authenticator =
-            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
-                .await?;
+            authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
         })
@@ -286,15 +286,14 @@ impl Authenticator {
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
-        paths: Arc<StoragePaths>,
+        paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let (query_material, nullifier_material) =
-            load_cached_materials(paths.as_ref())?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
-            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
-                .await?;
+            authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
             store,
@@ -312,7 +311,7 @@ impl Authenticator {
     pub async fn init(
         seed: &[u8],
         config: &str,
-        paths: Arc<StoragePaths>,
+        paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config =
@@ -320,11 +319,11 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        let (query_material, nullifier_material) =
-            load_cached_materials(paths.as_ref())?;
+
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
-            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
-                .await?;
+            authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
             store,
@@ -581,11 +580,11 @@ mod tests {
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
-        cache_embedded_groth16_material(store.storage_paths().expect("paths"))
+        cache_embedded_groth16_material(&store.storage_paths().expect("paths"))
             .expect("cache material");
 
         let paths = store.storage_paths().expect("paths");
-        Authenticator::init(&seed, &config, paths, Arc::new(store))
+        Authenticator::init(&seed, &config, &paths, Arc::new(store))
             .await
             .unwrap();
         drop(mock_server);
