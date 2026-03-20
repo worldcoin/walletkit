@@ -1,25 +1,12 @@
 //! Build script for walletkit-db.
 //!
-//! On non-WASM targets this downloads the sqlite3mc amalgamation zip from the
-//! official v2.3.2 release, extracts the pre-generated amalgamation files, and
-//! compiles them into a static library.
+//! Downloads the sqlite3mc v2.3.2 amalgamation zip, extracts the pre-built
+//! `sqlite3mc_amalgamation.c` / `.h`, and compiles them into a static library.
+//! Skipped on WASM targets (handled by `sqlite-wasm-rs`).
 //!
-//! On WASM targets compilation is skipped because `sqlite-wasm-rs` provides
-//! the pre-compiled WASM binary.
-//!
-//! ## Release zip
-//!
-//! The upstream v2.3.2 release ships a dedicated amalgamation zip
-//! (`sqlite3mc-2.3.2-sqlite-3.51.3-amalgamation.zip`) that already contains
-//! `sqlite3mc_amalgamation.c` and `sqlite3mc_amalgamation.h` at the root — no
-//! Python or build-time source generation is required.
-//!
-//! v2.3.2 includes the thread-safety fix for `sqlite3mc_cipher_name` (upstream
-//! issue #228, commit `07a1a60`) that landed after the v2.3.1 release.
-//!
-//! Upstream issue:  <https://github.com/utelle/SQLite3MultipleCiphers/issues/228>
-//! Fix commit:      <https://github.com/utelle/SQLite3MultipleCiphers/commit/07a1a60>
-//! Release:         <https://github.com/utelle/SQLite3MultipleCiphers/releases/tag/v2.3.2>
+//! v2.3.2 contains the thread-safety fix for `sqlite3mc_cipher_name` (issue #228,
+//! commit `07a1a60`):
+//! <https://github.com/utelle/SQLite3MultipleCiphers/releases/tag/v2.3.2>
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -50,7 +37,6 @@ fn build_sqlite3mc() {
     let amalgamation_c = source_dir.join("sqlite3mc_amalgamation.c");
     let amalgamation_h = source_dir.join("sqlite3mc_amalgamation.h");
 
-    // Download and extract if not already cached in OUT_DIR.
     if !amalgamation_c.exists() || !amalgamation_h.exists() {
         std::fs::create_dir_all(&source_dir).expect("failed to create source dir");
         let zip_path = out_dir.join("sqlite3mc-amalgamation.zip");
@@ -70,7 +56,6 @@ fn build_sqlite3mc() {
     compile(&amalgamation_c, &source_dir);
 }
 
-/// Downloads the release amalgamation zip using curl.
 fn download(dest: &Path) {
     println!(
         "cargo:warning=Downloading sqlite3mc v{SQLITE3MC_VERSION} amalgamation \
@@ -85,7 +70,6 @@ fn download(dest: &Path) {
     assert!(status.success(), "curl failed with status {status}");
 }
 
-/// Verifies the SHA-256 checksum of the downloaded archive.
 fn verify_checksum(zip_path: &Path) {
     let data = std::fs::read(zip_path).expect("failed to read zip for checksum");
     let hash = Sha256::digest(&data);
@@ -97,12 +81,8 @@ fn verify_checksum(zip_path: &Path) {
     );
 }
 
-/// Extracts the amalgamation zip into `dest_dir`.
-///
-/// The release amalgamation zip has no top-level directory prefix; files
-/// (`sqlite3mc_amalgamation.c`, `sqlite3mc_amalgamation.h`, etc.) sit at the
-/// root of the archive and are extracted directly into `dest_dir`.
 fn extract(zip_path: &Path, dest_dir: &Path) {
+    // The release amalgamation zip has a flat structure — no top-level prefix.
     let file = std::fs::File::open(zip_path).expect("failed to open zip");
     let mut archive = zip::ZipArchive::new(file).expect("failed to read zip archive");
 
@@ -114,9 +94,7 @@ fn extract(zip_path: &Path, dest_dir: &Path) {
             continue;
         }
 
-        // Guard against zip-slip: reject entries with absolute paths or `..`
-        // components. In practice the SHA-256 check above ensures the archive
-        // hasn't been tampered with, but this is an extra layer of defence.
+        // Zip-slip guard (belt-and-suspenders alongside the SHA-256 check).
         if raw_name.contains("..") || raw_name.starts_with('/') {
             panic!("zip entry with unsafe path rejected: {raw_name}");
         }
@@ -144,7 +122,6 @@ fn extract(zip_path: &Path, dest_dir: &Path) {
     }
 }
 
-/// Compiles the sqlite3mc amalgamation into a static library.
 fn compile(amalgamation_c: &Path, include_dir: &Path) {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
@@ -161,11 +138,10 @@ fn compile(amalgamation_c: &Path, include_dir: &Path) {
         .define("SQLITE_ENABLE_RTREE", None)
         .define("SQLITE_DEFAULT_WAL_SYNCHRONOUS", "1")
         .define("SQLITE_DQS", "0")
-        // sqlite3mc cipher configuration -- default to ChaCha20-Poly1305
+        // Default cipher: ChaCha20-Poly1305
         .define("CODEC_TYPE", "CODEC_TYPE_CHACHA20")
-        // Disable Argon2 threading (not needed, avoids pthread dep on some targets)
+        // Disable Argon2 threading (avoids pthread dep on some targets)
         .define("ARGON2_NO_THREADS", None)
-        // Optimizations
         .define("SQLITE_DEFAULT_MEMSTATUS", "0")
         .define("SQLITE_LIKE_DOESNT_MATCH_BLOBS", None)
         .define("SQLITE_OMIT_DEPRECATED", None)
@@ -184,7 +160,6 @@ fn compile(amalgamation_c: &Path, include_dir: &Path) {
         _ => {}
     }
 
-    // Suppress warnings from the amalgamation (third-party code)
-    build.warnings(false);
+    build.warnings(false); // third-party code
     build.compile("sqlite3mc");
 }
