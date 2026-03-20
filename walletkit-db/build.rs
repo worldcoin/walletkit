@@ -2,9 +2,7 @@
 //!
 //! On non-WASM targets this downloads the sqlite3mc v2.3.2 amalgamation zip,
 //! extracts the pre-built `sqlite3mc_amalgamation.c` / `.h`, and compiles them
-//! into a static library. v2.3.2 includes the thread-safety fix for
-//! `sqlite3mc_cipher_name` (issue #228, commit `07a1a60`):
-//! <https://github.com/utelle/SQLite3MultipleCiphers/releases/tag/v2.3.2>
+//! into a static library.
 //!
 //! On WASM targets compilation is skipped because `sqlite-wasm-rs` provides
 //! the pre-compiled WASM binary.
