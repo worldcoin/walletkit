@@ -47,7 +47,7 @@ pub struct CredentialStore {
     /// Channel sender for the vault-changed notification thread.
     /// Kept outside `inner` so we can notify after releasing the storage mutex.
     #[cfg(not(target_arch = "wasm32"))]
-    vault_changed_tx: Mutex<Option<mpsc::Sender<()>>>,
+    vault_changed_tx: Mutex<Option<mpsc::SyncSender<()>>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -344,7 +344,7 @@ impl CredentialStore {
     /// `CredentialStore` — doing so will deadlock.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn set_vault_changed_listener(&self, listener: Arc<dyn VaultChangedListener>) {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = mpsc::sync_channel(1);
 
         match std::thread::Builder::new()
             .name("walletkit-vault-notify".into())
@@ -373,8 +373,11 @@ impl CredentialStore {
         #[cfg(not(target_arch = "wasm32"))]
         if let Ok(guard) = self.vault_changed_tx.lock() {
             if let Some(tx) = guard.as_ref() {
-                if tx.send(()).is_err() {
-                    tracing::warn!("vault-changed listener disconnected");
+                match tx.try_send(()) {
+                    Ok(()) | Err(mpsc::TrySendError::Full(())) => {}
+                    Err(mpsc::TrySendError::Disconnected(())) => {
+                        tracing::warn!("vault-changed listener disconnected");
+                    }
                 }
             }
         }
