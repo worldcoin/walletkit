@@ -1,6 +1,8 @@
 //! Storage facade implementing the credential storage API.
 
-use std::sync::{mpsc, Arc, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
 
 use world_id_core::FieldElement as CoreFieldElement;
 
@@ -9,7 +11,9 @@ use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
 use super::traits::StorageProvider;
-use super::traits::{AtomicBlobStore, DeviceKeystore, VaultChangedListener};
+#[cfg(not(target_arch = "wasm32"))]
+use super::traits::VaultChangedListener;
+use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
 use crate::{Credential, FieldElement};
@@ -42,6 +46,7 @@ pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
     /// Channel sender for the vault-changed notification thread.
     /// Kept outside `inner` so we can notify after releasing the storage mutex.
+    #[cfg(not(target_arch = "wasm32"))]
     vault_changed_tx: Mutex<Option<mpsc::Sender<()>>>,
 }
 
@@ -132,6 +137,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
         })
     }
@@ -149,6 +155,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
         Ok(Self {
             inner: Mutex::new(inner),
+            #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
         })
     }
@@ -331,24 +338,29 @@ impl CredentialStore {
     /// automatically when the old sender is dropped.
     ///
     /// Delivery happens on a dedicated background thread to avoid re-entering
-    /// the UniFFI call stack (see `logger.rs` for rationale).
+    /// the `UniFFI` call stack (see `logger.rs` for rationale).
     ///
     /// **Warning:** the listener **must not** call back into this
     /// `CredentialStore` — doing so will deadlock.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_vault_changed_listener(&self, listener: Arc<dyn VaultChangedListener>) {
         let (tx, rx) = mpsc::channel();
 
-        std::thread::Builder::new()
+        match std::thread::Builder::new()
             .name("walletkit-vault-notify".into())
             .spawn(move || {
                 for () in rx {
                     listener.on_vault_changed();
                 }
-            })
-            .expect("failed to spawn vault notification thread");
-
-        if let Ok(mut guard) = self.vault_changed_tx.lock() {
-            *guard = Some(tx);
+            }) {
+            Ok(_) => {
+                if let Ok(mut guard) = self.vault_changed_tx.lock() {
+                    *guard = Some(tx);
+                }
+            }
+            Err(e) => {
+                tracing::error!("failed to spawn vault notification thread: {e}");
+            }
         }
     }
 }
@@ -356,7 +368,9 @@ impl CredentialStore {
 /// Implementation not exposed to foreign bindings
 impl CredentialStore {
     /// Best-effort notification to the registered vault-changed listener.
+    /// No-op on wasm32 where the listener cannot be registered.
     fn notify_vault_changed(&self) {
+        #[cfg(not(target_arch = "wasm32"))]
         if let Ok(guard) = self.vault_changed_tx.lock() {
             if let Some(tx) = guard.as_ref() {
                 if tx.send(()).is_err() {
@@ -670,6 +684,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
         })
     }
@@ -687,6 +702,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
         })
     }
@@ -707,6 +723,16 @@ mod tests {
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
+
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    struct TestVaultListener(Arc<AtomicU32>);
+
+    impl VaultChangedListener for TestVaultListener {
+        fn on_vault_changed(&self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 
     #[test]
     fn test_replay_guard_field_element_serialization() {
@@ -1431,7 +1457,6 @@ mod tests {
 
     #[test]
     fn test_vault_changed_listener_notified_on_store() {
-        use std::sync::atomic::{AtomicU32, Ordering};
         use world_id_core::Credential as CoreCredential;
 
         let root = temp_root_path();
@@ -1440,16 +1465,9 @@ mod tests {
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
-        let count_clone = Arc::clone(&count);
-
-        struct Listener(Arc<AtomicU32>);
-        impl VaultChangedListener for Listener {
-            fn on_vault_changed(&self) {
-                self.0.fetch_add(1, Ordering::SeqCst);
-            }
-        }
-
-        store.set_vault_changed_listener(Arc::new(Listener(count_clone)));
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
+            &count,
+        ))));
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -1473,7 +1491,6 @@ mod tests {
 
     #[test]
     fn test_vault_changed_listener_notified_on_delete() {
-        use std::sync::atomic::{AtomicU32, Ordering};
         use world_id_core::Credential as CoreCredential;
 
         let root = temp_root_path();
@@ -1482,16 +1499,9 @@ mod tests {
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
-        let count_clone = Arc::clone(&count);
-
-        struct Listener(Arc<AtomicU32>);
-        impl VaultChangedListener for Listener {
-            fn on_vault_changed(&self) {
-                self.0.fetch_add(1, Ordering::SeqCst);
-            }
-        }
-
-        store.set_vault_changed_listener(Arc::new(Listener(count_clone)));
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
+            &count,
+        ))));
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -1517,24 +1527,15 @@ mod tests {
 
     #[test]
     fn test_vault_changed_listener_not_notified_on_failure() {
-        use std::sync::atomic::{AtomicU32, Ordering};
-
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
-        let count_clone = Arc::clone(&count);
-
-        struct Listener(Arc<AtomicU32>);
-        impl VaultChangedListener for Listener {
-            fn on_vault_changed(&self) {
-                self.0.fetch_add(1, Ordering::SeqCst);
-            }
-        }
-
-        store.set_vault_changed_listener(Arc::new(Listener(count_clone)));
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
+            &count,
+        ))));
 
         // Deleting a non-existent credential should fail — no notification.
         let result = store.delete_credential(999);

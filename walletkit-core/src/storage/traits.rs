@@ -93,7 +93,7 @@ pub trait StorageProvider: Send + Sync {
 ///
 /// Register via [`CredentialStore::set_vault_changed_listener`]. The callback
 /// is delivered on a dedicated background thread to avoid re-entering the
-/// UniFFI call stack (see `logger.rs` for rationale).
+/// `UniFFI` call stack (see `logger.rs` for rationale).
 ///
 /// # Expected usage
 ///
