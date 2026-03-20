@@ -17,8 +17,8 @@
 //!     store: Arc<CredentialStore>,
 //! ) -> Result<(), Box<dyn std::error::Error>> {
 //!     // Cache Groth16 proving material to disk (idempotent).
-//!     let paths = Arc::new(StoragePaths::from_root("/data/walletkit".into()));
-//!     cache_embedded_groth16_material(paths.clone())?;
+//!     let paths = StoragePaths::from_root("/data/walletkit".into());
+//!     cache_embedded_groth16_material(&paths)?;
 //!
 //!     // Initialize an authenticator for an already-registered World ID.
 //!     let seed = b"my_secret_seed_at_length_32_bytes!";
@@ -27,7 +27,7 @@
 //!         None, // uses default RPC URL
 //!         &Environment::Staging,
 //!         None, // uses default region
-//!         paths,
+//!         &paths,
 //!         store,
 //!     )
 //!     .await?;
@@ -70,6 +70,20 @@ pub enum Environment {
     Staging,
     /// Live production environment. World ID Tree: `id.worldcoin.eth`
     Production,
+}
+
+/// Methods exported to Swift/Kotlin via `UniFFI`.
+#[uniffi::export]
+impl Environment {
+    /// Returns the `PoH` Recovery Agent contract address for this environment.
+    ///
+    /// The `PoH` Recovery Agent is a contract users can optionally designate when
+    /// registering a World ID. If they lose access to all authenticators, the
+    /// agent can sign a recovery transaction to restore their account.
+    #[must_use]
+    pub fn poh_recovery_agent_address(&self) -> String {
+        defaults::poh_recovery_agent_address(self).to_string()
+    }
 }
 
 /// Region for node selection.
@@ -120,7 +134,8 @@ pub mod issuers;
 ///
 /// # Example
 /// ```rust
-/// use walletkit_core::{proof::ProofContext, CredentialType, Environment, world_id::WorldId};
+/// use walletkit_core::v3::{proof::ProofContext, CredentialType, world_id::WorldId};
+/// use walletkit_core::Environment;
 /// async fn example() {
 ///     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
 ///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Orb);

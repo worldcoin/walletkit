@@ -4,7 +4,6 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 use sha2::{Digest, Sha256};
@@ -20,8 +19,8 @@ use super::{StorageError, StoragePaths, StorageResult};
 /// Returns an error if embedded material cannot be loaded or cache files cannot be written.
 #[uniffi::export]
 #[allow(clippy::needless_pass_by_value)]
-pub fn cache_embedded_groth16_material(paths: Arc<StoragePaths>) -> StorageResult<()> {
-    if has_valid_cached_material(paths.as_ref())? {
+pub fn cache_embedded_groth16_material(paths: &StoragePaths) -> StorageResult<()> {
+    if has_valid_cached_material(paths)? {
         return Ok(());
     }
 
@@ -101,7 +100,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> StorageResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, sync::Arc};
+    use std::fs;
 
     use super::cache_embedded_groth16_material;
     use crate::storage::StoragePaths;
@@ -115,10 +114,9 @@ mod tests {
     #[test]
     fn test_cache_embedded_groth16_material_writes_all_files() {
         let root = temp_root();
-        let paths = Arc::new(StoragePaths::new(&root));
+        let paths = StoragePaths::new(&root);
 
-        cache_embedded_groth16_material(paths.clone())
-            .expect("cache embedded material");
+        cache_embedded_groth16_material(&paths).expect("cache embedded material");
 
         assert!(paths.groth16_dir().is_dir());
         assert!(paths.query_zkey_path().is_file());
@@ -132,14 +130,14 @@ mod tests {
     #[test]
     fn test_cache_embedded_groth16_material_is_idempotent() {
         let root = temp_root();
-        let paths = Arc::new(StoragePaths::new(&root));
+        let paths = StoragePaths::new(&root);
 
-        cache_embedded_groth16_material(paths.clone()).expect("first cache");
+        cache_embedded_groth16_material(&paths).expect("first cache");
         let first_query_len = fs::metadata(paths.query_zkey_path())
             .expect("query zkey metadata")
             .len();
 
-        cache_embedded_groth16_material(paths.clone()).expect("second cache");
+        cache_embedded_groth16_material(&paths).expect("second cache");
         let second_query_len = fs::metadata(paths.query_zkey_path())
             .expect("query zkey metadata")
             .len();

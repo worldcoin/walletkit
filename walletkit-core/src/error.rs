@@ -69,10 +69,6 @@ pub enum WalletKitError {
     #[error("Account is not registered for this authenticator.")]
     AccountDoesNotExist,
 
-    /// The account already exists for this authenticator. Call `account_index` to get the account index.
-    #[error("Account already exists for this authenticator.")]
-    AccountAlreadyExists,
-
     /// The public key was not found in the batch, i.e. the authenticator is not authorized to sign for this action
     #[error("unauthorized_authenticator")]
     UnauthorizedAuthenticator,
@@ -176,7 +172,6 @@ impl From<AuthenticatorError> for WalletKitError {
     fn from(error: AuthenticatorError) -> Self {
         match error {
             AuthenticatorError::AccountDoesNotExist => Self::AccountDoesNotExist,
-            AuthenticatorError::AccountAlreadyExists => Self::AccountAlreadyExists,
 
             AuthenticatorError::NetworkError(error) => Self::NetworkError {
                 url: error
