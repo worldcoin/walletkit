@@ -24,11 +24,19 @@ final class LoggingTests: XCTestCase {
         WalletKit.initLogging(logger: logger, level: .info)
         WalletKit.emitLog(level: .info, message: "bridge test")
 
-        // Log delivery happens on a dedicated background thread, so give it
-        // a moment to flush through the channel.
-        Thread.sleep(forTimeInterval: 0.05)
+        // Log delivery happens on a dedicated background thread via an mpsc
+        // channel. Poll with a generous timeout so CI runners under load
+        // don't flake.
+        let deadline = Date().addingTimeInterval(5.0)
+        var entries: [(WalletKit.LogLevel, String)] = []
+        while Date() < deadline {
+            entries = logger.snapshot()
+            if entries.contains(where: { $0.0 == .info && $0.1.contains("bridge test") }) {
+                break
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
 
-        let entries = logger.snapshot()
         XCTAssertFalse(entries.isEmpty, "expected at least one bridged log entry")
 
         let hasBridgedMessage = entries.contains { level, message in

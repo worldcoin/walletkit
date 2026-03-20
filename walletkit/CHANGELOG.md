@@ -1,0 +1,45 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.11.0](https://github.com/worldcoin/walletkit/compare/v0.10.0...v0.11.0) - 2026-03-19
+
+### Added
+
+- [**breaking**] version bump to 0.6 with new RP signature ([#308](https://github.com/worldcoin/walletkit/pull/308))
+- export credential store as raw bytes ([#307](https://github.com/worldcoin/walletkit/pull/307))
+- expose TFH recovery agent address in defaults ([#299](https://github.com/worldcoin/walletkit/pull/299))
+- production defaults ([#305](https://github.com/worldcoin/walletkit/pull/305))
+
+### Fixed
+
+- *(walletkit-core)* fix flaky test_session_cache_ttl TTL off-by-one ([#303](https://github.com/worldcoin/walletkit/pull/303))
+
+## [0.10.0](https://github.com/worldcoin/walletkit/compare/v0.9.1...v0.10.0) - 2026-03-12
+
+### Added
+
+- notify host on vault mutations for backup sync ([#292](https://github.com/worldcoin/walletkit/pull/292))
+
+### Other
+
+- expose associated_data_hash ([#297](https://github.com/worldcoin/walletkit/pull/297))
+- include expired credentials in list + add delete by ID ([#273](https://github.com/worldcoin/walletkit/pull/273))
+
+## [0.9.1](https://github.com/worldcoin/walletkit/compare/v0.9.0...v0.9.1) - 2026-03-11
+
+### Other
+
+- pass explicit `dest_dir` for vault backup export ([#282](https://github.com/worldcoin/walletkit/pull/282)). this API breaking change is for a feature not yet in production.
+- add `BigInt` dep to swift ([#290](https://github.com/worldcoin/walletkit/pull/290)).
+
+## [0.9.0](https://github.com/worldcoin/walletkit/compare/v0.8.0...v0.9.0) - 2026-03-11
+
+### Added
+
+- use ruint-uniffi for numbers ([#283](https://github.com/worldcoin/walletkit/pull/283))

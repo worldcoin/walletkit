@@ -234,11 +234,11 @@ mod tests {
         let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
         let rp_id = [0x55u8; 32];
         let k_session = [0x66u8; 32];
-        db.session_key_put(&guard, rp_id, k_session, 1)
+        db.session_key_put(&guard, rp_id, k_session, 3)
             .expect("put session key");
         let hit = db.session_key_get(rp_id).expect("get session key");
         assert!(hit.is_some());
-        std::thread::sleep(Duration::from_secs(2));
+        std::thread::sleep(Duration::from_secs(4));
         let miss = db.session_key_get(rp_id).expect("get session key");
         assert!(miss.is_none());
         cleanup_cache_files(&path);

@@ -23,6 +23,7 @@ kotlin/libs/
 kotlin/walletkit/src/main/java/uniffi/
 kotlin/walletkit-tests/build/
 .build/
+**/tests/Package.resolved
 
 .env
 

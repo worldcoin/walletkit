@@ -43,10 +43,16 @@ let package = Package(
             name: "WalletKit",
             targets: ["WalletKit"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/attaswift/BigInt.git", from: "5.4.0"),
+    ],
     targets: [
         .target(
             name: "WalletKit",
-            dependencies: ["walletkit_coreFFI"],
+            dependencies: [
+                "walletkit_coreFFI",
+                .product(name: "BigInt", package: "BigInt"),
+            ],
             path: "Sources/WalletKit"
         ),
         .binaryTarget(

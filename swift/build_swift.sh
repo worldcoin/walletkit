@@ -12,7 +12,7 @@ BASE_PATH="$PROJECT_ROOT_PATH/swift" # The base path for the Swift build
 PACKAGE_NAME="walletkit"
 TARGET_DIR="$PROJECT_ROOT_PATH/target"
 SUPPORT_SOURCES_DIR="$BASE_PATH/support"
-CARGO_FEATURES="compress-zkeys"
+CARGO_FEATURES="compress-zkeys,v3"
 
 # Default values
 OUTPUT_DIR="$BASE_PATH" # Default to BASE_PATH if not provided
@@ -67,6 +67,15 @@ mkdir -p "$SWIFT_HEADERS_DIR"
 echo "Building Rust packages for iOS targets..."
 
 export IPHONEOS_DEPLOYMENT_TARGET="13.0"
+# Workaround: aws-lc-sys's urandom.c references the Linux-only RNDGETENTCNT
+# macro (from <linux/random.h>) and calls ioctl() without including
+# <sys/ioctl.h>, both of which cause compilation errors on iOS. We define
+# RNDGETENTCNT as a stub and suppress the implicit function declaration error.
+# These flags are scoped to aws-lc-sys only (via AWS_LC_SYS_ prefix) so they
+# don't affect other crates. The RNDGETENTCNT/ioctl code path is Linux-specific
+# and never reached on iOS, where aws-lc uses SecRandomCopyBytes/getentropy()
+# for entropy instead.
+export AWS_LC_SYS_CFLAGS="-DRNDGETENTCNT=2 -Wno-implicit-function-declaration"
 export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
                   -C link-arg=-Wl,-dead_strip \
                   -C link-arg=-Wl,-dead_strip_dylibs \

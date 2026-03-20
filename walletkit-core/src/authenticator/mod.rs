@@ -3,9 +3,9 @@
 use crate::{
     defaults::DefaultConfig, error::WalletKitError,
     primitives::ParseFromForeignBinding, Environment, FieldElement, Region,
-    U256Wrapper,
 };
 use alloy_primitives::Address;
+use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
@@ -136,7 +136,7 @@ impl Authenticator {
     /// The packed account data is a 256 bit integer which includes the user's leaf index, their recovery counter,
     /// and their pubkey id/commitment.
     #[must_use]
-    pub fn packed_account_data(&self) -> U256Wrapper {
+    pub fn packed_account_data(&self) -> Uint256 {
         self.inner.packed_account_data.into()
     }
 
@@ -163,7 +163,7 @@ impl Authenticator {
     /// Will error if the provided RPC URL is not valid or if there are RPC call failures.
     pub async fn get_packed_account_data_remote(
         &self,
-    ) -> Result<U256Wrapper, WalletKitError> {
+    ) -> Result<Uint256, WalletKitError> {
         let client = reqwest::Client::new(); // TODO: reuse client
         let packed_account_data = CoreAuthenticator::get_packed_account_data(
             self.inner.onchain_address(),
@@ -202,6 +202,24 @@ impl Authenticator {
     ) -> FieldElement {
         CoreCredential::compute_sub(self.inner.leaf_index(), blinding_factor.0).into()
     }
+
+    /// Signs an arbitrary challenge with the authenticator's on-chain key.
+    ///
+    /// # Warning
+    /// This is considered a dangerous operation because it leaks the user's on-chain key,
+    /// hence its `leaf_index`. The only acceptable use is to prove the user's `leaf_index`
+    /// to a Recovery Agent. The Recovery Agent is the only party beyond the user who needs
+    /// to know the `leaf_index`.
+    ///
+    /// # Errors
+    /// May error if very unexpectedly the signing process fails. Not expected.
+    pub fn danger_sign_challenge(
+        &self,
+        challenge: &[u8],
+    ) -> Result<Vec<u8>, WalletKitError> {
+        let signature = self.inner.danger_sign_challenge(challenge)?;
+        Ok(signature.as_bytes().to_vec())
+    }
 }
 
 #[cfg(not(feature = "storage"))]
@@ -222,10 +240,10 @@ impl Authenticator {
         region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_embedded_materials()?;
         let authenticator =
-            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
-                .await?;
+            authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
         })
@@ -245,10 +263,10 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_embedded_materials()?;
         let authenticator =
-            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
-                .await?;
+            authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
         })
@@ -271,15 +289,14 @@ impl Authenticator {
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
-        paths: Arc<StoragePaths>,
+        paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let (query_material, nullifier_material) =
-            load_cached_materials(paths.as_ref())?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
-            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
-                .await?;
+            authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
             store,
@@ -297,7 +314,7 @@ impl Authenticator {
     pub async fn init(
         seed: &[u8],
         config: &str,
-        paths: Arc<StoragePaths>,
+        paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config =
@@ -305,11 +322,11 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        let (query_material, nullifier_material) =
-            load_cached_materials(paths.as_ref())?;
+
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
-            CoreAuthenticator::init(seed, config, query_material, nullifier_material)
-                .await?;
+            authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
             store,
@@ -341,6 +358,7 @@ impl Authenticator {
         let credential_list = self.store.list_credentials(None, now)?;
         let credential_list = credential_list
             .into_iter()
+            .filter(|cred| !cred.is_expired)
             .map(|cred| cred.issuer_schema_id)
             .collect::<std::collections::HashSet<_>>();
         let credentials_to_prove = proof_request
@@ -565,11 +583,11 @@ mod tests {
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
-        cache_embedded_groth16_material(store.storage_paths().expect("paths"))
+        cache_embedded_groth16_material(&store.storage_paths().expect("paths"))
             .expect("cache material");
 
         let paths = store.storage_paths().expect("paths");
-        Authenticator::init(&seed, &config, paths, Arc::new(store))
+        Authenticator::init(&seed, &config, &paths, Arc::new(store))
             .await
             .unwrap();
         drop(mock_server);
