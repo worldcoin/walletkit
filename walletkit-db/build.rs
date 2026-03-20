@@ -1,29 +1,25 @@
 //! Build script for walletkit-db.
 //!
-//! On non-WASM targets this downloads the sqlite3mc source archive from a
-//! pinned upstream commit, generates the amalgamation using the bundled
-//! `scripts/amalgamate.py`, and compiles it into a static library.
+//! On non-WASM targets this downloads the sqlite3mc amalgamation zip from the
+//! official v2.3.2 release, extracts the pre-generated amalgamation files, and
+//! compiles them into a static library.
 //!
 //! On WASM targets compilation is skipped because `sqlite-wasm-rs` provides
 //! the pre-compiled WASM binary.
 //!
-//! ## Why a commit SHA rather than a release tag?
+//! ## Release zip
 //!
-//! The thread-safety fix for `sqlite3mc_cipher_name` (upstream issue #228) was
-//! committed to sqlite3mc `main` in commit `07a1a60` on 2026-03-18, five days
-//! after the v2.3.1 release.  We pin directly to that commit rather than
-//! waiting for the next release.
+//! The upstream v2.3.2 release ships a dedicated amalgamation zip
+//! (`sqlite3mc-2.3.2-sqlite-3.51.3-amalgamation.zip`) that already contains
+//! `sqlite3mc_amalgamation.c` and `sqlite3mc_amalgamation.h` at the root — no
+//! Python or build-time source generation is required.
 //!
-//! The fix replaces the internal call to `sqlite3mc_cipher_name` (which writes
-//! to a `static char[]` buffer) with a new `sqlite3mcFindCipherName` helper
-//! that returns a stable pointer into `globalCodecDescriptorTable` memory,
-//! making concurrent `sqlite3_open_v2` calls safe without any Rust-side locking.
+//! v2.3.2 includes the thread-safety fix for `sqlite3mc_cipher_name` (upstream
+//! issue #228, commit `07a1a60`) that landed after the v2.3.1 release.
 //!
 //! Upstream issue:  <https://github.com/utelle/SQLite3MultipleCiphers/issues/228>
 //! Fix commit:      <https://github.com/utelle/SQLite3MultipleCiphers/commit/07a1a60>
-//!
-//! When the next sqlite3mc release that includes this commit is published,
-//! switch back to the release-zip URL and update the constants accordingly.
+//! Release:         <https://github.com/utelle/SQLite3MultipleCiphers/releases/tag/v2.3.2>
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -31,21 +27,13 @@ use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
-// Pinned sqlite3mc commit (contains the thread-safety fix for issue #228).
-// The short form is used in human-readable messages and directory names; the
-// full SHA is embedded in DOWNLOAD_URL and ARCHIVE_PREFIX below.
-const SQLITE3MC_COMMIT_SHORT: &str = "07a1a60";
-// SQLite version bundled in the source tree at this commit.
+const SQLITE3MC_VERSION: &str = "2.3.2";
 const SQLITE_VERSION: &str = "3.51.3";
 
-const DOWNLOAD_URL: &str = "https://github.com/utelle/SQLite3MultipleCiphers/archive/\
-    07a1a60ce6439467620e247c88e0449572e03cb5.zip";
+const DOWNLOAD_URL: &str = "https://github.com/utelle/SQLite3MultipleCiphers/releases/\
+    download/v2.3.2/sqlite3mc-2.3.2-sqlite-3.51.3-amalgamation.zip";
 const EXPECTED_SHA256: &str =
-    "014d49636fea11fd598089f0ee4d19f022edc3aead0c769156444618eba6f051";
-
-// Every path inside the GitHub source archive is prefixed with this directory.
-const ARCHIVE_PREFIX: &str =
-    "SQLite3MultipleCiphers-07a1a60ce6439467620e247c88e0449572e03cb5/";
+    "3462d3f09e91daa829b8787d93f451168fbafc4ccbf9d579f5e4117416f5c82d";
 
 fn main() {
     build_sqlite3mc();
@@ -58,35 +46,34 @@ fn build_sqlite3mc() {
     }
 
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
-    let source_dir = out_dir.join(format!("sqlite3mc-{SQLITE3MC_COMMIT_SHORT}"));
+    let source_dir = out_dir.join(format!("sqlite3mc-{SQLITE3MC_VERSION}"));
     let amalgamation_c = source_dir.join("sqlite3mc_amalgamation.c");
     let amalgamation_h = source_dir.join("sqlite3mc_amalgamation.h");
 
-    // Download, extract, and amalgamate if not already cached in OUT_DIR.
+    // Download and extract if not already cached in OUT_DIR.
     if !amalgamation_c.exists() || !amalgamation_h.exists() {
         std::fs::create_dir_all(&source_dir).expect("failed to create source dir");
-        let zip_path = out_dir.join("sqlite3mc-source.zip");
+        let zip_path = out_dir.join("sqlite3mc-amalgamation.zip");
         download(&zip_path);
         verify_checksum(&zip_path);
         extract(&zip_path, &source_dir);
-        amalgamate(&source_dir);
         assert!(
             amalgamation_c.exists(),
-            "sqlite3mc_amalgamation.c not found after amalgamation"
+            "sqlite3mc_amalgamation.c not found after extraction"
         );
         assert!(
             amalgamation_h.exists(),
-            "sqlite3mc_amalgamation.h not found after amalgamation"
+            "sqlite3mc_amalgamation.h not found after extraction"
         );
     }
 
     compile(&amalgamation_c, &source_dir);
 }
 
-/// Downloads the pinned source archive using curl.
+/// Downloads the release amalgamation zip using curl.
 fn download(dest: &Path) {
     println!(
-        "cargo:warning=Downloading sqlite3mc commit {SQLITE3MC_COMMIT_SHORT} \
+        "cargo:warning=Downloading sqlite3mc v{SQLITE3MC_VERSION} amalgamation \
          (SQLite {SQLITE_VERSION})..."
     );
     let status = Command::new("curl")
@@ -106,13 +93,15 @@ fn verify_checksum(zip_path: &Path) {
     assert_eq!(
         actual_hash, EXPECTED_SHA256,
         "sqlite3mc checksum mismatch!\n  expected: {EXPECTED_SHA256}\n  actual:   {actual_hash}\n\
-         The download may be corrupted or the pinned commit archive has changed."
+         The download may be corrupted or the release zip has changed."
     );
 }
 
-/// Extracts the source archive into `dest_dir`, stripping the top-level
-/// archive prefix so that `dest_dir/src/`, `dest_dir/scripts/`, etc. are
-/// created directly.
+/// Extracts the amalgamation zip into `dest_dir`.
+///
+/// The release amalgamation zip has no top-level directory prefix; files
+/// (`sqlite3mc_amalgamation.c`, `sqlite3mc_amalgamation.h`, etc.) sit at the
+/// root of the archive and are extracted directly into `dest_dir`.
 fn extract(zip_path: &Path, dest_dir: &Path) {
     let file = std::fs::File::open(zip_path).expect("failed to open zip");
     let mut archive = zip::ZipArchive::new(file).expect("failed to read zip archive");
@@ -121,15 +110,18 @@ fn extract(zip_path: &Path, dest_dir: &Path) {
         let mut entry = archive.by_index(i).expect("failed to read zip entry");
         let raw_name = entry.name().to_owned();
 
-        // Strip the top-level directory prefix that GitHub adds to source archives.
-        let Some(rel) = raw_name.strip_prefix(ARCHIVE_PREFIX) else {
-            continue; // entry is outside the expected prefix — skip
-        };
-        if rel.is_empty() {
-            continue; // the prefix directory entry itself
+        if raw_name.is_empty() {
+            continue;
         }
 
-        let dest_path = dest_dir.join(rel);
+        // Guard against zip-slip: reject entries with absolute paths or `..`
+        // components. In practice the SHA-256 check above ensures the archive
+        // hasn't been tampered with, but this is an extra layer of defence.
+        if raw_name.contains("..") || raw_name.starts_with('/') {
+            panic!("zip entry with unsafe path rejected: {raw_name}");
+        }
+
+        let dest_path = dest_dir.join(&raw_name);
         if entry.is_dir() {
             std::fs::create_dir_all(&dest_path).unwrap_or_else(|e| {
                 panic!("failed to create dir {}: {e}", dest_path.display())
@@ -150,27 +142,6 @@ fn extract(zip_path: &Path, dest_dir: &Path) {
             });
         }
     }
-}
-
-/// Runs `scripts/amalgamate.py` inside `source_dir` to produce
-/// `sqlite3mc_amalgamation.c` and `sqlite3mc_amalgamation.h`.
-///
-/// The script is bundled in the upstream source tree and requires Python 3.
-/// It reads `src/` (which includes the `SQLite` amalgamation and all sqlite3mc
-/// cipher sources) and writes two self-contained amalgamation files.
-fn amalgamate(source_dir: &Path) {
-    for config in ["scripts/sqlite3mc.c.json", "scripts/sqlite3mc.h.json"] {
-        let status = Command::new("python3")
-            .current_dir(source_dir)
-            .args(["scripts/amalgamate.py", "-c", config, "-s", "src"])
-            .status()
-            .expect("failed to run python3 -- is it installed?");
-        assert!(
-            status.success(),
-            "amalgamate.py failed for {config} with status {status}"
-        );
-    }
-    println!("cargo:warning=Generated sqlite3mc amalgamation from commit {SQLITE3MC_COMMIT_SHORT}");
 }
 
 /// Compiles the sqlite3mc amalgamation into a static library.
