@@ -28,6 +28,8 @@ class AndroidDeviceKeystore(
             System.arraycopy(iv, 0, output, 1, iv.size)
             System.arraycopy(ciphertext, 0, output, 1 + iv.size, ciphertext.size)
             return output
+        } catch (error: StorageException) {
+            throw error
         } catch (error: Exception) {
             throw StorageException.Keystore("keystore seal failed: ${error.message}")
         }
@@ -53,6 +55,8 @@ class AndroidDeviceKeystore(
             cipher.init(Cipher.DECRYPT_MODE, key, spec)
             cipher.updateAAD(associatedData)
             return cipher.doFinal(payload)
+        } catch (error: StorageException) {
+            throw error
         } catch (error: Exception) {
             throw StorageException.Keystore("keystore open failed: ${error.message}")
         }
