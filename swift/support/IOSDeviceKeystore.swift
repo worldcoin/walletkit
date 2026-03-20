@@ -18,26 +18,38 @@ public final class IOSDeviceKeystore: DeviceKeystore {
     }
 
     public func seal(associatedData: Data, plaintext: Data) throws -> Data {
-        let key = try loadOrCreateKey()
-        let sealedBox = try AES.GCM.seal(
-            plaintext,
-            using: key,
-            authenticating: associatedData
-        )
-        guard let combined = sealedBox.combined else {
-            throw StorageError.Keystore("missing AES-GCM combined payload")
+        do {
+            let key = try loadOrCreateKey()
+            let sealedBox = try AES.GCM.seal(
+                plaintext,
+                using: key,
+                authenticating: associatedData
+            )
+            guard let combined = sealedBox.combined else {
+                throw StorageError.Keystore("missing AES-GCM combined payload")
+            }
+            return combined
+        } catch let error as StorageError {
+            throw error
+        } catch {
+            throw StorageError.Keystore("seal failed: \(error)")
         }
-        return combined
     }
 
     public func openSealed(associatedData: Data, ciphertext: Data) throws -> Data {
-        let key = try loadOrCreateKey()
-        let sealedBox = try AES.GCM.SealedBox(combined: ciphertext)
-        return try AES.GCM.open(
-            sealedBox,
-            using: key,
-            authenticating: associatedData
-        )
+        do {
+            let key = try loadOrCreateKey()
+            let sealedBox = try AES.GCM.SealedBox(combined: ciphertext)
+            return try AES.GCM.open(
+                sealedBox,
+                using: key,
+                authenticating: associatedData
+            )
+        } catch let error as StorageError {
+            throw error
+        } catch {
+            throw StorageError.Keystore("open failed: \(error)")
+        }
     }
 
     private func loadOrCreateKey() throws -> SymmetricKey {
