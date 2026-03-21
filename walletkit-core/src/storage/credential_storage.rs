@@ -1,5 +1,7 @@
 //! Storage facade implementing the credential storage API.
 
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 use world_id_core::FieldElement as CoreFieldElement;
@@ -9,6 +11,8 @@ use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
 use super::traits::StorageProvider;
+#[cfg(not(target_arch = "wasm32"))]
+use super::traits::VaultChangedListener;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::{CacheDb, VaultDb};
@@ -40,6 +44,10 @@ impl Drop for CleanupFile {
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
+    /// Channel sender for the vault-changed notification thread.
+    /// Kept outside `inner` so we can notify after releasing the storage mutex.
+    #[cfg(not(target_arch = "wasm32"))]
+    vault_changed_tx: Mutex<Option<mpsc::SyncSender<()>>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -129,6 +137,8 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            #[cfg(not(target_arch = "wasm32"))]
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -145,6 +155,8 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
         Ok(Self {
             inner: Mutex::new(inner),
+            #[cfg(not(target_arch = "wasm32"))]
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -190,7 +202,11 @@ impl CredentialStore {
     /// Returns an error if the delete operation fails or the credential ID does
     /// not exist.
     pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
-        self.lock_inner()?.delete_credential(credential_id)
+        let result = self.lock_inner()?.delete_credential(credential_id);
+        if result.is_ok() {
+            self.notify_vault_changed();
+        }
+        result
     }
 
     /// Stores a credential and optional associated data.
@@ -206,13 +222,17 @@ impl CredentialStore {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        self.lock_inner()?.store_credential(
+        let result = self.lock_inner()?.store_credential(
             credential,
             blinding_factor,
             expires_at,
             associated_data,
             now,
-        )
+        );
+        if result.is_ok() {
+            self.notify_vault_changed();
+        }
+        result
     }
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
@@ -303,12 +323,66 @@ impl CredentialStore {
     ///
     /// Returns an error if the delete operation fails.
     pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
-        self.lock_inner()?.danger_delete_all_credentials()
+        let result = self.lock_inner()?.danger_delete_all_credentials();
+        if result.is_ok() {
+            self.notify_vault_changed();
+        }
+        result
+    }
+
+    /// Registers a listener that is called after every successful vault
+    /// mutation (store, delete, purge).
+    ///
+    /// Only one listener can be active at a time — calling this replaces any
+    /// previously registered listener. The previous delivery thread shuts down
+    /// automatically when the old sender is dropped.
+    ///
+    /// Delivery happens on a dedicated background thread to avoid re-entering
+    /// the `UniFFI` call stack (see `logger.rs` for rationale).
+    ///
+    /// **Warning:** the listener **must not** call back into this
+    /// `CredentialStore` — doing so will deadlock.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_vault_changed_listener(&self, listener: Arc<dyn VaultChangedListener>) {
+        let (tx, rx) = mpsc::sync_channel(1);
+
+        match std::thread::Builder::new()
+            .name("walletkit-vault-notify".into())
+            .spawn(move || {
+                for () in rx {
+                    listener.on_vault_changed();
+                }
+            }) {
+            Ok(_) => {
+                if let Ok(mut guard) = self.vault_changed_tx.lock() {
+                    *guard = Some(tx);
+                }
+            }
+            Err(e) => {
+                tracing::error!("failed to spawn vault notification thread: {e}");
+            }
+        }
     }
 }
 
 /// Implementation not exposed to foreign bindings
 impl CredentialStore {
+    /// Best-effort notification to the registered vault-changed listener.
+    /// No-op on wasm32 where the listener cannot be registered.
+    fn notify_vault_changed(&self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Ok(guard) = self.vault_changed_tx.lock() {
+            if let Some(tx) = guard.as_ref() {
+                match tx.try_send(()) {
+                    Ok(()) | Err(mpsc::TrySendError::Full(())) => {}
+                    Err(mpsc::TrySendError::Disconnected(())) => {
+                        tracing::warn!("vault-changed listener disconnected");
+                    }
+                }
+            }
+        }
+    }
+
     fn lock_inner(
         &self,
     ) -> StorageResult<std::sync::MutexGuard<'_, CredentialStoreInner>> {
@@ -613,6 +687,8 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            #[cfg(not(target_arch = "wasm32"))]
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -629,6 +705,8 @@ impl CredentialStore {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            #[cfg(not(target_arch = "wasm32"))]
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -648,6 +726,16 @@ mod tests {
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
+
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    struct TestVaultListener(Arc<AtomicU32>);
+
+    impl VaultChangedListener for TestVaultListener {
+        fn on_vault_changed(&self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
 
     #[test]
     fn test_replay_guard_field_element_serialization() {
@@ -1366,6 +1454,124 @@ mod tests {
             remaining.is_empty(),
             "no temp backup files should remain after export, found: {remaining:?}"
         );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_vault_changed_listener_notified_on_store() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let count = Arc::new(AtomicU32::new(0));
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
+            &count,
+        ))));
+
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+
+        // Give the delivery thread time to process.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "listener should be notified once"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_vault_changed_listener_notified_on_delete() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let count = Arc::new(AtomicU32::new(0));
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
+            &count,
+        ))));
+
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        let id = store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+
+        store.delete_credential(id).expect("delete credential");
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // store + delete = 2 notifications
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            2,
+            "listener should be notified twice"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_vault_changed_listener_not_notified_on_failure() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let count = Arc::new(AtomicU32::new(0));
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
+            &count,
+        ))));
+
+        // Deleting a non-existent credential should fail — no notification.
+        let result = store.delete_credential(999);
+        assert!(result.is_err());
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            0,
+            "listener should not be notified on failure"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_no_listener_does_not_panic() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        // No listener registered — mutations should still work fine.
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store without listener should succeed");
 
         cleanup_test_storage(&root);
     }
