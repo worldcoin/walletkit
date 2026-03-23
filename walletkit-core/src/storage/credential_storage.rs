@@ -316,7 +316,10 @@ impl CredentialStore {
     pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
         self.lock_inner()?.danger_delete_all_credentials()
     }
+}
 
+#[uniffi::export]
+impl CredentialStore {
     /// Permanently destroys all credential storage data.
     ///
     /// This removes the encryption key envelope, the vault database, and the
@@ -333,9 +336,12 @@ impl CredentialStore {
     pub fn destroy_storage(&self) -> StorageResult<()> {
         self.lock_inner()?.destroy_storage()
     }
+}
 
-    /// Registers a listener that is called after a credential is added or
-    /// removed.
+/// Implementation not exposed to foreign bindings
+impl CredentialStore {
+    /// Registers a listener that is called after every successful vault
+    /// mutation (store, delete, purge).
     ///
     /// Only one listener can be active at a time — calling this replaces any
     /// previously registered listener. The previous delivery thread shuts down
@@ -367,10 +373,7 @@ impl CredentialStore {
             }
         }
     }
-}
 
-/// Implementation not exposed to foreign bindings
-impl CredentialStore {
     /// Stores a `session_id_r_seed` into the cache.
     ///
     /// # Errors
