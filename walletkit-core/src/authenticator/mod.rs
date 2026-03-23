@@ -357,13 +357,12 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(
-            seed,
-            config,
-            Arc::clone(&materials.query),
-            Arc::clone(&materials.nullifier),
-        )
-        .await?;
+        let authenticator = CoreAuthenticator::init(seed, config)
+            .await?
+            .with_proof_materials(
+                Arc::clone(&materials.query),
+                Arc::clone(&materials.nullifier),
+            );
         Ok(Self {
             inner: authenticator,
             store,
@@ -391,13 +390,12 @@ impl Authenticator {
                 reason: "Invalid config".to_string(),
             }
         })?;
-        let authenticator = CoreAuthenticator::init(
-            seed,
-            config,
-            Arc::clone(&materials.query),
-            Arc::clone(&materials.nullifier),
-        )
-        .await?;
+        let authenticator = CoreAuthenticator::init(seed, config)
+            .await?
+            .with_proof_materials(
+                Arc::clone(&materials.query),
+                Arc::clone(&materials.nullifier),
+            );
         Ok(Self {
             inner: authenticator,
             store,
