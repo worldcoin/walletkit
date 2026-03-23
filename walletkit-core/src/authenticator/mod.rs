@@ -8,10 +8,14 @@ use alloy_primitives::Address;
 use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
-    api_types::{GatewayErrorCode, GatewayRequestState},
+    api_types::{
+        ExecuteRecoveryAgentUpdateRequest, GatewayErrorCode, GatewayRequestState,
+        GatewayStatusResponse, UpdateRecoveryAgentRequest,
+    },
     primitives::Config,
+    world_id_registry::{domain, sign_initiate_recovery_agent_update},
     Authenticator as CoreAuthenticator, Credential as CoreCredential,
-    InitializingAuthenticator as CoreInitializingAuthenticator,
+    InitializingAuthenticator as CoreInitializingAuthenticator, Signer,
 };
 
 #[cfg(feature = "storage")]
@@ -125,6 +129,7 @@ fn load_nullifier_material_from_cache(
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator {
     inner: CoreAuthenticator,
+    signer: Signer,
     #[cfg(feature = "storage")]
     store: Arc<CredentialStore>,
 }
@@ -230,6 +235,119 @@ impl Authenticator {
         let signature = self.inner.danger_sign_challenge(challenge)?;
         Ok(signature.as_bytes().to_vec())
     }
+
+    /// Initiates a time-locked recovery agent update (14-day cooldown).
+    ///
+    /// Signs an EIP-712 `InitiateRecoveryAgentUpdate` payload and submits it to
+    /// the gateway. Returns the gateway request ID that can be used to poll
+    /// status.
+    ///
+    /// # Arguments
+    /// * `new_recovery_agent` — the checksummed hex address of the new recovery
+    ///   agent (e.g. `"0x1234…"`).
+    ///
+    /// # Errors
+    /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
+    ///   a valid address.
+    /// - Returns a network error if the gateway request fails.
+    pub async fn initiate_recovery_agent_update(
+        &self,
+        new_recovery_agent: String,
+    ) -> Result<String, WalletKitError> {
+        let new_recovery_agent =
+            Address::parse_from_ffi(&new_recovery_agent, "new_recovery_agent")?;
+
+        let leaf_index = self.inner.leaf_index();
+        let nonce = self.inner.signing_nonce().await?;
+
+        let eip712_domain = domain(
+            self.inner.config.chain_id(),
+            *self.inner.config.registry_address(),
+        );
+
+        let signature = sign_initiate_recovery_agent_update(
+            self.signer.onchain_signer(),
+            leaf_index,
+            new_recovery_agent,
+            nonce,
+            &eip712_domain,
+        )
+        .map_err(|e| WalletKitError::Generic {
+            error: format!("Failed to sign initiate recovery agent update: {e}"),
+        })?;
+
+        let req = UpdateRecoveryAgentRequest {
+            leaf_index,
+            new_recovery_agent,
+            signature: signature.as_bytes().to_vec(),
+            nonce,
+        };
+
+        let client = reqwest::Client::new(); // TODO: reuse client
+        let resp = client
+            .post(format!(
+                "{}/initiate-recovery-agent-update",
+                self.inner.config.gateway_url()
+            ))
+            .json(&req)
+            .send()
+            .await?;
+
+        let status = resp.status();
+        if status.is_success() {
+            let body: GatewayStatusResponse = resp.json().await?;
+            Ok(body.request_id)
+        } else {
+            let body_text = resp.text().await.unwrap_or_default();
+            Err(WalletKitError::NetworkError {
+                url: "gateway".to_string(),
+                error: body_text,
+                status: Some(status.as_u16()),
+            })
+        }
+    }
+
+    /// Executes a pending recovery agent update after the 14-day cooldown has
+    /// elapsed.
+    ///
+    /// This call is **permissionless** — no signature is required. The contract
+    /// enforces the cooldown and will revert with
+    /// `RecoveryAgentUpdateStillInCooldown` if called too early.
+    ///
+    /// Returns the gateway request ID that can be used to poll status.
+    ///
+    /// # Errors
+    /// Returns a network error if the gateway request fails.
+    pub async fn execute_recovery_agent_update(
+        &self,
+    ) -> Result<String, WalletKitError> {
+        let req = ExecuteRecoveryAgentUpdateRequest {
+            leaf_index: self.inner.leaf_index(),
+        };
+
+        let client = reqwest::Client::new(); // TODO: reuse client
+        let resp = client
+            .post(format!(
+                "{}/execute-recovery-agent-update",
+                self.inner.config.gateway_url()
+            ))
+            .json(&req)
+            .send()
+            .await?;
+
+        let status = resp.status();
+        if status.is_success() {
+            let body: GatewayStatusResponse = resp.json().await?;
+            Ok(body.request_id)
+        } else {
+            let body_text = resp.text().await.unwrap_or_default();
+            Err(WalletKitError::NetworkError {
+                url: "gateway".to_string(),
+                error: body_text,
+                status: Some(status.as_u16()),
+            })
+        }
+    }
 }
 
 #[cfg(not(feature = "storage"))]
@@ -249,6 +367,7 @@ impl Authenticator {
         environment: &Environment,
         region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
+        let signer = Signer::from_seed_bytes(seed)?;
         let config = Config::from_environment(environment, rpc_url, region)?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_embedded_materials()?;
@@ -256,6 +375,7 @@ impl Authenticator {
             authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
+            signer,
         })
     }
 
@@ -268,6 +388,7 @@ impl Authenticator {
     /// Will error if the provided seed is not valid or if the config is not valid.
     #[uniffi::constructor]
     pub async fn init(seed: &[u8], config: &str) -> Result<Self, WalletKitError> {
+        let signer = Signer::from_seed_bytes(seed)?;
         let config =
             Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
@@ -279,6 +400,7 @@ impl Authenticator {
             authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
+            signer,
         })
     }
 }
@@ -303,6 +425,7 @@ impl Authenticator {
         paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
+        let signer = Signer::from_seed_bytes(seed)?;
         let config = Config::from_environment(environment, rpc_url, region)?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_cached_materials(paths)?;
@@ -310,6 +433,7 @@ impl Authenticator {
             authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
+            signer,
             store,
         })
     }
@@ -329,6 +453,7 @@ impl Authenticator {
         paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
+        let signer = Signer::from_seed_bytes(seed)?;
         let config =
             Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
@@ -340,6 +465,7 @@ impl Authenticator {
             authenticator.with_proof_materials(query_material, nullifier_material);
         Ok(Self {
             inner: authenticator,
+            signer,
             store,
         })
     }
