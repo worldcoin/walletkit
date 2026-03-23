@@ -329,7 +329,10 @@ impl CredentialStore {
         }
         result
     }
+}
 
+/// Implementation not exposed to foreign bindings
+impl CredentialStore {
     /// Registers a listener that is called after every successful vault
     /// mutation (store, delete, purge).
     ///
@@ -363,10 +366,7 @@ impl CredentialStore {
             }
         }
     }
-}
 
-/// Implementation not exposed to foreign bindings
-impl CredentialStore {
     /// Best-effort notification to the registered vault-changed listener.
     /// No-op on wasm32 where the listener cannot be registered.
     fn notify_vault_changed(&self) {
