@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1](https://github.com/worldcoin/walletkit/compare/v0.11.0...v0.11.1) - 2026-03-24
+
+### Added
+
+- expose danger_sign_challenge ([#298](https://github.com/worldcoin/walletkit/pull/298))
+
+### Fixed
+
+- *(walletkit-db)* patch sqlite3mc_cipher_name to eliminate thread-safety race ([#301](https://github.com/worldcoin/walletkit/pull/301))
+
+### Other
+
+- `notify_vault_changed` when credential vault mutated ([#317](https://github.com/worldcoin/walletkit/pull/317))
+
 ## [0.11.0](https://github.com/worldcoin/walletkit/compare/v0.10.0...v0.11.0) - 2026-03-19
 
 ### Added
