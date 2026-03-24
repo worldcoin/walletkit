@@ -15,6 +15,7 @@ use super::traits::StorageProvider;
 use super::traits::VaultChangedListener;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
+use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, VaultDb};
 use crate::{Credential, FieldElement};
 
@@ -36,6 +37,20 @@ impl Drop for CleanupFile {
                 "Failed to delete plaintext vault temp file {}: {e}",
                 self.0
             );
+        }
+    }
+}
+
+/// Removes a `SQLite` database file and its WAL/SHM sidecar files.
+/// Best-effort: missing files are silently ignored, other errors are logged.
+#[cfg(not(target_arch = "wasm32"))]
+fn remove_db_files(db_path: &std::path::Path) {
+    for ext in &["sqlite", "sqlite-wal", "sqlite-shm"] {
+        let path = db_path.with_extension(ext);
+        if let Err(e) = std::fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::error!("Failed to delete {}: {e}", path.display());
+            }
         }
     }
 }
@@ -324,6 +339,27 @@ impl CredentialStore {
     /// Returns an error if the delete operation fails.
     pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
         let result = self.lock_inner()?.danger_delete_all_credentials();
+        if result.is_ok() {
+            self.notify_vault_changed();
+        }
+        result
+    }
+
+    /// Permanently destroys all credential storage data.
+    ///
+    /// This removes the encryption key envelope, the vault database, and the
+    /// cache database. After this call the store is left in an uninitialized
+    /// state — any subsequent operation (other than re-initialization) will
+    /// return [`StorageError::NotInitialized`].
+    ///
+    /// Intended for use when the user logs out or deletes their account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage lock cannot be acquired or the key
+    /// envelope cannot be deleted from the blob store.
+    pub fn destroy_storage(&self) -> StorageResult<()> {
+        let result = self.lock_inner()?.destroy_storage();
         if result.is_ok() {
             self.notify_vault_changed();
         }
@@ -674,6 +710,23 @@ impl CredentialStoreInner {
         let guard = self.guard()?;
         let state = self.state_mut()?;
         state.vault.danger_delete_all_credentials(&guard)
+    }
+
+    /// Permanently destroys all storage data: encryption keys, vault, and cache.
+    fn destroy_storage(&mut self) -> StorageResult<()> {
+        let _guard = self.guard()?;
+        // Drop in-memory state: zeroizes keys, closes database connections.
+        self.state = None;
+        // Delete the encryption key envelope. Without this key the database
+        // files are unreadable even if file deletion below fails.
+        self.blob_store.delete(ACCOUNT_KEYS_FILENAME.to_string())?;
+        // Best-effort removal of database files and their SQLite sidecar files.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            remove_db_files(&self.paths.vault_db_path());
+            remove_db_files(&self.paths.cache_db_path());
+        }
+        Ok(())
     }
 }
 
@@ -1572,6 +1625,82 @@ mod tests {
         store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store without listener should succeed");
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_destroy_storage() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+
+        // Destroy should succeed.
+        store.destroy_storage().expect("destroy storage");
+
+        // Subsequent operations should return NotInitialized.
+        let err = store.list_credentials(None, 1000).unwrap_err();
+        assert!(
+            matches!(err, StorageError::NotInitialized),
+            "expected NotInitialized, got: {err:?}"
+        );
+
+        // Re-initialization should work.
+        store.init(42, 1000).expect("re-init storage");
+        let list = store
+            .list_credentials(None, 1000)
+            .expect("list after re-init");
+        assert!(
+            list.is_empty(),
+            "store should be empty after destroy + re-init"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_destroy_storage_notifies_listener() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let count = Arc::new(AtomicU32::new(0));
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
+            &count,
+        ))));
+
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+
+        store.destroy_storage().expect("destroy storage");
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // store + destroy = 2 notifications
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            2,
+            "listener should be notified for store and destroy"
+        );
 
         cleanup_test_storage(&root);
     }

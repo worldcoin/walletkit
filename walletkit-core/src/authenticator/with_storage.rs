@@ -21,6 +21,20 @@ impl Authenticator {
         self.store.init(self.leaf_index(), now)?;
         Ok(())
     }
+
+    /// Permanently destroys all credential storage data.
+    ///
+    /// Removes the encryption keys, vault database, and cache database.
+    /// After this call the authenticator can no longer generate proofs or
+    /// access stored credentials. Intended for logout or account deletion.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage destruction fails.
+    pub fn destroy_storage(&self) -> Result<(), WalletKitError> {
+        self.store.destroy_storage()?;
+        Ok(())
+    }
 }
 
 impl Authenticator {
