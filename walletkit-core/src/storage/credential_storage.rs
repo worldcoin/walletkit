@@ -1,6 +1,8 @@
 //! Storage facade implementing the credential storage API.
 
 #[cfg(not(target_arch = "wasm32"))]
+use std::ops::Deref;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
@@ -362,6 +364,31 @@ impl CredentialStore {
                 tracing::error!("failed to spawn vault notification thread: {e}");
             }
         }
+    }
+
+    /// Exports the credential as a JSON string for the given issuer schema ID.
+    ///
+    /// Returns the serialized credential, or `None` if no matching non-expired
+    /// credential exists. Intended for debug/export use.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the credential query or serialization fails.
+    pub fn export_credential_json(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<String>> {
+        let Some((credential, _)) =
+            self.lock_inner()?.get_credential(issuer_schema_id, now)?
+        else {
+            return Ok(None);
+        };
+        serde_json::to_string_pretty(credential.deref())
+            .map(Some)
+            .map_err(|e| {
+                StorageError::Lock(format!("failed to serialize credential: {e}"))
+            })
     }
 }
 
