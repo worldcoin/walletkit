@@ -1649,6 +1649,18 @@ mod tests {
         // Destroy should succeed.
         store.destroy_storage().expect("destroy storage");
 
+        // Database files should be removed from the storage directory.
+        let paths = StoragePaths::new(&root);
+        let remaining: Vec<_> = std::fs::read_dir(paths.worldid_dir())
+            .expect("read worldid dir")
+            .filter_map(|e| e.ok().map(|e| e.file_name()))
+            .collect();
+        // Only the lock file should remain.
+        assert!(
+            remaining.iter().all(|f| f == "lock"),
+            "expected only lock file to remain, found: {remaining:?}"
+        );
+
         // Subsequent operations should return NotInitialized.
         let err = store.list_credentials(None, 1000).unwrap_err();
         assert!(
