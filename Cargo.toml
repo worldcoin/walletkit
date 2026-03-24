@@ -21,7 +21,7 @@ alloy-core = { version = "1", default-features = false, features = [
   "sol-types",
 ] }
 alloy-primitives = { version = "1", default-features = false }
-uniffi = { version = "0.31", features = ["tokio"] }
+uniffi = { version = "0.31", features = ["tokio", "wasm-unstable-single-threaded"] }
 world-id-core = { version = "0.6", default-features = false }
 
 # internal
@@ -42,3 +42,4 @@ opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.
 panic = "abort"
 debug = false
+

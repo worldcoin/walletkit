@@ -41,7 +41,7 @@ impl Drop for CleanupFile {
 }
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
+#[derive(uniffi::Object)]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
     /// Channel sender for the vault-changed notification thread.
@@ -120,14 +120,14 @@ impl CredentialStoreInner {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
+#[uniffi::export]
 impl CredentialStore {
     /// Creates a new storage handle from explicit components.
     ///
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
+    #[uniffi::constructor]
     pub fn new_with_components(
         paths: Arc<StoragePaths>,
         keystore: Arc<dyn DeviceKeystore>,
@@ -147,7 +147,7 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
+    #[uniffi::constructor]
     #[allow(clippy::needless_pass_by_value)]
     pub fn from_provider_arc(
         provider: Arc<dyn StorageProvider>,
@@ -259,53 +259,6 @@ impl CredentialStore {
             .merkle_cache_put(proof_bytes, now, ttl_seconds)
     }
 
-    /// Exports the current vault as an in-memory plaintext (unencrypted)
-    /// `SQLite` database for backup.
-    ///
-    /// The host app is responsible for persisting or uploading the returned
-    /// bytes
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the store is not initialized or the export fails.
-    #[cfg(not(target_arch = "wasm32"))]
-    #[expect(
-        clippy::significant_drop_tightening,
-        reason = "lock held intentionally for the full operation to prevent concurrent cleanup from deleting in-use temp files"
-    )]
-    pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
-        let inner = self.lock_inner()?;
-        inner.cleanup_stale_backup_files();
-        let path = inner.export_vault_for_backup_to_file()?;
-        let _cleanup = CleanupFile(path.clone());
-
-        std::fs::read(&path).map_err(|e| {
-            StorageError::VaultDb(format!("failed to read exported vault: {e}"))
-        })
-    }
-
-    /// Imports credentials from an in-memory plaintext vault backup.
-    ///
-    /// The store must already be initialized via [`init`](Self::init).
-    /// Intended for restore on a fresh install where the vault is empty.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the store is not initialized or the import fails.
-    #[cfg(not(target_arch = "wasm32"))]
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "Vec<u8> required for UniFFI lifting"
-    )]
-    pub fn import_vault_from_backup(&self, backup_bytes: Vec<u8>) -> StorageResult<()> {
-        let inner = self.lock_inner()?;
-        inner.cleanup_stale_backup_files();
-        let path = inner.write_temp_backup_file(&backup_bytes)?;
-        let _cleanup = CleanupFile(path.clone());
-
-        inner.import_vault_from_file(&path)
-    }
-
     /// **Development only.** Permanently deletes all stored credentials and their
     /// associated blob data from the vault.
     ///
@@ -329,7 +282,59 @@ impl CredentialStore {
         }
         result
     }
+}
 
+#[cfg(not(target_arch = "wasm32"))]
+#[uniffi::export]
+impl CredentialStore {
+    /// Exports the current vault as an in-memory plaintext (unencrypted)
+    /// `SQLite` database for backup.
+    ///
+    /// The host app is responsible for persisting or uploading the returned
+    /// bytes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the export fails.
+    #[expect(
+        clippy::significant_drop_tightening,
+        reason = "lock held intentionally for the full operation to prevent concurrent cleanup from deleting in-use temp files"
+    )]
+    pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
+        let inner = self.lock_inner()?;
+        inner.cleanup_stale_backup_files();
+        let path = inner.export_vault_for_backup_to_file()?;
+        let _cleanup = CleanupFile(path.clone());
+
+        std::fs::read(&path).map_err(|e| {
+            StorageError::VaultDb(format!("failed to read exported vault: {e}"))
+        })
+    }
+
+    /// Imports credentials from an in-memory plaintext vault backup.
+    ///
+    /// The store must already be initialized via [`init`](Self::init).
+    /// Intended for restore on a fresh install where the vault is empty.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the import fails.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Vec<u8> required for UniFFI lifting"
+    )]
+    pub fn import_vault_from_backup(&self, backup_bytes: Vec<u8>) -> StorageResult<()> {
+        let inner = self.lock_inner()?;
+        inner.cleanup_stale_backup_files();
+        let path = inner.write_temp_backup_file(&backup_bytes)?;
+        let _cleanup = CleanupFile(path.clone());
+
+        inner.import_vault_from_file(&path)
+    }
+}
+
+/// Implementation not exposed to foreign bindings
+impl CredentialStore {
     /// Registers a listener that is called after every successful vault
     /// mutation (store, delete, purge).
     ///
@@ -363,10 +368,7 @@ impl CredentialStore {
             }
         }
     }
-}
 
-/// Implementation not exposed to foreign bindings
-impl CredentialStore {
     /// Best-effort notification to the registered vault-changed listener.
     /// No-op on wasm32 where the listener cannot be registered.
     fn notify_vault_changed(&self) {

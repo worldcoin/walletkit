@@ -12,8 +12,7 @@ const QUERY_GRAPH_FILENAME: &str = "OPRFQueryGraph.bin";
 const NULLIFIER_GRAPH_FILENAME: &str = "OPRFNullifierGraph.bin";
 
 /// Paths for credential storage artifacts under `<root>/worldid`.
-#[derive(Debug, Clone)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
+#[derive(Debug, Clone, uniffi::Object)]
 pub struct StoragePaths {
     root: PathBuf,
     worldid_dir: PathBuf,
@@ -89,10 +88,10 @@ impl StoragePaths {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export)]
+#[uniffi::export]
 impl StoragePaths {
     /// Builds storage paths rooted at `root`.
-    #[cfg_attr(not(target_arch = "wasm32"), uniffi::constructor)]
+    #[uniffi::constructor]
     #[must_use]
     pub fn from_root(root: String) -> Self {
         Self::new(PathBuf::from(root))

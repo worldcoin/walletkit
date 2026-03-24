@@ -14,81 +14,104 @@ use world_id_core::{
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
-#[cfg(feature = "storage")]
 use world_id_core::{
     requests::{ProofResponse as CoreProofResponse, ResponseItem},
     FieldElement as CoreFieldElement,
 };
 
-#[cfg(feature = "storage")]
-use crate::storage::{CredentialStore, StoragePaths};
-
-#[cfg(feature = "storage")]
 use crate::requests::{ProofRequest, ProofResponse};
+use crate::storage::CredentialStore;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::storage::StoragePaths;
 
-#[cfg(feature = "storage")]
 use rand::rngs::OsRng;
 
-#[cfg(feature = "storage")]
 mod with_storage;
 
-type Groth16Materials = (
-    Arc<world_id_core::proof::CircomGroth16Material>,
-    Arc<world_id_core::proof::CircomGroth16Material>,
-);
-
-#[cfg(not(feature = "storage"))]
-/// Loads embedded Groth16 query/nullifier material for authenticator initialization.
+/// Pre-loaded Groth16 proving material (query circuit + nullifier circuit).
 ///
-/// # Errors
-/// Returns an error if embedded material cannot be loaded or verified.
-fn load_embedded_materials() -> Result<Groth16Materials, WalletKitError> {
-    let query_material =
-        world_id_core::proof::load_embedded_query_material().map_err(|error| {
-            WalletKitError::Groth16MaterialEmbeddedLoad {
+/// Construct via `Groth16Materials::from_embedded` (requires the `embed-zkeys` feature) or
+/// [`Groth16Materials::from_cache`] (native only, loads from filesystem).
+#[derive(Clone, uniffi::Object)]
+pub struct Groth16Materials {
+    query: Arc<world_id_core::proof::CircomGroth16Material>,
+    nullifier: Arc<world_id_core::proof::CircomGroth16Material>,
+}
+
+impl std::fmt::Debug for Groth16Materials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Groth16Materials").finish_non_exhaustive()
+    }
+}
+
+/// Constructors that require embedded zkeys compiled into the binary.
+///
+/// Enable the `embed-zkeys` Cargo feature to activate these.
+#[cfg(feature = "embed-zkeys")]
+#[uniffi::export]
+impl Groth16Materials {
+    /// Loads Groth16 material from the embedded (compiled-in) zkeys and graphs.
+    ///
+    /// Requires the `embed-zkeys` feature. The material is baked into the binary at
+    /// compile time so no filesystem access is required, and this works on every
+    /// platform including WASM.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the embedded material cannot be loaded or verified.
+    #[uniffi::constructor]
+    pub fn from_embedded() -> Result<Self, WalletKitError> {
+        let query =
+            world_id_core::proof::load_embedded_query_material().map_err(|error| {
+                WalletKitError::Groth16MaterialEmbeddedLoad {
+                    error: error.to_string(),
+                }
+            })?;
+        let nullifier = world_id_core::proof::load_embedded_nullifier_material()
+            .map_err(|error| WalletKitError::Groth16MaterialEmbeddedLoad {
                 error: error.to_string(),
-            }
-        })?;
-    let nullifier_material = world_id_core::proof::load_embedded_nullifier_material()
-        .map_err(|error| {
-        WalletKitError::Groth16MaterialEmbeddedLoad {
-            error: error.to_string(),
-        }
-    })?;
-
-    Ok((Arc::new(query_material), Arc::new(nullifier_material)))
+            })?;
+        Ok(Self {
+            query: Arc::new(query),
+            nullifier: Arc::new(nullifier),
+        })
+    }
 }
 
-#[cfg(feature = "storage")]
-/// Loads cached Groth16 query/nullifier material from the provided storage paths.
+/// Constructors that load Groth16 material from the native filesystem.
 ///
-/// # Errors
-/// Returns an error if cached material cannot be loaded or verified.
-fn load_cached_materials(
-    paths: &StoragePaths,
-) -> Result<Groth16Materials, WalletKitError> {
-    let query_zkey = paths.query_zkey_path();
-    let nullifier_zkey = paths.nullifier_zkey_path();
-    let query_graph = paths.query_graph_path();
-    let nullifier_graph = paths.nullifier_graph_path();
+/// Not available on WASM targets (no filesystem access).
+#[cfg(not(target_arch = "wasm32"))]
+#[uniffi::export]
+impl Groth16Materials {
+    /// Loads Groth16 material from cached files on disk.
+    ///
+    /// Use `storage::cache_embedded_groth16_material` (requires the `embed-zkeys` feature)
+    /// to populate the cache before calling this.
+    ///
+    /// Not available on WASM (no filesystem).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cached files cannot be read or verified.
+    #[uniffi::constructor]
+    // `Arc<StoragePaths>` must be taken by value: UniFFI constructors receive
+    // object arguments as owned `Arc`s across the FFI boundary, so passing by
+    // reference is not an option here.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI constructors require owned Arc arguments"
+    )]
+    pub fn from_cache(paths: Arc<StoragePaths>) -> Result<Self, WalletKitError> {
+        let query_zkey = paths.query_zkey_path();
+        let nullifier_zkey = paths.nullifier_zkey_path();
+        let query_graph = paths.query_graph_path();
+        let nullifier_graph = paths.nullifier_graph_path();
 
-    let query_material = load_query_material_from_cache(&query_zkey, &query_graph)?;
-    let nullifier_material =
-        load_nullifier_material_from_cache(&nullifier_zkey, &nullifier_graph)?;
-
-    Ok((Arc::new(query_material), Arc::new(nullifier_material)))
-}
-
-#[cfg(feature = "storage")]
-/// Loads cached query material from zkey/graph paths.
-///
-/// # Errors
-/// Returns an error if the cached query material cannot be loaded or verified.
-fn load_query_material_from_cache(
-    query_zkey: &std::path::Path,
-    query_graph: &std::path::Path,
-) -> Result<world_id_core::proof::CircomGroth16Material, WalletKitError> {
-    world_id_core::proof::load_query_material_from_paths(query_zkey, query_graph)
+        let query = world_id_core::proof::load_query_material_from_paths(
+            &query_zkey,
+            &query_graph,
+        )
         .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
             path: format!(
                 "{} and {}",
@@ -96,36 +119,26 @@ fn load_query_material_from_cache(
                 query_graph.to_string_lossy()
             ),
             error: error.to_string(),
-        })
-}
+        })?;
 
-#[cfg(feature = "storage")]
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "Temporary wrapper until world-id-core returns Result for nullifier path loader"
-)]
-/// Loads cached nullifier material from zkey/graph paths.
-///
-/// # Errors
-/// This currently mirrors a panicking upstream API and does not return an error path yet.
-/// It is intentionally wrapped in `Result` for forward compatibility with upstream.
-fn load_nullifier_material_from_cache(
-    nullifier_zkey: &std::path::Path,
-    nullifier_graph: &std::path::Path,
-) -> Result<world_id_core::proof::CircomGroth16Material, WalletKitError> {
-    // TODO: Switch to error mapping once world-id-core exposes
-    // `load_nullifier_material_from_paths` as `Result` instead of panicking.
-    Ok(world_id_core::proof::load_nullifier_material_from_paths(
-        nullifier_zkey,
-        nullifier_graph,
-    ))
+        // TODO: Switch to error mapping once world-id-core exposes
+        // `load_nullifier_material_from_paths` as `Result` instead of panicking.
+        let nullifier = world_id_core::proof::load_nullifier_material_from_paths(
+            &nullifier_zkey,
+            &nullifier_graph,
+        );
+
+        Ok(Self {
+            query: Arc::new(query),
+            nullifier: Arc::new(nullifier),
+        })
+    }
 }
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator {
     inner: CoreAuthenticator,
-    #[cfg(feature = "storage")]
     store: Arc<CredentialStore>,
 }
 
@@ -222,7 +235,6 @@ impl Authenticator {
     }
 }
 
-#[cfg(not(feature = "storage"))]
 #[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
@@ -238,65 +250,16 @@ impl Authenticator {
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
-    ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
-        let (query_material, nullifier_material) = load_embedded_materials()?;
-        let authenticator =
-            authenticator.with_proof_materials(query_material, nullifier_material);
-        Ok(Self {
-            inner: authenticator,
-        })
-    }
-
-    /// Initializes a new Authenticator from a seed and config.
-    ///
-    /// The user's World ID must already be registered in the `WorldIDRegistry`,
-    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
-    ///
-    /// # Errors
-    /// Will error if the provided seed is not valid or if the config is not valid.
-    #[uniffi::constructor]
-    pub async fn init(seed: &[u8], config: &str) -> Result<Self, WalletKitError> {
-        let config =
-            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
-                attribute: "config".to_string(),
-                reason: "Invalid config".to_string(),
-            })?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
-        let (query_material, nullifier_material) = load_embedded_materials()?;
-        let authenticator =
-            authenticator.with_proof_materials(query_material, nullifier_material);
-        Ok(Self {
-            inner: authenticator,
-        })
-    }
-}
-
-#[cfg(feature = "storage")]
-#[uniffi::export(async_runtime = "tokio")]
-impl Authenticator {
-    /// Initializes a new Authenticator from a seed and with SDK defaults.
-    ///
-    /// The user's World ID must already be registered in the `WorldIDRegistry`,
-    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
-    ///
-    /// # Errors
-    /// See `CoreAuthenticator::init` for potential errors.
-    #[uniffi::constructor]
-    pub async fn init_with_defaults(
-        seed: &[u8],
-        rpc_url: Option<String>,
-        environment: &Environment,
-        region: Option<Region>,
-        paths: &StoragePaths,
+        materials: Arc<Groth16Materials>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
-        let (query_material, nullifier_material) = load_cached_materials(paths)?;
-        let authenticator =
-            authenticator.with_proof_materials(query_material, nullifier_material);
+        let authenticator = CoreAuthenticator::init(seed, config)
+            .await?
+            .with_proof_materials(
+                Arc::clone(&materials.query),
+                Arc::clone(&materials.nullifier),
+            );
         Ok(Self {
             inner: authenticator,
             store,
@@ -314,7 +277,7 @@ impl Authenticator {
     pub async fn init(
         seed: &[u8],
         config: &str,
-        paths: &StoragePaths,
+        materials: Arc<Groth16Materials>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config =
@@ -322,11 +285,12 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
-        let (query_material, nullifier_material) = load_cached_materials(paths)?;
-        let authenticator =
-            authenticator.with_proof_materials(query_material, nullifier_material);
+        let authenticator = CoreAuthenticator::init(seed, config)
+            .await?
+            .with_proof_materials(
+                Arc::clone(&materials.query),
+                Arc::clone(&materials.nullifier),
+            );
         Ok(Self {
             inner: authenticator,
             store,
@@ -345,13 +309,24 @@ impl Authenticator {
         let now = if let Some(n) = now {
             n
         } else {
-            let start = std::time::SystemTime::now();
-            start
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| WalletKitError::Generic {
-                    error: format!("Critical. Unable to determine SystemTime: {e}"),
-                })?
-                .as_secs()
+            #[cfg(target_arch = "wasm32")]
+            {
+                return Err(WalletKitError::InvalidInput {
+                    attribute: "now".to_string(),
+                    reason: "`now` must be provided on wasm32 targets".to_string(),
+                });
+            }
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let start = std::time::SystemTime::now();
+                start
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|e| WalletKitError::Generic {
+                        error: format!("Critical. Unable to determine SystemTime: {e}"),
+                    })?
+                    .as_secs()
+            }
         };
 
         // First check if the request can be fulfilled and which credentials should be used
@@ -534,17 +509,16 @@ impl InitializingAuthenticator {
     }
 }
 
-#[cfg(all(test, feature = "storage"))]
+#[cfg(all(test, feature = "embed-zkeys"))]
 mod tests {
     use super::*;
-    use crate::storage::cache_embedded_groth16_material;
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
     use alloy::primitives::address;
 
     #[tokio::test]
-    async fn test_init_with_config_and_storage() {
+    async fn test_init_with_config_and_materials() {
         // Install default crypto provider for rustls
         let _ = rustls::crypto::ring::default_provider().install_default();
 
@@ -583,11 +557,10 @@ mod tests {
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
-        cache_embedded_groth16_material(&store.storage_paths().expect("paths"))
-            .expect("cache material");
 
-        let paths = store.storage_paths().expect("paths");
-        Authenticator::init(&seed, &config, &paths, Arc::new(store))
+        let materials =
+            Arc::new(Groth16Materials::from_embedded().expect("load materials"));
+        Authenticator::init(&seed, &config, materials, Arc::new(store))
             .await
             .unwrap();
         drop(mock_server);
