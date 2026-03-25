@@ -55,7 +55,7 @@ impl Credential {
     /// Returns the credential's associated-data commitment field element.
     ///
     /// The upstream field was renamed from `associated_data_hash` to
-    /// `associated_data_commitment`; this accessor keeps the WalletKit FFI surface
+    /// `associated_data_commitment`; this accessor keeps the `WalletKit` FFI surface
     /// stable while exposing the same value. It is a Poseidon2 commitment to the
     /// associated data (e.g. a PCP archive) set by the issuer at issuance time.
     /// Returns `FieldElement::ZERO` if no associated data was committed to.
