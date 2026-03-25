@@ -1,3 +1,4 @@
+pub use taceo_oprf::types::OprfKeyId;
 use world_id_core::requests::{
     ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse,
 };

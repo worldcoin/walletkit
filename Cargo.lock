@@ -6169,7 +6169,6 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "taceo-oprf",
  "tempfile",
  "tokio",
  "tracing",

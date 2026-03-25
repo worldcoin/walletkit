@@ -16,7 +16,6 @@ path = "src/main.rs"
 walletkit-core = { workspace = true, features = ["storage", "issuers"] }
 world-id-core = { workspace = true }
 alloy = { version = "1", default-features = false, features = ["contract", "json", "getrandom", "signer-local"] }
-taceo-oprf = { workspace = true, features = ["types"] }
 alloy-primitives = { workspace = true }
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }

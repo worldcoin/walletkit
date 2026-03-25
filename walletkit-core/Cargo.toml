@@ -52,6 +52,7 @@ tracing-log = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zeroize = "1"
 uuid = { version = "1.10", features = ["v4"], optional = true }
+taceo-oprf = { version = "0.8", default-features = false, features = ["types"] } # re-export OprfKeyId for downstream crates
 uniffi = { workspace = true }
 
 world-id-core = { workspace = true, features = [

@@ -10,8 +10,7 @@ use alloy_primitives::U160;
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use rand::rngs::OsRng;
-use taceo_oprf::types::OprfKeyId;
-use walletkit_core::requests::ProofRequest;
+use walletkit_core::requests::{OprfKeyId, ProofRequest};
 use world_id_core::primitives::{rp::RpId, FieldElement};
 use world_id_core::requests::{
     ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, RequestItem,
