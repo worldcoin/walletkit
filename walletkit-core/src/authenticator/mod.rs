@@ -243,10 +243,9 @@ impl Authenticator {
     }
 
     /// Inserts a new authenticator to the account.
-    #[allow(
-        clippy::missing_errors_doc,
-        reason = "FFI docs intentionally kept to a single summary line"
-    )]
+    ///
+    /// # Errors
+    /// Returns an error if the pubkey bytes, address, or network call fails.
     pub async fn insert_authenticator(
         &self,
         new_authenticator_pubkey_bytes: Vec<u8>,
@@ -265,10 +264,9 @@ impl Authenticator {
     }
 
     /// Updates an existing authenticator at the given slot index.
-    #[allow(
-        clippy::missing_errors_doc,
-        reason = "FFI docs intentionally kept to a single summary line"
-    )]
+    ///
+    /// # Errors
+    /// Returns an error if the address, pubkey bytes, index, or network call fails.
     pub async fn update_authenticator(
         &self,
         old_authenticator_address: String,
@@ -293,10 +291,9 @@ impl Authenticator {
     }
 
     /// Removes an authenticator from the account at the given slot index.
-    #[allow(
-        clippy::missing_errors_doc,
-        reason = "FFI docs intentionally kept to a single summary line"
-    )]
+    ///
+    /// # Errors
+    /// Returns an error if the address or network call fails.
     pub async fn remove_authenticator(
         &self,
         authenticator_address: String,
