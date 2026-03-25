@@ -276,7 +276,8 @@ impl Authenticator {
         Ok(self
             .inner
             .insert_authenticator(new_pubkey, new_address)
-            .await?)
+            .await?
+            .to_string())
     }
 
     /// Updates an existing authenticator slot with a new authenticator.
@@ -318,7 +319,8 @@ impl Authenticator {
         Ok(self
             .inner
             .update_authenticator(old_address, new_address, new_pubkey, index)
-            .await?)
+            .await?
+            .to_string())
     }
 
     /// Removes an authenticator from the account.
@@ -345,7 +347,11 @@ impl Authenticator {
     ) -> Result<String, WalletKitError> {
         let auth_address =
             Address::parse_from_ffi(&authenticator_address, "authenticator_address")?;
-        Ok(self.inner.remove_authenticator(auth_address, index).await?)
+        Ok(self
+            .inner
+            .remove_authenticator(auth_address, index)
+            .await?
+            .to_string())
     }
 
     /// Polls the status of a gateway operation (insert, update, or remove authenticator).
