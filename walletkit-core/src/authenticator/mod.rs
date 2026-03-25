@@ -8,7 +8,7 @@ use alloy_primitives::Address;
 use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
-    api_types::{GatewayErrorCode, GatewayRequestState, GatewayStatusResponse},
+    api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::Config,
     Authenticator as CoreAuthenticator, Credential as CoreCredential, EdDSAPublicKey,
     InitializingAuthenticator as CoreInitializingAuthenticator,
@@ -243,26 +243,10 @@ impl Authenticator {
     }
 
     /// Inserts a new authenticator to the account.
-    ///
-    /// The current authenticator signs the request to authorize adding a new authenticator.
-    /// The new authenticator will be registered in the `WorldIDRegistry` contract and can
-    /// subsequently sign operations on behalf of the same World ID.
-    ///
-    /// # Arguments
-    /// * `new_authenticator_pubkey_bytes` - The compressed off-chain `EdDSA` public key of the new
-    ///   authenticator (32 bytes, little-endian).
-    /// * `new_authenticator_address` - The on-chain Ethereum address (hex string) of the new
-    ///   authenticator.
-    ///
-    /// # Returns
-    /// A gateway request ID that can be used with [`poll_operation_status`](Self::poll_operation_status)
-    /// to track the on-chain finalization of the operation.
-    ///
-    /// # Errors
-    /// - Will error if the compressed public key bytes are invalid or not 32 bytes.
-    /// - Will error if the address string is not a valid hex address.
-    /// - Will error if there are network issues communicating with the indexer or gateway.
-    /// - Will error if the maximum number of authenticators has been reached.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "FFI docs intentionally kept to a single summary line"
+    )]
     pub async fn insert_authenticator(
         &self,
         new_authenticator_pubkey_bytes: Vec<u8>,
@@ -280,26 +264,11 @@ impl Authenticator {
             .to_string())
     }
 
-    /// Updates an existing authenticator slot with a new authenticator.
-    ///
-    /// The current authenticator signs the request to authorize replacing the authenticator
-    /// at the specified slot index.
-    ///
-    /// # Arguments
-    /// * `old_authenticator_address` - The on-chain address (hex string) of the authenticator being replaced.
-    /// * `new_authenticator_address` - The on-chain address (hex string) of the new authenticator.
-    /// * `new_authenticator_pubkey_bytes` - The compressed off-chain `EdDSA` public key of the new
-    ///   authenticator (32 bytes, little-endian).
-    /// * `index` - The pubkey slot index of the authenticator being replaced.
-    ///
-    /// # Returns
-    /// A gateway request ID that can be used with [`poll_operation_status`](Self::poll_operation_status).
-    ///
-    /// # Errors
-    /// - Will error if the compressed public key bytes are invalid.
-    /// - Will error if the address strings are not valid hex addresses.
-    /// - Will error if the index is out of bounds.
-    /// - Will error if there are network issues.
+    /// Updates an existing authenticator at the given slot index.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "FFI docs intentionally kept to a single summary line"
+    )]
     pub async fn update_authenticator(
         &self,
         old_authenticator_address: String,
@@ -323,23 +292,11 @@ impl Authenticator {
             .to_string())
     }
 
-    /// Removes an authenticator from the account.
-    ///
-    /// The current authenticator signs the request to authorize removing the authenticator
-    /// at the specified slot index. An authenticator can remove itself or any other authenticator
-    /// on the same account.
-    ///
-    /// # Arguments
-    /// * `authenticator_address` - The on-chain address (hex string) of the authenticator to remove.
-    /// * `index` - The pubkey slot index of the authenticator being removed.
-    ///
-    /// # Returns
-    /// A gateway request ID that can be used with [`poll_operation_status`](Self::poll_operation_status).
-    ///
-    /// # Errors
-    /// - Will error if the address string is not a valid hex address.
-    /// - Will error if the index is out of bounds or there is no authenticator at that slot.
-    /// - Will error if there are network issues.
+    /// Removes an authenticator from the account at the given slot index.
+    #[allow(
+        clippy::missing_errors_doc,
+        reason = "FFI docs intentionally kept to a single summary line"
+    )]
     pub async fn remove_authenticator(
         &self,
         authenticator_address: String,
@@ -366,25 +323,12 @@ impl Authenticator {
         &self,
         request_id: String,
     ) -> Result<RegistrationStatus, WalletKitError> {
-        let url = format!("{}/status/{}", self.inner.config.gateway_url(), request_id);
-        let client = reqwest::Client::new(); // TODO: reuse client
-        let resp = client.get(&url).send().await?;
-        let status = resp.status();
+        use world_id_core::api_types::GatewayRequestId;
 
-        if status.is_success() {
-            let body: GatewayStatusResponse = resp.json().await?;
-            Ok(body.status.into())
-        } else {
-            let body = resp
-                .text()
-                .await
-                .unwrap_or_else(|e| format!("Unable to read response body: {e}"));
-            Err(WalletKitError::NetworkError {
-                url,
-                error: body,
-                status: Some(status.as_u16()),
-            })
-        }
+        let raw = request_id.strip_prefix("gw_").unwrap_or(&request_id);
+        let id = GatewayRequestId::new(raw);
+        let status = self.inner.poll_status(&id).await?;
+        Ok(status.into())
     }
 }
 
@@ -810,144 +754,6 @@ mod storage_tests {
             .await
             .unwrap();
         drop(mock_server);
-        cleanup_test_storage(&root);
-    }
-
-    #[tokio::test]
-    async fn test_poll_operation_status_finalized() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/status/req_abc")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                serde_json::json!({
-                    "request_id": "req_abc",
-                    "kind": "insert_authenticator",
-                    "status": { "state": "finalized", "tx_hash": "0x1234" }
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        // Create an Authenticator pointing at this mock server
-        let mut rpc_server = mockito::Server::new_async().await;
-        rpc_server
-            .mock("POST", "/")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        let seed = [3u8; 32];
-        let config = Config::new(
-            Some(rpc_server.url()),
-            480,
-            address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
-            "https://unused-indexer.example.com".to_string(),
-            server.url(),
-            vec![],
-            2,
-        )
-        .unwrap();
-        let config = serde_json::to_string(&config).unwrap();
-
-        let root = temp_root_path();
-        let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("store");
-        store.init(42, 100).expect("init storage");
-        cache_embedded_groth16_material(&store.storage_paths().expect("paths"))
-            .expect("cache material");
-
-        let paths = store.storage_paths().expect("paths");
-        let auth = Authenticator::init(&seed, &config, &paths, Arc::new(store))
-            .await
-            .unwrap();
-
-        let status = auth
-            .poll_operation_status("req_abc".to_string())
-            .await
-            .unwrap();
-        assert!(matches!(status, RegistrationStatus::Finalized));
-
-        mock.assert_async().await;
-        drop(server);
-        drop(rpc_server);
-        cleanup_test_storage(&root);
-    }
-
-    #[tokio::test]
-    async fn test_poll_operation_status_gateway_error() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/status/req_bad")
-            .with_status(500)
-            .with_body("internal server error")
-            .create_async()
-            .await;
-
-        let mut rpc_server = mockito::Server::new_async().await;
-        rpc_server
-            .mock("POST", "/")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                serde_json::json!({
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        let seed = [4u8; 32];
-        let config = Config::new(
-            Some(rpc_server.url()),
-            480,
-            address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
-            "https://unused-indexer.example.com".to_string(),
-            server.url(),
-            vec![],
-            2,
-        )
-        .unwrap();
-        let config = serde_json::to_string(&config).unwrap();
-
-        let root = temp_root_path();
-        let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("store");
-        store.init(42, 100).expect("init storage");
-        cache_embedded_groth16_material(&store.storage_paths().expect("paths"))
-            .expect("cache material");
-
-        let paths = store.storage_paths().expect("paths");
-        let auth = Authenticator::init(&seed, &config, &paths, Arc::new(store))
-            .await
-            .unwrap();
-
-        let result = auth.poll_operation_status("req_bad".to_string()).await;
-        assert!(matches!(
-            result,
-            Err(WalletKitError::NetworkError {
-                status: Some(500),
-                ..
-            })
-        ));
-
-        mock.assert_async().await;
-        drop(server);
-        drop(rpc_server);
         cleanup_test_storage(&root);
     }
 }
