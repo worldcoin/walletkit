@@ -33,10 +33,9 @@ use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
 use alloy_primitives::U160;
 use eyre::{Context as _, Result};
-use taceo_oprf::types::OprfKeyId;
 use walletkit_core::storage::cache_embedded_groth16_material;
 use walletkit_core::{defaults::DefaultConfig, Authenticator, Environment};
-use world_id_core::primitives::{rp::RpId, FieldElement, Nullifier};
+use world_id_core::primitives::{rp::RpId, FieldElement, Nullifier, OprfKeyId};
 use world_id_core::{
     requests::{ProofRequest, RequestItem, RequestVersion},
     Authenticator as CoreAuthenticator, EdDSAPrivateKey,
