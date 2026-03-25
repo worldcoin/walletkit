@@ -182,11 +182,6 @@ impl From<AuthenticatorError> for WalletKitError {
                 status: None,
             },
             AuthenticatorError::PublicKeyNotFound => Self::UnauthorizedAuthenticator,
-            AuthenticatorError::GatewayError { status, body }
-                if body.contains("authenticator_already_exists") =>
-            {
-                Self::AccountAlreadyExists
-            }
             AuthenticatorError::GatewayError { status, body } => Self::NetworkError {
                 url: "gateway".to_string(),
                 error: body,
