@@ -332,14 +332,8 @@ impl CredentialStoreInner {
         nullifier: FieldElement,
         now: u64,
     ) -> StorageResult<bool> {
-        let mut nullifier_bytes = Vec::new();
-        nullifier
-            .serialize_as_bytes(&mut nullifier_bytes)
-            .map_err(|e| {
-                StorageError::Serialization(format!(
-                    "critical. nullifier serialization failed: {e}"
-                ))
-            })?;
+        // TODO: check that migration is correct
+        let nullifier_bytes = nullifier.to_be_bytes();
         let nullifier_len = nullifier_bytes.len();
         let nullifier_bytes: [u8; 32] = nullifier_bytes.try_into().map_err(|_| {
             StorageError::Serialization(format!(
@@ -363,14 +357,8 @@ impl CredentialStoreInner {
         now: u64,
     ) -> StorageResult<()> {
         let guard = self.guard()?;
-        let mut nullifier_bytes = Vec::new();
-        nullifier
-            .serialize_as_bytes(&mut nullifier_bytes)
-            .map_err(|e| {
-                StorageError::Serialization(format!(
-                    "critical. nullifier serialization failed: {e}"
-                ))
-            })?;
+        // TODO: check that migration is correct
+        let nullifier_bytes = nullifier.to_be_bytes();
         let nullifier_len = nullifier_bytes.len();
         let nullifier_bytes: [u8; 32] = nullifier_bytes.try_into().map_err(|_| {
             StorageError::Serialization(format!(

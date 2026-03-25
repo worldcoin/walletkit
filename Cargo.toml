@@ -23,7 +23,7 @@ walletkit-core = { version = "0.4.0", path = "walletkit-core", default-features 
 uniffi = { version = "0.31", features = ["build", "tokio"] }
 #FIXME: Update to next published version when available
 # world-id-core = { version = "0.3", default-features = false, features = ["authenticator", "embed-zkeys"] }
-world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "6ededf6", default-features = false, features = ["authenticator", "embed-zkeys"] }
+world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "5a7c060e0eb535a48a2d78872584bd416a3f0ef0", default-features = false, features = ["authenticator", "embed-zkeys"] }
 
 [profile.release]
 opt-level = 'z' # Optimize for size.

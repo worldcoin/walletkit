@@ -146,8 +146,7 @@ impl From<AuthenticatorError> for WalletKitError {
     fn from(error: AuthenticatorError) -> Self {
         match error {
             AuthenticatorError::AccountDoesNotExist => Self::AccountDoesNotExist,
-            AuthenticatorError::AccountAlreadyExists => Self::AccountAlreadyExists,
-
+            //AuthenticatorError::AccountAlreadyExists => Self::AccountAlreadyExists,
             AuthenticatorError::NetworkError(error) => Self::NetworkError {
                 url: error
                     .url()
