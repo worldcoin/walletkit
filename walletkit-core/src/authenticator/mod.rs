@@ -10,7 +10,7 @@ use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::Config,
-    Authenticator as CoreAuthenticator, Credential as CoreCredential,
+    Authenticator as CoreAuthenticator, Credential as CoreCredential, EdDSAPublicKey,
     InitializingAuthenticator as CoreInitializingAuthenticator,
 };
 
@@ -121,6 +121,27 @@ fn load_nullifier_material_from_cache(
     ))
 }
 
+/// Parses a compressed off-chain `EdDSA` public key from a 32-byte little-endian byte slice.
+///
+/// # Errors
+/// Returns an error if the bytes are not exactly 32 bytes or cannot be decompressed.
+fn parse_compressed_pubkey(bytes: &[u8]) -> Result<EdDSAPublicKey, WalletKitError> {
+    let compressed: [u8; 32] =
+        bytes.try_into().map_err(|_| WalletKitError::InvalidInput {
+            attribute: "new_authenticator_pubkey_bytes".to_string(),
+            reason: format!(
+                "Expected 32 bytes for compressed public key, got {}",
+                bytes.len()
+            ),
+        })?;
+    EdDSAPublicKey::from_compressed_bytes(compressed).map_err(|e| {
+        WalletKitError::InvalidInput {
+            attribute: "new_authenticator_pubkey_bytes".to_string(),
+            reason: format!("Invalid compressed public key: {e}"),
+        }
+    })
+}
+
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator {
@@ -219,6 +240,92 @@ impl Authenticator {
     ) -> Result<Vec<u8>, WalletKitError> {
         let signature = self.inner.danger_sign_challenge(challenge)?;
         Ok(signature.as_bytes().to_vec())
+    }
+
+    /// Inserts a new authenticator to the account.
+    ///
+    /// # Errors
+    /// Returns an error if the pubkey bytes, address, or network call fails.
+    pub async fn insert_authenticator(
+        &self,
+        new_authenticator_pubkey_bytes: Vec<u8>,
+        new_authenticator_address: String,
+    ) -> Result<String, WalletKitError> {
+        let new_address = Address::parse_from_ffi(
+            &new_authenticator_address,
+            "new_authenticator_address",
+        )?;
+        let new_pubkey = parse_compressed_pubkey(&new_authenticator_pubkey_bytes)?;
+        Ok(self
+            .inner
+            .insert_authenticator(new_pubkey, new_address)
+            .await?
+            .to_string())
+    }
+
+    /// Updates an existing authenticator at the given slot index.
+    ///
+    /// # Errors
+    /// Returns an error if the address, pubkey bytes, index, or network call fails.
+    pub async fn update_authenticator(
+        &self,
+        old_authenticator_address: String,
+        new_authenticator_address: String,
+        new_authenticator_pubkey_bytes: Vec<u8>,
+        index: u32,
+    ) -> Result<String, WalletKitError> {
+        let old_address = Address::parse_from_ffi(
+            &old_authenticator_address,
+            "old_authenticator_address",
+        )?;
+        let new_address = Address::parse_from_ffi(
+            &new_authenticator_address,
+            "new_authenticator_address",
+        )?;
+        let new_pubkey = parse_compressed_pubkey(&new_authenticator_pubkey_bytes)?;
+        Ok(self
+            .inner
+            .update_authenticator(old_address, new_address, new_pubkey, index)
+            .await?
+            .to_string())
+    }
+
+    /// Removes an authenticator from the account at the given slot index.
+    ///
+    /// # Errors
+    /// Returns an error if the address or network call fails.
+    pub async fn remove_authenticator(
+        &self,
+        authenticator_address: String,
+        index: u32,
+    ) -> Result<String, WalletKitError> {
+        let auth_address =
+            Address::parse_from_ffi(&authenticator_address, "authenticator_address")?;
+        Ok(self
+            .inner
+            .remove_authenticator(auth_address, index)
+            .await?
+            .to_string())
+    }
+
+    /// Polls the status of a gateway operation (insert, update, or remove authenticator).
+    ///
+    /// Use the request ID returned by [`insert_authenticator`](Self::insert_authenticator),
+    /// [`update_authenticator`](Self::update_authenticator), or
+    /// [`remove_authenticator`](Self::remove_authenticator) to track the operation.
+    ///
+    /// # Errors
+    /// Will error if the network request fails or the gateway returns an error.
+    pub async fn poll_operation_status(
+        &self,
+        request_id: String,
+    ) -> Result<RegistrationStatus, WalletKitError> {
+        use world_id_core::api_types::GatewayRequestId;
+
+        let raw = request_id.strip_prefix("gw_").unwrap_or(&request_id);
+        let id = GatewayRequestId::new(raw);
+        let status = self.inner.poll_status(&id).await?;
+        Ok(status.into())
     }
 }
 
@@ -534,8 +641,61 @@ impl InitializingAuthenticator {
     }
 }
 
-#[cfg(all(test, feature = "storage"))]
+#[cfg(test)]
 mod tests {
+    use super::*;
+    use world_id_core::OnchainKeyRepresentable;
+
+    fn test_pubkey(seed_byte: u8) -> EdDSAPublicKey {
+        let signer =
+            world_id_core::primitives::Signer::from_seed_bytes(&[seed_byte; 32])
+                .unwrap();
+        signer.offchain_signer_pubkey()
+    }
+
+    fn compressed_pubkey_bytes(seed_byte: u8) -> Vec<u8> {
+        let pk = test_pubkey(seed_byte);
+        let u256 = pk.to_ethereum_representation().unwrap();
+        u256.to_le_bytes_vec()
+    }
+
+    // ── Compressed pubkey parsing ──
+
+    #[test]
+    fn test_parse_compressed_pubkey_valid() {
+        let bytes = compressed_pubkey_bytes(1);
+        assert_eq!(bytes.len(), 32);
+        let result = parse_compressed_pubkey(&bytes);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_compressed_pubkey_wrong_length() {
+        let short = vec![0u8; 16];
+        let result = parse_compressed_pubkey(&short);
+        assert!(matches!(
+            result,
+            Err(WalletKitError::InvalidInput { attribute, .. })
+                if attribute == "new_authenticator_pubkey_bytes"
+        ));
+    }
+
+    #[test]
+    fn test_parse_compressed_pubkey_roundtrip() {
+        let original = test_pubkey(42);
+        let bytes = {
+            let u256 = original.to_ethereum_representation().unwrap();
+            u256.to_le_bytes_vec()
+        };
+        let recovered = parse_compressed_pubkey(&bytes).unwrap();
+        assert_eq!(original.pk, recovered.pk);
+    }
+}
+
+// ── Storage-dependent tests ──
+
+#[cfg(all(test, feature = "storage"))]
+mod storage_tests {
     use super::*;
     use crate::storage::cache_embedded_groth16_material;
     use crate::storage::tests_utils::{
