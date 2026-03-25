@@ -165,9 +165,7 @@ fn run_doctor(cli: &Cli) -> eyre::Result<()> {
 
 async fn run_export(cli: &Cli, dest: &str) -> eyre::Result<()> {
     let (_authenticator, store) = init_authenticator(cli).await?;
-    let backup_bytes = store
-        .export_vault_for_backup()
-        .wrap_err("export failed")?;
+    let backup_bytes = store.export_vault_for_backup().wrap_err("export failed")?;
 
     let backup_path = std::path::Path::new(dest).join("vault_backup.bin");
     std::fs::write(&backup_path, &backup_bytes)
@@ -187,8 +185,7 @@ async fn run_export(cli: &Cli, dest: &str) -> eyre::Result<()> {
 
 async fn run_import(cli: &Cli, backup: &str) -> eyre::Result<()> {
     let (_authenticator, store) = init_authenticator(cli).await?;
-    let backup_bytes = std::fs::read(backup)
-        .wrap_err("failed to read backup file")?;
+    let backup_bytes = std::fs::read(backup).wrap_err("failed to read backup file")?;
     store
         .import_vault_from_backup(backup_bytes)
         .wrap_err("import failed")?;

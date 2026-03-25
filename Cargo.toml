@@ -22,6 +22,7 @@ alloy-core = { version = "1", default-features = false, features = [
 ] }
 alloy-primitives = { version = "1", default-features = false }
 uniffi = { version = "0.31", features = ["tokio"] }
+taceo-oprf = { version = "0.8", default-features = false }
 world-id-core = { version = "0.6", default-features = false }
 
 # internal

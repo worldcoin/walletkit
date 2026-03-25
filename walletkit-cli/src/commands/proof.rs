@@ -305,7 +305,10 @@ fn run_generate_test_request(
 
     let action = FieldElement::from(1u64);
     let msg = world_id_core::primitives::rp::compute_rp_signature_msg(
-        *nonce, created_at, expires_at, Some(*action),
+        *nonce,
+        created_at,
+        expires_at,
+        Some(*action),
     );
     let signature = signer.sign_message_sync(&msg).wrap_err("signing failed")?;
 
