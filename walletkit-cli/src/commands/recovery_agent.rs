@@ -10,23 +10,21 @@ use super::{init_authenticator, Cli};
 #[derive(Subcommand)]
 pub enum RecoveryAgentCommand {
     /// Initiate a time-locked recovery agent update (14-day cooldown).
-    InitiateUpdate {
+    Initiate {
         /// Checksummed hex address of the new recovery agent (e.g. "0x1234…").
         new_recovery_agent: String,
     },
     /// Execute a pending recovery agent update after the cooldown has elapsed.
-    ExecuteUpdate,
+    Execute,
     /// Cancel a pending recovery agent update before the cooldown expires.
-    CancelUpdate,
+    Cancel,
 }
 
 pub async fn run(cli: &Cli, action: &RecoveryAgentCommand) -> eyre::Result<()> {
     let (authenticator, _store) = init_authenticator(cli).await?;
 
     match action {
-        RecoveryAgentCommand::InitiateUpdate {
-            new_recovery_agent,
-        } => {
+        RecoveryAgentCommand::Initiate { new_recovery_agent } => {
             let request_id = authenticator
                 .initiate_recovery_agent_update(new_recovery_agent.clone())
                 .await
@@ -39,7 +37,7 @@ pub async fn run(cli: &Cli, action: &RecoveryAgentCommand) -> eyre::Result<()> {
                 println!("Recovery agent update initiated. Request ID: {request_id}");
             }
         }
-        RecoveryAgentCommand::ExecuteUpdate => {
+        RecoveryAgentCommand::Execute => {
             let request_id = authenticator
                 .execute_recovery_agent_update()
                 .await
@@ -49,12 +47,10 @@ pub async fn run(cli: &Cli, action: &RecoveryAgentCommand) -> eyre::Result<()> {
             if cli.json {
                 output::print_json_data(&data, true);
             } else {
-                println!(
-                    "Recovery agent update executed. Request ID: {request_id}"
-                );
+                println!("Recovery agent update executed. Request ID: {request_id}");
             }
         }
-        RecoveryAgentCommand::CancelUpdate => {
+        RecoveryAgentCommand::Cancel => {
             let request_id = authenticator
                 .cancel_recovery_agent_update()
                 .await
@@ -64,9 +60,7 @@ pub async fn run(cli: &Cli, action: &RecoveryAgentCommand) -> eyre::Result<()> {
             if cli.json {
                 output::print_json_data(&data, true);
             } else {
-                println!(
-                    "Recovery agent update cancelled. Request ID: {request_id}"
-                );
+                println!("Recovery agent update cancelled. Request ID: {request_id}");
             }
         }
     }

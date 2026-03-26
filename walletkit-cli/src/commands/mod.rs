@@ -238,8 +238,6 @@ pub async fn run(cli: Cli) -> eyre::Result<()> {
         Command::Auth { action } => auth::run(&cli, action).await,
         Command::Credential { action } => credential::run(&cli, action).await,
         Command::Proof { action } => proof::run(&cli, action).await,
-        Command::RecoveryAgent { action } => {
-            recovery_agent::run(&cli, action).await
-        }
+        Command::RecoveryAgent { action } => recovery_agent::run(&cli, action).await,
     }
 }
