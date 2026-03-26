@@ -42,14 +42,24 @@ impl RecoveryBindingManager {
         }
         .to_string();
         let user_agent = format!("walletkit-core/{}", env!("CARGO_PKG_VERSION"));
+        return Self::new_base_url(base_url.as_str(), user_agent.as_str());
+    }
+
+    /// Creates a new RecoveryBindingManager for the specified base URL and user agent.
+    #[uniffi::constructor]
+    #[must_use]
+    pub fn new_base_url(
+        base_url: &str,
+        user_agent: &str,
+    ) -> Result<Self, WalletKitError> {
         let client = ClientBuilder::new()
             .timeout(Duration::from_secs(60))
-            .user_agent(user_agent)
+            .user_agent(user_agent.to_string())
             .build()
             .map_err(|e| WalletKitError::Generic {
                 error: e.to_string(),
             })?;
-        let pop_backend_client = PopBackendClient::new(client, base_url);
+        let pop_backend_client = PopBackendClient::new(client, base_url.to_string());
         Ok(Self { pop_backend_client })
     }
 }
@@ -175,5 +185,153 @@ impl RecoveryBindingManager {
         concatenated.extend_from_slice(&sub_bytes);
 
         Ok(concatenated)
+    }
+}
+
+mod tests {
+    use super::*;
+    use crate::storage::cache_embedded_groth16_material;
+    use crate::storage::tests_utils::{temp_root_path, InMemoryStorageProvider};
+    use crate::storage::CredentialStore;
+    use std::sync::Arc;
+    const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
+
+    #[tokio::test]
+    async fn test_recovery_agent_token_generator_success() {
+        let mut pop_api_server = mockito::Server::new_async().await;
+        let leaf_index = 42;
+        let sub = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+            .to_string();
+
+        // Mock the challenge endpoint
+        let challenge_url_path = "/api/v1/challenge".to_string();
+        let challenge =
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+                .to_string();
+        let challenge_mock = pop_api_server
+            .mock("GET", challenge_url_path.as_str())
+            .with_status(200)
+            .with_body(format!("{{\"challenge\": \"{challenge}\"}}"))
+            .create_async()
+            .await;
+
+        // Mock the recovery binding registration endpoint
+        let url_path = "/api/v1/recovery-binding".to_string();
+
+        let mock = pop_api_server
+            .mock("POST", url_path.as_str())
+            .match_header(
+                "X-Auth-Signature",
+                mockito::Matcher::Regex(".*".to_string()),
+            )
+            .match_header("X-Auth-Challenge", challenge.as_str())
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "sub": sub.as_str(),
+                "leafIndex": leaf_index,
+            })))
+            .with_status(201)
+            .with_body("{}")
+            .create_async()
+            .await;
+
+        let recovery_binding_manager = RecoveryBindingManager::new_base_url(
+            pop_api_server.url().as_str(),
+            "walletkit-core/test",
+        )
+        .unwrap();
+        let private_key =
+            "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
+        let private_key_bytes = hex::decode(private_key).unwrap();
+
+        let authenticator = create_test_authenticator(&private_key_bytes).await;
+
+        let result = recovery_binding_manager
+            .register_recovery_binding(&authenticator, leaf_index, sub.clone())
+            .await;
+        assert!(
+            result.is_ok(),
+            "Expected success, but got error: {result:?}"
+        );
+        challenge_mock.assert_async().await;
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_recovery_bindings_signature() {
+        let leaf_index = 42;
+        let sub = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+            .to_string();
+        let challenge =
+            "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+                .to_string();
+        let private_key =
+            "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
+        let private_key_bytes = hex::decode(private_key).unwrap();
+
+        let message_bytes = RecoveryBindingManager::create_bytes_to_sign(
+            challenge.clone(),
+            leaf_index,
+            sub.clone(),
+        )
+        .unwrap();
+        log::info!("message_bytes: {:?}", hex::encode(message_bytes.clone()));
+        assert_eq!(hex::encode(message_bytes.clone()), "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2000000000000002aabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+
+        let request = ManageRecoveryBindingRequest {
+            sub: sub.clone(),
+            leaf_index,
+        };
+        let pop_api_server = mockito::Server::new();
+        let recovery_binding_manager = RecoveryBindingManager::new_base_url(
+            pop_api_server.url().as_str(),
+            "walletkit-core/test",
+        )
+        .unwrap();
+
+        let authenticator = create_test_authenticator(&private_key_bytes);
+        let authenticator = authenticator.await;
+        let security_token = recovery_binding_manager
+            .generate_recovery_agent_security_token(
+                &authenticator,
+                &request,
+                challenge.clone(),
+            )
+            .await;
+        assert!(
+            security_token.is_ok(),
+            "Expected success, but got error: {security_token:?}"
+        );
+        // let security_token = security_token.unwrap();
+        // let expect_signature = "0x72ec312737276c94e3ac32ab1c393a63b9474480d3a9eb434b8bf6927b7222ef7eb1fea0812ff62a7fb144db9631751e505969162a9c590cabb27bf0bd5005581c";
+        // assert_eq!(security_token, expect_signature);
+    }
+
+    async fn create_test_authenticator(seed: &[u8]) -> Authenticator {
+        let store = create_test_credential_store();
+        let paths = store.storage_paths().unwrap();
+        cache_embedded_groth16_material(&paths).expect("cache groth16 material");
+        let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
+            .unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
+
+        let authenticator = Authenticator::init_with_defaults(
+            seed,
+            Some(rpc_url.clone()),
+            &Environment::Staging,
+            None,
+            &paths,
+            store.clone(),
+        )
+        .await
+        .unwrap();
+
+        return authenticator;
+    }
+
+    fn create_test_credential_store() -> Arc<CredentialStore> {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        Arc::new(
+            CredentialStore::from_provider(&provider).expect("create credential store"),
+        )
     }
 }
