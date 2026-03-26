@@ -6,11 +6,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
-use alloy_primitives::U160;
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use rand::rngs::OsRng;
-use walletkit_core::requests::{OprfKeyId, ProofRequest};
+use walletkit_core::requests::ProofRequest;
 use world_id_core::primitives::{rp::RpId, FieldElement};
 use world_id_core::requests::{
     ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, RequestItem,
@@ -311,28 +310,38 @@ fn run_generate_test_request(
     );
     let signature = signer.sign_message_sync(&msg).wrap_err("signing failed")?;
 
-    let request = CoreProofRequest {
+    // Build as JSON value to avoid depending on the exact `OprfKeyId`
+    // crate version used by `world-id-primitives`.
+    let rp_id = RpId::new(STAGING_RP_ID);
+    let request_item = RequestItem::new(
+        "test".to_string(),
+        issuer_schema_id,
+        Some(signal.as_bytes().to_vec()),
+        None,
+        None,
+    );
+
+    let partial = CoreProofRequest {
         id: "test_request".to_string(),
         version: RequestVersion::V1,
         created_at,
         expires_at,
-        rp_id: RpId::new(STAGING_RP_ID),
-        oprf_key_id: OprfKeyId::new(U160::from(STAGING_RP_ID)),
+        rp_id,
+        // Use a placeholder — we patch it below via JSON.
+        oprf_key_id: serde_json::from_value(serde_json::json!(format!(
+            "0x{:040x}",
+            STAGING_RP_ID
+        )))
+        .wrap_err("failed to construct oprf_key_id")?,
         session_id: None,
-        action: Some(FieldElement::from(1u64)),
+        action: Some(action),
         signature,
         nonce,
-        requests: vec![RequestItem::new(
-            "test".to_string(),
-            issuer_schema_id,
-            Some(signal.as_bytes().to_vec()),
-            None,
-            None,
-        )],
+        requests: vec![request_item],
         constraints: None,
     };
 
-    let json = serde_json::to_string_pretty(&request)?;
+    let json = serde_json::to_string_pretty(&partial)?;
 
     if cli.json {
         let parsed: serde_json::Value = serde_json::from_str(&json)?;
