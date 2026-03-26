@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn test_cache_create_and_open() {
         let path = temp_cache_path();
-        let key = SecretBox::init_with(||[0x11u8; 32]);
+        let key = SecretBox::init_with(|| [0x11u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_cache_rebuild_on_corruption() {
         let path = temp_cache_path();
-        let key = SecretBox::init_with(||[0x22u8; 32]);
+        let key = SecretBox::init_with(|| [0x22u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn test_merkle_cache_ttl() {
         let path = temp_cache_path();
-        let key = SecretBox::init_with(||[0x33u8; 32]);
+        let key = SecretBox::init_with(|| [0x33u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn test_session_cache_ttl() {
         let path = temp_cache_path();
-        let key = SecretBox::init_with(||[0x44u8; 32]);
+        let key = SecretBox::init_with(|| [0x44u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
