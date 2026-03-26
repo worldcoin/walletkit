@@ -54,10 +54,7 @@ impl Credential {
 
     /// Returns the credential's `associated_data_commitment` field element.
     ///
-    /// This stores the issuer-defined commitment to associated data (e.g. a PCP
-    /// archive). The issuer determines the commitment scheme, which may use
-    /// Poseidon2 or something else, and this field may be `FieldElement::ZERO`
-    /// even when associated data exists.
+    /// The commitment scheme is issuer-defined.
     #[must_use]
     pub fn associated_data_commitment(&self) -> FieldElement {
         self.0.associated_data_commitment.into()
