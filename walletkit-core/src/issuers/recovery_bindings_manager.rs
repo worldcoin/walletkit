@@ -241,7 +241,7 @@ mod tests {
         let private_key =
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
         let private_key_bytes = hex::decode(private_key).unwrap();
-        let mock_eth_server = create_mock_eth_server().await;
+        let (mock_eth_server, _eth_mock) = create_mock_eth_server().await;
         let authenticator =
             create_test_authenticator(&private_key_bytes, mock_eth_server.url()).await;
 
@@ -279,7 +279,7 @@ mod tests {
             sub: sub.clone(),
             leaf_index,
         };
-        let mock_eth_server = create_mock_eth_server().await;
+        let (mock_eth_server, _eth_mock) = create_mock_eth_server().await;
 
         let authenticator =
             create_test_authenticator(&private_key_bytes, mock_eth_server.url()).await;
@@ -296,6 +296,7 @@ mod tests {
         );
         let expect_signature = "0x72ec312737276c94e3ac32ab1c393a63b9474480d3a9eb434b8bf6927b7222ef7eb1fea0812ff62a7fb144db9631751e505969162a9c590cabb27bf0bd5005581c";
         assert_eq!(security_token, expect_signature);
+        _eth_mock.assert_async().await;
     }
 
     async fn create_test_authenticator(seed: &[u8], rpc_url: String) -> Authenticator {
@@ -326,9 +327,9 @@ mod tests {
         )
     }
 
-    async fn create_mock_eth_server() -> ServerGuard {
+    async fn create_mock_eth_server() -> (ServerGuard, mockito::Mock) {
         let mut mock_eth_server = mockito::Server::new_async().await;
-        mock_eth_server
+        let mock = mock_eth_server
             .mock("POST", "/")
             .with_status(200)
             .with_header("content-type", "application/json")
@@ -342,6 +343,6 @@ mod tests {
             )
             .create_async()
             .await;
-        mock_eth_server
+        (mock_eth_server, mock)
     }
 }
