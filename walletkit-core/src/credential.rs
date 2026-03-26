@@ -52,7 +52,9 @@ impl Credential {
         self.0.expires_at
     }
 
-    /// Returns the associated-data commitment field element for this credential.
+    /// Returns the credential's `associated_data_commitment` field element.
+    ///
+    /// The commitment scheme is issuer-defined.
     #[must_use]
     pub fn associated_data_commitment(&self) -> FieldElement {
         self.0.associated_data_commitment.into()

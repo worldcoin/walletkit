@@ -230,6 +230,69 @@ impl Authenticator {
         let signature = self.inner.danger_sign_challenge(challenge)?;
         Ok(signature.as_bytes().to_vec())
     }
+
+    /// Initiates a time-locked recovery agent update (14-day cooldown).
+    ///
+    /// Signs an EIP-712 `InitiateRecoveryAgentUpdate` payload and submits it to
+    /// the gateway. Returns the gateway request ID that can be used to poll
+    /// status.
+    ///
+    /// # Arguments
+    /// * `new_recovery_agent` — the checksummed hex address of the new recovery
+    ///   agent (e.g. `"0x1234…"`).
+    ///
+    /// # Errors
+    /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
+    ///   a valid address.
+    /// - Returns a network error if the gateway request fails.
+    pub async fn initiate_recovery_agent_update(
+        &self,
+        new_recovery_agent: String,
+    ) -> Result<String, WalletKitError> {
+        let new_recovery_agent =
+            Address::parse_from_ffi(&new_recovery_agent, "new_recovery_agent")?;
+
+        let request_id = self
+            .inner
+            .initiate_recovery_agent_update(new_recovery_agent)
+            .await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Executes a pending recovery agent update after the 14-day cooldown has
+    /// elapsed.
+    ///
+    /// This call is **permissionless** — no signature is required. The contract
+    /// enforces the cooldown and will revert with
+    /// `RecoveryAgentUpdateStillInCooldown` if called too early.
+    ///
+    /// Returns the gateway request ID that can be used to poll status.
+    ///
+    /// # Errors
+    /// Returns a network error if the gateway request fails.
+    pub async fn execute_recovery_agent_update(
+        &self,
+    ) -> Result<String, WalletKitError> {
+        let request_id = self.inner.execute_recovery_agent_update().await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Cancels a pending time-locked recovery agent update before the cooldown
+    /// expires.
+    ///
+    /// Signs an EIP-712 `CancelRecoveryAgentUpdate` payload and submits it to
+    /// the gateway. Returns the gateway request ID that can be used to poll
+    /// status.
+    ///
+    /// # Errors
+    /// Returns a network error if the gateway request fails.
+    pub async fn cancel_recovery_agent_update(&self) -> Result<String, WalletKitError> {
+        let request_id = self.inner.cancel_recovery_agent_update().await?;
+
+        Ok(request_id.to_string())
+    }
 }
 
 #[cfg(not(feature = "storage"))]
