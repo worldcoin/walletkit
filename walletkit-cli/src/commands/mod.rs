@@ -3,6 +3,7 @@
 mod auth;
 mod credential;
 mod proof;
+mod recovery_agent;
 mod wallet;
 
 use std::path::PathBuf;
@@ -96,6 +97,12 @@ pub enum Command {
     Proof {
         #[command(subcommand)]
         action: proof::ProofCommand,
+    },
+    /// Recovery agent management (initiate, execute, cancel updates).
+    #[command(name = "recovery-agent-update")]
+    RecoveryAgent {
+        #[command(subcommand)]
+        action: recovery_agent::RecoveryAgentCommand,
     },
 }
 
@@ -232,5 +239,6 @@ pub async fn run(cli: Cli) -> eyre::Result<()> {
         Command::Auth { action } => auth::run(&cli, action).await,
         Command::Credential { action } => credential::run(&cli, action).await,
         Command::Proof { action } => proof::run(&cli, action).await,
+        Command::RecoveryAgent { action } => recovery_agent::run(&cli, action).await,
     }
 }
