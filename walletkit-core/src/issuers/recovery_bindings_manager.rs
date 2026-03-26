@@ -238,12 +238,12 @@ mod tests {
             "walletkit-core/test",
         )
         .unwrap();
+
         let private_key =
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
         let private_key_bytes = hex::decode(private_key).unwrap();
-        let (mock_eth_server, _eth_mock) = create_mock_eth_server().await;
+        let (mock_eth_server, eth_mock) = create_mock_eth_server().await;
         let rpc_url = mock_eth_server.url();
-
         let authenticator =
             create_test_authenticator(&private_key_bytes, rpc_url).await;
 
@@ -257,7 +257,9 @@ mod tests {
         challenge_mock.assert_async().await;
 
         mock.assert_async().await;
-        _eth_mock.assert_async().await;
+        eth_mock.assert_async().await;
+        drop(pop_api_server);
+        drop(mock_eth_server);
     }
 
     #[tokio::test]
@@ -282,7 +284,7 @@ mod tests {
             sub: sub.clone(),
             leaf_index,
         };
-        let (mock_eth_server, _eth_mock) = create_mock_eth_server().await;
+        let (mock_eth_server, eth_mock) = create_mock_eth_server().await;
         let rpc_url = mock_eth_server.url();
 
         let authenticator =
@@ -300,7 +302,8 @@ mod tests {
         );
         let expect_signature = "0x72ec312737276c94e3ac32ab1c393a63b9474480d3a9eb434b8bf6927b7222ef7eb1fea0812ff62a7fb144db9631751e505969162a9c590cabb27bf0bd5005581c";
         assert_eq!(security_token, expect_signature);
-        _eth_mock.assert_async().await;
+        eth_mock.assert_async().await;
+        drop(mock_eth_server);
     }
 
     async fn create_test_authenticator(seed: &[u8], rpc_url: String) -> Authenticator {
