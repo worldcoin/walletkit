@@ -5322,16 +5322,25 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be862ba49094098f945f1375f704a2c47b4e267a6e564462a43ad142b4b1469e"
 dependencies = [
+ "taceo-oprf-types 0.10.1",
+]
+
+[[package]]
+name = "taceo-oprf"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70f2d8a89181967875c3e130dca3d5e906e720b30568b82c68653c3048b1bb02"
+dependencies = [
  "taceo-oprf-client",
  "taceo-oprf-core",
- "taceo-oprf-types",
+ "taceo-oprf-types 0.11.0",
 ]
 
 [[package]]
 name = "taceo-oprf-client"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "696c4b03e8b570d1d0486f7bc2273b85951b316d7f720fc2f95e79f2b053f649"
+checksum = "b1624edfd12063146c6f3614c659cb178a8ae82bfac72b751a72133136000866"
 dependencies = [
  "ark-ec",
  "ciborium",
@@ -5342,7 +5351,7 @@ dependencies = [
  "serde",
  "taceo-ark-babyjubjub",
  "taceo-oprf-core",
- "taceo-oprf-types",
+ "taceo-oprf-types 0.11.0",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "tokio",
@@ -5378,6 +5387,27 @@ name = "taceo-oprf-types"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "540ce620b9d45c2c3d417c8f4b0c82e112f2621f2419e1c9fd207b8d5a3310d4"
+dependencies = [
+ "alloy",
+ "ark-ff 0.5.0",
+ "ark-serialize 0.5.0",
+ "async-trait",
+ "eyre",
+ "http",
+ "serde",
+ "taceo-ark-babyjubjub",
+ "taceo-ark-serde-compat",
+ "taceo-circom-types",
+ "taceo-groth16-sol",
+ "taceo-oprf-core",
+ "uuid",
+]
+
+[[package]]
+name = "taceo-oprf-types"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b92ebe8693dfb75f2f1e7861785792747495f8f2be058ff07698f16046cb5fad"
 dependencies = [
  "alloy",
  "ark-ff 0.5.0",
@@ -6209,7 +6239,7 @@ dependencies = [
  "sha2",
  "strum",
  "subtle",
- "taceo-oprf",
+ "taceo-oprf 0.8.0",
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
@@ -6818,9 +6848,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-authenticator"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07d061f3e1150294b0eaab3c3a8311343c144995097c6f08cd7babbe8610faca"
+checksum = "f1713b3c70d6f2822f8ec0c12e313a74616fce2aa86c5cb54a991d13be5fe625"
 dependencies = [
  "alloy",
  "anyhow",
@@ -6837,7 +6867,7 @@ dependencies = [
  "taceo-ark-babyjubjub",
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
- "taceo-oprf",
+ "taceo-oprf 0.10.0",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "tokio",
@@ -6848,9 +6878,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-core"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a88fbe3660167654a014924faeeec87d7aebb9ff13a43dbb51958045f0aa3ed6"
+checksum = "c0f0b7dab893d2588e13b3d3a0c6259467c7079b7cbe4a41db5a6bf4a04f46be"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -6860,9 +6890,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-primitives"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "022157c68f1c49bb3d7256b9199174d6de6cc9d4b07c5ea757f2f6b35597b4a2"
+checksum = "8a38588112438f94966aef95559b48a0c3d4ae627c0ebc680ae4739ca0538c29"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -6888,7 +6918,7 @@ dependencies = [
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
  "taceo-groth16-sol",
- "taceo-oprf",
+ "taceo-oprf 0.10.0",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "url",
@@ -6897,9 +6927,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-proof"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "091e4902d84a827900db7f030fc6bb3f9705e0abe6d20aca943148727bb625b8"
+checksum = "c0685fc6fcb0fef10a7caa80f7d4ac09727ee582934c2da39bdd82a423ab7abe"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -6915,7 +6945,7 @@ dependencies = [
  "taceo-circom-types",
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
- "taceo-oprf",
+ "taceo-oprf 0.10.0",
  "taceo-poseidon2",
  "tar",
  "thiserror 2.0.18",
