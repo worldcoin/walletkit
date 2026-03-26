@@ -117,6 +117,10 @@ pub enum WalletKitError {
         /// The details of the error
         error: String,
     },
+
+    /// The recovery binding already exists
+    #[error("recovery_binding_already_exists")]
+    RecoveryBindingAlreadyExists,
 }
 
 impl From<reqwest::Error> for WalletKitError {
