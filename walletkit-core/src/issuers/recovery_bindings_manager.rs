@@ -283,9 +283,13 @@ mod tests {
 
         let authenticator =
             create_test_authenticator(&private_key_bytes, mock_eth_server.url()).await;
-        let security_token = RecoveryBindingManager::generate_recovery_agent_security_token(
-            &authenticator, &request, &challenge,
-        ).unwrap();
+        let security_token =
+            RecoveryBindingManager::generate_recovery_agent_security_token(
+                &authenticator,
+                &request,
+                &challenge,
+            )
+            .unwrap();
         assert!(
             !security_token.is_empty(),
             "Expected success, but got error: {security_token:?}"
