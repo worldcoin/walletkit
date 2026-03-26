@@ -107,7 +107,9 @@ impl PopBackendClient {
         let response_status = response.status();
         match response_status {
             reqwest::StatusCode::OK => Ok(()),
-            reqwest::StatusCode::NOT_FOUND => Err(WalletKitError::AccountDoesNotExist),
+            reqwest::StatusCode::NOT_FOUND => {
+                Err(WalletKitError::RecoveryBindingDoesNotExist)
+            }
             _ => {
                 let error_message = response
                     .text()
@@ -157,5 +159,171 @@ impl PopBackendClient {
                 })?;
 
         Ok(challenge_response.challenge)
+    }
+}
+
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_register_recovery_agent_success() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+
+        let request = ManageRecoveryBindingRequest {
+            sub: "test-sub-123".to_string(),
+            leaf_index: 42,
+        };
+
+        server
+            .mock("POST", "/api/v1/recovery-binding")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "sub": "test-sub-123",
+                "leafIndex": 42,
+            })))
+            .match_header("X-Auth-Signature", "security_token")
+            .match_header("X-Auth-Challenge", "challenge")
+            .with_status(201)
+            .with_body("{}")
+            .create_async()
+            .await;
+
+        let client = Client::new();
+        let pop_api_client = PopBackendClient::new(client, url.clone());
+
+        let result = pop_api_client
+            .register_recovery_binding(
+                request,
+                "security_token".to_string(),
+                "challenge".to_string(),
+            )
+            .await;
+
+        assert!(result.is_ok(), "Expected success but got error: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_register_recovery_agent_conflict() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+
+        let request = ManageRecoveryBindingRequest {
+            sub: "test-sub-123".to_string(),
+            leaf_index: 42,
+        };
+
+        server
+            .mock("POST", "/api/v1/recovery-binding")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "sub": "test-sub-123",
+                "leafIndex": 42,
+            })))
+            .match_header("X-Auth-Signature", "security_token")
+            .match_header("X-Auth-Challenge", "challenge")
+            .with_status(409)
+            .with_body("Recovery agent already exists")
+            .create_async()
+            .await;
+
+        let client = Client::new();
+        let pop_api_client = PopBackendClient::new(client, url.clone());
+
+        let result = pop_api_client
+            .register_recovery_binding(
+                request,
+                "security_token".to_string(),
+                "challenge".to_string(),
+            )
+            .await;
+
+        assert!(result.is_err(), "Expected error but got success");
+        let err = result.unwrap_err();
+        match err {
+            WalletKitError::RecoveryBindingAlreadyExists => {
+                assert!(true);
+            }
+            _ => panic!("Expected RecoveryBindingAlreadyExists error, got: {err:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_unregister_recovery_agent_success() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+
+        let request = ManageRecoveryBindingRequest {
+            sub: "test-sub-123".to_string(),
+            leaf_index: 42,
+        };
+
+        server
+            .mock("DELETE", "/api/v1/recovery-binding")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "sub": "test-sub-123",
+                "leafIndex": 42,
+            })))
+            .match_header("X-Auth-Signature", "security_token")
+            .match_header("X-Auth-Challenge", "challenge")
+            .with_status(200)
+            .with_body("{}")
+            .create_async()
+            .await;
+
+        let client = Client::new();
+        let pop_api_client = PopBackendClient::new(client, url.clone());
+
+        let result = pop_api_client
+            .unregister_recovery_binding(
+                request,
+                "security_token".to_string(),
+                "challenge".to_string(),
+            )
+            .await;
+
+        assert!(result.is_ok(), "Expected success but got error: {result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_unregister_recovery_agent_not_found() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+
+        let request = ManageRecoveryBindingRequest {
+            sub: "test-sub-123".to_string(),
+            leaf_index: 42,
+        };
+
+        server
+            .mock("DELETE", "/api/v1/recovery-binding")
+            .match_body(mockito::Matcher::Json(serde_json::json!({
+                "sub": "test-sub-123",
+                "leafIndex": 42,
+            })))
+            .match_header("X-Auth-Signature", "security_token")
+            .match_header("X-Auth-Challenge", "challenge")
+            .with_status(404)
+            .with_body("Recovery agent not found")
+            .create_async()
+            .await;
+
+        let client = Client::new();
+        let pop_api_client = PopBackendClient::new(client, url.clone());
+
+        let result = pop_api_client
+            .unregister_recovery_binding(
+                request,
+                "security_token".to_string(),
+                "challenge".to_string(),
+            )
+            .await;
+
+        assert!(result.is_err(), "Expected error but got success");
+        let err = result.unwrap_err();
+        match err {
+            WalletKitError::RecoveryBindingDoesNotExist => {
+                assert!(true);
+            }
+            _ => panic!("Expected RecoveryBindingDoesNotExist error, got: {err:?}"),
+        }
     }
 }
