@@ -18,14 +18,12 @@ use crate::issuers::pop_backend_client::ManageRecoveryBindingRequest;
 use crate::issuers::PopBackendClient;
 use crate::Environment;
 use alloy_primitives::keccak256;
-use reqwest::ClientBuilder;
-use std::time::Duration;
 
 /// Client for registering and unregistering recovery agents with the `PoP` backend.
 ///
 /// Each instance is bound to a specific [`Environment`] (staging or production),
 /// which determines the backend URL used for all requests.
-#[derive(Debug, uniffi::Object)]
+#[derive(uniffi::Object)]
 pub struct RecoveryBindingManager {
     pop_backend_client: PopBackendClient,
 }
@@ -44,8 +42,7 @@ impl RecoveryBindingManager {
             Environment::Production => "https://app.orb.worldcoin.org",
         }
         .to_string();
-        let user_agent = format!("walletkit-core/{}", env!("CARGO_PKG_VERSION"));
-        Self::new_base_url(base_url.as_str(), user_agent.as_str())
+        Self::new_with_base_url(base_url.as_str())
     }
 
     /// Creates a new `RecoveryBindingManager` for the specified base URL and user agent.
@@ -54,18 +51,8 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    pub fn new_base_url(
-        base_url: &str,
-        user_agent: &str,
-    ) -> Result<Self, WalletKitError> {
-        let client = ClientBuilder::new()
-            .timeout(Duration::from_secs(60))
-            .user_agent(user_agent.to_string())
-            .build()
-            .map_err(|e| WalletKitError::Generic {
-                error: e.to_string(),
-            })?;
-        let pop_backend_client = PopBackendClient::new(client, base_url.to_string());
+    pub fn new_with_base_url(base_url: &str) -> Result<Self, WalletKitError> {
+        let pop_backend_client = PopBackendClient::new(base_url.to_string());
         Ok(Self { pop_backend_client })
     }
 }
@@ -84,7 +71,7 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the challenge fetch, signing, or backend request fails,
     /// or if a recovery binding already exists ([`WalletKitError::RecoveryBindingManagerAlreadyExists`]).
-    pub async fn register_recovery_binding(
+    pub async fn bind_recovery_agent(
         &self,
         authenticator: &Authenticator,
         leaf_index: u64,
@@ -99,7 +86,7 @@ impl RecoveryBindingManager {
         )?;
 
         self.pop_backend_client
-            .register_recovery_binding(request, security_token, challenge)
+            .bind_recovery_agent(request, security_token, challenge)
             .await?;
         Ok(())
     }
@@ -116,7 +103,7 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the challenge fetch, signing, or backend request fails,
     /// or if the account does not exist ([`WalletKitError::AccountDoesNotExist`]).
-    pub async fn unregister_recovery_binding(
+    pub async fn unbind_recovery_agent(
         &self,
         authenticator: &Authenticator,
         leaf_index: u64,
@@ -130,7 +117,7 @@ impl RecoveryBindingManager {
             &challenge,
         )?;
         self.pop_backend_client
-            .unregister_recovery_binding(request, security_token, challenge)
+            .unbind_recovery_agent(request, security_token, challenge)
             .await?;
         Ok(())
     }
@@ -233,11 +220,9 @@ mod tests {
             .create_async()
             .await;
 
-        let recovery_binding_manager = RecoveryBindingManager::new_base_url(
-            pop_api_server.url().as_str(),
-            "walletkit-core/test",
-        )
-        .unwrap();
+        let recovery_binding_manager =
+            RecoveryBindingManager::new_with_base_url(pop_api_server.url().as_str())
+                .unwrap();
 
         let private_key =
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
@@ -248,7 +233,7 @@ mod tests {
             create_test_authenticator(&private_key_bytes, rpc_url).await;
 
         let result = recovery_binding_manager
-            .register_recovery_binding(&authenticator, leaf_index, sub.clone())
+            .bind_recovery_agent(&authenticator, leaf_index, sub.clone())
             .await;
         assert!(
             result.is_ok(),

@@ -1,5 +1,6 @@
 use crate::error::WalletKitError;
-use reqwest::Client;
+use crate::http_request::Request;
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
 /// Request payload for registering or unregistering a recovery binding.
@@ -27,17 +28,17 @@ struct ChallengeResponse {
 ///
 /// This client is not meant to be used directly — prefer [`super::RecoveryBindingManager`],
 /// which orchestrates the full challenge-response signing flow.
-#[derive(Debug)]
 pub struct PopBackendClient {
-    client: Client,
+    request: Request,
     base_url: String,
 }
 
 impl PopBackendClient {
     /// Creates a new client targeting the given base URL.
     #[must_use]
-    pub const fn new(client: Client, base_url: String) -> Self {
-        Self { client, base_url }
+    pub fn new(base_url: String) -> Self {
+        let request = Request::new();
+        Self { request, base_url }
     }
 }
 
@@ -48,7 +49,7 @@ impl PopBackendClient {
     ///
     /// * [`WalletKitError::RecoveryBindingAlreadyExists`] — HTTP 409 (binding already registered).
     /// * [`WalletKitError::NetworkError`] — any other non-success status.
-    pub async fn register_recovery_binding(
+    pub async fn bind_recovery_agent(
         &self,
         request: ManageRecoveryBindingRequest,
         security_token: String,
@@ -56,7 +57,7 @@ impl PopBackendClient {
     ) -> Result<(), WalletKitError> {
         let url: String = format!("{}/api/v1/recovery-binding", self.base_url);
         let response = self
-            .client
+            .request
             .post(&url)
             .json(&request)
             .header("X-Auth-Signature", security_token)
@@ -74,7 +75,7 @@ impl PopBackendClient {
                 let error_message = response
                     .text()
                     .await
-                    .unwrap_or_else(|_| String::from("Unknown error"));
+                    .unwrap_or_else(|e| format!("Unknown error: {e:?}"));
                 Err(WalletKitError::NetworkError {
                     url,
                     error: error_message,
@@ -90,7 +91,7 @@ impl PopBackendClient {
     ///
     /// * [`WalletKitError::AccountDoesNotExist`] — HTTP 404 (no binding found).
     /// * [`WalletKitError::NetworkError`] — any other non-success status.
-    pub async fn unregister_recovery_binding(
+    pub async fn unbind_recovery_agent(
         &self,
         request: ManageRecoveryBindingRequest,
         security_token: String,
@@ -98,8 +99,8 @@ impl PopBackendClient {
     ) -> Result<(), WalletKitError> {
         let url: String = format!("{}/api/v1/recovery-binding", self.base_url);
         let response = self
-            .client
-            .delete(&url)
+            .request
+            .req(Method::DELETE, url.as_str())
             .json(&request)
             .header("X-Auth-Signature", security_token)
             .header("X-Auth-Challenge", challenge)
@@ -115,7 +116,7 @@ impl PopBackendClient {
                 let error_message = response
                     .text()
                     .await
-                    .unwrap_or_else(|_| String::from("Unknown error"));
+                    .unwrap_or_else(|e| format!("Unknown error: {e:?}"));
                 Err(WalletKitError::NetworkError {
                     url,
                     error: error_message,
@@ -136,14 +137,14 @@ impl PopBackendClient {
     /// * [`WalletKitError::SerializationError`] — response body is not valid JSON.
     pub async fn get_challenge(&self) -> Result<String, WalletKitError> {
         let url = format!("{}/api/v1/challenge", self.base_url);
-        let response = self.client.get(&url).send().await?;
+        let response = self.request.get(url.as_str()).send().await?;
 
         let response_status = response.status();
         if !response_status.is_success() {
             let error_message = response
                 .text()
                 .await
-                .unwrap_or_else(|_| String::from("Unknown error"));
+                .unwrap_or_else(|e| format!("Unknown error: {e:?}"));
             return Err(WalletKitError::NetworkError {
                 url,
                 status: Some(response_status.as_u16()),
@@ -191,11 +192,10 @@ mod tests {
             .create_async()
             .await;
 
-        let client = Client::new();
-        let pop_api_client = PopBackendClient::new(client, url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone());
 
         let result = pop_api_client
-            .register_recovery_binding(
+            .bind_recovery_agent(
                 request,
                 "security_token".to_string(),
                 "challenge".to_string(),
@@ -230,11 +230,10 @@ mod tests {
             .create_async()
             .await;
 
-        let client = Client::new();
-        let pop_api_client = PopBackendClient::new(client, url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone());
 
         let result = pop_api_client
-            .register_recovery_binding(
+            .bind_recovery_agent(
                 request,
                 "security_token".to_string(),
                 "challenge".to_string(),
@@ -274,11 +273,10 @@ mod tests {
             .create_async()
             .await;
 
-        let client = Client::new();
-        let pop_api_client = PopBackendClient::new(client, url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone());
 
         let result = pop_api_client
-            .unregister_recovery_binding(
+            .unbind_recovery_agent(
                 request,
                 "security_token".to_string(),
                 "challenge".to_string(),
@@ -313,11 +311,10 @@ mod tests {
             .create_async()
             .await;
 
-        let client = Client::new();
-        let pop_api_client = PopBackendClient::new(client, url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone());
 
         let result = pop_api_client
-            .unregister_recovery_binding(
+            .unbind_recovery_agent(
                 request,
                 "security_token".to_string(),
                 "challenge".to_string(),
