@@ -242,8 +242,10 @@ mod tests {
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
         let private_key_bytes = hex::decode(private_key).unwrap();
         let (mock_eth_server, _eth_mock) = create_mock_eth_server().await;
+        let rpc_url = mock_eth_server.url();
+
         let authenticator =
-            create_test_authenticator(&private_key_bytes, mock_eth_server.url()).await;
+            create_test_authenticator(&private_key_bytes, rpc_url).await;
 
         let result = recovery_binding_manager
             .register_recovery_binding(&authenticator, leaf_index, sub.clone())
@@ -255,6 +257,7 @@ mod tests {
         challenge_mock.assert_async().await;
 
         mock.assert_async().await;
+        _eth_mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -280,9 +283,10 @@ mod tests {
             leaf_index,
         };
         let (mock_eth_server, _eth_mock) = create_mock_eth_server().await;
+        let rpc_url = mock_eth_server.url();
 
         let authenticator =
-            create_test_authenticator(&private_key_bytes, mock_eth_server.url()).await;
+            create_test_authenticator(&private_key_bytes, rpc_url).await;
         let security_token =
             RecoveryBindingManager::generate_recovery_agent_security_token(
                 &authenticator,

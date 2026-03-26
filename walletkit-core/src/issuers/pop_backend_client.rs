@@ -178,7 +178,7 @@ mod tests {
             leaf_index: 42,
         };
 
-        server
+        let _mock = server
             .mock("POST", "/api/v1/recovery-binding")
             .match_body(mockito::Matcher::Json(serde_json::json!({
                 "sub": "test-sub-123",
@@ -203,6 +203,7 @@ mod tests {
             .await;
 
         assert!(result.is_ok(), "Expected success but got error: {result:?}");
+        _mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -215,7 +216,7 @@ mod tests {
             leaf_index: 42,
         };
 
-        server
+        let _mock = server
             .mock("POST", "/api/v1/recovery-binding")
             .match_body(mockito::Matcher::Json(serde_json::json!({
                 "sub": "test-sub-123",
@@ -247,6 +248,7 @@ mod tests {
             }
             _ => panic!("Expected RecoveryBindingAlreadyExists error, got: {err:?}"),
         }
+        _mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -259,7 +261,7 @@ mod tests {
             leaf_index: 42,
         };
 
-        server
+        let _mock = server
             .mock("DELETE", "/api/v1/recovery-binding")
             .match_body(mockito::Matcher::Json(serde_json::json!({
                 "sub": "test-sub-123",
@@ -284,6 +286,7 @@ mod tests {
             .await;
 
         assert!(result.is_ok(), "Expected success but got error: {result:?}");
+        _mock.assert_async().await;
     }
 
     #[tokio::test]
@@ -296,7 +299,7 @@ mod tests {
             leaf_index: 42,
         };
 
-        server
+        let _mock = server
             .mock("DELETE", "/api/v1/recovery-binding")
             .match_body(mockito::Matcher::Json(serde_json::json!({
                 "sub": "test-sub-123",
@@ -328,5 +331,6 @@ mod tests {
             }
             _ => panic!("Expected RecoveryBindingDoesNotExist error, got: {err:?}"),
         }
+        _mock.assert_async().await;
     }
 }
