@@ -161,6 +161,11 @@ impl Authenticator {
     ///
     /// # Errors
     /// Will error if the provided RPC URL is not valid or if there are RPC call failures.
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "rpc_account_data",
+        skip_all
+    )]
     pub async fn get_packed_account_data_remote(
         &self,
     ) -> Result<Uint256, WalletKitError> {
@@ -183,6 +188,11 @@ impl Authenticator {
     ///
     /// - Will generally error if there are network issues or if the OPRF Nodes return an error.
     /// - Raises an error if the OPRF Nodes configuration is not correctly set.
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "oprf_blinding_factor",
+        skip_all
+    )]
     pub async fn generate_credential_blinding_factor_remote(
         &self,
         issuer_schema_id: u64,
@@ -284,6 +294,7 @@ impl Authenticator {
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
     #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init_with_defaults(
         seed: &[u8],
         rpc_url: Option<String>,
@@ -311,6 +322,7 @@ impl Authenticator {
     /// # Errors
     /// Will error if the provided seed is not valid or if the config is not valid.
     #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init(
         seed: &[u8],
         config: &str,
@@ -322,7 +334,6 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
@@ -478,6 +489,11 @@ impl InitializingAuthenticator {
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
     #[uniffi::constructor]
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "gateway_register",
+        skip_all
+    )]
     pub async fn register_with_defaults(
         seed: &[u8],
         rpc_url: Option<String>,
@@ -504,6 +520,11 @@ impl InitializingAuthenticator {
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
     #[uniffi::constructor]
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "gateway_register",
+        skip_all
+    )]
     pub async fn register(
         seed: &[u8],
         config: &str,
@@ -528,6 +549,11 @@ impl InitializingAuthenticator {
     ///
     /// # Errors
     /// Will error if the network request fails or the gateway returns an error.
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "gateway_poll",
+        skip_all
+    )]
     pub async fn poll_status(&self) -> Result<RegistrationStatus, WalletKitError> {
         let status = self.0.poll_status().await?;
         Ok(status.into())

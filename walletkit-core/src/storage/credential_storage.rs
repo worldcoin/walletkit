@@ -303,7 +303,6 @@ impl CredentialStore {
     ///
     /// The store must already be initialized via [`init`](Self::init).
     /// Intended for restore on a fresh install where the vault is empty.
-    ///
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the import fails.

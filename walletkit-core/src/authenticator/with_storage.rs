@@ -43,6 +43,11 @@ impl Authenticator {
     /// # Errors
     ///
     /// Returns an error if fetching or caching the proof fails.
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "indexer_inclusion_proof",
+        skip_all
+    )]
     pub(crate) async fn fetch_inclusion_proof_with_cache(
         &self,
         now: u64,
