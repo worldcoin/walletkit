@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Request payload for registering or unregistering a recovery binding.
 ///
-/// Serialized as JSON with `leafIndex` (camelCase) to match the PoP backend API.
+/// Serialized as JSON with `leafIndex` (camelCase) to match the `PoP` backend API.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ManageRecoveryBindingRequest {
     /// Hex-encoded subject identifier of the recovery binding.
@@ -19,7 +19,7 @@ struct ChallengeResponse {
     challenge: String,
 }
 
-/// Low-level HTTP client for the Proof-of-Personhood (PoP) backend API.
+/// Low-level HTTP client for the Proof-of-Personhood (`PoP`) backend API.
 ///
 /// Handles the REST calls for recovery binding management and challenge retrieval.
 /// All requests that mutate state require a security token (signature) and a
@@ -35,7 +35,8 @@ pub struct PopBackendClient {
 
 impl PopBackendClient {
     /// Creates a new client targeting the given base URL.
-    pub fn new(client: Client, base_url: String) -> Self {
+    #[must_use]
+    pub const fn new(client: Client, base_url: String) -> Self {
         Self { client, base_url }
     }
 }
@@ -162,7 +163,9 @@ impl PopBackendClient {
     }
 }
 
+#[cfg(test)]
 mod tests {
+
     use super::*;
 
     #[tokio::test]

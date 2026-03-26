@@ -1,4 +1,4 @@
-//! Bindings for managing recovery agents via the Proof-of-Personhood (PoP) backend.
+//! Bindings for managing recovery agents via the Proof-of-Personhood (`PoP`) backend.
 //!
 //! A recovery agent is an entity authorized to initiate account recovery on behalf of
 //! a user. This module provides [`RecoveryBindingManager`], which handles the authenticated
@@ -7,7 +7,7 @@
 //!
 //! ## Protocol
 //!
-//! 1. Fetch a one-time challenge from the PoP backend.
+//! 1. Fetch a one-time challenge from the `PoP` backend.
 //! 2. Construct a commitment: `keccak256(challenge || leaf_index || sub)`.
 //! 3. Sign the commitment with the authenticator's key to produce a security token.
 //! 4. Submit the request with the signature and challenge as auth headers.
@@ -21,7 +21,7 @@ use alloy_primitives::keccak256;
 use reqwest::ClientBuilder;
 use std::time::Duration;
 
-/// Client for registering and unregistering recovery agents with the PoP backend.
+/// Client for registering and unregistering recovery agents with the `PoP` backend.
 ///
 /// Each instance is bound to a specific [`Environment`] (staging or production),
 /// which determines the backend URL used for all requests.
@@ -32,9 +32,12 @@ pub struct RecoveryBindingManager {
 
 #[uniffi::export]
 impl RecoveryBindingManager {
-    /// Creates a new RecoveryBindingManager for the specified environment.
+    /// Creates a new `RecoveryBindingManager` for the specified environment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    #[must_use]
     pub fn new(environment: &Environment) -> Result<Self, WalletKitError> {
         let base_url = match environment {
             Environment::Staging => "https://app.stage.orb.worldcoin.org",
@@ -42,12 +45,15 @@ impl RecoveryBindingManager {
         }
         .to_string();
         let user_agent = format!("walletkit-core/{}", env!("CARGO_PKG_VERSION"));
-        return Self::new_base_url(base_url.as_str(), user_agent.as_str());
+        Self::new_base_url(base_url.as_str(), user_agent.as_str())
     }
 
-    /// Creates a new RecoveryBindingManager for the specified base URL and user agent.
+    /// Creates a new `RecoveryBindingManager` for the specified base URL and user agent.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    #[must_use]
     pub fn new_base_url(
         base_url: &str,
         user_agent: &str,
@@ -86,13 +92,11 @@ impl RecoveryBindingManager {
     ) -> Result<(), WalletKitError> {
         let challenge = self.pop_backend_client.get_challenge().await?;
         let request = ManageRecoveryBindingRequest { sub, leaf_index };
-        let security_token = self
-            .generate_recovery_agent_security_token(
-                authenticator,
-                &request,
-                challenge.clone(),
-            )
-            .await?;
+        let security_token = Self::generate_recovery_agent_security_token(
+            authenticator,
+            &request,
+            &challenge,
+        )?;
 
         self.pop_backend_client
             .register_recovery_binding(request, security_token, challenge)
@@ -120,49 +124,43 @@ impl RecoveryBindingManager {
     ) -> Result<(), WalletKitError> {
         let request = ManageRecoveryBindingRequest { sub, leaf_index };
         let challenge = self.pop_backend_client.get_challenge().await?;
-        let security_token = self
-            .generate_recovery_agent_security_token(
-                authenticator,
-                &request,
-                challenge.clone(),
-            )
-            .await?;
+        let security_token = Self::generate_recovery_agent_security_token(
+            authenticator,
+            &request,
+            &challenge,
+        )?;
         self.pop_backend_client
             .unregister_recovery_binding(request, security_token, challenge)
             .await?;
         Ok(())
     }
-
-    /// Builds a hex-encoded security token by signing `keccak256(challenge || leaf_index || sub)`
-    /// with the authenticator's key.
-    async fn generate_recovery_agent_security_token(
-        &self,
-        authenticator: &Authenticator,
-        request: &ManageRecoveryBindingRequest,
-        challenge: String,
-    ) -> Result<String, WalletKitError> {
-        let message_bytes = Self::create_bytes_to_sign(
-            challenge,
-            request.leaf_index,
-            request.sub.clone(),
-        )?;
-        let commitment = keccak256(&message_bytes);
-        let signature: Vec<u8> =
-            authenticator.danger_sign_challenge(&commitment.as_slice())?;
-        Ok(hex::encode(signature))
-    }
 }
 
 impl RecoveryBindingManager {
+    /// Builds a hex-encoded security token by signing `keccak256(challenge || leaf_index || sub)`
+    /// with the authenticator's key.
+    fn generate_recovery_agent_security_token(
+        authenticator: &Authenticator,
+        request: &ManageRecoveryBindingRequest,
+        challenge: &str,
+    ) -> Result<String, WalletKitError> {
+        let message_bytes =
+            Self::create_bytes_to_sign(challenge, request.leaf_index, &request.sub)?;
+        let commitment = keccak256(&message_bytes);
+        let signature: Vec<u8> =
+            authenticator.danger_sign_challenge(commitment.as_slice())?;
+        Ok(format!("0x{}", hex::encode(signature)))
+    }
+
     /// Assembles the byte payload `challenge || leaf_index || sub` used as the
     /// pre-image for the keccak256 commitment.
     ///
     /// Both `challenge` and `sub` are expected as hex strings (with optional `0x` prefix).
     /// `leaf_index` is encoded as 8 big-endian bytes.
     fn create_bytes_to_sign(
-        challenge: String,
+        challenge: &str,
         leaf_index: u64,
-        sub: String,
+        sub: &str,
     ) -> Result<Vec<u8>, WalletKitError> {
         let challenge_bytes =
             hex::decode(challenge.trim_start_matches("0x")).map_err(|e| {
@@ -188,13 +186,14 @@ impl RecoveryBindingManager {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::cache_embedded_groth16_material;
     use crate::storage::tests_utils::{temp_root_path, InMemoryStorageProvider};
     use crate::storage::CredentialStore;
+    use mockito::ServerGuard;
     use std::sync::Arc;
-    const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
 
     #[tokio::test]
     async fn test_recovery_agent_token_generator_success() {
@@ -242,8 +241,9 @@ mod tests {
         let private_key =
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
         let private_key_bytes = hex::decode(private_key).unwrap();
-
-        let authenticator = create_test_authenticator(&private_key_bytes).await;
+        let mock_eth_server = create_mock_eth_server().await;
+        let authenticator =
+            create_test_authenticator(&private_key_bytes, mock_eth_server.url()).await;
 
         let result = recovery_binding_manager
             .register_recovery_binding(&authenticator, leaf_index, sub.clone())
@@ -253,6 +253,7 @@ mod tests {
             "Expected success, but got error: {result:?}"
         );
         challenge_mock.assert_async().await;
+
         mock.assert_async().await;
     }
 
@@ -268,12 +269,9 @@ mod tests {
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
         let private_key_bytes = hex::decode(private_key).unwrap();
 
-        let message_bytes = RecoveryBindingManager::create_bytes_to_sign(
-            challenge.clone(),
-            leaf_index,
-            sub.clone(),
-        )
-        .unwrap();
+        let message_bytes =
+            RecoveryBindingManager::create_bytes_to_sign(&challenge, leaf_index, &sub)
+                .unwrap();
         log::info!("message_bytes: {:?}", hex::encode(message_bytes.clone()));
         assert_eq!(hex::encode(message_bytes.clone()), "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2000000000000002aabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
 
@@ -281,37 +279,26 @@ mod tests {
             sub: sub.clone(),
             leaf_index,
         };
-        let pop_api_server = mockito::Server::new();
-        let recovery_binding_manager = RecoveryBindingManager::new_base_url(
-            pop_api_server.url().as_str(),
-            "walletkit-core/test",
-        )
-        .unwrap();
+        let mock_eth_server = create_mock_eth_server().await;
 
-        let authenticator = create_test_authenticator(&private_key_bytes);
-        let authenticator = authenticator.await;
-        let security_token = recovery_binding_manager
-            .generate_recovery_agent_security_token(
-                &authenticator,
-                &request,
-                challenge.clone(),
-            )
-            .await;
+        let authenticator =
+            create_test_authenticator(&private_key_bytes, mock_eth_server.url()).await;
+        let security_token = RecoveryBindingManager::generate_recovery_agent_security_token(
+            &authenticator, &request, &challenge,
+        ).unwrap();
         assert!(
-            security_token.is_ok(),
+            !security_token.is_empty(),
             "Expected success, but got error: {security_token:?}"
         );
-        // let security_token = security_token.unwrap();
-        // let expect_signature = "0x72ec312737276c94e3ac32ab1c393a63b9474480d3a9eb434b8bf6927b7222ef7eb1fea0812ff62a7fb144db9631751e505969162a9c590cabb27bf0bd5005581c";
-        // assert_eq!(security_token, expect_signature);
+        let expect_signature = "0x72ec312737276c94e3ac32ab1c393a63b9474480d3a9eb434b8bf6927b7222ef7eb1fea0812ff62a7fb144db9631751e505969162a9c590cabb27bf0bd5005581c";
+        assert_eq!(security_token, expect_signature);
     }
 
-    async fn create_test_authenticator(seed: &[u8]) -> Authenticator {
+    async fn create_test_authenticator(seed: &[u8], rpc_url: String) -> Authenticator {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let store = create_test_credential_store();
         let paths = store.storage_paths().unwrap();
         cache_embedded_groth16_material(&paths).expect("cache groth16 material");
-        let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
-            .unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
 
         let authenticator = Authenticator::init_with_defaults(
             seed,
@@ -324,7 +311,7 @@ mod tests {
         .await
         .unwrap();
 
-        return authenticator;
+        authenticator
     }
 
     fn create_test_credential_store() -> Arc<CredentialStore> {
@@ -333,5 +320,24 @@ mod tests {
         Arc::new(
             CredentialStore::from_provider(&provider).expect("create credential store"),
         )
+    }
+
+    async fn create_mock_eth_server() -> ServerGuard {
+        let mut mock_eth_server = mockito::Server::new_async().await;
+        mock_eth_server
+            .mock("POST", "/")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        mock_eth_server
     }
 }
