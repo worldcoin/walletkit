@@ -70,7 +70,7 @@ impl RecoveryBindingManager {
     /// # Errors
     ///
     /// Returns an error if the challenge fetch, signing, or backend request fails,
-    /// or if a recovery binding already exists ([`WalletKitError::RecoveryBindingManagerAlreadyExists`]).
+    /// or if a recovery binding already exists ([`WalletKitError::RecoveryBindingAlreadyExists`]).
     pub async fn bind_recovery_agent(
         &self,
         authenticator: &Authenticator,
