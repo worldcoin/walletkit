@@ -1,7 +1,7 @@
 //! Unit tests for the safe `SQLite` db wrapper.
 
 use super::*;
-use zeroize::Zeroizing;
+use secrecy::SecretBox;
 
 #[test]
 fn test_open_in_memory() {
@@ -113,7 +113,7 @@ fn test_null_handling() {
 fn test_cipher_encrypted_round_trip() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let path = dir.path().join("cipher-test.sqlite");
-    let key = Zeroizing::new([0xABu8; 32]);
+    let key = SecretBox::init_with(|| [0xABu8; 32]);
 
     // Create and write
     {
@@ -138,7 +138,7 @@ fn test_cipher_encrypted_round_trip() {
 
     // Wrong key should fail
     {
-        let wrong_key = Zeroizing::new([0xCDu8; 32]);
+        let wrong_key = SecretBox::init_with(|| [0xCDu8; 32]);
         let result = cipher::open_encrypted(&path, &wrong_key, false);
         assert!(result.is_err(), "wrong key should fail");
     }

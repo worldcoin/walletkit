@@ -6259,6 +6259,7 @@ version = "0.11.1"
 dependencies = [
  "cc",
  "hex",
+ "secrecy",
  "sha2",
  "sqlite-wasm-rs",
  "tempfile",

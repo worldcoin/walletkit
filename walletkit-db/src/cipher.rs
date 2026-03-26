@@ -33,6 +33,7 @@
 
 use std::path::Path;
 
+use secrecy::{ExposeSecret, SecretBox};
 use zeroize::Zeroizing;
 
 use super::connection::Connection;
@@ -50,7 +51,7 @@ use super::error::{DbError, DbResult};
 /// Returns `DbError` if opening, keying, or configuring the connection fails.
 pub fn open_encrypted(
     path: &Path,
-    k_intermediate: &Zeroizing<[u8; 32]>,
+    k_intermediate: &SecretBox<[u8; 32]>,
     read_only: bool,
 ) -> DbResult<Connection> {
     let conn = Connection::open(path, read_only)?;
@@ -69,9 +70,9 @@ pub fn open_encrypted(
 /// After keying, a lightweight read (`SELECT count(*) FROM sqlite_master`)
 /// verifies the key is correct. If it's wrong, `sqlite3mc` fails with
 /// `SQLITE_NOTADB` on the first page read.
-fn apply_key(conn: &Connection, k_intermediate: &Zeroizing<[u8; 32]>) -> DbResult<()> {
+fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> DbResult<()> {
     // Hex-encode the key and build the PRAGMA. Both are zeroized on drop.
-    let key_hex = Zeroizing::new(hex::encode(k_intermediate));
+    let key_hex = Zeroizing::new(hex::encode(k_intermediate.expose_secret()));
     let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", key_hex.as_str()));
 
     // execute_batch_zeroized ensures the internal CString copy of the PRAGMA
