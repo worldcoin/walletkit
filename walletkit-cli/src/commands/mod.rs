@@ -99,6 +99,7 @@ pub enum Command {
         action: proof::ProofCommand,
     },
     /// Recovery agent management (initiate, execute, cancel updates).
+    #[command(name = "recovery-agent-update")]
     RecoveryAgent {
         #[command(subcommand)]
         action: recovery_agent::RecoveryAgentCommand,
