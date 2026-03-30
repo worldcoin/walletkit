@@ -652,17 +652,10 @@ impl RecoveryIdentityMaterial {
     /// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
     pub fn from_seed(seed: &[u8]) -> Result<Self, WalletKitError> {
         let signer = Signer::from_seed_bytes(seed)?;
-
-        // Derive the on-chain address (checksummed hex).
         let authenticator_address = signer.onchain_signer_address().to_checksum(None);
-
-        // Compress the off-chain EdDSA public key into a U256, matching
-        // the representation used by `InitializingAuthenticator::new()`.
         let authenticator_pubkey: U256 = signer
             .offchain_signer_pubkey()
             .to_ethereum_representation()?;
-
-        // Build a single-key set and compute its Poseidon2 leaf hash.
         let mut key_set = AuthenticatorPublicKeySet::default();
         key_set.try_push(signer.offchain_signer_pubkey())?;
         let offchain_signer_commitment: U256 = key_set.leaf_hash().into();
