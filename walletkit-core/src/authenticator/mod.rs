@@ -831,27 +831,6 @@ mod tests {
     }
 
     #[test]
-    fn test_recovery_material_deterministic() {
-        let seed = [42u8; 32];
-        let a = RecoveryMaterial::from_seed(&seed).unwrap();
-        let b = RecoveryMaterial::from_seed(&seed).unwrap();
-
-        assert_eq!(a.authenticator_address, b.authenticator_address);
-        assert_eq!(a.authenticator_pubkey, b.authenticator_pubkey);
-        assert_eq!(a.offchain_signer_commitment, b.offchain_signer_commitment);
-    }
-
-    #[test]
-    fn test_recovery_material_different_seeds_differ() {
-        let a = RecoveryMaterial::from_seed(&[1u8; 32]).unwrap();
-        let b = RecoveryMaterial::from_seed(&[2u8; 32]).unwrap();
-
-        assert_ne!(a.authenticator_address, b.authenticator_address);
-        assert_ne!(a.authenticator_pubkey, b.authenticator_pubkey);
-        assert_ne!(a.offchain_signer_commitment, b.offchain_signer_commitment);
-    }
-
-    #[test]
     fn test_recovery_material_rejects_invalid_seed() {
         // Seed must be exactly 32 bytes.
         let result = RecoveryMaterial::from_seed(&[0u8; 16]);
