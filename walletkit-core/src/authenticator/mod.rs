@@ -666,21 +666,6 @@ impl RecoveryMaterial {
 }
 
 /// An authenticator in the process of recovering an existing World ID account.
-///
-/// # Recovery lifecycle
-///
-/// 1. **Generate material** — construct a `RecoveringAuthenticator` from the
-///    recovery seed. Call [`identity_material`](Self::identity_material) to
-///    obtain the `authenticator_address`, `authenticator_pubkey`, and
-///    `offchain_signer_commitment` that must be submitted on-chain.
-/// 2. **Submit on-chain** — submit these values as part of the recovery
-///    transaction.
-/// 3. **Poll for completion** — wait until the recovery transaction is
-///    confirmed on-chain.
-/// 4. **Transition** — call [`into_authenticator`](Self::into_authenticator)
-///    to initialise a full [`Authenticator`] from the same seed. This looks up
-///    the leaf index from on-chain state, so it will only succeed after the
-///    recovery transaction has been finalised.
 #[derive(uniffi::Object)]
 pub struct RecoveringAuthenticator {
     seed: Vec<u8>,
