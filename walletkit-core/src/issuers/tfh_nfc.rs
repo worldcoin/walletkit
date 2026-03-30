@@ -64,7 +64,7 @@ impl TfhNfcIssuer {
 impl TfhNfcIssuer {
     /// Refresh an NFC credential (migrate PCP to v4).
     ///
-    /// Calls the `/v2/refresh` endpoint and returns a parsed [`Credential`].
+    /// Calls the `/v2/migrate` endpoint and returns a parsed [`Credential`].
     ///
     /// # Errors
     ///
@@ -74,7 +74,7 @@ impl TfhNfcIssuer {
         request_body: &str,
         headers: HashMap<String, String>,
     ) -> Result<Credential, WalletKitError> {
-        let url = format!("{}/v2/refresh", self.base_url);
+        let url = format!("{}/v2/migrate", self.base_url);
 
         let mut request_builder = self
             .request
