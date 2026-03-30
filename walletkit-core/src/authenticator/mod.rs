@@ -12,8 +12,8 @@ use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::{authenticator::AuthenticatorPublicKeySet, Config},
     Authenticator as CoreAuthenticator, Credential as CoreCredential,
-    InitializingAuthenticator as CoreInitializingAuthenticator, OnchainKeyRepresentable,
-    Signer,
+    InitializingAuthenticator as CoreInitializingAuthenticator,
+    OnchainKeyRepresentable, Signer,
 };
 
 #[cfg(feature = "storage")]
@@ -629,8 +629,7 @@ impl InitializingAuthenticator {
 ///
 /// During account recovery the user generates new keys from a seed, but those
 /// keys do not yet exist on-chain. The three values in this record must be
-/// submitted to the orb / signup-service so it can execute the on-chain
-/// recovery transaction.
+/// submitted on-chain during the recovery transaction.
 ///
 /// All fields are hex-encoded strings suitable for direct use in API requests.
 #[derive(Debug, Clone, uniffi::Record)]
@@ -683,9 +682,9 @@ impl RecoveryIdentityMaterial {
 /// 1. **Generate material** — construct a `RecoveringAuthenticator` from the
 ///    recovery seed. Call [`identity_material`](Self::identity_material) to
 ///    obtain the `authenticator_address`, `authenticator_pubkey`, and
-///    `offchain_signer_commitment` that must be submitted to the orb.
-/// 2. **Submit to the orb** — the signup-service uses these values to execute
-///    the on-chain recovery transaction.
+///    `offchain_signer_commitment` that must be submitted on-chain.
+/// 2. **Submit on-chain** — submit these values as part of the recovery
+///    transaction.
 /// 3. **Poll for completion** — wait until the recovery transaction is
 ///    confirmed on-chain.
 /// 4. **Transition** — call [`into_authenticator`](Self::into_authenticator)
@@ -724,8 +723,8 @@ impl RecoveringAuthenticator {
 
     /// Returns the pre-computed recovery identity material.
     ///
-    /// These values must be submitted to the orb / signup-service so the
-    /// recovery transaction can be executed on-chain.
+    /// These values must be submitted on-chain as part of the recovery
+    /// transaction.
     #[must_use]
     pub fn identity_material(&self) -> RecoveryIdentityMaterial {
         self.material.clone()
