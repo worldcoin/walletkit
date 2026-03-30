@@ -683,8 +683,8 @@ impl RecoveringAuthenticator {
     #[uniffi::constructor]
     pub fn new(
         seed: &[u8],
-        environment: &Environment,
         rpc_url: Option<String>,
+        environment: &Environment,
         region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
