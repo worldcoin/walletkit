@@ -633,7 +633,7 @@ impl InitializingAuthenticator {
 ///
 /// All fields are hex-encoded strings suitable for direct use in API requests.
 #[derive(Debug, Clone, uniffi::Record)]
-pub struct RecoveryIdentityMaterial {
+pub struct RecoveryMaterial {
     /// Checksummed hex Ethereum address of the on-chain signer.
     pub authenticator_address: String,
     /// Hex-encoded U256 compressed `EdDSA` public key of the off-chain signer.
@@ -642,11 +642,8 @@ pub struct RecoveryIdentityMaterial {
     pub offchain_signer_commitment: String,
 }
 
-impl RecoveryIdentityMaterial {
+impl RecoveryMaterial {
     /// Derives recovery identity material from a 32-byte seed.
-    ///
-    /// The derivation mirrors exactly how [`InitializingAuthenticator`] computes
-    /// the values submitted to the gateway during initial registration.
     ///
     /// # Errors
     /// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
@@ -688,7 +685,7 @@ impl RecoveryIdentityMaterial {
 pub struct RecoveringAuthenticator {
     seed: Vec<u8>,
     config: Config,
-    material: RecoveryIdentityMaterial,
+    material: RecoveryMaterial,
 }
 
 #[uniffi::export]
@@ -706,7 +703,7 @@ impl RecoveringAuthenticator {
         region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let material = RecoveryIdentityMaterial::from_seed(seed)?;
+        let material = RecoveryMaterial::from_seed(seed)?;
         Ok(Self {
             seed: seed.to_vec(),
             config,
@@ -719,7 +716,7 @@ impl RecoveringAuthenticator {
     /// These values must be submitted on-chain as part of the recovery
     /// transaction.
     #[must_use]
-    pub fn identity_material(&self) -> RecoveryIdentityMaterial {
+    pub fn identity_material(&self) -> RecoveryMaterial {
         self.material.clone()
     }
 }
@@ -782,10 +779,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_recovery_identity_material_from_seed() {
+    fn test_recovery_material_from_seed() {
         let seed = [1u8; 32];
         let material =
-            RecoveryIdentityMaterial::from_seed(&seed).expect("should derive material");
+            RecoveryMaterial::from_seed(&seed).expect("should derive material");
 
         // `authenticator_address` must be a checksummed 0x-prefixed hex address.
         assert!(
@@ -834,10 +831,10 @@ mod tests {
     }
 
     #[test]
-    fn test_recovery_identity_material_deterministic() {
+    fn test_recovery_material_deterministic() {
         let seed = [42u8; 32];
-        let a = RecoveryIdentityMaterial::from_seed(&seed).unwrap();
-        let b = RecoveryIdentityMaterial::from_seed(&seed).unwrap();
+        let a = RecoveryMaterial::from_seed(&seed).unwrap();
+        let b = RecoveryMaterial::from_seed(&seed).unwrap();
 
         assert_eq!(a.authenticator_address, b.authenticator_address);
         assert_eq!(a.authenticator_pubkey, b.authenticator_pubkey);
@@ -845,9 +842,9 @@ mod tests {
     }
 
     #[test]
-    fn test_recovery_identity_material_different_seeds_differ() {
-        let a = RecoveryIdentityMaterial::from_seed(&[1u8; 32]).unwrap();
-        let b = RecoveryIdentityMaterial::from_seed(&[2u8; 32]).unwrap();
+    fn test_recovery_material_different_seeds_differ() {
+        let a = RecoveryMaterial::from_seed(&[1u8; 32]).unwrap();
+        let b = RecoveryMaterial::from_seed(&[2u8; 32]).unwrap();
 
         assert_ne!(a.authenticator_address, b.authenticator_address);
         assert_ne!(a.authenticator_pubkey, b.authenticator_pubkey);
@@ -855,12 +852,12 @@ mod tests {
     }
 
     #[test]
-    fn test_recovery_identity_material_rejects_invalid_seed() {
+    fn test_recovery_material_rejects_invalid_seed() {
         // Seed must be exactly 32 bytes.
-        let result = RecoveryIdentityMaterial::from_seed(&[0u8; 16]);
+        let result = RecoveryMaterial::from_seed(&[0u8; 16]);
         assert!(result.is_err(), "should reject 16-byte seed");
 
-        let result = RecoveryIdentityMaterial::from_seed(&[]);
+        let result = RecoveryMaterial::from_seed(&[]);
         assert!(result.is_err(), "should reject empty seed");
     }
 }
