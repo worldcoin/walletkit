@@ -1,7 +1,7 @@
 //! Encrypted vault database for credential storage.
 //!
 //! The vault database (`account.vault.sqlite`) is the **authoritative** source
-//! of truth for the account. It is encrypted via sqlite3mc (SQLite3 Multiple
+//! of truth for the account. It is encrypted via sqlite3mc (`SQLite3` Multiple
 //! Ciphers, ChaCha20-Poly1305 default) and integrity-protected, keyed by
 //! `K_intermediate`.
 //!

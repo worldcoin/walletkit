@@ -57,7 +57,7 @@ fn remove_db_files(db_path: &std::path::Path) {
 
 /// Concrete storage implementation backed by sqlite3mc-encrypted databases.
 ///
-/// This is the public-facing API surface exposed to WalletKit. It is the single
+/// This is the public-facing API surface exposed to `WalletKit`. It is the single
 /// entry point for all credential persistence, caching, and replay-safety
 /// operations. Internally it delegates to a [`VaultDb`] (authoritative) and
 /// a [`CacheDb`] (non-authoritative), both keyed by `K_intermediate`.

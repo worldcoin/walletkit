@@ -54,7 +54,7 @@ use super::paths::StoragePaths;
 ///
 /// Represents the device-bound root key (`K_device`) provided by the platform keystore.
 /// This key MUST be non-exportable when supported by the platform (Secure Enclave on iOS,
-/// Android Keystore on Android, WebCrypto on browsers).
+/// Android Keystore on Android, `WebCrypto` on browsers).
 ///
 /// `K_device` is used **only** to unwrap the per-account intermediate key (`K_intermediate`)
 /// during initialization. It is never used directly for database encryption.
