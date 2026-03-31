@@ -21,6 +21,20 @@ impl Authenticator {
         self.store.init(self.leaf_index(), now)?;
         Ok(())
     }
+
+    /// Permanently destroys all credential storage data.
+    ///
+    /// Removes the encryption keys, vault database, and cache database.
+    /// After this call the authenticator can no longer generate proofs or
+    /// access stored credentials. Intended for logout or account deletion.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage destruction fails.
+    pub fn destroy_storage(&self) -> Result<(), WalletKitError> {
+        self.store.destroy_storage()?;
+        Ok(())
+    }
 }
 
 impl Authenticator {
@@ -29,6 +43,11 @@ impl Authenticator {
     /// # Errors
     ///
     /// Returns an error if fetching or caching the proof fails.
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "indexer_inclusion_proof",
+        skip_all
+    )]
     pub(crate) async fn fetch_inclusion_proof_with_cache(
         &self,
         now: u64,

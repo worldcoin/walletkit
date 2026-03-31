@@ -1,8 +1,8 @@
 //! Build script for walletkit-db.
 //!
-//! On non-WASM targets this downloads the sqlite3mc amalgamation from a pinned
-//! upstream release (if not already cached) and compiles it into a static
-//! library.
+//! On non-WASM targets this downloads the sqlite3mc v2.3.2 amalgamation zip,
+//! extracts the pre-built `sqlite3mc_amalgamation.c` / `.h`, and compiles them
+//! into a static library.
 //!
 //! On WASM targets compilation is skipped because `sqlite-wasm-rs` provides
 //! the pre-compiled WASM binary.
@@ -13,15 +13,13 @@ use std::process::Command;
 
 use sha2::{Digest, Sha256};
 
-// Pinned sqlite3mc release.
-const SQLITE3MC_VERSION: &str = "2.2.7";
-const SQLITE_VERSION: &str = "3.51.2";
-const DOWNLOAD_URL: &str = "https://github.com/utelle/SQLite3MultipleCiphers/releases/download/v2.2.7/sqlite3mc-2.2.7-sqlite-3.51.2-amalgamation.zip";
-const EXPECTED_SHA256: &str =
-    "8e84aadc53bc09bda9cd307745a178191e7783e1b6478d74ffbcdf6a04f98085";
+const SQLITE3MC_VERSION: &str = "2.3.2";
+const SQLITE_VERSION: &str = "3.51.3";
 
-/// Files we need from the zip archive.
-const NEEDED_FILES: &[&str] = &["sqlite3mc_amalgamation.c", "sqlite3mc_amalgamation.h"];
+const DOWNLOAD_URL: &str = "https://github.com/utelle/SQLite3MultipleCiphers/releases/\
+    download/v2.3.2/sqlite3mc-2.3.2-sqlite-3.51.3-amalgamation.zip";
+const EXPECTED_SHA256: &str =
+    "3462d3f09e91daa829b8787d93f451168fbafc4ccbf9d579f5e4117416f5c82d";
 
 fn main() {
     build_sqlite3mc();
@@ -38,7 +36,6 @@ fn build_sqlite3mc() {
     let amalgamation_c = source_dir.join("sqlite3mc_amalgamation.c");
     let amalgamation_h = source_dir.join("sqlite3mc_amalgamation.h");
 
-    // Download and extract if not already cached in OUT_DIR.
     if !amalgamation_c.exists() || !amalgamation_h.exists() {
         std::fs::create_dir_all(&source_dir).expect("failed to create source dir");
         let zip_path = out_dir.join("sqlite3mc-amalgamation.zip");
@@ -58,9 +55,11 @@ fn build_sqlite3mc() {
     compile(&amalgamation_c, &source_dir);
 }
 
-/// Downloads the pinned amalgamation zip using curl.
 fn download(dest: &Path) {
-    eprintln!("cargo:warning=Downloading sqlite3mc {SQLITE3MC_VERSION} (SQLite {SQLITE_VERSION})...");
+    println!(
+        "cargo:warning=Downloading sqlite3mc v{SQLITE3MC_VERSION} amalgamation \
+         (SQLite {SQLITE_VERSION})..."
+    );
     let status = Command::new("curl")
         .args(["-fsSL", "-o"])
         .arg(dest)
@@ -70,7 +69,6 @@ fn download(dest: &Path) {
     assert!(status.success(), "curl failed with status {status}");
 }
 
-/// Verifies the SHA-256 checksum of the downloaded zip.
 fn verify_checksum(zip_path: &Path) {
     let data = std::fs::read(zip_path).expect("failed to read zip for checksum");
     let hash = Sha256::digest(&data);
@@ -78,30 +76,27 @@ fn verify_checksum(zip_path: &Path) {
     assert_eq!(
         actual_hash, EXPECTED_SHA256,
         "sqlite3mc checksum mismatch!\n  expected: {EXPECTED_SHA256}\n  actual:   {actual_hash}\n\
-         The download may be corrupted or the pinned release has changed."
+         The download may be corrupted or the release zip has changed."
     );
 }
 
-/// Extracts the needed files from the zip into `dest_dir`.
 fn extract(zip_path: &Path, dest_dir: &Path) {
     let file = std::fs::File::open(zip_path).expect("failed to open zip");
     let mut archive = zip::ZipArchive::new(file).expect("failed to read zip archive");
 
-    for name in NEEDED_FILES {
+    for name in ["sqlite3mc_amalgamation.c", "sqlite3mc_amalgamation.h"] {
         let mut entry = archive
             .by_name(name)
-            .unwrap_or_else(|e| panic!("file {name} not found in zip: {e}"));
-        let dest_path = dest_dir.join(name);
+            .unwrap_or_else(|e| panic!("failed to find {name} in zip: {e}"));
         let mut buf = Vec::with_capacity(usize::try_from(entry.size()).unwrap_or(0));
         entry
             .read_to_end(&mut buf)
             .unwrap_or_else(|e| panic!("failed to read {name} from zip: {e}"));
-        std::fs::write(&dest_path, &buf)
-            .unwrap_or_else(|e| panic!("failed to write {}: {e}", dest_path.display()));
+        std::fs::write(dest_dir.join(name), &buf)
+            .unwrap_or_else(|e| panic!("failed to write {name}: {e}"));
     }
 }
 
-/// Compiles the sqlite3mc amalgamation into a static library.
 fn compile(amalgamation_c: &Path, include_dir: &Path) {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
@@ -118,11 +113,10 @@ fn compile(amalgamation_c: &Path, include_dir: &Path) {
         .define("SQLITE_ENABLE_RTREE", None)
         .define("SQLITE_DEFAULT_WAL_SYNCHRONOUS", "1")
         .define("SQLITE_DQS", "0")
-        // sqlite3mc cipher configuration -- default to ChaCha20-Poly1305
+        // Default cipher: ChaCha20-Poly1305
         .define("CODEC_TYPE", "CODEC_TYPE_CHACHA20")
-        // Disable Argon2 threading (not needed, avoids pthread dep on some targets)
+        // Disable Argon2 threading (avoids pthread dep on some targets)
         .define("ARGON2_NO_THREADS", None)
-        // Optimizations
         .define("SQLITE_DEFAULT_MEMSTATUS", "0")
         .define("SQLITE_LIKE_DOESNT_MATCH_BLOBS", None)
         .define("SQLITE_OMIT_DEPRECATED", None)
@@ -141,7 +135,6 @@ fn compile(amalgamation_c: &Path, include_dir: &Path) {
         _ => {}
     }
 
-    // Suppress warnings from the amalgamation (third-party code)
-    build.warnings(false);
+    build.warnings(false); // third-party code
     build.compile("sqlite3mc");
 }

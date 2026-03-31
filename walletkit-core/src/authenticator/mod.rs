@@ -161,6 +161,11 @@ impl Authenticator {
     ///
     /// # Errors
     /// Will error if the provided RPC URL is not valid or if there are RPC call failures.
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "rpc_account_data",
+        skip_all
+    )]
     pub async fn get_packed_account_data_remote(
         &self,
     ) -> Result<Uint256, WalletKitError> {
@@ -183,6 +188,11 @@ impl Authenticator {
     ///
     /// - Will generally error if there are network issues or if the OPRF Nodes return an error.
     /// - Raises an error if the OPRF Nodes configuration is not correctly set.
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "oprf_blinding_factor",
+        skip_all
+    )]
     pub async fn generate_credential_blinding_factor_remote(
         &self,
         issuer_schema_id: u64,
@@ -219,6 +229,69 @@ impl Authenticator {
     ) -> Result<Vec<u8>, WalletKitError> {
         let signature = self.inner.danger_sign_challenge(challenge)?;
         Ok(signature.as_bytes().to_vec())
+    }
+
+    /// Initiates a time-locked recovery agent update (14-day cooldown).
+    ///
+    /// Signs an EIP-712 `InitiateRecoveryAgentUpdate` payload and submits it to
+    /// the gateway. Returns the gateway request ID that can be used to poll
+    /// status.
+    ///
+    /// # Arguments
+    /// * `new_recovery_agent` — the checksummed hex address of the new recovery
+    ///   agent (e.g. `"0x1234…"`).
+    ///
+    /// # Errors
+    /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
+    ///   a valid address.
+    /// - Returns a network error if the gateway request fails.
+    pub async fn initiate_recovery_agent_update(
+        &self,
+        new_recovery_agent: String,
+    ) -> Result<String, WalletKitError> {
+        let new_recovery_agent =
+            Address::parse_from_ffi(&new_recovery_agent, "new_recovery_agent")?;
+
+        let request_id = self
+            .inner
+            .initiate_recovery_agent_update(new_recovery_agent)
+            .await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Executes a pending recovery agent update after the 14-day cooldown has
+    /// elapsed.
+    ///
+    /// This call is **permissionless** — no signature is required. The contract
+    /// enforces the cooldown and will revert with
+    /// `RecoveryAgentUpdateStillInCooldown` if called too early.
+    ///
+    /// Returns the gateway request ID that can be used to poll status.
+    ///
+    /// # Errors
+    /// Returns a network error if the gateway request fails.
+    pub async fn execute_recovery_agent_update(
+        &self,
+    ) -> Result<String, WalletKitError> {
+        let request_id = self.inner.execute_recovery_agent_update().await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Cancels a pending time-locked recovery agent update before the cooldown
+    /// expires.
+    ///
+    /// Signs an EIP-712 `CancelRecoveryAgentUpdate` payload and submits it to
+    /// the gateway. Returns the gateway request ID that can be used to poll
+    /// status.
+    ///
+    /// # Errors
+    /// Returns a network error if the gateway request fails.
+    pub async fn cancel_recovery_agent_update(&self) -> Result<String, WalletKitError> {
+        let request_id = self.inner.cancel_recovery_agent_update().await?;
+
+        Ok(request_id.to_string())
     }
 }
 
@@ -284,6 +357,7 @@ impl Authenticator {
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
     #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init_with_defaults(
         seed: &[u8],
         rpc_url: Option<String>,
@@ -311,6 +385,7 @@ impl Authenticator {
     /// # Errors
     /// Will error if the provided seed is not valid or if the config is not valid.
     #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init(
         seed: &[u8],
         config: &str,
@@ -322,7 +397,6 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
@@ -478,6 +552,11 @@ impl InitializingAuthenticator {
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
     #[uniffi::constructor]
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "gateway_register",
+        skip_all
+    )]
     pub async fn register_with_defaults(
         seed: &[u8],
         rpc_url: Option<String>,
@@ -504,6 +583,11 @@ impl InitializingAuthenticator {
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
     #[uniffi::constructor]
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "gateway_register",
+        skip_all
+    )]
     pub async fn register(
         seed: &[u8],
         config: &str,
@@ -528,6 +612,11 @@ impl InitializingAuthenticator {
     ///
     /// # Errors
     /// Will error if the network request fails or the gateway returns an error.
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "gateway_poll",
+        skip_all
+    )]
     pub async fn poll_status(&self) -> Result<RegistrationStatus, WalletKitError> {
         let status = self.0.poll_status().await?;
         Ok(status.into())

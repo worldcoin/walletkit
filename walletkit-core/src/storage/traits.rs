@@ -88,3 +88,26 @@ pub trait StorageProvider: Send + Sync {
     /// Returns the storage paths selected by the platform.
     fn paths(&self) -> Arc<StoragePaths>;
 }
+
+/// Listener notified when the credential vault is mutated.
+///
+/// Register via [`super::CredentialStore::set_vault_changed_listener`]. The
+/// callback is delivered on a dedicated background thread to avoid re-entering
+/// the `UniFFI` call stack (see `logger.rs` for rationale).
+///
+/// # Expected usage
+///
+/// The host app should treat this as a trigger to take actions when the vault
+/// state has mutated. It should contain synchronous actions only.
+///
+/// # Safety
+///
+/// **Warning:** implementors **must not** call back into
+/// [`super::CredentialStore`] from
+/// [`on_vault_changed`](VaultChangedListener::on_vault_changed) — doing so
+/// will deadlock.
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+pub trait VaultChangedListener: Send + Sync {
+    /// Called after a successful vault mutation (store, delete, purge).
+    fn on_vault_changed(&self);
+}
