@@ -633,7 +633,7 @@ impl InitializingAuthenticator {
 ///
 /// All fields are hex-encoded strings suitable for direct use in API requests.
 #[derive(Debug, Clone, uniffi::Record)]
-pub struct RecoveryMaterial {
+pub struct RecoveryData {
     /// Checksummed hex Ethereum address of the on-chain signer.
     pub authenticator_address: String,
     /// Hex-encoded U256 compressed `EdDSA` public key of the off-chain signer.
@@ -642,11 +642,17 @@ pub struct RecoveryMaterial {
     pub offchain_signer_commitment: String,
 }
 
-impl RecoveryMaterial {
+#[uniffi::export]
+impl RecoveryData {
     /// Derives recovery identity material from a 32-byte seed.
+    ///
+    /// These values must be submitted on-chain as part of the recovery
+    /// transaction before the recovered account can be initialised with
+    /// [`Authenticator::init`] / [`Authenticator::init_with_defaults`].
     ///
     /// # Errors
     /// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
+    #[uniffi::constructor]
     pub fn from_seed(seed: &[u8]) -> Result<Self, WalletKitError> {
         let signer = Signer::from_seed_bytes(seed)?;
         let authenticator_address = signer.onchain_signer_address().to_checksum(None);
@@ -665,109 +671,14 @@ impl RecoveryMaterial {
     }
 }
 
-/// An authenticator in the process of recovering an existing World ID account.
-#[derive(uniffi::Object)]
-pub struct RecoveringAuthenticator {
-    seed: Vec<u8>,
-    config: Config,
-    material: RecoveryMaterial,
-}
-
-#[uniffi::export]
-impl RecoveringAuthenticator {
-    /// Creates a new `RecoveringAuthenticator` from a seed and SDK defaults.
-    ///
-    /// # Errors
-    /// Returns [`WalletKitError`] if the seed is invalid or the config cannot
-    /// be constructed.
-    #[uniffi::constructor]
-    pub fn new(
-        seed: &[u8],
-        rpc_url: Option<String>,
-        environment: &Environment,
-        region: Option<Region>,
-    ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url, region)?;
-        let material = RecoveryMaterial::from_seed(seed)?;
-        Ok(Self {
-            seed: seed.to_vec(),
-            config,
-            material,
-        })
-    }
-
-    /// Returns the pre-computed recovery identity material.
-    ///
-    /// These values must be submitted on-chain as part of the recovery
-    /// transaction.
-    #[must_use]
-    pub fn identity_material(&self) -> RecoveryMaterial {
-        self.material.clone()
-    }
-}
-
-#[cfg(not(feature = "storage"))]
-#[uniffi::export(async_runtime = "tokio")]
-impl RecoveringAuthenticator {
-    /// Transitions into a fully initialised [`Authenticator`].
-    ///
-    /// This performs an on-chain lookup to derive the leaf index, so it will
-    /// only succeed **after** the recovery transaction has been finalised
-    /// on-chain.
-    ///
-    /// # Errors
-    /// Returns [`WalletKitError`] if the account does not yet exist on-chain
-    /// or if initialisation fails.
-    pub async fn into_authenticator(&self) -> Result<Authenticator, WalletKitError> {
-        let authenticator =
-            CoreAuthenticator::init(&self.seed, self.config.clone()).await?;
-        let (query_material, nullifier_material) = load_embedded_materials()?;
-        let authenticator =
-            authenticator.with_proof_materials(query_material, nullifier_material);
-        Ok(Authenticator {
-            inner: authenticator,
-        })
-    }
-}
-
-#[cfg(feature = "storage")]
-#[uniffi::export(async_runtime = "tokio")]
-impl RecoveringAuthenticator {
-    /// Transitions into a fully initialised [`Authenticator`].
-    ///
-    /// This performs an on-chain lookup to derive the leaf index, so it will
-    /// only succeed **after** the recovery transaction has been finalised
-    /// on-chain.
-    ///
-    /// # Errors
-    /// Returns [`WalletKitError`] if the account does not yet exist on-chain
-    /// or if initialisation fails.
-    pub async fn into_authenticator(
-        &self,
-        paths: &StoragePaths,
-        store: Arc<CredentialStore>,
-    ) -> Result<Authenticator, WalletKitError> {
-        let authenticator =
-            CoreAuthenticator::init(&self.seed, self.config.clone()).await?;
-        let (query_material, nullifier_material) = load_cached_materials(paths)?;
-        let authenticator =
-            authenticator.with_proof_materials(query_material, nullifier_material);
-        Ok(Authenticator {
-            inner: authenticator,
-            store,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_recovery_material_from_seed() {
+    fn test_recovery_data_from_seed() {
         let seed = [1u8; 32];
-        let material =
-            RecoveryMaterial::from_seed(&seed).expect("should derive material");
+        let material = RecoveryData::from_seed(&seed).expect("should derive material");
 
         // `authenticator_address` must be a checksummed 0x-prefixed hex address.
         assert!(
@@ -816,12 +727,12 @@ mod tests {
     }
 
     #[test]
-    fn test_recovery_material_rejects_invalid_seed() {
+    fn test_recovery_data_rejects_invalid_seed() {
         // Seed must be exactly 32 bytes.
-        let result = RecoveryMaterial::from_seed(&[0u8; 16]);
+        let result = RecoveryData::from_seed(&[0u8; 16]);
         assert!(result.is_err(), "should reject 16-byte seed");
 
-        let result = RecoveryMaterial::from_seed(&[]);
+        let result = RecoveryData::from_seed(&[]);
         assert!(result.is_err(), "should reject empty seed");
     }
 }
