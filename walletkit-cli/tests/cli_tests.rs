@@ -33,14 +33,14 @@ fn help_exits_zero() {
 }
 
 #[test]
-fn auth_help_lists_recovery_material() {
+fn auth_help_lists_recovery_data() {
     let output = Command::new(walletkit_bin())
         .args(["auth", "--help"])
         .output()
         .expect("failed to run walletkit");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("recovery-material"), "stdout: {stdout}");
+    assert!(stdout.contains("recovery-data"), "stdout: {stdout}");
 }
 
 #[test]
@@ -258,7 +258,7 @@ fn latency_json_on_wallet_paths() {
 }
 
 #[test]
-fn auth_recovery_material_json_has_all_keys() {
+fn auth_recovery_data_json_has_all_keys() {
     let root = temp_root();
     let output = Command::new(walletkit_bin())
         .args([
@@ -268,7 +268,7 @@ fn auth_recovery_material_json_has_all_keys() {
             "0101010101010101010101010101010101010101010101010101010101010101",
             "--json",
             "auth",
-            "recovery-material",
+            "recovery-data",
         ])
         .output()
         .expect("failed to run");
