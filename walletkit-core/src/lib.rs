@@ -118,7 +118,9 @@ pub use credential::Credential;
 pub mod storage;
 
 mod authenticator;
-pub use authenticator::{Authenticator, InitializingAuthenticator, RegistrationStatus};
+pub use authenticator::{
+    Authenticator, InitializingAuthenticator, RecoveryData, RegistrationStatus,
+};
 
 /// Default configuration values for each [`Environment`].
 pub mod defaults;

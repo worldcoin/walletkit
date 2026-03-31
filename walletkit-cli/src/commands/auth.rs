@@ -3,7 +3,7 @@
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use walletkit_core::error::WalletKitError;
-use walletkit_core::{InitializingAuthenticator, RegistrationStatus};
+use walletkit_core::{InitializingAuthenticator, RecoveryData, RegistrationStatus};
 
 use crate::output;
 
@@ -31,6 +31,8 @@ pub enum AuthCommand {
     },
     /// Initialize an authenticator for an already-registered World ID.
     Init,
+    /// Derive recovery data for account recovery.
+    RecoveryData,
     /// Print authenticator info (leaf index, onchain address, packed account data).
     Info,
     /// Fetch packed account data from on-chain and compare with local.
@@ -153,6 +155,21 @@ async fn run_register_wait(
     }
 }
 
+fn run_recovery_data(cli: &Cli) -> eyre::Result<()> {
+    let seed = resolve_seed(cli)?;
+
+    let material =
+        RecoveryData::from_seed(&seed).wrap_err("failed to derive recovery data")?;
+    let data = serde_json::json!({
+        "authenticator_address": material.authenticator_address,
+        "authenticator_pubkey": material.authenticator_pubkey,
+        "offchain_signer_commitment": material.offchain_signer_commitment,
+    });
+
+    output::print_json_data(&data, cli.json);
+    Ok(())
+}
+
 async fn run_info(cli: &Cli) -> eyre::Result<()> {
     let (authenticator, _store) = init_authenticator(cli).await?;
 
@@ -195,6 +212,7 @@ pub async fn run(cli: &Cli, action: &AuthCommand) -> eyre::Result<()> {
             }
             Ok(())
         }
+        AuthCommand::RecoveryData => run_recovery_data(cli),
         AuthCommand::Info => run_info(cli).await,
         AuthCommand::RemoteAccountData => {
             let (authenticator, _store) = init_authenticator(cli).await?;

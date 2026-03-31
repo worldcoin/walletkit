@@ -33,6 +33,17 @@ fn help_exits_zero() {
 }
 
 #[test]
+fn auth_help_lists_recovery_data() {
+    let output = Command::new(walletkit_bin())
+        .args(["auth", "--help"])
+        .output()
+        .expect("failed to run walletkit");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("recovery-data"), "stdout: {stdout}");
+}
+
+#[test]
 fn wallet_paths_json_has_all_keys() {
     let root = temp_root();
     let output = Command::new(walletkit_bin())
@@ -244,4 +255,34 @@ fn latency_json_on_wallet_paths() {
     let parsed: serde_json::Value =
         serde_json::from_str(&stdout).expect("invalid json");
     assert_eq!(parsed["ok"], true);
+}
+
+#[test]
+fn auth_recovery_data_json_has_all_keys() {
+    let root = temp_root();
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--root",
+            root.path().to_str().unwrap(),
+            "--seed",
+            "0101010101010101010101010101010101010101010101010101010101010101",
+            "--json",
+            "auth",
+            "recovery-data",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("invalid json");
+    let data = &parsed["data"];
+    assert_eq!(parsed["ok"], true);
+    assert!(data["authenticator_address"].as_str().is_some());
+    assert!(data["authenticator_pubkey"].as_str().is_some());
+    assert!(data["offchain_signer_commitment"].as_str().is_some());
 }
