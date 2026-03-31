@@ -1,4 +1,6 @@
 //! Storage path helpers.
+//!
+//! All credential storage artifacts live under `<root>/worldid/`.
 
 use std::path::{Path, PathBuf};
 
@@ -12,6 +14,19 @@ const QUERY_GRAPH_FILENAME: &str = "OPRFQueryGraph.bin";
 const NULLIFIER_GRAPH_FILENAME: &str = "OPRFNullifierGraph.bin";
 
 /// Paths for credential storage artifacts under `<root>/worldid`.
+///
+/// ```text
+/// <root>/worldid/
+///   account_keys.bin            # DeviceKeystore-sealed K_intermediate envelope
+///   account.cache.sqlite        # sqlite3mc-encrypted cache DB (keyed by K_intermediate)
+///   account.vault.sqlite        # sqlite3mc-encrypted vault DB (keyed by K_intermediate)
+///   lock                        # account-scoped lock
+///   groth16/                    # cached Groth16 proving material
+///     OPRFQuery.arks.zkey
+///     OPRFNullifier.arks.zkey
+///     OPRFQueryGraph.bin
+///     OPRFNullifierGraph.bin
+/// ```
 #[derive(Debug, Clone)]
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct StoragePaths {

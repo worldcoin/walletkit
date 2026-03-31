@@ -7,11 +7,21 @@ use super::error::{StorageError, StorageResult};
 
 const ENVELOPE_VERSION: u32 = 1;
 
+/// Account key envelope persisted as `account_keys.bin`.
+///
+/// Stores `K_intermediate` sealed under `K_device` (via [`DeviceKeystore`](super::traits::DeviceKeystore)).
+/// Opened once per storage initialization and kept in memory for the lifetime
+/// of the storage handle. Device-local and not intended to be synced across devices.
 #[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub(crate) struct AccountKeyEnvelope {
+    /// Envelope format version.
     pub(crate) version: u32,
+    /// `DeviceKeystore::seal(ad_i, K_intermediate)` where
+    /// `ad_i = "worldid:account-key-envelope"`.
     pub(crate) wrapped_k_intermediate: Vec<u8>,
+    /// Timestamp of initial envelope creation (unix seconds).
     pub(crate) created_at: u64,
+    /// Timestamp of last envelope update (unix seconds).
     pub(crate) updated_at: u64,
 }
 

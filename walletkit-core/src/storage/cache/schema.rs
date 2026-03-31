@@ -1,4 +1,19 @@
 //! Cache database schema management.
+//!
+//! All cacheable data is stored in a single `cache_entries` table with a unified
+//! key/value/TTL structure. Entries are distinguished by a 1-byte key prefix
+//! followed by type-specific key material.
+//!
+//! ## Key format
+//!
+//! `key_bytes = prefix || key_material`:
+//!
+//! - `0x01` — Merkle inclusion proof
+//!   - `value_bytes = proof_bytes`
+//! - `0x02 || rp_id` — session key
+//!   - `value_bytes = k_session`
+//! - `0x03 || nullifier` — replay guard nullifier
+//!   - `value_bytes = marker byte`
 
 use crate::storage::error::StorageResult;
 use walletkit_db::{params, Connection};

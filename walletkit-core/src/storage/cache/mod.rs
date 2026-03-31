@@ -1,4 +1,34 @@
 //! Encrypted cache database for credential storage.
+//!
+//! The cache database (`account.cache.sqlite`) is encrypted via sqlite3mc
+//! and integrity-protected, keyed by `K_intermediate`. It stores
+//! **non-authoritative**, regenerable cache entries (key/value/ttl):
+//!
+//! - Per-RP session key material (derived from `K_intermediate`) for session proof flows
+//! - Replay-safety entries (nullifier mappings)
+//! - Merkle inclusion proof cache
+//!
+//! May grow large and is subject to aggressive TTL-based pruning. Can be deleted
+//! and rebuilt at any time without correctness loss.
+//!
+//! ## Cache growth bounds
+//!
+//! Because these caches may grow large, TTL pruning is enforced before inserts:
+//!
+//! ```sql
+//! DELETE FROM cache_entries WHERE expires_at <= now;
+//! ```
+//!
+//! ## Corruption handling
+//!
+//! On open during `init`, the implementation MUST run a lightweight sqlite3mc
+//! integrity check. If it fails:
+//!
+//! - Close DB
+//! - Delete/recreate `account.cache.sqlite` and schema
+//!
+//! After rebuild, cache entries are empty (merkle proofs, replay-safety mappings,
+//! session keys).
 
 use std::path::Path;
 
@@ -18,6 +48,10 @@ mod util;
 ///
 /// Stores non-authoritative, regenerable data (proof cache, session keys, replay guard)
 /// to improve performance without affecting correctness if rebuilt.
+///
+/// All cacheable data is stored in a single `cache_entries` table with a unified
+/// key/value/TTL structure. Entries are distinguished by a 1-byte key prefix
+/// followed by type-specific key material.
 #[derive(Debug)]
 pub struct CacheDb {
     conn: Connection,
