@@ -35,12 +35,19 @@ impl TryFrom<i64> for BlobKind {
 }
 
 /// Content identifier for stored blobs.
+///
+/// Computed as `SHA256("worldid:blob" || blob_kind || plaintext_bytes)`.
+/// Used to deduplicate blob storage in the vault `blob_objects` table.
 pub type ContentId = [u8; 32];
 
 /// Request identifier for replay guard.
 pub type RequestId = [u8; 32];
 
 /// Nullifier identifier used for replay safety.
+///
+/// Within the retention window, a nullifier may be associated with at most
+/// one `request_id`. Replay guard entries are intentionally short-lived to
+/// avoid creating long-lived "interaction history" on device.
 pub type Nullifier = [u8; 32];
 
 /// In-memory representation of stored credential metadata.

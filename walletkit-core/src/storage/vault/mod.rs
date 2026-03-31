@@ -1,4 +1,38 @@
 //! Encrypted vault database for credential storage.
+//!
+//! The vault database (`account.vault.sqlite`) is the **authoritative** source
+//! of truth for the account. It is encrypted via sqlite3mc (SQLite3 Multiple
+//! Ciphers, ChaCha20-Poly1305 default) and integrity-protected, keyed by
+//! `K_intermediate`.
+//!
+//! It stores:
+//!
+//! - Credentials and associated blobs
+//! - Issuer subject blinding factors
+//! - Core account state:
+//!   - Account leaf index
+//!   - Per-device state
+//!
+//! This implementation is device-local; future cross-device sync would require an
+//! explicit key export/import mechanism or an external key provider.
+//!
+//! On native targets, sqlite3mc is compiled from the vendored amalgamation via `cc`.
+//! On WASM targets, `sqlite-wasm-rs` provides sqlite3mc compiled to WebAssembly.
+//!
+//! ## Durability settings
+//!
+//! On open, implementations configure sqlite3mc/SQLite for crash consistency:
+//!
+//! - WAL journaling
+//! - Durable sync level (`FULL`)
+//!
+//! Implementations MUST also perform a lightweight sqlite3mc integrity check
+//! during `init()`.
+//!
+//! ## Corruption handling
+//!
+//! The vault database is authoritative. If the vault DB integrity check fails,
+//! `init` returns an error. The vault is **never** auto-rebuilt.
 
 mod helpers;
 mod schema;
@@ -17,6 +51,10 @@ use walletkit_db::{params, Connection, StepResult, Value};
 use zeroize::Zeroizing;
 
 /// Encrypted vault database wrapper.
+///
+/// Authoritative storage for credentials and associated blobs, issuer subject
+/// blinding factors, and core account state (leaf index). Encrypted via
+/// sqlite3mc (ChaCha20-Poly1305 default) and keyed by `K_intermediate`.
 #[derive(Debug)]
 pub struct VaultDb {
     conn: Connection,
