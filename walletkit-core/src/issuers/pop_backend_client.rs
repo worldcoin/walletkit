@@ -191,22 +191,18 @@ impl PopBackendClient {
             let recovery_binding: RecoveryBindingResponse = response.json().await?;
             return Ok(recovery_binding);
         }
-        match status {
-            reqwest::StatusCode::NOT_FOUND => {
-                Err(WalletKitError::RecoveryBindingDoesNotExist)
-            }
-            _ => {
-                let error_message = response
-                    .text()
-                    .await
-                    .unwrap_or_else(|e| format!("Unknown error: {e:?}"));
-                Err(WalletKitError::NetworkError {
-                    url,
-                    error: error_message,
-                    status: Some(status.as_u16()),
-                })
-            }
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(WalletKitError::RecoveryBindingDoesNotExist);
         }
+        let error_message = response
+            .text()
+            .await
+            .unwrap_or_else(|e| format!("Unknown error: {e:?}"));
+        Err(WalletKitError::NetworkError {
+            url,
+            error: error_message,
+            status: Some(status.as_u16()),
+        })
     }
 }
 
