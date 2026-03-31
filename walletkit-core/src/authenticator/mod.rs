@@ -642,7 +642,6 @@ pub struct RecoveryData {
     pub offchain_signer_commitment: String,
 }
 
-#[uniffi::export]
 impl RecoveryData {
     /// Derives recovery identity material from a 32-byte seed.
     ///
@@ -652,7 +651,6 @@ impl RecoveryData {
     ///
     /// # Errors
     /// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
-    #[uniffi::constructor]
     pub fn from_seed(seed: &[u8]) -> Result<Self, WalletKitError> {
         let signer = Signer::from_seed_bytes(seed)?;
         let authenticator_address = signer.onchain_signer_address().to_checksum(None);
@@ -669,6 +667,17 @@ impl RecoveryData {
             offchain_signer_commitment: format!("{offchain_signer_commitment:#066x}"),
         })
     }
+}
+
+/// Derives recovery data from a 32-byte seed.
+///
+/// This is the foreign-bindings entrypoint for recovery data generation.
+///
+/// # Errors
+/// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
+#[uniffi::export]
+pub fn recovery_data_from_seed(seed: &[u8]) -> Result<RecoveryData, WalletKitError> {
+    RecoveryData::from_seed(seed)
 }
 
 #[cfg(test)]
