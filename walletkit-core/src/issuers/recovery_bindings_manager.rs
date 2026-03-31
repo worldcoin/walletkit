@@ -171,6 +171,23 @@ impl RecoveryBindingManager {
 
         Ok(concatenated)
     }
+
+    /// Fetches a recovery binding via `GET /api/v1/recovery-binding`.
+    ///
+    /// # Errors
+    ///
+    /// * [`WalletKitError::NetworkError`] — non-success HTTP status.
+    /// * [`WalletKitError::SerializationError`] — response body is not valid JSON.
+    pub async fn get_recovery_binding(
+        &self,
+        leaf_index: u64,
+    ) -> Result<String, WalletKitError> {
+        let recovery_binding = self
+            .pop_backend_client
+            .get_recovery_binding(leaf_index)
+            .await?;
+        Ok(recovery_binding.recovery_agent)
+    }
 }
 
 #[cfg(test)]
