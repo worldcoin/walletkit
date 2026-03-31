@@ -17,7 +17,7 @@
 //!
 //! 1. **Device keystore root (`K_device`)**
 //!    - A device-bound, preferably non-exportable key.
-//!    - Backed by Secure Enclave / Android Keystore / WebCrypto where available.
+//!    - Backed by Secure Enclave / Android Keystore / `WebCrypto` where available.
 //!    - Used only to unwrap a per-account intermediate key during initialization.
 //!    - Never used directly for database encryption.
 //!
@@ -28,7 +28,7 @@
 //!    - Device-local and not intended to be synced across devices.
 //!
 //! 3. **Encrypted Vault Database (`account.vault.sqlite`)**
-//!    - Encrypted via sqlite3mc (SQLite3 Multiple Ciphers, ChaCha20-Poly1305 default)
+//!    - Encrypted via sqlite3mc (`SQLite3` Multiple Ciphers, `ChaCha20-Poly1305` default)
 //!      and integrity-protected.
 //!    - Opened using `K_intermediate`.
 //!    - Authoritative storage for:
@@ -77,8 +77,8 @@
 //! ## sqlite3mc database keying
 //!
 //! Both databases (`account.vault.sqlite` and `account.cache.sqlite`) are encrypted
-//! using sqlite3mc (SQLite3 Multiple Ciphers) with `K_intermediate` as the key material.
-//! The default cipher is ChaCha20-Poly1305 (no OpenSSL dependency). The same encryption
+//! using sqlite3mc (`SQLite3` Multiple Ciphers) with `K_intermediate` as the key material.
+//! The default cipher is `ChaCha20-Poly1305` (no `OpenSSL` dependency). The same encryption
 //! library and PRAGMA dialect is used on all platforms (native and WASM).
 //!
 //! ## Key hierarchy
@@ -152,8 +152,8 @@
 //! - `AccountId` is not a hash of `leaf_index`; it is derived from `K_intermediate` and
 //!   network context, preventing brute-force recovery of `leaf_index`.
 //! - Vault contents are end-to-end encrypted via sqlite3mc (keyed by `K_intermediate`,
-//!   ChaCha20-Poly1305 by default); untrusted storage cannot read credentials.
-//!   No OpenSSL dependency is required.
+//!   `ChaCha20-Poly1305` by default); untrusted storage cannot read credentials.
+//!   No `OpenSSL` dependency is required.
 //! - Account state is device-protected under `K_device`; it contains:
 //!   - `leaf_index_cache` (sensitive)
 //!   - `K_session_root` (sensitive)

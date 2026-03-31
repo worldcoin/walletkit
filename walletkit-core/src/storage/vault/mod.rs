@@ -2,7 +2,7 @@
 //!
 //! The vault database (`account.vault.sqlite`) is the **authoritative** source
 //! of truth for the account. It is encrypted via sqlite3mc (`SQLite3` Multiple
-//! Ciphers, ChaCha20-Poly1305 default) and integrity-protected, keyed by
+//! Ciphers, `ChaCha20-Poly1305` default) and integrity-protected, keyed by
 //! `K_intermediate`.
 //!
 //! It stores:
@@ -54,7 +54,7 @@ use zeroize::Zeroizing;
 ///
 /// Authoritative storage for credentials and associated blobs, issuer subject
 /// blinding factors, and core account state (leaf index). Encrypted via
-/// sqlite3mc (ChaCha20-Poly1305 default) and keyed by `K_intermediate`.
+/// sqlite3mc (`ChaCha20-Poly1305` default) and keyed by `K_intermediate`.
 #[derive(Debug)]
 pub struct VaultDb {
     conn: Connection,

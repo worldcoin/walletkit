@@ -42,7 +42,7 @@
 //! ### Browser (WASM)
 //!
 //! Default platform components:
-//! - [`DeviceKeystore`]: WebCrypto-backed device keystore
+//! - [`DeviceKeystore`]: `WebCrypto`-backed device keystore
 //! - [`AtomicBlobStore`]: origin-private storage namespace
 
 use std::sync::Arc;
