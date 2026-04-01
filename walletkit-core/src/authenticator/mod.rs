@@ -5,13 +5,15 @@ use crate::{
     primitives::ParseFromForeignBinding, Environment, FieldElement, Region,
 };
 use alloy_primitives::Address;
+use ruint::aliases::U256;
 use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
-    primitives::Config,
+    primitives::{authenticator::AuthenticatorPublicKeySet, Config},
     Authenticator as CoreAuthenticator, Credential as CoreCredential,
     InitializingAuthenticator as CoreInitializingAuthenticator,
+    OnchainKeyRepresentable, Signer,
 };
 
 #[cfg(feature = "storage")]
@@ -651,8 +653,129 @@ impl InitializingAuthenticator {
     }
 }
 
-#[cfg(all(test, feature = "storage"))]
+/// Identity material derived from a seed for use during account recovery.
+///
+/// During account recovery the user generates new keys from a seed, but those
+/// keys do not yet exist on-chain. The three values in this record must be
+/// submitted on-chain during the recovery transaction.
+///
+/// All fields are hex-encoded strings suitable for direct use in API requests.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RecoveryData {
+    /// Checksummed hex Ethereum address of the on-chain signer.
+    pub authenticator_address: String,
+    /// Hex-encoded U256 compressed `EdDSA` public key of the off-chain signer.
+    pub authenticator_pubkey: String,
+    /// Hex-encoded U256 Poseidon2 hash commitment over the authenticator key set.
+    pub offchain_signer_commitment: String,
+}
+
+impl RecoveryData {
+    /// Derives recovery identity material from a 32-byte seed.
+    ///
+    /// These values must be submitted on-chain as part of the recovery
+    /// transaction before the recovered account can be initialised with
+    /// [`Authenticator::init`] / [`Authenticator::init_with_defaults`].
+    ///
+    /// # Errors
+    /// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
+    pub fn from_seed(seed: &[u8]) -> Result<Self, WalletKitError> {
+        let signer = Signer::from_seed_bytes(seed)?;
+        let authenticator_address = signer.onchain_signer_address().to_checksum(None);
+        let authenticator_pubkey: U256 = signer
+            .offchain_signer_pubkey()
+            .to_ethereum_representation()?;
+        let mut key_set = AuthenticatorPublicKeySet::default();
+        key_set.try_push(signer.offchain_signer_pubkey())?;
+        let offchain_signer_commitment: U256 = key_set.leaf_hash().into();
+
+        Ok(Self {
+            authenticator_address,
+            authenticator_pubkey: format!("{authenticator_pubkey:#066x}"),
+            offchain_signer_commitment: format!("{offchain_signer_commitment:#066x}"),
+        })
+    }
+}
+
+/// Derives recovery data from a 32-byte seed.
+///
+/// This is the foreign-bindings entrypoint for recovery data generation.
+///
+/// # Errors
+/// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
+#[uniffi::export]
+pub fn recovery_data_from_seed(seed: &[u8]) -> Result<RecoveryData, WalletKitError> {
+    RecoveryData::from_seed(seed)
+}
+
+#[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn test_recovery_data_from_seed() {
+        let seed = [1u8; 32];
+        let material = RecoveryData::from_seed(&seed).expect("should derive material");
+
+        // `authenticator_address` must be a checksummed 0x-prefixed hex address.
+        assert!(
+            material.authenticator_address.starts_with("0x"),
+            "address should start with 0x"
+        );
+        assert_eq!(
+            material.authenticator_address.len(),
+            42,
+            "address should be 42 chars (0x + 40 hex digits)"
+        );
+
+        // `authenticator_pubkey` must be a 0x-prefixed, zero-padded 64-hex-digit U256.
+        assert!(
+            material.authenticator_pubkey.starts_with("0x"),
+            "pubkey should start with 0x"
+        );
+        assert!(
+            material.authenticator_pubkey.len() <= 66,
+            "pubkey should be at most 66 chars (0x + 64 hex digits)"
+        );
+
+        // `offchain_signer_commitment` must be a 0x-prefixed, zero-padded 64-hex-digit U256.
+        assert!(
+            material.offchain_signer_commitment.starts_with("0x"),
+            "commitment should start with 0x"
+        );
+        assert!(
+            material.offchain_signer_commitment.len() <= 66,
+            "commitment should be at most 66 chars (0x + 64 hex digits)"
+        );
+
+        // All fields must be non-empty beyond the prefix.
+        assert!(
+            material.authenticator_address.len() > 2,
+            "address should be non-empty"
+        );
+        assert!(
+            material.authenticator_pubkey.len() > 2,
+            "pubkey should be non-empty"
+        );
+        assert!(
+            material.offchain_signer_commitment.len() > 2,
+            "commitment should be non-empty"
+        );
+    }
+
+    #[test]
+    fn test_recovery_data_rejects_invalid_seed() {
+        // Seed must be exactly 32 bytes.
+        let result = RecoveryData::from_seed(&[0u8; 16]);
+        assert!(result.is_err(), "should reject 16-byte seed");
+
+        let result = RecoveryData::from_seed(&[]);
+        assert!(result.is_err(), "should reject empty seed");
+    }
+}
+
+#[cfg(all(test, feature = "storage"))]
+mod storage_tests {
     use super::*;
     use crate::storage::cache_embedded_groth16_material;
     use crate::storage::tests_utils::{
