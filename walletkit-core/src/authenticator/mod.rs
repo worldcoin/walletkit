@@ -668,7 +668,7 @@ impl InitializingAuthenticator {
 /// The signature and signing nonce returned by
 /// [`Authenticator::danger_sign_initiate_recovery_agent_update`].
 ///
-/// UniFFI does not support returning bare tuples across the FFI boundary, so
+/// `UniFFI` does not support returning bare tuples across the FFI boundary, so
 /// the two values are bundled in this record type.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct RecoveryUpdateSignature {
