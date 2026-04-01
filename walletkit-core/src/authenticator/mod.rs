@@ -236,7 +236,7 @@ impl Authenticator {
     /// Signs the EIP-712 `InitiateRecoveryAgentUpdate` payload and returns the
     /// raw signature bytes without submitting anything to the gateway.
     ///
-    /// This is the signing-only counterpart of [`initiate_recovery_agent_update`].
+    /// This is the signing-only counterpart of [`Self::initiate_recovery_agent_update`].
     /// Callers can use the returned bytes to build and submit the gateway request
     /// themselves.
     ///
