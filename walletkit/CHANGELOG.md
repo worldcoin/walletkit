@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.3](https://github.com/worldcoin/walletkit/compare/v0.11.2...v0.11.3) - 2026-04-01
+
+### Added
+
+- add account recovery mechanisms ([#330](https://github.com/worldcoin/walletkit/pull/330))
+
+### Other
+
+- bump world-id-protocol crates 0.7 → 0.8 and taceo-oprf 0.8 → 0.11 ([#337](https://github.com/worldcoin/walletkit/pull/337))
+
 ## [0.11.2](https://github.com/worldcoin/walletkit/compare/v0.11.1...v0.11.2) - 2026-03-26
 
 ### Added
