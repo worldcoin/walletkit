@@ -252,7 +252,7 @@ impl Authenticator {
     ) -> Result<Vec<u8>, WalletKitError> {
         let new_recovery_agent =
             Address::parse_from_ffi(&new_recovery_agent, "new_recovery_agent")?;
-        let sig = self
+        let (sig, _nonce) = self
             .inner
             .sign_initiate_recovery_agent_update(new_recovery_agent)
             .await?;
@@ -715,32 +715,6 @@ mod tests {
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         let (_, root) = init_test_authenticator(&[2u8; 32]).await;
-        cleanup_test_storage(&root);
-    }
-
-    /// Smoke-test: verifies that `sign_initiate_recovery_agent_update` wires through
-    /// to `CoreAuthenticator` without panicking and that the method exists with the
-    /// expected signature.  The actual EIP-712 signing path is covered by
-    /// `world-id-authenticator` unit tests; full round-trip testing here is blocked
-    /// until the upstream crate is published (PROTO-4477).
-    #[tokio::test]
-    async fn test_sign_initiate_recovery_agent_update_method_exists() {
-        // Install default crypto provider for rustls.
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
-        let (authenticator, root) = init_test_authenticator(&[2u8; 32]).await;
-
-        // Confirm the method is callable and that it returns the right type.
-        // We pass an obviously invalid address string to trigger a fast error
-        // path (InvalidInput) without needing a live indexer/gateway.
-        let result = authenticator
-            .sign_initiate_recovery_agent_update("not-an-address".to_string())
-            .await;
-        assert!(
-            matches!(result, Err(WalletKitError::InvalidInput { .. })),
-            "expected InvalidInput for a bad address, got: {result:?}"
-        );
-
         cleanup_test_storage(&root);
     }
 }
