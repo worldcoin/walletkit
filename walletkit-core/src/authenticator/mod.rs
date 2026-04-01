@@ -234,11 +234,20 @@ impl Authenticator {
     }
 
     /// Signs the EIP-712 `InitiateRecoveryAgentUpdate` payload and returns the
-    /// raw signature bytes without submitting anything to the gateway.
+    /// raw signature bytes and signing nonce without submitting anything to the
+    /// gateway.
     ///
     /// This is the signing-only counterpart of [`Self::initiate_recovery_agent_update`].
     /// Callers can use the returned bytes to build and submit the gateway request
     /// themselves.
+    ///
+    /// # Warning
+    /// This method uses the `onchain_signer` (secp256k1 ECDSA) and produces a
+    /// recoverable signature. Any holder of the signature together with the
+    /// EIP-712 parameters can call `ecrecover` to obtain the `onchain_address`,
+    /// which can then be looked up in the registry to derive the user's
+    /// `leaf_index`. Only expose the output to trusted parties (e.g. a Recovery
+    /// Agent).
     ///
     /// # Arguments
     /// * `new_recovery_agent` — the checksummed hex address of the new recovery
@@ -248,17 +257,20 @@ impl Authenticator {
     /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
     ///   a valid address.
     /// - Returns an error if the nonce fetch or signing step fails.
-    pub async fn sign_initiate_recovery_agent_update(
+    pub async fn danger_sign_initiate_recovery_agent_update(
         &self,
         new_recovery_agent: String,
-    ) -> Result<Vec<u8>, WalletKitError> {
+    ) -> Result<RecoveryUpdateSignature, WalletKitError> {
         let new_recovery_agent =
             Address::parse_from_ffi(&new_recovery_agent, "new_recovery_agent")?;
-        let (sig, _nonce) = self
+        let (sig, nonce) = self
             .inner
             .sign_initiate_recovery_agent_update(new_recovery_agent)
             .await?;
-        Ok(sig.as_bytes().to_vec())
+        Ok(RecoveryUpdateSignature {
+            signature: sig.as_bytes().to_vec(),
+            nonce: nonce.into(),
+        })
     }
 
     /// Initiates a time-locked recovery agent update (14-day cooldown).
@@ -651,6 +663,21 @@ impl InitializingAuthenticator {
         let status = self.0.poll_status().await?;
         Ok(status.into())
     }
+}
+
+/// The signature and signing nonce returned by
+/// [`Authenticator::danger_sign_initiate_recovery_agent_update`].
+///
+/// UniFFI does not support returning bare tuples across the FFI boundary, so
+/// the two values are bundled in this record type.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RecoveryUpdateSignature {
+    /// Raw bytes of the secp256k1 ECDSA signature over the EIP-712
+    /// `InitiateRecoveryAgentUpdate` payload.
+    pub signature: Vec<u8>,
+    /// The EIP-712 signing nonce that was used; must be included in the
+    /// gateway request alongside the signature.
+    pub nonce: Uint256,
 }
 
 /// Identity material derived from a seed for use during account recovery.
