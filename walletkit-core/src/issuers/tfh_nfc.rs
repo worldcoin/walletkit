@@ -18,6 +18,14 @@ struct NfcRefreshResultRaw {
     credential: String,
 }
 
+/// Structured error body returned by the NFC uniqueness service (`{"error": "..."}`)
+#[derive(Debug, Clone, Deserialize)]
+struct NfcErrorBody {
+    error: String,
+}
+
+const NFC_NON_RETRYABLE_ERRORS: &[&str] = &["document_expired"];
+
 impl NfcRefreshResultRaw {
     fn parse(&self) -> Result<Credential, WalletKitError> {
         let credential_bytes = STANDARD.decode(&self.credential).map_err(|e| {
@@ -89,6 +97,15 @@ impl TfhNfcIssuer {
         let status = response.status();
         if !status.is_success() {
             let error_body = response.text().await.unwrap_or_default();
+
+            if let Ok(parsed) = serde_json::from_str::<NfcErrorBody>(&error_body) {
+                if NFC_NON_RETRYABLE_ERRORS.contains(&parsed.error.as_str()) {
+                    return Err(WalletKitError::NfcNonRetryable {
+                        error_code: parsed.error,
+                    });
+                }
+            }
+
             return Err(WalletKitError::NetworkError {
                 url,
                 status: Some(status.as_u16()),
