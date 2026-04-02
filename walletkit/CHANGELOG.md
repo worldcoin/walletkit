@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/worldcoin/walletkit/compare/v0.11.3...v0.12.0) - 2026-04-02
+
+### Added
+
+- do not trigger backups on `delete_storage()` ([#343](https://github.com/worldcoin/walletkit/pull/343))
+- add danger_sign_initiate_recovery_agent_update to Authenticator (PROTO-4477) ([#333](https://github.com/worldcoin/walletkit/pull/333))
+
+### Other
+
+- NFC non-retryable migration errors ([#345](https://github.com/worldcoin/walletkit/pull/345))
+
 ## [0.11.3](https://github.com/worldcoin/walletkit/compare/v0.11.2...v0.11.3) - 2026-04-01
 
 ### Added
