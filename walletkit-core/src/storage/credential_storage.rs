@@ -10,9 +10,9 @@ use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
-use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
 use super::traits::BackupNeededListener;
+use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::ACCOUNT_KEYS_FILENAME;
@@ -396,6 +396,10 @@ impl CredentialStore {
 impl CredentialStore {
     /// Best-effort notification to the registered backup-needed listener.
     /// No-op on wasm32 where the listener cannot be registered.
+    ///
+    /// Only call this when vault contents change in a way that warrants a new
+    /// backup (i.e. credential added or removed). Do **not** call it for
+    /// destructive operations like vault deletion or purge.
     fn notify_backup_needed(&self) {
         #[cfg(not(target_arch = "wasm32"))]
         if let Ok(guard) = self.backup_needed_tx.lock() {
