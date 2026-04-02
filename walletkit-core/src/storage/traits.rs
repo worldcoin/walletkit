@@ -96,8 +96,7 @@ pub trait StorageProvider: Send + Sync {
 /// callback is delivered on a dedicated background thread to avoid re-entering
 /// the `UniFFI` call stack (see `logger.rs` for rationale).
 ///
-/// This is **not** called when the vault is destroyed — only when credentials
-/// are added, removed, or purged.
+/// This is only called when individual credentials are added or removed.
 ///
 /// # Expected usage
 ///
@@ -112,6 +111,6 @@ pub trait StorageProvider: Send + Sync {
 /// will deadlock.
 #[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 pub trait BackupNeededListener: Send + Sync {
-    /// Called after a successful vault content change (store, delete, purge).
+    /// Called after a credential is added or removed.
     fn on_backup_needed(&self);
 }

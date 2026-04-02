@@ -337,11 +337,7 @@ impl CredentialStore {
     ///
     /// Returns an error if the delete operation fails.
     pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
-        let result = self.lock_inner()?.danger_delete_all_credentials();
-        if result.is_ok() {
-            self.notify_backup_needed();
-        }
-        result
+        self.lock_inner()?.danger_delete_all_credentials()
     }
 
     /// Permanently destroys all credential storage data.
@@ -361,9 +357,8 @@ impl CredentialStore {
         self.lock_inner()?.destroy_storage()
     }
 
-    /// Registers a listener that is called after every successful vault
-    /// content change (store, delete, purge) to signal that a new backup is
-    /// needed.
+    /// Registers a listener that is called after a credential is added or
+    /// removed, signalling that a new backup is needed.
     ///
     /// Only one listener can be active at a time — calling this replaces any
     /// previously registered listener. The previous delivery thread shuts down
