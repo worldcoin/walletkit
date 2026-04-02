@@ -233,6 +233,46 @@ impl Authenticator {
         Ok(signature.as_bytes().to_vec())
     }
 
+    /// Signs the EIP-712 `InitiateRecoveryAgentUpdate` payload and returns the
+    /// raw signature bytes and signing nonce without submitting anything to the
+    /// gateway.
+    ///
+    /// This is the signing-only counterpart of [`Self::initiate_recovery_agent_update`].
+    /// Callers can use the returned bytes to build and submit the gateway request
+    /// themselves.
+    ///
+    /// # Warning
+    /// This method uses the `onchain_signer` (secp256k1 ECDSA) and produces a
+    /// recoverable signature. Any holder of the signature together with the
+    /// EIP-712 parameters can call `ecrecover` to obtain the `onchain_address`,
+    /// which can then be looked up in the registry to derive the user's
+    /// `leaf_index`. Only expose the output to trusted parties (e.g. a Recovery
+    /// Agent).
+    ///
+    /// # Arguments
+    /// * `new_recovery_agent` — the checksummed hex address of the new recovery
+    ///   agent (e.g. `"0x1234…"`).
+    ///
+    /// # Errors
+    /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
+    ///   a valid address.
+    /// - Returns an error if the nonce fetch or signing step fails.
+    pub async fn danger_sign_initiate_recovery_agent_update(
+        &self,
+        new_recovery_agent: String,
+    ) -> Result<RecoveryUpdateSignature, WalletKitError> {
+        let new_recovery_agent =
+            Address::parse_from_ffi(&new_recovery_agent, "new_recovery_agent")?;
+        let (sig, nonce) = self
+            .inner
+            .sign_initiate_recovery_agent_update(new_recovery_agent)
+            .await?;
+        Ok(RecoveryUpdateSignature {
+            signature: sig.as_bytes().to_vec(),
+            nonce: nonce.into(),
+        })
+    }
+
     /// Initiates a time-locked recovery agent update (14-day cooldown).
     ///
     /// Signs an EIP-712 `InitiateRecoveryAgentUpdate` payload and submits it to
@@ -625,6 +665,21 @@ impl InitializingAuthenticator {
     }
 }
 
+/// The signature and signing nonce returned by
+/// [`Authenticator::danger_sign_initiate_recovery_agent_update`].
+///
+/// `UniFFI` does not support returning bare tuples across the FFI boundary, so
+/// the two values are bundled in this record type.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct RecoveryUpdateSignature {
+    /// Raw bytes of the secp256k1 ECDSA signature over the EIP-712
+    /// `InitiateRecoveryAgentUpdate` payload.
+    pub signature: Vec<u8>,
+    /// The EIP-712 signing nonce that was used; must be included in the
+    /// gateway request alongside the signature.
+    pub nonce: Uint256,
+}
+
 /// Identity material derived from a seed for use during account recovery.
 ///
 /// During account recovery the user generates new keys from a seed, but those
@@ -755,14 +810,12 @@ mod storage_tests {
     };
     use alloy::primitives::address;
 
-    #[tokio::test]
-    async fn test_init_with_config_and_storage() {
-        // Install default crypto provider for rustls
-        let _ = rustls::crypto::ring::default_provider().install_default();
-
+    async fn init_test_authenticator(
+        seed: &[u8],
+    ) -> (Authenticator, std::path::PathBuf) {
         let mut mock_server = mockito::Server::new_async().await;
 
-        // Mock eth_call to return account data indicating account exists
+        // Mock eth_call to return account data indicating account exists.
         mock_server
             .mock("POST", "/")
             .with_status(200)
@@ -778,7 +831,6 @@ mod storage_tests {
             .create_async()
             .await;
 
-        let seed = [2u8; 32];
         let config = Config::new(
             Some(mock_server.url()),
             480,
@@ -799,10 +851,20 @@ mod storage_tests {
             .expect("cache material");
 
         let paths = store.storage_paths().expect("paths");
-        Authenticator::init(&seed, &config, &paths, Arc::new(store))
+        let authenticator = Authenticator::init(seed, &config, &paths, Arc::new(store))
             .await
             .unwrap();
         drop(mock_server);
+
+        (authenticator, root)
+    }
+
+    #[tokio::test]
+    async fn test_init_with_config_and_storage() {
+        // Install default crypto provider for rustls.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let (_, root) = init_test_authenticator(&[2u8; 32]).await;
         cleanup_test_storage(&root);
     }
 }

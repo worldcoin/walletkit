@@ -119,7 +119,8 @@ pub mod storage;
 
 mod authenticator;
 pub use authenticator::{
-    Authenticator, InitializingAuthenticator, RecoveryData, RegistrationStatus,
+    Authenticator, InitializingAuthenticator, RecoveryData, RecoveryUpdateSignature,
+    RegistrationStatus,
 };
 
 /// Default configuration values for each [`Environment`].
