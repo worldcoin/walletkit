@@ -337,11 +337,7 @@ impl CredentialStore {
     ///
     /// Returns an error if the delete operation fails.
     pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
-        let result = self.lock_inner()?.danger_delete_all_credentials();
-        if result.is_ok() {
-            self.notify_vault_changed();
-        }
-        result
+        self.lock_inner()?.danger_delete_all_credentials()
     }
 
     /// Permanently destroys all credential storage data.
@@ -358,15 +354,11 @@ impl CredentialStore {
     /// Returns an error if the storage lock cannot be acquired or the key
     /// envelope cannot be deleted from the blob store.
     pub fn destroy_storage(&self) -> StorageResult<()> {
-        let result = self.lock_inner()?.destroy_storage();
-        if result.is_ok() {
-            self.notify_vault_changed();
-        }
-        result
+        self.lock_inner()?.destroy_storage()
     }
 
-    /// Registers a listener that is called after every successful vault
-    /// mutation (store, delete, purge).
+    /// Registers a listener that is called after a credential is added or
+    /// removed.
     ///
     /// Only one listener can be active at a time — calling this replaces any
     /// previously registered listener. The previous delivery thread shuts down
@@ -404,6 +396,10 @@ impl CredentialStore {
 impl CredentialStore {
     /// Best-effort notification to the registered vault-changed listener.
     /// No-op on wasm32 where the listener cannot be registered.
+    ///
+    /// Only call this when vault contents change in a way that warrants a new
+    /// backup (i.e. credential added or removed). Do **not** call it for
+    /// destructive operations like vault deletion or purge.
     fn notify_vault_changed(&self) {
         #[cfg(not(target_arch = "wasm32"))]
         if let Ok(guard) = self.vault_changed_tx.lock() {
@@ -1681,7 +1677,7 @@ mod tests {
     }
 
     #[test]
-    fn test_destroy_storage_notifies_listener() {
+    fn test_destroy_storage_does_not_notify_vault_changed() {
         use world_id_core::Credential as CoreCredential;
 
         let root = temp_root_path();
@@ -1706,11 +1702,11 @@ mod tests {
 
         std::thread::sleep(std::time::Duration::from_millis(50));
 
-        // store + destroy = 2 notifications
+        // Only the store should trigger a notification — destroy does not.
         assert_eq!(
             count.load(Ordering::SeqCst),
-            2,
-            "listener should be notified for store and destroy"
+            1,
+            "listener should only be notified for store, not destroy"
         );
 
         cleanup_test_storage(&root);
