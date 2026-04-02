@@ -20,7 +20,7 @@ pub use keys::StorageKeys;
 pub use lock::{StorageLock, StorageLockGuard};
 pub use paths::StoragePaths;
 pub use traits::{
-    AtomicBlobStore, DeviceKeystore, StorageProvider, VaultChangedListener,
+    AtomicBlobStore, BackupNeededListener, DeviceKeystore, StorageProvider,
 };
 pub use types::{
     BlobKind, ContentId, CredentialRecord, Nullifier, ReplayGuardKind,
