@@ -10,9 +10,9 @@ use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
+use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
 use super::traits::VaultChangedListener;
-use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::ACCOUNT_KEYS_FILENAME;
