@@ -92,7 +92,7 @@ pub trait StorageProvider: Send + Sync {
 /// Listener notified when the credential vault contents change and a new
 /// backup is needed.
 ///
-/// Register via [`super::CredentialStore::set_backup_needed_listener`]. The
+/// Register via [`super::CredentialStore::set_vault_changed_listener`]. The
 /// callback is delivered on a dedicated background thread to avoid re-entering
 /// the `UniFFI` call stack (see `logger.rs` for rationale).
 ///
@@ -107,10 +107,10 @@ pub trait StorageProvider: Send + Sync {
 ///
 /// **Warning:** implementors **must not** call back into
 /// [`super::CredentialStore`] from
-/// [`on_backup_needed`](BackupNeededListener::on_backup_needed) — doing so
+/// [`on_vault_changed`](VaultChangedListener::on_vault_changed) — doing so
 /// will deadlock.
 #[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
-pub trait BackupNeededListener: Send + Sync {
+pub trait VaultChangedListener: Send + Sync {
     /// Called after a credential is added or removed.
-    fn on_backup_needed(&self);
+    fn on_vault_changed(&self);
 }

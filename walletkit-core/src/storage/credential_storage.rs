@@ -11,7 +11,7 @@ use super::keys::StorageKeys;
 use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
 #[cfg(not(target_arch = "wasm32"))]
-use super::traits::BackupNeededListener;
+use super::traits::VaultChangedListener;
 use super::traits::StorageProvider;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
@@ -59,10 +59,10 @@ fn remove_db_files(db_path: &std::path::Path) {
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
-    /// Channel sender for the backup-needed notification thread.
+    /// Channel sender for the vault-changed notification thread.
     /// Kept outside `inner` so we can notify after releasing the storage mutex.
     #[cfg(not(target_arch = "wasm32"))]
-    backup_needed_tx: Mutex<Option<mpsc::SyncSender<()>>>,
+    vault_changed_tx: Mutex<Option<mpsc::SyncSender<()>>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -153,7 +153,7 @@ impl CredentialStore {
         Ok(Self {
             inner: Mutex::new(inner),
             #[cfg(not(target_arch = "wasm32"))]
-            backup_needed_tx: Mutex::new(None),
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -171,7 +171,7 @@ impl CredentialStore {
         Ok(Self {
             inner: Mutex::new(inner),
             #[cfg(not(target_arch = "wasm32"))]
-            backup_needed_tx: Mutex::new(None),
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -219,7 +219,7 @@ impl CredentialStore {
     pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
         let result = self.lock_inner()?.delete_credential(credential_id);
         if result.is_ok() {
-            self.notify_backup_needed();
+            self.notify_vault_changed();
         }
         result
     }
@@ -245,7 +245,7 @@ impl CredentialStore {
             now,
         );
         if result.is_ok() {
-            self.notify_backup_needed();
+            self.notify_vault_changed();
         }
         result
     }
@@ -358,7 +358,7 @@ impl CredentialStore {
     }
 
     /// Registers a listener that is called after a credential is added or
-    /// removed, signalling that a new backup is needed.
+    /// removed.
     ///
     /// Only one listener can be active at a time — calling this replaces any
     /// previously registered listener. The previous delivery thread shuts down
@@ -370,23 +370,23 @@ impl CredentialStore {
     /// **Warning:** the listener **must not** call back into this
     /// `CredentialStore` — doing so will deadlock.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn set_backup_needed_listener(&self, listener: Arc<dyn BackupNeededListener>) {
+    pub fn set_vault_changed_listener(&self, listener: Arc<dyn VaultChangedListener>) {
         let (tx, rx) = mpsc::sync_channel(1);
 
         match std::thread::Builder::new()
-            .name("walletkit-backup-notify".into())
+            .name("walletkit-vault-notify".into())
             .spawn(move || {
                 for () in rx {
-                    listener.on_backup_needed();
+                    listener.on_vault_changed();
                 }
             }) {
             Ok(_) => {
-                if let Ok(mut guard) = self.backup_needed_tx.lock() {
+                if let Ok(mut guard) = self.vault_changed_tx.lock() {
                     *guard = Some(tx);
                 }
             }
             Err(e) => {
-                tracing::error!("failed to spawn backup notification thread: {e}");
+                tracing::error!("failed to spawn vault notification thread: {e}");
             }
         }
     }
@@ -394,20 +394,20 @@ impl CredentialStore {
 
 /// Implementation not exposed to foreign bindings
 impl CredentialStore {
-    /// Best-effort notification to the registered backup-needed listener.
+    /// Best-effort notification to the registered vault-changed listener.
     /// No-op on wasm32 where the listener cannot be registered.
     ///
     /// Only call this when vault contents change in a way that warrants a new
     /// backup (i.e. credential added or removed). Do **not** call it for
     /// destructive operations like vault deletion or purge.
-    fn notify_backup_needed(&self) {
+    fn notify_vault_changed(&self) {
         #[cfg(not(target_arch = "wasm32"))]
-        if let Ok(guard) = self.backup_needed_tx.lock() {
+        if let Ok(guard) = self.vault_changed_tx.lock() {
             if let Some(tx) = guard.as_ref() {
                 match tx.try_send(()) {
                     Ok(()) | Err(mpsc::TrySendError::Full(())) => {}
                     Err(mpsc::TrySendError::Disconnected(())) => {
-                        tracing::warn!("backup-needed listener disconnected");
+                        tracing::warn!("vault-changed listener disconnected");
                     }
                 }
             }
@@ -736,7 +736,7 @@ impl CredentialStore {
         Ok(Self {
             inner: Mutex::new(inner),
             #[cfg(not(target_arch = "wasm32"))]
-            backup_needed_tx: Mutex::new(None),
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -754,7 +754,7 @@ impl CredentialStore {
         Ok(Self {
             inner: Mutex::new(inner),
             #[cfg(not(target_arch = "wasm32"))]
-            backup_needed_tx: Mutex::new(None),
+            vault_changed_tx: Mutex::new(None),
         })
     }
 
@@ -779,8 +779,8 @@ mod tests {
 
     struct TestVaultListener(Arc<AtomicU32>);
 
-    impl BackupNeededListener for TestVaultListener {
-        fn on_backup_needed(&self) {
+    impl VaultChangedListener for TestVaultListener {
+        fn on_vault_changed(&self) {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
     }
@@ -1507,7 +1507,7 @@ mod tests {
     }
 
     #[test]
-    fn test_backup_needed_listener_notified_on_store() {
+    fn test_vault_changed_listener_notified_on_store() {
         use world_id_core::Credential as CoreCredential;
 
         let root = temp_root_path();
@@ -1516,7 +1516,7 @@ mod tests {
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
-        store.set_backup_needed_listener(Arc::new(TestVaultListener(Arc::clone(
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
             &count,
         ))));
 
@@ -1541,7 +1541,7 @@ mod tests {
     }
 
     #[test]
-    fn test_backup_needed_listener_notified_on_delete() {
+    fn test_vault_changed_listener_notified_on_delete() {
         use world_id_core::Credential as CoreCredential;
 
         let root = temp_root_path();
@@ -1550,7 +1550,7 @@ mod tests {
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
-        store.set_backup_needed_listener(Arc::new(TestVaultListener(Arc::clone(
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
             &count,
         ))));
 
@@ -1577,14 +1577,14 @@ mod tests {
     }
 
     #[test]
-    fn test_backup_needed_listener_not_notified_on_failure() {
+    fn test_vault_changed_listener_not_notified_on_failure() {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
-        store.set_backup_needed_listener(Arc::new(TestVaultListener(Arc::clone(
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
             &count,
         ))));
 
@@ -1677,7 +1677,7 @@ mod tests {
     }
 
     #[test]
-    fn test_destroy_storage_does_not_notify_backup_needed() {
+    fn test_destroy_storage_does_not_notify_vault_changed() {
         use world_id_core::Credential as CoreCredential;
 
         let root = temp_root_path();
@@ -1686,7 +1686,7 @@ mod tests {
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
-        store.set_backup_needed_listener(Arc::new(TestVaultListener(Arc::clone(
+        store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
             &count,
         ))));
 
