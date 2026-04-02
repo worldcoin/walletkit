@@ -374,7 +374,7 @@ impl CredentialStore {
         let (tx, rx) = mpsc::sync_channel(1);
 
         match std::thread::Builder::new()
-            .name("walletkit-vault-notify".into())
+            .name("walletkit-backup-notify".into())
             .spawn(move || {
                 for () in rx {
                     listener.on_backup_needed();
@@ -386,7 +386,7 @@ impl CredentialStore {
                 }
             }
             Err(e) => {
-                tracing::error!("failed to spawn vault notification thread: {e}");
+                tracing::error!("failed to spawn backup notification thread: {e}");
             }
         }
     }
