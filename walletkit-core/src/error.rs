@@ -125,6 +125,14 @@ pub enum WalletKitError {
     /// The recovery binding does not exist
     #[error("recovery_binding_does_not_exist")]
     RecoveryBindingDoesNotExist,
+
+    /// The NFC uniqueness service rejected the request with a permanent error
+    /// that will not resolve on retry (e.g. expired document).
+    #[error("nfc_non_retryable: {error_code}")]
+    NfcNonRetryable {
+        /// The error code from the NFC service (e.g. `document_expired`)
+        error_code: String,
+    },
 }
 
 impl From<reqwest::Error> for WalletKitError {
