@@ -347,18 +347,30 @@ impl VaultDb {
         // Floor to date to store less metadata
         let created_at = now - (now % SECONDS_PER_DAY);
         let created_at_i64 = to_i64(created_at, "created_at")?;
-        self.conn
+        let now_i64 = to_i64(now, "now")?;
+        let ttl_i64 = to_i64(SESSION_SEED_TTL_SECONDS, "ttl")?;
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+        let _ = tx
             .execute(
-                "INSERT OR REPLACE INTO session_seeds
-                     (oprf_seed, session_id_r_seed, created_at)
-                 VALUES (?1, ?2, ?3)",
-                params![
-                    oprf_seed.as_slice(),
-                    session_id_r_seed.as_slice(),
-                    created_at_i64,
-                ],
+                "DELETE FROM session_seeds WHERE created_at + ?1 <= ?2",
+                params![ttl_i64, now_i64],
             )
-            .map_err(|err| map_db_err(&err))?;
+            .map_err(|err| {
+                tracing::error!("Failed to clear expired session_seeds: {}", err);
+            });
+
+        tx.execute(
+            "INSERT OR REPLACE INTO session_seeds
+                 (oprf_seed, session_id_r_seed, created_at)
+             VALUES (?1, ?2, ?3)",
+            params![
+                oprf_seed.as_slice(),
+                session_id_r_seed.as_slice(),
+                created_at_i64,
+            ],
+        )
+        .map_err(|err| map_db_err(&err))?;
+        tx.commit().map_err(|err| map_db_err(&err))?;
         Ok(())
     }
 

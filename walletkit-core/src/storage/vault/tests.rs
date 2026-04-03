@@ -645,3 +645,39 @@ fn test_session_seed_expires_after_ttl() {
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
+
+#[test]
+fn test_store_session_seed_deletes_expired() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x11u8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+
+    let old_oprf = [0x05u8; 32];
+    let old_session = [0x06u8; 32];
+    let t0 = 1_700_000_000;
+    db.store_session_seed(&guard, &old_oprf, &old_session, t0)
+        .expect("store old seed");
+
+    // Store a new seed well after the first one expired
+    let new_oprf = [0x07u8; 32];
+    let new_session = [0x08u8; 32];
+    let t1 = t0 + 183 * 86_400;
+    db.store_session_seed(&guard, &new_oprf, &new_session, t1)
+        .expect("store new seed");
+
+    // Old row should have been purged
+    let count = db
+        .conn
+        .query_row("SELECT COUNT(*) FROM session_seeds", &[], |stmt| {
+            Ok(stmt.column_i64(0))
+        })
+        .map_err(|err| map_db_err(&err))
+        .expect("count rows");
+    assert_eq!(count, 1);
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
