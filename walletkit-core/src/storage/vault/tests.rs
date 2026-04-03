@@ -557,3 +557,91 @@ fn test_vault_corruption_handling() {
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
+
+#[test]
+fn test_store_and_get_session_seed() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x0Eu8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+
+    let oprf = [0xAAu8; 32];
+    let session = [0xBBu8; 32];
+    let now = 1_700_000_000;
+
+    db.store_session_seed(&guard, &oprf, &session, now)
+        .expect("store session seed");
+
+    let result = db.get_session_seed(now).expect("get session seed");
+    let (got_oprf, got_session) = result.expect("should find seed");
+    assert_eq!(got_oprf, oprf);
+    assert_eq!(got_session, session);
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn test_session_seed_created_at_floored_to_midnight() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x0Fu8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+
+    let oprf = [0x01u8; 32];
+    let session = [0x02u8; 32];
+    // 2023-11-14 15:06:40 UTC
+    let now = 1_700_000_000;
+    let midnight = now - (now % 86_400);
+
+    db.store_session_seed(&guard, &oprf, &session, now)
+        .expect("store");
+
+    let stored = db
+        .conn
+        .query_row(
+            "SELECT created_at FROM session_seeds WHERE oprf_seed = ?1",
+            params![oprf.as_slice()],
+            |stmt| Ok(stmt.column_i64(0)),
+        )
+        .map_err(|err| map_db_err(&err))
+        .expect("query created_at");
+
+    assert_eq!(stored, i64::try_from(midnight).expect("midnight fits i64"));
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn test_session_seed_expires_after_ttl() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = Zeroizing::new([0x10u8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+
+    let oprf = [0x03u8; 32];
+    let session = [0x04u8; 32];
+    let now = 1_700_000_000;
+    let midnight = now - (now % 86_400);
+
+    db.store_session_seed(&guard, &oprf, &session, now)
+        .expect("store");
+
+    // Just before expiry (relative to floored created_at): still valid
+    let before_expiry = midnight + 182 * 86_400 - 1;
+    assert!(db.get_session_seed(before_expiry).expect("get").is_some());
+
+    // At expiry boundary: expired
+    let at_expiry = midnight + 182 * 86_400;
+    assert!(db.get_session_seed(at_expiry).expect("get").is_none());
+
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}

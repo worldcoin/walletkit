@@ -16,6 +16,11 @@ use walletkit_db::cipher;
 use walletkit_db::{params, Connection, StepResult, Value};
 use zeroize::Zeroizing;
 
+const SECONDS_PER_DAY: u64 = 86_400;
+
+/// Session seed TTL: ~6 months (182 days).
+const SESSION_SEED_TTL_SECONDS: u64 = 182 * SECONDS_PER_DAY;
+
 /// Encrypted vault database wrapper.
 #[derive(Debug)]
 pub struct VaultDb {
@@ -319,6 +324,79 @@ impl VaultDb {
                 let blinding_factor = row.column_blob(0);
                 let credential_blob = row.column_blob(1);
                 Ok(Some((credential_blob, blinding_factor)))
+            }
+            StepResult::Done => Ok(None),
+        }
+    }
+
+    /// Stores a session seed pair in the vault.
+    ///
+    /// `created_at` is floored to midnight (00:00:00 UTC) for privacy.
+    /// The seed expires after [`SESSION_SEED_TTL_SECONDS`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the insert fails.
+    pub fn store_session_seed(
+        &mut self,
+        _lock: &StorageLockGuard,
+        oprf_seed: &[u8; 32],
+        session_id_r_seed: &[u8; 32],
+        now: u64,
+    ) -> StorageResult<()> {
+        // Floor to date to store less metadata
+        let created_at = now - (now % SECONDS_PER_DAY);
+        let created_at_i64 = to_i64(created_at, "created_at")?;
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO session_seeds
+                     (oprf_seed, session_id_r_seed, created_at)
+                 VALUES (?1, ?2, ?3)",
+                params![
+                    oprf_seed.as_slice(),
+                    session_id_r_seed.as_slice(),
+                    created_at_i64,
+                ],
+            )
+            .map_err(|err| map_db_err(&err))?;
+        Ok(())
+    }
+
+    /// Retrieves the most recent non-expired session seed.
+    ///
+    /// Returns `None` if no valid session seed exists.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn get_session_seed(
+        &self,
+        now: u64,
+    ) -> StorageResult<Option<([u8; 32], [u8; 32])>> {
+        let now_i64 = to_i64(now, "now")?;
+        let ttl_i64 = to_i64(SESSION_SEED_TTL_SECONDS, "ttl")?;
+
+        let sql = "SELECT oprf_seed, session_id_r_seed
+                   FROM session_seeds
+                   WHERE created_at + ?1 > ?2
+                   ORDER BY created_at DESC
+                   LIMIT 1";
+
+        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![ttl_i64, now_i64])
+            .map_err(|err| map_db_err(&err))?;
+
+        match stmt.step().map_err(|err| map_db_err(&err))? {
+            StepResult::Row(row) => {
+                let oprf = row.column_blob(0);
+                let session = row.column_blob(1);
+                let oprf: [u8; 32] = oprf.try_into().map_err(|_| {
+                    StorageError::VaultDb("oprf_seed not 32 bytes".to_string())
+                })?;
+                let session: [u8; 32] = session.try_into().map_err(|_| {
+                    StorageError::VaultDb("session_id_r_seed not 32 bytes".to_string())
+                })?;
+                Ok(Some((oprf, session)))
             }
             StepResult::Done => Ok(None),
         }
