@@ -52,7 +52,9 @@ impl Authenticator {
     ) -> Result<AccountInclusionProof<TREE_DEPTH>, WalletKitError> {
         // If there is a cached inclusion proof, return it
         if let Some(account_inclusion_proof) = self.store.merkle_cache_get(now)? {
-            return Ok(account_inclusion_proof);
+            if account_inclusion_proof.inclusion_proof.leaf_index == self.leaf_index() {
+                return Ok(account_inclusion_proof);
+            }
         }
 
         // Otherwise, fetch from the indexer and cache it
