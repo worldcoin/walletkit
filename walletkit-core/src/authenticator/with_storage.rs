@@ -1,6 +1,4 @@
-use serde::{Deserialize, Serialize};
-use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
-use world_id_core::primitives::merkle::MerkleInclusionProof;
+use world_id_core::primitives::merkle::AccountInclusionProof;
 use world_id_core::primitives::TREE_DEPTH;
 
 use crate::error::WalletKitError;
@@ -51,58 +49,24 @@ impl Authenticator {
     pub(crate) async fn fetch_inclusion_proof_with_cache(
         &self,
         now: u64,
-    ) -> Result<
-        (MerkleInclusionProof<TREE_DEPTH>, AuthenticatorPublicKeySet),
-        WalletKitError,
-    > {
+    ) -> Result<AccountInclusionProof<TREE_DEPTH>, WalletKitError> {
         // If there is a cached inclusion proof, return it
-        if let Some(bytes) = self.store.merkle_cache_get(now)? {
-            if let Some(cached) = CachedInclusionProof::deserialize(&bytes) {
-                if cached.inclusion_proof.leaf_index == self.leaf_index() {
-                    return Ok((cached.inclusion_proof, cached.authenticator_keyset));
-                }
-            }
+        if let Some(account_inclusion_proof) = self.store.merkle_cache_get(now)? {
+            return Ok(account_inclusion_proof);
         }
 
         // Otherwise, fetch from the indexer and cache it
-        let (inclusion_proof, authenticator_keyset) =
-            self.inner.fetch_inclusion_proof().await?;
-        let payload = CachedInclusionProof {
-            inclusion_proof: inclusion_proof.clone(),
-            authenticator_keyset: authenticator_keyset.clone(),
-        };
-        let payload = payload.serialize()?;
+        let account_inclusion_proof = self.inner.fetch_inclusion_proof().await?;
 
-        if let Err(e) =
-            self.store
-                .merkle_cache_put(payload, now, MERKLE_PROOF_VALIDITY_SECONDS)
-        {
+        if let Err(e) = self.store.merkle_cache_put(
+            &account_inclusion_proof,
+            now,
+            MERKLE_PROOF_VALIDITY_SECONDS,
+        ) {
             tracing::error!("Failed to cache Merkle inclusion proof: {e}");
         }
 
-        Ok((inclusion_proof, authenticator_keyset))
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct CachedInclusionProof {
-    inclusion_proof: MerkleInclusionProof<TREE_DEPTH>,
-    authenticator_keyset: AuthenticatorPublicKeySet,
-}
-
-impl CachedInclusionProof {
-    fn serialize(&self) -> Result<Vec<u8>, WalletKitError> {
-        let mut bytes = Vec::new();
-        ciborium::ser::into_writer(self, &mut bytes).map_err(|err| {
-            WalletKitError::SerializationError {
-                error: err.to_string(),
-            }
-        })?;
-        Ok(bytes)
-    }
-
-    fn deserialize(bytes: &[u8]) -> Option<Self> {
-        ciborium::de::from_reader(bytes).ok()
+        Ok(account_inclusion_proof)
     }
 }
 
@@ -113,6 +77,8 @@ mod tests {
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
     use crate::storage::CredentialStore;
+    use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
+    use world_id_core::primitives::merkle::MerkleInclusionProof;
     use world_id_core::FieldElement;
 
     #[test]
@@ -125,26 +91,24 @@ mod tests {
         let siblings = [FieldElement::from(0u64); TREE_DEPTH];
         let root_fe = FieldElement::from(123u64);
         let inclusion_proof = MerkleInclusionProof::new(root_fe, 42, siblings);
-        let authenticator_keyset =
+        let authenticator_pubkeys =
             AuthenticatorPublicKeySet::new(vec![]).expect("key set");
-        let payload = CachedInclusionProof {
+        let account_inclusion_proof = AccountInclusionProof {
             inclusion_proof,
-            authenticator_keyset,
+            authenticator_pubkeys,
         };
-        let payload_bytes = payload.serialize().expect("serialize");
 
         store
-            .merkle_cache_put(payload_bytes, 100, 60)
+            .merkle_cache_put(&account_inclusion_proof, 100, 60)
             .expect("cache put");
         let now = 110;
-        let cached = store
+        let decoded = store
             .merkle_cache_get(now)
             .expect("cache get")
             .expect("cache hit");
-        let decoded = CachedInclusionProof::deserialize(&cached).expect("decode");
         assert_eq!(decoded.inclusion_proof.leaf_index, 42);
         assert_eq!(decoded.inclusion_proof.root, root_fe);
-        assert_eq!(decoded.authenticator_keyset.len(), 0);
+        assert_eq!(decoded.authenticator_pubkeys.len(), 0);
         cleanup_test_storage(&root);
     }
 }
