@@ -29,9 +29,6 @@ use crate::storage::{CredentialStore, StoragePaths};
 use crate::requests::{ProofRequest, ProofResponse};
 
 #[cfg(feature = "storage")]
-use rand::rngs::OsRng;
-
-#[cfg(feature = "storage")]
 mod with_storage;
 
 type Groth16Materials = (
@@ -470,7 +467,7 @@ impl Authenticator {
                 .as_secs()
         };
 
-        // FIXME: If request is to initiate a session, call `self.inner.generate_session_id`
+        // TODO: If request is to initiate a session, call `self.inner.generate_session_id` and cache seed
 
         // First check if the request can be fulfilled and which credentials should be used
         let credential_list = self.store.list_credentials(None, now)?;
@@ -490,7 +487,7 @@ impl Authenticator {
         // Next, generate the nullifier and check the replay guard
         let nullifier = self
             .inner
-            .generate_nullifier(&proof_request.0, Some(account_inclusion_proof))
+            .generate_nullifier(&proof_request.0, Some(account_inclusion_proof.clone()))
             .await?;
 
         if self
@@ -500,6 +497,48 @@ impl Authenticator {
             return Err(WalletKitError::NullifierReplay);
         }
 
+        // If the request is for a Session Proof, get the correct `session_id_r_seed`, either
+        // from the cache or compute it again
+        let session_id_r_seed =
+            if proof_request.0.is_session_proof() {
+                let session_id = proof_request.0.session_id.ok_or_else(|| {
+                    WalletKitError::Generic {
+                        error: "session id not found when expected".to_string(),
+                    }
+                })?;
+
+                let cached_r_seed =
+                    self.store.get_session_seed(session_id.oprf_seed, now)?;
+
+                if cached_r_seed.is_some() {
+                    cached_r_seed
+                } else {
+                    let (expected_session_id, seed) = self
+                        .inner
+                        .generate_session_id(
+                            &proof_request.0,
+                            None,
+                            Some(account_inclusion_proof),
+                        )
+                        .await?;
+
+                    if expected_session_id != session_id {
+                        return Err(WalletKitError::SessionIdMismatch);
+                    }
+
+                    let _ = self
+                        .store
+                        .store_session_seed(session_id.oprf_seed, seed, now)
+                        .map_err(|err| {
+                            tracing::error!("error caching session_id_r_seed: {}", err);
+                        });
+
+                    Some(seed)
+                }
+            } else {
+                None
+            };
+
         let mut responses: Vec<ResponseItem> = vec![];
 
         for request_item in credentials_to_prove {
@@ -508,14 +547,12 @@ impl Authenticator {
                 .get_credential(request_item.issuer_schema_id, now)?
                 .ok_or(WalletKitError::CredentialNotIssued)?;
 
-            let session_id_r_seed = CoreFieldElement::random(&mut OsRng); // TODO: Properly fetch session seed from cache
-
             let response_item = self.inner.generate_single_proof(
                 nullifier.clone(),
                 request_item,
                 &credential,
                 blinding_factor.0,
-                session_id_r_seed,
+                session_id_r_seed.unwrap_or(CoreFieldElement::ZERO), // TODO: upstream update coming accepting Option
                 proof_request.0.session_id,
                 proof_request.0.created_at,
             )?;

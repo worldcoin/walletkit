@@ -368,6 +368,34 @@ impl CredentialStore {
 
 /// Implementation not exposed to foreign bindings
 impl CredentialStore {
+    /// Stores a session seed pair in the vault.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the insert fails.
+    pub fn store_session_seed(
+        &self,
+        oprf_seed: CoreFieldElement,
+        session_id_r_seed: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<()> {
+        self.lock_inner()?
+            .store_session_seed(oprf_seed, session_id_r_seed, now)
+    }
+
+    /// Retrieves the `session_id_r_seed` for a given `oprf_seed`, if not expired.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the query fails.
+    pub fn get_session_seed(
+        &self,
+        oprf_seed: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<Option<CoreFieldElement>> {
+        self.lock_inner()?.get_session_seed(oprf_seed, now)
+    }
+
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
     ///
     /// # Errors
@@ -573,6 +601,42 @@ impl CredentialStoreInner {
             associated_data,
             now,
         )
+    }
+
+    fn store_session_seed(
+        &mut self,
+        oprf_seed: CoreFieldElement,
+        session_id_r_seed: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<()> {
+        let guard = self.guard()?;
+        let state = self.state_mut()?;
+        state.vault.store_session_seed(
+            &guard,
+            &oprf_seed.to_be_bytes(),
+            &session_id_r_seed.to_be_bytes(),
+            now,
+        )
+    }
+
+    fn get_session_seed(
+        &self,
+        oprf_seed: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<Option<CoreFieldElement>> {
+        let state = self.state()?;
+        let Some(session_bytes) = state
+            .vault
+            .get_session_seed(&oprf_seed.to_be_bytes(), now)?
+        else {
+            return Ok(None);
+        };
+        let session = CoreFieldElement::from_be_bytes(&session_bytes).map_err(|e| {
+            StorageError::Serialization(format!(
+                "failed to deserialize session_id_r_seed: {e}"
+            ))
+        })?;
+        Ok(Some(session))
     }
 
     fn merkle_cache_get(

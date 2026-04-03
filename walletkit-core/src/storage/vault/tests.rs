@@ -574,9 +574,10 @@ fn test_store_and_get_session_seed() {
     db.store_session_seed(&guard, &oprf, &session, now)
         .expect("store session seed");
 
-    let result = db.get_session_seed(now).expect("get session seed");
-    let (got_oprf, got_session) = result.expect("should find seed");
-    assert_eq!(got_oprf, oprf);
+    let got_session = db
+        .get_session_seed(&oprf, now)
+        .expect("get session seed")
+        .expect("should find seed");
     assert_eq!(got_session, session);
 
     cleanup_vault_files(&path);
@@ -636,11 +637,11 @@ fn test_session_seed_expires_after_ttl() {
 
     // Just before expiry (relative to floored created_at): still valid
     let before_expiry = midnight + 182 * 86_400 - 1;
-    assert!(db.get_session_seed(before_expiry).expect("get").is_some());
+    assert!(db.get_session_seed(&oprf, before_expiry).expect("get").is_some());
 
     // At expiry boundary: expired
     let at_expiry = midnight + 182 * 86_400;
-    assert!(db.get_session_seed(at_expiry).expect("get").is_none());
+    assert!(db.get_session_seed(&oprf, at_expiry).expect("get").is_none());
 
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);

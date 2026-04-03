@@ -126,6 +126,13 @@ pub enum WalletKitError {
     #[error("recovery_binding_does_not_exist")]
     RecoveryBindingDoesNotExist,
 
+    /// The session ID computed for this proof does not match the expected session ID from the proof request.
+    ///
+    /// This indicates the `session_id` provided by the RP is invalid or compromised, as
+    /// the only other failure option is OPRFs not having performed correct computations.
+    #[error("the expected session id and the generated session id do not match")]
+    SessionIdMismatch,
+
     /// The NFC uniqueness service rejected the request with a permanent error
     /// that will not resolve on retry (e.g. expired document).
     #[error("nfc_non_retryable: {error_code}")]

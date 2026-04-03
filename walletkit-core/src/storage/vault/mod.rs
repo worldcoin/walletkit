@@ -374,41 +374,37 @@ impl VaultDb {
         Ok(())
     }
 
-    /// Retrieves the most recent non-expired session seed.
+    /// Retrieves the `session_id_r_seed` for a given `oprf_seed`, if not expired.
     ///
-    /// Returns `None` if no valid session seed exists.
+    /// Returns `None` if the seed does not exist or has expired.
     ///
     /// # Errors
     ///
     /// Returns an error if the query fails.
     pub fn get_session_seed(
         &self,
+        oprf_seed: &[u8; 32],
         now: u64,
-    ) -> StorageResult<Option<([u8; 32], [u8; 32])>> {
+    ) -> StorageResult<Option<[u8; 32]>> {
         let now_i64 = to_i64(now, "now")?;
         let ttl_i64 = to_i64(SESSION_SEED_TTL_SECONDS, "ttl")?;
 
-        let sql = "SELECT oprf_seed, session_id_r_seed
+        let sql = "SELECT session_id_r_seed
                    FROM session_seeds
-                   WHERE created_at + ?1 > ?2
-                   ORDER BY created_at DESC
-                   LIMIT 1";
+                   WHERE oprf_seed = ?1
+                     AND created_at + ?2 > ?3";
 
         let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
-        stmt.bind_values(params![ttl_i64, now_i64])
+        stmt.bind_values(params![oprf_seed.as_slice(), ttl_i64, now_i64])
             .map_err(|err| map_db_err(&err))?;
 
         match stmt.step().map_err(|err| map_db_err(&err))? {
             StepResult::Row(row) => {
-                let oprf = row.column_blob(0);
-                let session = row.column_blob(1);
-                let oprf: [u8; 32] = oprf.try_into().map_err(|_| {
-                    StorageError::VaultDb("oprf_seed not 32 bytes".to_string())
-                })?;
-                let session: [u8; 32] = session.try_into().map_err(|_| {
+                let bytes = row.column_blob(0);
+                let session: [u8; 32] = bytes.try_into().map_err(|_| {
                     StorageError::VaultDb("session_id_r_seed not 32 bytes".to_string())
                 })?;
-                Ok(Some((oprf, session)))
+                Ok(Some(session))
             }
             StepResult::Done => Ok(None),
         }
