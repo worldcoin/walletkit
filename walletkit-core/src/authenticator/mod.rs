@@ -564,7 +564,7 @@ impl Authenticator {
             version: world_id_core::requests::RequestVersion::V1,
             responses,
             error: None,
-            session_id: None, // TODO: This needs to be computed to be shareable
+            session_id: proof_request.0.session_id,
         };
 
         proof_request
