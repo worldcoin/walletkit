@@ -470,6 +470,8 @@ impl Authenticator {
                 .as_secs()
         };
 
+        // FIXME: If request is to initiate a session, call `self.inner.generate_session_id`
+
         // First check if the request can be fulfilled and which credentials should be used
         let credential_list = self.store.list_credentials(None, now)?;
         let credential_list = credential_list

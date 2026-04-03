@@ -583,11 +583,9 @@ impl CredentialStoreInner {
         let bytes = state.cache.merkle_cache_get(valid_until)?;
 
         if let Some(bytes) = bytes {
-            let result = ciborium::de::from_reader::<
-                AccountInclusionProof<TREE_DEPTH>,
-                &[u8],
-            >(bytes.as_ref())
-            .ok();
+            let result =
+                serde_json::from_slice::<AccountInclusionProof<TREE_DEPTH>>(&bytes)
+                    .ok();
             return Ok(result);
         }
         Ok(None)
@@ -601,15 +599,13 @@ impl CredentialStoreInner {
     ) -> StorageResult<()> {
         let guard = self.guard()?;
         let state = self.state_mut()?;
-        let mut bytes = Vec::new();
-        ciborium::ser::into_writer(account_inclusion_proof, &mut bytes).map_err(
-            |_| {
-                StorageError::Serialization(
-                    "unexpected. unable to serialize `account_inclusion_proof`"
-                        .to_string(),
-                )
-            },
-        )?;
+        // Use JSON for storage instead of CBOR because the `#[serde(flatten)]` property
+        // causes the deserialization of `FieldElement`s to appear as human-readable
+        let bytes = serde_json::to_vec(account_inclusion_proof).map_err(|_| {
+            StorageError::Serialization(
+                "unexpected. unable to serialize `account_inclusion_proof`".to_string(),
+            )
+        })?;
 
         state
             .cache
