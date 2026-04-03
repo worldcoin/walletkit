@@ -1,6 +1,7 @@
 //! Key hierarchy management for credential storage.
 
 use rand::{rngs::OsRng, RngCore};
+use secrecy::SecretBox;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use super::{
@@ -17,7 +18,7 @@ use super::{
 #[derive(Zeroize, ZeroizeOnDrop)]
 #[allow(clippy::struct_field_names)]
 pub struct StorageKeys {
-    intermediate_key: [u8; 32],
+    intermediate_key: SecretBox<[u8; 32]>,
 }
 
 impl StorageKeys {
@@ -43,26 +44,28 @@ impl StorageKeys {
             let k_intermediate =
                 parse_key_32(k_intermediate_bytes.as_slice(), "K_intermediate")?;
             Ok(Self {
-                intermediate_key: k_intermediate,
+                intermediate_key: SecretBox::init_with(|| k_intermediate),
             })
         } else {
             let k_intermediate = random_key();
+            // TODO: At this moment, the key needs to be temporarily heap allocated in order
+            // to be bridged via UniFFI. This needs to be improved to use pointers that can
+            // be zeroized after use.
             let wrapped_k_intermediate = keystore
                 .seal(ACCOUNT_KEY_ENVELOPE_AD.to_vec(), k_intermediate.to_vec())?;
             let envelope = AccountKeyEnvelope::new(wrapped_k_intermediate, now);
             let bytes = envelope.serialize()?;
             blob_store.write_atomic(ACCOUNT_KEYS_FILENAME.to_string(), bytes)?;
             Ok(Self {
-                intermediate_key: k_intermediate,
+                intermediate_key: SecretBox::init_with(|| k_intermediate),
             })
         }
     }
 
-    /// Returns the intermediate key wrapped in [`Zeroizing`] so the caller's
-    /// copy is automatically zeroed on drop. Treat this as sensitive material.
+    /// Returns a reference to the intermediate key's [`SecretBox`].
     #[must_use]
-    pub fn intermediate_key(&self) -> Zeroizing<[u8; 32]> {
-        Zeroizing::new(self.intermediate_key)
+    pub const fn intermediate_key(&self) -> &SecretBox<[u8; 32]> {
+        &self.intermediate_key
     }
 }
 
@@ -89,6 +92,7 @@ mod tests {
     use super::*;
     use crate::storage::lock::StorageLock;
     use crate::storage::tests_utils::{InMemoryBlobStore, InMemoryKeystore};
+    use secrecy::ExposeSecret;
     use uuid::Uuid;
 
     fn temp_lock_path() -> std::path::PathBuf {
@@ -109,7 +113,10 @@ mod tests {
         let keys_second =
             StorageKeys::init(&keystore, &blob_store, &guard, 200).expect("init");
 
-        assert_eq!(keys_first.intermediate_key, keys_second.intermediate_key);
+        assert_eq!(
+            keys_first.intermediate_key.expose_secret(),
+            keys_second.intermediate_key.expose_secret()
+        );
         let _ = std::fs::remove_file(lock_path);
     }
 
