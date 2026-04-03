@@ -58,12 +58,7 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
             PRIMARY KEY (content_id)
         );
 
-        CREATE TABLE IF NOT EXISTS session_seeds (
-            oprf_seed BLOB NOT NULL,
-            session_id_r_seed BLOB NOT NULL,
-            created_at INTEGER NOT NULL,
-            PRIMARY KEY (oprf_seed)
-        );",
+",
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())

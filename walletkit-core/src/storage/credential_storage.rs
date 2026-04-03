@@ -21,6 +21,9 @@ use crate::{Credential, FieldElement};
 use world_id_core::primitives::merkle::AccountInclusionProof;
 use world_id_core::primitives::TREE_DEPTH;
 
+/// Session seed TTL: ~6 months (182 days).
+const SESSION_SEED_TTL_SECONDS: u64 = 182 * 86_400;
+
 /// Filename prefix for temporary plaintext vault exports used during
 /// backup export and import. A UUID is appended to avoid collisions.
 #[cfg(not(target_arch = "wasm32"))]
@@ -368,7 +371,7 @@ impl CredentialStore {
 
 /// Implementation not exposed to foreign bindings
 impl CredentialStore {
-    /// Stores a session seed pair in the vault.
+    /// Stores a `session_id_r_seed` into the cache.
     ///
     /// # Errors
     ///
@@ -611,11 +614,12 @@ impl CredentialStoreInner {
     ) -> StorageResult<()> {
         let guard = self.guard()?;
         let state = self.state_mut()?;
-        state.vault.store_session_seed(
+        state.cache.session_seed_put(
             &guard,
-            &oprf_seed.to_be_bytes(),
-            &session_id_r_seed.to_be_bytes(),
+            oprf_seed.to_be_bytes(),
+            session_id_r_seed.to_be_bytes(),
             now,
+            SESSION_SEED_TTL_SECONDS,
         )
     }
 
@@ -625,18 +629,16 @@ impl CredentialStoreInner {
         now: u64,
     ) -> StorageResult<Option<CoreFieldElement>> {
         let state = self.state()?;
-        let Some(session_bytes) = state
-            .vault
-            .get_session_seed(&oprf_seed.to_be_bytes(), now)?
+        let Some(bytes) = state.cache.session_seed_get(oprf_seed.to_be_bytes(), now)?
         else {
             return Ok(None);
         };
-        let session = CoreFieldElement::from_be_bytes(&session_bytes).map_err(|e| {
+        let seed = CoreFieldElement::from_be_bytes(&bytes).map_err(|e| {
             StorageError::Serialization(format!(
                 "failed to deserialize session_id_r_seed: {e}"
             ))
         })?;
-        Ok(Some(session))
+        Ok(Some(seed))
     }
 
     fn merkle_cache_get(

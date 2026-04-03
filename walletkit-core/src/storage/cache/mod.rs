@@ -72,35 +72,35 @@ impl CacheDb {
         merkle::put(&self.conn, proof_bytes.as_ref(), now, ttl_seconds)
     }
 
-    /// Fetches a cached session key if present.
+    /// Fetches a cached `session_id_r_seed` for the given `oprf_seed`.
     ///
-    /// This value is the per-RP session seed (aka `session_id_r_seed` in the
-    /// protocol). It is derived from `K_intermediate` and `rp_id` and is used to
-    /// derive the per-session `r` that feeds the sessionId commitment. The cache
-    /// is an optional performance hint and may be missing or expired.
+    /// Returns `None` when missing or expired.
     ///
     /// # Errors
     ///
     /// Returns an error if the query fails.
-    pub fn session_key_get(&self, rp_id: [u8; 32]) -> StorageResult<Option<[u8; 32]>> {
-        session::get(&self.conn, rp_id)
+    pub fn session_seed_get(
+        &self,
+        oprf_seed: [u8; 32],
+        now: u64,
+    ) -> StorageResult<Option<[u8; 32]>> {
+        session::get(&self.conn, oprf_seed, now)
     }
 
-    /// Stores a session key with a TTL.
-    ///
-    /// The key is cached per relying party (`rp_id`) and replaced on insert.
+    /// Stores a `session_id_r_seed` keyed by `oprf_seed` with a TTL.
     ///
     /// # Errors
     ///
     /// Returns an error if the insert fails.
-    pub fn session_key_put(
+    pub fn session_seed_put(
         &mut self,
         _lock: &StorageLockGuard,
-        rp_id: [u8; 32],
-        k_session: [u8; 32],
+        oprf_seed: [u8; 32],
+        session_id_r_seed: [u8; 32],
+        now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        session::put(&self.conn, rp_id, k_session, ttl_seconds)
+        session::put(&self.conn, oprf_seed, session_id_r_seed, now, ttl_seconds)
     }
 
     /// Checks whether a replay guard entry exists for the given nullifier.
@@ -141,7 +141,6 @@ mod tests {
     use crate::storage::lock::StorageLock;
     use std::fs;
     use std::path::PathBuf;
-    use std::time::Duration;
     use uuid::Uuid;
 
     fn temp_cache_path() -> PathBuf {
@@ -190,16 +189,19 @@ mod tests {
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
         let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
-        let rp_id = [0x01u8; 32];
-        let k_session = [0x02u8; 32];
-        db.session_key_put(&guard, rp_id, k_session, 1000)
-            .expect("put session key");
+        let oprf_seed = [0x01u8; 32];
+        let r_seed = [0x02u8; 32];
+        let now = 1_000;
+        db.session_seed_put(&guard, oprf_seed, r_seed, now, 1000)
+            .expect("put session seed");
         drop(db);
 
         fs::write(&path, b"corrupt").expect("corrupt cache file");
 
         let db = CacheDb::new(&path, &key, &guard).expect("rebuild cache");
-        let value = db.session_key_get(rp_id).expect("get session key");
+        let value = db
+            .session_seed_get(oprf_seed, now)
+            .expect("get session seed");
         assert!(value.is_none());
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
@@ -225,21 +227,21 @@ mod tests {
     }
 
     #[test]
-    fn test_session_cache_ttl() {
+    fn test_session_seed_cache_ttl() {
         let path = temp_cache_path();
         let key = Zeroizing::new([0x44u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
         let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
-        let rp_id = [0x55u8; 32];
-        let k_session = [0x66u8; 32];
-        db.session_key_put(&guard, rp_id, k_session, 3)
-            .expect("put session key");
-        let hit = db.session_key_get(rp_id).expect("get session key");
-        assert!(hit.is_some());
-        std::thread::sleep(Duration::from_secs(4));
-        let miss = db.session_key_get(rp_id).expect("get session key");
+        let oprf_seed = [0x55u8; 32];
+        let r_seed = [0x66u8; 32];
+        let now = 100;
+        db.session_seed_put(&guard, oprf_seed, r_seed, now, 10)
+            .expect("put session seed");
+        let hit = db.session_seed_get(oprf_seed, now).expect("get");
+        assert_eq!(hit, Some(r_seed));
+        let miss = db.session_seed_get(oprf_seed, now + 11).expect("get");
         assert!(miss.is_none());
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
