@@ -11,7 +11,7 @@ readme = "./README.md"
 homepage = "https://docs.world.org"                             # TODO: Update to specific WalletKit page
 rust-version = "1.91"                                           # MSRV
 repository = "https://github.com/worldcoin/walletkit"
-exclude = ["tests/", "uniffi-bindgen/", "walletkit-cli/"]
+exclude = ["tests/", "uniffi-bindgen/", "walletkit-cli/", "/audits", "/kotlin", "/swift"]
 keywords = ["ZKP", "WorldID", "World", "Identity", "Semaphore"]
 categories = ["api-bindings", "cryptography::cryptocurrencies"]
 
@@ -22,7 +22,7 @@ alloy-core = { version = "1", default-features = false, features = [
 ] }
 alloy-primitives = { version = "1", default-features = false }
 uniffi = { version = "0.31", features = ["tokio"] }
-world-id-core = { version = "0.8", default-features = false }
+world-id-core = { version = "0.8.2", default-features = false }
 
 # internal
 walletkit-core = { version = "0.12.0", path = "walletkit-core", default-features = false }

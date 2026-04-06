@@ -29,9 +29,6 @@ use crate::storage::{CredentialStore, StoragePaths};
 use crate::requests::{ProofRequest, ProofResponse};
 
 #[cfg(feature = "storage")]
-use rand::rngs::OsRng;
-
-#[cfg(feature = "storage")]
 mod with_storage;
 
 type Groth16Materials = (
@@ -265,7 +262,7 @@ impl Authenticator {
             Address::parse_from_ffi(&new_recovery_agent, "new_recovery_agent")?;
         let (sig, nonce) = self
             .inner
-            .sign_initiate_recovery_agent_update(new_recovery_agent)
+            .danger_sign_initiate_recovery_agent_update(new_recovery_agent)
             .await?;
         Ok(RecoveryUpdateSignature {
             signature: sig.as_bytes().to_vec(),
@@ -470,6 +467,8 @@ impl Authenticator {
                 .as_secs()
         };
 
+        // TODO: If request is to initiate a session, call `self.inner.generate_session_id` and cache seed
+
         // First check if the request can be fulfilled and which credentials should be used
         let credential_list = self.store.list_credentials(None, now)?;
         let credential_list = credential_list
@@ -482,23 +481,56 @@ impl Authenticator {
             .credentials_to_prove(&credential_list)
             .ok_or(WalletKitError::UnfulfillableRequest)?;
 
-        let (inclusion_proof, key_set) =
+        let account_inclusion_proof =
             self.fetch_inclusion_proof_with_cache(now).await?;
 
         // Next, generate the nullifier and check the replay guard
         let nullifier = self
             .inner
-            .generate_nullifier(&proof_request.0, inclusion_proof, key_set)
+            .generate_nullifier(&proof_request.0, Some(account_inclusion_proof.clone()))
             .await?;
 
-        // NOTE: In a normal flow this error can not be triggered since OPRF nodes have their own
-        // replay protection so the function will fail before this when attempting to generate the nullifier
         if self
             .store
             .is_nullifier_replay(nullifier.verifiable_oprf_output.output.into(), now)?
         {
             return Err(WalletKitError::NullifierReplay);
         }
+
+        // If the request is for a Session Proof, get the correct `session_id_r_seed`, either
+        // from the cache or compute it again
+        let session_id_r_seed = if let Some(session_id) = proof_request.0.session_id {
+            let cached_r_seed =
+                self.store.get_session_seed(session_id.oprf_seed, now)?;
+
+            if cached_r_seed.is_some() {
+                cached_r_seed
+            } else {
+                let (expected_session_id, seed) = self
+                    .inner
+                    .generate_session_id(
+                        &proof_request.0,
+                        None,
+                        Some(account_inclusion_proof),
+                    )
+                    .await?;
+
+                if expected_session_id != session_id {
+                    return Err(WalletKitError::SessionIdMismatch);
+                }
+
+                if let Err(err) =
+                    self.store
+                        .store_session_seed(session_id.oprf_seed, seed, now)
+                {
+                    tracing::error!("error caching session_id_r_seed: {}", err);
+                }
+
+                Some(seed)
+            }
+        } else {
+            None
+        };
 
         let mut responses: Vec<ResponseItem> = vec![];
 
@@ -508,14 +540,12 @@ impl Authenticator {
                 .get_credential(request_item.issuer_schema_id, now)?
                 .ok_or(WalletKitError::CredentialNotIssued)?;
 
-            let session_id_r_seed = CoreFieldElement::random(&mut OsRng); // TODO: Properly fetch session seed from cache
-
             let response_item = self.inner.generate_single_proof(
                 nullifier.clone(),
                 request_item,
                 &credential,
                 blinding_factor.0,
-                session_id_r_seed,
+                session_id_r_seed.unwrap_or(CoreFieldElement::ZERO), // TODO: upstream update coming accepting Option
                 proof_request.0.session_id,
                 proof_request.0.created_at,
             )?;
@@ -527,7 +557,7 @@ impl Authenticator {
             version: world_id_core::requests::RequestVersion::V1,
             responses,
             error: None,
-            session_id: None, // TODO: This needs to be computed to be shareable
+            session_id: proof_request.0.session_id,
         };
 
         proof_request

@@ -56,7 +56,9 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
             created_at  INTEGER NOT NULL,
             bytes       BLOB    NOT NULL,
             PRIMARY KEY (content_id)
-        );",
+        );
+
+",
     )
     .map_err(|err| map_db_err(&err))?;
     Ok(())

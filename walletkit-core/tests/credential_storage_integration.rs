@@ -6,7 +6,13 @@ mod common;
 use rand::rngs::OsRng;
 use walletkit_core::storage::CredentialStore;
 use walletkit_core::Credential;
-use world_id_core::{Credential as CoreCredential, FieldElement as CoreFieldElement};
+use world_id_core::api_types::AccountInclusionProof;
+use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
+use world_id_core::primitives::TREE_DEPTH;
+use world_id_core::{
+    primitives::merkle::MerkleInclusionProof, Credential as CoreCredential,
+    FieldElement as CoreFieldElement,
+};
 
 #[test]
 fn test_storage_flow_end_to_end() {
@@ -40,12 +46,22 @@ fn test_storage_flow_end_to_end() {
     assert_eq!(record.expires_at, 1_800_000_000);
     assert!(!record.is_expired);
 
+    let siblings = [CoreFieldElement::from(0u64); TREE_DEPTH];
+    let inclusion_proof =
+        MerkleInclusionProof::new(CoreFieldElement::from(1u64), 42, siblings);
+    let authenticator_pubkeys =
+        AuthenticatorPublicKeySet::new(vec![]).expect("key set");
+    let account_inclusion_proof = AccountInclusionProof {
+        inclusion_proof,
+        authenticator_pubkeys,
+    };
+
     store
-        .merkle_cache_put(vec![9, 9], 100, 10)
+        .merkle_cache_put(&account_inclusion_proof, 100, 10)
         .expect("cache put");
     let now = 105;
     let hit = store.merkle_cache_get(now).expect("cache get");
-    assert_eq!(hit, Some(vec![9, 9]));
+    assert_eq!(hit.unwrap().inclusion_proof.leaf_index, 42);
     let miss = store.merkle_cache_get(111).expect("cache get");
     assert!(miss.is_none());
 

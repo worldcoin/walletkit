@@ -18,6 +18,11 @@ use super::types::CredentialRecord;
 use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, VaultDb};
 use crate::{Credential, FieldElement};
+use world_id_core::primitives::merkle::AccountInclusionProof;
+use world_id_core::primitives::TREE_DEPTH;
+
+/// Session seed TTL: ~6 months (182 days).
+const SESSION_SEED_TTL_SECONDS: u64 = 182 * 86_400;
 
 /// Filename prefix for temporary plaintext vault exports used during
 /// backup export and import. A UUID is appended to avoid collisions.
@@ -250,30 +255,6 @@ impl CredentialStore {
         result
     }
 
-    /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the cache lookup fails.
-    pub fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
-        self.lock_inner()?.merkle_cache_get(valid_until)
-    }
-
-    /// Inserts a cached Merkle proof with a TTL.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the cache insert fails.
-    pub fn merkle_cache_put(
-        &self,
-        proof_bytes: Vec<u8>,
-        now: u64,
-        ttl_seconds: u64,
-    ) -> StorageResult<()> {
-        self.lock_inner()?
-            .merkle_cache_put(proof_bytes, now, ttl_seconds)
-    }
-
     /// Exports the current vault as an in-memory plaintext (unencrypted)
     /// `SQLite` database for backup.
     ///
@@ -307,14 +288,10 @@ impl CredentialStore {
     ///
     /// Returns an error if the store is not initialized or the import fails.
     #[cfg(not(target_arch = "wasm32"))]
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "Vec<u8> required for UniFFI lifting"
-    )]
-    pub fn import_vault_from_backup(&self, backup_bytes: Vec<u8>) -> StorageResult<()> {
+    pub fn import_vault_from_backup(&self, backup_bytes: &[u8]) -> StorageResult<()> {
         let inner = self.lock_inner()?;
         inner.cleanup_stale_backup_files();
-        let path = inner.write_temp_backup_file(&backup_bytes)?;
+        let path = inner.write_temp_backup_file(backup_bytes)?;
         let _cleanup = CleanupFile(path.clone());
 
         inner.import_vault_from_file(&path)
@@ -394,6 +371,61 @@ impl CredentialStore {
 
 /// Implementation not exposed to foreign bindings
 impl CredentialStore {
+    /// Stores a `session_id_r_seed` into the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the insert fails.
+    pub fn store_session_seed(
+        &self,
+        oprf_seed: CoreFieldElement,
+        session_id_r_seed: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<()> {
+        self.lock_inner()?
+            .store_session_seed(oprf_seed, session_id_r_seed, now)
+    }
+
+    /// Retrieves the `session_id_r_seed` for a given `oprf_seed`, if not expired.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the query fails.
+    pub fn get_session_seed(
+        &self,
+        oprf_seed: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<Option<CoreFieldElement>> {
+        self.lock_inner()?.get_session_seed(oprf_seed, now)
+    }
+
+    /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache lookup fails.
+    pub fn merkle_cache_get(
+        &self,
+        valid_until: u64,
+    ) -> StorageResult<Option<AccountInclusionProof<TREE_DEPTH>>> {
+        self.lock_inner()?.merkle_cache_get(valid_until)
+    }
+
+    /// Inserts a cached Merkle proof with a TTL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache insert fails.
+    pub fn merkle_cache_put(
+        &self,
+        account_inclusion_proof: &AccountInclusionProof<TREE_DEPTH>,
+        now: u64,
+        ttl_seconds: u64,
+    ) -> StorageResult<()> {
+        self.lock_inner()?
+            .merkle_cache_put(account_inclusion_proof, now, ttl_seconds)
+    }
+
     /// Best-effort notification to the registered vault-changed listener.
     /// No-op on wasm32 where the listener cannot be registered.
     ///
@@ -574,22 +606,76 @@ impl CredentialStoreInner {
         )
     }
 
-    fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
+    fn store_session_seed(
+        &mut self,
+        oprf_seed: CoreFieldElement,
+        session_id_r_seed: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<()> {
+        let guard = self.guard()?;
+        let state = self.state_mut()?;
+        state.cache.session_seed_put(
+            &guard,
+            oprf_seed.to_be_bytes(),
+            session_id_r_seed.to_be_bytes(),
+            now,
+            SESSION_SEED_TTL_SECONDS,
+        )
+    }
+
+    fn get_session_seed(
+        &self,
+        oprf_seed: CoreFieldElement,
+        now: u64,
+    ) -> StorageResult<Option<CoreFieldElement>> {
         let state = self.state()?;
-        state.cache.merkle_cache_get(valid_until)
+        let Some(bytes) = state.cache.session_seed_get(oprf_seed.to_be_bytes(), now)?
+        else {
+            return Ok(None);
+        };
+        let seed = CoreFieldElement::from_be_bytes(&bytes).map_err(|e| {
+            StorageError::Serialization(format!(
+                "failed to deserialize session_id_r_seed: {e}"
+            ))
+        })?;
+        Ok(Some(seed))
+    }
+
+    fn merkle_cache_get(
+        &self,
+        valid_until: u64,
+    ) -> StorageResult<Option<AccountInclusionProof<TREE_DEPTH>>> {
+        let state = self.state()?;
+        let bytes = state.cache.merkle_cache_get(valid_until)?;
+
+        if let Some(bytes) = bytes {
+            let result =
+                serde_json::from_slice::<AccountInclusionProof<TREE_DEPTH>>(&bytes)
+                    .ok();
+            return Ok(result);
+        }
+        Ok(None)
     }
 
     fn merkle_cache_put(
         &mut self,
-        proof_bytes: Vec<u8>,
+        account_inclusion_proof: &AccountInclusionProof<TREE_DEPTH>,
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
         let guard = self.guard()?;
         let state = self.state_mut()?;
+        // Use JSON for storage instead of CBOR because the `#[serde(flatten)]` property
+        // causes the deserialization of `FieldElement`s to appear as human-readable
+        let bytes = serde_json::to_vec(account_inclusion_proof).map_err(|_| {
+            StorageError::Serialization(
+                "unexpected. unable to serialize `account_inclusion_proof`".to_string(),
+            )
+        })?;
+
         state
             .cache
-            .merkle_cache_put(&guard, proof_bytes, now, ttl_seconds)
+            .merkle_cache_put(&guard, bytes, now, ttl_seconds)
     }
 
     /// Checks whether a replay guard entry exists for the given nullifier.
@@ -1035,7 +1121,7 @@ mod tests {
         dst_store.init(42, 1000).expect("init dst storage");
 
         dst_store
-            .import_vault_from_backup(bytes)
+            .import_vault_from_backup(&bytes)
             .expect("import vault");
 
         let (imported_cred, imported_bf) = dst_store
@@ -1104,7 +1190,7 @@ mod tests {
         dst_store.init(42, 1000).expect("init dst storage");
 
         dst_store
-            .import_vault_from_backup(bytes)
+            .import_vault_from_backup(&bytes)
             .expect("import vault");
 
         assert_eq!(dst_store.list_credentials(None, 1000).unwrap().len(), 3);
@@ -1156,7 +1242,7 @@ mod tests {
         let bytes = store.export_vault_for_backup().expect("export vault");
 
         // Importing into a non-empty vault should fail.
-        let result = store.import_vault_from_backup(bytes);
+        let result = store.import_vault_from_backup(&bytes);
         assert!(result.is_err(), "import into non-empty vault should fail");
 
         // Verify existing data is unchanged after the failed import.
@@ -1177,7 +1263,7 @@ mod tests {
         let store = CredentialStore::from_provider(&provider).expect("create store");
         store.init(42, 1000).expect("init storage");
 
-        let result = store.import_vault_from_backup(b"not a sqlite database".to_vec());
+        let result = store.import_vault_from_backup(b"not a sqlite database");
         assert!(result.is_err(), "import from invalid bytes should fail");
 
         cleanup_test_storage(&root);
@@ -1234,7 +1320,7 @@ mod tests {
             CredentialStore::from_provider(&dst_provider).expect("create dst store");
         dst_store.init(42, 1000).expect("init dst storage");
 
-        let result = dst_store.import_vault_from_backup(corrupt_bytes);
+        let result = dst_store.import_vault_from_backup(&corrupt_bytes);
         assert!(result.is_err(), "import with corrupt backup should fail");
 
         // The transaction should have rolled back — destination is still empty.
@@ -1404,7 +1490,7 @@ mod tests {
         dst_store.init(42, 1000).expect("init dst store");
 
         dst_store
-            .import_vault_from_backup(bytes)
+            .import_vault_from_backup(&bytes)
             .expect("import vault from bytes");
 
         let (imported_cred, imported_bf) = dst_store
