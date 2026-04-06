@@ -499,45 +499,38 @@ impl Authenticator {
 
         // If the request is for a Session Proof, get the correct `session_id_r_seed`, either
         // from the cache or compute it again
-        let session_id_r_seed =
-            if proof_request.0.is_session_proof() {
-                let session_id = proof_request.0.session_id.ok_or_else(|| {
-                    WalletKitError::Generic {
-                        error: "session id not found when expected".to_string(),
-                    }
-                })?;
+        let session_id_r_seed = if let Some(session_id) = proof_request.0.session_id {
+            let cached_r_seed =
+                self.store.get_session_seed(session_id.oprf_seed, now)?;
 
-                let cached_r_seed =
-                    self.store.get_session_seed(session_id.oprf_seed, now)?;
-
-                if cached_r_seed.is_some() {
-                    cached_r_seed
-                } else {
-                    let (expected_session_id, seed) = self
-                        .inner
-                        .generate_session_id(
-                            &proof_request.0,
-                            None,
-                            Some(account_inclusion_proof),
-                        )
-                        .await?;
-
-                    if expected_session_id != session_id {
-                        return Err(WalletKitError::SessionIdMismatch);
-                    }
-
-                    let _ = self
-                        .store
-                        .store_session_seed(session_id.oprf_seed, seed, now)
-                        .map_err(|err| {
-                            tracing::error!("error caching session_id_r_seed: {}", err);
-                        });
-
-                    Some(seed)
-                }
+            if cached_r_seed.is_some() {
+                cached_r_seed
             } else {
-                None
-            };
+                let (expected_session_id, seed) = self
+                    .inner
+                    .generate_session_id(
+                        &proof_request.0,
+                        None,
+                        Some(account_inclusion_proof),
+                    )
+                    .await?;
+
+                if expected_session_id != session_id {
+                    return Err(WalletKitError::SessionIdMismatch);
+                }
+
+                if let Err(err) =
+                    self.store
+                        .store_session_seed(session_id.oprf_seed, seed, now)
+                {
+                    tracing::error!("error caching session_id_r_seed: {}", err);
+                }
+
+                Some(seed)
+            }
+        } else {
+            None
+        };
 
         let mut responses: Vec<ResponseItem> = vec![];
 
