@@ -3,10 +3,10 @@
 use super::helpers::{compute_content_id, map_db_err};
 use super::*;
 use crate::storage::lock::StorageLock;
+use secrecy::SecretBox;
 use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
-use zeroize::Zeroizing;
 
 fn temp_vault_path() -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -39,7 +39,7 @@ fn sample_blinding_factor() -> Vec<u8> {
 #[test]
 fn test_vault_create_and_open() {
     let path = temp_vault_path();
-    let key = Zeroizing::new([0x42u8; 32]);
+    let key = SecretBox::init_with(|| [0x42u8; 32]);
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
@@ -53,12 +53,12 @@ fn test_vault_create_and_open() {
 #[test]
 fn test_vault_wrong_key_fails() {
     let path = temp_vault_path();
-    let key = Zeroizing::new([0x01u8; 32]);
+    let key = SecretBox::init_with(|| [0x01u8; 32]);
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
     VaultDb::new(&path, &key, &guard).expect("create vault");
-    let wrong_key = Zeroizing::new([0x02u8; 32]);
+    let wrong_key = SecretBox::init_with(|| [0x02u8; 32]);
     let err = VaultDb::new(&path, &wrong_key, &guard).expect_err("wrong key");
     match err {
         StorageError::VaultDb(_) | StorageError::CorruptedVault(_) => {}
@@ -74,7 +74,7 @@ fn test_leaf_index_set_once() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x03u8; 32]);
+    let key = SecretBox::init_with(|| [0x03u8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.init_leaf_index(&guard, 42, 100)
         .expect("init leaf index");
@@ -90,7 +90,7 @@ fn test_leaf_index_immutable() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x04u8; 32]);
+    let key = SecretBox::init_with(|| [0x04u8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.init_leaf_index(&guard, 7, 100).expect("init leaf index");
     let err = db.init_leaf_index(&guard, 8, 200).expect_err("mismatch");
@@ -108,7 +108,7 @@ fn test_store_credential_without_associated_data() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x05u8; 32]);
+    let key = SecretBox::init_with(|| [0x05u8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     let credential_id = db
         .store_credential(
@@ -138,7 +138,7 @@ fn test_store_credential_with_associated_data() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x06u8; 32]);
+    let key = SecretBox::init_with(|| [0x06u8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.store_credential(
         &guard,
@@ -173,7 +173,7 @@ fn test_content_id_deduplication() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x07u8; 32]);
+    let key = SecretBox::init_with(|| [0x07u8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     let first_id = db
         .store_credential(
@@ -242,7 +242,7 @@ fn test_list_credentials_by_issuer() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x08u8; 32]);
+    let key = SecretBox::init_with(|| [0x08u8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.store_credential(
         &guard,
@@ -281,7 +281,7 @@ fn test_list_credentials_marks_expired() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x09u8; 32]);
+    let key = SecretBox::init_with(|| [0x09u8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.store_credential(
         &guard,
@@ -321,7 +321,7 @@ fn test_list_credentials_by_issuer_includes_expired() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x0Au8; 32]);
+    let key = SecretBox::init_with(|| [0x0Au8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.store_credential(
         &guard,
@@ -351,7 +351,7 @@ fn test_delete_credential_by_id() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x0Bu8; 32]);
+    let key = SecretBox::init_with(|| [0x0Bu8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     let credential_id = db
         .store_credential(
@@ -412,7 +412,7 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x0Cu8; 32]);
+    let key = SecretBox::init_with(|| [0x0Cu8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
 
     let credential_id = db
@@ -463,7 +463,7 @@ fn test_danger_delete_all_credentials() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x0Cu8; 32]);
+    let key = SecretBox::init_with(|| [0x0Cu8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
     db.store_credential(
         &guard,
@@ -515,7 +515,7 @@ fn test_danger_delete_all_credentials_empty() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x0Du8; 32]);
+    let key = SecretBox::init_with(|| [0x0Du8; 32]);
     let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
 
     let deleted = db
@@ -533,7 +533,7 @@ fn test_vault_integrity_check() {
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");
-    let key = Zeroizing::new([0x0Au8; 32]);
+    let key = SecretBox::init_with(|| [0x0Au8; 32]);
     let db = VaultDb::new(&path, &key, &guard).expect("create vault");
     assert!(db.check_integrity().expect("integrity"));
     cleanup_vault_files(&path);
@@ -543,7 +543,7 @@ fn test_vault_integrity_check() {
 #[test]
 fn test_vault_corruption_handling() {
     let path = temp_vault_path();
-    let key = Zeroizing::new([0x0Bu8; 32]);
+    let key = SecretBox::init_with(|| [0x0Bu8; 32]);
     let lock_path = temp_lock_path();
     let lock = StorageLock::open(&lock_path).expect("open lock");
     let guard = lock.lock().expect("lock");

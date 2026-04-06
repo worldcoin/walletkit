@@ -4,8 +4,8 @@ use std::path::Path;
 
 use crate::storage::error::StorageResult;
 use crate::storage::lock::StorageLockGuard;
+use secrecy::SecretBox;
 use walletkit_db::Connection;
-use zeroize::Zeroizing;
 
 mod maintenance;
 mod merkle;
@@ -34,7 +34,7 @@ impl CacheDb {
     /// Returns an error if the database cannot be opened or rebuilt.
     pub fn new(
         path: &Path,
-        k_intermediate: &Zeroizing<[u8; 32]>,
+        k_intermediate: &SecretBox<[u8; 32]>,
         _lock: &StorageLockGuard,
     ) -> StorageResult<Self> {
         let conn = maintenance::open_or_rebuild(path, k_intermediate)?;
@@ -139,6 +139,7 @@ impl CacheDb {
 mod tests {
     use super::*;
     use crate::storage::lock::StorageLock;
+    use secrecy::SecretBox;
     use std::fs;
     use std::path::PathBuf;
     use uuid::Uuid;
@@ -170,7 +171,7 @@ mod tests {
     #[test]
     fn test_cache_create_and_open() {
         let path = temp_cache_path();
-        let key = Zeroizing::new([0x11u8; 32]);
+        let key = SecretBox::init_with(|| [0x11u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
@@ -184,7 +185,7 @@ mod tests {
     #[test]
     fn test_cache_rebuild_on_corruption() {
         let path = temp_cache_path();
-        let key = Zeroizing::new([0x22u8; 32]);
+        let key = SecretBox::init_with(|| [0x22u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
@@ -210,7 +211,7 @@ mod tests {
     #[test]
     fn test_merkle_cache_ttl() {
         let path = temp_cache_path();
-        let key = Zeroizing::new([0x33u8; 32]);
+        let key = SecretBox::init_with(|| [0x33u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
@@ -229,7 +230,7 @@ mod tests {
     #[test]
     fn test_session_seed_cache_ttl() {
         let path = temp_cache_path();
-        let key = Zeroizing::new([0x44u8; 32]);
+        let key = SecretBox::init_with(|| [0x44u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
