@@ -14,6 +14,21 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  version-alignment:
+    name: Version Alignment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - uses: worldcoin/bedrock/.github/actions/version-alignment@main
+        with:
+          uniffi_version: ${{ vars.UNIFFI_VERSION }}
+          rust_toolchain_channel: ${{ vars.RUST_TOOLCHAIN_CHANNEL }}
+
   lint:
     name: Format, Clippy & Build
     runs-on: ubuntu-latest
