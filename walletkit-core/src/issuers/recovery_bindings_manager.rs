@@ -121,6 +121,27 @@ impl RecoveryBindingManager {
             .await?;
         Ok(())
     }
+
+    /// Fetches a recovery binding via `GET /api/v1/recovery-binding`.
+    ///
+    /// # Arguments
+    ///
+    /// * `leaf_index` — The authenticator's leaf index in the World ID Merkle tree.
+    /// # Errors
+    ///
+    /// * [`WalletKitError::NetworkError`] — non-success HTTP status.
+    /// * [`WalletKitError::SerializationError`] — response body is not valid JSON.
+    /// * [`WalletKitError::RecoveryBindingDoesNotExist`] — HTTP 404 (no binding found).
+    pub async fn get_recovery_binding(
+        &self,
+        leaf_index: u64,
+    ) -> Result<String, WalletKitError> {
+        let recovery_binding = self
+            .pop_backend_client
+            .get_recovery_binding(leaf_index)
+            .await?;
+        Ok(recovery_binding.recovery_agent)
+    }
 }
 
 impl RecoveryBindingManager {

@@ -20,6 +20,12 @@ struct ChallengeResponse {
     challenge: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct RecoveryBindingResponse {
+    #[serde(rename = "recoveryAgent")]
+    pub recovery_agent: String,
+}
+
 /// Low-level HTTP client for the Proof-of-Personhood (`PoP`) backend API.
 ///
 /// Handles the REST calls for recovery binding management and challenge retrieval.
@@ -161,6 +167,42 @@ impl PopBackendClient {
                 })?;
 
         Ok(challenge_response.challenge)
+    }
+
+    /// Fetches a recovery binding via `GET /api/v1/recovery-binding`.
+    ///
+    /// # Errors
+    ///
+    /// * [`WalletKitError::NetworkError`] — non-success HTTP status.
+    /// * [`WalletKitError::SerializationError`] — response body is not valid JSON.
+    /// * [`WalletKitError::RecoveryBindingDoesNotExist`] — HTTP 404 (no binding found).
+    pub async fn get_recovery_binding(
+        &self,
+        leaf_index: u64,
+    ) -> Result<RecoveryBindingResponse, WalletKitError> {
+        let url = format!(
+            "{}/api/v1/recovery-binding?leafIndex={leaf_index}",
+            self.base_url
+        );
+        let response = self.request.get(url.as_str()).send().await?;
+
+        let status = response.status();
+        if status.is_success() {
+            let recovery_binding: RecoveryBindingResponse = response.json().await?;
+            return Ok(recovery_binding);
+        }
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(WalletKitError::RecoveryBindingDoesNotExist);
+        }
+        let error_message = response
+            .text()
+            .await
+            .unwrap_or_else(|e| format!("Unknown error: {e:?}"));
+        Err(WalletKitError::NetworkError {
+            url,
+            error: error_message,
+            status: Some(status.as_u16()),
+        })
     }
 }
 
@@ -321,6 +363,52 @@ mod tests {
             )
             .await;
 
+        assert!(result.is_err(), "Expected error but got success");
+        let err = result.unwrap_err();
+        assert!(
+            matches!(err, WalletKitError::RecoveryBindingDoesNotExist),
+            "Expected RecoveryBindingDoesNotExist error, got: {err:?}"
+        );
+        mock.assert_async().await;
+        drop(server);
+    }
+
+    #[tokio::test]
+    async fn test_get_recovery_binding_success() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+
+        let mock = server
+            .mock("GET", "/api/v1/recovery-binding?leafIndex=42")
+            .with_status(200)
+            .with_body("{\"recoveryAgent\": \"0x1234567890abcdef\"}")
+            .create_async()
+            .await;
+
+        let pop_api_client = PopBackendClient::new(url.clone());
+
+        let result = pop_api_client.get_recovery_binding(42).await;
+        assert!(result.is_ok(), "Expected success but got error: {result:?}");
+        mock.assert_async().await;
+        assert_eq!(result.unwrap().recovery_agent, "0x1234567890abcdef");
+        drop(server);
+    }
+
+    #[tokio::test]
+    async fn test_get_recovery_binding_not_found() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+
+        let mock = server
+            .mock("GET", "/api/v1/recovery-binding?leafIndex=42")
+            .with_status(404)
+            .with_body("Recovery agent not found")
+            .create_async()
+            .await;
+
+        let pop_api_client = PopBackendClient::new(url.clone());
+
+        let result = pop_api_client.get_recovery_binding(42).await;
         assert!(result.is_err(), "Expected error but got success");
         let err = result.unwrap_err();
         assert!(
