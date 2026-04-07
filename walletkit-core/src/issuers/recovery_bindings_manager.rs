@@ -89,7 +89,7 @@ impl RecoveryBindingManager {
             leaf_index,
             signature: format!("0x{}", hex::encode(sig_recovery_update.signature)),
             nonce: sig_recovery_update.nonce.to_string(),
-            new_recovery_agent,
+            recovery_agent: new_recovery_agent.clone(),
         };
         let security_token = Self::generate_recovery_agent_security_token(
             authenticator,
@@ -121,16 +121,16 @@ impl RecoveryBindingManager {
         leaf_index: u64,
         sub: String,
     ) -> Result<(), WalletKitError> {
-        let new_recovery_agent = ZERO_ADDRESS.to_string();
+        let recovery_agent = ZERO_ADDRESS.to_string();
         let sig_recovery_update = authenticator
-            .danger_sign_initiate_recovery_agent_update(new_recovery_agent.clone())
+            .danger_sign_initiate_recovery_agent_update(recovery_agent.clone())
             .await?;
         let request = ManageRecoveryBindingRequest {
             sub,
             leaf_index,
             signature: format!("0x{}", hex::encode(sig_recovery_update.signature)),
             nonce: sig_recovery_update.nonce.to_string(),
-            new_recovery_agent,
+            recovery_agent: recovery_agent.clone(),
         };
         let challenge = self.pop_backend_client.get_challenge().await?;
         let security_token = Self::generate_recovery_agent_security_token(
@@ -246,8 +246,7 @@ mod tests {
 
         // Mock the recovery binding registration endpoint
         let url_path = "/api/v1/recovery-binding".to_string();
-        let new_recovery_agent =
-            "0x1000000000000000000000000000000000000000".to_string();
+        let recovery_agent = "0x1000000000000000000000000000000000000000".to_string();
 
         let mock = pop_api_server
             .mock("POST", url_path.as_str())
@@ -259,7 +258,7 @@ mod tests {
             .match_body(mockito::Matcher::PartialJson(serde_json::json!({
                 "sub": sub.as_str(),
                 "leafIndex": leaf_index,
-                "newRecoveryAgent": new_recovery_agent.as_str(),
+                "recoveryAgent": recovery_agent.as_str(),
 
             })))
             .with_status(201)
@@ -284,7 +283,7 @@ mod tests {
                 &authenticator,
                 leaf_index,
                 sub.clone(),
-                new_recovery_agent.clone(),
+                recovery_agent.clone(),
             )
             .await;
         assert!(
@@ -318,14 +317,13 @@ mod tests {
         assert_eq!(hex::encode(message_bytes.clone()), "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2000000000000002aabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
         let signature = "0x01".to_string();
         let nonce = "0x02".to_string();
-        let new_recovery_agent =
-            "0x1000000000000000000000000000000000000000".to_string();
+        let recovery_agent = "0x1000000000000000000000000000000000000000".to_string();
         let request = ManageRecoveryBindingRequest {
             sub: sub.clone(),
             leaf_index,
             signature: signature.clone(),
             nonce: nonce.clone(),
-            new_recovery_agent: new_recovery_agent.clone(),
+            recovery_agent: recovery_agent.clone(),
         };
         let (mock_eth_server, eth_mock) = create_mock_eth_server().await;
         let rpc_url = mock_eth_server.url();
