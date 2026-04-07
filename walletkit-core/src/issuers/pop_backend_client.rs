@@ -13,6 +13,13 @@ pub struct ManageRecoveryBindingRequest {
     /// The authenticator's leaf index in the World ID Merkle tree.
     #[serde(rename = "leafIndex")]
     pub leaf_index: u64,
+    /// The signature of the recovery agent update.
+    pub signature: String,
+    /// The nonce of the recovery agent update.
+    pub nonce: String,
+    /// The checksummed hex address of the new recovery agent (e.g. `"0x1234…"`).
+    #[serde(rename = "newRecoveryAgent")]
+    pub new_recovery_agent: String,
 }
 
 #[derive(Deserialize)]
@@ -216,9 +223,13 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
 
+        let new_recovery_agent = "0x1234567890abcdef".to_string();
         let request = ManageRecoveryBindingRequest {
             sub: "test-sub-123".to_string(),
             leaf_index: 42,
+            signature: "0x1234567890abcdef".to_string(),
+            nonce: "0x1234567890abcdef1".to_string(),
+            new_recovery_agent: new_recovery_agent.clone(),
         };
 
         let mock = server
@@ -226,6 +237,9 @@ mod tests {
             .match_body(mockito::Matcher::Json(serde_json::json!({
                 "sub": "test-sub-123",
                 "leafIndex": 42,
+                "signature": "0x1234567890abcdef",
+                "nonce": "0x1234567890abcdef1",
+                "newRecoveryAgent": "0x1234567890abcdef",
             })))
             .match_header("X-Auth-Signature", "security_token")
             .match_header("X-Auth-Challenge", "challenge")
@@ -254,9 +268,13 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
 
+        let new_recovery_agent = "0x1234567890abcdef".to_string();
         let request = ManageRecoveryBindingRequest {
             sub: "test-sub-123".to_string(),
             leaf_index: 42,
+            signature: "0x1234567890abcdef".to_string(),
+            nonce: "0x1234567890abcdef1".to_string(),
+            new_recovery_agent: new_recovery_agent.clone(),
         };
 
         let mock = server
@@ -264,6 +282,9 @@ mod tests {
             .match_body(mockito::Matcher::Json(serde_json::json!({
                 "sub": "test-sub-123",
                 "leafIndex": 42,
+                "signature": "0x1234567890abcdef",
+                "nonce": "0x1234567890abcdef1",
+                "newRecoveryAgent": "0x1234567890abcdef",
             })))
             .match_header("X-Auth-Signature", "security_token")
             .match_header("X-Auth-Challenge", "challenge")
@@ -300,6 +321,10 @@ mod tests {
         let request = ManageRecoveryBindingRequest {
             sub: "test-sub-123".to_string(),
             leaf_index: 42,
+            signature: "0x1234567890abcdef".to_string(),
+            nonce: "0x1234567890abcdef1".to_string(),
+            new_recovery_agent: "0x0000000000000000000000000000000000000000"
+                .to_string(),
         };
 
         let mock = server
@@ -307,6 +332,9 @@ mod tests {
             .match_body(mockito::Matcher::Json(serde_json::json!({
                 "sub": "test-sub-123",
                 "leafIndex": 42,
+                "signature": "0x1234567890abcdef",
+                "nonce": "0x1234567890abcdef1",
+                "newRecoveryAgent": "0x0000000000000000000000000000000000000000",
             })))
             .match_header("X-Auth-Signature", "security_token")
             .match_header("X-Auth-Challenge", "challenge")
@@ -335,9 +363,14 @@ mod tests {
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
 
+        let new_recovery_agent =
+            "0x0000000000000000000000000000000000000000".to_string();
         let request = ManageRecoveryBindingRequest {
             sub: "test-sub-123".to_string(),
             leaf_index: 42,
+            signature: "0x1234567890abcdef".to_string(),
+            nonce: "0x1234567890abcdef1".to_string(),
+            new_recovery_agent: new_recovery_agent.clone(),
         };
 
         let mock = server
@@ -345,6 +378,9 @@ mod tests {
             .match_body(mockito::Matcher::Json(serde_json::json!({
                 "sub": "test-sub-123",
                 "leafIndex": 42,
+                "signature": "0x1234567890abcdef",
+                "nonce": "0x1234567890abcdef1",
+                "newRecoveryAgent": "0x0000000000000000000000000000000000000000",
             })))
             .match_header("X-Auth-Signature", "security_token")
             .match_header("X-Auth-Challenge", "challenge")

@@ -18,7 +18,8 @@ use crate::issuers::pop_backend_client::ManageRecoveryBindingRequest;
 use crate::issuers::PopBackendClient;
 use crate::Environment;
 use alloy_primitives::keccak256;
-
+use std::string::String;
+const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 /// Client for registering and unregistering recovery agents with the `PoP` backend.
 ///
 /// Each instance is bound to a specific [`Environment`] (staging or production),
@@ -66,6 +67,7 @@ impl RecoveryBindingManager {
     /// * `authenticator` — The authenticator whose signing key authorizes the request.
     /// * `leaf_index` — The authenticator's leaf index in the World ID Merkle tree.
     /// * `sub` — Hex-encoded subject identifier of the recovery agent to register.
+    /// * `new_recovery_agent` — The checksummed hex address of the new recovery agent (e.g. `"0x1234…"`).
     ///
     /// # Errors
     ///
@@ -76,9 +78,19 @@ impl RecoveryBindingManager {
         authenticator: &Authenticator,
         leaf_index: u64,
         sub: String,
+        new_recovery_agent: String,
     ) -> Result<(), WalletKitError> {
         let challenge = self.pop_backend_client.get_challenge().await?;
-        let request = ManageRecoveryBindingRequest { sub, leaf_index };
+        let sig_recovery_update = authenticator
+            .danger_sign_initiate_recovery_agent_update(new_recovery_agent.clone())
+            .await?;
+        let request = ManageRecoveryBindingRequest {
+            sub,
+            leaf_index,
+            signature: format!("0x{}", hex::encode(sig_recovery_update.signature)),
+            nonce: sig_recovery_update.nonce.to_string(),
+            new_recovery_agent,
+        };
         let security_token = Self::generate_recovery_agent_security_token(
             authenticator,
             &request,
@@ -109,7 +121,17 @@ impl RecoveryBindingManager {
         leaf_index: u64,
         sub: String,
     ) -> Result<(), WalletKitError> {
-        let request = ManageRecoveryBindingRequest { sub, leaf_index };
+        let new_recovery_agent = ZERO_ADDRESS.to_string();
+        let sig_recovery_update = authenticator
+            .danger_sign_initiate_recovery_agent_update(new_recovery_agent.clone())
+            .await?;
+        let request = ManageRecoveryBindingRequest {
+            sub,
+            leaf_index,
+            signature: format!("0x{}", hex::encode(sig_recovery_update.signature)),
+            nonce: sig_recovery_update.nonce.to_string(),
+            new_recovery_agent,
+        };
         let challenge = self.pop_backend_client.get_challenge().await?;
         let security_token = Self::generate_recovery_agent_security_token(
             authenticator,
@@ -224,6 +246,8 @@ mod tests {
 
         // Mock the recovery binding registration endpoint
         let url_path = "/api/v1/recovery-binding".to_string();
+        let new_recovery_agent =
+            "0x1000000000000000000000000000000000000000".to_string();
 
         let mock = pop_api_server
             .mock("POST", url_path.as_str())
@@ -232,9 +256,11 @@ mod tests {
                 mockito::Matcher::Regex(".*".to_string()),
             )
             .match_header("X-Auth-Challenge", challenge.as_str())
-            .match_body(mockito::Matcher::Json(serde_json::json!({
+            .match_body(mockito::Matcher::PartialJson(serde_json::json!({
                 "sub": sub.as_str(),
                 "leafIndex": leaf_index,
+                "newRecoveryAgent": new_recovery_agent.as_str(),
+
             })))
             .with_status(201)
             .with_body("{}")
@@ -254,7 +280,12 @@ mod tests {
             create_test_authenticator(&private_key_bytes, rpc_url).await;
 
         let result = recovery_binding_manager
-            .bind_recovery_agent(&authenticator, leaf_index, sub.clone())
+            .bind_recovery_agent(
+                &authenticator,
+                leaf_index,
+                sub.clone(),
+                new_recovery_agent.clone(),
+            )
             .await;
         assert!(
             result.is_ok(),
@@ -285,10 +316,16 @@ mod tests {
                 .unwrap();
         log::info!("message_bytes: {:?}", hex::encode(message_bytes.clone()));
         assert_eq!(hex::encode(message_bytes.clone()), "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2000000000000002aabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
-
+        let signature = "0x01".to_string();
+        let nonce = "0x02".to_string();
+        let new_recovery_agent =
+            "0x1000000000000000000000000000000000000000".to_string();
         let request = ManageRecoveryBindingRequest {
             sub: sub.clone(),
             leaf_index,
+            signature: signature.clone(),
+            nonce: nonce.clone(),
+            new_recovery_agent: new_recovery_agent.clone(),
         };
         let (mock_eth_server, eth_mock) = create_mock_eth_server().await;
         let rpc_url = mock_eth_server.url();
@@ -354,6 +391,8 @@ mod tests {
                 })
                 .to_string(),
             )
+            .expect_at_least(1)
+            .expect_at_most(2)
             .create_async()
             .await;
         (mock_eth_server, mock)
