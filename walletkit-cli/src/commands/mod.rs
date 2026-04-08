@@ -4,14 +4,15 @@ mod auth;
 mod credential;
 mod proof;
 mod recovery_agent;
+mod recovery_binding;
 mod wallet;
-
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use eyre::WrapErr as _;
+
 use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
 use walletkit_core::Authenticator;
 
@@ -103,6 +104,12 @@ pub enum Command {
     RecoveryAgent {
         #[command(subcommand)]
         action: recovery_agent::RecoveryAgentCommand,
+    },
+    /// Recovery binding management.
+    #[command(name = "recovery-binding")]
+    RecoveryBinding {
+        #[command(subcommand)]
+        action: recovery_binding::RecoveryBindingCommand,
     },
 }
 
@@ -240,5 +247,9 @@ pub async fn run(cli: Cli) -> eyre::Result<()> {
         Command::Credential { action } => credential::run(&cli, action).await,
         Command::Proof { action } => proof::run(&cli, action).await,
         Command::RecoveryAgent { action } => recovery_agent::run(&cli, action).await,
+        Command::RecoveryBinding { action } => {
+            let environment = resolve_environment(&cli)?;
+            recovery_binding::run(&cli, action, &environment).await
+        }
     }
 }

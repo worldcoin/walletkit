@@ -6819,9 +6819,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-authenticator"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67f3ecb9c5e1c9246df040d0ccc86bc7771f9fdbdf89775d03cdb6d0c5aef383"
+checksum = "26c38b4f4ccbfee4b7585b15b0843255a6f0db9045bcafbd9cf96835f27df012"
 dependencies = [
  "alloy",
  "anyhow",
@@ -6849,9 +6849,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-core"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a986e70e5521902b8e2f2a15525b586861f81517855f995b76e2a451ec7b8d4c"
+checksum = "a8974ca9cb27313d5164d5b9c40cceb5abb95d3a1a5436c76a4bb9218514e582"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -6861,9 +6861,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-primitives"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27156f6c0ccbc694f35c776324a2c844aef71b6221d27045dbe174a08e41cbac"
+checksum = "c95e6f02b30c93e30674c3b19aed3228afe866df8a9ca750f6284a4c2e7b480a"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -6898,9 +6898,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-proof"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c6dbf53c5e46597b6ea1b85c38e32578964023ce99a1f0a5e24defff683546f4"
+checksum = "49cd28f6adadba3043f10c7c286330ad23d66da1f9e9b2646e5d5c866aea50b3"
 dependencies = [
  "ark-bn254",
  "ark-ec",
