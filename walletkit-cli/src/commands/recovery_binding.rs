@@ -32,7 +32,7 @@ pub async fn run(
             let recovery_binding_manager =
                 RecoveryBindingManager::new(environment).unwrap();
             recovery_binding_manager
-                .bind_recovery_agent(&authenticator, leaf_index.clone(), sub.clone())
+                .bind_recovery_agent(&authenticator, *leaf_index, sub.clone())
                 .await?;
         }
         RecoveryBindingCommand::UnregisterBindings { leaf_index, sub } => {
