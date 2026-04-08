@@ -131,7 +131,7 @@ impl RecoveryBindingManager {
             leaf_index,
             signature: format!("0x{}", hex::encode(sig_recovery_update.signature)),
             nonce: sig_recovery_update.nonce.to_string(),
-            recovery_agent: recovery_agent.clone(),
+            recovery_agent,
         };
         let challenge = self.pop_backend_client.get_challenge().await?;
         let security_token = Self::generate_recovery_agent_security_token(
