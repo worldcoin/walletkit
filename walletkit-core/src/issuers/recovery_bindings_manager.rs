@@ -18,9 +18,9 @@ use crate::issuers::pop_backend_client::ManageRecoveryBindingRequest;
 use crate::issuers::PopBackendClient;
 use crate::Environment;
 use alloy_primitives::keccak256;
+use alloy_primitives::Address;
 use std::string::String;
 
-const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 /// Client for registering and unregistering recovery agents with the `PoP` backend.
 ///
 /// Each instance is bound to a specific [`Environment`] (staging or production),
@@ -122,7 +122,7 @@ impl RecoveryBindingManager {
         leaf_index: u64,
         sub: String,
     ) -> Result<(), WalletKitError> {
-        let recovery_agent = ZERO_ADDRESS.to_string();
+        let recovery_agent = Address::ZERO.to_string();
         let sig_recovery_update = authenticator
             .danger_sign_initiate_recovery_agent_update(recovery_agent.clone())
             .await?;
