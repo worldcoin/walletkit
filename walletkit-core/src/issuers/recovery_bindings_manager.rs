@@ -66,7 +66,6 @@ impl RecoveryBindingManager {
     /// # Arguments
     ///
     /// * `authenticator` — The authenticator whose signing key authorizes the request.
-    /// * `leaf_index` — The authenticator's leaf index in the World ID Merkle tree.
     /// * `sub` — Hex-encoded subject identifier of the recovery agent to register.
     /// * `recovery_agent_address` — The checksummed hex address of the new recovery agent (e.g. `"0x1234…"`).
     ///
@@ -77,11 +76,11 @@ impl RecoveryBindingManager {
     pub async fn bind_recovery_agent(
         &self,
         authenticator: &Authenticator,
-        leaf_index: u64,
         sub: String,
         recovery_agent_address: String,
     ) -> Result<(), WalletKitError> {
         let challenge = self.pop_backend_client.get_challenge().await?;
+        let leaf_index = authenticator.leaf_index();
         let sig_recovery_update = authenticator
             .danger_sign_initiate_recovery_agent_update(recovery_agent_address.clone())
             .await?;
@@ -109,7 +108,6 @@ impl RecoveryBindingManager {
     /// # Arguments
     ///
     /// * `authenticator` — The authenticator whose signing key authorizes the request.
-    /// * `leaf_index` — The authenticator's leaf index in the World ID Merkle tree.
     /// * `sub` — Hex-encoded subject identifier of the recovery agent to remove.
     ///
     /// # Errors
@@ -119,9 +117,9 @@ impl RecoveryBindingManager {
     pub async fn unbind_recovery_agent(
         &self,
         authenticator: &Authenticator,
-        leaf_index: u64,
         sub: String,
     ) -> Result<(), WalletKitError> {
+        let leaf_index = authenticator.leaf_index();
         let recovery_agent = Address::ZERO.to_string();
         let sig_recovery_update = authenticator
             .danger_sign_initiate_recovery_agent_update(recovery_agent.clone())
@@ -229,7 +227,6 @@ mod tests {
     #[tokio::test]
     async fn test_recovery_agent_token_generator_success() {
         let mut pop_api_server = mockito::Server::new_async().await;
-        let leaf_index = 42;
         let sub = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
             .to_string();
 
@@ -248,7 +245,14 @@ mod tests {
         // Mock the recovery binding registration endpoint
         let url_path = "/api/v1/recovery-binding".to_string();
         let recovery_agent = "0x1000000000000000000000000000000000000000".to_string();
-
+        let private_key =
+            "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
+        let private_key_bytes = hex::decode(private_key).unwrap();
+        let (mock_eth_server, eth_mock) = create_mock_eth_server().await;
+        let rpc_url = mock_eth_server.url();
+        let authenticator =
+            create_test_authenticator(&private_key_bytes, rpc_url).await;
+        let leaf_index = authenticator.leaf_index();
         let mock = pop_api_server
             .mock("POST", url_path.as_str())
             .match_header(
@@ -271,21 +275,8 @@ mod tests {
             RecoveryBindingManager::new_with_base_url(pop_api_server.url().as_str())
                 .unwrap();
 
-        let private_key =
-            "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
-        let private_key_bytes = hex::decode(private_key).unwrap();
-        let (mock_eth_server, eth_mock) = create_mock_eth_server().await;
-        let rpc_url = mock_eth_server.url();
-        let authenticator =
-            create_test_authenticator(&private_key_bytes, rpc_url).await;
-
         let result = recovery_binding_manager
-            .bind_recovery_agent(
-                &authenticator,
-                leaf_index,
-                sub.clone(),
-                recovery_agent.clone(),
-            )
+            .bind_recovery_agent(&authenticator, sub.clone(), recovery_agent.clone())
             .await;
         assert!(
             result.is_ok(),
@@ -301,7 +292,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_recovery_bindings_signature() {
-        let leaf_index = 42;
         let sub = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
             .to_string();
         let challenge =
@@ -310,7 +300,11 @@ mod tests {
         let private_key =
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
         let private_key_bytes = hex::decode(private_key).unwrap();
-
+        let (mock_eth_server, eth_mock) = create_mock_eth_server().await;
+        let rpc_url = mock_eth_server.url();
+        let authenticator =
+            create_test_authenticator(&private_key_bytes, rpc_url).await;
+        let leaf_index = authenticator.leaf_index();
         let message_bytes =
             RecoveryBindingManager::create_bytes_to_sign(&challenge, leaf_index, &sub)
                 .unwrap();
@@ -326,11 +320,6 @@ mod tests {
             nonce: nonce.clone(),
             recovery_agent: recovery_agent.clone(),
         };
-        let (mock_eth_server, eth_mock) = create_mock_eth_server().await;
-        let rpc_url = mock_eth_server.url();
-
-        let authenticator =
-            create_test_authenticator(&private_key_bytes, rpc_url).await;
         let security_token =
             RecoveryBindingManager::generate_recovery_agent_security_token(
                 &authenticator,
@@ -338,6 +327,7 @@ mod tests {
                 &challenge,
             )
             .unwrap();
+
         assert!(
             !security_token.is_empty(),
             "Expected success, but got error: {security_token:?}"
@@ -386,7 +376,7 @@ mod tests {
                 serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": 1,
-                    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+                    "result": "0x000000000000000000000000000000000000000000000000000000000000002a"
                 })
                 .to_string(),
             )
