@@ -54,9 +54,15 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    pub fn new_with_base_url(base_url: &str, recovery_agent_address: &str) -> Result<Self, WalletKitError> {
+    pub fn new_with_base_url(
+        base_url: &str,
+        recovery_agent_address: &str,
+    ) -> Result<Self, WalletKitError> {
         let pop_backend_client = PopBackendClient::new(base_url.to_string());
-        Ok(Self { pop_backend_client, recovery_agent_address: recovery_agent_address.to_string() })
+        Ok(Self {
+            pop_backend_client,
+            recovery_agent_address: recovery_agent_address.to_string(),
+        })
     }
 }
 
@@ -83,7 +89,9 @@ impl RecoveryBindingManager {
     ) -> Result<(), WalletKitError> {
         let challenge = self.pop_backend_client.get_challenge().await?;
         let sig_recovery_update = authenticator
-            .danger_sign_initiate_recovery_agent_update(self.recovery_agent_address.clone())
+            .danger_sign_initiate_recovery_agent_update(
+                self.recovery_agent_address.clone(),
+            )
             .await?;
         let request = ManageRecoveryBindingRequest {
             sub,
@@ -267,9 +275,11 @@ mod tests {
             .create_async()
             .await;
 
-        let recovery_binding_manager =
-            RecoveryBindingManager::new_with_base_url(pop_api_server.url().as_str(), recovery_agent.as_str())
-                .unwrap();
+        let recovery_binding_manager = RecoveryBindingManager::new_with_base_url(
+            pop_api_server.url().as_str(),
+            recovery_agent.as_str(),
+        )
+        .unwrap();
 
         let private_key =
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
@@ -280,11 +290,7 @@ mod tests {
             create_test_authenticator(&private_key_bytes, rpc_url).await;
 
         let result = recovery_binding_manager
-            .bind_recovery_agent(
-                &authenticator,
-                leaf_index,
-                sub.clone(),
-            )
+            .bind_recovery_agent(&authenticator, leaf_index, sub.clone())
             .await;
         assert!(
             result.is_ok(),
