@@ -27,7 +27,6 @@ const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 #[derive(uniffi::Object)]
 pub struct RecoveryBindingManager {
     pop_backend_client: PopBackendClient,
-    recovery_agent_address: String,
 }
 
 #[uniffi::export]
@@ -44,8 +43,7 @@ impl RecoveryBindingManager {
             Environment::Production => "https://app.orb.worldcoin.org",
         }
         .to_string();
-        let recovery_agent_address = environment.poh_recovery_agent_address();
-        Self::new_with_base_url(base_url.as_str(), recovery_agent_address.as_str())
+        Self::new_with_base_url(base_url.as_str())
     }
 
     /// Creates a new `RecoveryBindingManager` for the specified base URL and user agent.
@@ -54,15 +52,9 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    pub fn new_with_base_url(
-        base_url: &str,
-        recovery_agent_address: &str,
-    ) -> Result<Self, WalletKitError> {
+    pub fn new_with_base_url(base_url: &str) -> Result<Self, WalletKitError> {
         let pop_backend_client = PopBackendClient::new(base_url.to_string());
-        Ok(Self {
-            pop_backend_client,
-            recovery_agent_address: recovery_agent_address.to_string(),
-        })
+        Ok(Self { pop_backend_client })
     }
 }
 
@@ -86,19 +78,18 @@ impl RecoveryBindingManager {
         authenticator: &Authenticator,
         leaf_index: u64,
         sub: String,
+        recovery_agent_address: String,
     ) -> Result<(), WalletKitError> {
         let challenge = self.pop_backend_client.get_challenge().await?;
         let sig_recovery_update = authenticator
-            .danger_sign_initiate_recovery_agent_update(
-                self.recovery_agent_address.clone(),
-            )
+            .danger_sign_initiate_recovery_agent_update(recovery_agent_address.clone())
             .await?;
         let request = ManageRecoveryBindingRequest {
             sub,
             leaf_index,
             signature: format!("0x{}", hex::encode(sig_recovery_update.signature)),
             nonce: sig_recovery_update.nonce.to_string(),
-            recovery_agent: self.recovery_agent_address.clone(),
+            recovery_agent: recovery_agent_address.clone(),
         };
         let security_token = Self::generate_recovery_agent_security_token(
             authenticator,
@@ -275,11 +266,9 @@ mod tests {
             .create_async()
             .await;
 
-        let recovery_binding_manager = RecoveryBindingManager::new_with_base_url(
-            pop_api_server.url().as_str(),
-            recovery_agent.as_str(),
-        )
-        .unwrap();
+        let recovery_binding_manager =
+            RecoveryBindingManager::new_with_base_url(pop_api_server.url().as_str())
+                .unwrap();
 
         let private_key =
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
@@ -290,7 +279,12 @@ mod tests {
             create_test_authenticator(&private_key_bytes, rpc_url).await;
 
         let result = recovery_binding_manager
-            .bind_recovery_agent(&authenticator, leaf_index, sub.clone())
+            .bind_recovery_agent(
+                &authenticator,
+                leaf_index,
+                sub.clone(),
+                recovery_agent.clone(),
+            )
             .await;
         assert!(
             result.is_ok(),
