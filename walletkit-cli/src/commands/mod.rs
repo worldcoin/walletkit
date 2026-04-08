@@ -248,7 +248,8 @@ pub async fn run(cli: Cli) -> eyre::Result<()> {
         Command::Proof { action } => proof::run(&cli, action).await,
         Command::RecoveryAgent { action } => recovery_agent::run(&cli, action).await,
         Command::RecoveryBinding { action } => {
-            recovery_binding::run(&cli, action).await
+            let environment = resolve_environment(&cli)?;
+            recovery_binding::run(&cli, action, &environment).await
         }
     }
 }
