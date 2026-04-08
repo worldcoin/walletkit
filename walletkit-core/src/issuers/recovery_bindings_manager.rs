@@ -67,7 +67,7 @@ impl RecoveryBindingManager {
     /// * `authenticator` — The authenticator whose signing key authorizes the request.
     /// * `leaf_index` — The authenticator's leaf index in the World ID Merkle tree.
     /// * `sub` — Hex-encoded subject identifier of the recovery agent to register.
-    /// * `new_recovery_agent` — The checksummed hex address of the new recovery agent (e.g. `"0x1234…"`).
+    /// * `recovery_agent_address` — The checksummed hex address of the new recovery agent (e.g. `"0x1234…"`).
     ///
     /// # Errors
     ///
