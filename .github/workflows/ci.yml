@@ -24,7 +24,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - uses: worldcoin/bedrock/.github/actions/version-alignment@main
+      - uses: worldcoin/bedrock/.github/actions/version-alignment@1453568cd2cd287076629b92fd57b3d428551e60
         with:
           uniffi_version: ${{ vars.UNIFFI_VERSION }}
           rust_toolchain_channel: ${{ vars.RUST_TOOLCHAIN_CHANNEL }}
