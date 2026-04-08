@@ -19,6 +19,7 @@ use crate::issuers::PopBackendClient;
 use crate::Environment;
 use alloy_primitives::keccak256;
 use std::string::String;
+
 const ZERO_ADDRESS: &str = "0x0000000000000000000000000000000000000000";
 /// Client for registering and unregistering recovery agents with the `PoP` backend.
 ///
