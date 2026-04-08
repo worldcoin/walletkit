@@ -11,7 +11,6 @@ pub enum RecoveryBindingCommand {
     /// Register bindings for a recovery agent.
     RegisterBindings {
         leaf_index: u64,
-        /// Checksummed hex address of the recovery agent (e.g. "0x1234…").
         sub: String,
     },
     UnregisterBindings {
