@@ -25,7 +25,7 @@ use std::string::String;
 #[derive(Debug, PartialEq, Eq, uniffi::Record)]
 pub struct RecoveryBinding {
     /// The hex address of the recovery agent (e.g. `"0x1234…"`).
-    pub recovery_agent: String,
+    pub recovery_agent: Option<String>,
     /// The hex address of the pending recovery agent (e.g. `"0x1234…"`).
     pub pending_recovery_agent: Option<String>,
     /// The timestamp of the recovery agent update in seconds since the Unix epoch.

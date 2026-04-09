@@ -30,7 +30,7 @@ struct ChallengeResponse {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct RecoveryBindingResponse {
     #[serde(rename = "recoveryAgent")]
-    pub recovery_agent: String,
+    pub recovery_agent: Option<String>,
     #[serde(rename = "pendingRecoveryAgent")]
     pub pending_recovery_agent: Option<String>,
     #[serde(rename = "executeAfter")]
@@ -428,7 +428,10 @@ mod tests {
         let result = pop_api_client.get_recovery_binding(42).await;
         assert!(result.is_ok(), "Expected success but got error: {result:?}");
         mock.assert_async().await;
-        assert_eq!(result.unwrap().recovery_agent, "0x1234567890abcdef");
+        assert_eq!(
+            result.unwrap().recovery_agent,
+            Some("0x1234567890abcdef".to_string())
+        );
         drop(server);
     }
 
@@ -477,7 +480,10 @@ mod tests {
         let recovery_binding = result.unwrap();
         assert_eq!(recovery_binding.pending_recovery_agent, None);
         assert_eq!(recovery_binding.execute_after, None);
-        assert_eq!(recovery_binding.recovery_agent, "0x1234567890abcdef");
+        assert_eq!(
+            recovery_binding.recovery_agent,
+            Some("0x1234567890abcdef".to_string())
+        );
         drop(server);
     }
 
@@ -506,7 +512,7 @@ mod tests {
         assert_eq!(recovery_binding.execute_after, Some("0x01".to_string()));
         assert_eq!(
             recovery_binding.recovery_agent,
-            "0x0000000000000000000000000000000000000001".to_string()
+            Some("0x0000000000000000000000000000000000000001".to_string())
         );
         drop(server);
     }
