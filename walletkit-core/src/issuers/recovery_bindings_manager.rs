@@ -15,11 +15,32 @@
 use crate::authenticator::Authenticator;
 use crate::error::WalletKitError;
 use crate::issuers::pop_backend_client::ManageRecoveryBindingRequest;
+use crate::issuers::pop_backend_client::RecoveryBindingResponse;
 use crate::issuers::PopBackendClient;
 use crate::Environment;
 use alloy_primitives::keccak256;
 use alloy_primitives::Address;
 use std::string::String;
+/// Represents a recovery binding.
+#[derive(Debug, PartialEq, Eq, uniffi::Record)]
+pub struct RecoveryBinding {
+    /// The hex address of the recovery agent (e.g. `"0x1234…"`).
+    pub recovery_agent: String,
+    /// The hex address of the pending recovery agent (e.g. `"0x1234…"`).
+    pub pending_recovery_agent: Option<String>,
+    /// The timestamp of the recovery agent update in seconds since the Unix epoch.
+    pub execute_after: Option<String>,
+}
+
+impl From<RecoveryBindingResponse> for RecoveryBinding {
+    fn from(response: RecoveryBindingResponse) -> Self {
+        Self {
+            recovery_agent: response.recovery_agent,
+            pending_recovery_agent: response.pending_recovery_agent,
+            execute_after: response.execute_after,
+        }
+    }
+}
 
 /// Client for registering and unregistering recovery agents with the `PoP` backend.
 ///
@@ -156,12 +177,12 @@ impl RecoveryBindingManager {
     pub async fn get_recovery_binding(
         &self,
         leaf_index: u64,
-    ) -> Result<String, WalletKitError> {
+    ) -> Result<RecoveryBinding, WalletKitError> {
         let recovery_binding = self
             .pop_backend_client
             .get_recovery_binding(leaf_index)
             .await?;
-        Ok(recovery_binding.recovery_agent)
+        Ok(recovery_binding.into())
     }
 }
 
