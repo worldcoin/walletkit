@@ -3,6 +3,7 @@
 use clap::Subcommand;
 
 use super::{init_authenticator, Cli};
+use crate::output;
 use walletkit_core::issuers::RecoveryBindingManager;
 use walletkit_core::Environment;
 
@@ -15,6 +16,7 @@ pub enum RecoveryBindingCommand {
     UnregisterBindings {
         sub: String,
     },
+    GetBinding,
 }
 
 pub async fn run(
@@ -43,6 +45,25 @@ pub async fn run(
             recovery_binding_manager
                 .unbind_recovery_agent(&authenticator, sub.clone())
                 .await?;
+        }
+        RecoveryBindingCommand::GetBinding => {
+            let recovery_binding_manager =
+                RecoveryBindingManager::new(environment).unwrap();
+            let recovery_binding = recovery_binding_manager
+                .get_recovery_binding(authenticator.leaf_index())
+                .await?;
+            if cli.json {
+                output::print_json_data(
+                    &serde_json::json!({
+                        "recovery_agent": recovery_binding.recovery_agent,
+                        "pending_recovery_agent": recovery_binding.pending_recovery_agent,
+                        "execute_after": recovery_binding.execute_after,
+                    }),
+                    true,
+                );
+            } else {
+                println!("Recovery binding: {recovery_binding:?}");
+            }
         }
     }
     Ok(())
