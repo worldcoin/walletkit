@@ -52,6 +52,13 @@ pub enum WalletKitError {
         error: String,
     },
 
+    /// The RP signature provided in the proof request does not match the expected signer.
+    ///
+    /// This typically indicates the proof request was signed by a different key than
+    /// the one registered for the RP.
+    #[error("invalid_rp_signature")]
+    InvalidRpSignature,
+
     /// The `semaphore` feature flag is not enabled
     #[error("semaphore_not_enabled")]
     SemaphoreNotEnabled,
@@ -212,9 +219,14 @@ impl From<AuthenticatorError> for WalletKitError {
             },
             AuthenticatorError::PrimitiveError(error) => Self::from(error),
 
-            AuthenticatorError::ProofError(error) => Self::ProofGeneration {
-                error: error.to_string(),
-            },
+            AuthenticatorError::ProofError(error) => {
+                let msg = error.to_string();
+                if msg.contains("the rp signer is not the same as in the signature") {
+                    Self::InvalidRpSignature
+                } else {
+                    Self::ProofGeneration { error: msg }
+                }
+            }
 
             _ => Self::AuthenticatorError {
                 error: error.to_string(),
