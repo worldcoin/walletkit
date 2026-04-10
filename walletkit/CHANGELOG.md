@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0](https://github.com/worldcoin/walletkit/compare/v0.12.0...v0.13.0) - 2026-04-09
+
+### Added
+
+- session proofs support ([#347](https://github.com/worldcoin/walletkit/pull/347))
+- improve intermediate key handling ([#328](https://github.com/worldcoin/walletkit/pull/328))
+
+### Other
+
+- update Cargo.toml dependencies
+- Adjust get recovery agent method to return pending update ([#350](https://github.com/worldcoin/walletkit/pull/350))
+- Register recovery agent from the signup service ([#349](https://github.com/worldcoin/walletkit/pull/349))
+- Add function to check recovery bindings status ([#332](https://github.com/worldcoin/walletkit/pull/332))
+
 ## [0.12.0](https://github.com/worldcoin/walletkit/compare/v0.11.3...v0.12.0) - 2026-04-02
 
 ### Added
