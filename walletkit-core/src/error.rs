@@ -216,6 +216,17 @@ impl From<AuthenticatorError> for WalletKitError {
                 error: error.to_string(),
             },
 
+            AuthenticatorError::IndexerError { status, body } => Self::NetworkError {
+                url: "indexer".to_string(),
+                error: body,
+                status: Some(status.as_u16()),
+            },
+            AuthenticatorError::UnfullfilableRequest => Self::UnfulfillableRequest,
+            AuthenticatorError::ResponseValidationError(err) => {
+                Self::ResponseValidation(err.to_string())
+            }
+            AuthenticatorError::SessionIdMismatch => Self::SessionIdMismatch,
+
             _ => Self::AuthenticatorError {
                 error: error.to_string(),
             },
