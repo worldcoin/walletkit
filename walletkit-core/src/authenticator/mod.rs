@@ -17,10 +17,7 @@ use world_id_core::{
 };
 
 #[cfg(feature = "storage")]
-use world_id_core::{
-    requests::{ProofResponse as CoreProofResponse, ResponseItem},
-    FieldElement as CoreFieldElement,
-};
+use world_id_core::CredentialInput;
 
 #[cfg(feature = "storage")]
 use crate::storage::{CredentialStore, StoragePaths};
@@ -99,25 +96,23 @@ fn load_query_material_from_cache(
 }
 
 #[cfg(feature = "storage")]
-#[expect(
-    clippy::unnecessary_wraps,
-    reason = "Temporary wrapper until world-id-core returns Result for nullifier path loader"
-)]
 /// Loads cached nullifier material from zkey/graph paths.
 ///
 /// # Errors
-/// This currently mirrors a panicking upstream API and does not return an error path yet.
-/// It is intentionally wrapped in `Result` for forward compatibility with upstream.
+/// Returns an error if the cached nullifier material cannot be loaded or verified.
 fn load_nullifier_material_from_cache(
     nullifier_zkey: &std::path::Path,
     nullifier_graph: &std::path::Path,
 ) -> Result<world_id_core::proof::CircomGroth16Material, WalletKitError> {
-    // TODO: Switch to error mapping once world-id-core exposes
-    // `load_nullifier_material_from_paths` as `Result` instead of panicking.
-    Ok(world_id_core::proof::load_nullifier_material_from_paths(
-        nullifier_zkey,
-        nullifier_graph,
-    ))
+    world_id_core::proof::load_nullifier_material_from_paths(nullifier_zkey, nullifier_graph)
+        .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
+            path: format!(
+                "{} and {}",
+                nullifier_zkey.to_string_lossy(),
+                nullifier_graph.to_string_lossy()
+            ),
+            error: error.to_string(),
+        })
 }
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
@@ -168,14 +163,7 @@ impl Authenticator {
     pub async fn get_packed_account_data_remote(
         &self,
     ) -> Result<Uint256, WalletKitError> {
-        let client = reqwest::Client::new(); // TODO: reuse client
-        let packed_account_data = CoreAuthenticator::get_packed_account_data(
-            self.inner.onchain_address(),
-            self.inner.registry().as_deref(),
-            &self.inner.config,
-            &client,
-        )
-        .await?;
+        let packed_account_data = self.inner.refresh_packed_account_data().await?;
         Ok(packed_account_data.into())
     }
 
@@ -406,7 +394,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let authenticator = CoreAuthenticator::init(seed, config.into()).await?;
         let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
             authenticator.with_proof_materials(query_material, nullifier_material);
@@ -436,7 +424,7 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        let authenticator = CoreAuthenticator::init(seed, config).await?;
+        let authenticator = CoreAuthenticator::init(seed, config.into()).await?;
         let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
             authenticator.with_proof_materials(query_material, nullifier_material);
@@ -467,24 +455,27 @@ impl Authenticator {
                 .as_secs()
         };
 
-        // TODO: If request is to initiate a session, call `self.inner.generate_session_id` and cache seed
-
-        // First check if the request can be fulfilled and which credentials should be used
+        // Build CredentialInput list from storage
         let credential_list = self.store.list_credentials(None, now)?;
-        let credential_list = credential_list
-            .into_iter()
+        let credentials: Vec<CredentialInput> = credential_list
+            .iter()
             .filter(|cred| !cred.is_expired)
-            .map(|cred| cred.issuer_schema_id)
-            .collect::<std::collections::HashSet<_>>();
-        let credentials_to_prove = proof_request
-            .0
-            .credentials_to_prove(&credential_list)
-            .ok_or(WalletKitError::UnfulfillableRequest)?;
+            .filter_map(|cred| {
+                self.store
+                    .get_credential(cred.issuer_schema_id, now)
+                    .ok()
+                    .flatten()
+                    .map(|(credential, blinding_factor)| CredentialInput {
+                        credential: credential.into(),
+                        blinding_factor: blinding_factor.into(),
+                    })
+            })
+            .collect();
 
         let account_inclusion_proof =
             self.fetch_inclusion_proof_with_cache(now).await?;
 
-        // Next, generate the nullifier and check the replay guard
+        // Generate the nullifier and check the replay guard
         let nullifier = self
             .inner
             .generate_nullifier(&proof_request.0, Some(account_inclusion_proof.clone()))
@@ -497,78 +488,46 @@ impl Authenticator {
             return Err(WalletKitError::NullifierReplay);
         }
 
-        // If the request is for a Session Proof, get the correct `session_id_r_seed`, either
-        // from the cache or compute it again
-        let session_id_r_seed = if let Some(session_id) = proof_request.0.session_id {
-            let cached_r_seed =
-                self.store.get_session_seed(session_id.oprf_seed, now)?;
+        // Get cached session seed if available
+        let session_id_r_seed = proof_request
+            .0
+            .session_id
+            .and_then(|sid| {
+                self.store
+                    .get_session_seed(sid.oprf_seed, now)
+                    .ok()
+                    .flatten()
+            });
 
-            if cached_r_seed.is_some() {
-                cached_r_seed
-            } else {
-                let (expected_session_id, seed) = self
-                    .inner
-                    .generate_session_id(
-                        &proof_request.0,
-                        None,
-                        Some(account_inclusion_proof),
-                    )
-                    .await?;
+        // Delegate to upstream — handles credential selection, session resolution,
+        // per-credential proofs, response assembly, and validation
+        let result = self
+            .inner
+            .generate_proof(
+                &proof_request.0,
+                nullifier.clone(),
+                &credentials,
+                Some(account_inclusion_proof),
+                session_id_r_seed.map(Into::into),
+            )
+            .await?;
 
-                if expected_session_id != session_id {
-                    return Err(WalletKitError::SessionIdMismatch);
-                }
-
+        // Cache session seed if returned
+        if let Some(seed) = result.session_id_r_seed {
+            if let Some(session_id) = proof_request.0.session_id {
                 if let Err(err) =
                     self.store
-                        .store_session_seed(session_id.oprf_seed, seed, now)
+                        .store_session_seed(session_id.oprf_seed, seed.into(), now)
                 {
                     tracing::error!("error caching session_id_r_seed: {}", err);
                 }
-
-                Some(seed)
             }
-        } else {
-            None
-        };
-
-        let mut responses: Vec<ResponseItem> = vec![];
-
-        for request_item in credentials_to_prove {
-            let (credential, blinding_factor) = self
-                .store
-                .get_credential(request_item.issuer_schema_id, now)?
-                .ok_or(WalletKitError::CredentialNotIssued)?;
-
-            let response_item = self.inner.generate_single_proof(
-                nullifier.clone(),
-                request_item,
-                &credential,
-                blinding_factor.0,
-                session_id_r_seed.unwrap_or(CoreFieldElement::ZERO), // TODO: upstream update coming accepting Option
-                proof_request.0.session_id,
-                proof_request.0.created_at,
-            )?;
-            responses.push(response_item);
         }
-
-        let response = CoreProofResponse {
-            id: proof_request.0.id.clone(),
-            version: world_id_core::requests::RequestVersion::V1,
-            responses,
-            error: None,
-            session_id: proof_request.0.session_id,
-        };
-
-        proof_request
-            .0
-            .validate_response(&response)
-            .map_err(|err| WalletKitError::ResponseValidation(err.to_string()))?;
 
         self.store
             .replay_guard_set(nullifier.verifiable_oprf_output.output.into(), now)?;
 
-        Ok(response.into())
+        Ok(result.proof_response.into())
     }
 }
 
@@ -642,7 +601,7 @@ impl InitializingAuthenticator {
         let config = Config::from_environment(environment, rpc_url, region)?;
 
         let initializing_authenticator =
-            CoreAuthenticator::register(seed, config, recovery_address).await?;
+            CoreAuthenticator::register(seed, config.into(), recovery_address).await?;
 
         Ok(Self(initializing_authenticator))
     }
@@ -675,7 +634,7 @@ impl InitializingAuthenticator {
             })?;
 
         let initializing_authenticator =
-            CoreAuthenticator::register(seed, config, recovery_address).await?;
+            CoreAuthenticator::register(seed, config.into(), recovery_address).await?;
 
         Ok(Self(initializing_authenticator))
     }

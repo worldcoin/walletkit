@@ -35,7 +35,7 @@ alloy-core = { version = "1", default-features = false, features = [
 ] }
 alloy-primitives = { version = "1", default-features = false }
 uniffi = { version = "0.31.0", features = ["tokio"] }
-world-id-core = { version = "0.8.2", default-features = false }
+world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", branch = "main", default-features = false }
 
 # internal
 walletkit-core = { version = "0.13.0", path = "walletkit-core", default-features = false }
