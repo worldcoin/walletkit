@@ -74,9 +74,24 @@ fn ohttp_relay_url(region: Region, environment: &Environment) -> String {
     format!("https://privacy-relay.cloudflare.com/{path}")
 }
 
-// TODO: replace with real base64-encoded HPKE key configs
-const OHTTP_KEY_CONFIG_STAGING: &str = "TODO";
-const OHTTP_KEY_CONFIG_PRODUCTION: &str = "TODO";
+// TODO: replace with real base64-encoded HPKE key configs fetched from /ohttp-keys endpoints
+const OHTTP_KEY_CONFIG_STAGING_US: &str = "TODO";
+const OHTTP_KEY_CONFIG_STAGING_EU: &str = "TODO";
+const OHTTP_KEY_CONFIG_STAGING_AP: &str = "TODO";
+const OHTTP_KEY_CONFIG_PRODUCTION_US: &str = "TODO";
+const OHTTP_KEY_CONFIG_PRODUCTION_EU: &str = "TODO";
+const OHTTP_KEY_CONFIG_PRODUCTION_AP: &str = "TODO";
+
+fn ohttp_key_config(region: Region, environment: &Environment) -> &'static str {
+    match (environment, region) {
+        (Environment::Staging, Region::Us) => OHTTP_KEY_CONFIG_STAGING_US,
+        (Environment::Staging, Region::Eu) => OHTTP_KEY_CONFIG_STAGING_EU,
+        (Environment::Staging, Region::Ap) => OHTTP_KEY_CONFIG_STAGING_AP,
+        (Environment::Production, Region::Us) => OHTTP_KEY_CONFIG_PRODUCTION_US,
+        (Environment::Production, Region::Eu) => OHTTP_KEY_CONFIG_PRODUCTION_EU,
+        (Environment::Production, Region::Ap) => OHTTP_KEY_CONFIG_PRODUCTION_AP,
+    }
+}
 
 impl DefaultConfig for AuthenticatorConfig {
     fn from_environment(
@@ -87,10 +102,7 @@ impl DefaultConfig for AuthenticatorConfig {
         let region = region.unwrap_or_default();
         let config = Config::from_environment(environment, rpc_url, Some(region))?;
 
-        let key_config_base64 = match environment {
-            Environment::Staging => OHTTP_KEY_CONFIG_STAGING,
-            Environment::Production => OHTTP_KEY_CONFIG_PRODUCTION,
-        };
+        let key_config_base64 = ohttp_key_config(region, environment);
         let relay_url = ohttp_relay_url(region, environment);
         let ohttp = Some(OhttpClientConfig::new(
             relay_url,
