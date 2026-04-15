@@ -88,6 +88,12 @@ impl PopBackendClient {
             reqwest::StatusCode::CONFLICT => {
                 Err(WalletKitError::RecoveryBindingAlreadyExists)
             }
+            reqwest::StatusCode::NOT_FOUND => {
+                Err(WalletKitError::DebugReportNotFound)
+            }
+            reqwest::StatusCode::PRECONDITION_FAILED => {
+                Err(WalletKitError::NotEligableForRecovery)
+            }
             _ => {
                 let error_message = response
                     .text()

@@ -140,6 +140,14 @@ pub enum WalletKitError {
         /// The error code from the NFC service (e.g. `document_expired`)
         error_code: String,
     },
+
+    /// The debug report was not found
+    #[error("debug_report_not_found")]
+    DebugReportNotFound,
+
+    /// The user is not eligable for recovery
+    #[error("not_eligable_for_recovery")]
+    NotEligableForRecovery,
 }
 
 impl From<reqwest::Error> for WalletKitError {
