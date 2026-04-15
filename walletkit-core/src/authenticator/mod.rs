@@ -491,10 +491,10 @@ impl Authenticator {
 
         // Generate the nullifier and check the replay guard
         // Box::pin to heap-allocate the large upstream futures and keep this future below clippy::large_futures threshold
-        let nullifier = Box::pin(
-            self.inner
-                .generate_nullifier(&proof_request.0, Some(account_inclusion_proof.clone())),
-        )
+        let nullifier = Box::pin(self.inner.generate_nullifier(
+            &proof_request.0,
+            Some(account_inclusion_proof.clone()),
+        ))
         .await?;
 
         if self
@@ -532,11 +532,10 @@ impl Authenticator {
         // Cache session seed if returned
         if let Some(seed) = result.session_id_r_seed {
             if let Some(session_id) = proof_request.0.session_id {
-                if let Err(err) = self.store.store_session_seed(
-                    session_id.oprf_seed,
-                    seed,
-                    now,
-                ) {
+                if let Err(err) =
+                    self.store
+                        .store_session_seed(session_id.oprf_seed, seed, now)
+                {
                     tracing::error!("error caching session_id_r_seed: {}", err);
                 }
             }
