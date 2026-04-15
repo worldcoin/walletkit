@@ -468,19 +468,20 @@ impl Authenticator {
             .iter()
             .filter(|c| !c.is_expired)
             .filter_map(|cred| {
-                match self.store.get_credential(cred.issuer_schema_id, now) {
-                    Ok(Some((credential, blinding_factor))) => Some(CredentialInput {
+                if let Ok(Some((credential, blinding_factor))) =
+                    self.store.get_credential(cred.issuer_schema_id, now)
+                {
+                    Some(CredentialInput {
                         credential: credential.into(),
                         blinding_factor: blinding_factor.into(),
-                    }),
-                    Ok(None) | Err(_) => {
-                        tracing::warn!(
-                            issuer_schema_id = %cred.issuer_schema_id,
-                            credential_id = %cred.credential_id,
-                            "credential listed but not loadable, skipping"
-                        );
-                        None
-                    }
+                    })
+                } else {
+                    tracing::warn!(
+                        issuer_schema_id = %cred.issuer_schema_id,
+                        credential_id = %cred.credential_id,
+                        "credential listed but not loadable, skipping"
+                    );
+                    None
                 }
             })
             .collect();
@@ -489,10 +490,12 @@ impl Authenticator {
             self.fetch_inclusion_proof_with_cache(now).await?;
 
         // Generate the nullifier and check the replay guard
-        let nullifier = self
-            .inner
-            .generate_nullifier(&proof_request.0, Some(account_inclusion_proof.clone()))
-            .await?;
+        // Box::pin to heap-allocate the large upstream futures and keep this future below clippy::large_futures threshold
+        let nullifier = Box::pin(
+            self.inner
+                .generate_nullifier(&proof_request.0, Some(account_inclusion_proof.clone())),
+        )
+        .await?;
 
         if self
             .store
@@ -502,36 +505,36 @@ impl Authenticator {
         }
 
         // Get cached `session_id_r_seed` if session ID is provided in the proof request
-        let session_id_r_seed = if let Some(session_id) = proof_request.0.session_id {
-            match self.store.get_session_seed(session_id.oprf_seed, now) {
-                Ok(seed) => seed,
-                Err(err) => {
-                    tracing::warn!(error = %err, "failed to load cached session seed, continuing without");
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let session_id_r_seed =
+            proof_request
+                .0
+                .session_id
+                .and_then(|session_id| {
+                    match self.store.get_session_seed(session_id.oprf_seed, now) {
+                        Ok(seed) => seed,
+                        Err(err) => {
+                            tracing::warn!(error = %err, "failed to load cached session seed, continuing without");
+                            None
+                        }
+                    }
+                });
 
         // Handles credential selection, session resolution, per-credential proofs, response assembly, and validation
-        let result = self
-            .inner
-            .generate_proof(
-                &proof_request.0,
-                nullifier.clone(),
-                &credentials,
-                Some(account_inclusion_proof),
-                session_id_r_seed.map(Into::into),
-            )
-            .await?;
+        let result = Box::pin(self.inner.generate_proof(
+            &proof_request.0,
+            nullifier.clone(),
+            &credentials,
+            Some(account_inclusion_proof),
+            session_id_r_seed,
+        ))
+        .await?;
 
         // Cache session seed if returned
         if let Some(seed) = result.session_id_r_seed {
             if let Some(session_id) = proof_request.0.session_id {
                 if let Err(err) = self.store.store_session_seed(
                     session_id.oprf_seed,
-                    seed.into(),
+                    seed,
                     now,
                 ) {
                     tracing::error!("error caching session_id_r_seed: {}", err);
