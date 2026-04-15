@@ -67,11 +67,11 @@ pub trait DefaultConfig {
 }
 
 fn ohttp_relay_url(region: Region, environment: &Environment) -> String {
-    let domain = match environment {
-        Environment::Staging => "worldcoin.dev",
-        Environment::Production => "world.org",
+    let path = match environment {
+        Environment::Staging => format!("{region}-world-id-stage"),
+        Environment::Production => format!("{region}-world-id"),
     };
-    format!("https://ohttp-relay.{region}.id-infra.{domain}/gateway")
+    format!("https://privacy-gateway.cloudflare.com/{path}")
 }
 
 // TODO: replace with real base64-encoded HPKE key configs
