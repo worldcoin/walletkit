@@ -85,9 +85,7 @@ impl PopBackendClient {
         let response_status = response.status();
         match response_status {
             reqwest::StatusCode::CREATED | reqwest::StatusCode::OK => Ok(()),
-            reqwest::StatusCode::NOT_FOUND => {
-                Err(WalletKitError::DebugReportNotFound)
-            }
+            reqwest::StatusCode::NOT_FOUND => Err(WalletKitError::DebugReportNotFound),
             reqwest::StatusCode::PRECONDITION_FAILED => {
                 Err(WalletKitError::NotEligableForRecovery)
             }
