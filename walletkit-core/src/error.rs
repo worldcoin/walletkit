@@ -227,6 +227,12 @@ impl From<AuthenticatorError> for WalletKitError {
             }
             AuthenticatorError::SessionIdMismatch => Self::SessionIdMismatch,
 
+            AuthenticatorError::OhttpRelayError { status, body } => Self::NetworkError {
+                url: "ohttp_relay".to_string(),
+                error: body,
+                status: Some(status.as_u16()),
+            },
+
             _ => Self::AuthenticatorError {
                 error: error.to_string(),
             },
