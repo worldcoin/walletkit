@@ -1,5 +1,5 @@
 use alloy_primitives::{address, Address};
-use world_id_core::primitives::Config;
+use world_id_core::{primitives::Config, AuthenticatorConfig, OhttpClientConfig};
 
 use crate::{error::WalletKitError, Environment, Region};
 
@@ -64,6 +64,45 @@ pub trait DefaultConfig {
     ) -> Result<Self, WalletKitError>
     where
         Self: Sized;
+}
+
+fn ohttp_relay_url(region: Region, environment: &Environment) -> String {
+    let domain = match environment {
+        Environment::Staging => "worldcoin.dev",
+        Environment::Production => "world.org",
+    };
+    format!("https://ohttp-relay.{region}.id-infra.{domain}/gateway")
+}
+
+// TODO: replace with real base64-encoded HPKE key configs
+const OHTTP_KEY_CONFIG_STAGING: &str = "TODO";
+const OHTTP_KEY_CONFIG_PRODUCTION: &str = "TODO";
+
+impl DefaultConfig for AuthenticatorConfig {
+    fn from_environment(
+        environment: &Environment,
+        rpc_url: Option<String>,
+        region: Option<Region>,
+    ) -> Result<Self, WalletKitError> {
+        let region = region.unwrap_or_default();
+        let config = Config::from_environment(environment, rpc_url, Some(region))?;
+
+        let key_config_base64 = match environment {
+            Environment::Staging => OHTTP_KEY_CONFIG_STAGING,
+            Environment::Production => OHTTP_KEY_CONFIG_PRODUCTION,
+        };
+        let relay_url = ohttp_relay_url(region, environment);
+        let ohttp = Some(OhttpClientConfig::new(
+            relay_url,
+            key_config_base64.to_string(),
+        ));
+
+        Ok(Self {
+            config,
+            ohttp_indexer: ohttp.clone(),
+            ohttp_gateway: ohttp,
+        })
+    }
 }
 
 impl DefaultConfig for Config {
