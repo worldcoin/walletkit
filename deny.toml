@@ -44,4 +44,5 @@ ignore = [
     "RUSTSEC-2023-0089", # Unmaintained `atomic-polyfill` (2025-06-03)
     "RUSTSEC-2025-0055", # `tracing-subscriber` < 0.3.20, requires bumps on `semaphore-rs` (and Ark deps) (2025-09-09)
     "RUSTSEC-2025-0141", # Unmaintained `bincode`, feature complete for now (2026-01-15)
+    "RUSTSEC-2026-0097", # Unsoundness in `rand` 0.8.5 (transitive dep), only affects custom logger + `rand::rng()` which we don't use (2026-04-15)
 ]
