@@ -104,15 +104,18 @@ fn load_nullifier_material_from_cache(
     nullifier_zkey: &std::path::Path,
     nullifier_graph: &std::path::Path,
 ) -> Result<world_id_core::proof::CircomGroth16Material, WalletKitError> {
-    world_id_core::proof::load_nullifier_material_from_paths(nullifier_zkey, nullifier_graph)
-        .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
-            path: format!(
-                "{} and {}",
-                nullifier_zkey.to_string_lossy(),
-                nullifier_graph.to_string_lossy()
-            ),
-            error: error.to_string(),
-        })
+    world_id_core::proof::load_nullifier_material_from_paths(
+        nullifier_zkey,
+        nullifier_graph,
+    )
+    .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
+        path: format!(
+            "{} and {}",
+            nullifier_zkey.to_string_lossy(),
+            nullifier_graph.to_string_lossy()
+        ),
+        error: error.to_string(),
+    })
 }
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
@@ -456,19 +459,29 @@ impl Authenticator {
         };
 
         // Build CredentialInput list from storage
-        let credential_list = self.store.list_credentials(None, now)?;
-        let credentials: Vec<CredentialInput> = credential_list
+        // Note: We simply load all non-expired credentials. Filtering for the requested schema IDs is done in `generate_proof`.
+        // We could avoid unnecessary loading by filtering via `world_id_primitives::ProofRequest::credentials_to_prove`. We consider this an
+        // unnecessary optimization for now.
+        let credentials: Vec<_> = self
+            .store
+            .list_credentials(None, now)?
             .iter()
-            .filter(|cred| !cred.is_expired)
+            .filter(|c| !c.is_expired)
             .filter_map(|cred| {
-                self.store
-                    .get_credential(cred.issuer_schema_id, now)
-                    .ok()
-                    .flatten()
-                    .map(|(credential, blinding_factor)| CredentialInput {
+                match self.store.get_credential(cred.issuer_schema_id, now) {
+                    Ok(Some((credential, blinding_factor))) => Some(CredentialInput {
                         credential: credential.into(),
                         blinding_factor: blinding_factor.into(),
-                    })
+                    }),
+                    Ok(None) | Err(_) => {
+                        tracing::warn!(
+                            issuer_schema_id = %cred.issuer_schema_id,
+                            credential_id = %cred.credential_id,
+                            "credential listed but not loadable, skipping"
+                        );
+                        None
+                    }
+                }
             })
             .collect();
 
@@ -488,19 +501,20 @@ impl Authenticator {
             return Err(WalletKitError::NullifierReplay);
         }
 
-        // Get cached session seed if available
-        let session_id_r_seed = proof_request
-            .0
-            .session_id
-            .and_then(|sid| {
-                self.store
-                    .get_session_seed(sid.oprf_seed, now)
-                    .ok()
-                    .flatten()
-            });
+        // Get cached `session_id_r_seed` if session ID is provided in the proof request
+        let session_id_r_seed = if let Some(session_id) = proof_request.0.session_id {
+            match self.store.get_session_seed(session_id.oprf_seed, now) {
+                Ok(seed) => seed,
+                Err(err) => {
+                    tracing::warn!(error = %err, "failed to load cached session seed, continuing without");
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
-        // Delegate to upstream — handles credential selection, session resolution,
-        // per-credential proofs, response assembly, and validation
+        // Handles credential selection, session resolution, per-credential proofs, response assembly, and validation
         let result = self
             .inner
             .generate_proof(
@@ -515,10 +529,11 @@ impl Authenticator {
         // Cache session seed if returned
         if let Some(seed) = result.session_id_r_seed {
             if let Some(session_id) = proof_request.0.session_id {
-                if let Err(err) =
-                    self.store
-                        .store_session_seed(session_id.oprf_seed, seed.into(), now)
-                {
+                if let Err(err) = self.store.store_session_seed(
+                    session_id.oprf_seed,
+                    seed.into(),
+                    now,
+                ) {
                     tracing::error!("error caching session_id_r_seed: {}", err);
                 }
             }
