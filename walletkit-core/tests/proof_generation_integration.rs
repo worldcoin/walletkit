@@ -130,11 +130,14 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
             .wrap_err("failed to load embedded nullifier material")?,
     );
 
-    let core_authenticator =
-        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
-            .await
-            .wrap_err("account creation/init failed")?
-            .with_proof_materials(query_material, nullifier_material);
+    let core_authenticator = CoreAuthenticator::init_or_register(
+        &seed,
+        config.into(),
+        Some(recovery_address),
+    )
+    .await
+    .wrap_err("account creation/init failed")?
+    .with_proof_materials(query_material, nullifier_material);
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -349,11 +352,14 @@ async fn e2e_session_proof() -> Result<()> {
             .wrap_err("failed to load embedded nullifier material")?,
     );
 
-    let core_authenticator =
-        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
-            .await
-            .wrap_err("account creation/init failed")?
-            .with_proof_materials(query_material, nullifier_material);
+    let core_authenticator = CoreAuthenticator::init_or_register(
+        &seed,
+        config.into(),
+        Some(recovery_address),
+    )
+    .await
+    .wrap_err("account creation/init failed")?
+    .with_proof_materials(query_material, nullifier_material);
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -466,7 +472,7 @@ async fn e2e_session_proof() -> Result<()> {
 
     // Use the core authenticator to generate a session ID (calls OPRF)
     let (session_id, session_id_r_seed) = core_authenticator
-        .generate_session_id(&init_request, None, None)
+        .build_session_id(&init_request, None, None)
         .await
         .wrap_err("generate_session_id failed")?;
 
