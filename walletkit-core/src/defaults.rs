@@ -71,7 +71,11 @@ fn ohttp_relay_url(region: Region, environment: &Environment) -> String {
         Environment::Staging => format!("{region}-world-id-stage"),
         Environment::Production => format!("{region}-world-id"),
     };
-    format!("https://privacy-relay.cloudflare.com/{path}")
+    let host = match environment {
+        Environment::Staging => "staging.privacy-relay.cloudflare.com",
+        Environment::Production => "privacy-relay.cloudflare.com",
+    };
+    format!("https://{host}/{path}")
 }
 
 // Base64-encoded `application/ohttp-keys` payloads fetched from /ohttp-keys endpoints.
