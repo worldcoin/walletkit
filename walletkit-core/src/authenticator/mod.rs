@@ -10,8 +10,9 @@ use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
-    primitives::{authenticator::AuthenticatorPublicKeySet, Config},
-    Authenticator as CoreAuthenticator, Credential as CoreCredential,
+    primitives::authenticator::AuthenticatorPublicKeySet,
+    Authenticator as CoreAuthenticator, AuthenticatorConfig,
+    Credential as CoreCredential,
     InitializingAuthenticator as CoreInitializingAuthenticator,
     OnchainKeyRepresentable, Signer,
 };
@@ -342,7 +343,8 @@ impl Authenticator {
         environment: &Environment,
         region: Option<Region>,
     ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url, region)?;
+        let config =
+            AuthenticatorConfig::from_environment(environment, rpc_url, region)?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_embedded_materials()?;
         let authenticator =
@@ -361,11 +363,12 @@ impl Authenticator {
     /// Will error if the provided seed is not valid or if the config is not valid.
     #[uniffi::constructor]
     pub async fn init(seed: &[u8], config: &str) -> Result<Self, WalletKitError> {
-        let config =
-            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
+            WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
-            })?;
+            }
+        })?;
         let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_embedded_materials()?;
         let authenticator =
@@ -396,8 +399,9 @@ impl Authenticator {
         paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config.into()).await?;
+        let config =
+            AuthenticatorConfig::from_environment(environment, rpc_url, region)?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
             authenticator.with_proof_materials(query_material, nullifier_material);
@@ -422,12 +426,13 @@ impl Authenticator {
         paths: &StoragePaths,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config =
-            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
+            WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
-            })?;
-        let authenticator = CoreAuthenticator::init(seed, config.into()).await?;
+            }
+        })?;
+        let authenticator = CoreAuthenticator::init(seed, config).await?;
         let (query_material, nullifier_material) = load_cached_materials(paths)?;
         let authenticator =
             authenticator.with_proof_materials(query_material, nullifier_material);
@@ -615,10 +620,11 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = Config::from_environment(environment, rpc_url, region)?;
+        let config =
+            AuthenticatorConfig::from_environment(environment, rpc_url, region)?;
 
         let initializing_authenticator =
-            CoreAuthenticator::register(seed, config.into(), recovery_address).await?;
+            CoreAuthenticator::register(seed, config, recovery_address).await?;
 
         Ok(Self(initializing_authenticator))
     }
@@ -644,14 +650,15 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config =
-            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
+            WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
-            })?;
+            }
+        })?;
 
         let initializing_authenticator =
-            CoreAuthenticator::register(seed, config.into(), recovery_address).await?;
+            CoreAuthenticator::register(seed, config, recovery_address).await?;
 
         Ok(Self(initializing_authenticator))
     }
@@ -815,6 +822,7 @@ mod storage_tests {
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
     use alloy::primitives::address;
+    use world_id_core::primitives::Config;
 
     async fn init_test_authenticator(
         seed: &[u8],

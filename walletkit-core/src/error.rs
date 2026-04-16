@@ -140,6 +140,13 @@ pub enum WalletKitError {
         /// The error code from the NFC service (e.g. `document_expired`)
         error_code: String,
     },
+
+    /// An error occurred in the OHTTP privacy layer (relay, encapsulation, or framing).
+    #[error("ohttp_error: {error}")]
+    OhttpError {
+        /// The error message from the OHTTP layer
+        error: String,
+    },
 }
 
 impl From<reqwest::Error> for WalletKitError {
@@ -226,6 +233,13 @@ impl From<AuthenticatorError> for WalletKitError {
                 Self::ResponseValidation(err.to_string())
             }
             AuthenticatorError::SessionIdMismatch => Self::SessionIdMismatch,
+
+            AuthenticatorError::OhttpEncapsulationError(_)
+            | AuthenticatorError::BhttpError(_)
+            | AuthenticatorError::OhttpRelayError { .. }
+            | AuthenticatorError::InvalidServiceResponse(_) => Self::OhttpError {
+                error: error.to_string(),
+            },
 
             _ => Self::AuthenticatorError {
                 error: error.to_string(),
