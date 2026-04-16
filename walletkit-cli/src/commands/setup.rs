@@ -1,14 +1,12 @@
 //! `walletkit setup` — one-shot wallet initialization and account registration.
 
-use eyre::WrapErr as _;
-use walletkit_core::error::WalletKitError;
 use walletkit_core::storage::cache_embedded_groth16_material;
-use walletkit_core::{InitializingAuthenticator, RegistrationStatus};
 
 use crate::output;
 use crate::provider::create_fs_credential_store;
 
-use super::{resolve_config, resolve_environment, resolve_region, resolve_root, Cli};
+use super::auth::{register_and_poll, RegisterOutcome};
+use super::{resolve_root, Cli};
 
 pub async fn run(cli: &Cli, poll_interval: u64) -> eyre::Result<()> {
     let root = resolve_root(cli)?;
@@ -42,81 +40,29 @@ pub async fn run(cli: &Cli, poll_interval: u64) -> eyre::Result<()> {
     }
 
     // --- auth register-wait ---
-    let config_json = resolve_config(cli)?;
-
-    let result = if let Some(ref config) = config_json {
-        InitializingAuthenticator::register(
-            &seed, config, None, // no recovery address
-        )
-        .await
-    } else {
-        let env = resolve_environment(cli)?;
-        let region = resolve_region(cli)?;
-        InitializingAuthenticator::register_with_defaults(
-            &seed,
-            cli.rpc_url.clone(),
-            &env,
-            region,
-            None, // no recovery address
-        )
-        .await
-    };
-
-    let init_auth = match result {
-        Ok(auth) => auth,
-        Err(WalletKitError::NetworkError { ref error, .. })
-            if error.contains("authenticator_already_exists") =>
-        {
-            let data = serde_json::json!({
-                "seed": seed_hex,
-                "root": root.display().to_string(),
-                "status": "AlreadyRegistered",
-            });
-            if cli.json {
-                output::print_json_data(&data, true);
-            } else {
-                println!("Account already registered.");
-            }
-            return Ok(());
-        }
-        Err(e) => return Err(e).wrap_err("registration failed"),
-    };
-
     if !cli.json {
         eprintln!("Registration submitted, waiting for finalization...");
     }
 
-    loop {
-        let status = init_auth.poll_status().await.wrap_err("poll failed")?;
+    let outcome = register_and_poll(cli, &seed, None, poll_interval).await?;
 
-        match &status {
-            RegistrationStatus::Finalized => {
-                let data = serde_json::json!({
-                    "seed": seed_hex,
-                    "root": root.display().to_string(),
-                    "status": "Finalized",
-                });
-                if cli.json {
-                    output::print_json_data(&data, true);
-                } else {
-                    println!("Setup complete. Account registered and finalized.");
-                    println!("  root: {}", root.display());
-                    println!("  seed: {seed_hex}");
-                }
-                return Ok(());
-            }
-            RegistrationStatus::Failed { error, error_code } => {
-                eyre::bail!("registration failed: {error} (code: {error_code:?})");
-            }
-            _ => {
-                let status_str = format!("{status:?}");
-                if !cli.json {
-                    eprintln!(
-                        "Status: {status_str} — polling again in {poll_interval}s..."
-                    );
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(poll_interval)).await;
-            }
-        }
+    let status = match outcome {
+        RegisterOutcome::Finalized => "Finalized",
+        RegisterOutcome::AlreadyRegistered => "AlreadyRegistered",
+    };
+
+    let data = serde_json::json!({
+        "seed": seed_hex,
+        "root": root.display().to_string(),
+        "status": status,
+    });
+
+    if cli.json {
+        output::print_json_data(&data, true);
+    } else {
+        println!("Setup complete. Account registered and finalized.");
+        println!("  root: {}", root.display());
+        println!("  seed: {seed_hex}");
     }
+    Ok(())
 }
