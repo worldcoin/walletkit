@@ -19,8 +19,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Strip unsupported KEM algorithms (e.g. Kyber) from ohttp-keys payloads,
-          # keeping only X25519 (KEM ID 0x0020) which the Rust ohttp crate supports.
+          # The /ohttp-keys endpoints return application/ohttp-keys payloads that
+          # include both X25519 and Kyber768 HPKE key configs. The Rust ohttp crate
+          # (v0.7.2) only supports X25519 and silently skips Kyber — but the Kyber
+          # configs make up ~96% of the payload size. This filter strips them out.
+          #
+          # Wire format (RFC 9458): list of length-delimited key configs:
+          #   [u16 BE] config_length
+          #   [u8]     key_id
+          #   [u16 BE] kem_id    <- 0x0020 = X25519 (keep), 0x0030 = Kyber (drop)
+          #   [...]    public_key + cipher_suites
           filter_x25519() {
             python3 -c "
           import sys, struct, base64
@@ -28,10 +36,12 @@ jobs:
           out = bytearray()
           i = 0
           while i < len(data):
+              # Read 2-byte length prefix, then the config body
               cfg_len = struct.unpack('>H', data[i:i+2])[0]
               cfg = data[i+2:i+2+cfg_len]
+              # KEM ID sits at offset 1 in the config (after 1-byte key_id)
               kem_id = struct.unpack('>H', cfg[1:3])[0]
-              if kem_id == 0x0020:
+              if kem_id == 0x0020:  # DHKEM(X25519, HKDF-SHA256)
                   out += data[i:i+2+cfg_len]
               i += 2 + cfg_len
           print(base64.b64encode(out).decode(), end='')
