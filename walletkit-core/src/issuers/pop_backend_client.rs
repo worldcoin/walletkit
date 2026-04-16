@@ -64,8 +64,11 @@ impl PopBackendClient {
     ///
     /// # Errors
     ///
-    /// * [`WalletKitError::RecoveryBindingAlreadyExists`] — HTTP 409 (binding already registered).
-    /// * [`WalletKitError::NetworkError`] — any other non-success status.
+    /// * [`WalletKitError::DebugReportNotFound`] — HTTP 404 Not Found.
+    /// * [`WalletKitError::NotEligibleForRecovery`] — HTTP 412 Precondition Failed.
+    /// * [`WalletKitError::NetworkError`] — any other non-success status; the response body is in
+    ///   `error` and the HTTP status in `status`. This includes conflicts (e.g. HTTP 409) and
+    ///   server errors.
     pub async fn bind_recovery_agent(
         &self,
         request: ManageRecoveryBindingRequest,
