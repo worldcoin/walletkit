@@ -141,9 +141,9 @@ pub enum WalletKitError {
     #[error("debug_report_not_found")]
     DebugReportNotFound,
 
-    /// The user is not eligable for recovery
-    #[error("not_eligable_for_recovery")]
-    NotEligableForRecovery,
+    /// The user is not eligible for recovery
+    #[error("not_eligible_for_recovery")]
+    NotEligibleForRecovery,
 }
 
 impl From<reqwest::Error> for WalletKitError {
