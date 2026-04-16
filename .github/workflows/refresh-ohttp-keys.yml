@@ -1,0 +1,86 @@
+name: Refresh OHTTP Key Configs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  refresh-keys:
+    name: Fetch and update OHTTP HPKE key configs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Fetch OHTTP key configs
+        run: |
+          set -euo pipefail
+
+          declare -A ENDPOINTS=(
+            [STAGING_US]="https://ohttp-keys.us.id-infra.worldcoin.dev/ohttp-keys"
+            [STAGING_EU]="https://ohttp-keys.eu.id-infra.worldcoin.dev/ohttp-keys"
+            [STAGING_AP]="https://ohttp-keys.ap.id-infra.worldcoin.dev/ohttp-keys"
+            [PRODUCTION_US]="https://ohttp-keys.us.id-infra.world.org/ohttp-keys"
+            [PRODUCTION_EU]="https://ohttp-keys.eu.id-infra.world.org/ohttp-keys"
+            [PRODUCTION_AP]="https://ohttp-keys.ap.id-infra.world.org/ohttp-keys"
+          )
+
+          for key in "${!ENDPOINTS[@]}"; do
+            url="${ENDPOINTS[$key]}"
+            echo "Fetching $key from $url"
+            value=$(curl -sf "$url" | base64 -w0)
+            if [ -z "$value" ]; then
+              echo "::error::Failed to fetch key config for $key from $url"
+              exit 1
+            fi
+            echo "${key}=${value}" >> "$GITHUB_ENV"
+          done
+
+      - name: Update defaults.rs
+        run: |
+          set -euo pipefail
+          FILE="walletkit-core/src/defaults.rs"
+
+          declare -A KEYS=(
+            [STAGING_US]="$STAGING_US"
+            [STAGING_EU]="$STAGING_EU"
+            [STAGING_AP]="$STAGING_AP"
+            [PRODUCTION_US]="$PRODUCTION_US"
+            [PRODUCTION_EU]="$PRODUCTION_EU"
+            [PRODUCTION_AP]="$PRODUCTION_AP"
+          )
+
+          for key in "${!KEYS[@]}"; do
+            value="${KEYS[$key]}"
+            sed -i "s|const OHTTP_KEY_CONFIG_${key}: &str = \"[^\"]*\";|const OHTTP_KEY_CONFIG_${key}: \&str = \"${value}\";|" "$FILE"
+          done
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet walletkit-core/src/defaults.rs; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No key config changes detected"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Key configs changed:"
+            git diff --stat walletkit-core/src/defaults.rs
+          fi
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/refresh-ohttp-keys
+          commit-message: "chore: refresh OHTTP HPKE key configs"
+          title: "chore: refresh OHTTP HPKE key configs"
+          body: |
+            Automated refresh of OHTTP HPKE key configs from `/ohttp-keys` endpoints.
+
+            Fetched from:
+            - `ohttp-keys.{us,eu,ap}.id-infra.worldcoin.dev/ohttp-keys` (staging)
+            - `ohttp-keys.{us,eu,ap}.id-infra.world.org/ohttp-keys` (production)
+          labels: automation
