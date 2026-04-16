@@ -39,35 +39,34 @@ jobs:
             echo "${key}=${value}" >> "$GITHUB_ENV"
           done
 
-      - name: Update defaults.rs
+      - name: Update key config files
         run: |
           set -euo pipefail
-          FILE="walletkit-core/src/defaults.rs"
+          DIR="walletkit-core/src/ohttp_keys"
 
-          declare -A KEYS=(
-            [STAGING_US]="$STAGING_US"
-            [STAGING_EU]="$STAGING_EU"
-            [STAGING_AP]="$STAGING_AP"
-            [PRODUCTION_US]="$PRODUCTION_US"
-            [PRODUCTION_EU]="$PRODUCTION_EU"
-            [PRODUCTION_AP]="$PRODUCTION_AP"
+          declare -A FILES=(
+            [STAGING_US]="staging_us.b64"
+            [STAGING_EU]="staging_eu.b64"
+            [STAGING_AP]="staging_ap.b64"
+            [PRODUCTION_US]="production_us.b64"
+            [PRODUCTION_EU]="production_eu.b64"
+            [PRODUCTION_AP]="production_ap.b64"
           )
 
-          for key in "${!KEYS[@]}"; do
-            value="${KEYS[$key]}"
-            sed -i "s|const OHTTP_KEY_CONFIG_${key}: &str = \"[^\"]*\";|const OHTTP_KEY_CONFIG_${key}: \&str = \"${value}\";|" "$FILE"
+          for key in "${!FILES[@]}"; do
+            printf '%s' "${!key}" > "$DIR/${FILES[$key]}"
           done
 
       - name: Check for changes
         id: diff
         run: |
-          if git diff --quiet walletkit-core/src/defaults.rs; then
+          if git diff --quiet walletkit-core/src/ohttp_keys/; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No key config changes detected"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Key configs changed:"
-            git diff --stat walletkit-core/src/defaults.rs
+            git diff --stat walletkit-core/src/ohttp_keys/
           fi
 
       - name: Create pull request
