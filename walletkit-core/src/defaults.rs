@@ -71,12 +71,36 @@ fn ohttp_relay_url(region: Region, environment: &Environment) -> String {
         Environment::Staging => format!("{region}-world-id-stage"),
         Environment::Production => format!("{region}-world-id"),
     };
-    format!("https://privacy-relay.cloudflare.com/{path}")
+    let host = match environment {
+        Environment::Staging => "staging.privacy-relay.cloudflare.com",
+        Environment::Production => "privacy-relay.cloudflare.com",
+    };
+    format!("https://{host}/{path}")
 }
 
-// TODO: replace with real base64-encoded HPKE key configs
-const OHTTP_KEY_CONFIG_STAGING: &str = "TODO";
-const OHTTP_KEY_CONFIG_PRODUCTION: &str = "TODO";
+// Base64-encoded `application/ohttp-keys` payloads fetched from /ohttp-keys endpoints.
+// Each region has an independent HPKE key derived from its own seed secret.
+// To refresh, run the `refresh-ohttp-keys` GitHub Action workflow.
+const OHTTP_KEY_CONFIG_STAGING_US: &str = include_str!("ohttp_keys/staging_us.b64");
+const OHTTP_KEY_CONFIG_STAGING_EU: &str = include_str!("ohttp_keys/staging_eu.b64");
+const OHTTP_KEY_CONFIG_STAGING_AP: &str = include_str!("ohttp_keys/staging_ap.b64");
+const OHTTP_KEY_CONFIG_PRODUCTION_US: &str =
+    include_str!("ohttp_keys/production_us.b64");
+const OHTTP_KEY_CONFIG_PRODUCTION_EU: &str =
+    include_str!("ohttp_keys/production_eu.b64");
+const OHTTP_KEY_CONFIG_PRODUCTION_AP: &str =
+    include_str!("ohttp_keys/production_ap.b64");
+
+const fn ohttp_key_config(region: Region, environment: &Environment) -> &'static str {
+    match (environment, region) {
+        (Environment::Staging, Region::Us) => OHTTP_KEY_CONFIG_STAGING_US,
+        (Environment::Staging, Region::Eu) => OHTTP_KEY_CONFIG_STAGING_EU,
+        (Environment::Staging, Region::Ap) => OHTTP_KEY_CONFIG_STAGING_AP,
+        (Environment::Production, Region::Us) => OHTTP_KEY_CONFIG_PRODUCTION_US,
+        (Environment::Production, Region::Eu) => OHTTP_KEY_CONFIG_PRODUCTION_EU,
+        (Environment::Production, Region::Ap) => OHTTP_KEY_CONFIG_PRODUCTION_AP,
+    }
+}
 
 impl DefaultConfig for AuthenticatorConfig {
     fn from_environment(
@@ -87,10 +111,7 @@ impl DefaultConfig for AuthenticatorConfig {
         let region = region.unwrap_or_default();
         let config = Config::from_environment(environment, rpc_url, Some(region))?;
 
-        let key_config_base64 = match environment {
-            Environment::Staging => OHTTP_KEY_CONFIG_STAGING,
-            Environment::Production => OHTTP_KEY_CONFIG_PRODUCTION,
-        };
+        let key_config_base64 = ohttp_key_config(region, environment);
         let relay_url = ohttp_relay_url(region, environment);
         let ohttp = Some(OhttpClientConfig::new(
             relay_url,
