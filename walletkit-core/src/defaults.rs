@@ -71,7 +71,7 @@ fn ohttp_relay_url(region: Region, environment: &Environment) -> String {
         Environment::Staging => format!("{region}-world-id-stage"),
         Environment::Production => format!("{region}-world-id"),
     };
-    format!("https://privacy-gateway.cloudflare.com/{path}")
+    format!("https://privacy-relay.cloudflare.com/{path}")
 }
 
 // TODO: replace with real base64-encoded HPKE key configs
