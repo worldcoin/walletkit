@@ -84,9 +84,12 @@ fn ohttp_relay_url(region: Region, environment: &Environment) -> String {
 const OHTTP_KEY_CONFIG_STAGING_US: &str = include_str!("ohttp_keys/staging_us.b64");
 const OHTTP_KEY_CONFIG_STAGING_EU: &str = include_str!("ohttp_keys/staging_eu.b64");
 const OHTTP_KEY_CONFIG_STAGING_AP: &str = include_str!("ohttp_keys/staging_ap.b64");
-const OHTTP_KEY_CONFIG_PRODUCTION_US: &str = include_str!("ohttp_keys/production_us.b64");
-const OHTTP_KEY_CONFIG_PRODUCTION_EU: &str = include_str!("ohttp_keys/production_eu.b64");
-const OHTTP_KEY_CONFIG_PRODUCTION_AP: &str = include_str!("ohttp_keys/production_ap.b64");
+const OHTTP_KEY_CONFIG_PRODUCTION_US: &str =
+    include_str!("ohttp_keys/production_us.b64");
+const OHTTP_KEY_CONFIG_PRODUCTION_EU: &str =
+    include_str!("ohttp_keys/production_eu.b64");
+const OHTTP_KEY_CONFIG_PRODUCTION_AP: &str =
+    include_str!("ohttp_keys/production_ap.b64");
 
 const fn ohttp_key_config(region: Region, environment: &Environment) -> &'static str {
     match (environment, region) {
