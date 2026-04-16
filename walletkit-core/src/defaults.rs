@@ -152,3 +152,53 @@ impl DefaultConfig for Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_region_has_distinct_key_config() {
+        let regions = [Region::Us, Region::Eu, Region::Ap];
+        let environments = [Environment::Staging, Environment::Production];
+
+        let mut seen = std::collections::HashSet::new();
+        for env in &environments {
+            for &region in &regions {
+                let key = ohttp_key_config(region, env);
+                assert_ne!(key, "TODO", "key config for {env:?}/{region:?} is still a placeholder");
+                assert!(!key.is_empty(), "key config for {env:?}/{region:?} is empty");
+                assert!(seen.insert(key), "duplicate key config for {env:?}/{region:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn relay_urls_vary_by_region_and_environment() {
+        let staging_us = ohttp_relay_url(Region::Us, &Environment::Staging);
+        let staging_eu = ohttp_relay_url(Region::Eu, &Environment::Staging);
+        let prod_us = ohttp_relay_url(Region::Us, &Environment::Production);
+
+        assert!(staging_us.contains("us-world-id-stage"));
+        assert!(staging_eu.contains("eu-world-id-stage"));
+        assert!(prod_us.contains("us-world-id"));
+        assert!(!prod_us.contains("stage"));
+    }
+
+    #[test]
+    fn authenticator_config_defaults_include_ohttp() {
+        let config = AuthenticatorConfig::from_environment(
+            &Environment::Staging,
+            None,
+            Some(Region::Us),
+        )
+        .expect("should build staging US config");
+
+        assert!(config.ohttp_gateway.is_some(), "gateway OHTTP should be set");
+        assert!(config.ohttp_indexer.is_some(), "indexer OHTTP should be set");
+
+        let gw = config.ohttp_gateway.unwrap();
+        assert!(gw.relay_url.contains("us-world-id-stage"));
+        assert!(!gw.key_config_base64.is_empty());
+    }
+}
