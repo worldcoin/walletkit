@@ -8,9 +8,7 @@ use walletkit_core::{InitializingAuthenticator, RegistrationStatus};
 use crate::output;
 use crate::provider::create_fs_credential_store;
 
-use super::{
-    resolve_config, resolve_environment, resolve_region, resolve_root, Cli,
-};
+use super::{resolve_config, resolve_environment, resolve_region, resolve_root, Cli};
 
 pub async fn run(cli: &Cli, poll_interval: u64) -> eyre::Result<()> {
     let root = resolve_root(cli)?;
@@ -48,9 +46,7 @@ pub async fn run(cli: &Cli, poll_interval: u64) -> eyre::Result<()> {
 
     let result = if let Some(ref config) = config_json {
         InitializingAuthenticator::register(
-            &seed,
-            config,
-            None, // no recovery address
+            &seed, config, None, // no recovery address
         )
         .await
     } else {
@@ -119,8 +115,7 @@ pub async fn run(cli: &Cli, poll_interval: u64) -> eyre::Result<()> {
                         "Status: {status_str} — polling again in {poll_interval}s..."
                     );
                 }
-                tokio::time::sleep(std::time::Duration::from_secs(poll_interval))
-                    .await;
+                tokio::time::sleep(std::time::Duration::from_secs(poll_interval)).await;
             }
         }
     }

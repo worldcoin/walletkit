@@ -301,12 +301,7 @@ fn setup_fails_if_wallet_exists() {
 
     // Setup should fail because the wallet already exists.
     let output = Command::new(walletkit_bin())
-        .args([
-            "--root",
-            root.path().to_str().unwrap(),
-            "--json",
-            "setup",
-        ])
+        .args(["--root", root.path().to_str().unwrap(), "--json", "setup"])
         .output()
         .expect("failed to run setup");
     assert!(!output.status.success());
