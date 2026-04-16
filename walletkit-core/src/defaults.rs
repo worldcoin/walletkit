@@ -166,9 +166,18 @@ mod tests {
         for env in &environments {
             for &region in &regions {
                 let key = ohttp_key_config(region, env);
-                assert_ne!(key, "TODO", "key config for {env:?}/{region:?} is still a placeholder");
-                assert!(!key.is_empty(), "key config for {env:?}/{region:?} is empty");
-                assert!(seen.insert(key), "duplicate key config for {env:?}/{region:?}");
+                assert_ne!(
+                    key, "TODO",
+                    "key config for {env:?}/{region:?} is still a placeholder"
+                );
+                assert!(
+                    !key.is_empty(),
+                    "key config for {env:?}/{region:?} is empty"
+                );
+                assert!(
+                    seen.insert(key),
+                    "duplicate key config for {env:?}/{region:?}"
+                );
             }
         }
     }
@@ -194,8 +203,14 @@ mod tests {
         )
         .expect("should build staging US config");
 
-        assert!(config.ohttp_gateway.is_some(), "gateway OHTTP should be set");
-        assert!(config.ohttp_indexer.is_some(), "indexer OHTTP should be set");
+        assert!(
+            config.ohttp_gateway.is_some(),
+            "gateway OHTTP should be set"
+        );
+        assert!(
+            config.ohttp_indexer.is_some(),
+            "indexer OHTTP should be set"
+        );
 
         let gw = config.ohttp_gateway.unwrap();
         assert!(gw.relay_url.contains("us-world-id-stage"));
