@@ -111,17 +111,22 @@ impl DefaultConfig for AuthenticatorConfig {
         let region = region.unwrap_or_default();
         let config = Config::from_environment(environment, rpc_url, Some(region))?;
 
-        let key_config_base64 = ohttp_key_config(region, environment);
-        let relay_url = ohttp_relay_url(region, environment);
-        let ohttp = Some(OhttpClientConfig::new(
-            relay_url,
-            key_config_base64.to_string(),
+        let ohttp_indexer = Some(OhttpClientConfig::new(
+            ohttp_relay_url(region, environment),
+            ohttp_key_config(region, environment).to_string(),
+        ));
+        // The world-id-gateway is centralized in the US cluster — only the
+        // US OHTTP relay/gateway is configured to forward to it. Route
+        // gateway traffic through US regardless of the user's region.
+        let ohttp_gateway = Some(OhttpClientConfig::new(
+            ohttp_relay_url(Region::Us, environment),
+            ohttp_key_config(Region::Us, environment).to_string(),
         ));
 
         Ok(Self {
             config,
-            ohttp_indexer: ohttp.clone(),
-            ohttp_gateway: ohttp,
+            ohttp_indexer,
+            ohttp_gateway,
         })
     }
 }
