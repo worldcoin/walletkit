@@ -7414,18 +7414,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "semaphore-rs"
-version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
-
-[[patch.unused]]
-name = "semaphore-rs-storage"
-version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
-
-[[patch.unused]]
-name = "semaphore-rs-trees"
-version = "0.5.0"
-source = "git+https://github.com/worldcoin/semaphore-rs.git?branch=feat%2Fwasm-compat#8e1b5b67339c2b685b61209e2a6e92395f68f020"
