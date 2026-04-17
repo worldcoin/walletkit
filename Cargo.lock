@@ -6179,7 +6179,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "uniffi",
 ]
@@ -6382,7 +6382,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "uniffi",
  "walletkit-core",
@@ -6390,7 +6390,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-cli"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -6399,7 +6399,7 @@ dependencies = [
  "dirs",
  "eyre",
  "hex",
- "rand 0.9.2",
+ "rand 0.8.5",
  "reqwest",
  "serde",
  "serde_json",
@@ -6413,7 +6413,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-core"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -6430,7 +6430,7 @@ dependencies = [
  "hkdf",
  "log",
  "mockito",
- "rand 0.9.2",
+ "rand 0.8.5",
  "regex",
  "reqwest",
  "ruint",
@@ -6459,7 +6459,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-db"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "cc",
  "hex",

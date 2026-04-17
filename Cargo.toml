@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.13.0"
+version = "0.14.0"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -38,8 +38,8 @@ uniffi = { version = "0.31.0", features = ["tokio"] }
 world-id-core = { version = "0.9.0", default-features = false }
 
 # internal
-walletkit-core = { version = "0.13.0", path = "walletkit-core", default-features = false }
-walletkit-db = { version = "0.13.0", path = "walletkit-db" }
+walletkit-core = { version = "0.14.0", path = "walletkit-core", default-features = false }
+walletkit-db = { version = "0.14.0", path = "walletkit-db" }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
