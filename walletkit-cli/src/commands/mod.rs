@@ -5,6 +5,7 @@ mod credential;
 mod proof;
 mod recovery_agent;
 mod recovery_binding;
+mod setup;
 mod wallet;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -110,6 +111,12 @@ pub enum Command {
     RecoveryBinding {
         #[command(subcommand)]
         action: recovery_binding::RecoveryBindingCommand,
+    },
+    /// Initialize wallet and register account in one step.
+    Setup {
+        /// Poll interval in seconds while waiting for registration.
+        #[arg(long, default_value = "5")]
+        poll_interval: u64,
     },
 }
 
@@ -251,5 +258,6 @@ pub async fn run(cli: Cli) -> eyre::Result<()> {
             let environment = resolve_environment(&cli)?;
             recovery_binding::run(&cli, action, &environment).await
         }
+        Command::Setup { poll_interval } => setup::run(&cli, *poll_interval).await,
     }
 }

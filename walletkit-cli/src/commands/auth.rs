@@ -12,6 +12,72 @@ use super::{
     resolve_seed, Cli,
 };
 
+/// Outcome of a registration attempt.
+pub enum RegisterOutcome {
+    Finalized,
+    AlreadyRegistered,
+}
+
+/// Registers an authenticator and polls until finalized or already registered.
+pub async fn register_and_poll(
+    cli: &Cli,
+    seed: &[u8],
+    recovery_address: Option<&str>,
+    poll_interval: u64,
+) -> eyre::Result<RegisterOutcome> {
+    let config_json = resolve_config(cli)?;
+
+    let result = if let Some(ref config) = config_json {
+        InitializingAuthenticator::register(
+            seed,
+            config,
+            recovery_address.map(String::from),
+        )
+        .await
+    } else {
+        let env = resolve_environment(cli)?;
+        let region = resolve_region(cli)?;
+        InitializingAuthenticator::register_with_defaults(
+            seed,
+            cli.rpc_url.clone(),
+            &env,
+            region,
+            recovery_address.map(String::from),
+        )
+        .await
+    };
+
+    let init_auth = match result {
+        Ok(auth) => auth,
+        Err(WalletKitError::NetworkError { ref error, .. })
+            if error.contains("authenticator_already_exists") =>
+        {
+            return Ok(RegisterOutcome::AlreadyRegistered);
+        }
+        Err(e) => return Err(e).wrap_err("registration failed"),
+    };
+
+    loop {
+        let status = init_auth.poll_status().await.wrap_err("poll failed")?;
+
+        match &status {
+            RegistrationStatus::Finalized => return Ok(RegisterOutcome::Finalized),
+            RegistrationStatus::Failed { error, error_code } => {
+                eyre::bail!("registration failed: {error} (code: {error_code:?})");
+            }
+            _ => {
+                let status_str = format!("{status:?}");
+                if !cli.json {
+                    eprintln!(
+                        "Status: {status_str} — polling again in {poll_interval}s..."
+                    );
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(poll_interval)).await;
+            }
+        }
+    }
+}
+
 #[derive(Subcommand)]
 pub enum AuthCommand {
     /// Register a new World ID (returns immediately).
@@ -91,68 +157,25 @@ async fn run_register_wait(
     poll_interval: u64,
 ) -> eyre::Result<()> {
     let seed = resolve_seed(cli)?;
-    let config_json = resolve_config(cli)?;
+    let outcome =
+        register_and_poll(cli, &seed, recovery_address, poll_interval).await?;
 
-    let result = if let Some(ref config) = config_json {
-        InitializingAuthenticator::register(
-            &seed,
-            config,
-            recovery_address.map(String::from),
-        )
-        .await
-    } else {
-        let env = resolve_environment(cli)?;
-        let region = resolve_region(cli)?;
-        InitializingAuthenticator::register_with_defaults(
-            &seed,
-            cli.rpc_url.clone(),
-            &env,
-            region,
-            recovery_address.map(String::from),
-        )
-        .await
-    };
-
-    let init_auth = match result {
-        Ok(auth) => auth,
-        Err(WalletKitError::NetworkError { ref error, .. })
-            if error.contains("authenticator_already_exists") =>
-        {
+    match outcome {
+        RegisterOutcome::AlreadyRegistered => {
             output::print_success("Already registered.", cli.json);
-            return Ok(());
         }
-        Err(e) => return Err(e).wrap_err("registration failed"),
-    };
-
-    loop {
-        let status = init_auth.poll_status().await.wrap_err("poll failed")?;
-
-        match &status {
-            RegistrationStatus::Finalized => {
-                if cli.json {
-                    output::print_json_data(
-                        &serde_json::json!({ "status": "Finalized" }),
-                        true,
-                    );
-                } else {
-                    println!("Registration finalized.");
-                }
-                return Ok(());
-            }
-            RegistrationStatus::Failed { error, error_code } => {
-                eyre::bail!("registration failed: {error} (code: {error_code:?})");
-            }
-            _ => {
-                let status_str = format!("{status:?}");
-                if !cli.json {
-                    eprintln!(
-                        "Status: {status_str} — polling again in {poll_interval}s..."
-                    );
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(poll_interval)).await;
+        RegisterOutcome::Finalized => {
+            if cli.json {
+                output::print_json_data(
+                    &serde_json::json!({ "status": "Finalized" }),
+                    true,
+                );
+            } else {
+                println!("Registration finalized.");
             }
         }
     }
+    Ok(())
 }
 
 fn run_recovery_data(cli: &Cli) -> eyre::Result<()> {
