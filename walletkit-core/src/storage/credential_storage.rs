@@ -255,7 +255,6 @@ impl CredentialStore {
         result
     }
 
-
     /// **Development only.** Permanently deletes all stored credentials and their
     /// associated blob data from the vault.
     ///
@@ -1132,7 +1131,7 @@ mod tests {
         dst_store.init(42, 1000).expect("init dst storage");
 
         dst_store
-            .import_vault_from_backup(bytes.clone())
+            .import_vault_from_backup(bytes)
             .expect("import vault");
 
         let (imported_cred, imported_bf) = dst_store
@@ -1201,7 +1200,7 @@ mod tests {
         dst_store.init(42, 1000).expect("init dst storage");
 
         dst_store
-            .import_vault_from_backup(bytes.clone())
+            .import_vault_from_backup(bytes)
             .expect("import vault");
 
         assert_eq!(dst_store.list_credentials(None, 1000).unwrap().len(), 3);
@@ -1253,7 +1252,7 @@ mod tests {
         let bytes = store.export_vault_for_backup().expect("export vault");
 
         // Importing into a non-empty vault should fail.
-        let result = store.import_vault_from_backup(bytes.clone());
+        let result = store.import_vault_from_backup(bytes);
         assert!(result.is_err(), "import into non-empty vault should fail");
 
         // Verify existing data is unchanged after the failed import.
@@ -1331,7 +1330,7 @@ mod tests {
             CredentialStore::from_provider(&dst_provider).expect("create dst store");
         dst_store.init(42, 1000).expect("init dst storage");
 
-        let result = dst_store.import_vault_from_backup(corrupt_bytes.clone());
+        let result = dst_store.import_vault_from_backup(corrupt_bytes);
         assert!(result.is_err(), "import with corrupt backup should fail");
 
         // The transaction should have rolled back — destination is still empty.
@@ -1501,7 +1500,7 @@ mod tests {
         dst_store.init(42, 1000).expect("init dst store");
 
         dst_store
-            .import_vault_from_backup(bytes.clone())
+            .import_vault_from_backup(bytes)
             .expect("import vault from bytes");
 
         let (imported_cred, imported_bf) = dst_store

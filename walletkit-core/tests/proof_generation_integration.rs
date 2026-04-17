@@ -370,16 +370,17 @@ async fn e2e_session_proof() -> Result<()> {
     // Phase 2: Authenticator init with walletkit wrapper
     // ----------------------------------------------------------------
     let store = common::create_test_credential_store();
-    let paths = store.storage_paths().wrap_err("storage_paths failed")?;
-    cache_embedded_groth16_material(&paths)
-        .wrap_err("cache_embedded_groth16_material failed")?;
+    let materials = Arc::new(
+        Groth16Materials::from_embedded()
+            .wrap_err("failed to load embedded groth16 materials")?,
+    );
 
     let authenticator = Authenticator::init_with_defaults(
         &seed,
         Some(rpc_url.clone()),
         &Environment::Staging,
         None,
-        &paths,
+        materials,
         store.clone(),
     )
     .await

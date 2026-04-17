@@ -13,7 +13,7 @@ name = "walletkit"
 path = "src/main.rs"
 
 [dependencies]
-walletkit-core = { workspace = true, features = ["storage", "issuers"] }
+walletkit-core = { workspace = true, features = ["issuers", "embed-zkeys"] }
 world-id-core = { workspace = true }
 alloy = { version = "1", default-features = false, features = ["contract", "json", "getrandom", "signer-local"] }
 alloy-primitives = { workspace = true }

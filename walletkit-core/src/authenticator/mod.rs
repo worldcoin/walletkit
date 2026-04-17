@@ -117,12 +117,18 @@ impl Groth16Materials {
             error: error.to_string(),
         })?;
 
-        // TODO: Switch to error mapping once world-id-core exposes
-        // `load_nullifier_material_from_paths` as `Result` instead of panicking.
         let nullifier = world_id_core::proof::load_nullifier_material_from_paths(
             &nullifier_zkey,
             &nullifier_graph,
-        );
+        )
+        .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
+            path: format!(
+                "{} and {}",
+                nullifier_zkey.to_string_lossy(),
+                nullifier_graph.to_string_lossy()
+            ),
+            error: error.to_string(),
+        })?;
 
         Ok(Self {
             query: Arc::new(query),
@@ -357,7 +363,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config)
+        let authenticator = CoreAuthenticator::init(seed, config.into())
             .await?
             .with_proof_materials(
                 Arc::clone(&materials.query),

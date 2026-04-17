@@ -47,7 +47,6 @@ tracing-log = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 zeroize = "1"
 uuid = { version = "1.10", features = ["v4"] }
-taceo-oprf = { version = "0.7.1", default-features = false, features = ["client"] }
 world-id-core = { workspace = true, features = ["authenticator"] }
 ciborium = "0.2.2"
 walletkit-db = { workspace = true }
@@ -73,7 +72,7 @@ dotenvy = "0.15.7"
 eyre = "0.6"
 mockito = "1.6"
 regex = "1.11"
-taceo-oprf = { version = "0.11", default-features = false, features = ["types"] } # TODO: remove once OprfKeyId gets removed from request
+taceo-oprf = { version = "0.12.1", default-features = false, features = ["types"] } # TODO: remove once OprfKeyId gets removed from request
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }

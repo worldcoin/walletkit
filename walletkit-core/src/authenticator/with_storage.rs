@@ -2,9 +2,7 @@ use crate::error::WalletKitError;
 
 use super::Authenticator;
 
-use serde::{Deserialize, Serialize};
-use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
-use world_id_core::primitives::merkle::{AccountInclusionProof, MerkleInclusionProof};
+use world_id_core::primitives::merkle::AccountInclusionProof;
 use world_id_core::primitives::TREE_DEPTH;
 
 /// The amount of time a Merkle inclusion proof remains valid in the cache.
