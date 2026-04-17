@@ -18,6 +18,7 @@ use world_id_core::requests::{
 
 use crate::output;
 
+use super::credential::{issue_test_credential, FAUX_ISSUER_SCHEMA_ID};
 use super::{init_authenticator, Cli};
 
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
@@ -85,6 +86,12 @@ pub enum ProofCommand {
         /// Override the `WorldID` verifier contract address (default: mainnet).
         #[arg(long)]
         verifier_address: Option<String>,
+    },
+    /// End-to-end test: issue a test credential, generate a proof, and verify it on-chain.
+    Test {
+        /// Signal string for the proof request.
+        #[arg(long, default_value = "test_signal")]
+        signal: String,
     },
 }
 
@@ -159,20 +166,21 @@ fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-async fn run_verify(
+/// Result of verifying one proof response item against the `WorldIDVerifier` contract.
+pub struct VerifyItemResult {
+    pub issuer_schema_id: u64,
+    pub identifier: String,
+    pub verified: bool,
+    pub error: Option<String>,
+}
+
+/// Verifies a proof request + response pair on-chain. Returns per-item results.
+pub async fn verify_proof_onchain(
     cli: &Cli,
-    request_path: &str,
-    response_path: &str,
+    proof_request: &CoreProofRequest,
+    proof_response: &CoreProofResponse,
     verifier_address: Option<&str>,
-) -> eyre::Result<()> {
-    let request_json = read_file_or_stdin(request_path)?;
-    let response_json = read_file_or_stdin(response_path)?;
-
-    let proof_request: CoreProofRequest =
-        serde_json::from_str(&request_json).wrap_err("invalid proof request")?;
-    let proof_response: CoreProofResponse =
-        serde_json::from_str(&response_json).wrap_err("invalid proof response")?;
-
+) -> eyre::Result<Vec<VerifyItemResult>> {
     if let Some(ref err) = proof_response.error {
         eyre::bail!("proof response contains error: {err}");
     }
@@ -194,7 +202,6 @@ async fn run_verify(
     let rp_id = proof_request.rp_id.into_inner();
 
     let mut results = Vec::new();
-
     for response_item in &proof_response.responses {
         let request_item = proof_request
             .find_request_by_issuer_schema_id(response_item.issuer_schema_id)
@@ -227,51 +234,85 @@ async fn run_verify(
             .call()
             .await;
 
-        let verified = result.is_ok();
-        let error_msg = result.err().map(|e| format!("{e:#}"));
+        results.push(VerifyItemResult {
+            issuer_schema_id: response_item.issuer_schema_id,
+            identifier: response_item.identifier.clone(),
+            verified: result.is_ok(),
+            error: result.err().map(|e| format!("{e:#}")),
+        });
+    }
+    Ok(results)
+}
 
-        results.push(serde_json::json!({
-            "issuer_schema_id": response_item.issuer_schema_id,
-            "identifier": response_item.identifier,
-            "verified": verified,
-            "error": error_msg,
-        }));
-
-        if !cli.json {
-            if verified {
-                println!(
-                    "  [PASS] {} (issuer_schema_id={})",
-                    response_item.identifier, response_item.issuer_schema_id
-                );
-            } else {
-                println!(
-                    "  [FAIL] {} (issuer_schema_id={}): {}",
-                    response_item.identifier,
-                    response_item.issuer_schema_id,
-                    error_msg.as_deref().unwrap_or("unknown")
-                );
-            }
+fn print_verify_items_human(results: &[VerifyItemResult]) {
+    for r in results {
+        if r.verified {
+            println!(
+                "  [PASS] {} (issuer_schema_id={})",
+                r.identifier, r.issuer_schema_id
+            );
+        } else {
+            println!(
+                "  [FAIL] {} (issuer_schema_id={}): {}",
+                r.identifier,
+                r.issuer_schema_id,
+                r.error.as_deref().unwrap_or("unknown")
+            );
         }
     }
+}
 
-    let all_passed = results.iter().all(|r| r["verified"] == true);
+fn verify_items_to_json(results: &[VerifyItemResult]) -> Vec<serde_json::Value> {
+    results
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "issuer_schema_id": r.issuer_schema_id,
+                "identifier": r.identifier,
+                "verified": r.verified,
+                "error": r.error,
+            })
+        })
+        .collect()
+}
+
+async fn run_verify(
+    cli: &Cli,
+    request_path: &str,
+    response_path: &str,
+    verifier_address: Option<&str>,
+) -> eyre::Result<()> {
+    let request_json = read_file_or_stdin(request_path)?;
+    let response_json = read_file_or_stdin(response_path)?;
+
+    let proof_request: CoreProofRequest =
+        serde_json::from_str(&request_json).wrap_err("invalid proof request")?;
+    let proof_response: CoreProofResponse =
+        serde_json::from_str(&response_json).wrap_err("invalid proof response")?;
+
+    let results =
+        verify_proof_onchain(cli, &proof_request, &proof_response, verifier_address)
+            .await?;
+    let all_passed = results.iter().all(|r| r.verified);
 
     if cli.json {
         output::print_json_data(
             &serde_json::json!({
                 "verified": all_passed,
-                "results": results,
+                "results": verify_items_to_json(&results),
             }),
             true,
         );
-    } else if all_passed {
-        println!("All proofs verified on-chain.");
+    } else {
+        print_verify_items_human(&results);
+        if all_passed {
+            println!("All proofs verified on-chain.");
+        }
     }
 
     if !all_passed {
         std::process::exit(1);
     }
-
     Ok(())
 }
 
@@ -283,12 +324,12 @@ const STAGING_RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
     "1111111111111111111111111111111111111111111111111111111111111111"
 );
 
-fn run_generate_test_request(
-    cli: &Cli,
+/// Builds a signed test proof request using hardcoded staging RP keys.
+fn build_test_request(
     issuer_schema_id: u64,
     signal: &str,
     expires_in: u64,
-) -> eyre::Result<()> {
+) -> eyre::Result<CoreProofRequest> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("system time after epoch")
@@ -310,8 +351,6 @@ fn run_generate_test_request(
     );
     let signature = signer.sign_message_sync(&msg).wrap_err("signing failed")?;
 
-    // Build as JSON value to avoid depending on the exact `OprfKeyId`
-    // crate version used by `world-id-primitives`.
     let rp_id = RpId::new(STAGING_RP_ID);
     let request_item = RequestItem::new(
         "test".to_string(),
@@ -321,13 +360,12 @@ fn run_generate_test_request(
         None,
     );
 
-    let partial = CoreProofRequest {
+    Ok(CoreProofRequest {
         id: "test_request".to_string(),
         version: RequestVersion::V1,
         created_at,
         expires_at,
         rp_id,
-        // Use a placeholder — we patch it below via JSON.
         oprf_key_id: serde_json::from_value(serde_json::json!(format!(
             "0x{:040x}",
             STAGING_RP_ID
@@ -339,9 +377,17 @@ fn run_generate_test_request(
         nonce,
         requests: vec![request_item],
         constraints: None,
-    };
+    })
+}
 
-    let json = serde_json::to_string_pretty(&partial)?;
+fn run_generate_test_request(
+    cli: &Cli,
+    issuer_schema_id: u64,
+    signal: &str,
+    expires_in: u64,
+) -> eyre::Result<()> {
+    let request = build_test_request(issuer_schema_id, signal, expires_in)?;
+    let json = serde_json::to_string_pretty(&request)?;
 
     if cli.json {
         let parsed: serde_json::Value = serde_json::from_str(&json)?;
@@ -350,6 +396,66 @@ fn run_generate_test_request(
         println!("{json}");
     }
 
+    Ok(())
+}
+
+/// End-to-end test: issue a test credential, generate a proof, and verify it on-chain.
+async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
+    let (authenticator, store) = init_authenticator(cli).await?;
+
+    if !cli.json {
+        eprintln!("Issuing test credential from faux issuer...");
+    }
+    let issued = issue_test_credential(&authenticator, &store).await?;
+
+    if !cli.json {
+        eprintln!("Generating test proof request...");
+    }
+    let proof_request = build_test_request(FAUX_ISSUER_SCHEMA_ID, signal, 300)?;
+
+    if !cli.json {
+        eprintln!("Generating proof...");
+    }
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_secs();
+    let walletkit_request =
+        ProofRequest::from_json(&serde_json::to_string(&proof_request)?)
+            .wrap_err("invalid proof request")?;
+    let proof_response = authenticator
+        .generate_proof(&walletkit_request, Some(ts))
+        .await
+        .wrap_err("proof generation failed")?;
+
+    if !cli.json {
+        eprintln!("Verifying proof on-chain...");
+    }
+    let results =
+        verify_proof_onchain(cli, &proof_request, &proof_response.0, None).await?;
+    let all_passed = results.iter().all(|r| r.verified);
+
+    if cli.json {
+        output::print_json_data(
+            &serde_json::json!({
+                "credential_id": issued.credential_id,
+                "issuer_schema_id": issued.issuer_schema_id,
+                "blinding_factor": issued.blinding_factor.to_hex_string(),
+                "verified": all_passed,
+                "results": verify_items_to_json(&results),
+            }),
+            true,
+        );
+    } else {
+        print_verify_items_human(&results);
+        if all_passed {
+            println!("End-to-end test passed.");
+        }
+    }
+
+    if !all_passed {
+        std::process::exit(1);
+    }
     Ok(())
 }
 
@@ -369,5 +475,6 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             response,
             verifier_address,
         } => run_verify(cli, request, response, verifier_address.as_deref()).await,
+        ProofCommand::Test { signal } => run_test(cli, signal).await,
     }
 }

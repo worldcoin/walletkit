@@ -264,27 +264,29 @@ async fn run_issue(
 }
 
 const FAUX_ISSUER_URL: &str = "https://faux-issuer.us.id-infra.worldcoin.dev/issue";
-const FAUX_ISSUER_SCHEMA_ID: u64 = 128;
+pub const FAUX_ISSUER_SCHEMA_ID: u64 = 128;
 
-async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
-    let (authenticator, store) = init_authenticator(cli).await?;
+/// Result of issuing a test credential from the faux issuer.
+pub struct IssuedTestCredential {
+    pub credential_id: u64,
+    pub issuer_schema_id: u64,
+    pub expires_at: u64,
+    pub blinding_factor: FieldElement,
+}
 
-    // Step 1: OPRF to get blinding factor
+/// Issues a test credential from the staging faux issuer (schema 128).
+pub async fn issue_test_credential(
+    authenticator: &walletkit_core::Authenticator,
+    store: &walletkit_core::storage::CredentialStore,
+) -> eyre::Result<IssuedTestCredential> {
     let bf = authenticator
         .generate_credential_blinding_factor_remote(FAUX_ISSUER_SCHEMA_ID)
         .await
         .wrap_err("blinding factor generation failed")?;
 
-    // Step 2: Compute sub from blinding factor
     let sub = authenticator.compute_credential_sub(&bf);
     let sub_hex = sub.to_hex_string();
 
-    if !cli.json {
-        println!("Computed sub: {sub_hex}");
-        println!("Requesting credential from faux issuer...");
-    }
-
-    // Step 3: POST to faux issuer
     let client = reqwest::Client::new();
     let resp = client
         .post(FAUX_ISSUER_URL)
@@ -314,27 +316,44 @@ async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
         .wrap_err("invalid credential from faux issuer")?;
     let expires_at = cred.expires_at();
 
-    // Step 4: Store the credential
     let now = now_secs()?;
     let id = store
         .store_credential(&cred, &bf, expires_at, None, now)
         .wrap_err("store credential failed")?;
 
+    Ok(IssuedTestCredential {
+        credential_id: id,
+        issuer_schema_id: FAUX_ISSUER_SCHEMA_ID,
+        expires_at,
+        blinding_factor: bf,
+    })
+}
+
+async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
+    let (authenticator, store) = init_authenticator(cli).await?;
+    let result = issue_test_credential(&authenticator, &store).await?;
+
     if cli.json {
         output::print_json_data(
             &serde_json::json!({
-                "credential_id": id,
-                "issuer_schema_id": FAUX_ISSUER_SCHEMA_ID,
-                "expires_at": expires_at,
-                "blinding_factor": bf.to_hex_string(),
+                "credential_id": result.credential_id,
+                "issuer_schema_id": result.issuer_schema_id,
+                "expires_at": result.expires_at,
+                "blinding_factor": result.blinding_factor.to_hex_string(),
             }),
             true,
         );
     } else {
-        println!("Credential issued from faux issuer (id={id})");
-        println!("  issuer_schema_id: {FAUX_ISSUER_SCHEMA_ID}");
-        println!("  expires_at: {expires_at}");
-        println!("  blinding_factor: {}", bf.to_hex_string());
+        println!(
+            "Credential issued from faux issuer (id={})",
+            result.credential_id
+        );
+        println!("  issuer_schema_id: {}", result.issuer_schema_id);
+        println!("  expires_at: {}", result.expires_at);
+        println!(
+            "  blinding_factor: {}",
+            result.blinding_factor.to_hex_string()
+        );
     }
     Ok(())
 }
