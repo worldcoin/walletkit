@@ -1,0 +1,28 @@
+{
+  "version": "0.2",
+  "language": "en-US",
+  "allowCompoundWords": true,
+  "ignorePaths": [
+    "Cargo.toml"
+  ],
+  "words": [
+    "aarch",
+    "clippy",
+    "foundryup",
+    "merkle",
+    "ruint",
+    "Uniffi",
+    "WalletKit",
+    "Worldcoin",
+    "xcframework",
+    "Zeroize"
+  ],
+  "enabledLanguageIds": [
+    "jsonc",
+    "markdown",
+    "plaintext",
+    "rust",
+    "shellscript",
+    "swift"
+  ]
+}

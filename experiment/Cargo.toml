@@ -1,0 +1,24 @@
+[workspace]
+members = [
+  "crates/text-core",
+  "crates/switchboard",
+  "crates/shouty",
+  "crates/mirror",
+  "crates/uniffi-bindgen",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91"
+license = "MIT"
+authors = ["World Contributors"]
+repository = "https://github.com/worldcoin/WalletKit"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+text-core = { path = "crates/text-core" }
+thiserror = "2"
+uniffi = "0.31.0"

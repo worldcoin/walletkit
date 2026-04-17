@@ -1,0 +1,46 @@
+target/
+.DS_Store
+**/ios_build
+.swiftpm/
+
+# IDE
+.idea
+*.iml
+.vscode
+*/settings.json
+
+# Swift build outputs are not committed to this repo.
+WalletKit.xcframework/
+Sources/
+swift/WalletKit.xcframework/
+swift/Sources/
+swift/ios_build/
+swift/local_build/
+swift/tests/Sources/
+swift/tests/.build/
+# Kotlin bindings and native libs
+kotlin/libs/
+kotlin/walletkit/src/main/java/uniffi/
+kotlin/walletkit-tests/build/
+.build/
+**/tests/Package.resolved
+
+.env
+
+# forge
+cache/
+**/out/build-info
+
+# Allow storage cache module sources.
+!walletkit-core/src/storage/cache/
+!walletkit-core/src/storage/cache/**
+
+# Python experiment generated native libraries and caches
+experiment/host-python/generated/*/*.so
+experiment/host-python/generated/*/*.dylib
+experiment/host-python/generated/*/*.dll
+experiment/host-python/generated/*/*.pyd
+experiment/host-python/generated/*/__pycache__/
+experiment/host-python/__pycache__/
+
+# NOTE: Cargo.lock is not ignored because it is used for FFI builds (Swift & Kotlin)

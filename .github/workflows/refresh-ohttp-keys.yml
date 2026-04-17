@@ -1,0 +1,114 @@
+name: Refresh OHTTP Key Configs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  refresh-keys:
+    name: Fetch and update OHTTP HPKE key configs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Fetch OHTTP key configs
+        run: |
+          set -euo pipefail
+
+          # The /ohttp-keys endpoints return application/ohttp-keys payloads that
+          # include both X25519 and Kyber768 HPKE key configs. The Rust ohttp crate
+          # (v0.7.2) only supports X25519 and silently skips Kyber — but the Kyber
+          # configs make up ~96% of the payload size. This filter strips them out.
+          #
+          # Wire format (RFC 9458): list of length-delimited key configs:
+          #   [u16 BE] config_length
+          #   [u8]     key_id
+          #   [u16 BE] kem_id    <- 0x0020 = X25519 (keep), 0x0030 = Kyber (drop)
+          #   [...]    public_key + cipher_suites
+          filter_x25519() {
+            python3 -c "
+          import sys, struct, base64
+          data = base64.b64decode(sys.stdin.read())
+          out = bytearray()
+          i = 0
+          while i < len(data):
+              # Read 2-byte length prefix, then the config body
+              cfg_len = struct.unpack('>H', data[i:i+2])[0]
+              cfg = data[i+2:i+2+cfg_len]
+              # KEM ID sits at offset 1 in the config (after 1-byte key_id)
+              kem_id = struct.unpack('>H', cfg[1:3])[0]
+              if kem_id == 0x0020:  # DHKEM(X25519, HKDF-SHA256)
+                  out += data[i:i+2+cfg_len]
+              i += 2 + cfg_len
+          print(base64.b64encode(out).decode(), end='')
+          "
+          }
+
+          declare -A ENDPOINTS=(
+            [STAGING_US]="https://ohttp-keys.us.id-infra.worldcoin.dev/ohttp-keys"
+            [STAGING_EU]="https://ohttp-keys.eu.id-infra.worldcoin.dev/ohttp-keys"
+            [STAGING_AP]="https://ohttp-keys.ap.id-infra.worldcoin.dev/ohttp-keys"
+            [PRODUCTION_US]="https://ohttp-keys.us.id-infra.world.org/ohttp-keys"
+            [PRODUCTION_EU]="https://ohttp-keys.eu.id-infra.world.org/ohttp-keys"
+            [PRODUCTION_AP]="https://ohttp-keys.ap.id-infra.world.org/ohttp-keys"
+          )
+
+          for key in "${!ENDPOINTS[@]}"; do
+            url="${ENDPOINTS[$key]}"
+            echo "Fetching $key from $url"
+            value=$(curl -sf "$url" | base64 -w0 | filter_x25519)
+            if [ -z "$value" ]; then
+              echo "::error::Failed to fetch key config for $key from $url"
+              exit 1
+            fi
+            echo "${key}=${value}" >> "$GITHUB_ENV"
+          done
+
+      - name: Update key config files
+        run: |
+          set -euo pipefail
+          DIR="walletkit-core/src/ohttp_keys"
+
+          declare -A FILES=(
+            [STAGING_US]="staging_us.b64"
+            [STAGING_EU]="staging_eu.b64"
+            [STAGING_AP]="staging_ap.b64"
+            [PRODUCTION_US]="production_us.b64"
+            [PRODUCTION_EU]="production_eu.b64"
+            [PRODUCTION_AP]="production_ap.b64"
+          )
+
+          for key in "${!FILES[@]}"; do
+            printf '%s' "${!key}" > "$DIR/${FILES[$key]}"
+          done
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet walletkit-core/src/ohttp_keys/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No key config changes detected"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Key configs changed:"
+            git diff --stat walletkit-core/src/ohttp_keys/
+          fi
+
+      - name: Create pull request
+        if: steps.diff.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/refresh-ohttp-keys
+          commit-message: "chore: refresh OHTTP HPKE key configs"
+          title: "chore: refresh OHTTP HPKE key configs"
+          body: |
+            Automated refresh of OHTTP HPKE key configs from `/ohttp-keys` endpoints.
+
+            Fetched from:
+            - `ohttp-keys.{us,eu,ap}.id-infra.worldcoin.dev/ohttp-keys` (staging)
+            - `ohttp-keys.{us,eu,ap}.id-infra.world.org/ohttp-keys` (production)
+          labels: automation

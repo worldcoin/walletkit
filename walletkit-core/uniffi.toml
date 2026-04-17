@@ -1,0 +1,12 @@
+###### U256 ######
+
+[bindings.kotlin.custom_types.Uint256]
+type_name = "java.math.BigInteger"
+lift = "java.math.BigInteger({}, 16)"
+lower = "{}.toString(16)"
+
+[bindings.swift.custom_types.Uint256]
+type_name = "BigUInt"
+lift = "BigUInt({}, radix: 16)!"
+lower = "String({}, radix: 16)"
+imports = ["BigInt"]

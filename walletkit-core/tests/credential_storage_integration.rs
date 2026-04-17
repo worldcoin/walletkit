@@ -1,0 +1,69 @@
+#![allow(missing_docs)]
+#![cfg(feature = "storage")]
+
+mod common;
+
+use rand::rngs::OsRng;
+use walletkit_core::storage::CredentialStore;
+use walletkit_core::Credential;
+use world_id_core::api_types::AccountInclusionProof;
+use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
+use world_id_core::primitives::TREE_DEPTH;
+use world_id_core::{
+    primitives::merkle::MerkleInclusionProof, Credential as CoreCredential,
+    FieldElement as CoreFieldElement,
+};
+
+#[test]
+fn test_storage_flow_end_to_end() {
+    let root = common::temp_root();
+    let provider = common::InMemoryStorageProvider::new(&root);
+    let store = CredentialStore::from_provider(&provider).expect("store");
+
+    store.init(42, 100).expect("init");
+
+    let blinding_factor = CoreFieldElement::random(&mut OsRng);
+    let core_cred = CoreCredential::new()
+        .issuer_schema_id(7)
+        .genesis_issued_at(1_700_000_000);
+    let credential: Credential = core_cred.into();
+
+    let credential_id = store
+        .store_credential(
+            &credential,
+            &blinding_factor.into(),
+            1_800_000_000,
+            Some(vec![4, 5, 6]),
+            100,
+        )
+        .expect("store credential");
+
+    let records = store.list_credentials(None, 101).expect("list credentials");
+    assert_eq!(records.len(), 1);
+    let record = &records[0];
+    assert_eq!(record.credential_id, credential_id);
+    assert_eq!(record.issuer_schema_id, 7);
+    assert_eq!(record.expires_at, 1_800_000_000);
+    assert!(!record.is_expired);
+
+    let siblings = [CoreFieldElement::from(0u64); TREE_DEPTH];
+    let inclusion_proof =
+        MerkleInclusionProof::new(CoreFieldElement::from(1u64), 42, siblings);
+    let authenticator_pubkeys =
+        AuthenticatorPublicKeySet::new(vec![]).expect("key set");
+    let account_inclusion_proof = AccountInclusionProof {
+        inclusion_proof,
+        authenticator_pubkeys,
+    };
+
+    store
+        .merkle_cache_put(&account_inclusion_proof, 100, 10)
+        .expect("cache put");
+    let now = 105;
+    let hit = store.merkle_cache_get(now).expect("cache get");
+    assert_eq!(hit.unwrap().inclusion_proof.leaf_index, 42);
+    let miss = store.merkle_cache_get(111).expect("cache get");
+    assert!(miss.is_none());
+
+    common::cleanup_storage(&root);
+}

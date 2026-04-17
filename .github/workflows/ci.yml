@@ -1,0 +1,210 @@
+name: CI
+
+# Unless we are on the main branch, the workflow should stop and yield to a new run if new code is pushed.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ !contains(github.ref, 'main')}}
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version-alignment:
+    name: Version Alignment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - uses: worldcoin/bedrock/.github/actions/version-alignment@main
+        with:
+          uniffi_version: ${{ vars.UNIFFI_VERSION }}
+          rust_toolchain_channel: ${{ vars.RUST_TOOLCHAIN_CHANNEL }}
+
+  lint:
+    name: Format, Clippy & Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.92.0
+          components: clippy,rustfmt
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Check code formatting
+        run: cargo fmt -- --check
+
+      - name: Run clippy (all features)
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run clippy (default features)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run clippy (no default features)
+        run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+
+  swift-build-and-test:
+    name: Swift Build & Foreign Binding Tests
+    runs-on: macos-14
+    permissions:
+      contents: read
+      actions: write # needed for cache save
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.92.0
+          targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
+        with:
+          cache-targets: "true"
+
+      # Ensure a specific Xcode version is selected to match available simulators
+      - name: Select Xcode 16.2
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "16.2"
+
+      # Includes temporary downstream UniFFI callback vtable patch:
+      # https://github.com/mozilla/uniffi-rs/pull/2821
+      - name: Run Swift foreign binding tests (with temporary UniFFI ASan workaround)
+        run: ./swift/test_swift.sh
+
+      - name: Install SwiftLint
+        run: |
+          brew install swiftlint
+
+      - name: Lint Swift Tests
+        run: swiftlint swift/tests
+
+  kotlin-build-and-test:
+    name: Kotlin Build & Foreign Binding Tests
+    runs-on: arc-public-8xlarge-amd64-runner # uses the same runner as the release workflow to ensure consistency
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.92.0
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install ktlint
+        run: |
+          curl -sSLO https://github.com/pinterest/ktlint/releases/latest/download/ktlint &&
+          chmod a+x ktlint &&
+          sudo mv ktlint /usr/local/bin/
+
+      - name: Build and test Kotlin bindings
+        run: ./kotlin/test_kotlin.sh
+
+      - name: Lint Kotlin Tests
+        run: |
+          ktlint kotlin/walletkit-tests/src/test/kotlin
+
+  test:
+    name: Tests
+    runs-on: arc-public-xlarge-arm64-runner
+    permissions:
+      contents: read
+
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - nightly
+          - 1.92.0 # MSRV
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Run tests
+        env:
+          WORLDCHAIN_SEPOLIA_RPC_URL: ${{ secrets.WORLDCHAIN_SEPOLIA_RPC_URL || 'https://worldchain-sepolia.g.alchemy.com/public' }}
+          WORLDCHAIN_RPC_URL: ${{ secrets.WORLDCHAIN_RPC_URL || 'https://worldchain-mainnet.g.alchemy.com/public' }}
+        # we don't do --all-features because `compress-zkeys` is very expensive for the CI and doesn't need to be tested on every PR
+        # we add the remainder of non-default features to include them in tests
+        run: |
+          cargo test --workspace --features walletkit-core/legacy-nullifiers --features walletkit-core/v3
+
+      - name: Build non-default features
+        run: |
+          cargo build --all --no-default-features
+
+  deny:
+    name: Cargo deny
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        checks:
+          - advisories
+          - bans licenses sources
+
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check ${{ matrix.checks }}
+          rust-version: 1.92.0
+
+  docs:
+    name: Check docs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RUSTDOCFLAGS: -Dwarnings
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/install@cargo-docs-rs
+      - run: |
+          cargo +nightly docs-rs -p walletkit-core
+          cargo +nightly docs-rs -p walletkit

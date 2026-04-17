@@ -1,0 +1,96 @@
+{
+  "status": "mined",
+  "root": "0x2f3a95b6df9074a19bf46e2308d7f5696e9dca49e0d64ef49a1425bbf40e0c02",
+  "proof": [
+    {
+      "Left": "0x32871aefcc49f9c68c228fc07c1e9c948aae38c510b99b93fe84f4692a1159e"
+    },
+    {
+      "Left": "0x14cece5d8b7610f54e34ab2bba11f9e6437ea377006b194eb7b4bed7f8af9aa0"
+    },
+    {
+      "Left": "0xe4d484bd2f786ea2da0f4b7a3e02e14bb53413308c4cc21b2796d4909a5aff6"
+    },
+    {
+      "Right": "0x20df04fc727746bf92e5c75a3353ff1de5d3165d13a810bb67d9e9abcc327bb3"
+    },
+    {
+      "Left": "0x187a87e4d4b8abca8deb18ca8a2e8c3b3d36b8613af8eb8ebb3dd0075507ceac"
+    },
+    {
+      "Left": "0x242cbbae351f1eed0a8d41dfc85eb708c170996066f0a2191209712fdf7f28f6"
+    },
+    {
+      "Right": "0x40866463fb04aa0e9677ec5d2e3a96254593c9e5dd8c92649f96e805ea5f003"
+    },
+    {
+      "Left": "0x78295e5a22b84e982cf601eb639597b8b0515a88cb5ac7fa8a4aabe3c87349d"
+    },
+    {
+      "Left": "0x2fa5e5f18f6027a6501bec864564472a616b2e274a41211a444cbe3a99f3cc61"
+    },
+    {
+      "Right": "0xa8fca5d93251a3e46c9bdc6c119e8ed1ecf125b5f383eb16d80ebb9bebf2c29"
+    },
+    {
+      "Left": "0x1b7201da72494f1e28717ad1a52eb469f95892f957713533de6175e5da190af2"
+    },
+    {
+      "Right": "0x29588f6783ba8e3161b752bf196917c4dba7fcdb7bf26e16ec1431e43caf4f7b"
+    },
+    {
+      "Right": "0xac6768a33a7d86ec72897d48197bfa075c580485122bff02162b516a1b4ddb6"
+    },
+    {
+      "Left": "0x14c54148a0940bb820957f5adf3fa1134ef5c4aaa113f4646458f270e0bfbfd0"
+    },
+    {
+      "Right": "0x14d4bcfe121be97d2e899610189abadb496d3993912324d76b89ba1237110f03"
+    },
+    {
+      "Right": "0x2667f065b4ecca4a33f295c2e6c515f982b7b8ec1398d5acdd9c894544a3ad31"
+    },
+    {
+      "Right": "0x1ec8877ca7755a7f37e0ecbee0456d318366c524713146bdef102181b3d026cc"
+    },
+    {
+      "Right": "0x87d47b57f282edc00cfde72ccd19d47cb250cfc191ca5b7f875fc1636aa3ad4"
+    },
+    {
+      "Left": "0xf57c5571e9a4eab49e2c8cf050dae948aef6ead647392273546249d1c1ff10f"
+    },
+    {
+      "Left": "0x1830ee67b5fb554ad5f63d4388800e1cfe78e310697d46e43c9ce36134f72cca"
+    },
+    {
+      "Left": "0x2134e76ac5d21aab186c2be1dd8f84ee880a1e46eaf712f9d371b6df22191f3e"
+    },
+    {
+      "Left": "0x19df90ec844ebc4ffeebd866f33859b0c051d8c958ee3aa88f8f8df3db91a5b1"
+    },
+    {
+      "Left": "0x18cca2a66b5c0787981e69aefd84852d74af0e93ef4912b4648c05f722efe52b"
+    },
+    {
+      "Left": "0x2388909415230d1b4d1304d2d54f473a628338f2efad83fadf05644549d2538d"
+    },
+    {
+      "Right": "0x16ec84443a1a7600f53c5cc4053be4cd4648c804746a9e438be2222cc9e1fc48"
+    },
+    {
+      "Left": "0x2ff6650540f629fd5711a0bc74fc0d28dcb230b9392583e5f8d59696dde6ae21"
+    },
+    {
+      "Left": "0x120c58f143d491e95902f7f5277778a2e0ad5168f6add75669932630ce611518"
+    },
+    {
+      "Left": "0x1f21feb70d3f21b07bf853d5e5db03071ec495a0a565a21da2d665d279483795"
+    },
+    {
+      "Left": "0x24be905fa71335e14c638cc0f66a8623a826e768068a9e968bb1a1dde18a72d2"
+    },
+    {
+      "Left": "0xf8666b62ed17491c50ceadead57d4cd597ef3821d65c328744c74e553dac26d"
+    }
+  ]
+}
