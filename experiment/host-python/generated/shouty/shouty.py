@@ -481,7 +481,7 @@ def _uniffi_check_contract_api_version(lib):
 def _uniffi_check_api_checksums(lib):
     if lib.uniffi_shouty_checksum_constructor_shoutyprocessor_new() != 23844:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_shouty_checksum_method_shoutyprocessor_process() != 16973:
+    if lib.uniffi_shouty_checksum_method_shoutyprocessor_as_processor_registration() != 59766:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
 
 # A ctypes library to expose the extern-C FFI definitions.
@@ -760,21 +760,20 @@ _UniffiLib.uniffi_shouty_fn_constructor_shoutyprocessor_new.argtypes = (
     ctypes.POINTER(_UniffiRustCallStatus),
 )
 _UniffiLib.uniffi_shouty_fn_constructor_shoutyprocessor_new.restype = ctypes.c_uint64
-_UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_process.argtypes = (
+_UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_as_processor_registration.argtypes = (
     ctypes.c_uint64,
-    _UniffiRustBuffer,
     ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_process.restype = _UniffiRustBuffer
+_UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_as_processor_registration.restype = ctypes.c_uint64
 _UniffiLib.ffi_shouty_uniffi_contract_version.argtypes = (
 )
 _UniffiLib.ffi_shouty_uniffi_contract_version.restype = ctypes.c_uint32
 _UniffiLib.uniffi_shouty_checksum_constructor_shoutyprocessor_new.argtypes = (
 )
 _UniffiLib.uniffi_shouty_checksum_constructor_shoutyprocessor_new.restype = ctypes.c_uint16
-_UniffiLib.uniffi_shouty_checksum_method_shoutyprocessor_process.argtypes = (
+_UniffiLib.uniffi_shouty_checksum_method_shoutyprocessor_as_processor_registration.argtypes = (
 )
-_UniffiLib.uniffi_shouty_checksum_method_shoutyprocessor_process.restype = ctypes.c_uint16
+_UniffiLib.uniffi_shouty_checksum_method_shoutyprocessor_as_processor_registration.restype = ctypes.c_uint16
 
 _uniffi_check_contract_api_version(_UniffiLib)
 # _uniffi_check_api_checksums(_UniffiLib)
@@ -886,24 +885,18 @@ class _UniffiFfiConverterTypeShoutyError(_UniffiConverterRustBuffer):
 
 
 
-
-
 class ShoutyProcessorProtocol(typing.Protocol):
     """
     Processor that uppercases the input text.
 """
     
-    def process(self, request_json: str) -> str:
+    def as_processor_registration(self, ) -> switchboard.ProcessorRegistration:
         """
-        Processes a request by uppercasing the input text.
-
-        # Errors
-
-        Returns an error if the request JSON is invalid.
+        Creates a switchboard registration handle for this processor.
 """
         raise NotImplementedError
 
-class ShoutyProcessor(ShoutyProcessorProtocol, switchboard.ProcessorDriver):
+class ShoutyProcessor(ShoutyProcessorProtocol):
     """
     Processor that uppercases the input text.
 """
@@ -941,25 +934,18 @@ class ShoutyProcessor(ShoutyProcessorProtocol, switchboard.ProcessorDriver):
         inst = cls.__new__(cls)
         inst._handle = handle
         return inst
-    def process(self, request_json: str) -> str:
+    def as_processor_registration(self, ) -> switchboard.ProcessorRegistration:
         """
-        Processes a request by uppercasing the input text.
-
-        # Errors
-
-        Returns an error if the request JSON is invalid.
+        Creates a switchboard registration handle for this processor.
 """
-        
-        _UniffiFfiConverterString.check_lower(request_json)
         _uniffi_lowered_args = (
             self._uniffi_clone_handle(),
-            _UniffiFfiConverterString.lower(request_json),
         )
-        _uniffi_lift_return = _UniffiFfiConverterString.lift
-        _uniffi_error_converter = switchboard._UniffiFfiConverterTypeSwitchboardError
+        _uniffi_lift_return = switchboard._UniffiFfiConverterTypeProcessorRegistration.lift
+        _uniffi_error_converter = None
         _uniffi_ffi_result = _uniffi_rust_call_with_error(
             _uniffi_error_converter,
-            _UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_process,
+            _UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_as_processor_registration,
             *_uniffi_lowered_args,
         )
         return _uniffi_lift_return(_uniffi_ffi_result)

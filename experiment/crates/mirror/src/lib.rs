@@ -1,6 +1,10 @@
 //! Reversing processor used by the host-mediated composition experiment.
 
-use switchboard::{ProcessorDriver, SwitchboardError, SwitchboardResult};
+use std::sync::Arc;
+
+use switchboard::{
+    ProcessorDriver, ProcessorRegistration, SwitchboardError, SwitchboardResult,
+};
 use text_core::{build_response_json, parse_request_json, CoreError};
 use thiserror::Error;
 
@@ -43,16 +47,21 @@ impl MirrorProcessor {
     pub fn new() -> Self {
         Self
     }
+
+    /// Creates a switchboard registration handle for this processor.
+    pub fn as_processor_registration(self: Arc<Self>) -> Arc<ProcessorRegistration> {
+        ProcessorRegistration::from_processor(self)
+    }
 }
 
-#[uniffi::export]
+#[async_trait::async_trait]
 impl ProcessorDriver for MirrorProcessor {
     /// Processes a request by reversing the input text.
     ///
     /// # Errors
     ///
     /// Returns an error if the request JSON is invalid.
-    fn process(&self, request_json: String) -> SwitchboardResult<String> {
+    async fn process(&self, request_json: String) -> SwitchboardResult<String> {
         self.process_request(request_json).map_err(|error| {
             SwitchboardError::UnexpectedUniFFICallback {
                 reason: error.to_string(),
@@ -65,28 +74,31 @@ uniffi::setup_scaffolding!("mirror");
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::MirrorProcessor;
     use switchboard::{ProcessorDriver, Switchboard};
 
-    #[test]
-    fn reverses_the_input() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn reverses_the_input() {
         let processor = MirrorProcessor::new();
         let response = ProcessorDriver::process(
             &processor,
             r#"{"text":"hello world"}"#.to_string(),
         )
+        .await
         .expect("process should succeed");
 
         assert_eq!(response, r#"{"processor":"mirror","output":"dlrow olleh"}"#);
     }
 
-    #[test]
-    fn registers_directly_with_switchboard() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn registers_directly_with_switchboard() {
         let board = Switchboard::new();
         board
             .register_processor(
                 "mirror".to_string(),
-                std::sync::Arc::new(MirrorProcessor::new()),
+                Arc::new(MirrorProcessor::new()).as_processor_registration(),
             )
             .expect("register mirror directly");
 
@@ -95,6 +107,7 @@ mod tests {
                 "mirror".to_string(),
                 r#"{"text":"hello world"}"#.to_string(),
             )
+            .await
             .expect("dispatch mirror");
 
         assert_eq!(response, r#"{"processor":"mirror","output":"dlrow olleh"}"#);

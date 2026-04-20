@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import importlib
 import json
 import sys
@@ -31,11 +32,17 @@ from shouty import shouty  # noqa: E402  pylint: disable=wrong-import-position
 from switchboard import switchboard  # noqa: E402  pylint: disable=wrong-import-position
 
 
-def build_switchboard() -> switchboard.Switchboard:
+async def build_switchboard() -> switchboard.Switchboard:
     """Constructs the switchboard and registers both runtime-selectable processors."""
     board = switchboard.Switchboard()
-    board.register_processor("shouty", shouty.ShoutyProcessor())
-    board.register_processor("mirror", mirror.MirrorProcessor())
+    board.register_processor(
+        "shouty",
+        shouty.ShoutyProcessor().as_processor_registration(),
+    )
+    board.register_processor(
+        "mirror",
+        mirror.MirrorProcessor().as_processor_registration(),
+    )
     return board
 
 
@@ -48,9 +55,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
+async def main() -> int:
     args = parse_args()
-    board = build_switchboard()
+    board = await build_switchboard()
     processors = board.available_processors()
 
     if args.processor not in processors:
@@ -61,10 +68,10 @@ def main() -> int:
         return 2
 
     request_json = json.dumps({"text": args.text})
-    response_json = board.process_with(args.processor, request_json)
+    response_json = await board.process_with(args.processor, request_json)
     print(response_json)
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(asyncio.run(main()))

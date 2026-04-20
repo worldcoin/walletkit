@@ -5,6 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use async_trait::async_trait;
 use thiserror::Error;
 
 /// Result type for switchboard operations.
@@ -44,17 +45,34 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for SwitchboardError {
     }
 }
 
-/// Host-provided driver interface used by the switchboard.
-#[uniffi::export(with_foreign)]
+/// Async driver interface used by the switchboard.
+#[async_trait]
 pub trait ProcessorDriver: Send + Sync {
     /// Processes a JSON request and returns a JSON response.
-    fn process(&self, request_json: String) -> SwitchboardResult<String>;
+    async fn process(&self, request_json: String) -> SwitchboardResult<String>;
+}
+
+/// Opaque registration handle that adapts a concrete processor into the switchboard registry.
+#[derive(uniffi::Object)]
+pub struct ProcessorRegistration {
+    processor: Arc<dyn ProcessorDriver>,
+}
+
+impl ProcessorRegistration {
+    /// Creates a registration handle for a concrete processor implementation.
+    #[must_use]
+    pub fn from_processor<T>(processor: Arc<T>) -> Arc<Self>
+    where
+        T: ProcessorDriver + 'static,
+    {
+        Arc::new(Self { processor })
+    }
 }
 
 /// Registry and dispatcher for named processors.
 #[derive(uniffi::Object)]
 pub struct Switchboard {
-    registry: RwLock<HashMap<String, Arc<dyn ProcessorDriver>>>,
+    registry: RwLock<HashMap<String, Arc<ProcessorRegistration>>>,
 }
 
 impl Default for Switchboard {
@@ -63,7 +81,7 @@ impl Default for Switchboard {
     }
 }
 
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl Switchboard {
     /// Creates an empty switchboard.
     #[uniffi::constructor]
@@ -81,7 +99,7 @@ impl Switchboard {
     pub fn register_processor(
         &self,
         name: String,
-        processor: Arc<dyn ProcessorDriver>,
+        processor: Arc<ProcessorRegistration>,
     ) -> SwitchboardResult<()> {
         let normalized_name = normalize_name(name)?;
         let mut registry = self
@@ -117,7 +135,7 @@ impl Switchboard {
     /// # Errors
     ///
     /// Returns an error if the processor is unknown or its callback fails.
-    pub fn process_with(
+    pub async fn process_with(
         &self,
         name: String,
         request_json: String,
@@ -133,7 +151,7 @@ impl Switchboard {
                 name: normalized_name,
             })?;
 
-        processor.process(request_json)
+        processor.processor.process(request_json).await
     }
 }
 
@@ -152,31 +170,35 @@ uniffi::setup_scaffolding!("switchboard");
 mod tests {
     use std::sync::Arc;
 
-    use super::{ProcessorDriver, Switchboard, SwitchboardError, SwitchboardResult};
+    use super::{
+        ProcessorDriver, ProcessorRegistration, Switchboard, SwitchboardError,
+        SwitchboardResult,
+    };
 
     struct FakeDriver {
         prefix: &'static str,
     }
 
+    #[async_trait::async_trait]
     impl ProcessorDriver for FakeDriver {
-        fn process(&self, request_json: String) -> SwitchboardResult<String> {
+        async fn process(&self, request_json: String) -> SwitchboardResult<String> {
             Ok(format!("{}:{request_json}", self.prefix))
         }
     }
 
-    #[test]
-    fn registers_and_dispatches_to_named_processors() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn registers_and_dispatches_to_named_processors() {
         let board = Switchboard::new();
         board
             .register_processor(
                 "shouty".to_string(),
-                Arc::new(FakeDriver { prefix: "a" }),
+                ProcessorRegistration::from_processor(Arc::new(FakeDriver { prefix: "a" })),
             )
             .expect("register shouty");
         board
             .register_processor(
                 "mirror".to_string(),
-                Arc::new(FakeDriver { prefix: "b" }),
+                ProcessorRegistration::from_processor(Arc::new(FakeDriver { prefix: "b" })),
             )
             .expect("register mirror");
 
@@ -187,12 +209,14 @@ mod tests {
         assert_eq!(
             board
                 .process_with("shouty".to_string(), "payload".to_string())
+                .await
                 .expect("dispatch shouty"),
             "a:payload"
         );
         assert_eq!(
             board
                 .process_with("mirror".to_string(), "payload".to_string())
+                .await
                 .expect("dispatch mirror"),
             "b:payload"
         );
@@ -204,14 +228,14 @@ mod tests {
         board
             .register_processor(
                 "shouty".to_string(),
-                Arc::new(FakeDriver { prefix: "a" }),
+                ProcessorRegistration::from_processor(Arc::new(FakeDriver { prefix: "a" })),
             )
             .expect("first registration should succeed");
 
         let error = board
             .register_processor(
                 "shouty".to_string(),
-                Arc::new(FakeDriver { prefix: "b" }),
+                ProcessorRegistration::from_processor(Arc::new(FakeDriver { prefix: "b" })),
             )
             .expect_err("duplicate registration should fail");
 
@@ -223,11 +247,12 @@ mod tests {
         );
     }
 
-    #[test]
-    fn rejects_unknown_processors() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn rejects_unknown_processors() {
         let board = Switchboard::new();
         let error = board
             .process_with("missing".to_string(), "payload".to_string())
+            .await
             .expect_err("unknown processor should fail");
 
         assert_eq!(
