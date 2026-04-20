@@ -70,17 +70,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-trait"
-version = "0.1.89"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -348,8 +337,6 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 name = "mirror"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "switchboard",
  "text-core",
  "thiserror",
  "tokio",
@@ -529,8 +516,6 @@ dependencies = [
 name = "shouty"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "switchboard",
  "text-core",
  "thiserror",
  "tokio",
@@ -565,7 +550,6 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 name = "switchboard"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "thiserror",
  "tokio",
  "uniffi",

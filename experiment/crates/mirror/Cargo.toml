@@ -11,8 +11,6 @@ repository.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-async-trait.workspace = true
-switchboard = { path = "../switchboard" }
 text-core.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

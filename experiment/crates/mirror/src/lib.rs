@@ -1,10 +1,5 @@
 //! Reversing processor used by the host-mediated composition experiment.
 
-use std::sync::Arc;
-
-use switchboard::{
-    ProcessorDriver, ProcessorRegistration, SwitchboardError, SwitchboardResult,
-};
 use text_core::{build_response_json, parse_request_json, CoreError};
 use thiserror::Error;
 
@@ -32,15 +27,7 @@ impl Default for MirrorProcessor {
     }
 }
 
-impl MirrorProcessor {
-    fn process_request(&self, request_json: String) -> Result<String, MirrorError> {
-        let request = parse_request_json(&request_json)?;
-        let output = request.text.chars().rev().collect::<String>();
-        build_response_json("mirror", output).map_err(Into::into)
-    }
-}
-
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl MirrorProcessor {
     /// Creates a new mirror processor.
     #[uniffi::constructor]
@@ -48,25 +35,19 @@ impl MirrorProcessor {
         Self
     }
 
-    /// Creates a switchboard registration handle for this processor.
-    pub fn as_processor_registration(self: Arc<Self>) -> Arc<ProcessorRegistration> {
-        ProcessorRegistration::from_processor(self)
-    }
-}
-
-#[async_trait::async_trait]
-impl ProcessorDriver for MirrorProcessor {
-    /// Processes a request by reversing the input text.
+    /// Async processing — runs on mirror's own tokio runtime.
     ///
     /// # Errors
     ///
     /// Returns an error if the request JSON is invalid.
-    async fn process(&self, request_json: String) -> SwitchboardResult<String> {
-        self.process_request(request_json).map_err(|error| {
-            SwitchboardError::UnexpectedUniFFICallback {
-                reason: error.to_string(),
-            }
-        })
+    pub async fn process_async(
+        &self,
+        request_json: String,
+    ) -> Result<String, MirrorError> {
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        let request = parse_request_json(&request_json)?;
+        let output = request.text.chars().rev().collect::<String>();
+        build_response_json("mirror", output).map_err(Into::into)
     }
 }
 
@@ -74,41 +55,15 @@ uniffi::setup_scaffolding!("mirror");
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::MirrorProcessor;
-    use switchboard::{ProcessorDriver, Switchboard};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn reverses_the_input() {
         let processor = MirrorProcessor::new();
-        let response = ProcessorDriver::process(
-            &processor,
-            r#"{"text":"hello world"}"#.to_string(),
-        )
-        .await
-        .expect("process should succeed");
-
-        assert_eq!(response, r#"{"processor":"mirror","output":"dlrow olleh"}"#);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn registers_directly_with_switchboard() {
-        let board = Switchboard::new();
-        board
-            .register_processor(
-                "mirror".to_string(),
-                Arc::new(MirrorProcessor::new()).as_processor_registration(),
-            )
-            .expect("register mirror directly");
-
-        let response = board
-            .process_with(
-                "mirror".to_string(),
-                r#"{"text":"hello world"}"#.to_string(),
-            )
+        let response = processor
+            .process_async(r#"{"text":"hello world"}"#.to_string())
             .await
-            .expect("dispatch mirror");
+            .expect("process should succeed");
 
         assert_eq!(response, r#"{"processor":"mirror","output":"dlrow olleh"}"#);
     }

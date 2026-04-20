@@ -26,8 +26,8 @@ import threading
 import itertools
 import traceback
 import typing
+import asyncio
 import platform
-from . import switchboard
 
 
 # Used for default argument values
@@ -481,7 +481,7 @@ def _uniffi_check_contract_api_version(lib):
 def _uniffi_check_api_checksums(lib):
     if lib.uniffi_shouty_checksum_constructor_shoutyprocessor_new() != 23844:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_shouty_checksum_method_shoutyprocessor_as_processor_registration() != 59766:
+    if lib.uniffi_shouty_checksum_method_shoutyprocessor_process_async() != 25495:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
 
 # A ctypes library to expose the extern-C FFI definitions.
@@ -760,25 +760,87 @@ _UniffiLib.uniffi_shouty_fn_constructor_shoutyprocessor_new.argtypes = (
     ctypes.POINTER(_UniffiRustCallStatus),
 )
 _UniffiLib.uniffi_shouty_fn_constructor_shoutyprocessor_new.restype = ctypes.c_uint64
-_UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_as_processor_registration.argtypes = (
+_UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_process_async.argtypes = (
     ctypes.c_uint64,
-    ctypes.POINTER(_UniffiRustCallStatus),
+    _UniffiRustBuffer,
 )
-_UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_as_processor_registration.restype = ctypes.c_uint64
+_UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_process_async.restype = ctypes.c_uint64
 _UniffiLib.ffi_shouty_uniffi_contract_version.argtypes = (
 )
 _UniffiLib.ffi_shouty_uniffi_contract_version.restype = ctypes.c_uint32
 _UniffiLib.uniffi_shouty_checksum_constructor_shoutyprocessor_new.argtypes = (
 )
 _UniffiLib.uniffi_shouty_checksum_constructor_shoutyprocessor_new.restype = ctypes.c_uint16
-_UniffiLib.uniffi_shouty_checksum_method_shoutyprocessor_as_processor_registration.argtypes = (
+_UniffiLib.uniffi_shouty_checksum_method_shoutyprocessor_process_async.argtypes = (
 )
-_UniffiLib.uniffi_shouty_checksum_method_shoutyprocessor_as_processor_registration.restype = ctypes.c_uint16
+_UniffiLib.uniffi_shouty_checksum_method_shoutyprocessor_process_async.restype = ctypes.c_uint16
 
 _uniffi_check_contract_api_version(_UniffiLib)
 # _uniffi_check_api_checksums(_UniffiLib)
 
+# RustFuturePoll values
+_UNIFFI_RUST_FUTURE_POLL_READY = 0
+_UNIFFI_RUST_FUTURE_POLL_WAKE = 1
 
+# Stores futures for _uniffi_continuation_callback
+_UniffiContinuationHandleMap = _UniffiHandleMap()
+
+_UNIFFI_GLOBAL_EVENT_LOOP = None
+
+"""
+Set the event loop to use for async functions
+
+This is needed if some async functions run outside of the eventloop, for example:
+    - A non-eventloop thread is spawned, maybe from `EventLoop.run_in_executor` or maybe from the
+      Rust code spawning its own thread.
+    - The Rust code calls an async callback method from a sync callback function, using something
+      like `pollster` to block on the async call.
+
+In this case, we need an event loop to run the Python async function, but there's no eventloop set
+for the thread.  Use `uniffi_set_event_loop` to force an eventloop to be used in this case.
+"""
+def uniffi_set_event_loop(eventloop: asyncio.BaseEventLoop):
+    global _UNIFFI_GLOBAL_EVENT_LOOP
+    _UNIFFI_GLOBAL_EVENT_LOOP = eventloop
+
+def _uniffi_get_event_loop():
+    if _UNIFFI_GLOBAL_EVENT_LOOP is not None:
+        return _UNIFFI_GLOBAL_EVENT_LOOP
+    else:
+        return asyncio.get_running_loop()
+
+# Continuation callback for async functions
+# lift the return value or error and resolve the future, causing the async function to resume.
+@_UNIFFI_RUST_FUTURE_CONTINUATION_CALLBACK
+def _uniffi_continuation_callback(future_ptr, poll_code):
+    (eventloop, future) = _UniffiContinuationHandleMap.remove(future_ptr)
+    eventloop.call_soon_threadsafe(_uniffi_set_future_result, future, poll_code)
+
+def _uniffi_set_future_result(future, poll_code):
+    if not future.cancelled():
+        future.set_result(poll_code)
+
+async def _uniffi_rust_call_async(rust_future, ffi_poll, ffi_complete, ffi_free, lift_func, error_ffi_converter):
+    try:
+        eventloop = _uniffi_get_event_loop()
+
+        # Loop and poll until we see a _UNIFFI_RUST_FUTURE_POLL_READY value
+        while True:
+            future = eventloop.create_future()
+            ffi_poll(
+                rust_future,
+                _uniffi_continuation_callback,
+                _UniffiContinuationHandleMap.insert((eventloop, future)),
+            )
+            poll_code = await future
+            if poll_code == _UNIFFI_RUST_FUTURE_POLL_READY:
+                break
+
+        return lift_func(
+            _uniffi_rust_call_with_error(error_ffi_converter, ffi_complete, rust_future)
+        )
+    finally:
+        ffi_free(rust_future)
 
 # Public interface members begin here.
 
@@ -883,16 +945,18 @@ class _UniffiFfiConverterTypeShoutyError(_UniffiConverterRustBuffer):
             _UniffiFfiConverterString.write(value._values[0], buf)
 
 
-
-
 class ShoutyProcessorProtocol(typing.Protocol):
     """
     Processor that uppercases the input text.
 """
     
-    def as_processor_registration(self, ) -> switchboard.ProcessorRegistration:
+    async def process_async(self, request_json: str) -> str:
         """
-        Creates a switchboard registration handle for this processor.
+        Async processing — runs on shouty's own tokio runtime.
+
+        # Errors
+
+        Returns an error if the request JSON is invalid.
 """
         raise NotImplementedError
 
@@ -934,21 +998,30 @@ class ShoutyProcessor(ShoutyProcessorProtocol):
         inst = cls.__new__(cls)
         inst._handle = handle
         return inst
-    def as_processor_registration(self, ) -> switchboard.ProcessorRegistration:
+    async def process_async(self, request_json: str) -> str:
         """
-        Creates a switchboard registration handle for this processor.
+        Async processing — runs on shouty's own tokio runtime.
+
+        # Errors
+
+        Returns an error if the request JSON is invalid.
 """
+        
+        _UniffiFfiConverterString.check_lower(request_json)
         _uniffi_lowered_args = (
             self._uniffi_clone_handle(),
+            _UniffiFfiConverterString.lower(request_json),
         )
-        _uniffi_lift_return = switchboard._UniffiFfiConverterTypeProcessorRegistration.lift
-        _uniffi_error_converter = None
-        _uniffi_ffi_result = _uniffi_rust_call_with_error(
+        _uniffi_lift_return = _UniffiFfiConverterString.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeShoutyError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_process_async(*_uniffi_lowered_args),
+            _UniffiLib.ffi_shouty_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_shouty_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_shouty_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
             _uniffi_error_converter,
-            _UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_as_processor_registration,
-            *_uniffi_lowered_args,
         )
-        return _uniffi_lift_return(_uniffi_ffi_result)
 
 
 

@@ -479,13 +479,15 @@ def _uniffi_check_contract_api_version(lib):
         raise InternalError("UniFFI contract version mismatch: try cleaning and rebuilding your project")
 
 def _uniffi_check_api_checksums(lib):
+    if lib.uniffi_switchboard_checksum_method_processordriver_process() != 35707:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_switchboard_checksum_constructor_switchboard_new() != 32750:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_switchboard_checksum_method_switchboard_available_processors() != 15055:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_switchboard_checksum_method_switchboard_process_with() != 16355:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_switchboard_checksum_method_switchboard_register_processor() != 10135:
+    if lib.uniffi_switchboard_checksum_method_switchboard_register_processor() != 30041:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
 
 # A ctypes library to expose the extern-C FFI definitions.
@@ -750,16 +752,16 @@ _UniffiLib.ffi_switchboard_rust_future_free_void.argtypes = (
     ctypes.c_uint64,
 )
 _UniffiLib.ffi_switchboard_rust_future_free_void.restype = None
-_UniffiLib.uniffi_switchboard_fn_clone_processorregistration.argtypes = (
+_UniffiLib.uniffi_switchboard_fn_clone_processordriver.argtypes = (
     ctypes.c_uint64,
     ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniffiLib.uniffi_switchboard_fn_clone_processorregistration.restype = ctypes.c_uint64
-_UniffiLib.uniffi_switchboard_fn_free_processorregistration.argtypes = (
+_UniffiLib.uniffi_switchboard_fn_clone_processordriver.restype = ctypes.c_uint64
+_UniffiLib.uniffi_switchboard_fn_free_processordriver.argtypes = (
     ctypes.c_uint64,
     ctypes.POINTER(_UniffiRustCallStatus),
 )
-_UniffiLib.uniffi_switchboard_fn_free_processorregistration.restype = None
+_UniffiLib.uniffi_switchboard_fn_free_processordriver.restype = None
 _UniffiLib.uniffi_switchboard_fn_clone_switchboard.argtypes = (
     ctypes.c_uint64,
     ctypes.POINTER(_UniffiRustCallStatus),
@@ -770,6 +772,29 @@ _UniffiLib.uniffi_switchboard_fn_free_switchboard.argtypes = (
     ctypes.POINTER(_UniffiRustCallStatus),
 )
 _UniffiLib.uniffi_switchboard_fn_free_switchboard.restype = None
+_UNIFFI_CALLBACK_INTERFACE_SWITCHBOARD_PROCESSOR_DRIVER_METHOD0 = ctypes.CFUNCTYPE(None,ctypes.c_uint64,_UniffiRustBuffer,ctypes.POINTER(_UniffiRustBuffer),
+    ctypes.POINTER(_UniffiRustCallStatus),
+)
+_UNIFFI_CALLBACK_INTERFACE_CLONE_SWITCHBOARD_PROCESSOR_DRIVER = ctypes.CFUNCTYPE(ctypes.c_uint64,ctypes.c_uint64,
+)
+_UNIFFI_CALLBACK_INTERFACE_FREE_SWITCHBOARD_PROCESSOR_DRIVER = ctypes.CFUNCTYPE(None,ctypes.c_uint64,
+)
+class _UniffiVTableCallbackInterfaceSwitchboardProcessorDriver(ctypes.Structure):
+    _fields_ = [
+        ("uniffi_free", _UNIFFI_CALLBACK_INTERFACE_FREE_SWITCHBOARD_PROCESSOR_DRIVER),
+        ("uniffi_clone", _UNIFFI_CALLBACK_INTERFACE_CLONE_SWITCHBOARD_PROCESSOR_DRIVER),
+        ("process", _UNIFFI_CALLBACK_INTERFACE_SWITCHBOARD_PROCESSOR_DRIVER_METHOD0),
+    ]
+_UniffiLib.uniffi_switchboard_fn_init_callback_vtable_processordriver.argtypes = (
+    ctypes.POINTER(_UniffiVTableCallbackInterfaceSwitchboardProcessorDriver),
+)
+_UniffiLib.uniffi_switchboard_fn_init_callback_vtable_processordriver.restype = None
+_UniffiLib.uniffi_switchboard_fn_method_processordriver_process.argtypes = (
+    ctypes.c_uint64,
+    _UniffiRustBuffer,
+    ctypes.POINTER(_UniffiRustCallStatus),
+)
+_UniffiLib.uniffi_switchboard_fn_method_processordriver_process.restype = _UniffiRustBuffer
 _UniffiLib.uniffi_switchboard_fn_constructor_switchboard_new.argtypes = (
     ctypes.POINTER(_UniffiRustCallStatus),
 )
@@ -795,6 +820,9 @@ _UniffiLib.uniffi_switchboard_fn_method_switchboard_register_processor.restype =
 _UniffiLib.ffi_switchboard_uniffi_contract_version.argtypes = (
 )
 _UniffiLib.ffi_switchboard_uniffi_contract_version.restype = ctypes.c_uint32
+_UniffiLib.uniffi_switchboard_checksum_method_processordriver_process.argtypes = (
+)
+_UniffiLib.uniffi_switchboard_checksum_method_processordriver_process.restype = ctypes.c_uint16
 _UniffiLib.uniffi_switchboard_checksum_constructor_switchboard_new.argtypes = (
 )
 _UniffiLib.uniffi_switchboard_checksum_constructor_switchboard_new.restype = ctypes.c_uint16
@@ -1039,16 +1067,20 @@ class _UniffiFfiConverterTypeSwitchboardError(_UniffiConverterRustBuffer):
             _UniffiFfiConverterString.write(value.reason, buf)
 
 
-class ProcessorRegistrationProtocol(typing.Protocol):
+class ProcessorDriver():
     """
-    Opaque registration handle that adapts a concrete processor into the switchboard registry.
+    Driver interface used by the switchboard.
 """
     
-    pass
+    def process(self, request_json: str) -> str:
+        """
+        Processes a JSON request and returns a JSON response.
+"""
+        raise NotImplementedError
 
-class ProcessorRegistration(ProcessorRegistrationProtocol):
+class ProcessorDriverImpl(ProcessorDriver):
     """
-    Opaque registration handle that adapts a concrete processor into the switchboard registry.
+    Driver interface used by the switchboard.
 """
     
     _handle: ctypes.c_uint64
@@ -1060,10 +1092,10 @@ class ProcessorRegistration(ProcessorRegistrationProtocol):
         # In case of partial initialization of instances.
         handle = getattr(self, "_handle", None)
         if handle is not None:
-            _uniffi_rust_call(_UniffiLib.uniffi_switchboard_fn_free_processorregistration, handle)
+            _uniffi_rust_call(_UniffiLib.uniffi_switchboard_fn_free_processordriver, handle)
 
     def _uniffi_clone_handle(self):
-        return _uniffi_rust_call(_UniffiLib.uniffi_switchboard_fn_clone_processorregistration, self._handle)
+        return _uniffi_rust_call(_UniffiLib.uniffi_switchboard_fn_clone_processordriver, self._handle)
 
     # Used by alternative constructors or any methods which return this type.
     @classmethod
@@ -1073,34 +1105,108 @@ class ProcessorRegistration(ProcessorRegistrationProtocol):
         inst = cls.__new__(cls)
         inst._handle = handle
         return inst
+    def process(self, request_json: str) -> str:
+        """
+        Processes a JSON request and returns a JSON response.
+"""
+        
+        _UniffiFfiConverterString.check_lower(request_json)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            _UniffiFfiConverterString.lower(request_json),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterString.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeSwitchboardError
+        _uniffi_ffi_result = _uniffi_rust_call_with_error(
+            _uniffi_error_converter,
+            _UniffiLib.uniffi_switchboard_fn_method_processordriver_process,
+            *_uniffi_lowered_args,
+        )
+        return _uniffi_lift_return(_uniffi_ffi_result)
 
 
 
 
+# Put all the bits inside a class to keep the top-level namespace clean
+class _UniffiTraitImplProcessorDriverImpl:
+    # For each method, generate a callback function to pass to Rust
 
-class _UniffiFfiConverterTypeProcessorRegistration:
+    @_UNIFFI_CALLBACK_INTERFACE_SWITCHBOARD_PROCESSOR_DRIVER_METHOD0
+    def process(
+            uniffi_handle,
+            request_json,
+            uniffi_out_return,
+            uniffi_call_status_ptr,
+        ):
+        uniffi_obj = _UniffiFfiConverterTypeProcessorDriver._handle_map.get(uniffi_handle)
+        def make_call():
+            uniffi_args = (_UniffiFfiConverterString.lift(request_json), )
+            uniffi_method = uniffi_obj.process
+            return uniffi_method(*uniffi_args)
+        def write_return_value(v):
+            uniffi_out_return[0] = _UniffiFfiConverterString.lower(v)
+        _uniffi_trait_interface_call_with_error(
+                uniffi_call_status_ptr.contents,
+                make_call,
+                write_return_value,
+                SwitchboardError,
+                _UniffiFfiConverterTypeSwitchboardError.lower,
+        )
+
+    @_UNIFFI_CALLBACK_INTERFACE_FREE_SWITCHBOARD_PROCESSOR_DRIVER
+    def _uniffi_free(uniffi_handle):
+        _UniffiFfiConverterTypeProcessorDriver._handle_map.remove(uniffi_handle)
+
+    @_UNIFFI_CALLBACK_INTERFACE_CLONE_SWITCHBOARD_PROCESSOR_DRIVER
+    def _uniffi_clone(uniffi_handle):
+        return _UniffiFfiConverterTypeProcessorDriver._handle_map.clone(uniffi_handle)
+
+    # Generate the FFI VTable.  This has a field for each callback interface method.
+    _uniffi_vtable = _UniffiVTableCallbackInterfaceSwitchboardProcessorDriver(
+        _uniffi_free,
+        _uniffi_clone,
+        process,
+    )
+    # Send Rust a pointer to the VTable.  Note: this means we need to keep the struct alive forever,
+    # or else bad things will happen when Rust tries to access it.
+    _UniffiLib.uniffi_switchboard_fn_init_callback_vtable_processordriver(ctypes.byref(_uniffi_vtable))
+
+class _UniffiFfiConverterTypeProcessorDriver:
+    _handle_map = _UniffiHandleMap()
+
     @staticmethod
-    def lift(value: int) -> ProcessorRegistration:
-        return ProcessorRegistration._uniffi_make_instance(value)
+    def lift(value: int):
+        if (value & 1) == 0:
+            # Rust-generated handle, construct a new class that uses the handle to implement the
+            # interface
+            return ProcessorDriverImpl._uniffi_make_instance(value)
+        else:
+            # Python-generated handle, get the object from the handle map
+            return _UniffiFfiConverterTypeProcessorDriver._handle_map.remove(value)
 
     @staticmethod
-    def check_lower(value: ProcessorRegistration):
-        if not isinstance(value, ProcessorRegistration):
-            raise TypeError("Expected ProcessorRegistration instance, {} found".format(type(value).__name__))
+    def check_lower(value: ProcessorDriver):
+        if not isinstance(value, ProcessorDriver):
+            raise TypeError("Expected ProcessorDriver subclass, {} found".format(type(value).__name__))
 
     @staticmethod
-    def lower(value: ProcessorRegistration) -> ctypes.c_uint64:
-        return value._uniffi_clone_handle()
+    def lower(value: ProcessorDriver):
+         if isinstance(value, ProcessorDriverImpl):
+            # Rust-implementated object.  Clone the handle and return it
+            return value._uniffi_clone_handle()
+         else:
+            # Python-implementated object, generate a new vtable handle and return that.
+            return _UniffiFfiConverterTypeProcessorDriver._handle_map.insert(value)
 
     @classmethod
-    def read(cls, buf: _UniffiRustBuffer) -> ProcessorRegistration:
+    def read(cls, buf: _UniffiRustBuffer):
         ptr = buf.read_u64()
         if ptr == 0:
             raise InternalError("Raw handle value was null")
         return cls.lift(ptr)
 
     @classmethod
-    def write(cls, value: ProcessorRegistration, buf: _UniffiRustBuffer):
+    def write(cls, value: ProcessorDriver, buf: _UniffiRustBuffer):
         buf.write_u64(cls.lower(value))
 
 class _UniffiFfiConverterSequenceString(_UniffiConverterRustBuffer):
@@ -1146,7 +1252,7 @@ class SwitchboardProtocol(typing.Protocol):
         Returns an error if the processor is unknown or its callback fails.
 """
         raise NotImplementedError
-    def register_processor(self, name: str,processor: ProcessorRegistration) -> None:
+    def register_processor(self, name: str,processor: ProcessorDriver) -> None:
         """
         Registers a named processor implementation.
 
@@ -1236,7 +1342,7 @@ class Switchboard(SwitchboardProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
-    def register_processor(self, name: str,processor: ProcessorRegistration) -> None:
+    def register_processor(self, name: str,processor: ProcessorDriver) -> None:
         """
         Registers a named processor implementation.
 
@@ -1247,11 +1353,11 @@ class Switchboard(SwitchboardProtocol):
         
         _UniffiFfiConverterString.check_lower(name)
 
-        _UniffiFfiConverterTypeProcessorRegistration.check_lower(processor)
+        _UniffiFfiConverterTypeProcessorDriver.check_lower(processor)
         _uniffi_lowered_args = (
             self._uniffi_clone_handle(),
             _UniffiFfiConverterString.lower(name),
-            _UniffiFfiConverterTypeProcessorRegistration.lower(processor),
+            _UniffiFfiConverterTypeProcessorDriver.lower(processor),
         )
         _uniffi_lift_return = lambda val: None
         _uniffi_error_converter = _UniffiFfiConverterTypeSwitchboardError
@@ -1307,8 +1413,8 @@ class _UniffiFfiConverterUInt8(_UniffiConverterPrimitiveInt):
 __all__ = [
     "InternalError",
     "SwitchboardError",
-    "ProcessorRegistration",
-    "ProcessorRegistrationProtocol",
+    "ProcessorDriverImpl",
+    "ProcessorDriver",
     "Switchboard",
     "SwitchboardProtocol",
 ]

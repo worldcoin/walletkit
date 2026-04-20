@@ -1,10 +1,5 @@
 //! Uppercase processor used by the host-mediated composition experiment.
 
-use std::sync::Arc;
-
-use switchboard::{
-    ProcessorDriver, ProcessorRegistration, SwitchboardError, SwitchboardResult,
-};
 use text_core::{build_response_json, parse_request_json, CoreError};
 use thiserror::Error;
 
@@ -32,14 +27,7 @@ impl Default for ShoutyProcessor {
     }
 }
 
-impl ShoutyProcessor {
-    fn process_request(&self, request_json: String) -> Result<String, ShoutyError> {
-        let request = parse_request_json(&request_json)?;
-        build_response_json("shouty", request.text.to_uppercase()).map_err(Into::into)
-    }
-}
-
-#[uniffi::export]
+#[uniffi::export(async_runtime = "tokio")]
 impl ShoutyProcessor {
     /// Creates a new shouty processor.
     #[uniffi::constructor]
@@ -47,25 +35,18 @@ impl ShoutyProcessor {
         Self
     }
 
-    /// Creates a switchboard registration handle for this processor.
-    pub fn as_processor_registration(self: Arc<Self>) -> Arc<ProcessorRegistration> {
-        ProcessorRegistration::from_processor(self)
-    }
-}
-
-#[async_trait::async_trait]
-impl ProcessorDriver for ShoutyProcessor {
-    /// Processes a request by uppercasing the input text.
+    /// Async processing — runs on shouty's own tokio runtime.
     ///
     /// # Errors
     ///
     /// Returns an error if the request JSON is invalid.
-    async fn process(&self, request_json: String) -> SwitchboardResult<String> {
-        self.process_request(request_json).map_err(|error| {
-            SwitchboardError::UnexpectedUniFFICallback {
-                reason: error.to_string(),
-            }
-        })
+    pub async fn process_async(
+        &self,
+        request_json: String,
+    ) -> Result<String, ShoutyError> {
+        tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+        let request = parse_request_json(&request_json)?;
+        build_response_json("shouty", request.text.to_uppercase()).map_err(Into::into)
     }
 }
 
@@ -73,41 +54,15 @@ uniffi::setup_scaffolding!("shouty");
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::ShoutyProcessor;
-    use switchboard::{ProcessorDriver, Switchboard};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn uppercases_the_input() {
         let processor = ShoutyProcessor::new();
-        let response = ProcessorDriver::process(
-            &processor,
-            r#"{"text":"hello world"}"#.to_string(),
-        )
-        .await
-        .expect("process should succeed");
-
-        assert_eq!(response, r#"{"processor":"shouty","output":"HELLO WORLD"}"#);
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    async fn registers_directly_with_switchboard() {
-        let board = Switchboard::new();
-        board
-            .register_processor(
-                "shouty".to_string(),
-                Arc::new(ShoutyProcessor::new()).as_processor_registration(),
-            )
-            .expect("register shouty directly");
-
-        let response = board
-            .process_with(
-                "shouty".to_string(),
-                r#"{"text":"hello world"}"#.to_string(),
-            )
+        let response = processor
+            .process_async(r#"{"text":"hello world"}"#.to_string())
             .await
-            .expect("dispatch shouty");
+            .expect("process should succeed");
 
         assert_eq!(response, r#"{"processor":"shouty","output":"HELLO WORLD"}"#);
     }
