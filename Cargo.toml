@@ -1,57 +1,25 @@
 [workspace]
 members = [
-  "uniffi-bindgen",
-  "walletkit-core",
-  "walletkit",
-  "walletkit-db",
-  "walletkit-cli",
+  "crates/text-core",
+  "crates/switchboard",
+  "crates/shouty",
+  "crates/mirror",
+  "crates/uniffi-bindgen",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.14.0"
-license = "MIT"
+version = "0.1.0"
 edition = "2021"
+rust-version = "1.91"
+license = "MIT"
 authors = ["World Contributors"]
-readme = "./README.md"
-homepage = "https://docs.world.org" # TODO: Update to specific WalletKit page
-rust-version = "1.91" # MSRV
-repository = "https://github.com/worldcoin/walletkit"
-exclude = [
-  "tests/",
-  "uniffi-bindgen/",
-  "walletkit-cli/",
-  "/audits",
-  "/kotlin",
-  "/swift",
-]
-keywords = ["ZKP", "WorldID", "World", "Identity", "Semaphore"]
-categories = ["api-bindings", "cryptography::cryptocurrencies"]
-
+repository = "https://github.com/worldcoin/WalletKit"
 
 [workspace.dependencies]
-alloy-core = { version = "1", default-features = false, features = [
-  "sol-types",
-] }
-alloy-primitives = { version = "1", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+text-core = { path = "crates/text-core" }
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 uniffi = { version = "0.31.0", features = ["tokio"] }
-world-id-core = { version = "0.9.0", default-features = false }
-
-# internal
-walletkit-core = { version = "0.14.0", path = "walletkit-core", default-features = false }
-walletkit-db = { version = "0.14.0", path = "walletkit-db" }
-
-[workspace.lints.clippy]
-all = { level = "deny", priority = -1 }
-pedantic = { level = "deny", priority = -1 }
-nursery = { level = "deny", priority = -1 }
-
-[workspace.lints.rust]
-missing_docs = "deny"
-dead_code = "deny"
-
-[profile.release]
-opt-level = 'z' # Optimize for size.
-lto = true      # Enable Link Time Optimization.
-panic = "abort"
-debug = false
