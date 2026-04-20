@@ -27,6 +27,7 @@ import itertools
 import traceback
 import typing
 import platform
+from . import switchboard
 
 
 # Used for default argument values
@@ -480,7 +481,7 @@ def _uniffi_check_contract_api_version(lib):
 def _uniffi_check_api_checksums(lib):
     if lib.uniffi_shouty_checksum_constructor_shoutyprocessor_new() != 23844:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_shouty_checksum_method_shoutyprocessor_process() != 36533:
+    if lib.uniffi_shouty_checksum_method_shoutyprocessor_process() != 16973:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
 
 # A ctypes library to expose the extern-C FFI definitions.
@@ -883,6 +884,10 @@ class _UniffiFfiConverterTypeShoutyError(_UniffiConverterRustBuffer):
             _UniffiFfiConverterString.write(value._values[0], buf)
 
 
+
+
+
+
 class ShoutyProcessorProtocol(typing.Protocol):
     """
     Processor that uppercases the input text.
@@ -898,7 +903,7 @@ class ShoutyProcessorProtocol(typing.Protocol):
 """
         raise NotImplementedError
 
-class ShoutyProcessor(ShoutyProcessorProtocol):
+class ShoutyProcessor(ShoutyProcessorProtocol, switchboard.ProcessorDriver):
     """
     Processor that uppercases the input text.
 """
@@ -951,7 +956,7 @@ class ShoutyProcessor(ShoutyProcessorProtocol):
             _UniffiFfiConverterString.lower(request_json),
         )
         _uniffi_lift_return = _UniffiFfiConverterString.lift
-        _uniffi_error_converter = _UniffiFfiConverterTypeShoutyError
+        _uniffi_error_converter = switchboard._UniffiFfiConverterTypeSwitchboardError
         _uniffi_ffi_result = _uniffi_rust_call_with_error(
             _uniffi_error_converter,
             _UniffiLib.uniffi_shouty_fn_method_shoutyprocessor_process,

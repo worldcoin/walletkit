@@ -1,5 +1,6 @@
 //! Reversing processor used by the host-mediated composition experiment.
 
+use switchboard::{ProcessorDriver, SwitchboardError, SwitchboardResult};
 use text_core::{build_response_json, parse_request_json, CoreError};
 use thiserror::Error;
 
@@ -27,6 +28,14 @@ impl Default for MirrorProcessor {
     }
 }
 
+impl MirrorProcessor {
+    fn process_request(&self, request_json: String) -> Result<String, MirrorError> {
+        let request = parse_request_json(&request_json)?;
+        let output = request.text.chars().rev().collect::<String>();
+        build_response_json("mirror", output).map_err(Into::into)
+    }
+}
+
 #[uniffi::export]
 impl MirrorProcessor {
     /// Creates a new mirror processor.
@@ -34,16 +43,21 @@ impl MirrorProcessor {
     pub fn new() -> Self {
         Self
     }
+}
 
+#[uniffi::export]
+impl ProcessorDriver for MirrorProcessor {
     /// Processes a request by reversing the input text.
     ///
     /// # Errors
     ///
     /// Returns an error if the request JSON is invalid.
-    pub fn process(&self, request_json: String) -> Result<String, MirrorError> {
-        let request = parse_request_json(&request_json)?;
-        let output = request.text.chars().rev().collect::<String>();
-        build_response_json("mirror", output).map_err(Into::into)
+    fn process(&self, request_json: String) -> SwitchboardResult<String> {
+        self.process_request(request_json).map_err(|error| {
+            SwitchboardError::UnexpectedUniFFICallback {
+                reason: error.to_string(),
+            }
+        })
     }
 }
 
@@ -52,13 +66,36 @@ uniffi::setup_scaffolding!("mirror");
 #[cfg(test)]
 mod tests {
     use super::MirrorProcessor;
+    use switchboard::{ProcessorDriver, Switchboard};
 
     #[test]
     fn reverses_the_input() {
         let processor = MirrorProcessor::new();
-        let response = processor
-            .process(r#"{"text":"hello world"}"#.to_string())
-            .expect("process should succeed");
+        let response = ProcessorDriver::process(
+            &processor,
+            r#"{"text":"hello world"}"#.to_string(),
+        )
+        .expect("process should succeed");
+
+        assert_eq!(response, r#"{"processor":"mirror","output":"dlrow olleh"}"#);
+    }
+
+    #[test]
+    fn registers_directly_with_switchboard() {
+        let board = Switchboard::new();
+        board
+            .register_processor(
+                "mirror".to_string(),
+                std::sync::Arc::new(MirrorProcessor::new()),
+            )
+            .expect("register mirror directly");
+
+        let response = board
+            .process_with(
+                "mirror".to_string(),
+                r#"{"text":"hello world"}"#.to_string(),
+            )
+            .expect("dispatch mirror");
 
         assert_eq!(response, r#"{"processor":"mirror","output":"dlrow olleh"}"#);
     }

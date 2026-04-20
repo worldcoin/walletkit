@@ -4,31 +4,38 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import sys
 from pathlib import Path
 
 
 def add_generated_module_paths() -> None:
-    """Adds the generated binding directories to ``sys.path``."""
+    """Adds the generated binding root to ``sys.path``."""
     generated_root = Path(__file__).resolve().parent / "generated"
-    for component in ("switchboard", "shouty", "mirror"):
-        sys.path.insert(0, str(generated_root / component))
+    sys.path.insert(0, str(generated_root))
+
+
+def alias_external_switchboard_modules() -> None:
+    """Reuses one generated switchboard module for all external-type imports."""
+    switchboard_module = importlib.import_module("switchboard.switchboard")
+    sys.modules["shouty.switchboard"] = switchboard_module
+    sys.modules["mirror.switchboard"] = switchboard_module
 
 
 add_generated_module_paths()
+alias_external_switchboard_modules()
 
-import mirror  # noqa: E402  pylint: disable=wrong-import-position
-import shouty  # noqa: E402  pylint: disable=wrong-import-position
-import switchboard  # noqa: E402  pylint: disable=wrong-import-position
-from adapters import MirrorAdapter, ShoutyAdapter  # noqa: E402  pylint: disable=wrong-import-position
+from mirror import mirror  # noqa: E402  pylint: disable=wrong-import-position
+from shouty import shouty  # noqa: E402  pylint: disable=wrong-import-position
+from switchboard import switchboard  # noqa: E402  pylint: disable=wrong-import-position
 
 
 def build_switchboard() -> switchboard.Switchboard:
     """Constructs the switchboard and registers both runtime-selectable processors."""
     board = switchboard.Switchboard()
-    board.register_processor("shouty", ShoutyAdapter(shouty.ShoutyProcessor()))
-    board.register_processor("mirror", MirrorAdapter(mirror.MirrorProcessor()))
+    board.register_processor("shouty", shouty.ShoutyProcessor())
+    board.register_processor("mirror", mirror.MirrorProcessor())
     return board
 
 

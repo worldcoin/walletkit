@@ -11,6 +11,7 @@ repository.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+switchboard = { path = "../switchboard" }
 text-core.workspace = true
 thiserror.workspace = true
 uniffi.workspace = true

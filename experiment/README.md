@@ -5,18 +5,18 @@ This experiment proves that a base Rust library can compose with multiple **sepa
 ## Architecture
 
 - `text-core`: shared request/response models, validation, and JSON helpers.
-- `switchboard`: base orchestrator `cdylib` exporting a UniFFI **foreign trait**.
-- `shouty`: implementation `cdylib` that uppercases text.
-- `mirror`: implementation `cdylib` that reverses text.
-- `host-python`: Python harness that imports all three generated bindings, adapts concrete processors to the `switchboard.ProcessorDriver` foreign trait, and selects the implementation at runtime.
+- `switchboard`: base orchestrator `cdylib` exporting a UniFFI trait that can be implemented by Rust or the host.
+- `shouty`: implementation `cdylib` whose `ShoutyProcessor` directly implements `switchboard::ProcessorDriver` and uppercases text.
+- `mirror`: implementation `cdylib` whose `MirrorProcessor` directly implements `switchboard::ProcessorDriver` and reverses text.
+- `host-python`: Python harness that imports all three generated bindings, instantiates the concrete processors, and selects the implementation at runtime.
 
 The host mediates composition:
 
 1. Python creates `Switchboard`, `ShoutyProcessor`, and `MirrorProcessor`.
-2. Python implements `switchboard.ProcessorDriver` adapters.
-3. `Switchboard` stores those adapters behind `Arc<dyn ProcessorDriver>`.
+2. Python registers the concrete processor objects directly with `Switchboard`.
+3. `Switchboard` stores them behind `Arc<dyn ProcessorDriver>`.
 4. At runtime, Python picks which processor name to call.
-5. `Switchboard` invokes the host callback, and the host forwards to the chosen Rust component.
+5. `Switchboard` invokes the selected Rust implementation directly.
 
 ## Build and generate Python bindings
 
@@ -50,4 +50,5 @@ Expected output:
 
 - The Rust-to-host boundary uses JSON `String` payloads intentionally, to keep the experiment focused on host-mediated composition across separate binaries.
 - `text-core` is reused as a **source dependency** by all Rust crates, not as a cross-binary ABI.
+- `switchboard::ProcessorDriver` remains exported with foreign-implementation support so the generated Python bindings treat direct Rust implementers as valid trait instances while still allowing host-side implementations if needed.
 - Async is intentionally left as a future follow-up once the synchronous architecture is proven.
