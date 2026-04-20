@@ -30,6 +30,7 @@ fn help_exits_zero() {
     assert!(stdout.contains("auth"));
     assert!(stdout.contains("credential"));
     assert!(stdout.contains("proof"));
+    assert!(stdout.contains("setup"));
 }
 
 #[test]
@@ -285,4 +286,34 @@ fn auth_recovery_data_json_has_all_keys() {
     assert!(data["authenticator_address"].as_str().is_some());
     assert!(data["authenticator_pubkey"].as_str().is_some());
     assert!(data["offchain_signer_commitment"].as_str().is_some());
+}
+
+#[test]
+fn setup_fails_if_wallet_exists() {
+    let root = temp_root();
+
+    // Initialize a wallet first.
+    let init_output = Command::new(walletkit_bin())
+        .args(["--root", root.path().to_str().unwrap(), "wallet", "init"])
+        .output()
+        .expect("failed to run init");
+    assert!(init_output.status.success());
+
+    // Setup should fail because the wallet already exists.
+    let output = Command::new(walletkit_bin())
+        .args(["--root", root.path().to_str().unwrap(), "--json", "setup"])
+        .output()
+        .expect("failed to run setup");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stderr).expect("invalid json");
+    assert_eq!(parsed["ok"], false);
+    assert!(
+        parsed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("wallet already exists"),
+        "expected 'wallet already exists' error, got: {stderr}"
+    );
 }

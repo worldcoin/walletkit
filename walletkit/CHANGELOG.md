@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0](https://github.com/worldcoin/walletkit/compare/v0.13.0...v0.14.0) - 2026-04-17
+
+### Added
+
+- ohttp key rotation flow ([#358](https://github.com/worldcoin/walletkit/pull/358))
+- integrate ohttp client ([#356](https://github.com/worldcoin/walletkit/pull/356))
+
+### Other
+
+- adapt to world-id-protocol authenticator refactor ([#352](https://github.com/worldcoin/walletkit/pull/352))
+- Update the  endpoint to the ([#331](https://github.com/worldcoin/walletkit/pull/331))
+
 ## [0.13.0](https://github.com/worldcoin/walletkit/compare/v0.12.0...v0.13.0) - 2026-04-09
 
 ### Added
