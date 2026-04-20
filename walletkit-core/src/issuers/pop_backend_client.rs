@@ -64,8 +64,11 @@ impl PopBackendClient {
     ///
     /// # Errors
     ///
-    /// * [`WalletKitError::RecoveryBindingAlreadyExists`] — HTTP 409 (binding already registered).
-    /// * [`WalletKitError::NetworkError`] — any other non-success status.
+    /// * [`WalletKitError::DebugReportNotFound`] — HTTP 404 Not Found.
+    /// * [`WalletKitError::NotEligibleForRecovery`] — HTTP 412 Precondition Failed.
+    /// * [`WalletKitError::NetworkError`] — any other non-success status; the response body is in
+    ///   `error` and the HTTP status in `status`. This includes conflicts (e.g. HTTP 409) and
+    ///   server errors.
     pub async fn bind_recovery_agent(
         &self,
         request: ManageRecoveryBindingRequest,
@@ -85,8 +88,9 @@ impl PopBackendClient {
         let response_status = response.status();
         match response_status {
             reqwest::StatusCode::CREATED | reqwest::StatusCode::OK => Ok(()),
-            reqwest::StatusCode::CONFLICT => {
-                Err(WalletKitError::RecoveryBindingAlreadyExists)
+            reqwest::StatusCode::NOT_FOUND => Err(WalletKitError::DebugReportNotFound),
+            reqwest::StatusCode::PRECONDITION_FAILED => {
+                Err(WalletKitError::NotEligibleForRecovery)
             }
             _ => {
                 let error_message = response
@@ -268,7 +272,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_register_recovery_agent_conflict() {
+    async fn test_register_recovery_agent_no_debug_report() {
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
 
@@ -292,8 +296,8 @@ mod tests {
             })))
             .match_header("X-Auth-Signature", "security_token")
             .match_header("X-Auth-Challenge", "challenge")
-            .with_status(409)
-            .with_body("Recovery agent already exists")
+            .with_status(404)
+            .with_body("{\"error\":\"DebugReportNotFound\"}")
             .create_async()
             .await;
 
@@ -310,8 +314,8 @@ mod tests {
         assert!(result.is_err(), "Expected error but got success");
         let err = result.unwrap_err();
         assert!(
-            matches!(err, WalletKitError::RecoveryBindingAlreadyExists),
-            "Expected RecoveryBindingAlreadyExists error, got: {err:?}"
+            matches!(err, WalletKitError::DebugReportNotFound),
+            "Expected DebugReportNotFound error, got: {err:?}"
         );
         mock.assert_async().await;
         drop(server);

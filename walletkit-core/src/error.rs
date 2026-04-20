@@ -118,10 +118,6 @@ pub enum WalletKitError {
         error: String,
     },
 
-    /// The recovery binding already exists
-    #[error("recovery_binding_already_exists")]
-    RecoveryBindingAlreadyExists,
-
     /// The recovery binding does not exist
     #[error("recovery_binding_does_not_exist")]
     RecoveryBindingDoesNotExist,
@@ -141,6 +137,13 @@ pub enum WalletKitError {
         error_code: String,
     },
 
+    /// The debug report was not found
+    #[error("debug_report_not_found")]
+    DebugReportNotFound,
+
+    /// The user is not eligible for recovery
+    #[error("not_eligible_for_recovery")]
+    NotEligibleForRecovery,
     /// An error occurred in the OHTTP privacy layer (relay, encapsulation, or framing).
     #[error("ohttp_error: {error}")]
     OhttpError {
