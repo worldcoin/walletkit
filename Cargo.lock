@@ -292,6 +292,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "issuer-host"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+ "tokio",
+ "uniffi",
+]
+
+[[package]]
+name = "issuer-sdk"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -334,13 +352,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
-name = "mirror"
+name = "nfc-kit"
 version = "0.1.0"
 dependencies = [
- "text-core",
+ "issuer-sdk",
+ "serde_json",
  "thiserror",
  "tokio",
  "uniffi",
+ "uuid",
 ]
 
 [[package]]
@@ -358,6 +378,18 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "orb-kit"
+version = "0.1.0"
+dependencies = [
+ "issuer-sdk",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "uniffi",
+ "uuid",
+]
 
 [[package]]
 name = "percent-encoding"
@@ -513,16 +545,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "shouty"
-version = "0.1.0"
-dependencies = [
- "text-core",
- "thiserror",
- "tokio",
- "uniffi",
-]
-
-[[package]]
 name = "siphasher"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -547,15 +569,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
-name = "switchboard"
-version = "0.1.0"
-dependencies = [
- "thiserror",
- "tokio",
- "uniffi",
-]
-
-[[package]]
 name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -577,15 +590,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "text-core"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror",
 ]
 
 [[package]]
@@ -816,6 +820,15 @@ dependencies = [
  "textwrap",
  "uniffi_meta",
  "weedle2",
+]
+
+[[package]]
+name = "uuid"
+version = "1.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ddd74a9687298c6858e9b88ec8935ec45d22e8fd5e6394fa1bd4e99a87789c76"
+dependencies = [
+ "getrandom",
 ]
 
 [[package]]

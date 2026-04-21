@@ -1,36 +1,40 @@
-"""Adapters: Python implements switchboard.ProcessorDriver by bridging to async processor methods."""
+"""Adapters: Python implements issuer_host.IssuerDriver by bridging to async issuer methods."""
 
 import asyncio
 
-from mirror import mirror
-from shouty import shouty
-from switchboard import switchboard
+from nfc_kit import nfc_kit
+from orb_kit import orb_kit
+from issuer_host import issuer_host
 
 
-class ShoutyAdapter(switchboard.ProcessorDriver):
-    def __init__(self, inner: shouty.ShoutyProcessor, loop: asyncio.AbstractEventLoop) -> None:
+class OrbKitAdapter(issuer_host.IssuerDriver):
+    """Adapts OrbIssuer's async fetch_credential_async into the synchronous IssuerDriver trait."""
+
+    def __init__(self, inner: orb_kit.OrbIssuer, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__()
         self._inner = inner
         self._loop = loop
 
-    def process(self, request_json: str) -> str:
+    def fetch_credential(self, request_json: str) -> str:
         # Called on a tokio blocking thread; schedule the async work on the asyncio event loop.
         future = asyncio.run_coroutine_threadsafe(
-            self._inner.process_async(request_json),
+            self._inner.fetch_credential_async(request_json),
             self._loop,
         )
         return future.result()
 
 
-class MirrorAdapter(switchboard.ProcessorDriver):
-    def __init__(self, inner: mirror.MirrorProcessor, loop: asyncio.AbstractEventLoop) -> None:
+class NfcKitAdapter(issuer_host.IssuerDriver):
+    """Adapts NfcIssuer's async fetch_credential_async into the synchronous IssuerDriver trait."""
+
+    def __init__(self, inner: nfc_kit.NfcIssuer, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__()
         self._inner = inner
         self._loop = loop
 
-    def process(self, request_json: str) -> str:
+    def fetch_credential(self, request_json: str) -> str:
         future = asyncio.run_coroutine_threadsafe(
-            self._inner.process_async(request_json),
+            self._inner.fetch_credential_async(request_json),
             self._loop,
         )
         return future.result()

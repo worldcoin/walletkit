@@ -1,9 +1,9 @@
 [workspace]
 members = [
-  "crates/text-core",
-  "crates/switchboard",
-  "crates/shouty",
-  "crates/mirror",
+  "crates/issuer-sdk",
+  "crates/issuer-host",
+  "crates/orb-kit",
+  "crates/nfc-kit",
   "crates/uniffi-bindgen",
 ]
 resolver = "2"
@@ -17,9 +17,9 @@ authors = ["World Contributors"]
 repository = "https://github.com/worldcoin/WalletKit"
 
 [workspace.dependencies]
+issuer-sdk = { path = "crates/issuer-sdk" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-text-core = { path = "crates/text-core" }
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 uniffi = { version = "0.31.0", features = ["tokio"] }

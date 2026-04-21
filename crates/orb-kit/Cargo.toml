@@ -1,5 +1,5 @@
 [package]
-name = "mirror"
+name = "orb-kit"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,7 +11,11 @@ repository.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-text-core.workspace = true
+issuer-sdk.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 uniffi.workspace = true
+uuid = { version = "1", features = ["v4"], default-features = false }
+
+[dev-dependencies]
+serde_json.workspace = true

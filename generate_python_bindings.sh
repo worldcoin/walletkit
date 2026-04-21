@@ -24,9 +24,17 @@ esac
 
 cargo build --manifest-path "$WORKSPACE_DIR/Cargo.toml" --release
 
-for component in switchboard shouty mirror; do
-  out_dir="$GENERATED_DIR/$component"
-  library_path="$TARGET_DIR/$(lib_file "$component")"
+# component name (used as -p flag and directory name) → native lib stem
+declare -A COMPONENTS=(
+  ["issuer-host"]="issuer_host"
+  ["orb-kit"]="orb_kit"
+  ["nfc-kit"]="nfc_kit"
+)
+
+for component in "${!COMPONENTS[@]}"; do
+  lib_stem="${COMPONENTS[$component]}"
+  out_dir="$GENERATED_DIR/$lib_stem"
+  library_path="$TARGET_DIR/$(lib_file "$lib_stem")"
 
   mkdir -p "$out_dir"
   find "$out_dir" -maxdepth 1 -type f \( -name '*.py' -o -name '*.so' -o -name '*.dylib' -o -name '*.dll' -o -name '*.pyd' \) -delete
