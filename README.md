@@ -52,11 +52,6 @@ Replace `VERSION` with the desired WalletKit version.
    - Install via Android Studio > Settings > Android SDK (ensure the NDK is installed)
    - Set `sdk.dir` (and `ndk.dir` if needed) in `kotlin/local.properties`
 
-3. **Protocol Buffers compiler**:
-   ```bash
-   brew install protobuf
-   ```
-
 ### Building and publishing
 
 To test local changes before publishing a release, use the build script to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
