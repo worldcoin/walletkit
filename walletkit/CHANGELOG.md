@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0](https://github.com/worldcoin/walletkit/compare/v0.14.0...v0.15.0) - 2026-04-21
+
+### Fixed
+
+- route OHTTP gateway traffic through US relay regardless of region ([#360](https://github.com/worldcoin/walletkit/pull/360))
+
+### Other
+
+- remove protobuf compiler from prerequisites ([#363](https://github.com/worldcoin/walletkit/pull/363))
+- Handle missing debug report ([#357](https://github.com/worldcoin/walletkit/pull/357))
+
 ## [0.14.0](https://github.com/worldcoin/walletkit/compare/v0.13.0...v0.14.0) - 2026-04-17
 
 ### Added
