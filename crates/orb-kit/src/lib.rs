@@ -4,11 +4,15 @@
 //! `pop_backend_api` in oxide). In a real implementation it would perform a ZKP
 //! authentication handshake with the Orb relay service before minting a signed
 //! SD-JWT credential.
+//!
+//! `OrbIssuer` implements [`issuer_sdk::IssuerDriver`] directly, so it can be
+//! used from Rust-native code that holds an `Arc<dyn IssuerDriver>` without
+//! going through the Python adapter layer.
 
-use issuer_sdk::{build_credential_json, parse_request_json, SdkError};
+use issuer_sdk::{build_credential_json, parse_request_json, IssuerDriver, SdkError};
 use thiserror::Error;
 
-/// Errors returned by the Orb issuer.
+/// Errors returned by the Orb issuer's async pathway.
 #[derive(Debug, Error, uniffi::Error)]
 pub enum OrbKitError {
     /// Shared SDK model or JSON error.
@@ -33,6 +37,24 @@ impl Default for OrbIssuer {
         Self::new()
     }
 }
+
+// ── Synchronous IssuerDriver impl (Rust-native / host-mediated path) ──────────
+
+/// Implement [`IssuerDriver`] so `OrbIssuer` can be registered directly with
+/// an `IssuerHost` from Rust-native code.
+///
+/// Internally blocks on the async pathway using the current Tokio runtime
+/// handle.  This is safe when called from `tokio::task::spawn_blocking`, which
+/// is how `IssuerHost::fetch_credential_with` invokes the driver.
+impl IssuerDriver for OrbIssuer {
+    fn fetch_credential(&self, request_json: String) -> Result<String, SdkError> {
+        tokio::runtime::Handle::current()
+            .block_on(self.fetch_credential_async(request_json))
+            .map_err(|e| SdkError::IssuanceFailed(e.to_string()))
+    }
+}
+
+// ── Async UniFFI export (Python / Swift / Kotlin adapter path) ────────────────
 
 #[uniffi::export(async_runtime = "tokio")]
 impl OrbIssuer {
@@ -77,12 +99,12 @@ uniffi::setup_scaffolding!("orb_kit");
 #[cfg(test)]
 mod tests {
     use super::OrbIssuer;
-    use issuer_sdk::Credential;
+    use issuer_sdk::{Credential, IssuerDriver};
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn issues_orb_credential() {
+    async fn issues_orb_credential_async() {
         let issuer = OrbIssuer::new();
-        let request_json = r#"{"user_id":"user-abc","issuer_type":"orb"}"#.to_string();
+        let request_json = r#"{"user_id":"user-abc"}"#.to_string();
         let response = issuer
             .fetch_credential_async(request_json)
             .await
@@ -94,9 +116,27 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn rejects_blank_user_id() {
+    async fn rejects_blank_user_id_async() {
         let issuer = OrbIssuer::new();
-        let request_json = r#"{"user_id":"","issuer_type":"orb"}"#.to_string();
+        let request_json = r#"{"user_id":""}"#.to_string();
         assert!(issuer.fetch_credential_async(request_json).await.is_err());
+    }
+
+    /// Verify the synchronous `IssuerDriver` impl works from a blocking
+    /// context inside a multi-thread Tokio runtime (mirrors `spawn_blocking`).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn issues_orb_credential_via_driver_trait() {
+        let issuer = OrbIssuer::new();
+        let request_json = r#"{"user_id":"user-driver"}"#.to_string();
+
+        // block_in_place lets us call block_on from within an async context.
+        let response = tokio::task::block_in_place(|| {
+            issuer.fetch_credential(request_json)
+        })
+        .expect("IssuerDriver::fetch_credential should succeed");
+
+        let cred: Credential = serde_json::from_str(&response).expect("should parse credential");
+        assert_eq!(cred.issuer, "orb-kit");
+        assert!(cred.data.contains("user-driver"));
     }
 }

@@ -55,7 +55,7 @@ async def main() -> int:
         )
         return 2
 
-    request_json = json.dumps({"user_id": args.user_id, "issuer_type": args.issuer.split("-")[0]})
+    request_json = json.dumps({"user_id": args.user_id})
     credential_json = await host.fetch_credential_with(args.issuer, request_json)
     print(credential_json)
     return 0

@@ -1,4 +1,4 @@
-"""Adapters: Python implements issuer_host.IssuerDriver by bridging to async issuer methods."""
+"""Adapters: Python implements issuer_host.IssuerDriverCallback by bridging to async issuer methods."""
 
 import asyncio
 
@@ -7,8 +7,8 @@ from orb_kit import orb_kit
 from issuer_host import issuer_host
 
 
-class OrbKitAdapter(issuer_host.IssuerDriver):
-    """Adapts OrbIssuer's async fetch_credential_async into the synchronous IssuerDriver trait."""
+class OrbKitAdapter(issuer_host.IssuerDriverCallback):
+    """Adapts OrbIssuer's async fetch_credential_async into the synchronous IssuerDriverCallback."""
 
     def __init__(self, inner: orb_kit.OrbIssuer, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__()
@@ -24,8 +24,8 @@ class OrbKitAdapter(issuer_host.IssuerDriver):
         return future.result()
 
 
-class NfcKitAdapter(issuer_host.IssuerDriver):
-    """Adapts NfcIssuer's async fetch_credential_async into the synchronous IssuerDriver trait."""
+class NfcKitAdapter(issuer_host.IssuerDriverCallback):
+    """Adapts NfcIssuer's async fetch_credential_async into the synchronous IssuerDriverCallback."""
 
     def __init__(self, inner: nfc_kit.NfcIssuer, loop: asyncio.AbstractEventLoop) -> None:
         super().__init__()
