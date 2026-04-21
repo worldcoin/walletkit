@@ -1,21 +1,27 @@
 //! OrbKit — Orb-based credential issuer for the host-mediated Issuers SDK experiment.
 //!
 //! `OrbIssuer` simulates the Orb hardware issuance pathway (see `orb_relay` and
-//! `pop_backend_api` in oxide). In a real implementation it would perform a ZKP
+//! `pop_backend_api` in oxide).  In a real implementation it would perform a ZKP
 //! authentication handshake with the Orb relay service before minting a signed
 //! SD-JWT credential.
 //!
-//! `OrbIssuer` implements [`issuer_sdk::IssuerDriver`] directly, so it can be
-//! used from Rust-native code that holds an `Arc<dyn IssuerDriver>` without
-//! going through the Python adapter layer.
+//! ## Trait layering
+//!
+//! * `OrbIssuer` implements [`issuer_sdk::Issuer`] — the ergonomic Rust trait.
+//! * The blanket `impl<T: Issuer> IssuerDriver for T` in `issuer-sdk` then
+//!   automatically satisfies [`issuer_sdk::IssuerDriver`], so `OrbIssuer` can
+//!   be registered with an `IssuerHost` without any manual message dispatch.
+//! * For foreign-language hosts (Python adapters), `fetch_credential_async` is
+//!   exported via UniFFI and wrapped in an adapter that implements
+//!   `IssuerDriver` on the foreign side.
 
-use issuer_sdk::{build_credential_json, parse_request_json, IssuerDriver, SdkError};
+use issuer_sdk::{build_credential_json, parse_request_json, Issuer, SdkError};
 use thiserror::Error;
 
 /// Errors returned by the Orb issuer's async pathway.
 #[derive(Debug, Error, uniffi::Error)]
 pub enum OrbKitError {
-    /// Shared SDK model or JSON error.
+    /// Shared SDK error.
     #[error("issuer-sdk error: {0}")]
     Sdk(String),
 }
@@ -28,7 +34,7 @@ impl From<SdkError> for OrbKitError {
 
 /// Issuer that mints credentials via the Orb hardware device.
 ///
-/// Corresponds to the `NfcBackend` / Orb relay pathway in oxide.
+/// Corresponds to the Orb relay / PoP backend pathway in oxide.
 #[derive(uniffi::Object)]
 pub struct OrbIssuer;
 
@@ -38,15 +44,17 @@ impl Default for OrbIssuer {
     }
 }
 
-// ── Synchronous IssuerDriver impl (Rust-native / host-mediated path) ──────────
+// ── Rust-native path: impl Issuer (sync wrapper) ─────────────────────────────
 
-/// Implement [`IssuerDriver`] so `OrbIssuer` can be registered directly with
-/// an `IssuerHost` from Rust-native code.
+/// Implement the ergonomic [`Issuer`] trait.
 ///
-/// Internally blocks on the async pathway using the current Tokio runtime
-/// handle.  This is safe when called from `tokio::task::spawn_blocking`, which
-/// is how `IssuerHost::fetch_credential_with` invokes the driver.
-impl IssuerDriver for OrbIssuer {
+/// Blocks on the async pathway using the current Tokio runtime handle — safe
+/// when called from `tokio::task::spawn_blocking` (how `IssuerHost` invokes
+/// the driver) or from `tokio::task::block_in_place` in tests.
+///
+/// The blanket `impl<T: Issuer> IssuerDriver for T` in `issuer-sdk` then
+/// provides `handle_message` for free.
+impl Issuer for OrbIssuer {
     fn fetch_credential(&self, request_json: String) -> Result<String, SdkError> {
         tokio::runtime::Handle::current()
             .block_on(self.fetch_credential_async(request_json))
@@ -54,7 +62,7 @@ impl IssuerDriver for OrbIssuer {
     }
 }
 
-// ── Async UniFFI export (Python / Swift / Kotlin adapter path) ────────────────
+// ── Foreign-language path: async UniFFI export ────────────────────────────────
 
 #[uniffi::export(async_runtime = "tokio")]
 impl OrbIssuer {
@@ -73,17 +81,16 @@ impl OrbIssuer {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request JSON is invalid.
+    /// Returns an error if the request JSON is invalid or issuance fails.
     pub async fn fetch_credential_async(
         &self,
         request_json: String,
     ) -> Result<String, OrbKitError> {
-        // Simulate network latency for the Orb relay handshake.
+        // Simulate Orb relay network latency.
         tokio::time::sleep(std::time::Duration::from_millis(1)).await;
 
         let request = parse_request_json(&request_json)?;
 
-        // Stub credential — in production this would be a signed SD-JWT.
         let credential_id = uuid::Uuid::new_v4().to_string();
         let stub_data = format!(
             "eyJhbGciOiJFUzI1NiIsInR5cCI6IlNELUpXVCJ9.stub.orb.{}",
@@ -99,18 +106,19 @@ uniffi::setup_scaffolding!("orb_kit");
 #[cfg(test)]
 mod tests {
     use super::OrbIssuer;
-    use issuer_sdk::{Credential, IssuerDriver};
+    use issuer_sdk::{Credential, IssuerDriver, IssuerMsg, IssuerValue, Issuer};
+
+    // ── async path ────────────────────────────────────────────────────────────
 
     #[tokio::test(flavor = "multi_thread")]
     async fn issues_orb_credential_async() {
         let issuer = OrbIssuer::new();
-        let request_json = r#"{"user_id":"user-abc"}"#.to_string();
         let response = issuer
-            .fetch_credential_async(request_json)
+            .fetch_credential_async(r#"{"user_id":"user-abc"}"#.to_string())
             .await
             .expect("should issue credential");
 
-        let cred: Credential = serde_json::from_str(&response).expect("should parse credential");
+        let cred: Credential = serde_json::from_str(&response).expect("should parse");
         assert_eq!(cred.issuer, "orb-kit");
         assert!(cred.data.contains("user-abc"));
     }
@@ -118,25 +126,46 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn rejects_blank_user_id_async() {
         let issuer = OrbIssuer::new();
-        let request_json = r#"{"user_id":""}"#.to_string();
-        assert!(issuer.fetch_credential_async(request_json).await.is_err());
+        assert!(
+            issuer
+                .fetch_credential_async(r#"{"user_id":""}"#.to_string())
+                .await
+                .is_err()
+        );
     }
 
-    /// Verify the synchronous `IssuerDriver` impl works from a blocking
-    /// context inside a multi-thread Tokio runtime (mirrors `spawn_blocking`).
+    // ── Issuer trait (sync, via block_in_place) ───────────────────────────────
+
     #[tokio::test(flavor = "multi_thread")]
-    async fn issues_orb_credential_via_driver_trait() {
+    async fn issues_orb_credential_via_issuer_trait() {
         let issuer = OrbIssuer::new();
-        let request_json = r#"{"user_id":"user-driver"}"#.to_string();
-
-        // block_in_place lets us call block_on from within an async context.
         let response = tokio::task::block_in_place(|| {
-            issuer.fetch_credential(request_json)
+            issuer.fetch_credential(r#"{"user_id":"user-issuer"}"#.to_string())
         })
-        .expect("IssuerDriver::fetch_credential should succeed");
+        .expect("Issuer::fetch_credential should succeed");
 
-        let cred: Credential = serde_json::from_str(&response).expect("should parse credential");
+        let cred: Credential = serde_json::from_str(&response).expect("should parse");
         assert_eq!(cred.issuer, "orb-kit");
-        assert!(cred.data.contains("user-driver"));
+        assert!(cred.data.contains("user-issuer"));
+    }
+
+    // ── IssuerDriver blanket impl (handle_message) ────────────────────────────
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn blanket_handle_message_fetch_credential() {
+        // OrbIssuer implements Issuer; the blanket gives it IssuerDriver.
+        let driver: &dyn IssuerDriver = &OrbIssuer::new();
+
+        let value = tokio::task::block_in_place(|| {
+            driver.handle_message(IssuerMsg::FetchCredential {
+                request_json: r#"{"user_id":"blanket-orb"}"#.to_string(),
+            })
+        })
+        .expect("blanket dispatch should succeed");
+
+        let IssuerValue::Credential { json } = value;
+        let cred: Credential = serde_json::from_str(&json).expect("should parse");
+        assert_eq!(cred.issuer, "orb-kit");
+        assert!(cred.data.contains("blanket-orb"));
     }
 }
