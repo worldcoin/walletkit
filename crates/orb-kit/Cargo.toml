@@ -13,7 +13,6 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 async-trait.workspace = true
 issuer-sdk.workspace = true
-thiserror.workspace = true
 tokio.workspace = true
 uniffi.workspace = true
 uuid = { version = "1", features = ["v4"], default-features = false }

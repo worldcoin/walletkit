@@ -1,16 +1,8 @@
 //! IssuerHost — host orchestrator for the host-mediated Issuers SDK experiment.
 //!
-//! The host is **fully generic**.  It holds a registry of named
-//! [`IssuerDriver`] implementations and dispatches `fetch_credential_with`
-//! calls by sending an [`IssuerMsg`] and awaiting the result directly — no
-//! `spawn_blocking` needed since `handle_message` is async.
-//!
-//! ## UniFFI scaffolding
-//!
-//! `issuer-sdk` owns `setup_scaffolding!("issuer_sdk")` and exports
-//! `IssuerDriver`, `IssuerMsg`, and `IssuerValue` as proper UniFFI types.
-//! This crate re-exports those symbols via
-//! `issuer_sdk::uniffi_reexport_scaffolding!()`.
+//! Holds a registry of named [`IssuerDriver`] implementations and dispatches
+//! `fetch_credential_with` calls by sending an [`IssuerMsg`] and awaiting
+//! the result directly.
 
 extern crate issuer_sdk;
 issuer_sdk::uniffi_reexport_scaffolding!();
@@ -37,8 +29,7 @@ pub enum HostError {
     IssuerNotFound { name: String },
     #[error("issuer error: {0}")]
     IssuerError(String),
-    /// The driver returned an [`IssuerValue`] variant the host did not expect
-    /// for this operation (protocol mismatch; guard for future variants).
+    /// Guard for future [`IssuerValue`] variants (protocol mismatch).
     #[error("unexpected issuer value: {0}")]
     UnexpectedValue(String),
     #[error("unexpected UniFFI callback error: {reason}")]
@@ -78,7 +69,7 @@ impl IssuerHost {
         }
     }
 
-    /// Registers a named issuer.  Accepts any `Arc<dyn IssuerDriver>`.
+    /// Registers a named issuer.
     pub fn register_issuer(
         &self,
         name: String,
@@ -105,11 +96,8 @@ impl IssuerHost {
         v
     }
 
-    /// Sends `IssuerMsg::FetchCredential` to the named issuer, awaits the
-    /// result, and unwraps the `IssuerValue::Credential` payload.
-    ///
-    /// Because `handle_message` is async, this is a direct await — no
-    /// `spawn_blocking` required.
+    /// Sends `IssuerMsg::FetchCredential` to the named issuer and returns the
+    /// credential JSON.
     pub async fn fetch_credential_with(
         &self,
         name: String,
