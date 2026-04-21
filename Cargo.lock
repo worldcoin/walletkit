@@ -308,6 +308,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "uniffi",
 ]
 
 [[package]]

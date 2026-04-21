@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Python harness — Issuers SDK demo with OrbKit and NfcKit implementations."""
+"""Python harness — Issuers SDK demo with OrbKit and NfcKit implementations.
+
+IssuerDriver is imported from the `issuer_sdk` module (the SDK cdylib) rather
+than from `issuer_host`, reflecting the uniffi_reexport_scaffolding pattern:
+the trait is defined and owned by issuer-sdk, and issuer-host re-exports its
+symbols so both live in the issuer_host binary too.
+"""
 from __future__ import annotations
 
 import argparse
@@ -16,9 +22,10 @@ def add_generated_module_paths() -> None:
 
 add_generated_module_paths()
 
+from issuer_sdk import issuer_sdk  # noqa: E402  – IssuerDriver lives here
+from issuer_host import issuer_host  # noqa: E402  – IssuerHost lives here
 from nfc_kit import nfc_kit  # noqa: E402
 from orb_kit import orb_kit  # noqa: E402
-from issuer_host import issuer_host  # noqa: E402
 from adapters import OrbKitAdapter, NfcKitAdapter  # noqa: E402
 
 
@@ -31,14 +38,8 @@ async def build_host(loop: asyncio.AbstractEventLoop) -> issuer_host.IssuerHost:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Issuers SDK demo")
-    parser.add_argument(
-        "issuer",
-        help="Issuer to use (orb-kit or nfc-kit)",
-    )
-    parser.add_argument(
-        "user_id",
-        help="User identifier to include in the credential request",
-    )
+    parser.add_argument("issuer", help="Issuer to use (orb-kit or nfc-kit)")
+    parser.add_argument("user_id", help="User identifier for the credential request")
     return parser.parse_args()
 
 

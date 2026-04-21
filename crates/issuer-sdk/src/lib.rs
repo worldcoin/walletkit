@@ -1,17 +1,20 @@
-//! Shared credential types, JSON helpers, and the `IssuerDriver` interface
-//! for the host-mediated Issuers SDK experiment.
+//! Shared credential types, JSON helpers, and the `IssuerDriver` UniFFI
+//! callback interface for the host-mediated Issuers SDK experiment.
 //!
 //! This crate is intentionally **domain-agnostic**: it knows nothing about
 //! Orb hardware, NFC documents, or any specific issuance pathway.  All
 //! domain-specific logic lives exclusively in `orb-kit` and `nfc-kit`.
 //!
-//! Compiled as a source dependency (rlib) — not a cross-binary ABI.
+//! ## UniFFI scaffolding
+//!
+//! `issuer-sdk` owns `uniffi::setup_scaffolding!("issuer_sdk")` and is compiled
+//! as a `cdylib` + `rlib`.  Crates that embed the SDK's exported symbols (such
+//! as `issuer-host`) call `issuer_sdk::uniffi_reexport_scaffolding!()` so the
+//! linker includes those symbols in their own binary — exactly the same pattern
+//! used between `walletkit-core` and `walletkit` in the main branch.
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use thiserror::Error;
-
-/// Result type used across the shared SDK crate.
-pub type SdkResult<T> = Result<T, SdkError>;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Domain types
@@ -19,11 +22,9 @@ pub type SdkResult<T> = Result<T, SdkError>;
 
 /// Request sent from the host to a credential issuer.
 ///
-/// Kept intentionally minimal so `issuer-sdk` and `issuer-host` remain
-/// fully generic.  Issuer implementations may encode additional context
-/// (e.g. issuance pathway, document type) inside their own request
-/// structures that they serialize into/out of the `user_id` string, or
-/// they may extend the JSON payload at their own layer.
+/// Kept intentionally minimal — `issuer-sdk` and `issuer-host` remain fully
+/// generic.  Issuer implementations encode any pathway-specific context (Orb,
+/// NFC, …) in their own serialization layer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CredentialRequest {
     /// Opaque identifier for the credential subject.
@@ -34,8 +35,8 @@ pub struct CredentialRequest {
 
 /// Credential returned by an issuer.
 ///
-/// In production this would carry a signed SD-JWT or similar structure
-/// (see `IdentityCredential` in oxide). Kept simple for the demo.
+/// In production this would carry a signed SD-JWT (see `IdentityCredential` in
+/// oxide).  Kept simple for the demo.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Credential {
     /// Opaque credential identifier (e.g. UUID).
@@ -50,8 +51,12 @@ pub struct Credential {
 // Error type
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Shared errors for validation, serialization, and issuance failures.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+/// Errors surfaced through the `IssuerDriver` FFI boundary.
+///
+/// Declared as a flat UniFFI error so it can be the error type of
+/// `IssuerDriver::fetch_credential` without needing a per-variant FFI layout.
+#[derive(Debug, Clone, PartialEq, Eq, Error, uniffi::Error)]
+#[uniffi(flat_error)]
 pub enum SdkError {
     /// JSON could not be parsed or serialized.
     #[error("invalid json: {0}")]
@@ -65,23 +70,19 @@ pub enum SdkError {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// IssuerDriver — the core cross-binary interface
+// IssuerDriver — the core UniFFI callback interface
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Synchronous driver interface implemented by each credential issuer.
 ///
-/// This is the Rust-level contract the host uses to dispatch credential
-/// requests to whichever implementation (Orb, NFC, …) has been registered.
-/// The host calls this synchronously via `tokio::task::spawn_blocking`;
-/// implementors may internally block on async work.
+/// Declared with `#[uniffi::export(with_foreign)]` so that foreign-language
+/// hosts (Python, Swift, Kotlin) can implement it and pass it to
+/// `IssuerHost::register_issuer` as a callback object.
 ///
-/// Defined here so that `orb-kit` and `nfc-kit` can implement it directly at
-/// the Rust level without depending on `issuer-host`.
-///
-/// The `#[uniffi::export(with_foreign)]` annotation that makes this trait
-/// available as a UniFFI callback interface lives in `issuer-host`, which owns
-/// the FFI scaffolding namespace.  `issuer-host` re-exports this trait and
-/// declares a blanket-compatible UniFFI wrapper there.
+/// `orb-kit` and `nfc-kit` also implement this trait directly at the Rust
+/// level (blocking on their internal async work) so they can be used from
+/// native Rust code that holds an `Arc<dyn IssuerDriver>`.
+#[uniffi::export(with_foreign)]
 pub trait IssuerDriver: Send + Sync {
     /// Accept a JSON-serialized [`CredentialRequest`] and return a
     /// JSON-serialized [`Credential`], or a [`SdkError`] on failure.
@@ -93,27 +94,22 @@ pub trait IssuerDriver: Send + Sync {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Serializes any serde-compatible value into JSON.
-pub fn to_json<T>(value: &T) -> SdkResult<String>
-where
-    T: Serialize,
-{
+pub fn to_json<T: Serialize>(value: &T) -> Result<String, SdkError> {
     serde_json::to_string(value).map_err(|e| SdkError::InvalidJson(e.to_string()))
 }
 
 /// Parses any serde-compatible value from JSON.
-pub fn from_json<T>(json: &str) -> SdkResult<T>
+pub fn from_json<T: DeserializeOwned>(json: &str) -> Result<String, SdkError>
 where
-    T: DeserializeOwned,
+    T: Serialize,
 {
-    serde_json::from_str(json).map_err(|e| SdkError::InvalidJson(e.to_string()))
+    let value: T =
+        serde_json::from_str(json).map_err(|e| SdkError::InvalidJson(e.to_string()))?;
+    to_json(&value)
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Request helpers
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Validates a credential request.
-pub fn validate_request(request: &CredentialRequest) -> SdkResult<()> {
+/// Validates a [`CredentialRequest`].
+pub fn validate_request(request: &CredentialRequest) -> Result<(), SdkError> {
     if request.user_id.trim().is_empty() {
         return Err(SdkError::EmptyUserId);
     }
@@ -121,20 +117,30 @@ pub fn validate_request(request: &CredentialRequest) -> SdkResult<()> {
 }
 
 /// Parses and validates a [`CredentialRequest`] from JSON.
-pub fn parse_request_json(json: &str) -> SdkResult<CredentialRequest> {
-    let request: CredentialRequest = from_json(json)?;
+pub fn parse_request_json(json: &str) -> Result<CredentialRequest, SdkError> {
+    let request: CredentialRequest =
+        serde_json::from_str(json).map_err(|e| SdkError::InvalidJson(e.to_string()))?;
     validate_request(&request)?;
     Ok(request)
 }
 
 /// Builds a [`Credential`] and serializes it to JSON.
-pub fn build_credential_json(id: &str, issuer: &str, data: String) -> SdkResult<String> {
+pub fn build_credential_json(id: &str, issuer: &str, data: String) -> Result<String, SdkError> {
     to_json(&Credential {
         id: id.to_string(),
         issuer: issuer.to_string(),
         data,
     })
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// UniFFI scaffolding
+// ──────────────────────────────────────────────────────────────────────────────
+
+// This also generates the `uniffi_reexport_scaffolding!()` macro that
+// dependent cdylibs (e.g. `issuer-host`) call to force the linker to include
+// these symbols in their own binary.
+uniffi::setup_scaffolding!("issuer_sdk");
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Tests

@@ -24,8 +24,13 @@ esac
 
 cargo build --manifest-path "$WORKSPACE_DIR/Cargo.toml" --release
 
-# component name (used as -p flag and directory name) → native lib stem
+# Map: crate package name → native lib stem (snake_case).
+#
+# issuer-sdk is now a cdylib that owns IssuerDriver as a proper UniFFI export.
+# issuer-host re-exports those symbols via uniffi_reexport_scaffolding!(), but
+# Python adapters subclass IssuerDriver from the issuer_sdk module directly.
 declare -A COMPONENTS=(
+  ["issuer-sdk"]="issuer_sdk"
   ["issuer-host"]="issuer_host"
   ["orb-kit"]="orb_kit"
   ["nfc-kit"]="nfc_kit"

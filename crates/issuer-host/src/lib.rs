@@ -2,18 +2,23 @@
 //!
 //! The host is **fully generic**: it knows nothing about Orb, NFC, or any
 //! credential-domain concept.  It maintains a registry of named
-//! [`issuer_sdk::IssuerDriver`] implementations and dispatches
-//! `fetch_credential` calls to whichever one the caller requests.
+//! [`IssuerDriver`] implementations and dispatches `fetch_credential` calls
+//! to whichever one the caller requests.
 //!
-//! ## UniFFI callback interface
+//! ## UniFFI scaffolding
 //!
-//! `issuer-sdk` defines [`issuer_sdk::IssuerDriver`] as a plain Rust trait so
-//! that `orb-kit` and `nfc-kit` can implement it without depending on this
-//! crate.  Here we declare the UniFFI callback interface — named
-//! `IssuerDriverCallback` to avoid a name clash — that the Python (or Swift /
-//! Kotlin) host implements.  An `Arc<dyn IssuerDriverCallback>` stored in the
-//! registry is also an `Arc<dyn issuer_sdk::IssuerDriver>` via the blanket impl
-//! below, so the two halves compose cleanly.
+//! `issuer-sdk` owns `setup_scaffolding!("issuer_sdk")` and exports
+//! `IssuerDriver` as a proper UniFFI callback interface.  This crate re-exports
+//! those symbols into its own binary with
+//! `issuer_sdk::uniffi_reexport_scaffolding!()` — the same pattern used by
+//! `walletkit` / `walletkit-core` in the main branch — so the generated
+//! `issuer_host` Python (or Swift / Kotlin) bindings can see both
+//! `IssuerHost` and `IssuerDriver` in one library.
+
+// Force the linker to include issuer-sdk's exported UniFFI symbols in this
+// binary (mirrors walletkit_core::uniffi_reexport_scaffolding!() in main).
+extern crate issuer_sdk;
+issuer_sdk::uniffi_reexport_scaffolding!();
 
 use std::{
     collections::HashMap,
@@ -22,8 +27,6 @@ use std::{
 
 use thiserror::Error;
 
-// Bring the plain Rust trait into scope so `issuer-host` and its tests can use
-// it without always writing the full path.
 pub use issuer_sdk::{IssuerDriver, SdkError};
 
 /// Result type for issuer-host operations.
@@ -50,7 +53,7 @@ pub enum HostError {
     /// The issuer driver returned an SDK-level error.
     #[error("issuer error: {0}")]
     IssuerError(String),
-    /// Unexpected callback errors from UniFFI are surfaced explicitly.
+    /// Unexpected UniFFI callback errors are surfaced explicitly.
     #[error("unexpected UniFFI callback error: {reason}")]
     UnexpectedUniFFICallback {
         /// Reason reported by UniFFI.
@@ -72,24 +75,6 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for HostError {
     }
 }
 
-// ── UniFFI callback interface ─────────────────────────────────────────────────
-
-/// UniFFI callback interface: the contract that foreign (Python / Swift /
-/// Kotlin) implementations must satisfy to register as an issuer.
-///
-/// Uses [`HostError`] as its error type (a UniFFI-annotated enum) so it can
-/// cross the FFI boundary.  A blanket `impl IssuerDriver for T where T:
-/// IssuerDriverCallback` maps `HostError` back to `SdkError::IssuanceFailed`
-/// for the Rust-native pathway.
-#[uniffi::export(with_foreign)]
-pub trait IssuerDriverCallback: Send + Sync {
-    /// Accept a JSON-serialized `CredentialRequest` and return a
-    /// JSON-serialized `Credential`, or a `HostError` on failure.
-    fn fetch_credential(&self, request_json: String) -> Result<String, HostError>;
-}
-
-
-
 // ── Registry and dispatcher ───────────────────────────────────────────────────
 
 /// Registry and dispatcher for named credential issuers.
@@ -98,7 +83,7 @@ pub trait IssuerDriverCallback: Send + Sync {
 /// what credential types it produces.
 #[derive(uniffi::Object)]
 pub struct IssuerHost {
-    registry: RwLock<HashMap<String, Arc<dyn IssuerDriverCallback>>>,
+    registry: RwLock<HashMap<String, Arc<dyn IssuerDriver>>>,
 }
 
 impl Default for IssuerHost {
@@ -119,13 +104,16 @@ impl IssuerHost {
 
     /// Registers a named issuer implementation.
     ///
+    /// Accepts any `Arc<dyn IssuerDriver>` — the same trait that is exported
+    /// as a UniFFI callback interface by `issuer-sdk`.
+    ///
     /// # Errors
     ///
     /// Returns an error if the name is blank or already registered.
     pub fn register_issuer(
         &self,
         name: String,
-        issuer: Arc<dyn IssuerDriverCallback>,
+        issuer: Arc<dyn IssuerDriver>,
     ) -> HostResult<()> {
         let normalized = normalize_name(name)?;
         let mut registry = self
@@ -158,8 +146,8 @@ impl IssuerHost {
     ///
     /// # Errors
     ///
-    /// Returns an error if the issuer is unknown, its callback fails, or the
-    /// issuer driver returns an [`SdkError`].
+    /// Returns an error if the issuer is unknown, its callback fails, or
+    /// the issuer driver returns a [`SdkError`].
     pub async fn fetch_credential_with(
         &self,
         name: String,
@@ -176,13 +164,12 @@ impl IssuerHost {
                 name: normalized.clone(),
             })?;
 
-        tokio::task::spawn_blocking(move || {
-            IssuerDriverCallback::fetch_credential(issuer.as_ref(), request_json)
-        })
-        .await
-        .map_err(|e| HostError::UnexpectedUniFFICallback {
-            reason: e.to_string(),
-        })?
+        tokio::task::spawn_blocking(move || issuer.fetch_credential(request_json))
+            .await
+            .map_err(|e| HostError::UnexpectedUniFFICallback {
+                reason: e.to_string(),
+            })?
+            .map_err(HostError::from)
     }
 }
 
@@ -200,14 +187,14 @@ uniffi::setup_scaffolding!("issuer_host");
 mod tests {
     use std::sync::Arc;
 
-    use super::{HostError, IssuerDriverCallback, IssuerHost};
+    use super::{HostError, IssuerDriver, IssuerHost, SdkError};
 
     struct FakeIssuer {
         prefix: &'static str,
     }
 
-    impl IssuerDriverCallback for FakeIssuer {
-        fn fetch_credential(&self, request_json: String) -> Result<String, HostError> {
+    impl IssuerDriver for FakeIssuer {
+        fn fetch_credential(&self, request_json: String) -> Result<String, SdkError> {
             Ok(format!("{}:{request_json}", self.prefix))
         }
     }
@@ -273,11 +260,11 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn propagates_issuer_host_error() {
+    async fn maps_sdk_error_to_host_error() {
         struct FailingIssuer;
-        impl IssuerDriverCallback for FailingIssuer {
-            fn fetch_credential(&self, _: String) -> Result<String, HostError> {
-                Err(HostError::IssuerError("boom".to_string()))
+        impl IssuerDriver for FailingIssuer {
+            fn fetch_credential(&self, _: String) -> Result<String, SdkError> {
+                Err(SdkError::IssuanceFailed("boom".to_string()))
             }
         }
 
