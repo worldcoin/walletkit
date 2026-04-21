@@ -29,10 +29,10 @@ from orb_kit import orb_kit  # noqa: E402
 from adapters import OrbKitAdapter, NfcKitAdapter  # noqa: E402
 
 
-async def build_host(loop: asyncio.AbstractEventLoop) -> issuer_host.IssuerHost:
+async def build_host() -> issuer_host.IssuerHost:
     host = issuer_host.IssuerHost()
-    host.register_issuer("orb-kit", OrbKitAdapter(orb_kit.OrbIssuer(), loop))
-    host.register_issuer("nfc-kit", NfcKitAdapter(nfc_kit.NfcIssuer(), loop))
+    host.register_issuer("orb-kit", OrbKitAdapter(orb_kit.OrbIssuer()))
+    host.register_issuer("nfc-kit", NfcKitAdapter(nfc_kit.NfcIssuer()))
     return host
 
 
@@ -45,8 +45,7 @@ def parse_args() -> argparse.Namespace:
 
 async def main() -> int:
     args = parse_args()
-    loop = asyncio.get_running_loop()
-    host = await build_host(loop)
+    host = await build_host()
 
     issuers = host.available_issuers()
     if args.issuer not in issuers:
