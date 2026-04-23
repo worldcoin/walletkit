@@ -141,13 +141,6 @@ pub enum WalletKitError {
     #[error("debug_report_not_found")]
     DebugReportNotFound,
 
-    /// The requested feature is not supported by the currently linked dependencies.
-    #[error("not_supported: {feature}")]
-    NotSupported {
-        /// Human-readable description of what is not currently supported.
-        feature: String,
-    },
-
     /// The user is not eligible for recovery
     #[error("not_eligible_for_recovery")]
     NotEligibleForRecovery,
@@ -243,6 +236,12 @@ impl From<AuthenticatorError> for WalletKitError {
                 Self::ResponseValidation(err.to_string())
             }
             AuthenticatorError::SessionIdMismatch => Self::SessionIdMismatch,
+
+            AuthenticatorError::InvalidSubOrBlindingFactor => Self::InvalidInput {
+                attribute: "sub_or_blinding_factor".to_string(),
+                reason: "the sub or blinding factor provided do not match the expected value"
+                    .to_string(),
+            },
 
             AuthenticatorError::OhttpEncapsulationError(_)
             | AuthenticatorError::BhttpError(_)

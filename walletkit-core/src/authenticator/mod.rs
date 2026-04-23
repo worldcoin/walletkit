@@ -11,6 +11,7 @@ use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::authenticator::AuthenticatorPublicKeySet,
+    primitives::OwnershipProof as CoreOwnershipProof,
     Authenticator as CoreAuthenticator, AuthenticatorConfig,
     Credential as CoreCredential,
     InitializingAuthenticator as CoreInitializingAuthenticator,
@@ -461,24 +462,44 @@ impl Authenticator {
     /// requests from external parties.
     ///
     /// # Arguments
-    /// * `issuer_schema_id` - Issuer schema ID for the credential whose `sub`
-    ///   should be proven.
-    /// * `nonce` - 32-byte field element provided by the Issuer to prevent
-    ///   replay.
+    /// * `nonce` - A field element provided by the Issuer to prevent replay.
+    /// * `blinding_factor` - The credential blinding factor previously used to
+    ///   derive the credential `sub`.
+    /// * `sub` - The credential `sub` (commitment) to prove ownership of.
     ///
     /// # Errors
-    /// Returns [`WalletKitError::NotSupported`] until WalletKit bumps its
-    /// `world-id-core` dependency to a release that exposes
-    /// `Authenticator::prove_credential_sub` and the corresponding ownership
-    /// proof types from `world-id-protocol`.
+    /// - Returns [`WalletKitError::InvalidInput`] if `blinding_factor` and
+    ///   `sub` are inconsistent with each other (i.e. `sub` was not derived
+    ///   from this authenticator's leaf index and the provided blinding factor).
+    /// - Returns a network error if the Merkle inclusion proof cannot be
+    ///   fetched from the indexer.
+    /// - Returns [`WalletKitError::ProofGeneration`] if the ZK proof fails.
     pub async fn prove_credential_sub(
         &self,
-        _issuer_schema_id: u64,
-        _nonce: Vec<u8>,
+        nonce: &FieldElement,
+        blinding_factor: &FieldElement,
+        sub: &FieldElement,
     ) -> Result<OwnershipProof, WalletKitError> {
-        Err(WalletKitError::NotSupported {
-            feature: "WIP-103 Ownership Proof requires a newer world-id-core release; walletkit currently depends on world-id-core 0.9.0, which does not expose Authenticator::prove_credential_sub.".to_string(),
-        })
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| WalletKitError::Generic {
+                error: format!("Critical. Unable to determine SystemTime: {e}"),
+            })?
+            .as_secs();
+
+        let inclusion_proof = self.fetch_inclusion_proof_with_cache(now).await?;
+
+        // Box::pin to heap-allocate the large upstream future and keep this
+        // future below the clippy::large_futures threshold.
+        let upstream = Box::pin(self.inner.prove_credential_sub(
+            nonce.0,
+            blinding_factor.0,
+            sub.0,
+            Some(inclusion_proof),
+        ))
+        .await?;
+
+        Ok(OwnershipProof::from_core(upstream))
     }
 
     /// Generates a proof for the given proof request.
@@ -719,19 +740,35 @@ impl InitializingAuthenticator {
 
 /// Serialized Ownership Proof output for WIP-103.
 ///
-/// `proof_bytes` contains a serialized representation of the underlying
-/// Ownership Proof payload, and `merkle_root` contains the 32-byte big-endian
-/// Merkle root public input.
+/// `proof_bytes` contains the JSON-serialized [`provekit_common::WhirR1CSProof`]
+/// produced by `world-id-core`, and `merkle_root` contains the 32-byte
+/// big-endian encoding of the Merkle root public input.
 ///
-/// This record is reserved for the WalletKit UniFFI surface so that mobile
-/// clients have a stable return type once `world-id-core` exposes the upstream
-/// ownership proof generation API in a published release.
+/// Mobile clients receive this record across the UniFFI boundary and forward
+/// both fields to the Issuer for verification.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct OwnershipProof {
-    /// Serialized Ownership Proof payload bytes.
+    /// JSON-serialized `WhirR1CSProof` bytes produced by `world-id-core`.
     pub proof_bytes: Vec<u8>,
     /// 32-byte big-endian Merkle root used as a public input to the proof.
     pub merkle_root: Vec<u8>,
+}
+
+impl OwnershipProof {
+    /// Converts an upstream [`CoreOwnershipProof`] into the WalletKit FFI record.
+    ///
+    /// `proof_bytes` is the JSON encoding of the `WhirR1CSProof`; if
+    /// serialization somehow fails the field is left empty.
+    #[must_use]
+    pub fn from_core(upstream: CoreOwnershipProof) -> Self {
+        let proof_bytes =
+            serde_json::to_vec(&upstream.proof).unwrap_or_default();
+        let merkle_root = upstream.merkle_root.to_be_bytes().to_vec();
+        Self {
+            proof_bytes,
+            merkle_root,
+        }
+    }
 }
 
 /// The signature and signing nonce returned by
@@ -939,15 +976,29 @@ mod storage_tests {
     }
 
     #[tokio::test]
-    async fn test_prove_credential_sub_reports_not_supported() {
+    async fn test_prove_credential_sub_rejects_mismatched_sub() {
         // Install default crypto provider for rustls.
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         let (authenticator, root) = init_test_authenticator(&[3u8; 32]).await;
 
-        let result = authenticator.prove_credential_sub(1, vec![0; 32]).await;
+        // Use a random nonce, a zero blinding factor and a zero sub — the sub
+        // will not match what the authenticator would derive from the blinding
+        // factor, so the upstream must reject it.
+        let nonce = FieldElement::from_u64(42);
+        let blinding_factor = FieldElement::from_u64(1);
+        let wrong_sub = FieldElement::from_u64(999);
 
-        assert!(matches!(result, Err(WalletKitError::NotSupported { .. })));
+        let result = authenticator
+            .prove_credential_sub(&nonce, &blinding_factor, &wrong_sub)
+            .await;
+
+        // The upstream rejects mismatched (blinding_factor, sub) pairs with
+        // InvalidSubOrBlindingFactor, which maps to WalletKitError::InvalidInput.
+        assert!(
+            matches!(result, Err(WalletKitError::InvalidInput { .. })),
+            "expected InvalidInput for mismatched sub, got: {result:?}"
+        );
 
         cleanup_test_storage(&root);
     }
