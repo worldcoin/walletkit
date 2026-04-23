@@ -442,6 +442,45 @@ impl Authenticator {
         })
     }
 
+    /// Generates a WIP-103 Ownership Proof for Issuer Authentication flows.
+    ///
+    /// An Ownership Proof lets the user prove they own the credential `sub`
+    /// associated with a stored credential without revealing their `leaf_index`,
+    /// credential blinding factor, or private key material to the verifier.
+    ///
+    /// The intended WIP-103-001 use case is **Issuer Authentication** for
+    /// user-initiated actions such as credential re-issuance, status checks,
+    /// and credential deletion/unregistration.
+    ///
+    /// # Security-critical usage constraint
+    /// This method **MUST only** be called as part of a direct
+    /// **user-initiated** action in the client. Callers **MUST NOT** expose this
+    /// method to issuer-triggered, backend-triggered, or unauthenticated request
+    /// flows. WalletKit intentionally exposes this as a client-side primitive
+    /// only and does not auto-generate Ownership Proofs in response to incoming
+    /// requests from external parties.
+    ///
+    /// # Arguments
+    /// * `issuer_schema_id` - Issuer schema ID for the credential whose `sub`
+    ///   should be proven.
+    /// * `nonce` - 32-byte field element provided by the Issuer to prevent
+    ///   replay.
+    ///
+    /// # Errors
+    /// Returns [`WalletKitError::NotSupported`] until WalletKit bumps its
+    /// `world-id-core` dependency to a release that exposes
+    /// `Authenticator::prove_credential_sub` and the corresponding ownership
+    /// proof types from `world-id-protocol`.
+    pub async fn prove_credential_sub(
+        &self,
+        _issuer_schema_id: u64,
+        _nonce: Vec<u8>,
+    ) -> Result<OwnershipProof, WalletKitError> {
+        Err(WalletKitError::NotSupported {
+            feature: "WIP-103 Ownership Proof requires a newer world-id-core release; walletkit currently depends on world-id-core 0.9.0, which does not expose Authenticator::prove_credential_sub.".to_string(),
+        })
+    }
+
     /// Generates a proof for the given proof request.
     ///
     /// # Errors
@@ -678,6 +717,23 @@ impl InitializingAuthenticator {
     }
 }
 
+/// Serialized Ownership Proof output for WIP-103.
+///
+/// `proof_bytes` contains a serialized representation of the underlying
+/// Ownership Proof payload, and `merkle_root` contains the 32-byte big-endian
+/// Merkle root public input.
+///
+/// This record is reserved for the WalletKit UniFFI surface so that mobile
+/// clients have a stable return type once `world-id-core` exposes the upstream
+/// ownership proof generation API in a published release.
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct OwnershipProof {
+    /// Serialized Ownership Proof payload bytes.
+    pub proof_bytes: Vec<u8>,
+    /// 32-byte big-endian Merkle root used as a public input to the proof.
+    pub merkle_root: Vec<u8>,
+}
+
 /// The signature and signing nonce returned by
 /// [`Authenticator::danger_sign_initiate_recovery_agent_update`].
 ///
@@ -879,6 +935,20 @@ mod storage_tests {
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         let (_, root) = init_test_authenticator(&[2u8; 32]).await;
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_prove_credential_sub_reports_not_supported() {
+        // Install default crypto provider for rustls.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
+        let (authenticator, root) = init_test_authenticator(&[3u8; 32]).await;
+
+        let result = authenticator.prove_credential_sub(1, vec![0; 32]).await;
+
+        assert!(matches!(result, Err(WalletKitError::NotSupported { .. })));
+
         cleanup_test_storage(&root);
     }
 }

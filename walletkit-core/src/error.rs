@@ -141,6 +141,13 @@ pub enum WalletKitError {
     #[error("debug_report_not_found")]
     DebugReportNotFound,
 
+    /// The requested feature is not supported by the currently linked dependencies.
+    #[error("not_supported: {feature}")]
+    NotSupported {
+        /// Human-readable description of what is not currently supported.
+        feature: String,
+    },
+
     /// The user is not eligible for recovery
     #[error("not_eligible_for_recovery")]
     NotEligibleForRecovery,
