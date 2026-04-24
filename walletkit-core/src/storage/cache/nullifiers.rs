@@ -1,7 +1,24 @@
 //! Used-nullifier cache helpers for replay protection.
 //!
-//! Tracks request ids and nullifiers to enforce single-use disclosures while
-//! remaining idempotent for retries within the TTL window.
+//! Tracks nullifiers to enforce single-use disclosures while remaining
+//! idempotent for retries within the TTL window.
+//!
+//! ## Nullifier replay safety
+//!
+//! Within the retention window (TTL):
+//!
+//! - A `nullifier` may be associated with at most one `request_id`.
+//! - A `request_id` always returns the same proof bytes until expiry.
+//!
+//! Behavior:
+//!
+//! - Reusing a `request_id` returns the original proof.
+//! - Reusing a `nullifier` with a different `request_id` fails.
+//! - Expired entries may be pruned.
+//!
+//! Guarantees:
+//!
+//! - Enforcement is transactional.
 
 use crate::storage::error::StorageResult;
 use walletkit_db::Connection;

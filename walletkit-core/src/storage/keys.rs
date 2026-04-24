@@ -1,4 +1,18 @@
 //! Key hierarchy management for credential storage.
+//!
+//! ## Root and intermediate keys
+//!
+//! - `K_device`
+//!   - Device-bound root key provided by the platform keystore
+//!     (`DeviceKeystore`).
+//!   - MUST be non-exportable when supported.
+//! - `K_intermediate`
+//!   - 32-byte per-account intermediate key.
+//!   - Generated randomly on first use.
+//!   - Stored sealed under `K_device` in `account_keys.bin`
+//!     (see `AccountKeyEnvelope`).
+//!   - Loaded once during initialization and retained in memory for the lifetime
+//!     of the storage session.
 
 use rand::{rngs::OsRng, RngCore};
 use secrecy::SecretBox;

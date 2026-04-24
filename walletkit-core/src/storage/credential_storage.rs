@@ -60,7 +60,15 @@ fn remove_db_files(db_path: &std::path::Path) {
     }
 }
 
-/// Concrete storage implementation backed by `SQLCipher` databases.
+/// Concrete storage implementation backed by sqlite3mc-encrypted databases.
+///
+/// This is the public-facing API surface exposed to `WalletKit`. It is the single
+/// entry point for all credential persistence, caching, and replay-safety
+/// operations. Internally it delegates to a [`VaultDb`] (authoritative) and
+/// a [`CacheDb`] (non-authoritative), both keyed by `K_intermediate`.
+///
+/// All mutable operations are serialized under a [`Mutex`] and an account-wide
+/// storage lock to prevent concurrent modification.
 #[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Object))]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
@@ -190,6 +198,25 @@ impl CredentialStore {
     }
 
     /// Initializes storage and validates the account leaf index.
+    ///
+    /// On success, the following MUST hold:
+    ///
+    /// - An intermediate key `K_intermediate: [u8; 32]` is available in memory.
+    /// - The vault database is opened as a sqlite3mc-encrypted database keyed by
+    ///   `K_intermediate`.
+    /// - The cache database is opened as a sqlite3mc-encrypted database keyed by
+    ///   `K_intermediate`.
+    /// - Session keys are derived as needed from `K_intermediate` and MAY be
+    ///   persisted in cache (`cache_entries` with the session key prefix).
+    ///
+    /// # Rules
+    ///
+    /// - If no `K_intermediate` exists, it is generated and sealed under the device keystore.
+    /// - If a `leaf_index` is not yet recorded, it is set.
+    /// - If a recorded `leaf_index` differs from the provided value, initialization fails.
+    /// - Once set, `leaf_index` MUST NOT change.
+    /// - The cache database is non-authoritative and may be rebuilt on integrity failure.
+    /// - Initialization is serialized under a global storage lock.
     ///
     /// # Errors
     ///
@@ -471,8 +498,18 @@ impl CredentialStore {
 
     /// Checks whether a replay guard entry exists for the given nullifier.
     ///
+    /// Within the retention window (TTL):
+    ///
+    /// - A `nullifier` may be associated with at most one `request_id`.
+    /// - A `request_id` always returns the same proof bytes until expiry.
+    /// - Reusing a `nullifier` with a different `request_id` fails.
+    /// - Expired entries may be pruned.
+    /// - Enforcement is transactional.
+    ///
     /// # Returns
-    /// - bool: true if a replay guard entry exists (hence signalling a nullifier replay), false otherwise.
+    ///
+    /// `true` if a replay guard entry exists (hence signalling a nullifier replay),
+    /// `false` otherwise.
     ///
     /// # Errors
     ///
@@ -487,6 +524,12 @@ impl CredentialStore {
 
     /// After a proof has been successfully generated, creates a replay guard entry
     /// locally to avoid future replays of the same nullifier.
+    ///
+    /// Within the retention window (TTL):
+    ///
+    /// - Reusing a `request_id` returns the original proof.
+    /// - Reusing a `nullifier` with a different `request_id` fails.
+    /// - Expired entries may be pruned.
     ///
     /// # Errors
     ///

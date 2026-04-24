@@ -1,4 +1,38 @@
 //! Vault database schema management.
+//!
+//! The vault schema defines three tables:
+//!
+//! ## `vault_meta`
+//!
+//! Stores the schema version and account leaf index. The leaf index is
+//! nullable until first initialization. Once set it MUST NOT change.
+//!
+//! ## `credential_records`
+//!
+//! Each row represents a stored credential. Fields:
+//!
+//! - `credential_id` — auto-increment primary key (INTEGER).
+//! - `issuer_schema_id` — the unique issuer+schema identifier (u64).
+//! - `subject_blinding_factor` — 32-byte blinding factor (BLOB).
+//! - `genesis_issued_at` — timestamp of first issuance (unix seconds).
+//! - `expires_at` — expiration timestamp (unix seconds).
+//! - `credential_blob_cid` — [`ContentId`](super::super::types::ContentId) referencing
+//!   the credential payload in `blob_objects`.
+//! - `associated_data_cid` — optional [`ContentId`](super::super::types::ContentId)
+//!   referencing associated data in `blob_objects`.
+//!
+//! Indexed by `(issuer_schema_id, updated_at DESC)` for efficient lookups
+//! and by `expires_at` for expiry queries.
+//!
+//! ## `blob_objects`
+//!
+//! Content-addressed blob storage. Each row stores a blob payload identified
+//! by its [`ContentId`](super::super::types::ContentId).
+//!
+//! - `content_id` — 32 bytes: `SHA256("worldid:blob" || blob_kind || plaintext_bytes)`.
+//! - `blob_kind` — 1 = [`CredentialBlob`](super::super::types::BlobKind::CredentialBlob),
+//!   2 = [`AssociatedData`](super::super::types::BlobKind::AssociatedData).
+//! - `bytes` — the raw blob payload.
 
 use crate::storage::error::StorageResult;
 use walletkit_db::Connection;
