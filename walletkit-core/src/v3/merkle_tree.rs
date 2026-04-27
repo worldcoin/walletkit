@@ -58,7 +58,7 @@ impl MerkleTreeProof {
             identity_commitment: identity_commitment.to_padded_hex_string(),
         };
         let user_agent = UserAgent::default();
-        let request = Request::new(Some(user_agent));
+        let request = Request::new(&user_agent);
         let http_response = request.handle(request.post(&url).json(&body)).await?;
 
         let status = http_response.status();
