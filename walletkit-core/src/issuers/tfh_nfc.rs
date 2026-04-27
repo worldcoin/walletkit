@@ -145,13 +145,19 @@ mod tests {
 
     #[test]
     fn test_staging_url() {
-        let issuer = TfhNfcIssuer::new(&Environment::Staging, &UserAgent::new("1.0.0", "test", "1.0.0"));
+        let issuer = TfhNfcIssuer::new(
+            &Environment::Staging,
+            &UserAgent::new("1.0.0", "test", "1.0.0"),
+        );
         assert_eq!(issuer.base_url, "https://nfc.stage-crypto.worldcoin.org");
     }
 
     #[test]
     fn test_production_url() {
-        let issuer = TfhNfcIssuer::new(&Environment::Production, &UserAgent::new("1.0.0", "test", "1.0.0"));
+        let issuer = TfhNfcIssuer::new(
+            &Environment::Production,
+            &UserAgent::new("1.0.0", "test", "1.0.0"),
+        );
         assert_eq!(issuer.base_url, "https://nfc.crypto.worldcoin.org");
     }
 
