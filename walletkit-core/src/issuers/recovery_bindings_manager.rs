@@ -62,7 +62,7 @@ impl RecoveryBindingManager {
     #[uniffi::constructor]
     pub fn new(
         environment: &Environment,
-        user_agent: UserAgent,
+        user_agent: &UserAgent,
     ) -> Result<Self, WalletKitError> {
         let base_url = match environment {
             Environment::Staging => "https://app.stage.orb.worldcoin.org",
@@ -80,7 +80,7 @@ impl RecoveryBindingManager {
     #[uniffi::constructor]
     pub fn new_with_base_url(
         base_url: &str,
-        user_agent: UserAgent,
+        user_agent: &UserAgent,
     ) -> Result<Self, WalletKitError> {
         let pop_backend_client =
             PopBackendClient::new(base_url.to_string(), user_agent);
@@ -304,7 +304,7 @@ mod tests {
 
         let recovery_binding_manager = RecoveryBindingManager::new_with_base_url(
             pop_api_server.url().as_str(),
-            UserAgent::default(),
+            &UserAgent::default(),
         )
         .unwrap();
 

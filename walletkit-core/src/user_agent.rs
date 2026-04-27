@@ -1,7 +1,7 @@
 //! User agent for HTTP requests.
 
 /// Value sent in the `User-Agent` header for outbound HTTP calls (World App, client, and `walletkit-core` version).
-#[derive(uniffi::Record, Debug, Clone)]
+#[derive(Debug, Clone, uniffi::Object)]
 pub struct UserAgent {
     user_agent: String,
 }
@@ -15,6 +15,12 @@ impl UserAgent {
         let walletkit_version = env!("CARGO_PKG_VERSION");
         let user_agent = format!("WorldApp/{world_app_version} walletkit-core/{walletkit_version} {client_name}/{os_version}");
         Self { user_agent }
+    }
+
+    /// Full `User-Agent` string for logging or custom HTTP stacks.
+    #[must_use]
+    pub fn as_string(&self) -> String {
+        self.user_agent.clone()
     }
 }
 

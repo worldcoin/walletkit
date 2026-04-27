@@ -16,16 +16,15 @@ pub struct Request {
 
 impl Request {
     /// Initializes a new `Request` instance.
-    pub(crate) fn new(user_agent: Option<UserAgent>) -> Self {
+    pub(crate) fn new(user_agent: &UserAgent) -> Self {
         let client = reqwest::Client::new();
         let timeout = Duration::from_secs(5);
         let max_retries = 3; // total attempts = 4
-        let user_agent = user_agent.unwrap_or_default().to_string();
         Self {
             client,
             timeout,
             max_retries,
-            user_agent,
+            user_agent: user_agent.as_string(),
         }
     }
 
