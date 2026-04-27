@@ -1,5 +1,6 @@
 use crate::error::WalletKitError;
-use crate::http_request::{Request, UserAgent};
+use crate::http_request::Request;
+use crate::UserAgent;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
@@ -256,7 +257,7 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone(), UserAgent::default());
 
         let result = pop_api_client
             .bind_recovery_agent(
@@ -301,7 +302,7 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone(), UserAgent::default());
 
         let result = pop_api_client
             .bind_recovery_agent(
@@ -350,7 +351,7 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone(), UserAgent::default());
 
         let result = pop_api_client
             .unbind_recovery_agent(
@@ -395,7 +396,7 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone(), UserAgent::default());
 
         let result = pop_api_client
             .unbind_recovery_agent(
@@ -427,7 +428,7 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone(), UserAgent::default());
 
         let result = pop_api_client.get_recovery_binding(42).await;
         assert!(result.is_ok(), "Expected success but got error: {result:?}");
@@ -451,7 +452,7 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone(), UserAgent::default());
 
         let result = pop_api_client.get_recovery_binding(42).await;
         assert!(result.is_err(), "Expected error but got success");
@@ -476,7 +477,7 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone(), UserAgent::default());
 
         let result = pop_api_client.get_recovery_binding(42).await;
         assert!(result.is_ok(), "Expected success but got error: {result:?}");
@@ -503,7 +504,7 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client = PopBackendClient::new(url.clone(), UserAgent::default());
 
         let result = pop_api_client.get_recovery_binding(42).await;
         assert!(result.is_ok(), "Expected success but got error: {result:?}");

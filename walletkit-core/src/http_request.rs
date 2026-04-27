@@ -3,31 +3,7 @@ use std::time::Duration;
 use backon::{ExponentialBuilder, Retryable};
 use reqwest::{Method, RequestBuilder, Response};
 
-use crate::error::WalletKitError;
-
-#[derive(uniffi::Record)]
-pub struct UserAgent {
-    user_agent: String,
-}
-
-#[uniffi::export]
-impl UserAgent {
-    #[uniffi::constructor]
-    #[must_use]
-    pub fn new(world_app_version: &str, client_name: &str, os_version: &str) -> Self {
-        let walletkit_version = env!("CARGO_PKG_VERSION");
-        let user_agent = format!("WorldApp/{world_app_version} walletkit-core/{walletkit_version} {client_name}/{os_version}");
-        Self { user_agent }
-    }
-
-    #[uniffi::constructor]
-    #[must_use]
-    pub fn default() -> Self {
-        let walletkit_version = env!("CARGO_PKG_VERSION");
-        let user_agent = format!("walletkit-core/{walletkit_version}");
-        Self { user_agent }
-    }
-}
+use crate::{error::WalletKitError, UserAgent};
 
 /// A simple wrapper on an HTTP client for making requests. Sets sensible defaults such as timeouts,
 /// user-agent & ensuring HTTPS, and applies retry middleware for transient failures.
@@ -44,22 +20,24 @@ impl Request {
         let client = reqwest::Client::new();
         let timeout = Duration::from_secs(5);
         let max_retries = 3; // total attempts = 4
-        let user_agent = user_agent.unwrap_or_else(UserAgent::default).user_agent.clone();
-        Self { client, timeout, max_retries, user_agent }
+        let user_agent = user_agent.unwrap_or_default().to_string();
+        Self {
+            client,
+            timeout,
+            max_retries,
+            user_agent,
+        }
     }
 
     /// Creates a request builder with defaults applied.
     pub(crate) fn req(&self, method: Method, url: &str) -> RequestBuilder {
         #[cfg(not(test))]
         assert!(url.starts_with("https"));
-        
+
         self.client
             .request(method, url)
             .timeout(self.timeout)
-            .header(
-                "User-Agent",
-                &self.user_agent,
-            )
+            .header("User-Agent", &self.user_agent)
     }
 
     /// Creates a GET request builder with defaults applied.

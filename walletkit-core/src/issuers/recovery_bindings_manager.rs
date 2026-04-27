@@ -18,10 +18,10 @@ use crate::issuers::pop_backend_client::ManageRecoveryBindingRequest;
 use crate::issuers::pop_backend_client::RecoveryBindingResponse;
 use crate::issuers::PopBackendClient;
 use crate::Environment;
+use crate::UserAgent;
 use alloy_primitives::keccak256;
 use alloy_primitives::Address;
 use std::string::String;
-use crate::http_request::UserAgent;
 /// Represents a recovery binding.
 #[derive(Debug, PartialEq, Eq, uniffi::Record)]
 pub struct RecoveryBinding {
@@ -60,7 +60,10 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    pub fn new(environment: &Environment, user_agent: UserAgent) -> Result<Self, WalletKitError> {
+    pub fn new(
+        environment: &Environment,
+        user_agent: UserAgent,
+    ) -> Result<Self, WalletKitError> {
         let base_url = match environment {
             Environment::Staging => "https://app.stage.orb.worldcoin.org",
             Environment::Production => "https://app.orb.worldcoin.org",
@@ -75,8 +78,12 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    pub fn new_with_base_url(base_url: &str, user_agent: UserAgent) -> Result<Self, WalletKitError> {
-        let pop_backend_client = PopBackendClient::new(base_url.to_string(), user_agent);
+    pub fn new_with_base_url(
+        base_url: &str,
+        user_agent: UserAgent,
+    ) -> Result<Self, WalletKitError> {
+        let pop_backend_client =
+            PopBackendClient::new(base_url.to_string(), user_agent);
         Ok(Self { pop_backend_client })
     }
 }
@@ -295,9 +302,11 @@ mod tests {
             .create_async()
             .await;
 
-        let recovery_binding_manager =
-            RecoveryBindingManager::new_with_base_url(pop_api_server.url().as_str())
-                .unwrap();
+        let recovery_binding_manager = RecoveryBindingManager::new_with_base_url(
+            pop_api_server.url().as_str(),
+            UserAgent::default(),
+        )
+        .unwrap();
 
         let result = recovery_binding_manager
             .bind_recovery_agent(&authenticator, sub.clone(), recovery_agent.clone())
