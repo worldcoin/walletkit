@@ -1,6 +1,6 @@
 //! TFH NFC credential issuer (passport, eID, MNC).
 use crate::Credential;
-use crate::{error::WalletKitError, http_request::Request, Environment};
+use crate::{error::WalletKitError, http_request::{Request, UserAgent}, Environment};
 
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde::Deserialize;
@@ -54,7 +54,7 @@ impl TfhNfcIssuer {
     /// Create a new TFH NFC issuer for the specified environment
     #[uniffi::constructor]
     #[must_use]
-    pub fn new(environment: &Environment) -> Self {
+    pub fn new(environment: &Environment, user_agent: Option<UserAgent>) -> Self {
         let base_url = match environment {
             Environment::Staging => "https://nfc.stage-crypto.worldcoin.org",
             Environment::Production => "https://nfc.crypto.worldcoin.org",
@@ -63,7 +63,7 @@ impl TfhNfcIssuer {
 
         Self {
             base_url,
-            request: Request::new(),
+            request: Request::new(user_agent),
         }
     }
 }
@@ -132,7 +132,7 @@ impl TfhNfcIssuer {
     pub fn with_base_url(base_url: &str) -> Self {
         Self {
             base_url: base_url.to_string(),
-            request: Request::new(),
+            request: Request::new(None),
         }
     }
 }
@@ -143,13 +143,13 @@ mod tests {
 
     #[test]
     fn test_staging_url() {
-        let issuer = TfhNfcIssuer::new(&Environment::Staging);
+        let issuer = TfhNfcIssuer::new(&Environment::Staging, Some(UserAgent::new("1.0.0", "test", "1.0.0")));
         assert_eq!(issuer.base_url, "https://nfc.stage-crypto.worldcoin.org");
     }
 
     #[test]
     fn test_production_url() {
-        let issuer = TfhNfcIssuer::new(&Environment::Production);
+        let issuer = TfhNfcIssuer::new(&Environment::Production, Some(UserAgent::new("1.0.0", "test", "1.0.0")));
         assert_eq!(issuer.base_url, "https://nfc.crypto.worldcoin.org");
     }
 

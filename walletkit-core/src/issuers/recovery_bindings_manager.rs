@@ -21,6 +21,7 @@ use crate::Environment;
 use alloy_primitives::keccak256;
 use alloy_primitives::Address;
 use std::string::String;
+use crate::http_request::UserAgent;
 /// Represents a recovery binding.
 #[derive(Debug, PartialEq, Eq, uniffi::Record)]
 pub struct RecoveryBinding {
@@ -59,13 +60,13 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    pub fn new(environment: &Environment) -> Result<Self, WalletKitError> {
+    pub fn new(environment: &Environment, user_agent: UserAgent) -> Result<Self, WalletKitError> {
         let base_url = match environment {
             Environment::Staging => "https://app.stage.orb.worldcoin.org",
             Environment::Production => "https://app.orb.worldcoin.org",
         }
         .to_string();
-        Self::new_with_base_url(base_url.as_str())
+        Self::new_with_base_url(base_url.as_str(), user_agent)
     }
 
     /// Creates a new `RecoveryBindingManager` for the specified base URL and user agent.
@@ -74,8 +75,8 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    pub fn new_with_base_url(base_url: &str) -> Result<Self, WalletKitError> {
-        let pop_backend_client = PopBackendClient::new(base_url.to_string());
+    pub fn new_with_base_url(base_url: &str, user_agent: UserAgent) -> Result<Self, WalletKitError> {
+        let pop_backend_client = PopBackendClient::new(base_url.to_string(), user_agent);
         Ok(Self { pop_backend_client })
     }
 }

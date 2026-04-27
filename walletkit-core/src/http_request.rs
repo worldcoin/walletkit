@@ -5,38 +5,60 @@ use reqwest::{Method, RequestBuilder, Response};
 
 use crate::error::WalletKitError;
 
+#[derive(uniffi::Record)]
+pub struct UserAgent {
+    user_agent: String,
+}
+
+#[uniffi::export]
+impl UserAgent {
+    #[uniffi::constructor]
+    #[must_use]
+    pub fn new(world_app_version: &str, client_name: &str, os_version: &str) -> Self {
+        let walletkit_version = env!("CARGO_PKG_VERSION");
+        let user_agent = format!("WorldApp/{world_app_version} walletkit-core/{walletkit_version} {client_name}/{os_version}");
+        Self { user_agent }
+    }
+
+    #[uniffi::constructor]
+    #[must_use]
+    pub fn default() -> Self {
+        let walletkit_version = env!("CARGO_PKG_VERSION");
+        let user_agent = format!("walletkit-core/{walletkit_version}");
+        Self { user_agent }
+    }
+}
+
 /// A simple wrapper on an HTTP client for making requests. Sets sensible defaults such as timeouts,
 /// user-agent & ensuring HTTPS, and applies retry middleware for transient failures.
 pub struct Request {
     client: reqwest::Client,
     timeout: Duration,
     max_retries: u32,
+    user_agent: String,
 }
 
 impl Request {
     /// Initializes a new `Request` instance.
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(user_agent: Option<UserAgent>) -> Self {
         let client = reqwest::Client::new();
         let timeout = Duration::from_secs(5);
         let max_retries = 3; // total attempts = 4
-        Self {
-            client,
-            timeout,
-            max_retries,
-        }
+        let user_agent = user_agent.unwrap_or_else(UserAgent::default).user_agent.clone();
+        Self { client, timeout, max_retries, user_agent }
     }
 
     /// Creates a request builder with defaults applied.
     pub(crate) fn req(&self, method: Method, url: &str) -> RequestBuilder {
         #[cfg(not(test))]
         assert!(url.starts_with("https"));
-
+        
         self.client
             .request(method, url)
             .timeout(self.timeout)
             .header(
                 "User-Agent",
-                format!("walletkit-core/{}", env!("CARGO_PKG_VERSION")),
+                &self.user_agent,
             )
     }
 

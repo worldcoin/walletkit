@@ -1,5 +1,5 @@
 use crate::error::WalletKitError;
-use crate::http_request::Request;
+use crate::http_request::{Request, UserAgent};
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 
@@ -53,8 +53,8 @@ pub struct PopBackendClient {
 impl PopBackendClient {
     /// Creates a new client targeting the given base URL.
     #[must_use]
-    pub fn new(base_url: String) -> Self {
-        let request = Request::new();
+    pub fn new(base_url: String, user_agent: UserAgent) -> Self {
+        let request = Request::new(Some(user_agent));
         Self { request, base_url }
     }
 }
