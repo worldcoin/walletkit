@@ -4,8 +4,8 @@ use ruint_uniffi::Uint256;
 use semaphore_rs::poseidon_tree::Proof;
 use serde::{Deserialize, Serialize};
 
+use crate::UserAgent;
 use crate::{error::WalletKitError, http_request::Request};
-
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SequencerBody {
