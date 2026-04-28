@@ -79,8 +79,8 @@ mod tests {
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
     use crate::storage::CredentialStore;
-    use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
     use world_id_core::primitives::merkle::MerkleInclusionProof;
+    use world_id_core::primitives::AuthenticatorPublicKeySet;
     use world_id_core::FieldElement;
 
     #[test]
