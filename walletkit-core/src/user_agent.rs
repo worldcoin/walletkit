@@ -14,8 +14,8 @@ impl std::fmt::Display for UserAgent {
 
 /// Builds the [`UserAgent`] string sent as the HTTP `User-Agent` header.
 ///
-/// Starts with only `walletkit-core/{crate version}`. The embedding application supplies any
-/// product / OS segments via [`Self::with`], prepended before the walletkit segment.
+/// Starts with `walletkit-core/{crate version}`. Add segments with [`Self::with_app`]
+/// and [`Self::with_client`] (appended after), then [`Self::build`].
 #[derive(Debug, Clone, uniffi::Object)]
 pub struct UserAgentBuilder {
     segments: Vec<String>,
