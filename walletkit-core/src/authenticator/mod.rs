@@ -10,7 +10,7 @@ use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
-    primitives::authenticator::AuthenticatorPublicKeySet,
+    primitives::AuthenticatorPublicKeySet,
     Authenticator as CoreAuthenticator, AuthenticatorConfig,
     Credential as CoreCredential,
     InitializingAuthenticator as CoreInitializingAuthenticator,
@@ -167,7 +167,7 @@ impl Authenticator {
     pub async fn get_packed_account_data_remote(
         &self,
     ) -> Result<Uint256, WalletKitError> {
-        let packed_account_data = self.inner.refresh_packed_account_data().await?;
+        let packed_account_data = self.inner.fetch_packed_account_data().await?;
         Ok(packed_account_data.into())
     }
 

@@ -7,7 +7,7 @@ use rand::rngs::OsRng;
 use walletkit_core::storage::CredentialStore;
 use walletkit_core::Credential;
 use world_id_core::api_types::AccountInclusionProof;
-use world_id_core::primitives::authenticator::AuthenticatorPublicKeySet;
+use world_id_core::primitives::AuthenticatorPublicKeySet;
 use world_id_core::primitives::TREE_DEPTH;
 use world_id_core::{
     primitives::merkle::MerkleInclusionProof, Credential as CoreCredential,

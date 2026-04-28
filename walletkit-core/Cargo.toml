@@ -77,7 +77,9 @@ dotenvy = "0.15.7"
 eyre = "0.6"
 mockito = "1.6"
 regex = "1.11"
-taceo-oprf = { version = "0.11", default-features = false, features = ["types"] } # TODO: remove once OprfKeyId gets removed from request
+taceo-oprf = { version = "0.12.1", default-features = false, features = [
+  "types",
+] } # TODO: remove once OprfKeyId gets removed from request
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
@@ -93,12 +95,12 @@ default = ["issuers", "storage"]
 compress-zkeys = ["world-id-core/compress-zkeys"]
 issuers = ["dep:base64"]
 storage = [
-    "dep:ciborium",
-    "dep:hkdf",
-    "dep:rand",
-    "dep:sha2",
-    "dep:uuid",
-    "dep:walletkit-db",
+  "dep:ciborium",
+  "dep:hkdf",
+  "dep:rand",
+  "dep:sha2",
+  "dep:uuid",
+  "dep:walletkit-db",
 ]
 
 # SECTION: V3 Feature Flags
