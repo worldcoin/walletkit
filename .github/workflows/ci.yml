@@ -73,7 +73,6 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
           targets: wasm32-unknown-unknown
 
       # clang-18 (LLVM 18) is the minimum version that supports the C23
