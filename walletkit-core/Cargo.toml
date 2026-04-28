@@ -59,6 +59,7 @@ world-id-core = { workspace = true, features = [
   "embed-zkeys",
   "zstd-compress-zkeys",
 ] }
+world-id-proof = { workspace = true }
 ciborium = { version = "0.2.2", optional = true }
 walletkit-db = { workspace = true, optional = true }
 
