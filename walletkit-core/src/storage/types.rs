@@ -6,8 +6,7 @@ use super::error::{StorageError, StorageResult};
 ///
 /// Blob records (stored in the `blob_objects` table) carry a kind tag that
 /// distinguishes credential payloads from associated data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 #[repr(u8)]
 pub enum BlobKind {
     /// Credential blob payload.
@@ -47,8 +46,7 @@ pub type Nullifier = [u8; 32];
 ///
 /// This is intentionally small and excludes blobs; full credential payloads can
 /// be fetched separately to avoid heavy list queries.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Record))]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct CredentialRecord {
     /// Credential identifier.
     pub credential_id: u64,
@@ -63,8 +61,7 @@ pub struct CredentialRecord {
 }
 
 /// FFI-friendly replay guard result kind.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Enum))]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum ReplayGuardKind {
     /// Stored bytes for the first disclosure of a request.
     Fresh,
@@ -73,8 +70,7 @@ pub enum ReplayGuardKind {
 }
 
 /// Replay guard result.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(not(target_arch = "wasm32"), derive(uniffi::Record))]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ReplayGuardResult {
     /// Result kind.
     pub kind: ReplayGuardKind,

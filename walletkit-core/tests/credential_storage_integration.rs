@@ -1,5 +1,4 @@
-#![allow(missing_docs)]
-#![cfg(feature = "storage")]
+#![allow(missing_docs, clippy::missing_docs_in_private_items)]
 
 mod common;
 
