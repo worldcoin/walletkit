@@ -8105,6 +8105,7 @@ dependencies = [
  "uuid",
  "walletkit-db",
  "world-id-core",
+ "world-id-proof",
  "zeroize",
 ]
 

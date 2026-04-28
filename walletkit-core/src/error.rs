@@ -1,5 +1,9 @@
 use thiserror::Error;
-use world_id_core::{primitives::PrimitiveError, AuthenticatorError};
+use world_id_core::{
+    primitives::{oprf::WorldIdRequestAuthError, PrimitiveError},
+    AuthenticatorError,
+};
+use world_id_proof::ProofError;
 
 #[cfg(feature = "storage")]
 use crate::storage::StorageError;
@@ -95,6 +99,38 @@ pub enum WalletKitError {
     #[error("nullifier_replay")]
     NullifierReplay,
 
+    /// The RP's signature on the proof request could not be verified.
+    #[error("invalid_rp_signature")]
+    InvalidRpSignature,
+
+    /// The RP reused a signature nonce.
+    #[error("duplicate_nonce")]
+    DuplicateNonce,
+
+    /// The RP is unknown to the World ID registry.
+    #[error("unknown_rp")]
+    UnknownRp,
+
+    /// The RP is inactive and cannot request proofs.
+    #[error("inactive_rp")]
+    InactiveRp,
+
+    /// The RP's request timestamp is too old.
+    #[error("timestamp_too_old")]
+    TimestampTooOld,
+
+    /// The RP's request timestamp is too far in the future.
+    #[error("timestamp_too_far_in_future")]
+    TimestampTooFarInFuture,
+
+    /// The RP's request timestamp could not be parsed.
+    #[error("invalid_timestamp")]
+    InvalidTimestamp,
+
+    /// The RP's signature has expired.
+    #[error("rp_signature_expired")]
+    RpSignatureExpired,
+
     /// Cached Groth16 material could not be parsed or verified.
     #[error("groth16_material_cache_invalid")]
     Groth16MaterialCacheInvalid {
@@ -183,6 +219,37 @@ impl From<PrimitiveError> for WalletKitError {
     }
 }
 
+impl From<WorldIdRequestAuthError> for WalletKitError {
+    fn from(error: WorldIdRequestAuthError) -> Self {
+        match error {
+            WorldIdRequestAuthError::InvalidRpSignature => Self::InvalidRpSignature,
+            WorldIdRequestAuthError::DuplicateNonce => Self::DuplicateNonce,
+            WorldIdRequestAuthError::UnknownRp => Self::UnknownRp,
+            WorldIdRequestAuthError::InactiveRp => Self::InactiveRp,
+            WorldIdRequestAuthError::TimestampTooOld => Self::TimestampTooOld,
+            WorldIdRequestAuthError::TimestampTooFarInFuture => {
+                Self::TimestampTooFarInFuture
+            }
+            WorldIdRequestAuthError::InvalidTimestamp => Self::InvalidTimestamp,
+            WorldIdRequestAuthError::RpSignatureExpired => Self::RpSignatureExpired,
+            _ => Self::ProofGeneration {
+                error: error.to_string(),
+            },
+        }
+    }
+}
+
+impl From<ProofError> for WalletKitError {
+    fn from(error: ProofError) -> Self {
+        match error {
+            ProofError::RequestAuthError(error) => Self::from(error),
+            _ => Self::ProofGeneration {
+                error: error.to_string(),
+            },
+        }
+    }
+}
+
 #[cfg(feature = "semaphore")]
 impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     fn from(error: semaphore_rs::protocol::ProofError) -> Self {
@@ -222,9 +289,7 @@ impl From<AuthenticatorError> for WalletKitError {
             },
             AuthenticatorError::PrimitiveError(error) => Self::from(error),
 
-            AuthenticatorError::ProofError(error) => Self::ProofGeneration {
-                error: error.to_string(),
-            },
+            AuthenticatorError::ProofError(error) => Self::from(error),
 
             AuthenticatorError::IndexerError { status, body } => Self::NetworkError {
                 url: "indexer".to_string(),
@@ -247,6 +312,83 @@ impl From<AuthenticatorError> for WalletKitError {
             _ => Self::AuthenticatorError {
                 error: error.to_string(),
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn walletkit_error_from_request_auth_error(
+        error: WorldIdRequestAuthError,
+    ) -> WalletKitError {
+        AuthenticatorError::ProofError(ProofError::RequestAuthError(error)).into()
+    }
+
+    fn promoted_error_code(error: &WalletKitError) -> Option<&'static str> {
+        match error {
+            WalletKitError::InvalidRpSignature => Some("invalid_rp_signature"),
+            WalletKitError::DuplicateNonce => Some("duplicate_nonce"),
+            WalletKitError::UnknownRp => Some("unknown_rp"),
+            WalletKitError::InactiveRp => Some("inactive_rp"),
+            WalletKitError::TimestampTooOld => Some("timestamp_too_old"),
+            WalletKitError::TimestampTooFarInFuture => {
+                Some("timestamp_too_far_in_future")
+            }
+            WalletKitError::InvalidTimestamp => Some("invalid_timestamp"),
+            WalletKitError::RpSignatureExpired => Some("rp_signature_expired"),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn maps_rp_request_auth_errors_to_public_walletkit_errors() {
+        let cases = [
+            (
+                WorldIdRequestAuthError::InvalidRpSignature,
+                "invalid_rp_signature",
+            ),
+            (WorldIdRequestAuthError::DuplicateNonce, "duplicate_nonce"),
+            (WorldIdRequestAuthError::UnknownRp, "unknown_rp"),
+            (WorldIdRequestAuthError::InactiveRp, "inactive_rp"),
+            (
+                WorldIdRequestAuthError::TimestampTooOld,
+                "timestamp_too_old",
+            ),
+            (
+                WorldIdRequestAuthError::TimestampTooFarInFuture,
+                "timestamp_too_far_in_future",
+            ),
+            (
+                WorldIdRequestAuthError::InvalidTimestamp,
+                "invalid_timestamp",
+            ),
+            (
+                WorldIdRequestAuthError::RpSignatureExpired,
+                "rp_signature_expired",
+            ),
+        ];
+
+        for (request_auth_error, expected_code) in cases {
+            let error = walletkit_error_from_request_auth_error(request_auth_error);
+
+            assert_eq!(promoted_error_code(&error), Some(expected_code));
+            assert_eq!(error.to_string(), expected_code);
+        }
+    }
+
+    #[test]
+    fn keeps_non_promoted_request_auth_errors_as_proof_generation_errors() {
+        let error = walletkit_error_from_request_auth_error(
+            WorldIdRequestAuthError::InvalidMerkleRoot,
+        );
+
+        match error {
+            WalletKitError::ProofGeneration { error } => {
+                assert_eq!(error, "invalid_merkle_root");
+            }
+            other => panic!("expected proof generation error, got {other:?}"),
         }
     }
 }
