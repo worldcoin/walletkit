@@ -3506,6 +3506,7 @@ dependencies = [
  "once_cell",
  "serdect",
  "sha2 0.10.9",
+ "signature",
 ]
 
 [[package]]
@@ -5569,17 +5570,19 @@ dependencies = [
 [[package]]
 name = "taceo-oprf"
 version = "0.12.1"
-source = "git+https://github.com/TaceoLabs/oprf-service.git?branch=main#5fc6ebeb313d2ee1a0194f7417ce3a02375471c7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2cdb5bdabfe916822e6a7def8b8538c24d9582daf050e924a15263b68563b766"
 dependencies = [
  "taceo-oprf-client",
  "taceo-oprf-core",
- "taceo-oprf-types",
+ "taceo-oprf-types 0.12.1",
 ]
 
 [[package]]
 name = "taceo-oprf-client"
-version = "0.9.3"
-source = "git+https://github.com/TaceoLabs/oprf-service.git?branch=main#5fc6ebeb313d2ee1a0194f7417ce3a02375471c7"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b593b9ad62eac8e01229d1c764d2ea204241adfbd7ef6e292ec4027dc9421fc7"
 dependencies = [
  "ark-ec",
  "ciborium",
@@ -5590,7 +5593,7 @@ dependencies = [
  "serde",
  "taceo-ark-babyjubjub",
  "taceo-oprf-core",
- "taceo-oprf-types",
+ "taceo-oprf-types 0.13.0",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "tokio",
@@ -5601,8 +5604,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-core"
-version = "0.5.2"
-source = "git+https://github.com/TaceoLabs/oprf-service.git?branch=main#5fc6ebeb313d2ee1a0194f7417ce3a02375471c7"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4d538b7fe97e0df8118f8b2a322f27d7e6585b4dfa1acc8da19196ade5696060"
 dependencies = [
  "ark-ec",
  "ark-ff 0.5.0",
@@ -5623,7 +5627,8 @@ dependencies = [
 [[package]]
 name = "taceo-oprf-types"
 version = "0.12.1"
-source = "git+https://github.com/TaceoLabs/oprf-service.git?branch=main#5fc6ebeb313d2ee1a0194f7417ce3a02375471c7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e47dc5b492084daa80ed0f2b1a935ed2c1dba5f8290fb30521c93b6c13f43759"
 dependencies = [
  "alloy",
  "ark-ff 0.5.0",
@@ -5636,6 +5641,25 @@ dependencies = [
  "taceo-ark-serde-compat",
  "taceo-circom-types",
  "taceo-groth16-sol 0.2.3",
+ "taceo-oprf-core",
+ "uuid",
+]
+
+[[package]]
+name = "taceo-oprf-types"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb1fcb204762878cb53c645ca08030c38c35146c2eec627d3b18aaac85bab707"
+dependencies = [
+ "ark-ff 0.5.0",
+ "ark-serialize 0.5.0",
+ "async-trait",
+ "eyre",
+ "http",
+ "ruint",
+ "serde",
+ "taceo-ark-babyjubjub",
+ "taceo-ark-serde-compat",
  "taceo-oprf-core",
  "uuid",
 ]
@@ -7084,7 +7108,8 @@ dependencies = [
 [[package]]
 name = "world-id-authenticator"
 version = "0.9.0"
-source = "git+https://github.com/worldcoin/world-id-protocol.git?branch=main#afb3558c209cb3f71f4143155af3e750f03faf9d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9672e179672a81578323123026e4af8ce07201a58ac74360d7a668d22f31cbc5"
 dependencies = [
  "alloy",
  "anyhow",
@@ -7112,47 +7137,50 @@ dependencies = [
  "webpki-roots 1.0.6",
  "world-id-primitives",
  "world-id-proof",
- "world-id-registries",
 ]
 
 [[package]]
 name = "world-id-core"
 version = "0.9.0"
-source = "git+https://github.com/worldcoin/world-id-protocol.git?branch=main#afb3558c209cb3f71f4143155af3e750f03faf9d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd133bb577f3159873e0c988f352134265f89127477f191d97e6e37cc8c42424"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
  "world-id-primitives",
  "world-id-proof",
- "world-id-registries",
 ]
 
 [[package]]
 name = "world-id-primitives"
 version = "0.9.0"
-source = "git+https://github.com/worldcoin/world-id-protocol.git?branch=main#afb3558c209cb3f71f4143155af3e750f03faf9d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39642d8335d4474132d39f2c1ad777645b3b7f973e0699461d80007a696a0922"
 dependencies = [
  "alloy",
  "alloy-primitives",
  "ark-bn254",
  "ark-ff 0.5.0",
+ "ark-groth16",
  "arrayvec",
  "embed-doc-image",
  "eyre",
  "getrandom 0.2.17",
  "hex",
+ "k256",
  "rand 0.8.5",
  "ruint",
  "secrecy",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "sha3",
  "strum",
  "taceo-ark-babyjubjub",
  "taceo-ark-serde-compat",
  "taceo-circom-types",
  "taceo-eddsa-babyjubjub",
+ "taceo-groth16-material",
+ "taceo-groth16-sol 0.3.1",
  "taceo-oprf",
  "taceo-poseidon2",
  "thiserror 2.0.18",
@@ -7163,7 +7191,8 @@ dependencies = [
 [[package]]
 name = "world-id-proof"
 version = "0.9.0"
-source = "git+https://github.com/worldcoin/world-id-protocol.git?branch=main#afb3558c209cb3f71f4143155af3e750f03faf9d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4693f94b3d16470de5c7a30f705f2d486e5c4100bc7f4fec5880c6121e242b0f"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -7174,13 +7203,11 @@ dependencies = [
  "rand 0.8.5",
  "rayon",
  "reqwest",
- "ruint",
  "serde",
  "taceo-ark-babyjubjub",
  "taceo-circom-types",
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
- "taceo-groth16-sol 0.3.1",
  "taceo-oprf",
  "taceo-poseidon2",
  "tar",
@@ -7189,15 +7216,6 @@ dependencies = [
  "world-id-primitives",
  "zeroize",
  "zstd",
-]
-
-[[package]]
-name = "world-id-registries"
-version = "0.9.0"
-source = "git+https://github.com/worldcoin/world-id-protocol.git?branch=main#afb3558c209cb3f71f4143155af3e750f03faf9d"
-dependencies = [
- "alloy",
- "anyhow",
 ]
 
 [[package]]
