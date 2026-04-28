@@ -154,7 +154,7 @@ jobs:
 
   test:
     name: Tests
-    runs-on: arc-public-xlarge-arm64-runner
+    runs-on: arc-public-2xlarge-arm64-runner
     permissions:
       contents: read
 
