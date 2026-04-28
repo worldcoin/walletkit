@@ -4,7 +4,7 @@ use ruint_uniffi::Uint256;
 use semaphore_rs::poseidon_tree::Proof;
 use serde::{Deserialize, Serialize};
 
-use crate::UserAgent;
+use crate::UserAgentBuilder;
 use crate::{error::WalletKitError, http_request::Request};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,8 +57,8 @@ impl MerkleTreeProof {
         let body = SequencerBody {
             identity_commitment: identity_commitment.to_padded_hex_string(),
         };
-        let user_agent = UserAgent::default();
-        let request = Request::new(&user_agent);
+        let user_agent = UserAgentBuilder::default().build();
+        let request = Request::new(user_agent.to_string());
         let http_response = request.handle(request.post(&url).json(&body)).await?;
 
         let status = http_response.status();
