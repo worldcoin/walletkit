@@ -17,8 +17,8 @@ use crate::error::WalletKitError;
 use crate::issuers::pop_backend_client::ManageRecoveryBindingRequest;
 use crate::issuers::pop_backend_client::RecoveryBindingResponse;
 use crate::issuers::PopBackendClient;
+use crate::user_agent::UserAgentBuilder;
 use crate::Environment;
-use crate::UserAgent;
 use alloy_primitives::keccak256;
 use alloy_primitives::Address;
 use std::string::String;
@@ -62,14 +62,14 @@ impl RecoveryBindingManager {
     #[uniffi::constructor]
     pub fn new(
         environment: &Environment,
-        user_agent: &UserAgent,
+        user_agent_builder: &UserAgentBuilder,
     ) -> Result<Self, WalletKitError> {
         let base_url = match environment {
             Environment::Staging => "https://app.stage.orb.worldcoin.org",
             Environment::Production => "https://app.orb.worldcoin.org",
         }
         .to_string();
-        Self::new_with_base_url(base_url.as_str(), user_agent)
+        Self::new_with_base_url(base_url.as_str(), user_agent_builder)
     }
 
     /// Creates a new `RecoveryBindingManager` for the specified base URL and user agent.
@@ -80,8 +80,9 @@ impl RecoveryBindingManager {
     #[uniffi::constructor]
     pub fn new_with_base_url(
         base_url: &str,
-        user_agent: &UserAgent,
+        user_agent_builder: &UserAgentBuilder,
     ) -> Result<Self, WalletKitError> {
+        let user_agent = user_agent_builder.build().to_string();
         let pop_backend_client =
             PopBackendClient::new(base_url.to_string(), user_agent);
         Ok(Self { pop_backend_client })
@@ -304,7 +305,7 @@ mod tests {
 
         let recovery_binding_manager = RecoveryBindingManager::new_with_base_url(
             pop_api_server.url().as_str(),
-            &UserAgent::default(),
+            &UserAgentBuilder::new(),
         )
         .unwrap();
 

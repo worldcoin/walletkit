@@ -3,7 +3,7 @@ use std::time::Duration;
 use backon::{ExponentialBuilder, Retryable};
 use reqwest::{Method, RequestBuilder, Response};
 
-use crate::{error::WalletKitError, UserAgent};
+use crate::error::WalletKitError;
 
 /// A simple wrapper on an HTTP client for making requests. Sets sensible defaults such as timeouts,
 /// user-agent & ensuring HTTPS, and applies retry middleware for transient failures.
@@ -16,7 +16,7 @@ pub struct Request {
 
 impl Request {
     /// Initializes a new `Request` instance.
-    pub(crate) fn new(user_agent: &UserAgent) -> Self {
+    pub(crate) fn new(user_agent: String) -> Self {
         let client = reqwest::Client::new();
         let timeout = Duration::from_secs(5);
         let max_retries = 3; // total attempts = 4
@@ -24,7 +24,7 @@ impl Request {
             client,
             timeout,
             max_retries,
-            user_agent: user_agent.as_string(),
+            user_agent,
         }
     }
 

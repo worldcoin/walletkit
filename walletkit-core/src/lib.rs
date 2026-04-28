@@ -128,7 +128,7 @@ pub mod defaults;
 
 /// User agent for HTTP requests.
 pub mod user_agent;
-pub use user_agent::UserAgent;
+pub use user_agent::{UserAgent, UserAgentBuilder};
 
 /// Proof requests and responses in World ID v4.
 pub mod requests;
