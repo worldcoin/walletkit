@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0](https://github.com/worldcoin/walletkit/compare/v0.15.2...v0.16.0) - 2026-04-29
+
+### Other
+
+- bump to new world id core, proof and alloy v2 ([#379](https://github.com/worldcoin/walletkit/pull/379))
+- pop 3767 check with app crypto teams on walletkit useragent header ([#366](https://github.com/worldcoin/walletkit/pull/366))
+
 ## [0.15.2](https://github.com/worldcoin/walletkit/compare/v0.15.1...v0.15.2) - 2026-04-28
 
 ### Other
