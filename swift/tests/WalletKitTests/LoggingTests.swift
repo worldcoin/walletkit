@@ -18,7 +18,7 @@ private final class CapturingLogger: WalletKit.Logger {
     }
 }
 
-final class SimpleTest: XCTestCase {
+final class LoggingTests: XCTestCase {
     func testInitLoggingForwardsLevelAndMessage() {
         let logger = CapturingLogger()
         WalletKit.initLogging(logger: logger, level: .info)
@@ -36,7 +36,6 @@ final class SimpleTest: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.05)
         }
-
 
         XCTAssertFalse(entries.isEmpty, "expected at least one bridged log entry")
 
