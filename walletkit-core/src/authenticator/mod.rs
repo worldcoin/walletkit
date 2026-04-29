@@ -21,7 +21,10 @@ use world_id_core::{
 use world_id_core::CredentialInput;
 
 #[cfg(feature = "storage")]
-use crate::storage::{CredentialStore, StoragePaths};
+use crate::{
+    storage::{CredentialStore, StoragePaths},
+    OwnershipProof,
+};
 
 #[cfg(feature = "storage")]
 use crate::requests::{ProofRequest, ProofResponse};
@@ -550,6 +553,57 @@ impl Authenticator {
             .replay_guard_set(nullifier.verifiable_oprf_output.output.into(), now)?;
 
         Ok(result.proof_response.into())
+    }
+
+    /// Generates a WIP-103 Ownership Proof for Issuers.
+    ///
+    /// An Ownership Proof lets the user prove they own the credential `sub`
+    /// associated with a stored credential without revealing their `leaf_index`.
+    ///
+    /// # Security-critical usage constraint
+    /// This method **MUST only** be called as part of a direct
+    /// **user-initiated** action in the client. Callers **MUST NOT** expose this
+    /// method to issuer-triggered, backend-triggered, or unauthenticated request
+    /// flows.
+    ///
+    /// # Arguments
+    /// * `nonce` - A field element provided by the Issuer to prevent replay.
+    /// * `blinding_factor` - The credential blinding factor previously used to
+    ///   derive the credential `sub`.
+    /// * `sub` - The credential `sub` (commitment) to prove ownership of.
+    ///
+    /// # Errors
+    /// - Returns [`WalletKitError::InvalidInput`] if `blinding_factor` and
+    ///   `sub` are inconsistent with each other (i.e. `sub` was not derived
+    ///   from this authenticator's leaf index and the provided blinding factor).
+    /// - Returns a network error if the Merkle inclusion proof cannot be
+    ///   fetched from the indexer.
+    /// - Returns [`WalletKitError::ProofGeneration`] if the ZK proof fails.
+    pub async fn prove_credential_sub(
+        &self,
+        nonce: &FieldElement,
+        blinding_factor: &FieldElement,
+        sub: &FieldElement,
+    ) -> Result<OwnershipProof, WalletKitError> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| WalletKitError::Generic {
+                error: format!("Critical. Unable to determine SystemTime: {e}"),
+            })?
+            .as_secs();
+
+        let inclusion_proof = self.fetch_inclusion_proof_with_cache(now).await?;
+        let proof = self
+            .inner
+            .prove_credential_sub(
+                nonce.0,
+                blinding_factor.0,
+                sub.0,
+                Some(inclusion_proof),
+            )
+            .await?;
+
+        Ok(OwnershipProof(proof))
     }
 }
 
