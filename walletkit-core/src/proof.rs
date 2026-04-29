@@ -1,7 +1,7 @@
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use world_id_core::primitives::OwnershipProof as CoreOwnershipProof;
 
-use crate::error::WalletKitError;
+use crate::{error::WalletKitError, FieldElement};
 
 /// A WIP-103 Ownership Proof available to foreign bindings
 #[derive(Debug, Clone, uniffi::Object)]
@@ -29,5 +29,11 @@ impl OwnershipProof {
     /// An encoding error is theoretically possible, should not happen in practice.
     pub fn encode_b64(&self) -> Result<String, WalletKitError> {
         Ok(BASE64_URL_SAFE_NO_PAD.encode(self.encode()?))
+    }
+
+    /// The root hash of the Merkle root used for inclusion in the `WorldIDRegistry`.
+    #[must_use]
+    pub fn merkle_root(&self) -> FieldElement {
+        self.0.merkle_root.into()
     }
 }

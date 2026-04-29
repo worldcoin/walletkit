@@ -903,8 +903,8 @@ mod storage_tests {
             Some(mock_server.url()),
             480,
             address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
-            "https://world-id-indexer.stage-crypto.worldcoin.org".to_string(),
-            "https://world-id-gateway.stage-crypto.worldcoin.org".to_string(),
+            "https://indexer.us.id-infra.worldcoin.dev".to_string(),
+            "https://gateway.id-infra.worldcoin.dev".to_string(),
             vec![],
             2,
         )
