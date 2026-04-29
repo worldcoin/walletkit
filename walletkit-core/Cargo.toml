@@ -24,7 +24,7 @@ name = "walletkit_core"
 alloy-core = { workspace = true }
 alloy-primitives = { workspace = true }
 backon = "1.6"
-base64 = { version = "0.22", optional = true }
+base64 = { version = "0.22" }
 ctor = "0.2"
 hex = "0.4"
 hkdf = { version = "0.12", optional = true }
@@ -60,7 +60,7 @@ world-id-core = { workspace = true, features = [
   "zstd-compress-zkeys",
 ] }
 world-id-proof = { workspace = true }
-ciborium = { version = "0.2.2", optional = true }
+ciborium = { version = "0.2.2" }
 walletkit-db = { workspace = true, optional = true }
 
 
@@ -95,9 +95,8 @@ default = ["issuers", "storage"]
 # using it requires proper handling to ensure decompression is done once and cached. By default walletkit-swift and walletkit-android
 # ship with compressed keys. But this is disabled for tests.
 compress-zkeys = ["world-id-core/compress-zkeys"]
-issuers = ["dep:base64"]
+issuers = []
 storage = [
-  "dep:ciborium",
   "dep:hkdf",
   "dep:rand",
   "dep:sha2",
