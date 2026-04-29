@@ -176,12 +176,12 @@ jobs:
         run: |
           CROSS_NO_WARNINGS=0 cross build -p walletkit --target ${{ matrix.settings.target }} --release --locked --features compress-zkeys,v3
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-${{ matrix.settings.target }}
-          path: ./target/${{ matrix.settings.target }}/release/libwalletkit.so
-          if-no-files-found: error
+      # - name: Upload artifact
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: android-${{ matrix.settings.target }}
+      #     path: ./target/${{ matrix.settings.target }}/release/libwalletkit.so
+      #     if-no-files-found: error
 
   # publish-kotlin:
   #   name: Publish Kotlin
