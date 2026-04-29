@@ -30,9 +30,11 @@ pub async fn run(
     match action {
         RecoveryBindingCommand::RegisterBindings { sub } => {
             let recovery_agent_address = environment.poh_recovery_agent_address();
-            let recovery_binding_manager =
-                RecoveryBindingManager::new(environment, &UserAgentBuilder::new())
-                    .unwrap();
+            let recovery_binding_manager = RecoveryBindingManager::new(
+                environment,
+                &UserAgentBuilder::new().with_walletkit_segment(),
+            )
+            .unwrap();
             recovery_binding_manager
                 .bind_recovery_agent(
                     &authenticator,
@@ -42,17 +44,21 @@ pub async fn run(
                 .await?;
         }
         RecoveryBindingCommand::UnregisterBindings { sub } => {
-            let recovery_binding_manager =
-                RecoveryBindingManager::new(environment, &UserAgentBuilder::new())
-                    .unwrap();
+            let recovery_binding_manager = RecoveryBindingManager::new(
+                environment,
+                &UserAgentBuilder::new().with_walletkit_segment(),
+            )
+            .unwrap();
             recovery_binding_manager
                 .unbind_recovery_agent(&authenticator, sub.clone())
                 .await?;
         }
         RecoveryBindingCommand::GetBinding => {
-            let recovery_binding_manager =
-                RecoveryBindingManager::new(environment, &UserAgentBuilder::new())
-                    .unwrap();
+            let recovery_binding_manager = RecoveryBindingManager::new(
+                environment,
+                &UserAgentBuilder::new().with_walletkit_segment(),
+            )
+            .unwrap();
             let recovery_binding = recovery_binding_manager
                 .get_recovery_binding(authenticator.leaf_index())
                 .await?;

@@ -305,7 +305,7 @@ mod tests {
 
         let recovery_binding_manager = RecoveryBindingManager::new_with_base_url(
             pop_api_server.url().as_str(),
-            &UserAgentBuilder::new(),
+            &UserAgentBuilder::new().with_walletkit_segment(),
         )
         .unwrap();
 

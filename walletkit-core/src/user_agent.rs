@@ -14,8 +14,9 @@ impl std::fmt::Display for UserAgent {
 
 /// Builds the [`UserAgent`] string sent as the HTTP `User-Agent` header.
 ///
-/// Starts with `walletkit-core/{crate version}`. Add segments with [`Self::with_app`]
-/// and [`Self::with_client`] (appended after), then [`Self::build`].
+/// Starts empty; call [`Self::with_segment`] for arbitrary `name/version` tokens and
+/// [`Self::with_walletkit_segment`] for the library token (in whatever order fits the host — e.g.
+/// native app vs web authenticator may omit an app-like segment entirely).
 #[derive(Debug, Clone, uniffi::Object)]
 pub struct UserAgentBuilder {
     segments: Vec<String>,
@@ -23,35 +24,30 @@ pub struct UserAgentBuilder {
 
 #[uniffi::export]
 impl UserAgentBuilder {
-    /// Initializes a new `UserAgentBuilder` with the crate version.
+    /// Empty builder — add segments with [`Self::with_segment`] and/or [`Self::with_walletkit_segment`].
     #[uniffi::constructor]
     #[must_use]
-    pub fn new() -> Self {
-        let crate_version = env!("CARGO_PKG_VERSION");
+    pub const fn new() -> Self {
         Self {
-            segments: vec![format!("walletkit-core/{crate_version}")],
+            segments: Vec::new(),
         }
     }
 
-    /// Adds an `{app_name}/{app_version}` segment before the walletkit segment.
-    ///
-    /// Both must be non-empty to apply; otherwise returns an unchanged clone.
+    /// Appends `{product}/{version}` (e.g. `WorldApp/2.1`, `Chrome/120`). No-op if either side is empty after trim.
     #[must_use]
-    pub fn with_app(&self, app_name: &str, app_version: &str) -> Self {
+    pub fn with_segment(&self, name: &str, version: &str) -> Self {
         let mut next = self.clone();
-        next.segments.insert(0, format!("{app_name}/{app_version}"));
+        next.segments.push(format!("{name}/{version}"));
         next
     }
 
-    /// Adds a `{client_name}/{client_version}` segment after the walletkit segment.
-    ///
-    /// For example `with_client("iOS", "17.0")` will produce `iOS/17.0` in the User-Agent string.
-    /// Returns an unchanged clone if either `client_name` or `client_version` is empty.
+    /// Appends `walletkit-core/{crate version}`.
     #[must_use]
-    pub fn with_client(&self, client_name: &str, client_version: &str) -> Self {
+    pub fn with_walletkit_segment(&self) -> Self {
         let mut next = self.clone();
+        let crate_version = env!("CARGO_PKG_VERSION");
         next.segments
-            .push(format!("{client_name}/{client_version}"));
+            .push(format!("walletkit-core/{crate_version}"));
         next
     }
 
@@ -62,7 +58,6 @@ impl UserAgentBuilder {
     }
 }
 
-// Default implementation for UserAgentBuilder
 impl Default for UserAgentBuilder {
     fn default() -> Self {
         Self::new()
@@ -80,21 +75,26 @@ mod tests {
     fn user_agent_builder_table() {
         let cases: Vec<(UserAgentBuilder, String)> = vec![
             (
-                UserAgentBuilder::new(),
+                UserAgentBuilder::new().with_walletkit_segment(),
                 format!("walletkit-core/{CRATE_VERSION}"),
             ),
             (
-                UserAgentBuilder::new().with_app("WorldApp".into(), "1.0".into()),
+                UserAgentBuilder::new()
+                    .with_segment("WorldApp", "1.0")
+                    .with_walletkit_segment(),
                 format!("WorldApp/1.0 walletkit-core/{CRATE_VERSION}"),
             ),
             (
                 UserAgentBuilder::new()
-                    .with_app("WorldApp".into(), "2.1".into())
-                    .with_client("iOS".into(), "17.0".into()),
+                    .with_segment("WorldApp", "2.1")
+                    .with_walletkit_segment()
+                    .with_segment("iOS", "17.0"),
                 format!("WorldApp/2.1 walletkit-core/{CRATE_VERSION} iOS/17.0"),
             ),
             (
-                UserAgentBuilder::new().with_client("CLI".into(), "1.2.3".into()),
+                UserAgentBuilder::new()
+                    .with_walletkit_segment()
+                    .with_segment("CLI", "1.2.3"),
                 format!("walletkit-core/{CRATE_VERSION} CLI/1.2.3"),
             ),
         ];
@@ -102,5 +102,18 @@ mod tests {
         for (builder, expected) in cases {
             assert_eq!(builder.build().to_string(), expected);
         }
+    }
+
+    #[test]
+    fn suggested_native_app_style_chain_matches_example() {
+        let ua = UserAgentBuilder::new()
+            .with_segment("WorldApp", "2.1")
+            .with_walletkit_segment()
+            .with_segment("iOS", "17.0")
+            .build();
+        assert_eq!(
+            ua.to_string(),
+            format!("WorldApp/2.1 walletkit-core/{CRATE_VERSION} iOS/17.0"),
+        );
     }
 }

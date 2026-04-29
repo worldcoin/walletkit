@@ -139,25 +139,22 @@ impl TfhNfcIssuer {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::user_agent::UserAgentBuilder;
 
     #[test]
     fn test_staging_url() {
-        let ua = UserAgentBuilder::new()
-            .with_app("WorldApp".into(), "1.0.0".into())
-            .with_client("test".into(), "1.0.0".into())
-            .build();
-        let issuer = TfhNfcIssuer::new(&Environment::Staging, ua.to_string());
+        let issuer = TfhNfcIssuer::new(
+            &Environment::Staging,
+            "WorldApp/1.0.0 test/1.0.0".to_string(),
+        );
         assert_eq!(issuer.base_url, "https://nfc.stage-crypto.worldcoin.org");
     }
 
     #[test]
     fn test_production_url() {
-        let ua = UserAgentBuilder::new()
-            .with_app("WorldApp".into(), "1.0.0".into())
-            .with_client("test".into(), "1.0.0".into())
-            .build();
-        let issuer = TfhNfcIssuer::new(&Environment::Production, ua.to_string());
+        let issuer = TfhNfcIssuer::new(
+            &Environment::Production,
+            "WorldApp/1.0.0 test/1.0.0".to_string(),
+        );
         assert_eq!(issuer.base_url, "https://nfc.crypto.worldcoin.org");
     }
 
