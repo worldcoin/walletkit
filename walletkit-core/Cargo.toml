@@ -81,6 +81,7 @@ regex = "1.11"
 taceo-oprf = { version = "0.13", default-features = false, features = [
   "types",
 ] } # TODO: remove once OprfKeyId gets removed from request
+test-case = "3.3"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tokio-test = "0.4"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
