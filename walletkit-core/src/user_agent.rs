@@ -96,7 +96,7 @@ mod tests {
         concat!("walletkit-core/", env!("CARGO_PKG_VERSION"), " CLI/1.2.3");
         "walletkit_then_cli"
     )]
-    fn user_agent_builder_expected(builder: UserAgentBuilder, expected: &'static str) {
+    fn user_agent_builder_expected(builder: &UserAgentBuilder, expected: &'static str) {
         assert_eq!(builder.build().to_string(), expected);
     }
 }
