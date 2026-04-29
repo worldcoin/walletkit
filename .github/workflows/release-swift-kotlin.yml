@@ -42,11 +42,6 @@ jobs:
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
           components: rustfmt
 
-      - name: Set up Noir for ProveKit
-        uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
-        with:
-          # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
-          toolchain: v1.0.0-beta.11
 
       # Includes temporary downstream UniFFI callback vtable patch:
       # https://github.com/mozilla/uniffi-rs/pull/2821
@@ -158,14 +153,6 @@ jobs:
           toolchain: 1.92.0
           targets: ${{ matrix.settings.target }}
           components: rustfmt
-
-      - name: Set up Noir for ProveKit
-        uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
-        env:
-          NARGO_HOME: ${{ env.CARGO_HOME }}
-        with:
-          # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
-          toolchain: v1.0.0-beta.11
 
       - name: Install Cross
         run: |
