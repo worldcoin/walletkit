@@ -5000,27 +5000,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "provekit-r1cs-compiler"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5b67c82ed3d51c2d564551d65d56e8c1b8efa1f9d4fd1e83a0d185f990ebfac"
-dependencies = [
- "anyhow",
- "ark-bn254",
- "ark-ff 0.5.0",
- "ark-std 0.5.0",
- "postcard",
- "provekit-common",
- "provekit-whir",
- "provekit_acir",
- "provekit_noirc_abi",
- "provekit_noirc_artifacts",
- "serde",
- "serde_json",
- "tracing",
-]
-
-[[package]]
 name = "provekit-spongefish"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8993,8 +8972,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-authenticator"
-version = "0.10.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?branch=main#bf0ec8df4ef3248cb8148120092ae372e19cc09b"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21d49101e3f7645df65066d62aafcddf5e58a713aea7ac0ba8d417f90eadefa7"
 dependencies = [
  "alloy",
  "anyhow",
@@ -9027,8 +9007,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-core"
-version = "0.10.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?branch=main#bf0ec8df4ef3248cb8148120092ae372e19cc09b"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "098dc829e61fee475eadcbf5dab9687ce4b85531985ab8fb7cc4bbb6956f23f3"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -9039,8 +9020,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-primitives"
-version = "0.10.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?branch=main#bf0ec8df4ef3248cb8148120092ae372e19cc09b"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fc964ae49594d98cfd854385a9a6ee4b87ea70ffaee172d95b432e80471669b"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -9073,8 +9055,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-proof"
-version = "0.10.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?branch=main#bf0ec8df4ef3248cb8148120092ae372e19cc09b"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa564fc8a89175bd0eb03e9a98095427c46ca6bae1465108b6b4bd2b3bce0c60"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -9084,7 +9067,6 @@ dependencies = [
  "eyre",
  "provekit-common",
  "provekit-prover",
- "provekit-r1cs-compiler",
  "rand 0.8.6",
  "rayon",
  "reqwest 0.12.28",
@@ -9107,8 +9089,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-registries"
-version = "0.10.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?branch=main#bf0ec8df4ef3248cb8148120092ae372e19cc09b"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "464f2a67429855df77a21584629f634d31b9424d44d5d112c7c4c78bb5cb717e"
 dependencies = [
  "alloy",
  "anyhow",
