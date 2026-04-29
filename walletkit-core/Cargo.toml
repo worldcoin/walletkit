@@ -65,8 +65,7 @@ walletkit-db = { workspace = true, optional = true }
 
 
 [dev-dependencies]
-test-case = "3.3"
-alloy = { version = "1", default-features = false, features = [
+alloy = { version = "2", default-features = false, features = [
   "getrandom",
   "json",
   "contract",
@@ -79,7 +78,7 @@ dotenvy = "0.15.7"
 eyre = "0.6"
 mockito = "1.6"
 regex = "1.11"
-taceo-oprf = { version = "0.12.1", default-features = false, features = [
+taceo-oprf = { version = "0.13", default-features = false, features = [
   "types",
 ] } # TODO: remove once OprfKeyId gets removed from request
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
