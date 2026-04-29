@@ -15,7 +15,7 @@ path = "src/main.rs"
 [dependencies]
 walletkit-core = { workspace = true, features = ["storage", "issuers"] }
 world-id-core = { workspace = true }
-alloy = { version = "1", default-features = false, features = ["contract", "json", "getrandom", "signer-local"] }
+alloy = { version = "2", default-features = false, features = ["contract", "json", "getrandom", "signer-local"] }
 alloy-primitives = { workspace = true }
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
