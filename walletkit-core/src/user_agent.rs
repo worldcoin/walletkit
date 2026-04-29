@@ -70,19 +70,19 @@ mod tests {
     use test_case::test_case;
 
     #[test_case(
-        UserAgentBuilder::new().with_walletkit_segment(),
+        &UserAgentBuilder::new().with_walletkit_segment(),
         concat!("walletkit-core/", env!("CARGO_PKG_VERSION"));
         "walletkit_only"
     )]
     #[test_case(
-        UserAgentBuilder::new()
+        &UserAgentBuilder::new()
             .with_segment("WorldApp", "1.0")
             .with_walletkit_segment(),
         concat!("WorldApp/1.0 walletkit-core/", env!("CARGO_PKG_VERSION"));
         "world_app_then_walletkit"
     )]
     #[test_case(
-        UserAgentBuilder::new()
+        &UserAgentBuilder::new()
             .with_segment("WorldApp", "2.1")
             .with_walletkit_segment()
             .with_segment("iOS", "17.0"),
@@ -90,7 +90,7 @@ mod tests {
         "native_style_world_walletkit_os"
     )]
     #[test_case(
-        UserAgentBuilder::new()
+        &UserAgentBuilder::new()
             .with_walletkit_segment()
             .with_segment("CLI", "1.2.3"),
         concat!("walletkit-core/", env!("CARGO_PKG_VERSION"), " CLI/1.2.3");
