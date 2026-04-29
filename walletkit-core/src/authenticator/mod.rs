@@ -1,5 +1,12 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
+// `#[uniffi::export]` macro-generated FFI registrations reference the deprecated
+// WIP-102 V1 wrappers below (`initiate_/execute_/cancel_recovery_agent_update`).
+// Those references emit deprecation warnings at the wrapper definition sites,
+// outside the impl-level lint scope. Suppress at module level — the V1 wrappers
+// are intentionally retained for backward compat with existing FFI consumers.
+#![allow(deprecated)]
+
 use crate::{
     defaults::DefaultConfig, error::WalletKitError,
     primitives::ParseFromForeignBinding, Environment, FieldElement, Region,
@@ -262,7 +269,7 @@ impl Authenticator {
         })
     }
 
-    /// Initiates a time-locked recovery agent update (14-day cooldown).
+    /// Initiates a time-locked recovery agent update (legacy V1, 14-day cooldown).
     ///
     /// Signs an EIP-712 `InitiateRecoveryAgentUpdate` payload and submits it to
     /// the gateway. Returns the gateway request ID that can be used to poll
@@ -276,6 +283,10 @@ impl Authenticator {
     /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
     ///   a valid address.
     /// - Returns a network error if the gateway request fails.
+    #[deprecated(
+        note = "WIP-102: use `update_recovery_agent`. The legacy URL still works against a V2-upgraded gateway, but the V2 contract changes the agent immediately (with a revert window) instead of starting a cooldown."
+    )]
+    #[allow(deprecated)]
     pub async fn initiate_recovery_agent_update(
         &self,
         new_recovery_agent: String,
@@ -291,8 +302,37 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Executes a pending recovery agent update after the 14-day cooldown has
-    /// elapsed.
+    /// Updates the holder's recovery agent (WIP-102).
+    ///
+    /// On a V2 registry the new agent becomes effective immediately, but for a
+    /// revert window any authenticator can call
+    /// [`Self::revert_recovery_agent_update`] to roll back. During that window
+    /// the *previous* agent remains the only valid signer for `recoverAccount`,
+    /// which mitigates a compromised authenticator silently swapping in an
+    /// attacker-controlled recovery address.
+    ///
+    /// # Arguments
+    /// * `new_recovery_agent` — the checksummed hex address of the new recovery
+    ///   agent (e.g. `"0x1234…"`).
+    ///
+    /// # Errors
+    /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
+    ///   a valid address.
+    /// - Returns a network error if the gateway request fails.
+    pub async fn update_recovery_agent(
+        &self,
+        new_recovery_agent: String,
+    ) -> Result<String, WalletKitError> {
+        let new_recovery_agent =
+            Address::parse_from_ffi(&new_recovery_agent, "new_recovery_agent")?;
+
+        let request_id = self.inner.update_recovery_agent(new_recovery_agent).await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Executes a pending recovery agent update after the legacy V1 cooldown
+    /// has elapsed.
     ///
     /// This call is **permissionless** — no signature is required. The contract
     /// enforces the cooldown and will revert with
@@ -302,6 +342,10 @@ impl Authenticator {
     ///
     /// # Errors
     /// Returns a network error if the gateway request fails.
+    #[deprecated(
+        note = "WIP-102: this operation no longer exists. On a V2-upgraded gateway the call is a no-op (returns Queued without touching chain). Remove the call from your flow."
+    )]
+    #[allow(deprecated)]
     pub async fn execute_recovery_agent_update(
         &self,
     ) -> Result<String, WalletKitError> {
@@ -311,7 +355,7 @@ impl Authenticator {
     }
 
     /// Cancels a pending time-locked recovery agent update before the cooldown
-    /// expires.
+    /// expires (legacy V1).
     ///
     /// Signs an EIP-712 `CancelRecoveryAgentUpdate` payload and submits it to
     /// the gateway. Returns the gateway request ID that can be used to poll
@@ -319,8 +363,31 @@ impl Authenticator {
     ///
     /// # Errors
     /// Returns a network error if the gateway request fails.
+    #[deprecated(
+        note = "WIP-102: use `revert_recovery_agent_update`. The legacy URL still works against a V2-upgraded gateway, but the new method name reflects WIP-102 semantics: the operation can only succeed within the revert window after `update_recovery_agent`."
+    )]
+    #[allow(deprecated)]
     pub async fn cancel_recovery_agent_update(&self) -> Result<String, WalletKitError> {
         let request_id = self.inner.cancel_recovery_agent_update().await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Reverts an in-flight recovery agent update during the revert window
+    /// (WIP-102).
+    ///
+    /// Must be called within the revert window after
+    /// [`Self::update_recovery_agent`]. During that window any authenticator
+    /// can revert the update; the previous recovery agent stays effective
+    /// until the window expires.
+    ///
+    /// Signs an EIP-712 `CancelRecoveryAgentUpdate` payload (the typehash is
+    /// reused on V2) and submits it to the gateway.
+    ///
+    /// # Errors
+    /// Returns a network error if the gateway request fails.
+    pub async fn revert_recovery_agent_update(&self) -> Result<String, WalletKitError> {
+        let request_id = self.inner.revert_recovery_agent_update().await?;
 
         Ok(request_id.to_string())
     }
