@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.15.2"
+version = "0.16.0"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -39,8 +39,8 @@ world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", branch
 world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", branch = "wip-102", default-features = false }
 
 # internal
-walletkit-core = { version = "0.15.2", path = "walletkit-core", default-features = false }
-walletkit-db = { version = "0.15.2", path = "walletkit-db" }
+walletkit-core = { version = "0.16.0", path = "walletkit-core", default-features = false }
+walletkit-db = { version = "0.16.0", path = "walletkit-db" }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
