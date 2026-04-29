@@ -67,53 +67,36 @@ impl Default for UserAgentBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
-    /// Crate version is baked in at **compile** time via `env!`.
-    const CRATE_VERSION: &str = env!("CARGO_PKG_VERSION");
-
-    #[test]
-    fn user_agent_builder_table() {
-        let cases: Vec<(UserAgentBuilder, String)> = vec![
-            (
-                UserAgentBuilder::new().with_walletkit_segment(),
-                format!("walletkit-core/{CRATE_VERSION}"),
-            ),
-            (
-                UserAgentBuilder::new()
-                    .with_segment("WorldApp", "1.0")
-                    .with_walletkit_segment(),
-                format!("WorldApp/1.0 walletkit-core/{CRATE_VERSION}"),
-            ),
-            (
-                UserAgentBuilder::new()
-                    .with_segment("WorldApp", "2.1")
-                    .with_walletkit_segment()
-                    .with_segment("iOS", "17.0"),
-                format!("WorldApp/2.1 walletkit-core/{CRATE_VERSION} iOS/17.0"),
-            ),
-            (
-                UserAgentBuilder::new()
-                    .with_walletkit_segment()
-                    .with_segment("CLI", "1.2.3"),
-                format!("walletkit-core/{CRATE_VERSION} CLI/1.2.3"),
-            ),
-        ];
-
-        for (builder, expected) in cases {
-            assert_eq!(builder.build().to_string(), expected);
-        }
-    }
-
-    #[test]
-    fn suggested_native_app_style_chain_matches_example() {
-        let ua = UserAgentBuilder::new()
+    #[test_case(
+        UserAgentBuilder::new().with_walletkit_segment(),
+        concat!("walletkit-core/", env!("CARGO_PKG_VERSION"));
+        "walletkit_only"
+    )]
+    #[test_case(
+        UserAgentBuilder::new()
+            .with_segment("WorldApp", "1.0")
+            .with_walletkit_segment(),
+        concat!("WorldApp/1.0 walletkit-core/", env!("CARGO_PKG_VERSION"));
+        "world_app_then_walletkit"
+    )]
+    #[test_case(
+        UserAgentBuilder::new()
             .with_segment("WorldApp", "2.1")
             .with_walletkit_segment()
-            .with_segment("iOS", "17.0")
-            .build();
-        assert_eq!(
-            ua.to_string(),
-            format!("WorldApp/2.1 walletkit-core/{CRATE_VERSION} iOS/17.0"),
-        );
+            .with_segment("iOS", "17.0"),
+        concat!("WorldApp/2.1 walletkit-core/", env!("CARGO_PKG_VERSION"), " iOS/17.0");
+        "native_style_world_walletkit_os"
+    )]
+    #[test_case(
+        UserAgentBuilder::new()
+            .with_walletkit_segment()
+            .with_segment("CLI", "1.2.3"),
+        concat!("walletkit-core/", env!("CARGO_PKG_VERSION"), " CLI/1.2.3");
+        "walletkit_then_cli"
+    )]
+    fn user_agent_builder_expected(builder: UserAgentBuilder, expected: &'static str) {
+        assert_eq!(builder.build().to_string(), expected);
     }
 }
