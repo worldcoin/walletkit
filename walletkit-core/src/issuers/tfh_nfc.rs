@@ -54,16 +54,15 @@ impl TfhNfcIssuer {
     /// Create a new TFH NFC issuer for the specified environment
     #[uniffi::constructor]
     #[must_use]
-    pub fn new(environment: &Environment) -> Self {
+    pub fn new(environment: &Environment, user_agent: String) -> Self {
         let base_url = match environment {
             Environment::Staging => "https://nfc.stage-crypto.worldcoin.org",
             Environment::Production => "https://nfc.crypto.worldcoin.org",
         }
         .to_string();
-
         Self {
             base_url,
-            request: Request::new(),
+            request: Request::new(user_agent),
         }
     }
 }
@@ -129,10 +128,10 @@ impl TfhNfcIssuer {
 impl TfhNfcIssuer {
     /// Create an issuer with a custom base URL (for testing).
     #[must_use]
-    pub fn with_base_url(base_url: &str) -> Self {
+    pub fn with_base_url(base_url: &str, user_agent: String) -> Self {
         Self {
             base_url: base_url.to_string(),
-            request: Request::new(),
+            request: Request::new(user_agent),
         }
     }
 }
@@ -143,13 +142,19 @@ mod tests {
 
     #[test]
     fn test_staging_url() {
-        let issuer = TfhNfcIssuer::new(&Environment::Staging);
+        let issuer = TfhNfcIssuer::new(
+            &Environment::Staging,
+            "WorldApp/1.0.0 test/1.0.0".to_string(),
+        );
         assert_eq!(issuer.base_url, "https://nfc.stage-crypto.worldcoin.org");
     }
 
     #[test]
     fn test_production_url() {
-        let issuer = TfhNfcIssuer::new(&Environment::Production);
+        let issuer = TfhNfcIssuer::new(
+            &Environment::Production,
+            "WorldApp/1.0.0 test/1.0.0".to_string(),
+        );
         assert_eq!(issuer.base_url, "https://nfc.crypto.worldcoin.org");
     }
 

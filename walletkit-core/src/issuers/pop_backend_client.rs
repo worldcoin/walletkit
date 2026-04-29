@@ -53,8 +53,8 @@ pub struct PopBackendClient {
 impl PopBackendClient {
     /// Creates a new client targeting the given base URL.
     #[must_use]
-    pub fn new(base_url: String) -> Self {
-        let request = Request::new();
+    pub fn new(base_url: String, user_agent: String) -> Self {
+        let request = Request::new(user_agent);
         Self { request, base_url }
     }
 }
@@ -256,7 +256,8 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client =
+            PopBackendClient::new(url.clone(), "test-user-agent".to_string());
 
         let result = pop_api_client
             .bind_recovery_agent(
@@ -301,7 +302,8 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client =
+            PopBackendClient::new(url.clone(), "test-user-agent".to_string());
 
         let result = pop_api_client
             .bind_recovery_agent(
@@ -350,7 +352,8 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client =
+            PopBackendClient::new(url.clone(), "test-user-agent".to_string());
 
         let result = pop_api_client
             .unbind_recovery_agent(
@@ -395,7 +398,8 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client =
+            PopBackendClient::new(url.clone(), "test-user-agent".to_string());
 
         let result = pop_api_client
             .unbind_recovery_agent(
@@ -427,7 +431,8 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client =
+            PopBackendClient::new(url.clone(), "test-user-agent".to_string());
 
         let result = pop_api_client.get_recovery_binding(42).await;
         assert!(result.is_ok(), "Expected success but got error: {result:?}");
@@ -451,7 +456,8 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client =
+            PopBackendClient::new(url.clone(), "test-user-agent".to_string());
 
         let result = pop_api_client.get_recovery_binding(42).await;
         assert!(result.is_err(), "Expected error but got success");
@@ -476,7 +482,8 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client =
+            PopBackendClient::new(url.clone(), "test-user-agent".to_string());
 
         let result = pop_api_client.get_recovery_binding(42).await;
         assert!(result.is_ok(), "Expected success but got error: {result:?}");
@@ -503,7 +510,8 @@ mod tests {
             .create_async()
             .await;
 
-        let pop_api_client = PopBackendClient::new(url.clone());
+        let pop_api_client =
+            PopBackendClient::new(url.clone(), "test-user-agent".to_string());
 
         let result = pop_api_client.get_recovery_binding(42).await;
         assert!(result.is_ok(), "Expected success but got error: {result:?}");

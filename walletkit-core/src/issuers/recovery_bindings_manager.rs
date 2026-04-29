@@ -17,6 +17,7 @@ use crate::error::WalletKitError;
 use crate::issuers::pop_backend_client::ManageRecoveryBindingRequest;
 use crate::issuers::pop_backend_client::RecoveryBindingResponse;
 use crate::issuers::PopBackendClient;
+use crate::user_agent::UserAgentBuilder;
 use crate::Environment;
 use alloy_primitives::keccak256;
 use alloy_primitives::Address;
@@ -59,13 +60,16 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    pub fn new(environment: &Environment) -> Result<Self, WalletKitError> {
+    pub fn new(
+        environment: &Environment,
+        user_agent_builder: &UserAgentBuilder,
+    ) -> Result<Self, WalletKitError> {
         let base_url = match environment {
             Environment::Staging => "https://app.stage.orb.worldcoin.org",
             Environment::Production => "https://app.orb.worldcoin.org",
         }
         .to_string();
-        Self::new_with_base_url(base_url.as_str())
+        Self::new_with_base_url(base_url.as_str(), user_agent_builder)
     }
 
     /// Creates a new `RecoveryBindingManager` for the specified base URL and user agent.
@@ -74,8 +78,13 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the HTTP client cannot be built.
     #[uniffi::constructor]
-    pub fn new_with_base_url(base_url: &str) -> Result<Self, WalletKitError> {
-        let pop_backend_client = PopBackendClient::new(base_url.to_string());
+    pub fn new_with_base_url(
+        base_url: &str,
+        user_agent_builder: &UserAgentBuilder,
+    ) -> Result<Self, WalletKitError> {
+        let user_agent = user_agent_builder.build().to_string();
+        let pop_backend_client =
+            PopBackendClient::new(base_url.to_string(), user_agent);
         Ok(Self { pop_backend_client })
     }
 }
@@ -294,9 +303,11 @@ mod tests {
             .create_async()
             .await;
 
-        let recovery_binding_manager =
-            RecoveryBindingManager::new_with_base_url(pop_api_server.url().as_str())
-                .unwrap();
+        let recovery_binding_manager = RecoveryBindingManager::new_with_base_url(
+            pop_api_server.url().as_str(),
+            &UserAgentBuilder::new().with_walletkit_segment(),
+        )
+        .unwrap();
 
         let result = recovery_binding_manager
             .bind_recovery_agent(&authenticator, sub.clone(), recovery_agent.clone())

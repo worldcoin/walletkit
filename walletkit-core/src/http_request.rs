@@ -11,11 +11,12 @@ pub struct Request {
     client: reqwest::Client,
     timeout: Duration,
     max_retries: u32,
+    user_agent: String,
 }
 
 impl Request {
     /// Initializes a new `Request` instance.
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(user_agent: String) -> Self {
         let client = reqwest::Client::new();
         let timeout = Duration::from_secs(5);
         let max_retries = 3; // total attempts = 4
@@ -23,6 +24,7 @@ impl Request {
             client,
             timeout,
             max_retries,
+            user_agent,
         }
     }
 
@@ -34,10 +36,7 @@ impl Request {
         self.client
             .request(method, url)
             .timeout(self.timeout)
-            .header(
-                "User-Agent",
-                format!("walletkit-core/{}", env!("CARGO_PKG_VERSION")),
-            )
+            .header("User-Agent", &self.user_agent)
     }
 
     /// Creates a GET request builder with defaults applied.
