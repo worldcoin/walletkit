@@ -549,19 +549,22 @@ async fn e2e_session_proof() -> Result<()> {
 
     eprintln!("Phase 5 complete: session proof generated");
 
-    // ----------------------------------------------------------------
-    // Ownership Proof Generation
-    // ----------------------------------------------------------------
-    let nonce = FieldElement::random(&mut OsRng).into();
-    let sub = credential.sub.into();
-    let ownership_proof = authenticator
-        .prove_credential_sub(&nonce, &blinding_factor, &sub)
-        .await
-        .expect("can generate a correct ownership proof");
-    assert_eq!(
-        ownership_proof.merkle_root().to_u256(),
-        response_item.proof.as_ethereum_representation()[4]
-    );
+    #[cfg(feature = "provekit")]
+    {
+        // ----------------------------------------------------------------
+        // Ownership Proof Generation
+        // ----------------------------------------------------------------
+        let nonce = FieldElement::random(&mut OsRng).into();
+        let sub = credential.sub.into();
+        let ownership_proof = authenticator
+            .prove_credential_sub(&nonce, &blinding_factor, &sub)
+            .await
+            .expect("can generate a correct ownership proof");
+        assert_eq!(
+            ownership_proof.merkle_root().to_u256(),
+            response_item.proof.as_ethereum_representation()[4]
+        );
+    }
 
     Ok(())
 }

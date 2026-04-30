@@ -21,10 +21,9 @@ use world_id_core::{
 use world_id_core::CredentialInput;
 
 #[cfg(feature = "storage")]
-use crate::{
-    storage::{CredentialStore, StoragePaths},
-    OwnershipProof,
-};
+use crate::storage::{CredentialStore, StoragePaths};
+#[cfg(all(feature = "storage", feature = "provekit"))]
+use crate::OwnershipProof;
 
 #[cfg(feature = "storage")]
 use crate::requests::{ProofRequest, ProofResponse};
@@ -554,7 +553,11 @@ impl Authenticator {
 
         Ok(result.proof_response.into())
     }
+}
 
+#[cfg(all(feature = "storage", feature = "provekit"))]
+#[uniffi::export(async_runtime = "tokio")]
+impl Authenticator {
     /// Generates a WIP-103 Ownership Proof for Issuers.
     ///
     /// An Ownership Proof lets the user prove they own the credential `sub`
@@ -579,6 +582,7 @@ impl Authenticator {
     /// - Returns a network error if the Merkle inclusion proof cannot be
     ///   fetched from the indexer.
     /// - Returns [`WalletKitError::ProofGeneration`] if the ZK proof fails.
+    #[cfg(all(feature = "storage", feature = "provekit"))]
     pub async fn prove_credential_sub(
         &self,
         nonce: &FieldElement,

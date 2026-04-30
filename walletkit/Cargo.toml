@@ -26,6 +26,7 @@ walletkit-core = { workspace = true }
 [features]
 default = ["issuers", "storage"]
 compress-zkeys = ["walletkit-core/compress-zkeys"]
+provekit = ["walletkit-core/provekit"]
 issuers = ["walletkit-core/issuers"]
 storage = ["walletkit-core/storage"]
 
