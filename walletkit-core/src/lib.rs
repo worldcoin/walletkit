@@ -133,7 +133,9 @@ pub use user_agent::{UserAgent, UserAgentBuilder};
 /// Proof requests and responses in World ID v4.
 pub mod requests;
 
+#[cfg(feature = "provekit")]
 mod proof;
+#[cfg(feature = "provekit")]
 pub use proof::OwnershipProof;
 
 /// Credential issuers for World ID (NFC, etc.)

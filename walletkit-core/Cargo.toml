@@ -95,6 +95,8 @@ default = ["issuers", "storage"]
 # using it requires proper handling to ensure decompression is done once and cached. By default walletkit-swift and walletkit-android
 # ship with compressed keys. But this is disabled for tests.
 compress-zkeys = ["world-id-core/compress-zkeys"]
+# Enables ProveKit-backed ownership proof APIs. Disabled by default for mobile builds.
+provekit = ["world-id-core/provekit", "world-id-proof/provekit"]
 issuers = []
 storage = [
   "dep:hkdf",
