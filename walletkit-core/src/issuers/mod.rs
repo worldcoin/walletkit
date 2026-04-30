@@ -6,4 +6,5 @@ mod tfh_nfc;
 pub use tfh_nfc::TfhNfcIssuer;
 
 pub use pop_backend_client::PopBackendClient;
+pub use recovery_bindings_manager::RecoveryBinding;
 pub use recovery_bindings_manager::RecoveryBindingManager;
