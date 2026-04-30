@@ -8973,8 +8973,7 @@ dependencies = [
 [[package]]
 name = "world-id-authenticator"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21d49101e3f7645df65066d62aafcddf5e58a713aea7ac0ba8d417f90eadefa7"
+source = "git+https://github.com/worldcoin/world-id-protocol?branch=wip-102#f3e6b14dfc6882cb4c20124a2178df1c93422e02"
 dependencies = [
  "alloy",
  "anyhow",
@@ -9008,8 +9007,7 @@ dependencies = [
 [[package]]
 name = "world-id-core"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "098dc829e61fee475eadcbf5dab9687ce4b85531985ab8fb7cc4bbb6956f23f3"
+source = "git+https://github.com/worldcoin/world-id-protocol?branch=wip-102#f3e6b14dfc6882cb4c20124a2178df1c93422e02"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -9021,8 +9019,7 @@ dependencies = [
 [[package]]
 name = "world-id-primitives"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fc964ae49594d98cfd854385a9a6ee4b87ea70ffaee172d95b432e80471669b"
+source = "git+https://github.com/worldcoin/world-id-protocol?branch=wip-102#f3e6b14dfc6882cb4c20124a2178df1c93422e02"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -9056,8 +9053,7 @@ dependencies = [
 [[package]]
 name = "world-id-proof"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa564fc8a89175bd0eb03e9a98095427c46ca6bae1465108b6b4bd2b3bce0c60"
+source = "git+https://github.com/worldcoin/world-id-protocol?branch=wip-102#f3e6b14dfc6882cb4c20124a2178df1c93422e02"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -9090,8 +9086,7 @@ dependencies = [
 [[package]]
 name = "world-id-registries"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "464f2a67429855df77a21584629f634d31b9424d44d5d112c7c4c78bb5cb717e"
+source = "git+https://github.com/worldcoin/world-id-protocol?branch=wip-102#f3e6b14dfc6882cb4c20124a2178df1c93422e02"
 dependencies = [
  "alloy",
  "anyhow",
