@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.1](https://github.com/worldcoin/walletkit/compare/v0.16.0...v0.16.1) - 2026-05-03
+
+### Added
+
+- expose credential sub proving for issuers ([#382](https://github.com/worldcoin/walletkit/pull/382))
+
+### Fixed
+
+- use cfg(target_os = "android") for sha2 force-soft ([#389](https://github.com/worldcoin/walletkit/pull/389))
+
+### Other
+
+- Make RecoveryBinding public ([#385](https://github.com/worldcoin/walletkit/pull/385))
+
 ## [0.16.0](https://github.com/worldcoin/walletkit/compare/v0.15.2...v0.16.0) - 2026-04-29
 
 ### Other
