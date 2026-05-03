@@ -63,9 +63,6 @@ world-id-proof = { workspace = true }
 ciborium = { version = "0.2.2" }
 walletkit-db = { workspace = true, optional = true }
 
-
-
-
 [dev-dependencies]
 alloy = { version = "2", default-features = false, features = [
   "getrandom",
