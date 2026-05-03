@@ -63,7 +63,6 @@ world-id-proof = { workspace = true }
 ciborium = { version = "0.2.2" }
 walletkit-db = { workspace = true, optional = true }
 
-
 [dev-dependencies]
 alloy = { version = "2", default-features = false, features = [
   "getrandom",
@@ -114,3 +113,6 @@ v3 = ["semaphore", "legacy-nullifiers", "ruint/ark-ff-04"]
 
 [lints]
 workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+sha2 = { version = "0.10", features = ["force-soft"] }
