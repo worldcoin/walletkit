@@ -561,7 +561,8 @@ impl Authenticator {
         {
             let _ = (nonce, blinding_factor, sub);
             return Err(WalletKitError::Generic {
-                error: "credential ownership proofs are not supported on wasm32".to_string(),
+                error: "credential ownership proofs are not supported on wasm32"
+                    .to_string(),
             });
         }
 
