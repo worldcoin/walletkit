@@ -1,5 +1,5 @@
 {
-  "name": "@worldcoin/walletkit-wasm",
+  "name": "@worldcoin/walletkit-wasm-test",
   "version": "0.16.1",
   "repository": {
     "type": "git",
