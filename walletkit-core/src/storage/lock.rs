@@ -9,8 +9,6 @@
 
 use std::path::Path;
 
-#[cfg(not(target_arch = "wasm32"))]
-use super::error::StorageError;
 use super::error::StorageResult;
 
 // WASM: no-op lock (single-threaded worker, SQLITE_THREADSAFE=0)
@@ -49,7 +47,8 @@ mod imp {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
-    use super::{Path, StorageError, StorageResult};
+    use super::{Path, StorageResult};
+    use crate::storage::error::StorageError;
     use std::fs::{self, File, OpenOptions};
     use std::sync::Arc;
 
