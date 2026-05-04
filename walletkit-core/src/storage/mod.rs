@@ -4,6 +4,7 @@ pub mod cache;
 pub mod credential_storage;
 pub mod envelope;
 pub mod error;
+#[cfg(all(not(target_arch = "wasm32"), feature = "embed-zkeys"))]
 pub mod groth16_cache;
 pub mod keys;
 pub mod lock;
@@ -15,6 +16,7 @@ pub mod vault;
 pub use cache::CacheDb;
 pub use credential_storage::CredentialStore;
 pub use error::{StorageError, StorageResult};
+#[cfg(all(not(target_arch = "wasm32"), feature = "embed-zkeys"))]
 pub use groth16_cache::cache_embedded_groth16_material;
 pub use keys::StorageKeys;
 pub use lock::{StorageLock, StorageLockGuard};

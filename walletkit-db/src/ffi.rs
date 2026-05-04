@@ -515,7 +515,7 @@ mod raw {
         wasm::sqlite3_open_v2(filename.cast(), pp_db.cast(), flags, z_vfs.cast())
     }
     pub unsafe fn sqlite3_close_v2(db: *mut c_void) -> c_int {
-        wasm::sqlite3_close_v2(db.cast())
+        wasm::sqlite3_close(db.cast())
     }
     pub unsafe fn sqlite3_exec(
         db: *mut c_void,
@@ -567,7 +567,12 @@ mod raw {
         n: c_int,
         destructor: isize,
     ) -> c_int {
-        wasm::sqlite3_bind_blob(stmt.cast(), index, value, n, destructor)
+        // WASM bindings use typed destructor callbacks instead of SQLite's
+        // sentinel `isize` values. This shim only supports `SQLITE_TRANSIENT`,
+        // which matches all current callers and ensures SQLite copies the data
+        // immediately.
+        assert_eq!(destructor, super::SQLITE_TRANSIENT);
+        wasm::sqlite3_bind_blob(stmt.cast(), index, value, n, wasm::SQLITE_TRANSIENT())
     }
     pub unsafe fn sqlite3_bind_text(
         stmt: *mut c_void,
@@ -576,7 +581,18 @@ mod raw {
         n: c_int,
         destructor: isize,
     ) -> c_int {
-        wasm::sqlite3_bind_text(stmt.cast(), index, value.cast(), n, destructor)
+        // WASM bindings use typed destructor callbacks instead of SQLite's
+        // sentinel `isize` values. This shim only supports `SQLITE_TRANSIENT`,
+        // which matches all current callers and ensures SQLite copies the text
+        // immediately.
+        assert_eq!(destructor, super::SQLITE_TRANSIENT);
+        wasm::sqlite3_bind_text(
+            stmt.cast(),
+            index,
+            value.cast(),
+            n,
+            wasm::SQLITE_TRANSIENT(),
+        )
     }
     pub unsafe fn sqlite3_bind_null(stmt: *mut c_void, index: c_int) -> c_int {
         wasm::sqlite3_bind_null(stmt.cast(), index)

@@ -152,7 +152,13 @@ async fn execute_request_builder(
             Ok(resp)
         }
         Err(err) => {
-            if err.is_timeout() || err.is_connect() {
+            // NOTE: WASM reqwest uses a fetch-like API, which doesn't expose enough detail
+            //       to classify failures as connection errors.
+            #[cfg(not(target_arch = "wasm32"))]
+            let is_retryable = err.is_timeout() || err.is_connect();
+            #[cfg(target_arch = "wasm32")]
+            let is_retryable = err.is_timeout();
+            if is_retryable {
                 return Err(RequestHandleError::retryable(
                     url,
                     None,

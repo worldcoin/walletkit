@@ -1,5 +1,7 @@
-#![allow(missing_docs)]
-#![cfg(feature = "storage")]
+#![expect(
+    missing_docs,
+    reason = "`common` is only used in tetst and has no docs"
+)]
 
 mod common;
 
