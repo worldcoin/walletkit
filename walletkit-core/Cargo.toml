@@ -24,7 +24,7 @@ name = "walletkit_core"
 alloy-core = { workspace = true }
 alloy-primitives = { workspace = true }
 backon = "1.6"
-base64 = { version = "0.22", optional = true }
+base64 = { version = "0.22" }
 hex = "0.4"
 hkdf = "0.12"
 log = "0.4"
@@ -92,7 +92,7 @@ default = ["issuers"]
 # using it requires proper handling to ensure decompression is done once and cached. By default walletkit-swift and walletkit-android
 # ship with compressed keys. But this is disabled for tests.
 compress-zkeys = ["world-id-core/compress-zkeys"]
-issuers = ["dep:base64"]
+issuers = []
 
 # Embeds compiled zkeys into the binary at compile time, enabling `Groth16Materials::from_embedded`.
 # Also activates `cache_embedded_groth16_material` on native targets.
