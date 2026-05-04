@@ -20,7 +20,13 @@ categories.workspace = true
 name = "uniffi-bindgen"
 path = "./src/uniffi_bindgen.rs"
 
+[[bin]]
+name = "uniffi-bindgen-react-native"
+path = "./src/uniffi_bindgen_react_native.rs"
+
 [dependencies]
+clap = { version = "4", features = ["derive"] }
+ubrn-cli = { package = "uniffi-bindgen-react-native", git = "https://github.com/jhugman/uniffi-bindgen-react-native", rev = "f878bb7858a3f163c3c75490df2f0dcaa8e1d21b" }
 uniffi = { workspace = true, features = ["cli"] }
 
 [lints]

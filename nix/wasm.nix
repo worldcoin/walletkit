@@ -10,6 +10,7 @@ pkgs.mkShell {
     llvm.bintools-unwrapped
     pkgs.curl
     pkgs.git
+    pkgs.wasm-bindgen-cli
   ];
 
   # Use unwrapped clang: cc-wrapper injects host hardening flags that are invalid for wasm.
@@ -21,6 +22,6 @@ pkgs.mkShell {
     echo "  target: wasm32-unknown-unknown"
     echo "  clang: $CC_wasm32_unknown_unknown"
     echo ""
-    echo "Build with: cargo build -p walletkit --target wasm32-unknown-unknown"
+    echo "Build with: ./nix/build-wasm.sh"
   '';
 }

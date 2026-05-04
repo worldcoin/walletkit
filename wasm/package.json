@@ -1,0 +1,16 @@
+{
+  "name": "walletkit",
+  "version": "0.16.1",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/worldcoin/walletkit.git"
+  },
+  "browser": "out/src/index.web.ts",
+  "scripts": {
+    "build": "../nix/build-wasm.sh"
+  },
+  "dependencies": {
+    "uniffi-bindgen-react-native": "0.31.0-2"
+  }
+}
