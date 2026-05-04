@@ -5,19 +5,27 @@
     "type": "git",
     "url": "https://github.com/worldcoin/walletkit.git"
   },
-  "browser": "out/src/index.web.ts",
+  "browser": "out/pkg/index.web.js",
+  "module": "out/pkg/index.web.js",
+  "types": "out/pkg/index.web.d.ts",
   "exports": {
-    ".": "./out/src/index.web.ts"
+    ".": {
+      "types": "./out/pkg/index.web.d.ts",
+      "import": "./out/pkg/index.web.js"
+    }
   },
   "files": [
-    "out/src/index.web.ts",
-    "out/src/generated"
+    "out/pkg"
   ],
   "scripts": {
-    "build": "../nix/build-wasm.sh"
+    "build": "../nix/build-wasm.sh",
+    "build:js": "tsc -p tsconfig.json && cp out/src/generated/wasm-bindgen/index_bg.wasm out/pkg/generated/wasm-bindgen/index_bg.wasm"
   },
   "dependencies": {
     "uniffi-bindgen-react-native": "0.31.0-2"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

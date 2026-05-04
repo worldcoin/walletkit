@@ -38,6 +38,14 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: "@worldcoin"
 
+      - name: Install package build dependencies
+        working-directory: wasm
+        run: npm ci
+
+      - name: Build JS package
+        working-directory: wasm
+        run: npm run build:js
+
       - name: Set package version
         working-directory: wasm
         run: npm pkg set version="${{ steps.version.outputs.new_version }}"
