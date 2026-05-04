@@ -1,4 +1,7 @@
-#![allow(missing_docs, clippy::missing_docs_in_private_items)]
+#![expect(
+    missing_docs,
+    reason = "`common` is only used in tetst and has no docs"
+)]
 
 mod common;
 
