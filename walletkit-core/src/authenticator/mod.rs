@@ -557,25 +557,37 @@ impl Authenticator {
         blinding_factor: &FieldElement,
         sub: &FieldElement,
     ) -> Result<OwnershipProof, WalletKitError> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| WalletKitError::Generic {
-                error: format!("Critical. Unable to determine SystemTime: {e}"),
-            })?
-            .as_secs();
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (nonce, blinding_factor, sub);
+            return Err(WalletKitError::Generic {
+                error: "credential ownership proofs are not supported on wasm32"
+                    .to_string(),
+            });
+        }
 
-        let inclusion_proof = self.fetch_inclusion_proof_with_cache(now).await?;
-        let proof = self
-            .inner
-            .prove_credential_sub(
-                nonce.0,
-                blinding_factor.0,
-                sub.0,
-                Some(inclusion_proof),
-            )
-            .await?;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| WalletKitError::Generic {
+                    error: format!("Critical. Unable to determine SystemTime: {e}"),
+                })?
+                .as_secs();
 
-        Ok(OwnershipProof(proof))
+            let inclusion_proof = self.fetch_inclusion_proof_with_cache(now).await?;
+            let proof = self
+                .inner
+                .prove_credential_sub(
+                    nonce.0,
+                    blinding_factor.0,
+                    sub.0,
+                    Some(inclusion_proof),
+                )
+                .await?;
+
+            Ok(OwnershipProof(proof))
+        }
     }
 }
 
