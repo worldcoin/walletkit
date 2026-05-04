@@ -52,6 +52,9 @@ world-id-proof = { workspace = true }
 ciborium = "0.2.2"
 walletkit-db = { workspace = true }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
 # Native-only dependencies (not available on wasm32)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ctor = "0.2"

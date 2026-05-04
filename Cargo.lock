@@ -8208,6 +8208,7 @@ dependencies = [
  "ctor",
  "dotenvy",
  "eyre",
+ "getrandom 0.3.4",
  "hex",
  "hkdf",
  "log",
@@ -8973,8 +8974,6 @@ dependencies = [
 [[package]]
 name = "world-id-authenticator"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21d49101e3f7645df65066d62aafcddf5e58a713aea7ac0ba8d417f90eadefa7"
 dependencies = [
  "alloy",
  "anyhow",
