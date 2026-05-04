@@ -34,6 +34,8 @@ alloy-core = { version = "1", default-features = false, features = [
   "sol-types",
 ] }
 alloy-primitives = { version = "1", default-features = false }
+# Keep this exact until uniffi-bindgen-react-native supports newer UniFFI patch releases.
+# Its bindgen stack pins UniFFI crates to 0.31.0, and Cargo cannot mix those with 0.31.1.
 uniffi = { version = "=0.31.0", features = [
   "tokio",
   "wasm-unstable-single-threaded",
