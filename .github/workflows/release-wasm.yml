@@ -1,0 +1,48 @@
+name: Release WASM Package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish-wasm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - name: Get release version
+        id: version
+        run: |
+          NEW_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.workspace_members[0]' | cut -d '#' -f2)
+          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Build WASM package
+        run: ./nix/build-wasm.sh
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: "@worldcoin"
+
+      - name: Set package version
+        working-directory: wasm
+        run: npm version --no-git-tag-version "${{ steps.version.outputs.new_version }}"
+
+      - name: Publish package
+        working-directory: wasm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}

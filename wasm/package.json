@@ -1,16 +1,25 @@
 {
-  "name": "walletkit",
+  "name": "@worldcoin/walletkit-wasm",
   "version": "0.16.1",
-  "private": true,
   "repository": {
     "type": "git",
     "url": "https://github.com/worldcoin/walletkit.git"
   },
   "browser": "out/src/index.web.ts",
+  "exports": {
+    ".": "./out/src/index.web.ts"
+  },
+  "files": [
+    "out/src/index.web.ts",
+    "out/src/generated"
+  ],
   "scripts": {
     "build": "../nix/build-wasm.sh"
   },
   "dependencies": {
     "uniffi-bindgen-react-native": "0.31.0-2"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   }
 }
