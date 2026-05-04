@@ -38,8 +38,8 @@ uniffi = { version = "0.31.0", features = [
   "tokio",
   "wasm-unstable-single-threaded",
 ] }
-world-id-core = { version = "0.10.1", default-features = false }
-world-id-proof = { version = "0.10.1", default-features = false }
+world-id-core = { version = "0.10.2", default-features = false }
+world-id-proof = { version = "0.10.2", default-features = false }
 
 # internal
 walletkit-core = { version = "0.16.1", path = "walletkit-core", default-features = false }
@@ -60,5 +60,3 @@ lto = true      # Enable Link Time Optimization.
 panic = "abort"
 debug = false
 
-[patch.crates-io]
-world-id-authenticator = { path = "patches/world-id-authenticator" }
