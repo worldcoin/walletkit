@@ -37,6 +37,7 @@
           };
 
           android = import ./nix/android.nix { inherit pkgs; };
+          wasm = import ./nix/wasm.nix { inherit pkgs; };
         };
       });
 }
