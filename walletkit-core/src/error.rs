@@ -5,7 +5,6 @@ use world_id_core::{
 };
 use world_id_proof::ProofError;
 
-#[cfg(feature = "storage")]
 use crate::storage::StorageError;
 
 /// Error outputs from `WalletKit`
@@ -259,7 +258,6 @@ impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     }
 }
 
-#[cfg(feature = "storage")]
 impl From<StorageError> for WalletKitError {
     fn from(error: StorageError) -> Self {
         Self::Generic {

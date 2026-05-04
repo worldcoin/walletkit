@@ -15,7 +15,7 @@ use clap::{Parser, Subcommand};
 use eyre::WrapErr as _;
 
 use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
-use walletkit_core::Authenticator;
+use walletkit_core::{Authenticator, Groth16Materials};
 
 use crate::provider::create_fs_credential_store;
 
@@ -218,9 +218,13 @@ pub async fn init_authenticator(
     let store = create_fs_credential_store(&root)?;
     let paths = store.storage_paths()?;
     cache_embedded_groth16_material(&paths)?;
+    let materials = Arc::new(
+        Groth16Materials::from_cache(Arc::new(paths.clone()))
+            .wrap_err("failed to load cached Groth16 materials")?,
+    );
 
     let authenticator = if let Some(ref config) = config_json {
-        Authenticator::init(&seed, config, &paths, store.clone())
+        Authenticator::init(&seed, config, materials.clone(), store.clone())
             .await
             .wrap_err("authenticator init failed")?
     } else {
@@ -231,7 +235,7 @@ pub async fn init_authenticator(
             cli.rpc_url.clone(),
             &env,
             region,
-            &paths,
+            materials.clone(),
             store.clone(),
         )
         .await
