@@ -40,7 +40,7 @@ jobs:
 
       - name: Set package version
         working-directory: wasm
-        run: npm version --no-git-tag-version "${{ steps.version.outputs.new_version }}"
+        run: npm pkg set version="${{ steps.version.outputs.new_version }}"
 
       - name: Publish package
         working-directory: wasm
