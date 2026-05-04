@@ -42,7 +42,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
+          toolchain: 1.94.1
           components: clippy,rustfmt
 
       - name: Install Foundry
@@ -73,7 +73,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
+          toolchain: 1.94.1
           targets: wasm32-unknown-unknown
 
       # clang-18 (LLVM 18) is the minimum version that supports the C23
@@ -113,7 +113,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
+          toolchain: 1.94.1
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
 
       - name: Cache Rust build artifacts
@@ -152,7 +152,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
+          toolchain: 1.94.1
 
       - name: Setup Java
         uses: actions/setup-java@v3
@@ -184,7 +184,7 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.92.0 # MSRV
+          - 1.94.1 # MSRV
 
     steps:
       - name: Checkout code
@@ -231,7 +231,7 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check ${{ matrix.checks }}
-          rust-version: 1.92.0
+          rust-version: 1.94.1
 
   docs:
     name: Check docs
