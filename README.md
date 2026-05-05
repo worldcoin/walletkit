@@ -212,3 +212,60 @@ fun setupWalletKitLogging() {
     WalletKit.initLogging(WalletKitLoggerBridge.shared, WalletKit.LogLevel.DEBUG)
 }
 ```
+
+## Authenticator, Blinding Factor, Sub, and On-chain Registration
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant WK as WalletKit
+    participant Store as CredentialStore
+    participant OPRF as OPRF Nodes
+    participant GW as Gateway
+    participant Chain as WorldIDRegistry (on-chain)
+
+    Note over App,Store: 1) Register account on-chain
+    App->>WK: InitializingAuthenticator.register_with_defaults(seed, ...)
+    WK->>GW: gateway_register (submit registration request)
+    GW-->>WK: request_id / InitializingAuthenticator
+    WK-->>App: InitializingAuthenticator
+
+    loop until final state
+        App->>WK: poll_status()
+        WK->>GW: gateway_poll(request_id)
+        GW-->>WK: Queued | Batching | Submitted | Finalized | Failed
+        WK-->>App: RegistrationStatus
+    end
+
+    GW->>Chain: createAccount(...) transaction
+    Chain-->>GW: tx finalized
+
+    Note over App,Store: 2) Initialize Authenticator after registration
+    App->>WK: Authenticator.init_with_defaults(seed, ..., paths, store)
+    WK->>Chain: rpc_init (fetch account data by on-chain key)
+    Chain-->>WK: packed_account_data + leaf_index context
+    WK-->>App: Authenticator
+    App->>WK: init_storage(now)
+    WK->>Store: init(leaf_index, now)
+    Store-->>WK: ok
+
+    Note over App,Store: 3) Derive credential material
+    App->>WK: generate_credential_blinding_factor_remote(issuer_schema_id)
+    WK->>OPRF: OPRF request for issuer_schema_id
+    OPRF-->>WK: blinding_factor
+    WK-->>App: blinding_factor
+
+    App->>WK: compute_credential_sub(blinding_factor)
+    WK-->>App: sub = compute_sub(leaf_index, blinding_factor)
+
+    Note over App,Store: 4) Store issued credential
+    App->>Store: store_credential(credential, blinding_factor, ...)
+    Store-->>App: credential_id
+```
+
+How it works in code:
+- **On-chain registration** uses `InitializingAuthenticator::register_with_defaults` / `register` and then `poll_status` until `Finalized`.
+- **Authenticator creation** happens with `Authenticator::init_with_defaults` / `init` after the account exists on-chain; then `init_storage(now)` binds local storage to the authenticator leaf.
+- **Blinding factor generation** is remote (`generate_credential_blinding_factor_remote`) and calls OPRF nodes.
+- **`sub` creation** is local (`compute_credential_sub`) and is derived from the authenticator's internal `leaf_index` plus the provided `blinding_factor`.
+- **Credential persistence** stores both the issued credential and its blinding factor in `CredentialStore` (`store_credential`), so later proof generation can use them.
