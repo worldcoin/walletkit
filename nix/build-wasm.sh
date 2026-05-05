@@ -5,6 +5,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 exec nix develop .#wasm --command bash -c " \
   cd wasm && \
-  npx ubrn build web --config ubrn.config.yaml --release $@ && \
-  npx ubrn build web --config ubrn.node.config.yaml --release $@ \
+  npm run build:wasm:web && \
+  npm run build:wasm:node && \
+  npm run build:js && \
+  npm run build:js:web && \
+  npm run build:js:node \
 "
