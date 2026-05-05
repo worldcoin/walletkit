@@ -2,7 +2,6 @@
 name = "walletkit"
 description = "Reference implementation for World ID clients."
 
-
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

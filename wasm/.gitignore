@@ -1,0 +1,7 @@
+node_modules/
+out/*
+!out/Cargo.lock
+out-node/*
+!out-node/src/
+out-node/src/*
+!out-node/src/index.node.ts

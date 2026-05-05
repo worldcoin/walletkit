@@ -1,0 +1,49 @@
+{
+  "name": "@worldcoin/walletkit-wasm",
+  "version": "0.16.2",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/worldcoin/walletkit.git"
+  },
+  "browser": "out/pkg/index.web.js",
+  "module": "out/pkg/index.web.js",
+  "types": "out/pkg/index.web.d.ts",
+  "exports": {
+    ".": {
+      "browser": {
+        "types": "./out/pkg/index.web.d.ts",
+        "import": "./out/pkg/index.web.js",
+        "default": "./out/pkg/index.web.js"
+      },
+      "node": {
+        "types": "./node.d.ts",
+        "import": "./node.cjs",
+        "require": "./node.cjs"
+      },
+      "types": "./out/pkg/index.web.d.ts",
+      "import": "./out/pkg/index.web.js",
+      "default": "./out/pkg/index.web.js"
+    }
+  },
+  "files": [
+    "out/pkg",
+    "out-node/pkg",
+    "node.cjs",
+    "node.d.ts"
+  ],
+  "scripts": {
+    "build:wasm:web": "npx ubrn build web --config ubrn.config.yaml --release",
+    "build:wasm:node": "npx ubrn build web --config ubrn.node.config.yaml --release",
+    "build:js:web": "tsc -p tsconfig.json && cp out/src/generated/wasm-bindgen/index_bg.wasm out/pkg/generated/wasm-bindgen/index_bg.wasm",
+    "build:js:node": "tsc -p tsconfig.node.json"
+  },
+  "dependencies": {
+    "uniffi-bindgen-react-native": "0.31.0-2"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  }
+}

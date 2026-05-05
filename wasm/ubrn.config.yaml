@@ -1,0 +1,20 @@
+name: walletkit
+version: 0.16.2
+repository: https://github.com/worldcoin/walletkit
+
+rust:
+  directory: ..
+  manifestPath: walletkit-core/Cargo.toml
+
+bindings:
+  ts: out/src/generated
+  uniffiToml: ../uniffi.toml
+
+web:
+  manifestPath: out/Cargo.toml
+  manifestPatchFile: cargo.patch.toml
+  wasmCrateName: walletkit-wasm
+  defaultFeatures: false
+  ts: out/src/generated
+  entrypoint: out/src/index.web.ts
+  target: web
