@@ -8257,6 +8257,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "walletkit-secure-store"
+version = "0.16.1"
+dependencies = [
+ "ciborium",
+ "rand 0.8.6",
+ "secrecy",
+ "serde",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.18",
+ "uuid",
+ "walletkit-db",
+ "zeroize",
+]
+
+[[package]]
 name = "want"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

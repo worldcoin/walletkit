@@ -4,6 +4,7 @@ members = [
   "walletkit-core",
   "walletkit",
   "walletkit-db",
+  "walletkit-secure-store",
   "walletkit-cli",
 ]
 resolver = "2"
@@ -44,6 +45,7 @@ world-id-proof = { version = "0.10.2", default-features = false }
 # internal
 walletkit-core = { version = "0.16.1", path = "walletkit-core", default-features = false }
 walletkit-db = { version = "0.16.1", path = "walletkit-db" }
+walletkit-secure-store = { version = "0.16.1", path = "walletkit-secure-store" }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }

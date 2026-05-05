@@ -1,0 +1,36 @@
+[package]
+name = "walletkit-secure-store"
+description = "Reusable encrypted on-device storage primitives for WalletKit consumers (CredentialStore, OrbKit, NFC, etc.)."
+publish = true
+
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+exclude.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+ciborium = "0.2.2"
+rand = "0.8"
+secrecy = "0.10"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+thiserror = "2"
+walletkit-db = { workspace = true }
+zeroize = { version = "1", features = ["derive"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+sha2 = { version = "0.10", features = ["force-soft"] }
+
+[dev-dependencies]
+tempfile = "3"
+uuid = { version = "1.10", features = ["v4"] }
+
+[lints]
+workspace = true
