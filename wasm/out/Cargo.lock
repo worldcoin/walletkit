@@ -7667,7 +7667,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-wasm"
-version = "0.16.1"
+version = "0.16.2"
 dependencies = [
  "uniffi-runtime-javascript",
  "walletkit-core",
