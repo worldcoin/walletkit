@@ -19,11 +19,11 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name || github.ref }}
 
-      - name: Get release version
-        id: version
-        run: |
-          NEW_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.workspace_members[0]' | cut -d '#' -f2)
-          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+      # - name: Get release version
+      #   id: version
+      #   run: |
+      #     NEW_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.workspace_members[0]' | cut -d '#' -f2)
+      #     echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install Nix
         uses: cachix/install-nix-action@v31
@@ -46,9 +46,9 @@ jobs:
         working-directory: wasm
         run: npm run build:js
 
-      - name: Set package version
-        working-directory: wasm
-        run: npm pkg set version="${{ steps.version.outputs.new_version }}"
+      # - name: Set package version
+      #   working-directory: wasm
+      #   run: npm pkg set version="${{ steps.version.outputs.new_version }}"
 
       - name: Publish package
         working-directory: wasm
