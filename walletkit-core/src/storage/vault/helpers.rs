@@ -1,23 +1,8 @@
-//! Vault database helpers for content addressing and type conversion.
-
-use sha2::{Digest, Sha256};
+//! Vault database helpers for type conversion and row mapping.
 
 use crate::storage::error::{StorageError, StorageResult};
-use crate::storage::types::{BlobKind, ContentId, CredentialRecord};
+use crate::storage::types::CredentialRecord;
 use walletkit_db::{DbError, Row};
-
-const CONTENT_ID_PREFIX: &[u8] = b"worldid:blob";
-
-pub(super) fn compute_content_id(blob_kind: BlobKind, plaintext: &[u8]) -> ContentId {
-    let mut hasher = Sha256::new();
-    hasher.update(CONTENT_ID_PREFIX);
-    hasher.update([blob_kind as u8]);
-    hasher.update(plaintext);
-    let digest = hasher.finalize();
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&digest);
-    out
-}
 
 pub(super) fn map_record(row: &Row<'_, '_>) -> StorageResult<CredentialRecord> {
     let credential_id = row.column_i64(0);

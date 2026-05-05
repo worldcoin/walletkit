@@ -16,6 +16,11 @@
 
 use std::sync::Arc;
 
+use walletkit_secure_store::{
+    AtomicBlobStore as SecureAtomicBlobStore, Keystore as SecureKeystore,
+    StoreError, StoreResult,
+};
+
 use super::error::StorageResult;
 use super::paths::StoragePaths;
 
@@ -87,6 +92,78 @@ pub trait StorageProvider: Send + Sync {
 
     /// Returns the storage paths selected by the platform.
     fn paths(&self) -> Arc<StoragePaths>;
+}
+
+/// Adapter that lets a [`DeviceKeystore`] satisfy the
+/// [`walletkit_secure_store::Keystore`](SecureKeystore) trait.
+///
+/// `walletkit-secure-store` is a plain-Rust crate with no FFI awareness; the
+/// adapter bridges its trait surface to the `uniffi`-annotated traits exposed
+/// here. Errors are converted via the `String` payload — variant identity is
+/// preserved by `walletkit-core`'s [`From<StoreError> for
+/// StorageError`](super::error::StorageError).
+pub(crate) struct DeviceKeystoreAdapter<'a> {
+    inner: &'a dyn DeviceKeystore,
+}
+
+impl<'a> DeviceKeystoreAdapter<'a> {
+    pub(crate) const fn new(inner: &'a dyn DeviceKeystore) -> Self {
+        Self { inner }
+    }
+}
+
+impl SecureKeystore for DeviceKeystoreAdapter<'_> {
+    fn seal(
+        &self,
+        associated_data: Vec<u8>,
+        plaintext: Vec<u8>,
+    ) -> StoreResult<Vec<u8>> {
+        self.inner
+            .seal(associated_data, plaintext)
+            .map_err(|err| StoreError::Keystore(err.to_string()))
+    }
+
+    fn open_sealed(
+        &self,
+        associated_data: Vec<u8>,
+        ciphertext: Vec<u8>,
+    ) -> StoreResult<Vec<u8>> {
+        self.inner
+            .open_sealed(associated_data, ciphertext)
+            .map_err(|err| StoreError::Keystore(err.to_string()))
+    }
+}
+
+/// Adapter that lets an [`AtomicBlobStore`] satisfy the
+/// [`walletkit_secure_store::AtomicBlobStore`](SecureAtomicBlobStore) trait.
+pub(crate) struct AtomicBlobStoreAdapter<'a> {
+    inner: &'a dyn AtomicBlobStore,
+}
+
+impl<'a> AtomicBlobStoreAdapter<'a> {
+    pub(crate) const fn new(inner: &'a dyn AtomicBlobStore) -> Self {
+        Self { inner }
+    }
+}
+
+impl SecureAtomicBlobStore for AtomicBlobStoreAdapter<'_> {
+    fn read(&self, path: String) -> StoreResult<Option<Vec<u8>>> {
+        self.inner
+            .read(path)
+            .map_err(|err| StoreError::BlobStore(err.to_string()))
+    }
+
+    fn write_atomic(&self, path: String, bytes: Vec<u8>) -> StoreResult<()> {
+        self.inner
+            .write_atomic(path, bytes)
+            .map_err(|err| StoreError::BlobStore(err.to_string()))
+    }
+
+    fn delete(&self, path: String) -> StoreResult<()> {
+        self.inner
+            .delete(path)
+            .map_err(|err| StoreError::BlobStore(err.to_string()))
+    }
 }
 
 /// Listener notified when the credential vault contents change and a new

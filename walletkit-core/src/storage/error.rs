@@ -1,6 +1,7 @@
 //! Error types for credential storage components.
 
 use thiserror::Error;
+use walletkit_secure_store::StoreError;
 
 /// Result type for storage operations.
 pub type StorageResult<T> = Result<T, StorageError>;
@@ -91,5 +92,23 @@ pub enum StorageError {
 impl From<uniffi::UnexpectedUniFFICallbackError> for StorageError {
     fn from(error: uniffi::UnexpectedUniFFICallbackError) -> Self {
         Self::UnexpectedUniFFICallbackError(error.reason)
+    }
+}
+
+impl From<StoreError> for StorageError {
+    fn from(err: StoreError) -> Self {
+        match err {
+            StoreError::Keystore(msg) => Self::Keystore(msg),
+            StoreError::BlobStore(msg) => Self::BlobStore(msg),
+            StoreError::Lock(msg) => Self::Lock(msg),
+            StoreError::Serialization(msg) => Self::Serialization(msg),
+            StoreError::Crypto(msg) => Self::Crypto(msg),
+            StoreError::InvalidEnvelope(msg) => Self::InvalidEnvelope(msg),
+            StoreError::UnsupportedEnvelopeVersion(version) => {
+                Self::UnsupportedEnvelopeVersion(version)
+            }
+            StoreError::Db(msg) => Self::VaultDb(msg),
+            StoreError::IntegrityCheckFailed(msg) => Self::CorruptedVault(msg),
+        }
     }
 }

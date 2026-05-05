@@ -128,7 +128,7 @@ impl CredentialStoreInner {
     }
 
     fn guard(&self) -> StorageResult<StorageLockGuard> {
-        self.lock.lock()
+        Ok(self.lock.lock()?)
     }
 
     fn state(&self) -> StorageResult<&StorageState> {

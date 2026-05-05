@@ -1,14 +1,20 @@
 //! Key hierarchy management for credential storage.
+//!
+//! Delegates the actual envelope load/create logic to
+//! [`walletkit_secure_store::init_or_open_envelope_key`], passing the
+//! credential-store-specific envelope filename and associated data so the
+//! intermediate key is bound to this consumer's vault.
 
-use rand::{rngs::OsRng, RngCore};
 use secrecy::SecretBox;
-use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+use walletkit_secure_store::init_or_open_envelope_key;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::{
-    envelope::AccountKeyEnvelope,
-    error::{StorageError, StorageResult},
+    error::StorageResult,
     lock::StorageLockGuard,
-    traits::{AtomicBlobStore, DeviceKeystore},
+    traits::{
+        AtomicBlobStore, AtomicBlobStoreAdapter, DeviceKeystore, DeviceKeystoreAdapter,
+    },
     ACCOUNT_KEYS_FILENAME, ACCOUNT_KEY_ENVELOPE_AD,
 };
 
@@ -31,35 +37,20 @@ impl StorageKeys {
     pub fn init(
         keystore: &dyn DeviceKeystore,
         blob_store: &dyn AtomicBlobStore,
-        _lock: &StorageLockGuard,
+        lock: &StorageLockGuard,
         now: u64,
     ) -> StorageResult<Self> {
-        if let Some(bytes) = blob_store.read(ACCOUNT_KEYS_FILENAME.to_string())? {
-            let envelope = AccountKeyEnvelope::deserialize(&bytes)?;
-            let wrapped_k_intermediate = envelope.wrapped_k_intermediate.clone();
-            let k_intermediate_bytes = Zeroizing::new(keystore.open_sealed(
-                ACCOUNT_KEY_ENVELOPE_AD.to_vec(),
-                wrapped_k_intermediate,
-            )?);
-            let k_intermediate =
-                parse_key_32(k_intermediate_bytes.as_slice(), "K_intermediate")?;
-            Ok(Self {
-                intermediate_key: SecretBox::init_with(|| k_intermediate),
-            })
-        } else {
-            let k_intermediate = random_key();
-            // TODO: At this moment, the key needs to be temporarily heap allocated in order
-            // to be bridged via UniFFI. This needs to be improved to use pointers that can
-            // be zeroized after use.
-            let wrapped_k_intermediate = keystore
-                .seal(ACCOUNT_KEY_ENVELOPE_AD.to_vec(), k_intermediate.to_vec())?;
-            let envelope = AccountKeyEnvelope::new(wrapped_k_intermediate, now);
-            let bytes = envelope.serialize()?;
-            blob_store.write_atomic(ACCOUNT_KEYS_FILENAME.to_string(), bytes)?;
-            Ok(Self {
-                intermediate_key: SecretBox::init_with(|| k_intermediate),
-            })
-        }
+        let keystore_adapter = DeviceKeystoreAdapter::new(keystore);
+        let blob_store_adapter = AtomicBlobStoreAdapter::new(blob_store);
+        let intermediate_key = init_or_open_envelope_key(
+            &keystore_adapter,
+            &blob_store_adapter,
+            ACCOUNT_KEYS_FILENAME,
+            ACCOUNT_KEY_ENVELOPE_AD,
+            lock,
+            now,
+        )?;
+        Ok(Self { intermediate_key })
     }
 
     /// Returns a reference to the intermediate key's [`SecretBox`].
@@ -69,29 +60,12 @@ impl StorageKeys {
     }
 }
 
-fn random_key() -> [u8; 32] {
-    let mut key = [0u8; 32];
-    OsRng.fill_bytes(&mut key);
-    key
-}
-
-fn parse_key_32(bytes: &[u8], label: &str) -> StorageResult<[u8; 32]> {
-    if bytes.len() != 32 {
-        return Err(StorageError::InvalidEnvelope(format!(
-            "{label} length mismatch: expected 32, got {}",
-            bytes.len()
-        )));
-    }
-    let mut out = [0u8; 32];
-    out.copy_from_slice(bytes);
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::lock::StorageLock;
     use crate::storage::tests_utils::{InMemoryBlobStore, InMemoryKeystore};
+    use crate::storage::error::StorageError;
     use secrecy::ExposeSecret;
     use uuid::Uuid;
 

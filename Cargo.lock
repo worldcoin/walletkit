@@ -8237,6 +8237,7 @@ dependencies = [
  "uniffi",
  "uuid",
  "walletkit-db",
+ "walletkit-secure-store",
  "world-id-core",
  "world-id-proof",
  "zeroize",

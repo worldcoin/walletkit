@@ -1,9 +1,11 @@
 //! Vault database schema management.
+//!
+//! Owns only the credential-specific tables. The shared `blob_objects` table
+//! is created via [`walletkit_secure_store::Blobs::ensure_schema`] from
+//! [`super::VaultDb::new`].
 
-use crate::storage::error::StorageResult;
 use walletkit_db::Connection;
-
-use super::helpers::map_db_err;
+use walletkit_secure_store::{StoreError, StoreResult};
 
 pub(super) const VAULT_SCHEMA_VERSION: i64 = 1;
 
@@ -12,7 +14,7 @@ pub(super) const VAULT_SCHEMA_VERSION: i64 = 1;
 /// - Column changes (especially new `NOT NULL` columns without defaults) will
 ///   break restoring older backups into a newer schema. See the schema migration
 ///   note on `import_plaintext_copy` in `walletkit-db/src/cipher.rs`.
-pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
+pub(super) fn ensure_schema(conn: &Connection) -> StoreResult<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS vault_meta (
             schema_version  INTEGER NOT NULL,
@@ -49,17 +51,8 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
 
         CREATE INDEX IF NOT EXISTS idx_cred_by_expiry
         ON credential_records (expires_at);
-
-        CREATE TABLE IF NOT EXISTS blob_objects (
-            content_id  BLOB    NOT NULL,
-            blob_kind   INTEGER NOT NULL,
-            created_at  INTEGER NOT NULL,
-            bytes       BLOB    NOT NULL,
-            PRIMARY KEY (content_id)
-        );
-
 ",
     )
-    .map_err(|err| map_db_err(&err))?;
+    .map_err(StoreError::from)?;
     Ok(())
 }
