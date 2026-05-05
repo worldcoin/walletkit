@@ -11,6 +11,7 @@ pkgs.mkShell {
     pkgs.curl
     pkgs.git
     pkgs.wasm-bindgen-cli
+    pkgs.nodejs_24
   ];
 
   # Use unwrapped clang: cc-wrapper injects host hardening flags that are invalid for wasm.
