@@ -8,8 +8,7 @@ From the repository root:
 ```bash
 cd wasm
 npm ci
-npm run build:wasm
-npm run build:js
+npm run build:node
 
 cd ../wasm-test
 npm install

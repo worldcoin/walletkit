@@ -32,11 +32,13 @@
     "node.d.ts"
   ],
   "scripts": {
-    "build": "../nix/build-wasm.sh",
-    "build:wasm": "../nix/build-wasm.sh",
-    "build:js": "npm run build:js:web && npm run build:js:node",
-    "build:js:web": "tsc -p tsconfig.json && cp out/src/generated/wasm-bindgen/index_bg.wasm out/pkg/generated/wasm-bindgen/index_bg.wasm",
-    "build:js:node": "tsc -p tsconfig.node.json && cp out-node/src/generated/wasm-bindgen/index_bg.wasm out-node/pkg/generated/wasm-bindgen/index_bg.wasm"
+    "build": "npm run build:wasm && npm run build:js",
+    "build:node": "npm run build:wasm:node && npm run build:js:node",
+    "build:wasm": "npx ubrn build web --config ubrn.config.yaml --release",
+    "build:wasm:node": "npx ubrn build web --config ubrn.node.config.yaml --release",
+    "build:js": "tsc -p tsconfig.json && cp out/src/generated/wasm-bindgen/index_bg.wasm out/pkg/generated/wasm-bindgen/index_bg.wasm",
+    "build:js:web": "npm run build:js",
+    "build:js:node": "tsc -p tsconfig.node.json"
   },
   "dependencies": {
     "uniffi-bindgen-react-native": "0.31.0-2"
