@@ -757,41 +757,6 @@ impl From<GatewayRequestState> for GatewayRequestStatus {
     }
 }
 
-/// Registration status for a World ID being created through the gateway.
-#[derive(Debug, Clone, uniffi::Enum)]
-pub enum RegistrationStatus {
-    /// Request queued but not yet batched.
-    Queued,
-    /// Request currently being batched.
-    Batching,
-    /// Request submitted on-chain.
-    Submitted,
-    /// Request finalized on-chain. The World ID is now registered.
-    Finalized,
-    /// Request failed during processing.
-    Failed {
-        /// Error message returned by the gateway.
-        error: String,
-        /// Specific error code, if available.
-        error_code: Option<String>,
-    },
-}
-
-impl From<GatewayRequestState> for RegistrationStatus {
-    fn from(state: GatewayRequestState) -> Self {
-        match state {
-            GatewayRequestState::Queued => Self::Queued,
-            GatewayRequestState::Batching => Self::Batching,
-            GatewayRequestState::Submitted { .. } => Self::Submitted,
-            GatewayRequestState::Finalized { .. } => Self::Finalized,
-            GatewayRequestState::Failed { error, error_code } => Self::Failed {
-                error,
-                error_code: error_code.map(|c: GatewayErrorCode| c.to_string()),
-            },
-        }
-    }
-}
-
 /// Represents an Authenticator in the process of being initialized.
 ///
 /// The account is not yet registered in the `WorldIDRegistry` contract.
@@ -804,7 +769,7 @@ impl InitializingAuthenticator {
     /// Registers a new World ID with SDK defaults.
     ///
     /// This returns immediately and does not wait for registration to complete.
-    /// The returned `InitializingAuthenticator` can be used to poll the registration status.
+    /// The returned `InitializingAuthenticator` can be used to poll the gateway request status.
     ///
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
@@ -836,7 +801,7 @@ impl InitializingAuthenticator {
     /// Registers a new World ID.
     ///
     /// This returns immediately and does not wait for registration to complete.
-    /// The returned `InitializingAuthenticator` can be used to poll the registration status.
+    /// The returned `InitializingAuthenticator` can be used to poll the gateway request status.
     ///
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
@@ -867,7 +832,7 @@ impl InitializingAuthenticator {
         Ok(Self(initializing_authenticator))
     }
 
-    /// Polls the registration status from the gateway.
+    /// Polls the gateway request status for this registration.
     ///
     /// # Errors
     /// Will error if the network request fails or the gateway returns an error.
@@ -876,7 +841,7 @@ impl InitializingAuthenticator {
         name = "gateway_poll",
         skip_all
     )]
-    pub async fn poll_status(&self) -> Result<RegistrationStatus, WalletKitError> {
+    pub async fn poll_status(&self) -> Result<GatewayRequestStatus, WalletKitError> {
         let status = self.0.poll_status().await?;
         Ok(status.into())
     }
