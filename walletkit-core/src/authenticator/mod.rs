@@ -340,22 +340,9 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Inserts a new authenticator into this account.
-    ///
-    /// `new_authenticator_pubkey` is the compressed `EdDSA` off-chain public key
-    /// encoded as the protocol U256 representation. `new_authenticator_address`
-    /// is the checksummed hex Ethereum address of the new authenticator's
-    /// on-chain signer.
-    ///
-    /// Returns the gateway request ID. Inserting another authenticator changes
-    /// the account's off-chain signer commitment, but does not change this
-    /// authenticator's own local `packed_account_data`; callers should poll the
-    /// returned request ID and initialize the new authenticator after finalization.
-    ///
-    /// # Errors
-    /// Returns [`WalletKitError::InvalidInput`] if either input cannot be
-    /// parsed, or a network/authenticator error if the request cannot be
-    /// submitted.
+    /// Inserts a new authenticator and returns its gateway request ID.
+    /// The public key is the compressed `EdDSA` key as a protocol `U256`.
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn insert_authenticator(
         &self,
         new_authenticator_pubkey: Uint256,
@@ -378,17 +365,9 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Updates an existing authenticator slot with a new authenticator.
-    ///
-    /// `pubkey_id` is the authenticator slot index to update. After the gateway
-    /// request finalizes on-chain, this `Authenticator` may become unusable if
-    /// it corresponds to the authenticator being updated; callers should poll
-    /// the request ID and re-initialize the appropriate authenticator as needed.
-    ///
-    /// # Errors
-    /// Returns [`WalletKitError::InvalidInput`] if an address or public key
-    /// cannot be parsed, or a network/authenticator error if the request cannot
-    /// be submitted.
+    /// Updates an authenticator slot and returns its gateway request ID.
+    /// `pubkey_id` is the authenticator slot index to update.
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn update_authenticator(
         &self,
         old_authenticator_address: String,
@@ -422,16 +401,9 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Removes an authenticator from this account.
-    ///
-    /// `pubkey_id` is the authenticator slot index to remove. After the gateway
-    /// request finalizes on-chain, this `Authenticator` may become unusable if
-    /// it corresponds to the authenticator being removed; callers should poll
-    /// the request ID and re-initialize or discard this authenticator as needed.
-    ///
-    /// # Errors
-    /// Returns [`WalletKitError::InvalidInput`] if the address cannot be parsed,
-    /// or a network/authenticator error if the request cannot be submitted.
+    /// Removes an authenticator and returns its gateway request ID.
+    /// `pubkey_id` is the authenticator slot index to remove.
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn remove_authenticator(
         &self,
         authenticator_address: String,
@@ -448,14 +420,8 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Polls the gateway for a previously submitted account-management request.
-    ///
-    /// This can be used with request IDs returned by authenticator management,
-    /// recovery-agent update, and account-recovery methods.
-    ///
-    /// # Errors
-    /// Returns a network error if the gateway cannot be reached or rejects the
-    /// request ID.
+    /// Polls the gateway status for a previously submitted request.
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn poll_gateway_request_status(
         &self,
         request_id: String,
@@ -767,18 +733,14 @@ pub struct InitializingAuthenticator(CoreInitializingAuthenticator);
 #[uniffi::export(async_runtime = "tokio")]
 impl InitializingAuthenticator {
     /// Registers a new World ID with SDK defaults.
-    ///
-    /// This returns immediately and does not wait for registration to complete.
-    /// The returned `InitializingAuthenticator` can be used to poll the gateway request status.
-    ///
-    /// # Errors
-    /// See `CoreAuthenticator::register` for potential errors.
+    /// Returns immediately; use `poll_status` to track the gateway request.
     #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "gateway_register",
         skip_all
     )]
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn register_with_defaults(
         seed: &[u8],
         rpc_url: Option<String>,
@@ -799,18 +761,14 @@ impl InitializingAuthenticator {
     }
 
     /// Registers a new World ID.
-    ///
-    /// This returns immediately and does not wait for registration to complete.
-    /// The returned `InitializingAuthenticator` can be used to poll the gateway request status.
-    ///
-    /// # Errors
-    /// See `CoreAuthenticator::register` for potential errors.
+    /// Returns immediately; use `poll_status` to track the gateway request.
     #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "gateway_register",
         skip_all
     )]
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn register(
         seed: &[u8],
         config: &str,
@@ -833,14 +791,12 @@ impl InitializingAuthenticator {
     }
 
     /// Polls the gateway request status for this registration.
-    ///
-    /// # Errors
-    /// Will error if the network request fails or the gateway returns an error.
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "gateway_poll",
         skip_all
     )]
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn poll_status(&self) -> Result<GatewayRequestStatus, WalletKitError> {
         let status = self.0.poll_status().await?;
         Ok(status.into())
@@ -898,13 +854,7 @@ pub struct RecoveryData {
 
 impl RecoveryData {
     /// Derives recovery identity material from a 32-byte seed.
-    ///
-    /// These values must be submitted on-chain as part of the recovery
-    /// transaction before the recovered account can be initialised with
-    /// [`Authenticator::init`] / [`Authenticator::init_with_defaults`].
-    ///
-    /// # Errors
-    /// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub fn from_seed(seed: &[u8]) -> Result<Self, WalletKitError> {
         let signer = Signer::from_seed_bytes(seed)?;
         let authenticator_address = signer.onchain_signer_address().to_checksum(None);
@@ -924,11 +874,6 @@ impl RecoveryData {
 }
 
 /// Derives recovery data from a 32-byte seed.
-///
-/// This is the foreign-bindings entrypoint for recovery data generation.
-///
-/// # Errors
-/// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
 #[uniffi::export]
 pub fn recovery_data_from_seed(seed: &[u8]) -> Result<RecoveryData, WalletKitError> {
     RecoveryData::from_seed(seed)
