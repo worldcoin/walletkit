@@ -259,9 +259,11 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Inserts a new authenticator into this account, identified by its EdDSA `pubkey` and on-chain `address`.
-    /// Poll the returned gateway request ID with `poll_gateway_request_status` to confirm finalization,
-    /// then initialize the new authenticator using `init` or `init_with_defaults`.
+    /// Inserts a new authenticator into this account.
+    ///
+    /// Accepts the new authenticator's compressed EdDSA public key as a U256 and its on-chain signer
+    /// address as a hex string. Returns a gateway request ID; poll it with `poll_gateway_request_status`
+    /// to wait for finalization before initializing the new authenticator.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn insert_authenticator(
         &self,
@@ -285,9 +287,11 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Replaces an existing authenticator slot (identified by `pubkey_id`) with a new key pair.
-    /// `old_authenticator_address` identifies the slot to replace; the new slot is given by `new_authenticator_address` and `new_authenticator_pubkey`.
-    /// Returns the gateway request ID, which can be polled with `poll_gateway_request_status`.
+    /// Updates an existing authenticator slot.
+    ///
+    /// `pubkey_id` identifies the slot to replace; supply the old signer address, the new signer address,
+    /// and the new compressed EdDSA public key as a U256. Returns a gateway request ID; poll it with
+    /// `poll_gateway_request_status` to wait for finalization.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn update_authenticator(
         &self,
@@ -322,8 +326,10 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Removes the authenticator at the given slot (identified by `authenticator_address` and `pubkey_id`) from this account.
-    /// Returns the gateway request ID, which can be polled with `poll_gateway_request_status`.
+    /// Removes an authenticator from this account.
+    ///
+    /// `authenticator_address` and `pubkey_id` together identify the slot to remove. Returns a gateway
+    /// request ID; poll it with `poll_gateway_request_status` to wait for finalization.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn remove_authenticator(
         &self,
@@ -341,9 +347,10 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Polls the gateway for the current status of a previously submitted request.
-    /// Works with request IDs returned by any of the authenticator-management or recovery methods.
-    /// Returns a `GatewayRequestStatus` indicating whether the request is queued, submitted, finalized, or failed.
+    /// Polls the gateway for the status of a previously submitted request.
+    ///
+    /// Accepts a request ID returned by any authenticator-management or recovery method. Returns a
+    /// `GatewayRequestStatus` indicating whether the request is queued, submitted, finalized, or failed.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn poll_gateway_request_status(
         &self,
