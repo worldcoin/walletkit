@@ -345,7 +345,10 @@ impl Authenticator {
     /// Accepts the new authenticator's compressed EdDSA public key as a U256 and its on-chain signer
     /// address as a hex string. Returns a gateway request ID; poll it with `poll_gateway_request_status`
     /// to wait for finalization before initializing the new authenticator.
-    #[expect(clippy::missing_errors_doc, reason = "FFI")]
+    ///
+    /// # Errors
+    /// Returns [`WalletKitError::InvalidInput`] if the public key or address cannot be parsed.
+    /// Returns a network or authenticator error if the gateway request fails.
     pub async fn insert_authenticator(
         &self,
         new_authenticator_pubkey: Uint256,
@@ -373,7 +376,10 @@ impl Authenticator {
     /// `pubkey_id` identifies the slot to replace; supply the old signer address, the new signer address,
     /// and the new compressed EdDSA public key as a U256. Returns a gateway request ID; poll it with
     /// `poll_gateway_request_status` to wait for finalization.
-    #[expect(clippy::missing_errors_doc, reason = "FFI")]
+    ///
+    /// # Errors
+    /// Returns [`WalletKitError::InvalidInput`] if any address or the public key cannot be parsed.
+    /// Returns a network or authenticator error if the gateway request fails.
     pub async fn update_authenticator(
         &self,
         old_authenticator_address: String,
@@ -411,7 +417,10 @@ impl Authenticator {
     ///
     /// `authenticator_address` and `pubkey_id` together identify the slot to remove. Returns a gateway
     /// request ID; poll it with `poll_gateway_request_status` to wait for finalization.
-    #[expect(clippy::missing_errors_doc, reason = "FFI")]
+    ///
+    /// # Errors
+    /// Returns [`WalletKitError::InvalidInput`] if the authenticator address cannot be parsed.
+    /// Returns a network or authenticator error if the gateway request fails.
     pub async fn remove_authenticator(
         &self,
         authenticator_address: String,
@@ -432,7 +441,9 @@ impl Authenticator {
     ///
     /// Accepts a request ID returned by any authenticator-management or recovery method. Returns a
     /// `GatewayRequestStatus` indicating whether the request is queued, submitted, finalized, or failed.
-    #[expect(clippy::missing_errors_doc, reason = "FFI")]
+    ///
+    /// # Errors
+    /// Returns a network error if the gateway cannot be reached or returns an unexpected response.
     pub async fn poll_gateway_request_status(
         &self,
         request_id: String,
