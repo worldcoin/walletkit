@@ -39,10 +39,13 @@ impl std::fmt::Debug for Groth16Materials {
 }
 
 /// Constructors that require embedded zkeys compiled into the binary.
+/// Enable the `embed-zkeys` Cargo feature to activate these.
 #[cfg(feature = "embed-zkeys")]
 #[uniffi::export]
 impl Groth16Materials {
     /// Loads Groth16 material from the embedded (compiled-in) zkeys and graphs.
+    /// The material is baked into the binary at compile time, so no filesystem access is required.
+    /// Requires the `embed-zkeys` Cargo feature.
     #[uniffi::constructor]
     pub fn from_embedded() -> Result<Self, WalletKitError> {
         let query =
@@ -63,10 +66,13 @@ impl Groth16Materials {
 }
 
 /// Constructors that load Groth16 material from the native filesystem.
+/// Not available on WASM targets.
 #[cfg(not(target_arch = "wasm32"))]
 #[uniffi::export]
 impl Groth16Materials {
-    /// Loads Groth16 material from cached files on disk.
+    /// Loads Groth16 material from previously cached files on disk.
+    /// Use `storage::cache_embedded_groth16_material` (requires `embed-zkeys`) to populate the cache.
+    /// Not available on WASM targets.
     #[uniffi::constructor]
     // `Arc<StoragePaths>` must be taken by value: UniFFI constructors receive
     // object arguments as owned `Arc`s across the FFI boundary, so passing by
@@ -124,24 +130,28 @@ pub struct Authenticator {
 #[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
+    /// This is a 256-bit integer encoding the leaf index, recovery counter, and pubkey commitment.
     #[must_use]
     pub fn packed_account_data(&self) -> Uint256 {
         self.inner.packed_account_data.into()
     }
 
-    /// Returns the leaf index for the holder's World ID.
+    /// Returns the Merkle tree leaf index for the holder's World ID.
+    /// This value is private and should never be shared outside the authenticator.
     #[must_use]
     pub fn leaf_index(&self) -> u64 {
         self.inner.leaf_index()
     }
 
-    /// Returns the Authenticator's `onchain_address`.
+    /// Returns the on-chain secp256k1 address associated with this authenticator.
+    /// This is the address used to identify the authenticator in the `WorldIDRegistry`.
     #[must_use]
     pub fn onchain_address(&self) -> String {
         self.inner.onchain_address().to_string()
     }
 
-    /// Fetches the packed account data for the holder's World ID from the on-chain registry.
+    /// Fetches the packed account data for the holder's World ID directly from the on-chain registry.
+    /// Use this to get a fresh value when the locally cached `packed_account_data` may be stale.
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "rpc_account_data",
@@ -154,7 +164,9 @@ impl Authenticator {
         Ok(packed_account_data.into())
     }
 
-    /// Generates a blinding factor for a credential sub via OPRF nodes.
+    /// Generates a blinding factor for a credential `sub` by querying the OPRF nodes.
+    /// `issuer_schema_id` identifies the issuer schema for which the blinding factor is derived.
+    /// The returned value can be passed to `compute_credential_sub` to derive the credential `sub`.
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "oprf_blinding_factor",
@@ -180,7 +192,9 @@ impl Authenticator {
         CoreCredential::compute_sub(self.inner.leaf_index(), blinding_factor.0).into()
     }
 
-    /// Signs an arbitrary challenge with the authenticator's on-chain key. Dangerous: leaks `leaf_index`.
+    /// Signs an arbitrary challenge with the authenticator's on-chain secp256k1 key.
+    /// **Dangerous**: the signature reveals the on-chain address, which can be used to derive `leaf_index`.
+    /// Only use this when proving `leaf_index` to a trusted Recovery Agent.
     pub fn danger_sign_challenge(
         &self,
         challenge: &[u8],
@@ -189,7 +203,9 @@ impl Authenticator {
         Ok(signature.as_bytes().to_vec())
     }
 
-    /// Signs the EIP-712 `InitiateRecoveryAgentUpdate` payload and returns the raw signature and nonce without submitting.
+    /// Signs the EIP-712 `InitiateRecoveryAgentUpdate` payload and returns the raw signature bytes and signing nonce.
+    /// Unlike `initiate_recovery_agent_update`, this does not submit anything to the gateway;
+    /// callers can use the returned values to build and submit the request themselves.
     pub async fn danger_sign_initiate_recovery_agent_update(
         &self,
         new_recovery_agent: String,
@@ -206,7 +222,9 @@ impl Authenticator {
         })
     }
 
-    /// Initiates a time-locked recovery agent update (14-day cooldown). Returns a gateway request ID.
+    /// Submits a time-locked request to update the recovery agent; the change takes effect after a 14-day cooldown.
+    /// `new_recovery_agent` is the checksummed hex Ethereum address of the new agent.
+    /// Returns the gateway request ID, which can be polled with `poll_gateway_request_status`.
     pub async fn initiate_recovery_agent_update(
         &self,
         new_recovery_agent: String,
@@ -222,7 +240,9 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Executes a pending recovery agent update after the cooldown has elapsed. Returns a gateway request ID.
+    /// Executes a previously initiated recovery agent update once the 14-day cooldown has elapsed.
+    /// This call is permissionless — no signature is required; the contract enforces the cooldown.
+    /// Returns the gateway request ID, which can be polled with `poll_gateway_request_status`.
     pub async fn execute_recovery_agent_update(
         &self,
     ) -> Result<String, WalletKitError> {
@@ -231,14 +251,17 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Cancels a pending time-locked recovery agent update before the cooldown expires. Returns a gateway request ID.
+    /// Cancels a pending time-locked recovery agent update before the 14-day cooldown expires.
+    /// Returns the gateway request ID, which can be polled with `poll_gateway_request_status`.
     pub async fn cancel_recovery_agent_update(&self) -> Result<String, WalletKitError> {
         let request_id = self.inner.cancel_recovery_agent_update().await?;
 
         Ok(request_id.to_string())
     }
 
-    /// Inserts a new authenticator into this account. Returns a gateway request ID.
+    /// Inserts a new authenticator into this account, identified by its EdDSA `pubkey` and on-chain `address`.
+    /// Poll the returned gateway request ID with `poll_gateway_request_status` to confirm finalization,
+    /// then initialize the new authenticator using `init` or `init_with_defaults`.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn insert_authenticator(
         &self,
@@ -262,7 +285,9 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Updates an existing authenticator slot. Returns a gateway request ID.
+    /// Replaces an existing authenticator slot (identified by `pubkey_id`) with a new key pair.
+    /// `old_authenticator_address` identifies the slot to replace; the new slot is given by `new_authenticator_address` and `new_authenticator_pubkey`.
+    /// Returns the gateway request ID, which can be polled with `poll_gateway_request_status`.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn update_authenticator(
         &self,
@@ -297,7 +322,8 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Removes an authenticator from this account. Returns a gateway request ID.
+    /// Removes the authenticator at the given slot (identified by `authenticator_address` and `pubkey_id`) from this account.
+    /// Returns the gateway request ID, which can be polled with `poll_gateway_request_status`.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn remove_authenticator(
         &self,
@@ -315,7 +341,9 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Polls the gateway status for a previously submitted request.
+    /// Polls the gateway for the current status of a previously submitted request.
+    /// Works with request IDs returned by any of the authenticator-management or recovery methods.
+    /// Returns a `GatewayRequestStatus` indicating whether the request is queued, submitted, finalized, or failed.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn poll_gateway_request_status(
         &self,
@@ -329,7 +357,9 @@ impl Authenticator {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
-    /// Initializes a new Authenticator from a seed with SDK defaults.
+    /// Initializes a new `Authenticator` from a 32-byte seed using SDK-default config for the given environment.
+    /// The World ID account must already be registered in the `WorldIDRegistry`; use `InitializingAuthenticator` to register first.
+    /// `store` is used to cache credentials and inclusion proofs across sessions.
     #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init_with_defaults(
@@ -353,7 +383,9 @@ impl Authenticator {
         })
     }
 
-    /// Initializes a new Authenticator from a seed and config.
+    /// Initializes a new `Authenticator` from a 32-byte seed and a JSON-encoded `AuthenticatorConfig`.
+    /// The World ID account must already be registered in the `WorldIDRegistry`; use `InitializingAuthenticator` to register first.
+    /// `store` is used to cache credentials and inclusion proofs across sessions.
     #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init(
@@ -380,7 +412,9 @@ impl Authenticator {
         })
     }
 
-    /// Generates a ZK proof for the given proof request.
+    /// Generates a ZK proof for the given `ProofRequest`, using stored credentials and a fresh Merkle inclusion proof.
+    /// `now` is the current Unix timestamp in seconds; on WASM it must be provided by the caller.
+    /// Returns a `ProofResponse` containing the nullifier and per-credential proofs.
     pub async fn generate_proof(
         &self,
         proof_request: &ProofRequest,
@@ -498,7 +532,9 @@ impl Authenticator {
         Ok(result.proof_response.into())
     }
 
-    /// Generates a WIP-103 ownership proof for the credential sub.
+    /// Generates a WIP-103 ownership proof showing that the holder owns the credential `sub` without revealing `leaf_index`.
+    /// `nonce` is an issuer-provided replay-prevention value; `blinding_factor` and `sub` must be consistent with this authenticator.
+    /// Not supported on WASM targets.
     pub async fn prove_credential_sub(
         &self,
         nonce: &FieldElement,
@@ -580,13 +616,17 @@ impl From<GatewayRequestState> for GatewayRequestStatus {
     }
 }
 
-/// An Authenticator in the process of being registered; use `poll_status` to wait for finalization.
+/// An `Authenticator` in the process of being registered with the `WorldIDRegistry`.
+/// Returned by `register` and `register_with_defaults`; call `poll_status` to track the gateway request.
+/// Once the registration is finalized, initialize the full `Authenticator` using `init` or `init_with_defaults`.
 #[derive(uniffi::Object)]
 pub struct InitializingAuthenticator(CoreInitializingAuthenticator);
 
 #[uniffi::export(async_runtime = "tokio")]
 impl InitializingAuthenticator {
-    /// Registers a new World ID with SDK defaults. Returns immediately; use `poll_status` to wait for finalization.
+    /// Submits a new World ID registration using SDK-default config for the given environment.
+    /// Returns immediately without waiting for finalization; call `poll_status` on the result to track progress.
+    /// `recovery_address` is an optional checksummed hex Ethereum address to set as the initial recovery agent.
     #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
@@ -613,7 +653,9 @@ impl InitializingAuthenticator {
         Ok(Self(initializing_authenticator))
     }
 
-    /// Registers a new World ID. Returns immediately; use `poll_status` to wait for finalization.
+    /// Submits a new World ID registration using the provided JSON-encoded `AuthenticatorConfig`.
+    /// Returns immediately without waiting for finalization; call `poll_status` on the result to track progress.
+    /// `recovery_address` is an optional checksummed hex Ethereum address to set as the initial recovery agent.
     #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
@@ -642,7 +684,8 @@ impl InitializingAuthenticator {
         Ok(Self(initializing_authenticator))
     }
 
-    /// Polls the gateway request status for this registration.
+    /// Polls the gateway for the status of this registration request.
+    /// Returns a `GatewayRequestStatus` indicating whether the request is queued, submitted, finalized, or failed.
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "gateway_poll",
@@ -673,15 +716,18 @@ fn gateway_request_id_from_string(request_id: &str) -> GatewayRequestId {
 }
 
 /// Signature and nonce returned by `danger_sign_initiate_recovery_agent_update`.
+/// UniFFI does not support bare tuples across the FFI boundary, so the two values are bundled here.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct RecoveryUpdateSignature {
-    /// Raw bytes of the secp256k1 ECDSA signature.
+    /// Raw bytes of the secp256k1 ECDSA signature over the EIP-712 `InitiateRecoveryAgentUpdate` payload.
     pub signature: Vec<u8>,
-    /// The EIP-712 signing nonce; must be included in the gateway request alongside the signature.
+    /// The EIP-712 signing nonce used when producing the signature; must be included in the gateway request.
     pub nonce: Uint256,
 }
 
 /// Identity material derived from a seed for use during account recovery.
+/// All three values must be submitted on-chain as part of the recovery transaction
+/// before the recovered account can be initialized with `Authenticator::init`.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct RecoveryData {
     /// Checksummed hex Ethereum address of the on-chain signer.
@@ -693,7 +739,8 @@ pub struct RecoveryData {
 }
 
 impl RecoveryData {
-    /// Derives recovery identity material from a 32-byte seed.
+    /// Derives the on-chain address, EdDSA public key, and off-chain signer commitment from a 32-byte seed.
+    /// These values must be submitted on-chain as part of the recovery transaction.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub fn from_seed(seed: &[u8]) -> Result<Self, WalletKitError> {
         let signer = Signer::from_seed_bytes(seed)?;
@@ -713,7 +760,8 @@ impl RecoveryData {
     }
 }
 
-/// Derives recovery data from a 32-byte seed.
+/// Derives recovery identity material from a 32-byte seed.
+/// This is the FFI entry point for `RecoveryData::from_seed`; see that method for details.
 #[uniffi::export]
 pub fn recovery_data_from_seed(seed: &[u8]) -> Result<RecoveryData, WalletKitError> {
     RecoveryData::from_seed(seed)
