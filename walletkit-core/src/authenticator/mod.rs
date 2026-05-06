@@ -340,8 +340,7 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Inserts a new authenticator and returns its gateway request ID.
-    /// The public key is the compressed `EdDSA` key as a protocol `U256`.
+    /// Inserts a new authenticator into this account. Returns a gateway request ID.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn insert_authenticator(
         &self,
@@ -365,8 +364,7 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Updates an authenticator slot and returns its gateway request ID.
-    /// `pubkey_id` is the authenticator slot index to update.
+    /// Updates an existing authenticator slot. Returns a gateway request ID.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn update_authenticator(
         &self,
@@ -401,8 +399,7 @@ impl Authenticator {
         Ok(request_id.to_string())
     }
 
-    /// Removes an authenticator and returns its gateway request ID.
-    /// `pubkey_id` is the authenticator slot index to remove.
+    /// Removes an authenticator from this account. Returns a gateway request ID.
     #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn remove_authenticator(
         &self,
@@ -732,8 +729,7 @@ pub struct InitializingAuthenticator(CoreInitializingAuthenticator);
 
 #[uniffi::export(async_runtime = "tokio")]
 impl InitializingAuthenticator {
-    /// Registers a new World ID with SDK defaults.
-    /// Returns immediately; use `poll_status` to track the gateway request.
+    /// Registers a new World ID with SDK defaults. Returns immediately; use `poll_status` to wait for finalization.
     #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
@@ -760,8 +756,7 @@ impl InitializingAuthenticator {
         Ok(Self(initializing_authenticator))
     }
 
-    /// Registers a new World ID.
-    /// Returns immediately; use `poll_status` to track the gateway request.
+    /// Registers a new World ID. Returns immediately; use `poll_status` to wait for finalization.
     #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
