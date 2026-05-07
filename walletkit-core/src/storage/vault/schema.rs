@@ -1,6 +1,8 @@
-//! Vault database schema management.
+//! Credential-vault schema (vault metadata + credential records).
 //!
-//! Owns the credential vault tables and backup-sensitive schema.
+//! The shared `blob_objects` table comes from
+//! [`walletkit_db::Blobs::ensure_schema`]; this module owns only the
+//! credential-specific tables.
 
 use walletkit_db::{Connection, DbResult};
 
@@ -16,7 +18,10 @@ pub(super) const VAULT_SCHEMA_VERSION: i64 = 1;
 /// **Note:** New tables added to the vault schema must be added here too.
 pub const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
 
-/// **Backup sensitivity:** Schema changes here affect vault backups made into the backup system.
+/// Creates the credential-vault tables, indexes, and triggers.
+///
+/// **Backup sensitivity:** Schema changes here affect plaintext vault
+/// backups.
 /// - New tables must be added to [`BACKUP_TABLES`].
 /// - Column changes (especially new `NOT NULL` columns without defaults) can
 ///   break restoring older backups into a newer schema.
@@ -57,14 +62,6 @@ pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
 
         CREATE INDEX IF NOT EXISTS idx_cred_by_expiry
         ON credential_records (expires_at);
-
-        CREATE TABLE IF NOT EXISTS blob_objects (
-            content_id  BLOB    NOT NULL,
-            blob_kind   INTEGER NOT NULL,
-            created_at  INTEGER NOT NULL,
-            bytes       BLOB    NOT NULL,
-            PRIMARY KEY (content_id)
-        );
 ",
     )
 }

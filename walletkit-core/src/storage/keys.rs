@@ -13,17 +13,15 @@
 //! - Derived keys: per relying-party session keys may be derived from
 //!   `K_intermediate` and cached in `account.cache.sqlite` for performance.
 
-use rand::{rngs::OsRng, RngCore};
 use secrecy::SecretBox;
-use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::{
-    envelope::AccountKeyEnvelope,
-    error::{StorageError, StorageResult},
-    lock::StorageLockGuard,
+    error::StorageResult,
     traits::{AtomicBlobStore, DeviceKeystore},
     ACCOUNT_KEYS_FILENAME, ACCOUNT_KEY_ENVELOPE_AD,
 };
+use walletkit_db::LockGuard;
 
 /// In-memory account keys derived from the account key envelope.
 ///
@@ -44,35 +42,18 @@ impl StorageKeys {
     pub fn init(
         keystore: &dyn DeviceKeystore,
         blob_store: &dyn AtomicBlobStore,
-        _lock: &StorageLockGuard,
+        lock: &LockGuard,
         now: u64,
     ) -> StorageResult<Self> {
-        if let Some(bytes) = blob_store.read(ACCOUNT_KEYS_FILENAME.to_string())? {
-            let envelope = AccountKeyEnvelope::deserialize(&bytes)?;
-            let wrapped_k_intermediate = envelope.wrapped_k_intermediate.clone();
-            let k_intermediate_bytes = Zeroizing::new(keystore.open_sealed(
-                ACCOUNT_KEY_ENVELOPE_AD.to_vec(),
-                wrapped_k_intermediate,
-            )?);
-            let k_intermediate =
-                parse_key_32(k_intermediate_bytes.as_slice(), "K_intermediate")?;
-            Ok(Self {
-                intermediate_key: SecretBox::init_with(|| k_intermediate),
-            })
-        } else {
-            let k_intermediate = random_key();
-            // TODO: At this moment, the key needs to be temporarily heap
-            // allocated in order to be bridged via UniFFI. This needs to be
-            // improved to use pointers that can be zeroized after use.
-            let wrapped_k_intermediate = keystore
-                .seal(ACCOUNT_KEY_ENVELOPE_AD.to_vec(), k_intermediate.to_vec())?;
-            let envelope = AccountKeyEnvelope::new(wrapped_k_intermediate, now);
-            let bytes = envelope.serialize()?;
-            blob_store.write_atomic(ACCOUNT_KEYS_FILENAME.to_string(), bytes)?;
-            Ok(Self {
-                intermediate_key: SecretBox::init_with(|| k_intermediate),
-            })
-        }
+        let intermediate_key = walletkit_db::init_or_open_envelope_key(
+            &KeystoreAdapter { inner: keystore },
+            &BlobStoreAdapter { inner: blob_store },
+            lock,
+            ACCOUNT_KEYS_FILENAME,
+            ACCOUNT_KEY_ENVELOPE_AD,
+            now,
+        )?;
+        Ok(Self { intermediate_key })
     }
 
     /// Returns a reference to the intermediate key's [`SecretBox`].
@@ -82,32 +63,64 @@ impl StorageKeys {
     }
 }
 
-fn random_key() -> [u8; 32] {
-    let mut key = [0u8; 32];
-    OsRng.fill_bytes(&mut key);
-    key
+struct KeystoreAdapter<'a> {
+    inner: &'a dyn DeviceKeystore,
 }
 
-fn parse_key_32(bytes: &[u8], label: &str) -> StorageResult<[u8; 32]> {
-    if bytes.len() != 32 {
-        return Err(StorageError::InvalidEnvelope(format!(
-            "{label} length mismatch: expected 32, got {}",
-            bytes.len()
-        )));
+impl walletkit_db::Keystore for KeystoreAdapter<'_> {
+    fn seal(
+        &self,
+        associated_data: &[u8],
+        plaintext: &[u8],
+    ) -> walletkit_db::StoreResult<Vec<u8>> {
+        self.inner
+            .seal(associated_data.to_vec(), plaintext.to_vec())
+            .map_err(|err| walletkit_db::StoreError::Keystore(err.to_string()))
     }
-    let mut out = [0u8; 32];
-    out.copy_from_slice(bytes);
-    Ok(out)
+
+    fn open_sealed(
+        &self,
+        associated_data: &[u8],
+        ciphertext: &[u8],
+    ) -> walletkit_db::StoreResult<Vec<u8>> {
+        self.inner
+            .open_sealed(associated_data.to_vec(), ciphertext.to_vec())
+            .map_err(|err| walletkit_db::StoreError::Keystore(err.to_string()))
+    }
+}
+
+struct BlobStoreAdapter<'a> {
+    inner: &'a dyn AtomicBlobStore,
+}
+
+impl walletkit_db::AtomicBlobStore for BlobStoreAdapter<'_> {
+    fn read(&self, path: &str) -> walletkit_db::StoreResult<Option<Vec<u8>>> {
+        self.inner
+            .read(path.to_string())
+            .map_err(|err| walletkit_db::StoreError::BlobStore(err.to_string()))
+    }
+
+    fn write_atomic(&self, path: &str, bytes: &[u8]) -> walletkit_db::StoreResult<()> {
+        self.inner
+            .write_atomic(path.to_string(), bytes.to_vec())
+            .map_err(|err| walletkit_db::StoreError::BlobStore(err.to_string()))
+    }
+
+    fn delete(&self, path: &str) -> walletkit_db::StoreResult<()> {
+        self.inner
+            .delete(path.to_string())
+            .map_err(|err| walletkit_db::StoreError::BlobStore(err.to_string()))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::error::StorageError;
-    use crate::storage::lock::StorageLock;
     use crate::storage::tests_utils::{InMemoryBlobStore, InMemoryKeystore};
     use secrecy::ExposeSecret;
     use uuid::Uuid;
+    use walletkit_db::Lock;
 
     fn temp_lock_path() -> std::path::PathBuf {
         let mut path = std::env::temp_dir();
@@ -120,7 +133,7 @@ mod tests {
         let keystore = InMemoryKeystore::new();
         let blob_store = InMemoryBlobStore::new();
         let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
+        let lock = Lock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
         let keys_first =
             StorageKeys::init(&keystore, &blob_store, &guard, 100).expect("init");
@@ -139,7 +152,7 @@ mod tests {
         let keystore = InMemoryKeystore::new();
         let blob_store = InMemoryBlobStore::new();
         let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
+        let lock = Lock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
         StorageKeys::init(&keystore, &blob_store, &guard, 123).expect("init");
 
@@ -161,7 +174,7 @@ mod tests {
         let keystore = InMemoryKeystore::new();
         let blob_store = InMemoryBlobStore::new();
         let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
+        let lock = Lock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("lock");
         StorageKeys::init(&keystore, &blob_store, &guard, 123).expect("init");
 

@@ -1,4 +1,9 @@
 //! Encrypted vault database for credential storage.
+//!
+//! Thin wrapper around [`walletkit_db::Vault`]: the credential-specific
+//! schema, queries, and backup-table list live here; the underlying open /
+//! key / integrity-check machinery and the shared `blob_objects` table come
+//! from [`walletkit_db`].
 
 mod helpers;
 mod schema;
@@ -8,19 +13,19 @@ mod tests;
 use std::path::Path;
 
 use crate::storage::error::{StorageError, StorageResult};
-use crate::storage::lock::StorageLockGuard;
 use crate::storage::types::{BlobKind, CredentialRecord};
-use helpers::{compute_content_id, map_db_err, map_record, to_i64, to_u64};
+use crate::storage::StorageLockGuard;
+use helpers::{map_db_err, map_record, to_i64, to_u64};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
-use walletkit_db::{cipher, params, Connection, StepResult, Value};
+use walletkit_db::{cipher, params, Blobs, StepResult, Value, Vault};
 
 pub(crate) use schema::BACKUP_TABLES;
 
 /// Encrypted vault database wrapper.
 #[derive(Debug)]
 pub struct VaultDb {
-    conn: Connection,
+    vault: Vault,
 }
 
 impl VaultDb {
@@ -32,18 +37,13 @@ impl VaultDb {
     pub fn new(
         path: &Path,
         k_intermediate: &SecretBox<[u8; 32]>,
-        _lock: &StorageLockGuard,
+        lock: &StorageLockGuard,
     ) -> StorageResult<Self> {
-        let conn = cipher::open_encrypted(path, k_intermediate, false)
-            .map_err(|e| map_db_err(&e))?;
-        ensure_schema(&conn).map_err(|err| map_db_err(&err))?;
-        let db = Self { conn };
-        if !db.check_integrity()? {
-            return Err(StorageError::CorruptedVault(
-                "integrity_check failed".to_string(),
-            ));
-        }
-        Ok(db)
+        let vault = Vault::open(path, k_intermediate, lock, |conn| {
+            Blobs::ensure_schema(conn)?;
+            ensure_schema(conn)
+        })?;
+        Ok(Self { vault })
     }
 
     /// Initializes or validates the leaf index for this vault.
@@ -62,7 +62,8 @@ impl VaultDb {
     ) -> StorageResult<()> {
         let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
         let now_i64 = to_i64(now, "now")?;
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
         let stored = tx
             .query_row(
                 "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
@@ -114,49 +115,39 @@ impl VaultDb {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        let credential_blob_id =
-            compute_content_id(BlobKind::CredentialBlob, &credential_blob);
-        let associated_data_id = associated_data
-            .as_ref()
-            .map(|bytes| compute_content_id(BlobKind::AssociatedData, bytes));
         let now_i64 = to_i64(now, "now")?;
         let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
         let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
         let expires_at_i64 = to_i64(expires_at, "expires_at")?;
 
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
-        tx.execute(
-            "INSERT OR IGNORE INTO blob_objects (content_id, blob_kind, created_at, bytes)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![
-                credential_blob_id.as_ref(),
-                BlobKind::CredentialBlob.as_i64(),
-                now_i64,
-                credential_blob.as_slice(),
-            ],
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
+
+        let credential_blob_id = Blobs::put(
+            conn,
+            BlobKind::CredentialBlob as u8,
+            credential_blob.as_slice(),
+            now_i64,
         )
         .map_err(|err| map_db_err(&err))?;
 
-        if let Some(data) = associated_data {
-            let cid = associated_data_id.as_ref().ok_or_else(|| {
-                StorageError::VaultDb("associated data CID must be present".to_string())
-            })?;
-            tx.execute(
-                "INSERT OR IGNORE INTO blob_objects (content_id, blob_kind, created_at, bytes)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![
-                    cid.as_ref(),
-                    BlobKind::AssociatedData.as_i64(),
-                    now_i64,
+        let associated_data_id = if let Some(data) = associated_data.as_ref() {
+            Some(
+                Blobs::put(
+                    conn,
+                    BlobKind::AssociatedData as u8,
                     data.as_slice(),
-                ],
+                    now_i64,
+                )
+                .map_err(|err| map_db_err(&err))?,
             )
-            .map_err(|err| map_db_err(&err))?;
-        }
+        } else {
+            None
+        };
 
         let ad_cid_value: Value = associated_data_id
             .as_ref()
-            .map_or(Value::Null, |cid| Value::Blob(cid.to_vec()));
+            .map_or(Value::Null, |cid| Value::Blob(cid.as_bytes().to_vec()));
 
         let credential_id = tx
             .query_row(
@@ -220,7 +211,8 @@ impl VaultDb {
              WHERE (?2 IS NULL OR cr.issuer_schema_id = ?2)
              ORDER BY cr.updated_at DESC";
 
-        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        let conn = self.vault.connection();
+        let mut stmt = conn.prepare(sql).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(&[Value::Integer(now_i64), issuer_filter])
             .map_err(|err| map_db_err(&err))?;
         while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
@@ -245,7 +237,8 @@ impl VaultDb {
         credential_id: u64,
     ) -> StorageResult<()> {
         let credential_id_i64 = to_i64(credential_id, "credential_id")?;
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
         let deleted = tx
             .execute(
@@ -312,7 +305,8 @@ impl VaultDb {
              ORDER BY cr.updated_at DESC
              LIMIT 1";
 
-        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        let conn = self.vault.connection();
+        let mut stmt = conn.prepare(sql).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![expires, issuer_schema_id_i64])
             .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
@@ -338,7 +332,8 @@ impl VaultDb {
         &mut self,
         _lock: &StorageLockGuard,
     ) -> StorageResult<u64> {
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
         let deleted = tx
             .execute("DELETE FROM credential_records", &[])
@@ -357,7 +352,7 @@ impl VaultDb {
     ///
     /// Returns an error if the check cannot be executed.
     pub fn check_integrity(&self) -> StorageResult<bool> {
-        cipher::integrity_check(&self.conn).map_err(|e| map_db_err(&e))
+        cipher::integrity_check(self.vault.connection()).map_err(|e| map_db_err(&e))
     }
 
     /// Exports a plaintext (unencrypted) copy of the vault to `dest`.
@@ -377,7 +372,7 @@ impl VaultDb {
                 StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
             })?;
         }
-        cipher::export_plaintext_copy(&self.conn, dest, BACKUP_TABLES)
+        cipher::export_plaintext_copy(self.vault.connection(), dest, BACKUP_TABLES)
             .map_err(|e| map_db_err(&e))
     }
 
@@ -395,13 +390,13 @@ impl VaultDb {
         source: &Path,
         _lock: &StorageLockGuard,
     ) -> StorageResult<()> {
-        cipher::import_plaintext_copy(&self.conn, source, BACKUP_TABLES)
+        cipher::import_plaintext_copy(self.vault.connection(), source, BACKUP_TABLES)
             .map_err(|e| map_db_err(&e))
     }
 
     /// Borrows the underlying connection for direct SQL access. **Test-only.**
     #[cfg(test)]
-    pub(super) const fn raw_connection(&self) -> &Connection {
-        &self.conn
+    pub(super) const fn raw_connection(&self) -> &walletkit_db::Connection {
+        self.vault.connection()
     }
 }

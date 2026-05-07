@@ -1,12 +1,13 @@
 //! Vault database unit tests.
 
-use super::helpers::{compute_content_id, map_db_err};
+use super::helpers::map_db_err;
 use super::*;
-use crate::storage::lock::StorageLock;
+use crate::storage::StorageLock;
 use secrecy::SecretBox;
 use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
+use walletkit_db::compute_content_id;
 
 fn temp_vault_path() -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -162,8 +163,8 @@ fn test_store_credential_with_associated_data() {
 
 #[test]
 fn test_content_id_determinism() {
-    let a = compute_content_id(BlobKind::CredentialBlob, b"data");
-    let b = compute_content_id(BlobKind::CredentialBlob, b"data");
+    let a = compute_content_id(BlobKind::CredentialBlob as u8, b"data");
+    let b = compute_content_id(BlobKind::CredentialBlob as u8, b"data");
     assert_eq!(a, b);
 }
 
@@ -536,6 +537,74 @@ fn test_vault_integrity_check() {
     let key = SecretBox::init_with(|| [0x0Au8; 32]);
     let db = VaultDb::new(&path, &key, &guard).expect("create vault");
     assert!(db.check_integrity().expect("integrity"));
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn test_credential_vault_on_disk_format_guard() {
+    // This is the on-disk-format guard required by the storage-primitives
+    // refactor: any change to schemas, CBOR layout, content_id derivation,
+    // or cipher configuration that breaks compatibility with vault files
+    // written by `main` must fail this test.
+    //
+    // The test:
+    //   1. Stores a credential with a deterministic plaintext payload.
+    //   2. Asserts the `content_id` written into `blob_objects` equals a
+    //      hard-coded SHA-256 — locks the kind-tag + prefix derivation.
+    //   3. Closes the vault, reopens it under the same key, fetches the
+    //      credential back and asserts byte-equality with the original.
+    //      A schema or cipher mismatch would surface here.
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = SecretBox::init_with(|| [0xA5u8; 32]);
+    let credential_bytes = b"on-disk-guard-credential-payload".to_vec();
+    let blinding = sample_blinding_factor();
+
+    let credential_id = {
+        let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+        db.store_credential(
+            &guard,
+            42,
+            blinding.clone(),
+            1_700_000_000,
+            1_800_000_000,
+            credential_bytes.clone(),
+            None,
+            1_700_000_001,
+        )
+        .expect("store credential")
+    };
+
+    // Frozen content_id for the credential blob. SHA-256(b"worldid:blob"
+    // || [BlobKind::CredentialBlob as u8 = 0x01] || credential_bytes).
+    let expected_cid_hex =
+        "9281febbd42d05857b399f8481d6842f1e3e4b78401081ca7f0d0fb3a80e9264";
+
+    let db = VaultDb::new(&path, &key, &guard).expect("reopen vault");
+    let stored_cid_hex: String = db
+        .raw_connection()
+        .query_row(
+            "SELECT lower(hex(credential_blob_cid)) FROM credential_records WHERE credential_id = ?1",
+            params![i64::try_from(credential_id).unwrap()],
+            |row| Ok(row.column_text(0)),
+        )
+        .map_err(|err| map_db_err(&err))
+        .expect("fetch cid");
+    assert_eq!(
+        stored_cid_hex, expected_cid_hex,
+        "credential_blob content_id drifted — schema, kind tag, or hash domain changed"
+    );
+
+    let (fetched_blob, fetched_blinding) = db
+        .fetch_credential_and_blinding_factor(42, 1_700_000_500)
+        .expect("fetch credential")
+        .expect("credential present");
+    assert_eq!(fetched_blob, credential_bytes);
+    assert_eq!(fetched_blinding, blinding);
+
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
