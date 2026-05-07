@@ -162,8 +162,8 @@ fn test_store_credential_with_associated_data() {
 
 #[test]
 fn test_content_id_determinism() {
-    let a = compute_content_id(BlobKind::CredentialBlob as u8, b"data");
-    let b = compute_content_id(BlobKind::CredentialBlob as u8, b"data");
+    let a = compute_content_id(BlobKind::CredentialBlob, b"data");
+    let b = compute_content_id(BlobKind::CredentialBlob, b"data");
     assert_eq!(a, b);
 }
 
@@ -432,7 +432,7 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
         .raw_connection()
         .query_row(
             "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
-            params![i64::from(BlobKind::AssociatedData as u8)],
+            params![BlobKind::AssociatedData.as_i64()],
             |stmt| Ok(stmt.column_i64(0)),
         )
         .map_err(|err| map_db_err(&err))
@@ -446,7 +446,7 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
         .raw_connection()
         .query_row(
             "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
-            params![i64::from(BlobKind::AssociatedData as u8)],
+            params![BlobKind::AssociatedData.as_i64()],
             |stmt| Ok(stmt.column_i64(0)),
         )
         .map_err(|err| map_db_err(&err))

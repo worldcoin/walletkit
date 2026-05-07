@@ -97,7 +97,7 @@ cargo fmt -- --check
 WalletKit is broken down into separate crates, offering the following functionality.
 
 - `walletkit-core` - Enables basic usage of a World ID to generate ZKPs using different credentials.
-- `walletkit-db` - WalletKit's encrypted on-device storage crate. Houses the `SQLCipher` (`sqlite3mc`) wrapper plus opinionated vault primitives (`Vault::open` with integrity check, envelope-sealed key init, content-addressed blob table, cross-process lock). Used by `walletkit-core` for credential storage and consumed by sibling SDKs (e.g. OrbKit's planned `OrbPcpStore`) for their own typed stores. See its README for design rationale and a worked example of writing a consumer.
+- `walletkit-db` - Generic encrypted `SQLite` (`sqlite3mc`) wrapper providing safe connection, transaction, and statement types plus encrypted-open and plaintext export/import helpers. Used by `walletkit-core` for credential storage and consumable by sibling SDKs that need an encrypted on-device store.
 
 ### World ID Secret
 

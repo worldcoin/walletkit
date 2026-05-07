@@ -2,12 +2,22 @@
 //!
 //! Owns the credential vault tables and backup-sensitive schema.
 
-use walletkit_db::sqlite::{Connection, Result as DbResult};
+use walletkit_db::{Connection, DbResult};
 
 pub(super) const VAULT_SCHEMA_VERSION: i64 = 1;
 
+/// Tables included in plaintext vault backups.
+///
+/// `vault_meta` is intentionally excluded: on restore, the destination vault
+/// already has its own `vault_meta` (created by `ensure_schema` +
+/// `init_leaf_index`) with the authoritative `leaf_index` from the
+/// authenticator.
+///
+/// **Note:** New tables added to the vault schema must be added here too.
+pub const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
+
 /// **Backup sensitivity:** Schema changes here affect vault backups made into the backup system.
-/// - New tables must be added to [`super::BACKUP_TABLES`].
+/// - New tables must be added to [`BACKUP_TABLES`].
 /// - Column changes (especially new `NOT NULL` columns without defaults) can
 ///   break restoring older backups into a newer schema.
 pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
@@ -17,14 +27,6 @@ pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
             leaf_index      INTEGER,
             created_at      INTEGER NOT NULL,
             updated_at      INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS blob_objects (
-            content_id  BLOB    NOT NULL,
-            blob_kind   INTEGER NOT NULL,
-            created_at  INTEGER NOT NULL,
-            bytes       BLOB    NOT NULL,
-            PRIMARY KEY (content_id)
         );
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_meta_schema_version
@@ -55,6 +57,14 @@ pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
 
         CREATE INDEX IF NOT EXISTS idx_cred_by_expiry
         ON credential_records (expires_at);
+
+        CREATE TABLE IF NOT EXISTS blob_objects (
+            content_id  BLOB    NOT NULL,
+            blob_kind   INTEGER NOT NULL,
+            created_at  INTEGER NOT NULL,
+            bytes       BLOB    NOT NULL,
+            PRIMARY KEY (content_id)
+        );
 ",
     )
 }

@@ -3,8 +3,7 @@
 use std::io;
 
 use crate::storage::error::{StorageError, StorageResult};
-use walletkit_db::params;
-use walletkit_db::sqlite::{Connection, Error as DbError, Transaction};
+use walletkit_db::{params, Connection, DbError, Transaction};
 
 /// Maps a database error into a cache storage error.
 pub(super) fn map_db_err(err: &DbError) -> StorageError {
@@ -190,8 +189,8 @@ pub(super) fn get_cache_entry_tx(
         stmt.bind_values(params![key, now, insertion_before])
             .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
-            walletkit_db::sqlite::StepResult::Row(row) => Ok(Some(row.column_blob(0))),
-            walletkit_db::sqlite::StepResult::Done => Ok(None),
+            walletkit_db::StepResult::Row(row) => Ok(Some(row.column_blob(0))),
+            walletkit_db::StepResult::Done => Ok(None),
         }
     } else {
         let mut stmt = tx.prepare(
@@ -200,8 +199,8 @@ pub(super) fn get_cache_entry_tx(
         stmt.bind_values(params![key, now])
             .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
-            walletkit_db::sqlite::StepResult::Row(row) => Ok(Some(row.column_blob(0))),
-            walletkit_db::sqlite::StepResult::Done => Ok(None),
+            walletkit_db::StepResult::Row(row) => Ok(Some(row.column_blob(0))),
+            walletkit_db::StepResult::Done => Ok(None),
         }
     }
 }

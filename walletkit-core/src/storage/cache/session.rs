@@ -1,7 +1,7 @@
 //! Session seed cache helpers.
 
 use crate::storage::error::StorageResult;
-use walletkit_db::sqlite::Connection;
+use walletkit_db::Connection;
 
 use super::util::{
     cache_entry_times, get_cache_entry, parse_fixed_bytes, prune_expired_entries,

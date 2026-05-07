@@ -13,16 +13,15 @@ use crate::storage::types::{BlobKind, CredentialRecord};
 use helpers::{compute_content_id, map_db_err, map_record, to_i64, to_u64};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
-use walletkit_db::params;
-use walletkit_db::sqlite::{cipher, Connection, StepResult, Value};
+use walletkit_db::{cipher, params, Connection, StepResult, Value};
+
+pub(crate) use schema::BACKUP_TABLES;
 
 /// Encrypted vault database wrapper.
 #[derive(Debug)]
 pub struct VaultDb {
     conn: Connection,
 }
-
-pub(crate) const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
 
 impl VaultDb {
     /// Opens or creates the encrypted vault database at `path`.
@@ -116,10 +115,10 @@ impl VaultDb {
         now: u64,
     ) -> StorageResult<u64> {
         let credential_blob_id =
-            compute_content_id(BlobKind::CredentialBlob as u8, &credential_blob);
+            compute_content_id(BlobKind::CredentialBlob, &credential_blob);
         let associated_data_id = associated_data
             .as_ref()
-            .map(|bytes| compute_content_id(BlobKind::AssociatedData as u8, bytes));
+            .map(|bytes| compute_content_id(BlobKind::AssociatedData, bytes));
         let now_i64 = to_i64(now, "now")?;
         let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
         let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
@@ -131,7 +130,7 @@ impl VaultDb {
              VALUES (?1, ?2, ?3, ?4)",
             params![
                 credential_blob_id.as_ref(),
-                i64::from(BlobKind::CredentialBlob as u8),
+                BlobKind::CredentialBlob.as_i64(),
                 now_i64,
                 credential_blob.as_slice(),
             ],
@@ -147,7 +146,7 @@ impl VaultDb {
                  VALUES (?1, ?2, ?3, ?4)",
                 params![
                     cid.as_ref(),
-                    i64::from(BlobKind::AssociatedData as u8),
+                    BlobKind::AssociatedData.as_i64(),
                     now_i64,
                     data.as_slice(),
                 ],
@@ -268,7 +267,7 @@ impl VaultDb {
                    FROM credential_records cr
                    WHERE cr.credential_blob_cid = blob_objects.content_id
                )",
-            params![i64::from(BlobKind::CredentialBlob as u8)],
+            params![BlobKind::CredentialBlob.as_i64()],
         )
         .map_err(|err| map_db_err(&err))?;
 
@@ -281,7 +280,7 @@ impl VaultDb {
                    FROM credential_records cr
                    WHERE cr.associated_data_cid = blob_objects.content_id
                )",
-            params![i64::from(BlobKind::AssociatedData as u8)],
+            params![BlobKind::AssociatedData.as_i64()],
         )
         .map_err(|err| map_db_err(&err))?;
 
@@ -402,7 +401,7 @@ impl VaultDb {
 
     /// Borrows the underlying connection for direct SQL access. **Test-only.**
     #[cfg(test)]
-    pub(super) const fn raw_connection(&self) -> &walletkit_db::sqlite::Connection {
+    pub(super) const fn raw_connection(&self) -> &Connection {
         &self.conn
     }
 }

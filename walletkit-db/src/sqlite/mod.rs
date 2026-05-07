@@ -8,7 +8,7 @@
 //! - **WASM** (`wasm32`): delegated to `sqlite-wasm-rs` (with the
 //!   `sqlite3mc` feature) which ships its own `WASM`-compiled `sqlite3mc`.
 //!
-//! The [`ffi`] module is the only file in this crate that contains
+//! The internal `ffi` module is the only file in this crate that contains
 //! `unsafe` code or `C` types.
 
 mod ffi;
