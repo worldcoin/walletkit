@@ -26,7 +26,7 @@ private class CapturingLogger : Logger {
         }
 }
 
-class SimpleTest {
+class LoggingTests {
     @Test
     fun initLoggingForwardsLevelAndMessage() {
         val logger = CapturingLogger()
