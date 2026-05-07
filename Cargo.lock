@@ -8247,11 +8247,15 @@ name = "walletkit-db"
 version = "0.16.1"
 dependencies = [
  "cc",
+ "ciborium",
+ "getrandom 0.3.4",
  "hex",
  "secrecy",
+ "serde",
  "sha2 0.10.9",
  "sqlite-wasm-rs",
  "tempfile",
+ "thiserror 2.0.18",
  "zeroize",
  "zip",
 ]

@@ -279,3 +279,212 @@ fn test_cipher_import_rejects_non_empty_destination() {
         "expected non-empty-table error, got: {err}"
     );
 }
+
+// -------------------------------------------------------------------------
+// Storage primitives: blobs, envelope, lock, vault
+// -------------------------------------------------------------------------
+
+mod primitives {
+    use super::init_sqlite;
+    use crate::{
+        compute_content_id, init_or_open_envelope_key, AtomicBlobStore, Blobs,
+        ContentId, KeyEnvelope, Keystore, Lock, StoreError, StoreResult, Vault,
+    };
+    use secrecy::{ExposeSecret, SecretBox};
+    use std::sync::Mutex;
+
+    // ---- compute_content_id format guard --------------------------------
+    //
+    // The hash domain is part of the on-disk format. Changing this test
+    // means breaking every existing user database.
+
+    #[test]
+    fn test_compute_content_id_byte_stable() {
+        // SHA-256(b"worldid:blob" || [0x01] || b"hello"). Frozen value —
+        // changing this hash means breaking every existing user database.
+        let cid = compute_content_id(1, b"hello");
+        let expected = hex::decode(
+            "ed4eba40f11beec64d0607586f09b7529418ef31bf2c46cf9b8b905615f2e7ca",
+        )
+        .expect("decode hex");
+        assert_eq!(cid.as_bytes(), expected.as_slice());
+
+        let cid2 = compute_content_id(2, b"hello");
+        assert_ne!(cid, cid2, "kind tag must affect content id");
+    }
+
+    #[test]
+    fn test_content_id_round_trip() {
+        let bytes = [42u8; 32];
+        let cid = ContentId::new(bytes);
+        assert_eq!(cid.as_bytes(), &bytes);
+        assert_eq!(cid.into_bytes(), bytes);
+    }
+
+    // ---- KeyEnvelope CBOR format guard ----------------------------------
+
+    #[test]
+    fn test_key_envelope_round_trip() {
+        let envelope = KeyEnvelope::new(vec![1, 2, 3], 123);
+        let bytes = envelope.serialize().expect("serialize");
+        let decoded = KeyEnvelope::deserialize(&bytes).expect("deserialize");
+        assert_eq!(decoded.version, 1);
+        assert_eq!(decoded.wrapped_k_intermediate, vec![1, 2, 3]);
+        assert_eq!(decoded.created_at, 123);
+        assert_eq!(decoded.updated_at, 123);
+    }
+
+    #[test]
+    fn test_key_envelope_unsupported_version() {
+        let mut envelope = KeyEnvelope::new(vec![1, 2, 3], 123);
+        envelope.version = 99;
+        let bytes = envelope.serialize().expect("serialize");
+        match KeyEnvelope::deserialize(&bytes) {
+            Err(StoreError::UnsupportedEnvelopeVersion(v)) => assert_eq!(v, 99),
+            Err(err) => panic!("expected UnsupportedEnvelopeVersion, got: {err}"),
+            Ok(_) => panic!("expected UnsupportedEnvelopeVersion, got Ok"),
+        }
+    }
+
+    // ---- Lock --------------------------------------------------------------
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_lock_is_exclusive() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("lock.lock");
+        let lock_a = Lock::open(&path).expect("open lock");
+        let guard = lock_a.lock().expect("acquire lock");
+
+        let lock_b = Lock::open(&path).expect("open lock");
+        let blocked = lock_b.try_lock().expect("try lock");
+        assert!(blocked.is_none());
+
+        drop(guard);
+        let guard = lock_b.try_lock().expect("try lock");
+        assert!(guard.is_some());
+    }
+
+    // ---- Envelope helper end-to-end ----------------------------------------
+    //
+    // Uses a stub Keystore that XORs with a fixed pad. Good enough to verify
+    // the seal -> persist -> open round-trip on the envelope wiring.
+
+    struct XorKeystore {
+        pad: [u8; 32],
+    }
+
+    impl Keystore for XorKeystore {
+        fn seal(&self, _ad: &[u8], plaintext: &[u8]) -> StoreResult<Vec<u8>> {
+            Ok(plaintext
+                .iter()
+                .enumerate()
+                .map(|(i, b)| b ^ self.pad[i % 32])
+                .collect())
+        }
+        fn open_sealed(&self, _ad: &[u8], ciphertext: &[u8]) -> StoreResult<Vec<u8>> {
+            Ok(ciphertext
+                .iter()
+                .enumerate()
+                .map(|(i, b)| b ^ self.pad[i % 32])
+                .collect())
+        }
+    }
+
+    struct InMemoryBlobs {
+        inner: Mutex<std::collections::HashMap<String, Vec<u8>>>,
+    }
+    impl InMemoryBlobs {
+        fn new() -> Self {
+            Self {
+                inner: Mutex::new(std::collections::HashMap::new()),
+            }
+        }
+    }
+    impl AtomicBlobStore for InMemoryBlobs {
+        fn read(&self, path: &str) -> StoreResult<Option<Vec<u8>>> {
+            Ok(self.inner.lock().unwrap().get(path).cloned())
+        }
+        fn write_atomic(&self, path: &str, bytes: &[u8]) -> StoreResult<()> {
+            self.inner
+                .lock()
+                .unwrap()
+                .insert(path.to_string(), bytes.to_vec());
+            Ok(())
+        }
+        fn delete(&self, path: &str) -> StoreResult<()> {
+            self.inner.lock().unwrap().remove(path);
+            Ok(())
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_init_or_open_envelope_key_round_trip() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let lock_path = dir.path().join("envelope.lock");
+        let lock = Lock::open(&lock_path).expect("open lock");
+        let guard = lock.lock().expect("acquire");
+
+        let keystore = XorKeystore { pad: [0xAA; 32] };
+        let blobs = InMemoryBlobs::new();
+        let key_a = init_or_open_envelope_key(
+            &keystore, &blobs, &guard, "k.bin", b"test-ad", 100,
+        )
+        .expect("init");
+        let key_b = init_or_open_envelope_key(
+            &keystore, &blobs, &guard, "k.bin", b"test-ad", 200,
+        )
+        .expect("re-open");
+
+        assert_eq!(key_a.expose_secret(), key_b.expose_secret());
+    }
+
+    // ---- Vault::open --------------------------------------------------------
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_vault_open_runs_schema_callback() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let db_path = dir.path().join("vault.sqlite");
+        let lock_path = dir.path().join("vault.lock");
+        let lock = Lock::open(&lock_path).expect("open lock");
+        let guard = lock.lock().expect("acquire");
+        let key = SecretBox::init_with(|| [0x42u8; 32]);
+
+        let vault = Vault::open(&db_path, &key, &guard, |conn| {
+            Blobs::ensure_schema(conn)?;
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY);",
+            )
+        })
+        .expect("open vault");
+
+        let cid = Blobs::put(vault.connection(), 7, b"payload", 1000).expect("put");
+        let bytes = Blobs::get(vault.connection(), &cid)
+            .expect("get")
+            .expect("present");
+        assert_eq!(bytes, b"payload");
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_vault_open_rejects_wrong_key() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let db_path = dir.path().join("vault.sqlite");
+        let lock_path = dir.path().join("vault.lock");
+        let lock = Lock::open(&lock_path).expect("open lock");
+        let guard = lock.lock().expect("acquire");
+        let key = SecretBox::init_with(|| [0x11u8; 32]);
+        Vault::open(&db_path, &key, &guard, Blobs::ensure_schema)
+            .expect("create vault");
+        drop(guard);
+        let guard = lock.lock().expect("re-acquire");
+        let wrong = SecretBox::init_with(|| [0x22u8; 32]);
+        let err =
+            Vault::open(&db_path, &wrong, &guard, |_| Ok(())).expect_err("wrong key");
+        assert!(matches!(err, StoreError::Db(_)));
+    }
+}
