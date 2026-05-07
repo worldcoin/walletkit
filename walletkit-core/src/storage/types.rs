@@ -15,12 +15,6 @@ pub enum BlobKind {
     AssociatedData = 2,
 }
 
-impl BlobKind {
-    pub(crate) const fn as_i64(self) -> i64 {
-        self as i64
-    }
-}
-
 impl TryFrom<i64> for BlobKind {
     type Error = StorageError;
 

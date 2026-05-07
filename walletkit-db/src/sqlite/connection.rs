@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use super::error::{DbError, DbResult};
+use super::error::{Error, Result};
 use super::ffi::{self, RawDb};
 use super::statement::{Row, Statement, StepResult};
 use super::transaction::Transaction;
@@ -25,8 +25,8 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if `SQLite` cannot open the file.
-    pub fn open(path: &Path, read_only: bool) -> DbResult<Self> {
+    /// Returns `Error` if `SQLite` cannot open the file.
+    pub fn open(path: &Path, read_only: bool) -> Result<Self> {
         let path_str = path.to_string_lossy();
         let flags = if read_only {
             ffi::SQLITE_OPEN_READONLY | ffi::SQLITE_OPEN_FULLMUTEX
@@ -46,8 +46,8 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if any statement fails.
-    pub fn execute_batch(&self, sql: &str) -> DbResult<()> {
+    /// Returns `Error` if any statement fails.
+    pub fn execute_batch(&self, sql: &str) -> Result<()> {
         self.db.exec(sql)
     }
 
@@ -57,8 +57,8 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the statement fails.
-    pub fn execute_batch_zeroized(&self, sql: &str) -> DbResult<()> {
+    /// Returns `Error` if the statement fails.
+    pub fn execute_batch_zeroized(&self, sql: &str) -> Result<()> {
         self.db.exec_zeroized(sql)
     }
 
@@ -66,8 +66,8 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the SQL is invalid.
-    pub fn prepare(&self, sql: &str) -> DbResult<Statement<'_>> {
+    /// Returns `Error` if the SQL is invalid.
+    pub fn prepare(&self, sql: &str) -> Result<Statement<'_>> {
         let raw_stmt = self.db.prepare(sql)?;
         Ok(Statement::new(raw_stmt))
     }
@@ -78,8 +78,8 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if preparation or execution fails.
-    pub fn execute(&self, sql: &str, params: &[Value]) -> DbResult<usize> {
+    /// Returns `Error` if preparation or execution fails.
+    pub fn execute(&self, sql: &str, params: &[Value]) -> Result<usize> {
         let mut stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         stmt.step()?;
@@ -92,20 +92,20 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if preparation, execution, or the mapper fails,
+    /// Returns `Error` if preparation, execution, or the mapper fails,
     /// or if the query returns no rows.
     pub fn query_row<T>(
         &self,
         sql: &str,
         params: &[Value],
-        mapper: impl FnOnce(&Row<'_, '_>) -> DbResult<T>,
-    ) -> DbResult<T> {
+        mapper: impl FnOnce(&Row<'_, '_>) -> Result<T>,
+    ) -> Result<T> {
         let mut stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         match stmt.step()? {
             StepResult::Row(row) => mapper(&row),
             StepResult::Done => {
-                Err(DbError::new(ffi::SQLITE_DONE, "query returned no rows"))
+                Err(Error::new(ffi::SQLITE_DONE, "query returned no rows"))
             }
         }
     }
@@ -115,13 +115,13 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if preparation, execution, or the mapper fails.
+    /// Returns `Error` if preparation, execution, or the mapper fails.
     pub fn query_row_optional<T>(
         &self,
         sql: &str,
         params: &[Value],
-        mapper: impl FnOnce(&Row<'_, '_>) -> DbResult<T>,
-    ) -> DbResult<Option<T>> {
+        mapper: impl FnOnce(&Row<'_, '_>) -> Result<T>,
+    ) -> Result<Option<T>> {
         let mut stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
         match stmt.step()? {
@@ -134,8 +134,8 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if `BEGIN DEFERRED` fails.
-    pub fn transaction(&self) -> DbResult<Transaction<'_>> {
+    /// Returns `Error` if `BEGIN DEFERRED` fails.
+    pub fn transaction(&self) -> Result<Transaction<'_>> {
         Transaction::begin(self, false)
     }
 
@@ -143,8 +143,8 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if `BEGIN IMMEDIATE` fails.
-    pub fn transaction_immediate(&self) -> DbResult<Transaction<'_>> {
+    /// Returns `Error` if `BEGIN IMMEDIATE` fails.
+    pub fn transaction_immediate(&self) -> Result<Transaction<'_>> {
         Transaction::begin(self, true)
     }
 
@@ -175,8 +175,8 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the in-memory database cannot be opened.
-    pub fn open_in_memory() -> DbResult<Self> {
+    /// Returns `Error` if the in-memory database cannot be opened.
+    pub fn open_in_memory() -> Result<Self> {
         Self::open(Path::new(":memory:"), false)
     }
 }

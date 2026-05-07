@@ -1,12 +1,12 @@
-//! Database error types for the safe `SQLite` wrapper.
+//! Error types for the safe `SQLite` wrapper.
 
 use std::fmt;
 
 /// Error code returned by `SQLite` operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DbErrorCode(pub i32);
+pub struct ErrorCode(pub i32);
 
-impl fmt::Display for DbErrorCode {
+impl fmt::Display for ErrorCode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -14,30 +14,30 @@ impl fmt::Display for DbErrorCode {
 
 /// Error returned by database operations.
 #[derive(Debug, PartialEq, Eq)]
-pub struct DbError {
+pub struct Error {
     /// `SQLite` result code.
-    pub code: DbErrorCode,
+    pub code: ErrorCode,
     /// Human-readable error message (from `sqlite3_errmsg` when available).
     pub message: String,
 }
 
-impl DbError {
+impl Error {
     /// Creates a new database error.
     pub(crate) fn new(code: i32, message: impl Into<String>) -> Self {
         Self {
-            code: DbErrorCode(code),
+            code: ErrorCode(code),
             message: message.into(),
         }
     }
 }
 
-impl fmt::Display for DbError {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "sqlite error {}: {}", self.code, self.message)
     }
 }
 
-impl std::error::Error for DbError {}
+impl std::error::Error for Error {}
 
-/// Result type for database operations.
-pub type DbResult<T> = Result<T, DbError>;
+/// Result alias for [`Error`].
+pub type Result<T> = std::result::Result<T, Error>;

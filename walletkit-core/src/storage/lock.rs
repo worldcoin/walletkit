@@ -11,8 +11,6 @@ use std::path::Path;
 
 use super::error::StorageResult;
 
-// WASM: no-op lock (single-threaded worker, SQLITE_THREADSAFE=0)
-
 #[cfg(target_arch = "wasm32")]
 mod imp {
     use super::*;
@@ -42,8 +40,6 @@ mod imp {
         }
     }
 }
-
-// Native: file-backed exclusive lock (flock on Unix, LockFileEx on Windows)
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
@@ -125,8 +121,6 @@ mod imp {
         StorageError::Lock(err.to_string())
     }
 
-    // ── Unix flock ──────────────────────────────────────────────────────
-
     #[cfg(unix)]
     fn lock_exclusive(file: &File) -> std::io::Result<()> {
         let fd = std::os::unix::io::AsRawFd::as_raw_fd(file);
@@ -179,8 +173,6 @@ mod imp {
     extern "C" {
         fn flock(fd: c_int, operation: c_int) -> c_int;
     }
-
-    // ── Windows LockFileEx ──────────────────────────────────────────────
 
     #[cfg(windows)]
     fn lock_exclusive(file: &File) -> std::io::Result<()> {

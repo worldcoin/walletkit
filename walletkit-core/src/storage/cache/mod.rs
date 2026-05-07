@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::storage::error::StorageResult;
 use crate::storage::lock::StorageLockGuard;
 use secrecy::SecretBox;
-use walletkit_db::Connection;
+use walletkit_db::sqlite::Connection;
 
 mod maintenance;
 mod merkle;

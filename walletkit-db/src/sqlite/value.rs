@@ -50,6 +50,6 @@ impl From<&str> for Value {
 #[macro_export]
 macro_rules! params {
     ($($val:expr),* $(,)?) => {
-        &[$($crate::Value::from($val)),*][..]
+        &[$($crate::sqlite::Value::from($val)),*][..]
     };
 }

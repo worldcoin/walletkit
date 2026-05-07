@@ -3,7 +3,7 @@
 //! Automatically rolls back on drop unless explicitly committed.
 
 use super::connection::Connection;
-use super::error::DbResult;
+use super::error::Result;
 use super::statement::{Row, Statement};
 use super::value::Value;
 
@@ -22,7 +22,7 @@ impl<'conn> Transaction<'conn> {
     ///
     /// When `immediate` is true, the transaction acquires a RESERVED lock
     /// immediately (`BEGIN IMMEDIATE`) rather than deferring it.
-    pub(super) fn begin(conn: &'conn Connection, immediate: bool) -> DbResult<Self> {
+    pub(super) fn begin(conn: &'conn Connection, immediate: bool) -> Result<Self> {
         let sql = if immediate {
             "BEGIN IMMEDIATE"
         } else {
@@ -39,8 +39,8 @@ impl<'conn> Transaction<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the COMMIT statement fails.
-    pub fn commit(mut self) -> DbResult<()> {
+    /// Returns `Error` if the COMMIT statement fails.
+    pub fn commit(mut self) -> Result<()> {
         self.conn.execute_batch("COMMIT")?;
         self.committed = true;
         Ok(())
@@ -52,9 +52,9 @@ impl<'conn> Transaction<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if any statement fails.
+    /// Returns `Error` if any statement fails.
     #[allow(dead_code)]
-    pub fn execute_batch(&self, sql: &str) -> DbResult<()> {
+    pub fn execute_batch(&self, sql: &str) -> Result<()> {
         self.conn.execute_batch(sql)
     }
 
@@ -62,8 +62,8 @@ impl<'conn> Transaction<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if preparation or execution fails.
-    pub fn execute(&self, sql: &str, params: &[Value]) -> DbResult<usize> {
+    /// Returns `Error` if preparation or execution fails.
+    pub fn execute(&self, sql: &str, params: &[Value]) -> Result<usize> {
         self.conn.execute(sql, params)
     }
 
@@ -71,13 +71,13 @@ impl<'conn> Transaction<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if preparation, execution, or the mapper fails.
+    /// Returns `Error` if preparation, execution, or the mapper fails.
     pub fn query_row<T>(
         &self,
         sql: &str,
         params: &[Value],
-        mapper: impl FnOnce(&Row<'_, '_>) -> DbResult<T>,
-    ) -> DbResult<T> {
+        mapper: impl FnOnce(&Row<'_, '_>) -> Result<T>,
+    ) -> Result<T> {
         self.conn.query_row(sql, params, mapper)
     }
 
@@ -85,8 +85,8 @@ impl<'conn> Transaction<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the SQL is invalid.
-    pub fn prepare(&self, sql: &str) -> DbResult<Statement<'_>> {
+    /// Returns `Error` if the SQL is invalid.
+    pub fn prepare(&self, sql: &str) -> Result<Statement<'_>> {
         self.conn.prepare(sql)
     }
 }

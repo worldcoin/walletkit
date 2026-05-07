@@ -13,14 +13,16 @@ use crate::storage::types::{BlobKind, CredentialRecord};
 use helpers::{compute_content_id, map_db_err, map_record, to_i64, to_u64};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
-use walletkit_db::cipher;
-use walletkit_db::{params, Connection, StepResult, Value};
+use walletkit_db::params;
+use walletkit_db::sqlite::{cipher, Connection, StepResult, Value};
 
 /// Encrypted vault database wrapper.
 #[derive(Debug)]
 pub struct VaultDb {
     conn: Connection,
 }
+
+pub(crate) const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
 
 impl VaultDb {
     /// Opens or creates the encrypted vault database at `path`.
@@ -35,7 +37,7 @@ impl VaultDb {
     ) -> StorageResult<Self> {
         let conn = cipher::open_encrypted(path, k_intermediate, false)
             .map_err(|e| map_db_err(&e))?;
-        ensure_schema(&conn)?;
+        ensure_schema(&conn).map_err(|err| map_db_err(&err))?;
         let db = Self { conn };
         if !db.check_integrity()? {
             return Err(StorageError::CorruptedVault(
@@ -114,10 +116,10 @@ impl VaultDb {
         now: u64,
     ) -> StorageResult<u64> {
         let credential_blob_id =
-            compute_content_id(BlobKind::CredentialBlob, &credential_blob);
+            compute_content_id(BlobKind::CredentialBlob as u8, &credential_blob);
         let associated_data_id = associated_data
             .as_ref()
-            .map(|bytes| compute_content_id(BlobKind::AssociatedData, bytes));
+            .map(|bytes| compute_content_id(BlobKind::AssociatedData as u8, bytes));
         let now_i64 = to_i64(now, "now")?;
         let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
         let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
@@ -129,7 +131,7 @@ impl VaultDb {
              VALUES (?1, ?2, ?3, ?4)",
             params![
                 credential_blob_id.as_ref(),
-                BlobKind::CredentialBlob.as_i64(),
+                i64::from(BlobKind::CredentialBlob as u8),
                 now_i64,
                 credential_blob.as_slice(),
             ],
@@ -145,7 +147,7 @@ impl VaultDb {
                  VALUES (?1, ?2, ?3, ?4)",
                 params![
                     cid.as_ref(),
-                    BlobKind::AssociatedData.as_i64(),
+                    i64::from(BlobKind::AssociatedData as u8),
                     now_i64,
                     data.as_slice(),
                 ],
@@ -266,7 +268,7 @@ impl VaultDb {
                    FROM credential_records cr
                    WHERE cr.credential_blob_cid = blob_objects.content_id
                )",
-            params![BlobKind::CredentialBlob.as_i64()],
+            params![i64::from(BlobKind::CredentialBlob as u8)],
         )
         .map_err(|err| map_db_err(&err))?;
 
@@ -279,7 +281,7 @@ impl VaultDb {
                    FROM credential_records cr
                    WHERE cr.associated_data_cid = blob_objects.content_id
                )",
-            params![BlobKind::AssociatedData.as_i64()],
+            params![i64::from(BlobKind::AssociatedData as u8)],
         )
         .map_err(|err| map_db_err(&err))?;
 
@@ -371,13 +373,13 @@ impl VaultDb {
         dest: &Path,
         _lock: &StorageLockGuard,
     ) -> StorageResult<()> {
-        // Remove any stale export from a previous failed run.
         if dest.exists() {
             std::fs::remove_file(dest).map_err(|e| {
                 StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
             })?;
         }
-        cipher::export_plaintext_copy(&self.conn, dest).map_err(|e| map_db_err(&e))
+        cipher::export_plaintext_copy(&self.conn, dest, BACKUP_TABLES)
+            .map_err(|e| map_db_err(&e))
     }
 
     /// Imports credentials from a plaintext (unencrypted) vault backup into
@@ -394,6 +396,13 @@ impl VaultDb {
         source: &Path,
         _lock: &StorageLockGuard,
     ) -> StorageResult<()> {
-        cipher::import_plaintext_copy(&self.conn, source).map_err(|e| map_db_err(&e))
+        cipher::import_plaintext_copy(&self.conn, source, BACKUP_TABLES)
+            .map_err(|e| map_db_err(&e))
+    }
+
+    /// Borrows the underlying connection for direct SQL access. **Test-only.**
+    #[cfg(test)]
+    pub(super) const fn raw_connection(&self) -> &walletkit_db::sqlite::Connection {
+        &self.conn
     }
 }

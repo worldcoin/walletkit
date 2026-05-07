@@ -48,9 +48,9 @@ impl StorageKeys {
             })
         } else {
             let k_intermediate = random_key();
-            // TODO: At this moment, the key needs to be temporarily heap allocated in order
-            // to be bridged via UniFFI. This needs to be improved to use pointers that can
-            // be zeroized after use.
+            // TODO: At this moment, the key needs to be temporarily heap
+            // allocated in order to be bridged via UniFFI. This needs to be
+            // improved to use pointers that can be zeroized after use.
             let wrapped_k_intermediate = keystore
                 .seal(ACCOUNT_KEY_ENVELOPE_AD.to_vec(), k_intermediate.to_vec())?;
             let envelope = AccountKeyEnvelope::new(wrapped_k_intermediate, now);
@@ -90,6 +90,7 @@ fn parse_key_32(bytes: &[u8], label: &str) -> StorageResult<[u8; 32]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::error::StorageError;
     use crate::storage::lock::StorageLock;
     use crate::storage::tests_utils::{InMemoryBlobStore, InMemoryKeystore};
     use secrecy::ExposeSecret;

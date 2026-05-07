@@ -3,7 +3,7 @@
 //! This file contains **no `unsafe` code**. All FFI interaction is delegated to
 //! [`ffi::RawStmt`] which encapsulates the raw pointers and C type conversions.
 
-use super::error::DbResult;
+use super::error::Result;
 use super::ffi::{self, RawStmt};
 use super::value::Value;
 
@@ -95,12 +95,12 @@ impl<'conn> Statement<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if any bind call fails.
+    /// Returns `Error` if any bind call fails.
     ///
     /// # Panics
     ///
     /// Panics if the number of values exceeds `i32::MAX`.
-    pub fn bind_values(&mut self, values: &[Value]) -> DbResult<()> {
+    pub fn bind_values(&mut self, values: &[Value]) -> Result<()> {
         for (i, val) in values.iter().enumerate() {
             let idx = i32::try_from(i + 1).expect("parameter index overflow");
             match val {
@@ -117,8 +117,8 @@ impl<'conn> Statement<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the step fails.
-    pub fn step<'stmt>(&'stmt mut self) -> DbResult<StepResult<'stmt, 'conn>> {
+    /// Returns `Error` if the step fails.
+    pub fn step<'stmt>(&'stmt mut self) -> Result<StepResult<'stmt, 'conn>> {
         let rc = self.raw.step()?;
         if rc == ffi::SQLITE_ROW {
             Ok(StepResult::Row(Row { stmt: self }))

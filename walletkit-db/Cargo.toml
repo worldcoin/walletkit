@@ -1,6 +1,6 @@
 [package]
 name = "walletkit-db"
-description = "Internal SQLite wrapper crate for WalletKit storage."
+description = "Generic encrypted SQLite wrapper backed by sqlite3mc."
 publish = true
 version.workspace = true
 edition.workspace = true

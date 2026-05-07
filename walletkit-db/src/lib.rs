@@ -1,32 +1,15 @@
-//! Minimal safe `SQLite` wrapper backed by `sqlite3mc`.
+//! Generic encrypted `SQLite` (`sqlite3mc`) wrapper.
 //!
-//! This crate provides a small, safe Rust API over the `SQLite` C FFI.
-//! The raw symbols are resolved at compile time:
+//! The public API is exposed through [`sqlite`]:
 //!
-//! * **Native** (`not(wasm32)`): linked against the `sqlite3mc` static library
-//!   compiled from the downloaded amalgamation by `build.rs`.
-//! * **WASM** (`wasm32`): delegated to `sqlite-wasm-rs` (with the `sqlite3mc`
-//!   feature) which ships its own WASM-compiled `sqlite3mc`.
+//! - safe Rust connection / transaction / statement types
+//! - encrypted open helpers and integrity checks
+//! - plaintext export / import helpers parameterized by caller-owned tables
 //!
-//! Consumer code (vault, cache, cipher config) uses only the safe types
-//! defined here and never touches raw FFI directly. The `ffi` module is the
-//! **only** file that contains `unsafe` code or C types.
+//! Raw FFI lives behind the `sqlite` module; consumer crates own their own
+//! schema, queries, and higher-level storage policy.
 
-mod ffi;
-
-mod connection;
-pub mod error;
-mod statement;
-mod transaction;
-pub mod value;
-
-pub mod cipher;
-
-pub use connection::Connection;
-pub use error::DbError;
-pub use statement::{Row, Statement, StepResult};
-pub use transaction::Transaction;
-pub use value::Value;
+pub mod sqlite;
 
 #[cfg(test)]
 mod tests;

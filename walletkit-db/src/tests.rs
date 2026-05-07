@@ -2,7 +2,8 @@
 
 use std::sync::OnceLock;
 
-use super::*;
+use crate::params;
+use crate::sqlite::{cipher, Connection, Value};
 use secrecy::SecretBox;
 
 /// Ensures sqlite3mc's global codec registration is complete before any test

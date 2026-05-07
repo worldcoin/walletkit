@@ -162,8 +162,8 @@ fn test_store_credential_with_associated_data() {
 
 #[test]
 fn test_content_id_determinism() {
-    let a = compute_content_id(BlobKind::CredentialBlob, b"data");
-    let b = compute_content_id(BlobKind::CredentialBlob, b"data");
+    let a = compute_content_id(BlobKind::CredentialBlob as u8, b"data");
+    let b = compute_content_id(BlobKind::CredentialBlob as u8, b"data");
     assert_eq!(a, b);
 }
 
@@ -200,7 +200,7 @@ fn test_content_id_deduplication() {
         )
         .expect("store credential");
     let count = db
-        .conn
+        .raw_connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -212,7 +212,7 @@ fn test_content_id_deduplication() {
         .expect("delete first credential");
 
     let count_after_first_delete = db
-        .conn
+        .raw_connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -224,7 +224,7 @@ fn test_content_id_deduplication() {
         .expect("delete second credential");
 
     let count_after_second_delete = db
-        .conn
+        .raw_connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -367,7 +367,7 @@ fn test_delete_credential_by_id() {
         .expect("store credential");
 
     let blob_count_before = db
-        .conn
+        .raw_connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -382,7 +382,7 @@ fn test_delete_credential_by_id() {
     assert!(records.is_empty());
 
     let blob_count_after = db
-        .conn
+        .raw_connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -429,10 +429,10 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
         .expect("store credential");
 
     let associated_before = db
-        .conn
+        .raw_connection()
         .query_row(
             "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
-            params![BlobKind::AssociatedData.as_i64()],
+            params![i64::from(BlobKind::AssociatedData as u8)],
             |stmt| Ok(stmt.column_i64(0)),
         )
         .map_err(|err| map_db_err(&err))
@@ -443,10 +443,10 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
         .expect("delete credential");
 
     let associated_after = db
-        .conn
+        .raw_connection()
         .query_row(
             "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
-            params![BlobKind::AssociatedData.as_i64()],
+            params![i64::from(BlobKind::AssociatedData as u8)],
             |stmt| Ok(stmt.column_i64(0)),
         )
         .map_err(|err| map_db_err(&err))
@@ -497,7 +497,7 @@ fn test_danger_delete_all_credentials() {
     assert!(records.is_empty());
 
     let blob_count = db
-        .conn
+        .raw_connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })

@@ -3,15 +3,15 @@
 use sha2::{Digest, Sha256};
 
 use crate::storage::error::{StorageError, StorageResult};
-use crate::storage::types::{BlobKind, ContentId, CredentialRecord};
-use walletkit_db::{DbError, Row};
+use crate::storage::types::{ContentId, CredentialRecord};
+use walletkit_db::sqlite::{Error as DbError, Row};
 
 const CONTENT_ID_PREFIX: &[u8] = b"worldid:blob";
 
-pub(super) fn compute_content_id(blob_kind: BlobKind, plaintext: &[u8]) -> ContentId {
+pub(super) fn compute_content_id(kind_tag: u8, plaintext: &[u8]) -> ContentId {
     let mut hasher = Sha256::new();
     hasher.update(CONTENT_ID_PREFIX);
-    hasher.update([blob_kind as u8]);
+    hasher.update([kind_tag]);
     hasher.update(plaintext);
     let digest = hasher.finalize();
     let mut out = [0u8; 32];

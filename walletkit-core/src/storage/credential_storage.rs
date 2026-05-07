@@ -128,7 +128,7 @@ impl CredentialStoreInner {
     }
 
     fn guard(&self) -> StorageResult<StorageLockGuard> {
-        self.lock.lock()
+        Ok(self.lock.lock()?)
     }
 
     fn state(&self) -> StorageResult<&StorageState> {
@@ -1281,8 +1281,8 @@ mod tests {
 
     #[test]
     fn test_import_vault_backup_transaction_atomicity() {
-        use walletkit_db::cipher::BACKUP_TABLES;
-        use walletkit_db::Connection;
+        use crate::storage::vault::BACKUP_TABLES;
+        use walletkit_db::sqlite::Connection;
         use world_id_core::Credential as CoreCredential;
 
         let src_root = temp_root_path();
