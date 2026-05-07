@@ -1,18 +1,31 @@
-//! Vault database schema management.
+//! Credential-vault schema (vault metadata + credential records).
+//!
+//! The shared `blob_objects` table comes from
+//! [`walletkit_db::Blobs::ensure_schema`]; this module owns only the
+//! credential-specific tables.
 
-use crate::storage::error::StorageResult;
-use walletkit_db::Connection;
-
-use super::helpers::map_db_err;
+use walletkit_db::{Connection, DbResult};
 
 pub(super) const VAULT_SCHEMA_VERSION: i64 = 1;
 
-/// **Backup sensitivity:** Schema changes here affect vault backups made into the backup system.
-/// - New tables must be added to `BACKUP_TABLES` in `walletkit-db/src/cipher.rs`.
-/// - Column changes (especially new `NOT NULL` columns without defaults) will
-///   break restoring older backups into a newer schema. See the schema migration
-///   note on `import_plaintext_copy` in `walletkit-db/src/cipher.rs`.
-pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
+/// Tables included in plaintext vault backups.
+///
+/// `vault_meta` is intentionally excluded: on restore, the destination vault
+/// already has its own `vault_meta` (created by `ensure_schema` +
+/// `init_leaf_index`) with the authoritative `leaf_index` from the
+/// authenticator.
+///
+/// **Note:** New tables added to the vault schema must be added here too.
+pub const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
+
+/// Creates the credential-vault tables, indexes, and triggers.
+///
+/// **Backup sensitivity:** Schema changes here affect plaintext vault
+/// backups.
+/// - New tables must be added to [`BACKUP_TABLES`].
+/// - Column changes (especially new `NOT NULL` columns without defaults) can
+///   break restoring older backups into a newer schema.
+pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS vault_meta (
             schema_version  INTEGER NOT NULL,
@@ -49,17 +62,6 @@ pub(super) fn ensure_schema(conn: &Connection) -> StorageResult<()> {
 
         CREATE INDEX IF NOT EXISTS idx_cred_by_expiry
         ON credential_records (expires_at);
-
-        CREATE TABLE IF NOT EXISTS blob_objects (
-            content_id  BLOB    NOT NULL,
-            blob_kind   INTEGER NOT NULL,
-            created_at  INTEGER NOT NULL,
-            bytes       BLOB    NOT NULL,
-            PRIMARY KEY (content_id)
-        );
-
 ",
     )
-    .map_err(|err| map_db_err(&err))?;
-    Ok(())
 }

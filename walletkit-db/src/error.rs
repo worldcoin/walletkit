@@ -1,43 +1,42 @@
-//! Database error types for the safe `SQLite` wrapper.
+//! Error types for the storage primitives layer.
 
-use std::fmt;
+use crate::sqlite::Error as DbError;
 
-/// Error code returned by `SQLite` operations.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DbErrorCode(pub i32);
+/// Result alias for [`StoreError`].
+pub type StoreResult<T> = Result<T, StoreError>;
 
-impl fmt::Display for DbErrorCode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
+/// Errors raised by the storage primitives (vault, blobs, envelope, lock).
+///
+/// Variants carry a stringified detail rather than a concrete cause to keep
+/// the error type cheap to clone and FFI-friendly when consumers wrap it in
+/// their own typed error.
+#[derive(Debug, thiserror::Error)]
+pub enum StoreError {
+    /// Errors coming from the device keystore.
+    #[error("keystore error: {0}")]
+    Keystore(String),
+    /// Errors coming from the blob store.
+    #[error("blob store error: {0}")]
+    BlobStore(String),
+    /// Errors coming from the storage lock.
+    #[error("storage lock error: {0}")]
+    Lock(String),
+    /// Serialization / deserialization failures (envelope CBOR, etc.).
+    #[error("serialization error: {0}")]
+    Serialization(String),
+    /// Cryptographic failures (AEAD seal/open, RNG, etc.).
+    #[error("crypto error: {0}")]
+    Crypto(String),
+    /// Invalid or malformed key envelope (e.g. wrong length, bad format).
+    #[error("invalid envelope: {0}")]
+    InvalidEnvelope(String),
+    /// Envelope written by an unsupported version.
+    #[error("unsupported envelope version: {0}")]
+    UnsupportedEnvelopeVersion(u32),
+    /// Underlying database error from [`crate::sqlite`].
+    #[error("database error: {0}")]
+    Db(#[from] DbError),
+    /// `PRAGMA integrity_check` reported corruption.
+    #[error("integrity check failed: {0}")]
+    IntegrityCheckFailed(String),
 }
-
-/// Error returned by database operations.
-#[derive(Debug, PartialEq, Eq)]
-pub struct DbError {
-    /// `SQLite` result code.
-    pub code: DbErrorCode,
-    /// Human-readable error message (from `sqlite3_errmsg` when available).
-    pub message: String,
-}
-
-impl DbError {
-    /// Creates a new database error.
-    pub(crate) fn new(code: i32, message: impl Into<String>) -> Self {
-        Self {
-            code: DbErrorCode(code),
-            message: message.into(),
-        }
-    }
-}
-
-impl fmt::Display for DbError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "sqlite error {}: {}", self.code, self.message)
-    }
-}
-
-impl std::error::Error for DbError {}
-
-/// Result type for database operations.
-pub type DbResult<T> = Result<T, DbError>;

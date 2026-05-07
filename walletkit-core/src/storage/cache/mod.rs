@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use crate::storage::error::StorageResult;
-use crate::storage::lock::StorageLockGuard;
+use crate::storage::StorageLockGuard;
 use secrecy::SecretBox;
 use walletkit_db::Connection;
 
@@ -138,7 +138,7 @@ impl CacheDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::lock::StorageLock;
+    use crate::storage::StorageLock;
     use secrecy::SecretBox;
     use std::fs;
     use std::path::PathBuf;

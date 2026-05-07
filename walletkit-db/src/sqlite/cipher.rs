@@ -2,10 +2,10 @@
 //!
 //! # Encryption flow
 //!
-//! The credential storage uses `sqlite3mc` (`SQLite3` Multiple Ciphers) to
-//! encrypt both the vault and cache databases at rest. The encryption is
-//! transparent to SQL -- once a database is opened and keyed, all reads and
-//! writes are automatically encrypted/decrypted by the `SQLite` pager layer.
+//! This crate uses `sqlite3mc` (`SQLite3` Multiple Ciphers) to encrypt
+//! `SQLite` databases at rest. The encryption is transparent to SQL -- once a
+//! database is opened and keyed, all reads and writes are automatically
+//! encrypted/decrypted by the `SQLite` pager layer.
 //!
 //! The flow when opening a database is:
 //!
@@ -37,23 +37,23 @@ use secrecy::{ExposeSecret, SecretBox};
 use zeroize::Zeroizing;
 
 use super::connection::Connection;
-use super::error::{DbError, DbResult};
+use super::error::{Error, Result};
 
 /// Opens a database, applies the encryption key, and configures the connection.
 ///
-/// This is the standard open sequence used by both vault and cache databases:
-/// open -> key -> verify -> configure (WAL + foreign keys).
+/// This is the standard open sequence for encrypted databases: open -> key ->
+/// verify -> configure (WAL + foreign keys).
 ///
 /// See the [module-level documentation](self) for the full encryption flow.
 ///
 /// # Errors
 ///
-/// Returns `DbError` if opening, keying, or configuring the connection fails.
+/// Returns `Error` if opening, keying, or configuring the connection fails.
 pub fn open_encrypted(
     path: &Path,
     k_intermediate: &SecretBox<[u8; 32]>,
     read_only: bool,
-) -> DbResult<Connection> {
+) -> Result<Connection> {
     let conn = Connection::open(path, read_only)?;
     apply_key(&conn, k_intermediate)?;
     configure_connection(&conn)?;
@@ -70,7 +70,7 @@ pub fn open_encrypted(
 /// After keying, a lightweight read (`SELECT count(*) FROM sqlite_master`)
 /// verifies the key is correct. If it's wrong, `sqlite3mc` fails with
 /// `SQLITE_NOTADB` on the first page read.
-fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> DbResult<()> {
+fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> Result<()> {
     // Hex-encode the key and build the PRAGMA. Both are zeroized on drop.
     let key_hex = Zeroizing::new(hex::encode(k_intermediate.expose_secret()));
     let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", key_hex.as_str()));
@@ -83,7 +83,7 @@ fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> DbResul
     // error rather than a confusing "not a database" later during schema setup.
     conn.execute_batch("SELECT count(*) FROM sqlite_master;")
         .map_err(|e| {
-            DbError::new(
+            Error::new(
                 e.code.0,
                 format!(
                     "encryption key verification failed (is the key correct?): {}",
@@ -105,7 +105,7 @@ fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> DbResul
 /// - `foreign_keys = ON` -- enforces referential integrity constraints.
 /// - `secure_delete = ON` -- overwrites deleted content with zeroes so
 ///   sensitive data does not linger in free pages.
-fn configure_connection(conn: &Connection) -> DbResult<()> {
+fn configure_connection(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
          PRAGMA journal_mode = WAL;
@@ -114,21 +114,11 @@ fn configure_connection(conn: &Connection) -> DbResult<()> {
     )
 }
 
-/// Tables included in plaintext vault backups.
-///
-/// `vault_meta` is intentionally excluded: on restore, the destination vault
-/// already has its own `vault_meta` (created by `ensure_schema` + `init_leaf_index`)
-/// with the authoritative `leaf_index` from the authenticator.
-///
-/// **Note:** If new tables are added to the vault schema, this list must be
-/// updated to include them.
-pub const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
-
 /// Creates a plaintext (unencrypted) copy of an already-open encrypted database.
 ///
 /// The copy is produced by `ATTACH`-ing a new unencrypted database and copying
-/// all rows via `CREATE TABLE ... AS SELECT *`. The destination file must not
-/// already exist.
+/// the caller-specified tables via `CREATE TABLE ... AS SELECT *`. The
+/// destination file must not already exist.
 ///
 /// We use `ATTACH` + SQL instead of the `sqlite3_backup` API because
 /// `sqlite3mc` requires both source and destination to share the same
@@ -137,8 +127,12 @@ pub const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
 ///
 /// # Errors
 ///
-/// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
-pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()> {
+/// Returns `Error` if the `ATTACH`, copy, or `DETACH` fails.
+pub fn export_plaintext_copy(
+    conn: &Connection,
+    dest_path: &Path,
+    tables: &[&str],
+) -> Result<()> {
     let dest_str = dest_path.to_string_lossy();
     let attach_sql = format!(
         "ATTACH DATABASE '{}' AS backup KEY '';",
@@ -148,7 +142,7 @@ pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()
 
     let result = (|| {
         let tx = conn.transaction()?;
-        for table in BACKUP_TABLES {
+        for table in tables {
             tx.execute_batch(&format!(
                 "CREATE TABLE backup.{table} AS SELECT * FROM {table};"
             ))?;
@@ -168,24 +162,27 @@ pub fn export_plaintext_copy(conn: &Connection, dest_path: &Path) -> DbResult<()
 /// encrypted database.
 ///
 /// The source database is `ATTACH`ed with an empty key and its contents are
-/// copied into the main (empty) encrypted database. This is intended for
-/// restore on a fresh install where the vault tables exist but contain no data.
+/// copied into the main (empty) encrypted database.
 ///
 /// See [`export_plaintext_copy`] for why `ATTACH` + SQL is used instead of
 /// the `sqlite3_backup` API.
 ///
 /// **Schema migration:** The import uses `SELECT *`, so column changes are
-/// handled automatically as long as both sides share the same schema. If the
-/// vault schema evolves (e.g. new columns with `NOT NULL` constraints),
+/// handled automatically as long as both sides share the same schema. If a
+/// caller's schema evolves (e.g. new columns with `NOT NULL` constraints),
 /// restoring an older backup into a newer schema will fail. When that happens,
-/// this function will need version-aware import logic.
+/// the caller needs version-aware import logic.
 ///
 /// # Errors
 ///
-/// Returns `DbError` if the `ATTACH`, copy, or `DETACH` fails.
-pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<()> {
+/// Returns `Error` if the `ATTACH`, copy, or `DETACH` fails.
+pub fn import_plaintext_copy(
+    conn: &Connection,
+    source_path: &Path,
+    tables: &[&str],
+) -> Result<()> {
     if !source_path.exists() {
-        return Err(DbError::new(
+        return Err(Error::new(
             -1,
             format!("backup file does not exist: {}", source_path.display()),
         ));
@@ -199,25 +196,27 @@ pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<
     conn.execute_batch(&attach_sql)?;
 
     // Verify the destination tables are empty before importing. Importing into
-    // a non-empty vault could silently merge data if primary keys don't collide.
+    // a non-empty destination could silently merge data if primary keys don't
+    // collide.
     let result = (|| {
-        for table in BACKUP_TABLES {
+        for table in tables {
             let count: i64 =
                 conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), &[], |row| {
                     Ok(row.column_i64(0))
                 })?;
             if count > 0 {
-                return Err(DbError::new(
+                return Err(Error::new(
                     -1,
                     format!("cannot import into non-empty table: {table}"),
                 ));
             }
         }
 
-        // Wrap in a transaction so the restore is atomic — if any INSERT fails,
-        // everything is rolled back and the vault stays empty for a retry.
+        // Wrap in a transaction so the restore is atomic — if any INSERT
+        // fails, everything is rolled back and the destination stays empty for
+        // a retry.
         let tx = conn.transaction()?;
-        for table in BACKUP_TABLES {
+        for table in tables {
             tx.execute_batch(&format!(
                 "INSERT INTO {table} SELECT * FROM backup.{table};"
             ))?;
@@ -237,8 +236,8 @@ pub fn import_plaintext_copy(conn: &Connection, source_path: &Path) -> DbResult<
 ///
 /// # Errors
 ///
-/// Returns `DbError` if the integrity check query fails.
-pub fn integrity_check(conn: &Connection) -> DbResult<bool> {
+/// Returns `Error` if the integrity check query fails.
+pub fn integrity_check(conn: &Connection) -> Result<bool> {
     let result = conn.query_row("PRAGMA integrity_check;", &[], |stmt| {
         Ok(stmt.column_text(0))
     })?;

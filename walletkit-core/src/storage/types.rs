@@ -33,8 +33,7 @@ impl TryFrom<i64> for BlobKind {
     }
 }
 
-/// Content identifier for stored blobs.
-pub type ContentId = [u8; 32];
+pub use walletkit_db::ContentId;
 
 /// Request identifier for replay guard.
 pub type RequestId = [u8; 32];

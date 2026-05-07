@@ -1,32 +1,43 @@
-//! Minimal safe `SQLite` wrapper backed by `sqlite3mc`.
+//! Encrypted on-device storage primitives for `WalletKit`.
 //!
-//! This crate provides a small, safe Rust API over the `SQLite` C FFI.
-//! The raw symbols are resolved at compile time:
+//! The crate provides building blocks shared by `walletkit-core::storage` and
+//! sibling SDKs (e.g. `OrbKit`'s `OrbPcpStore`):
 //!
-//! * **Native** (`not(wasm32)`): linked against the `sqlite3mc` static library
-//!   compiled from the downloaded amalgamation by `build.rs`.
-//! * **WASM** (`wasm32`): delegated to `sqlite-wasm-rs` (with the `sqlite3mc`
-//!   feature) which ships its own WASM-compiled `sqlite3mc`.
+//! - [`sqlite`] — encrypted `SQLite` (`sqlite3mc`) wrapper with safe Rust
+//!   connection / transaction / statement types.
+//! - [`Vault`] — encrypted-database opener with caller-supplied schema.
+//! - [`Blobs`], [`ContentId`], [`compute_content_id`] — content-addressed
+//!   blob storage shared across consumer schemas.
+//! - [`KeyEnvelope`] + [`init_or_open_envelope_key`] — sealed intermediate
+//!   key persisted via [`AtomicBlobStore`].
+//! - [`Lock`] / [`LockGuard`] — cross-process exclusive lock (`flock` /
+//!   `LockFileEx` native, no-op on WASM).
+//! - [`Keystore`] / [`AtomicBlobStore`] — plain-Rust trait surface for
+//!   consumer-supplied platform integrations. Consumers that need FFI define
+//!   their own annotated traits and adapt to these.
 //!
-//! Consumer code (vault, cache, cipher config) uses only the safe types
-//! defined here and never touches raw FFI directly. The `ffi` module is the
-//! **only** file that contains `unsafe` code or C types.
+//! Consumers own their schemas, FFI surfaces, and storage policy on top of
+//! these primitives.
 
-mod ffi;
+pub mod sqlite;
 
-mod connection;
-pub mod error;
-mod statement;
-mod transaction;
-pub mod value;
+mod blobs;
+mod envelope;
+mod error;
+mod lock;
+mod traits;
+mod vault;
 
-pub mod cipher;
-
-pub use connection::Connection;
-pub use error::DbError;
-pub use statement::{Row, Statement, StepResult};
-pub use transaction::Transaction;
-pub use value::Value;
+pub use blobs::{compute_content_id, Blobs, ContentId};
+pub use envelope::{init_or_open_envelope_key, KeyEnvelope};
+pub use error::{StoreError, StoreResult};
+pub use lock::{Lock, LockGuard};
+pub use sqlite::{
+    cipher, Connection, Error as DbError, Result as DbResult, Row, Statement,
+    StepResult, Transaction, Value,
+};
+pub use traits::{AtomicBlobStore, Keystore};
+pub use vault::Vault;
 
 #[cfg(test)]
 mod tests;

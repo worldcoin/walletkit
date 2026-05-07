@@ -6,8 +6,7 @@ use std::path::Path;
 use secrecy::SecretBox;
 
 use crate::storage::error::StorageResult;
-use walletkit_db::cipher;
-use walletkit_db::Connection;
+use walletkit_db::{cipher, Connection};
 
 use super::schema;
 use super::util::{map_db_err, map_io_err};
