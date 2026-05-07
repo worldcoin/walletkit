@@ -9,10 +9,10 @@ use ruint::aliases::U256;
 use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
-    api_types::{GatewayErrorCode, GatewayRequestState},
+    api_types::{GatewayErrorCode, GatewayRequestId, GatewayRequestState},
     primitives::{AuthenticatorPublicKeySet, Config},
     Authenticator as CoreAuthenticator, AuthenticatorConfig,
-    Credential as CoreCredential, CredentialInput,
+    Credential as CoreCredential, CredentialInput, EdDSAPublicKey,
     InitializingAuthenticator as CoreInitializingAuthenticator,
     OnchainKeyRepresentable, Signer,
 };
@@ -339,6 +339,119 @@ impl Authenticator {
 
         Ok(request_id.to_string())
     }
+
+    /// Inserts a new authenticator into this account.
+    ///
+    /// Accepts the new authenticator's compressed EdDSA public key as a U256 and its on-chain signer
+    /// address as a hex string. Returns a gateway request ID; poll it with `poll_gateway_request_status`
+    /// to wait for finalization before initializing the new authenticator.
+    ///
+    /// # Errors
+    /// Returns [`WalletKitError::InvalidInput`] if the public key or address cannot be parsed.
+    /// Returns a network or authenticator error if the gateway request fails.
+    pub async fn insert_authenticator(
+        &self,
+        new_authenticator_pubkey: Uint256,
+        new_authenticator_address: String,
+    ) -> Result<String, WalletKitError> {
+        let new_authenticator_pubkey = eddsa_public_key_from_uint256(
+            new_authenticator_pubkey,
+            "new_authenticator_pubkey",
+        )?;
+        let new_authenticator_address = Address::parse_from_ffi(
+            &new_authenticator_address,
+            "new_authenticator_address",
+        )?;
+
+        let request_id = self
+            .inner
+            .insert_authenticator(new_authenticator_pubkey, new_authenticator_address)
+            .await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Updates an existing authenticator slot.
+    ///
+    /// `pubkey_id` identifies the slot to replace; supply the old signer address, the new signer address,
+    /// and the new compressed EdDSA public key as a U256. Returns a gateway request ID; poll it with
+    /// `poll_gateway_request_status` to wait for finalization.
+    ///
+    /// # Errors
+    /// Returns [`WalletKitError::InvalidInput`] if any address or the public key cannot be parsed.
+    /// Returns a network or authenticator error if the gateway request fails.
+    pub async fn update_authenticator(
+        &self,
+        old_authenticator_address: String,
+        new_authenticator_address: String,
+        new_authenticator_pubkey: Uint256,
+        pubkey_id: u32,
+    ) -> Result<String, WalletKitError> {
+        let old_authenticator_address = Address::parse_from_ffi(
+            &old_authenticator_address,
+            "old_authenticator_address",
+        )?;
+        let new_authenticator_address = Address::parse_from_ffi(
+            &new_authenticator_address,
+            "new_authenticator_address",
+        )?;
+        let new_authenticator_pubkey = eddsa_public_key_from_uint256(
+            new_authenticator_pubkey,
+            "new_authenticator_pubkey",
+        )?;
+
+        let request_id = self
+            .inner
+            .update_authenticator(
+                old_authenticator_address,
+                new_authenticator_address,
+                new_authenticator_pubkey,
+                pubkey_id,
+            )
+            .await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Removes an authenticator from this account.
+    ///
+    /// `authenticator_address` and `pubkey_id` together identify the slot to remove. Returns a gateway
+    /// request ID; poll it with `poll_gateway_request_status` to wait for finalization.
+    ///
+    /// # Errors
+    /// Returns [`WalletKitError::InvalidInput`] if the authenticator address cannot be parsed.
+    /// Returns a network or authenticator error if the gateway request fails.
+    pub async fn remove_authenticator(
+        &self,
+        authenticator_address: String,
+        pubkey_id: u32,
+    ) -> Result<String, WalletKitError> {
+        let authenticator_address =
+            Address::parse_from_ffi(&authenticator_address, "authenticator_address")?;
+
+        let request_id = self
+            .inner
+            .remove_authenticator(authenticator_address, pubkey_id)
+            .await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Polls the gateway for the status of a previously submitted request.
+    ///
+    /// Accepts a request ID returned by any authenticator-management or recovery method. Returns a
+    /// `GatewayRequestStatus` indicating whether the request is queued, submitted, finalized, or failed.
+    ///
+    /// # Errors
+    /// Returns a network error if the gateway cannot be reached or returns an unexpected response.
+    pub async fn poll_gateway_request_status(
+        &self,
+        request_id: String,
+    ) -> Result<GatewayRequestStatus, WalletKitError> {
+        let request_id = gateway_request_id_from_string(&request_id);
+        let status = self.inner.poll_status(&request_id).await?;
+        Ok(status.into())
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -593,15 +706,21 @@ impl Authenticator {
 
 /// Registration status for a World ID being created through the gateway.
 #[derive(Debug, Clone, uniffi::Enum)]
-pub enum RegistrationStatus {
+pub enum GatewayRequestStatus {
     /// Request queued but not yet batched.
     Queued,
     /// Request currently being batched.
     Batching,
     /// Request submitted on-chain.
-    Submitted,
-    /// Request finalized on-chain. The World ID is now registered.
-    Finalized,
+    Submitted {
+        /// Transaction hash emitted when the request was submitted.
+        tx_hash: String,
+    },
+    /// Request finalized on-chain.
+    Finalized {
+        /// Transaction hash emitted when the request was finalized.
+        tx_hash: String,
+    },
     /// Request failed during processing.
     Failed {
         /// Error message returned by the gateway.
@@ -611,13 +730,13 @@ pub enum RegistrationStatus {
     },
 }
 
-impl From<GatewayRequestState> for RegistrationStatus {
+impl From<GatewayRequestState> for GatewayRequestStatus {
     fn from(state: GatewayRequestState) -> Self {
         match state {
             GatewayRequestState::Queued => Self::Queued,
             GatewayRequestState::Batching => Self::Batching,
-            GatewayRequestState::Submitted { .. } => Self::Submitted,
-            GatewayRequestState::Finalized { .. } => Self::Finalized,
+            GatewayRequestState::Submitted { tx_hash } => Self::Submitted { tx_hash },
+            GatewayRequestState::Finalized { tx_hash } => Self::Finalized { tx_hash },
             GatewayRequestState::Failed { error, error_code } => Self::Failed {
                 error,
                 error_code: error_code.map(|c: GatewayErrorCode| c.to_string()),
@@ -648,6 +767,7 @@ impl InitializingAuthenticator {
         name = "gateway_register",
         skip_all
     )]
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn register_with_defaults(
         seed: &[u8],
         rpc_url: Option<String>,
@@ -680,6 +800,7 @@ impl InitializingAuthenticator {
         name = "gateway_register",
         skip_all
     )]
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
     pub async fn register(
         seed: &[u8],
         config: &str,
@@ -710,10 +831,28 @@ impl InitializingAuthenticator {
         name = "gateway_poll",
         skip_all
     )]
-    pub async fn poll_status(&self) -> Result<RegistrationStatus, WalletKitError> {
+    #[expect(clippy::missing_errors_doc, reason = "FFI")]
+    pub async fn poll_status(&self) -> Result<GatewayRequestStatus, WalletKitError> {
         let status = self.0.poll_status().await?;
         Ok(status.into())
     }
+}
+
+fn eddsa_public_key_from_uint256(
+    public_key: Uint256,
+    attribute: &'static str,
+) -> Result<EdDSAPublicKey, WalletKitError> {
+    let public_key: U256 = public_key.into();
+    EdDSAPublicKey::from_compressed_bytes(public_key.to_le_bytes()).map_err(|error| {
+        WalletKitError::InvalidInput {
+            attribute: attribute.to_string(),
+            reason: error.to_string(),
+        }
+    })
+}
+
+fn gateway_request_id_from_string(request_id: &str) -> GatewayRequestId {
+    GatewayRequestId::new(request_id.strip_prefix("gw_").unwrap_or(request_id))
 }
 
 /// The signature and signing nonce returned by
@@ -789,10 +928,13 @@ pub fn recovery_data_from_seed(seed: &[u8]) -> Result<RecoveryData, WalletKitErr
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "embed-zkeys")]
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
+    #[cfg(feature = "embed-zkeys")]
     use alloy::primitives::address;
+    #[cfg(feature = "embed-zkeys")]
     use world_id_core::primitives::Config;
 
     #[test]
@@ -815,6 +957,81 @@ mod tests {
     fn test_recovery_data_rejects_invalid_seed() {
         assert!(RecoveryData::from_seed(&[0u8; 16]).is_err());
         assert!(RecoveryData::from_seed(&[]).is_err());
+    }
+
+    #[test]
+    fn parses_recovery_data_pubkey_for_authenticator_management() {
+        let seed = [7u8; 32];
+        let signer = Signer::from_seed_bytes(&seed).expect("valid seed");
+        let material = RecoveryData::from_seed(&seed).expect("recovery data");
+        let encoded_pubkey = Uint256::try_from(
+            material
+                .authenticator_pubkey
+                .strip_prefix("0x")
+                .unwrap_or(&material.authenticator_pubkey)
+                .to_string(),
+        )
+        .expect("valid uint");
+
+        let parsed_pubkey =
+            eddsa_public_key_from_uint256(encoded_pubkey, "new_authenticator_pubkey")
+                .expect("valid compressed EdDSA pubkey");
+
+        assert_eq!(
+            parsed_pubkey.to_ethereum_representation().unwrap(),
+            signer
+                .offchain_signer_pubkey()
+                .to_ethereum_representation()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_management_pubkey() {
+        let error = eddsa_public_key_from_uint256(
+            Uint256::from(U256::ZERO),
+            "new_authenticator_pubkey",
+        )
+        .expect_err("zero is not a valid compressed EdDSA pubkey");
+
+        assert!(matches!(
+            error,
+            WalletKitError::InvalidInput {
+                ref attribute,
+                ..
+            } if attribute == "new_authenticator_pubkey"
+        ));
+    }
+
+    #[test]
+    fn gateway_request_status_preserves_transaction_hashes() {
+        let submitted = GatewayRequestStatus::from(GatewayRequestState::Submitted {
+            tx_hash: "0xabc".to_string(),
+        });
+        assert!(matches!(
+            submitted,
+            GatewayRequestStatus::Submitted { ref tx_hash } if tx_hash == "0xabc"
+        ));
+
+        let finalized = GatewayRequestStatus::from(GatewayRequestState::Finalized {
+            tx_hash: "0xdef".to_string(),
+        });
+        assert!(matches!(
+            finalized,
+            GatewayRequestStatus::Finalized { ref tx_hash } if tx_hash == "0xdef"
+        ));
+    }
+
+    #[test]
+    fn gateway_request_id_from_string_accepts_prefixed_and_unprefixed_ids() {
+        assert_eq!(
+            gateway_request_id_from_string("gw_insert-001").to_string(),
+            "gw_insert-001"
+        );
+        assert_eq!(
+            gateway_request_id_from_string("insert-001").to_string(),
+            "gw_insert-001"
+        );
     }
 
     #[cfg(feature = "embed-zkeys")]
