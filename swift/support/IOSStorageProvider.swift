@@ -42,18 +42,14 @@ public final class IOSStorageProvider: StorageProvider {
 }
 
 public enum WalletKitStorage {
-    public static func makeDefaultProvider(
-        bundleIdentifier: String? = Bundle.main.bundleIdentifier
-    ) throws -> IOSStorageProvider {
+    public static func makeDefaultProvider() throws -> IOSStorageProvider {
         let fileManager = FileManager.default
-        guard let appSupport = fileManager.urls(
-            for: .applicationSupportDirectory,
+        guard let documents = fileManager.urls(
+            for: .documentDirectory,
             in: .userDomainMask
         ).first else {
-            throw StorageError.BlobStore("missing application support directory")
+            throw StorageError.BlobStore("missing documents directory")
         }
-        let bundleId = bundleIdentifier ?? "walletkit"
-        let root = appSupport.appendingPathComponent(bundleId, isDirectory: true)
-        return try IOSStorageProvider(rootDirectory: root)
+        return try IOSStorageProvider(rootDirectory: documents)
     }
 }
