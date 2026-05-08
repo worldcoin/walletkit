@@ -3,7 +3,7 @@
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use walletkit_core::error::WalletKitError;
-use walletkit_core::{InitializingAuthenticator, RecoveryData, RegistrationStatus};
+use walletkit_core::{GatewayRequestStatus, InitializingAuthenticator, RecoveryData};
 
 use crate::output;
 
@@ -61,8 +61,10 @@ pub async fn register_and_poll(
         let status = init_auth.poll_status().await.wrap_err("poll failed")?;
 
         match &status {
-            RegistrationStatus::Finalized => return Ok(RegisterOutcome::Finalized),
-            RegistrationStatus::Failed { error, error_code } => {
+            GatewayRequestStatus::Finalized { .. } => {
+                return Ok(RegisterOutcome::Finalized)
+            }
+            GatewayRequestStatus::Failed { error, error_code } => {
                 eyre::bail!("registration failed: {error} (code: {error_code:?})");
             }
             _ => {

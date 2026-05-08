@@ -117,8 +117,8 @@ pub mod storage;
 
 mod authenticator;
 pub use authenticator::{
-    Authenticator, Groth16Materials, InitializingAuthenticator, RecoveryData,
-    RecoveryUpdateSignature, RegistrationStatus,
+    Authenticator, GatewayRequestStatus, Groth16Materials, InitializingAuthenticator,
+    RecoveryData, RecoveryUpdateSignature,
 };
 
 /// Default configuration values for each [`Environment`].
