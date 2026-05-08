@@ -5032,6 +5032,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-verifier"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1ff1bcdce6c807b04657898aae2fd863bd4958b7ded64aaad4f10156061d7b6"
+dependencies = [
+ "anyhow",
+ "ark-std 0.5.0",
+ "provekit-common",
+ "provekit-whir",
+ "rayon",
+ "tracing",
+]
+
+[[package]]
 name = "provekit-whir"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8176,6 +8190,7 @@ version = "0.17.1"
 dependencies = [
  "alloy",
  "base64 0.22.1",
+ "ciborium",
  "clap",
  "dirs",
  "eyre",
@@ -8190,6 +8205,7 @@ dependencies = [
  "tracing-subscriber 0.3.23",
  "walletkit-core",
  "world-id-core",
+ "world-id-proof",
 ]
 
 [[package]]
@@ -9067,6 +9083,7 @@ dependencies = [
  "eyre",
  "provekit-common",
  "provekit-prover",
+ "provekit-verifier",
  "rand 0.8.6",
  "rayon",
  "reqwest 0.12.28",
