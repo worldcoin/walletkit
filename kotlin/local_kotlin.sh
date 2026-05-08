@@ -10,8 +10,8 @@ export CARGO_HOME="${CARGO_HOME:-/tmp/.cargo}"
 # Version is required
 if [ -z "$1" ]; then
     echo "Error: Version parameter is required"
-    echo "Usage: ./build_android_local.sh <version>"
-    echo "Example: ./build_android_local.sh 0.2.1"
+    echo "Usage: ./local_kotlin.sh <version>"
+    echo "Example: ./local_kotlin.sh 0.2.1"
     exit 1
 fi
 
@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "Building WalletKit SDK..."
-./build.sh
+./build_kotlin.sh
 
 # Publish to Maven Local
 echo "Publishing to Maven Local..."

@@ -40,7 +40,7 @@ if [ -z "${JAVA_HOME:-}" ]; then
 fi
 
 echo -e "${BLUE}🔨 Step 1: Building Kotlin bindings with build_kotlin.sh${NC}"
-"$ROOT_DIR/kotlin/build_kotlin.sh"
+"$ROOT_DIR/kotlin/build_kotlin_test.sh"
 
 echo -e "${GREEN}✅ Kotlin bindings built${NC}"
 
