@@ -331,22 +331,15 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the import fails.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "Vec<u8> required for UniFFI lifting"
-    )]
-    pub fn import_vault_from_backup(&self, backup_bytes: Vec<u8>) -> StorageResult<()> {
+    pub fn import_vault_from_backup(&self, backup_bytes: &[u8]) -> StorageResult<()> {
         let inner = self.lock_inner()?;
         inner.cleanup_stale_backup_files();
-        let path = inner.write_temp_backup_file(&backup_bytes)?;
+        let path = inner.write_temp_backup_file(backup_bytes)?;
         let _cleanup = CleanupFile(path.clone());
 
         inner.import_vault_from_file(&path)
     }
-}
 
-/// Implementation not exposed to foreign bindings
-impl CredentialStore {
     /// Registers a listener that is called after every successful vault
     /// mutation (store, delete, purge).
     ///
@@ -380,7 +373,10 @@ impl CredentialStore {
             }
         }
     }
+}
 
+/// Implementation not exposed to foreign bindings
+impl CredentialStore {
     /// Stores a `session_id_r_seed` into the cache.
     ///
     /// # Errors
@@ -1131,7 +1127,7 @@ mod tests {
         dst_store.init(42, 1000).expect("init dst storage");
 
         dst_store
-            .import_vault_from_backup(bytes)
+            .import_vault_from_backup(&bytes)
             .expect("import vault");
 
         let (imported_cred, imported_bf) = dst_store
@@ -1200,7 +1196,7 @@ mod tests {
         dst_store.init(42, 1000).expect("init dst storage");
 
         dst_store
-            .import_vault_from_backup(bytes)
+            .import_vault_from_backup(&bytes)
             .expect("import vault");
 
         assert_eq!(dst_store.list_credentials(None, 1000).unwrap().len(), 3);
@@ -1252,7 +1248,7 @@ mod tests {
         let bytes = store.export_vault_for_backup().expect("export vault");
 
         // Importing into a non-empty vault should fail.
-        let result = store.import_vault_from_backup(bytes);
+        let result = store.import_vault_from_backup(&bytes);
         assert!(result.is_err(), "import into non-empty vault should fail");
 
         // Verify existing data is unchanged after the failed import.
@@ -1273,7 +1269,7 @@ mod tests {
         let store = CredentialStore::from_provider(&provider).expect("create store");
         store.init(42, 1000).expect("init storage");
 
-        let result = store.import_vault_from_backup(b"not a sqlite database".to_vec());
+        let result = store.import_vault_from_backup(b"not a sqlite database");
         assert!(result.is_err(), "import from invalid bytes should fail");
 
         cleanup_test_storage(&root);
@@ -1330,7 +1326,7 @@ mod tests {
             CredentialStore::from_provider(&dst_provider).expect("create dst store");
         dst_store.init(42, 1000).expect("init dst storage");
 
-        let result = dst_store.import_vault_from_backup(corrupt_bytes);
+        let result = dst_store.import_vault_from_backup(&corrupt_bytes);
         assert!(result.is_err(), "import with corrupt backup should fail");
 
         // The transaction should have rolled back — destination is still empty.
@@ -1500,7 +1496,7 @@ mod tests {
         dst_store.init(42, 1000).expect("init dst store");
 
         dst_store
-            .import_vault_from_backup(bytes)
+            .import_vault_from_backup(&bytes)
             .expect("import vault from bytes");
 
         let (imported_cred, imported_bf) = dst_store

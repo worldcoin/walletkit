@@ -30,7 +30,7 @@ use rand::rngs::OsRng;
 use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
-use alloy_primitives::U160;
+use alloy_core::primitives::U160;
 use eyre::{Context as _, Result};
 use taceo_oprf::types::OprfKeyId;
 use walletkit_core::{

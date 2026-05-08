@@ -8175,7 +8175,6 @@ name = "walletkit-cli"
 version = "0.17.0"
 dependencies = [
  "alloy",
- "alloy-primitives",
  "base64 0.22.1",
  "clap",
  "dirs",
@@ -8199,7 +8198,6 @@ version = "0.17.0"
 dependencies = [
  "alloy",
  "alloy-core",
- "alloy-primitives",
  "backon",
  "base64 0.22.1",
  "chacha20poly1305",
@@ -8223,7 +8221,7 @@ dependencies = [
  "semaphore-rs",
  "serde",
  "serde_json",
- "sha2 0.11.0",
+ "sha2 0.10.9",
  "strum 0.27.2",
  "subtle",
  "taceo-oprf",
@@ -8249,7 +8247,7 @@ dependencies = [
  "cc",
  "hex",
  "secrecy",
- "sha2 0.11.0",
+ "sha2 0.10.9",
  "sqlite-wasm-rs",
  "tempfile",
  "zeroize",

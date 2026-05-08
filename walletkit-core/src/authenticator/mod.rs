@@ -4,7 +4,7 @@ use crate::{
     defaults::DefaultConfig, error::WalletKitError,
     primitives::ParseFromForeignBinding, Environment, FieldElement, Region,
 };
-use alloy_primitives::Address;
+use alloy_core::primitives::Address;
 use ruint::aliases::U256;
 use ruint_uniffi::Uint256;
 use std::sync::Arc;

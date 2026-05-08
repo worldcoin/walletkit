@@ -1,4 +1,4 @@
-use alloy_primitives::{address, Address};
+use alloy_core::primitives::{address, Address};
 use world_id_core::{primitives::Config, AuthenticatorConfig, OhttpClientConfig};
 
 use crate::{error::WalletKitError, Environment, Region};

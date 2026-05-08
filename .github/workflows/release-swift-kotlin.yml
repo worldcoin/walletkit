@@ -4,6 +4,11 @@ on:
   release:
     types: [published]
 
+env:
+  # The feature flags with which the Android library is built.
+  # For iOS, this is set in the `build_swift.sh` file.
+  WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3
+
 jobs:
   pre-release-checks:
     runs-on: ubuntu-latest
@@ -41,7 +46,6 @@ jobs:
           toolchain: 1.92.0
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
           components: rustfmt
-
 
       # Includes temporary downstream UniFFI callback vtable patch:
       # https://github.com/mozilla/uniffi-rs/pull/2821
@@ -160,7 +164,7 @@ jobs:
 
       - name: Build for target
         run: |
-          CROSS_NO_WARNINGS=0 cross build -p walletkit --target ${{ matrix.settings.target }} --release --locked --features compress-zkeys,v3
+          CROSS_NO_WARNINGS=0 cross build -p walletkit --target ${{ matrix.settings.target }} --release --locked --features "$WALLETKIT_CARGO_FEATURES"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
