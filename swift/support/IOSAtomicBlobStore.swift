@@ -1,6 +1,6 @@
 import Foundation
 
-public final class IOSAtomicBlobStore: AtomicBlobStore {
+public final class IOSAtomicBlobStore: AtomicBlobStore, @unchecked Sendable {
     private let baseURL: URL
     private let fileManager = FileManager.default
 

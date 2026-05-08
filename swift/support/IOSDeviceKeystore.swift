@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import Security
 
-public final class IOSDeviceKeystore: DeviceKeystore {
+public final class IOSDeviceKeystore: DeviceKeystore, @unchecked Sendable {
     private let service: String
     private let account: String
     private let lock = NSLock()

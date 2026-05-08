@@ -1,6 +1,6 @@
 import Foundation
 
-public final class IOSStorageProvider: StorageProvider {
+public final class IOSStorageProvider: StorageProvider, @unchecked Sendable {
     private let keystoreImpl: IOSDeviceKeystore
     private let blobStoreImpl: IOSAtomicBlobStore
     private let pathsImpl: StoragePaths
