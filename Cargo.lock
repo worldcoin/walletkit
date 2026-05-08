@@ -8199,7 +8199,6 @@ version = "0.17.0"
 dependencies = [
  "alloy",
  "alloy-core",
- "alloy-primitives",
  "backon",
  "base64 0.22.1",
  "chacha20poly1305",

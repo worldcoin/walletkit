@@ -19,8 +19,8 @@ use crate::issuers::pop_backend_client::RecoveryBindingResponse;
 use crate::issuers::PopBackendClient;
 use crate::user_agent::UserAgentBuilder;
 use crate::Environment;
-use alloy_primitives::keccak256;
-use alloy_primitives::Address;
+use alloy_core::primitives::keccak256;
+use alloy_core::primitives::Address;
 use std::string::String;
 /// Represents a recovery binding.
 #[derive(Debug, PartialEq, Eq, uniffi::Record)]

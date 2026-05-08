@@ -22,7 +22,6 @@ name = "walletkit_core"
 
 [dependencies]
 alloy-core = { workspace = true }
-alloy-primitives = { workspace = true }
 backon = "1.6"
 base64 = { version = "0.22" }
 hex = "0.4"
