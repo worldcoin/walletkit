@@ -477,10 +477,9 @@ async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
 }
 
 fn parse_field_element(value: &str, label: &str) -> eyre::Result<FieldElement> {
-    value
-        .trim()
-        .parse::<FieldElement>()
-        .wrap_err_with(|| format!("invalid {label}: expected 32-byte hex field element"))
+    value.trim().parse::<FieldElement>().wrap_err_with(|| {
+        format!("invalid {label}: expected 32-byte hex field element")
+    })
 }
 
 fn run_verify_ownership(
