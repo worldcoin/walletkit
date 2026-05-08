@@ -8175,7 +8175,6 @@ name = "walletkit-cli"
 version = "0.17.0"
 dependencies = [
  "alloy",
- "alloy-primitives",
  "base64 0.22.1",
  "clap",
  "dirs",
