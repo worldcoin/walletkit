@@ -128,7 +128,7 @@ impl CredentialStoreInner {
     }
 
     fn guard(&self) -> StorageResult<StorageLockGuard> {
-        Ok(self.lock.lock()?)
+        self.lock.lock().map_err(Into::into)
     }
 
     fn state(&self) -> StorageResult<&StorageState> {

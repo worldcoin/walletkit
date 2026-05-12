@@ -580,6 +580,15 @@ fn test_credential_vault_on_disk_format_guard() {
 
     // Frozen content_id for the credential blob. SHA-256(b"worldid:blob"
     // || [BlobKind::CredentialBlob as u8 = 0x01] || credential_bytes).
+    //
+    // Verified to match `main`: the SHA-256 derivation in
+    // `walletkit_db::compute_content_id` is a line-by-line move of the
+    // pre-refactor `compute_content_id` in walletkit-core/storage/vault/
+    // helpers.rs (commit 9ff3b47), so the hex here equals what `main`
+    // would write for the same `(BlobKind::CredentialBlob, credential_bytes)`.
+    // Reproducible via:
+    //   printf 'worldid:blob\x01on-disk-guard-credential-payload' \
+    //     | shasum -a 256
     let expected_cid_hex =
         "9281febbd42d05857b399f8481d6842f1e3e4b78401081ca7f0d0fb3a80e9264";
 

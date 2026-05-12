@@ -287,8 +287,8 @@ fn test_cipher_import_rejects_non_empty_destination() {
 mod primitives {
     use super::init_sqlite;
     use crate::{
-        compute_content_id, init_or_open_envelope_key, AtomicBlobStore, Blobs,
-        ContentId, KeyEnvelope, Keystore, Lock, StoreError, StoreResult, Vault,
+        blobs, compute_content_id, init_or_open_envelope_key, open_vault,
+        AtomicBlobStore, KeyEnvelope, Keystore, Lock, StoreError, StoreResult,
     };
     use secrecy::{ExposeSecret, SecretBox};
     use std::sync::Mutex;
@@ -300,25 +300,19 @@ mod primitives {
 
     #[test]
     fn test_compute_content_id_byte_stable() {
-        // SHA-256(b"worldid:blob" || [0x01] || b"hello"). Frozen value —
+        // SHA-256(b"worldid:blob" || [0x01] || b"hello"). Frozen value;
         // changing this hash means breaking every existing user database.
         let cid = compute_content_id(1, b"hello");
-        let expected = hex::decode(
+        let expected: [u8; 32] = hex::decode(
             "ed4eba40f11beec64d0607586f09b7529418ef31bf2c46cf9b8b905615f2e7ca",
         )
-        .expect("decode hex");
-        assert_eq!(cid.as_bytes(), expected.as_slice());
+        .expect("decode hex")
+        .try_into()
+        .expect("32 bytes");
+        assert_eq!(cid, expected);
 
         let cid2 = compute_content_id(2, b"hello");
         assert_ne!(cid, cid2, "kind tag must affect content id");
-    }
-
-    #[test]
-    fn test_content_id_round_trip() {
-        let bytes = [42u8; 32];
-        let cid = ContentId::new(bytes);
-        assert_eq!(cid.as_bytes(), &bytes);
-        assert_eq!(cid.into_bytes(), bytes);
     }
 
     // ---- KeyEnvelope CBOR format guard ----------------------------------
@@ -365,6 +359,42 @@ mod primitives {
         assert!(guard.is_some());
     }
 
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_lock_serializes_across_threads() {
+        use std::sync::mpsc;
+        use std::thread;
+
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("lock.lock");
+        let lock = Lock::open(&path).expect("open lock");
+
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (released_tx, released_rx) = mpsc::channel();
+
+        let thread_a = thread::spawn(move || {
+            let guard = lock.lock().expect("lock in thread");
+            locked_tx.send(()).expect("signal locked");
+            release_rx.recv().expect("wait release");
+            drop(guard);
+            released_tx.send(()).expect("signal released");
+        });
+
+        locked_rx.recv().expect("wait locked");
+        let lock_b = Lock::open(&path).expect("open lock");
+        let blocked = lock_b.try_lock().expect("try lock");
+        assert!(blocked.is_none());
+
+        release_tx.send(()).expect("release");
+        released_rx.recv().expect("wait released");
+
+        let guard = lock_b.try_lock().expect("try lock");
+        assert!(guard.is_some());
+
+        thread_a.join().expect("thread join");
+    }
+
     // ---- Envelope helper end-to-end ----------------------------------------
     //
     // Uses a stub Keystore that XORs with a fixed pad. Good enough to verify
@@ -375,14 +405,18 @@ mod primitives {
     }
 
     impl Keystore for XorKeystore {
-        fn seal(&self, _ad: &[u8], plaintext: &[u8]) -> StoreResult<Vec<u8>> {
+        fn seal(&self, _ad: Vec<u8>, plaintext: Vec<u8>) -> StoreResult<Vec<u8>> {
             Ok(plaintext
                 .iter()
                 .enumerate()
                 .map(|(i, b)| b ^ self.pad[i % 32])
                 .collect())
         }
-        fn open_sealed(&self, _ad: &[u8], ciphertext: &[u8]) -> StoreResult<Vec<u8>> {
+        fn open_sealed(
+            &self,
+            _ad: Vec<u8>,
+            ciphertext: Vec<u8>,
+        ) -> StoreResult<Vec<u8>> {
             Ok(ciphertext
                 .iter()
                 .enumerate()
@@ -402,18 +436,15 @@ mod primitives {
         }
     }
     impl AtomicBlobStore for InMemoryBlobs {
-        fn read(&self, path: &str) -> StoreResult<Option<Vec<u8>>> {
-            Ok(self.inner.lock().unwrap().get(path).cloned())
+        fn read(&self, path: String) -> StoreResult<Option<Vec<u8>>> {
+            Ok(self.inner.lock().unwrap().get(&path).cloned())
         }
-        fn write_atomic(&self, path: &str, bytes: &[u8]) -> StoreResult<()> {
-            self.inner
-                .lock()
-                .unwrap()
-                .insert(path.to_string(), bytes.to_vec());
+        fn write_atomic(&self, path: String, bytes: Vec<u8>) -> StoreResult<()> {
+            self.inner.lock().unwrap().insert(path, bytes);
             Ok(())
         }
-        fn delete(&self, path: &str) -> StoreResult<()> {
-            self.inner.lock().unwrap().remove(path);
+        fn delete(&self, path: String) -> StoreResult<()> {
+            self.inner.lock().unwrap().remove(&path);
             Ok(())
         }
     }
@@ -427,24 +458,34 @@ mod primitives {
         let guard = lock.lock().expect("acquire");
 
         let keystore = XorKeystore { pad: [0xAA; 32] };
-        let blobs = InMemoryBlobs::new();
+        let blob_store = InMemoryBlobs::new();
         let key_a = init_or_open_envelope_key(
-            &keystore, &blobs, &guard, "k.bin", b"test-ad", 100,
+            &keystore,
+            &blob_store,
+            &guard,
+            "k.bin",
+            b"test-ad",
+            100,
         )
         .expect("init");
         let key_b = init_or_open_envelope_key(
-            &keystore, &blobs, &guard, "k.bin", b"test-ad", 200,
+            &keystore,
+            &blob_store,
+            &guard,
+            "k.bin",
+            b"test-ad",
+            200,
         )
         .expect("re-open");
 
         assert_eq!(key_a.expose_secret(), key_b.expose_secret());
     }
 
-    // ---- Vault::open --------------------------------------------------------
+    // ---- open_vault --------------------------------------------------------
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
-    fn test_vault_open_runs_schema_callback() {
+    fn test_open_vault_runs_schema_callback() {
         init_sqlite();
         let dir = tempfile::tempdir().expect("create temp dir");
         let db_path = dir.path().join("vault.sqlite");
@@ -453,24 +494,22 @@ mod primitives {
         let guard = lock.lock().expect("acquire");
         let key = SecretBox::init_with(|| [0x42u8; 32]);
 
-        let vault = Vault::open(&db_path, &key, &guard, |conn| {
-            Blobs::ensure_schema(conn)?;
+        let conn = open_vault(&db_path, &key, &guard, |conn| {
+            blobs::ensure_schema(conn)?;
             conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY);",
             )
         })
         .expect("open vault");
 
-        let cid = Blobs::put(vault.connection(), 7, b"payload", 1000).expect("put");
-        let bytes = Blobs::get(vault.connection(), &cid)
-            .expect("get")
-            .expect("present");
+        let cid = blobs::put(&conn, 7, b"payload", 1000).expect("put");
+        let bytes = blobs::get(&conn, &cid).expect("get").expect("present");
         assert_eq!(bytes, b"payload");
     }
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
-    fn test_vault_open_rejects_wrong_key() {
+    fn test_open_vault_rejects_wrong_key() {
         init_sqlite();
         let dir = tempfile::tempdir().expect("create temp dir");
         let db_path = dir.path().join("vault.sqlite");
@@ -478,13 +517,13 @@ mod primitives {
         let lock = Lock::open(&lock_path).expect("open lock");
         let guard = lock.lock().expect("acquire");
         let key = SecretBox::init_with(|| [0x11u8; 32]);
-        Vault::open(&db_path, &key, &guard, Blobs::ensure_schema)
+        let _ = open_vault(&db_path, &key, &guard, blobs::ensure_schema)
             .expect("create vault");
         drop(guard);
         let guard = lock.lock().expect("re-acquire");
         let wrong = SecretBox::init_with(|| [0x22u8; 32]);
         let err =
-            Vault::open(&db_path, &wrong, &guard, |_| Ok(())).expect_err("wrong key");
+            open_vault(&db_path, &wrong, &guard, |_| Ok(())).expect_err("wrong key");
         assert!(matches!(err, StoreError::Db(_)));
     }
 }

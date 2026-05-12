@@ -1,7 +1,9 @@
 //! Plain-Rust trait surface for consumer-supplied platform integrations.
 //!
-//! Consumers that need FFI define their own annotated traits and adapt to
-//! these via newtype wrappers.
+//! Argument shapes mirror `WalletKit`'s existing uniffi-annotated traits
+//! (`Vec<u8>` for byte buffers, owned `String` for paths) so downstream
+//! consumers can blanket-impl these for their own annotated traits without
+//! adapter newtypes.
 
 use crate::error::StoreResult;
 
@@ -17,7 +19,11 @@ pub trait Keystore: Send + Sync {
     ///
     /// Returns an error if the keystore refuses the operation or the seal
     /// fails.
-    fn seal(&self, associated_data: &[u8], plaintext: &[u8]) -> StoreResult<Vec<u8>>;
+    fn seal(
+        &self,
+        associated_data: Vec<u8>,
+        plaintext: Vec<u8>,
+    ) -> StoreResult<Vec<u8>>;
 
     /// Opens ciphertext under the device-bound key, verifying
     /// `associated_data`. The same associated data used during sealing must
@@ -28,8 +34,8 @@ pub trait Keystore: Send + Sync {
     /// Returns an error if authentication fails or the keystore cannot open.
     fn open_sealed(
         &self,
-        associated_data: &[u8],
-        ciphertext: &[u8],
+        associated_data: Vec<u8>,
+        ciphertext: Vec<u8>,
     ) -> StoreResult<Vec<u8>>;
 }
 
@@ -40,19 +46,19 @@ pub trait AtomicBlobStore: Send + Sync {
     /// # Errors
     ///
     /// Returns an error if the read fails.
-    fn read(&self, path: &str) -> StoreResult<Option<Vec<u8>>>;
+    fn read(&self, path: String) -> StoreResult<Option<Vec<u8>>>;
 
     /// Writes bytes atomically to `path`.
     ///
     /// # Errors
     ///
     /// Returns an error if the write fails.
-    fn write_atomic(&self, path: &str, bytes: &[u8]) -> StoreResult<()>;
+    fn write_atomic(&self, path: String, bytes: Vec<u8>) -> StoreResult<()>;
 
     /// Deletes the blob at `path`.
     ///
     /// # Errors
     ///
     /// Returns an error if the delete fails.
-    fn delete(&self, path: &str) -> StoreResult<()>;
+    fn delete(&self, path: String) -> StoreResult<()>;
 }

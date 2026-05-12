@@ -24,15 +24,10 @@ const ENVELOPE_VERSION: u32 = 1;
 /// breaks existing user databases.
 #[derive(Clone, Serialize, Deserialize, Zeroize, ZeroizeOnDrop)]
 pub struct KeyEnvelope {
-    /// Envelope format version. Mismatch triggers
-    /// [`StoreError::UnsupportedEnvelopeVersion`].
-    pub version: u32,
-    /// Output of [`Keystore::seal`] over the 32-byte intermediate key.
-    pub wrapped_k_intermediate: Vec<u8>,
-    /// Unix timestamp (seconds) recorded when the envelope was first written.
-    pub created_at: u64,
-    /// Unix timestamp (seconds) recorded on the most recent write.
-    pub updated_at: u64,
+    pub(crate) version: u32,
+    pub(crate) wrapped_k_intermediate: Vec<u8>,
+    pub(crate) created_at: u64,
+    pub(crate) updated_at: u64,
 }
 
 impl KeyEnvelope {
@@ -98,20 +93,22 @@ pub fn init_or_open_envelope_key(
     ad: &[u8],
     now: u64,
 ) -> StoreResult<SecretBox<[u8; 32]>> {
-    if let Some(bytes) = blob_store.read(filename)? {
+    if let Some(bytes) = blob_store.read(filename.to_string())? {
         let envelope = KeyEnvelope::deserialize(&bytes)?;
-        let k_intermediate_bytes =
-            Zeroizing::new(keystore.open_sealed(ad, &envelope.wrapped_k_intermediate)?);
+        let k_intermediate_bytes = Zeroizing::new(
+            keystore
+                .open_sealed(ad.to_vec(), envelope.wrapped_k_intermediate.clone())?,
+        );
         let k_intermediate = parse_key_32(&k_intermediate_bytes, "intermediate key")?;
         Ok(SecretBox::init_with(|| k_intermediate))
     } else {
         let mut k_intermediate = Zeroizing::new([0u8; 32]);
         getrandom::fill(k_intermediate.as_mut())
             .map_err(|err| StoreError::Crypto(format!("rng failure: {err}")))?;
-        let wrapped = keystore.seal(ad, k_intermediate.as_ref())?;
+        let wrapped = keystore.seal(ad.to_vec(), k_intermediate.to_vec())?;
         let envelope = KeyEnvelope::new(wrapped, now);
         let bytes = envelope.serialize()?;
-        blob_store.write_atomic(filename, &bytes)?;
+        blob_store.write_atomic(filename.to_string(), bytes)?;
         let key_copy = *k_intermediate;
         Ok(SecretBox::init_with(move || key_copy))
     }

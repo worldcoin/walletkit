@@ -46,8 +46,8 @@ impl StorageKeys {
         now: u64,
     ) -> StorageResult<Self> {
         let intermediate_key = walletkit_db::init_or_open_envelope_key(
-            &KeystoreAdapter { inner: keystore },
-            &BlobStoreAdapter { inner: blob_store },
+            &Ks(keystore),
+            &Bs(blob_store),
             lock,
             ACCOUNT_KEYS_FILENAME,
             ACCOUNT_KEY_ENVELOPE_AD,
@@ -63,53 +63,49 @@ impl StorageKeys {
     }
 }
 
-struct KeystoreAdapter<'a> {
-    inner: &'a dyn DeviceKeystore,
-}
+// Trait-object bridge from walletkit-core's uniffi-annotated traits onto
+// walletkit-db's plain-Rust trait surface. Required because Rust's orphan
+// rule prevents a blanket impl across crates; the wrappers are pure
+// delegation since both trait shapes already use `Vec<u8>` / `String`.
 
-impl walletkit_db::Keystore for KeystoreAdapter<'_> {
-    fn seal(
-        &self,
-        associated_data: &[u8],
-        plaintext: &[u8],
-    ) -> walletkit_db::StoreResult<Vec<u8>> {
-        self.inner
-            .seal(associated_data.to_vec(), plaintext.to_vec())
-            .map_err(|err| walletkit_db::StoreError::Keystore(err.to_string()))
+struct Ks<'a>(&'a dyn DeviceKeystore);
+impl walletkit_db::Keystore for Ks<'_> {
+    fn seal(&self, ad: Vec<u8>, pt: Vec<u8>) -> walletkit_db::StoreResult<Vec<u8>> {
+        self.0
+            .seal(ad, pt)
+            .map_err(|e| walletkit_db::StoreError::Keystore(e.to_string()))
     }
-
     fn open_sealed(
         &self,
-        associated_data: &[u8],
-        ciphertext: &[u8],
+        ad: Vec<u8>,
+        ct: Vec<u8>,
     ) -> walletkit_db::StoreResult<Vec<u8>> {
-        self.inner
-            .open_sealed(associated_data.to_vec(), ciphertext.to_vec())
-            .map_err(|err| walletkit_db::StoreError::Keystore(err.to_string()))
+        self.0
+            .open_sealed(ad, ct)
+            .map_err(|e| walletkit_db::StoreError::Keystore(e.to_string()))
     }
 }
 
-struct BlobStoreAdapter<'a> {
-    inner: &'a dyn AtomicBlobStore,
-}
-
-impl walletkit_db::AtomicBlobStore for BlobStoreAdapter<'_> {
-    fn read(&self, path: &str) -> walletkit_db::StoreResult<Option<Vec<u8>>> {
-        self.inner
-            .read(path.to_string())
-            .map_err(|err| walletkit_db::StoreError::BlobStore(err.to_string()))
+struct Bs<'a>(&'a dyn AtomicBlobStore);
+impl walletkit_db::AtomicBlobStore for Bs<'_> {
+    fn read(&self, path: String) -> walletkit_db::StoreResult<Option<Vec<u8>>> {
+        self.0
+            .read(path)
+            .map_err(|e| walletkit_db::StoreError::BlobStore(e.to_string()))
     }
-
-    fn write_atomic(&self, path: &str, bytes: &[u8]) -> walletkit_db::StoreResult<()> {
-        self.inner
-            .write_atomic(path.to_string(), bytes.to_vec())
-            .map_err(|err| walletkit_db::StoreError::BlobStore(err.to_string()))
+    fn write_atomic(
+        &self,
+        path: String,
+        bytes: Vec<u8>,
+    ) -> walletkit_db::StoreResult<()> {
+        self.0
+            .write_atomic(path, bytes)
+            .map_err(|e| walletkit_db::StoreError::BlobStore(e.to_string()))
     }
-
-    fn delete(&self, path: &str) -> walletkit_db::StoreResult<()> {
-        self.inner
-            .delete(path.to_string())
-            .map_err(|err| walletkit_db::StoreError::BlobStore(err.to_string()))
+    fn delete(&self, path: String) -> walletkit_db::StoreResult<()> {
+        self.0
+            .delete(path)
+            .map_err(|e| walletkit_db::StoreError::BlobStore(e.to_string()))
     }
 }
 
@@ -158,11 +154,7 @@ mod tests {
 
         let other_keystore = InMemoryKeystore::new();
         match StorageKeys::init(&other_keystore, &blob_store, &guard, 456) {
-            Err(
-                StorageError::Crypto(_)
-                | StorageError::InvalidEnvelope(_)
-                | StorageError::Keystore(_),
-            ) => {}
+            Err(StorageError::VaultDb(_)) => {}
             Err(err) => panic!("unexpected error: {err}"),
             Ok(_) => panic!("expected error"),
         }
@@ -188,11 +180,7 @@ mod tests {
             .expect("write");
 
         match StorageKeys::init(&keystore, &blob_store, &guard, 456) {
-            Err(
-                StorageError::Serialization(_)
-                | StorageError::Crypto(_)
-                | StorageError::UnsupportedEnvelopeVersion(_),
-            ) => {}
+            Err(StorageError::VaultDb(_)) => {}
             Err(err) => panic!("unexpected error: {err}"),
             Ok(_) => panic!("expected error"),
         }

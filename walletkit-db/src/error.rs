@@ -33,7 +33,7 @@ pub enum StoreError {
     /// Envelope written by an unsupported version.
     #[error("unsupported envelope version: {0}")]
     UnsupportedEnvelopeVersion(u32),
-    /// Underlying database error from [`crate::sqlite`].
+    /// Underlying database error from the encrypted-`SQLite` wrapper.
     #[error("database error: {0}")]
     Db(#[from] DbError),
     /// `PRAGMA integrity_check` reported corruption.
