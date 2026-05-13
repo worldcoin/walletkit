@@ -15,7 +15,7 @@ use super::traits::VaultChangedListener;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::ACCOUNT_KEYS_FILENAME;
-use super::{CacheDb, VaultDb};
+use super::{CacheDb, CredentialVault};
 use super::{StorageLock, StorageLockGuard};
 use crate::{Credential, FieldElement};
 use world_id_core::primitives::merkle::AccountInclusionProof;
@@ -87,7 +87,7 @@ struct CredentialStoreInner {
 struct StorageState {
     #[allow(dead_code)]
     keys: StorageKeys,
-    vault: VaultDb,
+    vault: CredentialVault,
     cache: CacheDb,
     leaf_index: u64,
 }
@@ -526,7 +526,8 @@ impl CredentialStoreInner {
             now,
         )?;
         let k_intermediate = keys.intermediate_key();
-        let vault = VaultDb::new(&self.paths.vault_db_path(), k_intermediate, &guard)?;
+        let vault =
+            CredentialVault::new(&self.paths.vault_db_path(), k_intermediate, &guard)?;
         let cache = CacheDb::new(&self.paths.cache_db_path(), k_intermediate, &guard)?;
         let mut state = StorageState {
             keys,
@@ -1281,7 +1282,7 @@ mod tests {
 
     #[test]
     fn test_import_vault_backup_transaction_atomicity() {
-        use crate::storage::vault::BACKUP_TABLES;
+        use crate::storage::credential_vault::BACKUP_TABLES;
         use walletkit_db::Connection;
         use world_id_core::Credential as CoreCredential;
 

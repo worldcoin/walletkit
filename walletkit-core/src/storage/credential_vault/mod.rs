@@ -24,11 +24,11 @@ pub(crate) use schema::BACKUP_TABLES;
 
 /// Encrypted vault database wrapper.
 #[derive(Debug)]
-pub struct VaultDb {
+pub struct CredentialVault {
     conn: Connection,
 }
 
-impl VaultDb {
+impl CredentialVault {
     /// Opens or creates the encrypted vault database at `path`.
     ///
     /// # Errors
