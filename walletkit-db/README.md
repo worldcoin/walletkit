@@ -8,6 +8,77 @@ Consumed by `walletkit-core::storage` (credential vault) and by sibling
 SDKs in the WalletKit workspace that need an encrypted on-device store.
 Plain Rust, no `uniffi`.
 
+## Concepts
+
+There are five physical pieces. Knowing what each one is and isn't makes the
+rest of the README straightforward.
+
+- **Vault** — the encrypted SQLite database file on disk (e.g.
+  `account.vault.sqlite`). Holds every row the consumer cares about,
+  including the shared `blob_objects` table. Encrypted with sqlite3mc.
+  Opened via `open_vault`.
+- **Envelope** — a small CBOR-encoded file on disk (e.g.
+  `account_keys.bin`) that holds the *sealed* 32-byte `K_intermediate`.
+  Not a vault, not encrypted by sqlite3mc — it's the wrapper around the
+  key that opens the vault. The seal is done by the host's hardware
+  keystore. Managed by `init_or_open_envelope_key` + `KeyEnvelope`.
+- **Lock** — a separate empty file (e.g. `account.lock`) used as a
+  cross-process mutex via `flock` / `LockFileEx`. Not encrypted, not part
+  of the vault. Prevents two processes (e.g. extension + main app) from
+  racing on the open-and-mutate path. Managed by `Lock` / `LockGuard`.
+- **blob_objects table** — one shared table inside the vault for
+  content-addressed bytes. Consumer-specific tables (`credential_records`,
+  `pcp_records`, etc.) reference rows here by `content_id` (SHA-256). Big
+  payloads live here once, deduplicated by hash. Managed by `blobs::*`.
+- **Keystore + AtomicBlobStore** — two traits the consumer (and
+  ultimately the host platform) implements. `Keystore` seals/unseals
+  bytes under `K_device`; `AtomicBlobStore` reads/writes the envelope
+  file. walletkit-db never touches the OS keystore or the filesystem
+  directly; it goes through these traits.
+
+### How they interact
+
+**Opening from scratch:**
+
+1. Acquire the **Lock** so no other process is mid-open.
+2. Ask `AtomicBlobStore` for the **Envelope** file.
+3. If no envelope: generate `K_intermediate`, seal it with the host's
+   **Keystore**, write the envelope. If envelope exists: read it, unseal
+   with the keystore.
+4. Open the **Vault** SQLite file, key it with `K_intermediate` (sqlite3mc
+   installs its encryption codec).
+5. Run the consumer's schema callback — typically
+   `blobs::ensure_schema(conn)` plus the consumer's domain tables.
+6. Integrity-check the vault, return the open `Connection`.
+
+**Storing a payload:**
+
+1. `blobs::put(conn, kind, bytes, now)` hashes the bytes
+   (`SHA-256("worldid:blob" || [kind] || bytes)`), `INSERT OR IGNORE`s
+   into `blob_objects`, returns the `ContentId`.
+2. The consumer inserts its own row (e.g. `credential_records`)
+   referencing that `content_id`.
+3. The host's `LockGuard` is held throughout the mutation; the consumer's
+   table and `blob_objects` are written in one SQLite transaction.
+
+**Reading a payload:**
+
+1. The consumer queries its own table for the row + the `content_id`.
+2. `blobs::get(conn, &content_id)` returns the bytes from `blob_objects`.
+3. No keystore call; the database is already keyed for the session.
+
+**Deleting:**
+
+1. The consumer deletes from its own table.
+2. If no other row references the same `content_id`, call
+   `blobs::delete(conn, &content_id)` to GC the orphan from
+   `blob_objects`. (walletkit-db doesn't track references; consumers
+   decide when a blob has become unreferenced.)
+
+The four files (vault, envelope, lock, and the consumer-chosen blob-store
+backing) all live under paths the consumer picks. walletkit-db doesn't
+prescribe where; it just expects them to stay together.
+
 ## Architecture
 
 ```mermaid
