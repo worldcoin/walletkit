@@ -94,12 +94,15 @@ pub fn put(
 /// Fetches blob bytes by content id, if present.
 ///
 /// Accepts any byte slice so callers can pass `&ContentId`, a slice read
-/// out of another table column, or a `Vec<u8>` without copying.
+/// out of another table column, or a `Vec<u8>` without copying. The slice
+/// must be exactly 32 bytes — non-32-byte input would silently match no row
+/// and is rejected up front.
 ///
 /// # Errors
 ///
-/// Returns a [`StoreError`] if the query fails.
+/// Returns a [`StoreError`] if `cid` is not 32 bytes or the query fails.
 pub fn get(conn: &Connection, cid: &[u8]) -> StoreResult<Option<Vec<u8>>> {
+    check_cid_len(cid)?;
     let bytes = conn.query_row_optional(
         "SELECT bytes FROM blob_objects WHERE content_id = ?1",
         params![cid],
@@ -111,16 +114,28 @@ pub fn get(conn: &Connection, cid: &[u8]) -> StoreResult<Option<Vec<u8>>> {
 /// Deletes the blob row with the given content id, if it exists.
 ///
 /// Consumers handling status transitions that orphan bytes (e.g. a credential
-/// or PCP becoming unreferenced) call this to GC the row. Accepts any byte
-/// slice for the same reason as [`get`].
+/// or PCP becoming unreferenced) call this to GC the row. Same 32-byte
+/// requirement as [`get`].
 ///
 /// # Errors
 ///
-/// Returns a [`StoreError`] if the delete fails.
+/// Returns a [`StoreError`] if `cid` is not 32 bytes or the delete fails.
 pub fn delete(conn: &Connection, cid: &[u8]) -> StoreResult<()> {
+    check_cid_len(cid)?;
     conn.execute(
         "DELETE FROM blob_objects WHERE content_id = ?1",
         params![cid],
     )?;
     Ok(())
+}
+
+fn check_cid_len(cid: &[u8]) -> StoreResult<()> {
+    if cid.len() == 32 {
+        Ok(())
+    } else {
+        Err(StoreError::Db(DbError::new(
+            -1,
+            format!("content_id must be 32 bytes, got {}", cid.len()),
+        )))
+    }
 }
