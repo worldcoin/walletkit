@@ -39,21 +39,10 @@ rest of the README straightforward.
   file. walletkit-db never touches the OS keystore or the filesystem
   directly; it goes through these traits.
 
-### How they interact
+### How they interact at runtime
 
-**Opening from scratch:**
-
-1. Open a `Lock` on the lock file path.
-2. `init_or_open_envelope_key(...)` acquires the lock, asks
-   `AtomicBlobStore` for the envelope file. If absent, generates
-   `K_intermediate`, seals it with the host's `Keystore`, writes the
-   envelope. If present, reads it and unseals with the keystore. Releases
-   the lock.
-3. `Vault::open(path, key, lock, ensure_schema)` acquires the lock, opens
-   the SQLite file via sqlite3mc, runs the consumer's schema callback
-   (typically `blobs::ensure_schema(conn)` plus the consumer's domain
-   tables), runs `PRAGMA integrity_check`, releases the lock. Returns
-   a `Vault`.
+(For the open-and-initialize sequence, see [Startup sequence](#startup-sequence)
+below.)
 
 **Storing a payload:**
 
