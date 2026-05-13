@@ -8,6 +8,139 @@ Consumed by `walletkit-core::storage` (credential vault) and by sibling
 SDKs in the WalletKit workspace that need an encrypted on-device store.
 Plain Rust, no `uniffi`.
 
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Host["Host platform (Kotlin / Swift)"]
+        KS["DeviceKeystore (uniffi)"]
+        BS["AtomicBlobStore (uniffi)"]
+    end
+
+    subgraph WKDB["walletkit-db (this crate)"]
+        OV["open_vault()"]
+        Blobs["blobs::{ensure_schema, put, get, delete}"]
+        Env["init_or_open_envelope_key()"]
+        Lock["Lock / LockGuard"]
+        Cipher["sqlite3mc (encrypted SQLite)"]
+        OV --> Cipher
+        Blobs --> Cipher
+    end
+
+    subgraph Consumer["Consumer crate (e.g. walletkit-core)"]
+        Wrapper["Domain-specific wrapper<br/>(e.g. CredentialVault)"]
+        Tables["domain tables<br/>blob_objects (shared)"]
+        Wrapper --> Tables
+    end
+
+    KS -.bridged via newtype.-> Env
+    BS -.bridged via newtype.-> Env
+
+    WKDB --> Wrapper
+
+    style WKDB fill:#e8f4f8
+```
+
+The dependency direction is one-way: `walletkit-db` doesn't know about its
+consumers, uniffi, or any specific schema. Each consumer brings its own
+filename, AD namespace, lock file, vault file, and SQL schema; the crate
+gives them an encrypted database with the safety machinery wired up.
+
+## Key hierarchy
+
+- **`K_device`** — hardware keystore root key (iOS Secure Enclave / Android
+  Keystore). Seal/unseal small blobs only; cannot be extracted from the
+  device. Provided by the consumer via the `Keystore` trait.
+- **`K_intermediate`** — 32-byte random key per consumer-vault. Generated
+  once on first run with `getrandom`, sealed under `K_device`, persisted as
+  a CBOR `KeyEnvelope`. Used as the SQLite page-encryption key by sqlite3mc.
+- **AD (associated data)** — non-secret label bound into the AEAD seal
+  (e.g. `worldid:account-key-envelope`). Per-consumer so envelopes can't be
+  swapped between vaults; not a password.
+
+Each consumer picks its own envelope filename + AD so independent vaults
+never share intermediate keys, and so the host can apply different keystore
+access policies (Face ID on one vault, none on another) per consumer.
+
+## Startup sequence
+
+**Cold start (first run, brand-new install):**
+
+1. Open `Lock`, acquire `LockGuard`.
+2. `init_or_open_envelope_key` calls `AtomicBlobStore.read(filename)` → `None`.
+3. `getrandom::fill` → 32 random bytes = `K_intermediate`.
+4. `K_device.seal(AD, K_intermediate)` → opaque ciphertext.
+5. Wrap in `KeyEnvelope` (version, ciphertext, timestamps), CBOR-encode,
+   `AtomicBlobStore.write_atomic` to disk.
+6. `open_vault` opens the SQLite file via `sqlite3_open_v2`.
+7. `PRAGMA key = "x'<hex>'"` — sqlite3mc installs its encryption codec.
+8. Schema callback: `blobs::ensure_schema(conn)` + consumer's schema DDL.
+9. `PRAGMA integrity_check`.
+10. Return open `Connection`.
+
+**Warm start (every subsequent run):**
+
+1. Open `Lock`, acquire `LockGuard`.
+2. `AtomicBlobStore.read(filename)` → envelope bytes.
+3. CBOR-decode, verify version, extract sealed ciphertext.
+4. `K_device.open_sealed(AD, sealed_ciphertext)` → recover the **bit-for-bit
+   original** `K_intermediate`. Encryption is reversible; nothing is
+   re-derived.
+5. `sqlite3_open_v2` + `PRAGMA key`. Wrong key returns `SQLITE_NOTADB` on
+   the first page read.
+6. Schema callback runs idempotently (`CREATE TABLE IF NOT EXISTS`).
+7. Integrity check; return.
+
+**Device wipe / app uninstall:** `K_device` is destroyed. The envelope on
+disk becomes permanently unsealable. Recovery has to come from a separate
+backup path that re-wraps `K_intermediate` (or the data) under a
+non-device-bound key.
+
+## Encryption mechanism (sqlite3mc)
+
+After `PRAGMA key`, walletkit-db is out of the crypto loop. sqlite3mc takes
+over inside SQLite's pager:
+
+- **Cipher**: ChaCha20-Poly1305 AEAD. Default for sqlite3mc; no external
+  crypto library.
+- **KDF**: PBKDF2-SHA256 derives per-page subkeys from `K_intermediate` and
+  the page number. Same plaintext on two pages does not produce identical
+  ciphertext.
+- **Pager hook**: every page read decrypts; every page write encrypts; SQL
+  engine sees only plaintext.
+- **What's encrypted**: every page in the file — tables, indexes, freelist,
+  WAL. Only the first 16 bytes (`SQLite format 3\0` magic + header) stay
+  plaintext so sqlite3mc can recognize the file before keying.
+- **Tamper detection**: Poly1305 MAC per page. Bit-flip → `SQLITE_CORRUPT`.
+  Wrong key → first decrypted page header is garbage → `SQLITE_NOTADB`.
+- **Performance**: single-digit µs per 4KB page on modern ARM. This is why
+  `K_intermediate` lives in main RAM — sqlite3mc invokes the codec
+  hundreds of times per transaction and the secure enclave can't service
+  that load.
+
+## Threat model
+
+| Tier | Status | What protects you |
+|------|--------|-------------------|
+| Disk copy / lost device / unencrypted backup | **Safe** | Vault + envelope are encrypted; attacker lacks `K_device`. |
+| Code running inside the app session | **Exposed** | Attacker calls the legitimate keystore as the app and unseals envelopes. Separate `K_intermediate` per consumer does not change this. |
+| File corruption / envelope swap between vaults | **Safe** | Per-page MAC fails on corrupted pages; AD binding fails AEAD auth on swapped envelopes. |
+| Hardware keystore compromise | Out of scope | — |
+
+**Defense-in-depth lever** against in-app attackers: host policy on the
+keystore entry (iOS `kSecAccessControlBiometryCurrentSet`, Android
+`setUserAuthenticationRequired(true)`, etc.). walletkit-db is neutral; the
+policy lives in the Kotlin/Swift code that creates `K_device`.
+
+**Why per-consumer `K_intermediate` exists** (not for in-app isolation):
+
+1. sqlite3mc needs a key in main RAM anyway — the enclave doesn't expose
+   bulk encryption, so we cannot use `K_device` directly.
+2. **Per-keystore-entry policy.** Host can require Face ID on one vault's
+   unseal but not another — only possible with separate envelopes.
+3. Independent rotation, recovery, and file lifecycle per consumer.
+4. AEAD tamper-evidence on each envelope.
+
 ## Intended usage
 
 A new consumer wires up storage in four steps. Each consumer picks its own
