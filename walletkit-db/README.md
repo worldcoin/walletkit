@@ -94,7 +94,7 @@ flowchart TB
     end
 
     subgraph WKDB["walletkit-db (this crate)"]
-        OV["open_vault()"]
+        OV["Vault::open / mutate / read"]
         Blobs["blobs::{ensure_schema, put, get, delete}"]
         Env["init_or_open_envelope_key()"]
         Lock["Lock / LockGuard"]
@@ -148,7 +148,7 @@ access policies (Face ID on one vault, none on another) per consumer.
 4. `K_device.seal(AD, K_intermediate)` → opaque ciphertext.
 5. Wrap in `KeyEnvelope` (version, ciphertext, timestamps), CBOR-encode,
    `AtomicBlobStore.write_atomic` to disk.
-6. `open_vault` opens the SQLite file via `sqlite3_open_v2`.
+6. `Vault::open` opens the SQLite file via `sqlite3_open_v2`.
 7. `PRAGMA key = "x'<hex>'"` — sqlite3mc installs its encryption codec.
 8. Schema callback: `blobs::ensure_schema(conn)` + consumer's schema DDL.
 9. `PRAGMA integrity_check`.
