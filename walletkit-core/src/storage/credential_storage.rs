@@ -512,7 +512,6 @@ impl CredentialStore {
 
 impl CredentialStoreInner {
     fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
-        let guard = self.guard()?;
         if let Some(state) = &mut self.state {
             state.vault.init_leaf_index(leaf_index, now)?;
             state.leaf_index = leaf_index;
@@ -531,7 +530,11 @@ impl CredentialStoreInner {
             k_intermediate,
             self.lock.clone(),
         )?;
-        let cache = CacheDb::new(&self.paths.cache_db_path(), k_intermediate, &guard)?;
+        let cache = CacheDb::new(
+            &self.paths.cache_db_path(),
+            k_intermediate,
+            self.lock.clone(),
+        )?;
         let state = StorageState {
             keys,
             vault,
@@ -623,10 +626,8 @@ impl CredentialStoreInner {
         session_id_r_seed: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
-        let guard = self.guard()?;
         let state = self.state_mut()?;
         state.cache.session_seed_put(
-            &guard,
             oprf_seed.to_be_bytes(),
             session_id_r_seed.to_be_bytes(),
             now,
@@ -674,7 +675,6 @@ impl CredentialStoreInner {
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        let guard = self.guard()?;
         let state = self.state_mut()?;
         // Use JSON for storage instead of CBOR because the `#[serde(flatten)]` property
         // causes the deserialization of `FieldElement`s to appear as human-readable
@@ -684,9 +684,7 @@ impl CredentialStoreInner {
             )
         })?;
 
-        state
-            .cache
-            .merkle_cache_put(&guard, bytes, now, ttl_seconds)
+        state.cache.merkle_cache_put(&bytes, now, ttl_seconds)
     }
 
     /// Checks whether a replay guard entry exists for the given nullifier.
@@ -718,10 +716,9 @@ impl CredentialStoreInner {
         nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
-        let guard = self.guard()?;
         let nullifier = nullifier.to_be_bytes();
         let state = self.state_mut()?;
-        state.cache.replay_guard_set(&guard, nullifier, now)
+        state.cache.replay_guard_set(nullifier, now)
     }
 
     /// Exports the vault to a temporary plaintext file in the worldid directory.

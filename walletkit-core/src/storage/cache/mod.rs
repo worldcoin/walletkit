@@ -3,9 +3,8 @@
 use std::path::Path;
 
 use crate::storage::error::StorageResult;
-use crate::storage::StorageLockGuard;
 use secrecy::SecretBox;
-use walletkit_db::Connection;
+use walletkit_db::{Lock, Vault};
 
 mod maintenance;
 mod merkle;
@@ -16,18 +15,25 @@ mod util;
 
 /// Encrypted cache database wrapper.
 ///
-/// Stores non-authoritative, regenerable data (proof cache, session keys, replay guard)
-/// to improve performance without affecting correctness if rebuilt.
+/// Stores non-authoritative, regenerable data (proof cache, session keys,
+/// replay guard). Wraps [`walletkit_db::Vault`]: mutations acquire the
+/// vault's lock via `Vault::mutate`; reads bypass the lock.
+///
+/// Unlike the credential vault, cache corruption is recoverable: open
+/// failures or integrity failures trigger a wipe-and-rebuild rather than
+/// a fatal error.
 #[derive(Debug)]
 pub struct CacheDb {
-    conn: Connection,
+    vault: Vault,
 }
 
 impl CacheDb {
-    /// Opens or creates the encrypted cache database at `path`.
+    /// Opens or rebuilds the encrypted cache database at `path`. Takes
+    /// ownership of `lock`; subsequent mutations re-acquire it through
+    /// [`walletkit_db::Vault::mutate`].
     ///
-    /// If integrity checks fail, the cache is rebuilt since its contents can be
-    /// regenerated from authoritative sources.
+    /// If the database is corrupted or unreadable, the file is deleted
+    /// and a fresh empty cache is created.
     ///
     /// # Errors
     ///
@@ -35,13 +41,13 @@ impl CacheDb {
     pub fn new(
         path: &Path,
         k_intermediate: &SecretBox<[u8; 32]>,
-        _lock: &StorageLockGuard,
+        lock: Lock,
     ) -> StorageResult<Self> {
-        let conn = maintenance::open_or_rebuild(path, k_intermediate)?;
-        Ok(Self { conn })
+        let vault = maintenance::open_or_rebuild(path, k_intermediate, lock)?;
+        Ok(Self { vault })
     }
 
-    /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
+    /// Fetches a cached Merkle proof if it remains valid beyond `valid_until`.
     ///
     /// Returns `None` when missing or expired so callers can refetch from the
     /// indexer without relying on stale proofs.
@@ -50,26 +56,23 @@ impl CacheDb {
     ///
     /// Returns an error if the query fails.
     pub fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
-        merkle::get(&self.conn, valid_until)
+        merkle::get(self.vault.read(), valid_until)
     }
 
-    /// Inserts a cached Merkle proof with a TTL.
-    /// Uses the database current time for `inserted_at`.
-    ///
-    /// Existing entries for the same (registry, root, leaf index) are replaced.
+    /// Inserts a cached Merkle proof with a TTL. Existing entries for the
+    /// same key are replaced.
     ///
     /// # Errors
     ///
     /// Returns an error if the insert fails.
-    #[allow(clippy::needless_pass_by_value)]
     pub fn merkle_cache_put(
-        &mut self,
-        _lock: &StorageLockGuard,
-        proof_bytes: Vec<u8>,
+        &self,
+        proof_bytes: &[u8],
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        merkle::put(&self.conn, proof_bytes.as_ref(), now, ttl_seconds)
+        self.vault
+            .mutate(|conn| merkle::put(conn, proof_bytes, now, ttl_seconds))
     }
 
     /// Fetches a cached `session_id_r_seed` for the given `oprf_seed`.
@@ -84,7 +87,7 @@ impl CacheDb {
         oprf_seed: [u8; 32],
         now: u64,
     ) -> StorageResult<Option<[u8; 32]>> {
-        session::get(&self.conn, oprf_seed, now)
+        session::get(self.vault.read(), oprf_seed, now)
     }
 
     /// Stores a `session_id_r_seed` keyed by `oprf_seed` with a TTL.
@@ -93,20 +96,23 @@ impl CacheDb {
     ///
     /// Returns an error if the insert fails.
     pub fn session_seed_put(
-        &mut self,
-        _lock: &StorageLockGuard,
+        &self,
         oprf_seed: [u8; 32],
         session_id_r_seed: [u8; 32],
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        session::put(&self.conn, oprf_seed, session_id_r_seed, now, ttl_seconds)
+        self.vault.mutate(|conn| {
+            session::put(conn, oprf_seed, session_id_r_seed, now, ttl_seconds)
+        })
     }
 
     /// Checks whether a replay guard entry exists for the given nullifier.
     ///
     /// # Returns
-    /// - bool: true if a replay guard entry exists (hence signalling a nullifier replay), false otherwise.
+    ///
+    /// - `true` if a replay guard entry exists (nullifier replay).
+    /// - `false` otherwise.
     ///
     /// # Errors
     ///
@@ -116,22 +122,18 @@ impl CacheDb {
         nullifier: [u8; 32],
         now: u64,
     ) -> StorageResult<bool> {
-        nullifiers::is_nullifier_replay(&self.conn, nullifier, now)
+        nullifiers::is_nullifier_replay(self.vault.read(), nullifier, now)
     }
 
-    /// After a proof has been successfully generated, creates a replay guard entry
-    /// locally to avoid future replays of the same nullifier.
+    /// After a proof has been successfully generated, creates a replay guard
+    /// entry locally to avoid future replays of the same nullifier.
     ///
     /// # Errors
     ///
     /// Returns an error if the query to the cache unexpectedly fails.
-    pub fn replay_guard_set(
-        &mut self,
-        _lock: &StorageLockGuard,
-        nullifier: [u8; 32],
-        now: u64,
-    ) -> StorageResult<()> {
-        nullifiers::replay_guard_set(&self.conn, nullifier, now)
+    pub fn replay_guard_set(&self, nullifier: [u8; 32], now: u64) -> StorageResult<()> {
+        self.vault
+            .mutate(|conn| nullifiers::replay_guard_set(conn, nullifier, now))
     }
 }
 
@@ -152,10 +154,8 @@ mod tests {
 
     fn cleanup_cache_files(path: &Path) {
         let _ = fs::remove_file(path);
-        let wal_path = path.with_extension("sqlite-wal");
-        let shm_path = path.with_extension("sqlite-shm");
-        let _ = fs::remove_file(wal_path);
-        let _ = fs::remove_file(shm_path);
+        let _ = fs::remove_file(path.with_extension("sqlite-wal"));
+        let _ = fs::remove_file(path.with_extension("sqlite-shm"));
     }
 
     fn temp_lock_path() -> PathBuf {
@@ -174,10 +174,9 @@ mod tests {
         let key = SecretBox::init_with(|| [0x11u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let db = CacheDb::new(&path, &key, &guard).expect("create cache");
+        let db = CacheDb::new(&path, &key, lock.clone()).expect("create cache");
         drop(db);
-        CacheDb::new(&path, &key, &guard).expect("open cache");
+        CacheDb::new(&path, &key, lock).expect("open cache");
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }
@@ -188,18 +187,17 @@ mod tests {
         let key = SecretBox::init_with(|| [0x22u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
+        let db = CacheDb::new(&path, &key, lock.clone()).expect("create cache");
         let oprf_seed = [0x01u8; 32];
         let r_seed = [0x02u8; 32];
         let now = 1_000;
-        db.session_seed_put(&guard, oprf_seed, r_seed, now, 1000)
+        db.session_seed_put(oprf_seed, r_seed, now, 1000)
             .expect("put session seed");
         drop(db);
 
         fs::write(&path, b"corrupt").expect("corrupt cache file");
 
-        let db = CacheDb::new(&path, &key, &guard).expect("rebuild cache");
+        let db = CacheDb::new(&path, &key, lock).expect("rebuild cache");
         let value = db
             .session_seed_get(oprf_seed, now)
             .expect("get session seed");
@@ -214,12 +212,10 @@ mod tests {
         let key = SecretBox::init_with(|| [0x33u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
-        db.merkle_cache_put(&guard, vec![1, 2, 3], 100, 10)
+        let db = CacheDb::new(&path, &key, lock).expect("create cache");
+        db.merkle_cache_put(&[1, 2, 3], 100, 10)
             .expect("put merkle proof");
-        let valid_until = 105;
-        let hit = db.merkle_cache_get(valid_until).expect("get merkle proof");
+        let hit = db.merkle_cache_get(105).expect("get merkle proof");
         assert!(hit.is_some());
         let miss = db.merkle_cache_get(111).expect("get merkle proof");
         assert!(miss.is_none());
@@ -233,12 +229,11 @@ mod tests {
         let key = SecretBox::init_with(|| [0x44u8; 32]);
         let lock_path = temp_lock_path();
         let lock = StorageLock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        let mut db = CacheDb::new(&path, &key, &guard).expect("create cache");
+        let db = CacheDb::new(&path, &key, lock).expect("create cache");
         let oprf_seed = [0x55u8; 32];
         let r_seed = [0x66u8; 32];
         let now = 100;
-        db.session_seed_put(&guard, oprf_seed, r_seed, now, 10)
+        db.session_seed_put(oprf_seed, r_seed, now, 10)
             .expect("put session seed");
         let hit = db.session_seed_get(oprf_seed, now).expect("get");
         assert_eq!(hit, Some(r_seed));
