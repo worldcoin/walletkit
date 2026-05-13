@@ -93,14 +93,34 @@ pub fn put(
 
 /// Fetches blob bytes by content id, if present.
 ///
+/// Accepts any byte slice so callers can pass `&ContentId`, a slice read
+/// out of another table column, or a `Vec<u8>` without copying.
+///
 /// # Errors
 ///
 /// Returns a [`StoreError`] if the query fails.
-pub fn get(conn: &Connection, cid: &ContentId) -> StoreResult<Option<Vec<u8>>> {
+pub fn get(conn: &Connection, cid: &[u8]) -> StoreResult<Option<Vec<u8>>> {
     let bytes = conn.query_row_optional(
         "SELECT bytes FROM blob_objects WHERE content_id = ?1",
-        params![cid.as_ref()],
+        params![cid],
         |row| Ok(row.column_blob(0)),
     )?;
     Ok(bytes)
+}
+
+/// Deletes the blob row with the given content id, if it exists.
+///
+/// Consumers handling status transitions that orphan bytes (e.g. a credential
+/// or PCP becoming unreferenced) call this to GC the row. Accepts any byte
+/// slice for the same reason as [`get`].
+///
+/// # Errors
+///
+/// Returns a [`StoreError`] if the delete fails.
+pub fn delete(conn: &Connection, cid: &[u8]) -> StoreResult<()> {
+    conn.execute(
+        "DELETE FROM blob_objects WHERE content_id = ?1",
+        params![cid],
+    )?;
+    Ok(())
 }

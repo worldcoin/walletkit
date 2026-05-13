@@ -286,9 +286,10 @@ fn test_cipher_import_rejects_non_empty_destination() {
 
 mod primitives {
     use super::init_sqlite;
+    use crate::envelope::KeyEnvelope;
     use crate::{
         blobs, compute_content_id, init_or_open_envelope_key, open_vault,
-        AtomicBlobStore, KeyEnvelope, Keystore, Lock, StoreError, StoreResult,
+        AtomicBlobStore, Keystore, Lock, StoreError, StoreResult,
     };
     use secrecy::{ExposeSecret, SecretBox};
     use std::sync::Mutex;
@@ -326,6 +327,26 @@ mod primitives {
         assert_eq!(decoded.wrapped_k_intermediate, vec![1, 2, 3]);
         assert_eq!(decoded.created_at, 123);
         assert_eq!(decoded.updated_at, 123);
+    }
+
+    #[test]
+    fn test_key_envelope_cbor_bytes_frozen() {
+        // Frozen CBOR encoding for the canonical envelope. Round-trip alone
+        // doesn't catch field-order or type drift; this byte-level check
+        // does. Updating this hex without an on-disk format review breaks
+        // every existing user database.
+        let envelope = KeyEnvelope::new(vec![1, 2, 3], 123);
+        let bytes = envelope.serialize().expect("serialize");
+        // CBOR map of 4 entries: version=1, wrapped_k_intermediate=[1,2,3],
+        // created_at=123, updated_at=123. Reproducible from the struct;
+        // hex captured by serializing the canonical envelope above.
+        let expected = hex::decode(
+            "a46776657273696f6e0176777261707065645f6b5f696e7465726d656469617465830102036a637265617465645f6174187b6a757064617465645f6174187b",
+        ).expect("decode hex");
+        assert_eq!(
+            bytes, expected,
+            "KeyEnvelope CBOR layout changed; on-disk envelope format would drift"
+        );
     }
 
     #[test]

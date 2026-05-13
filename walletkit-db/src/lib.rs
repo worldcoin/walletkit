@@ -8,8 +8,8 @@
 //! - [`open_vault`] — encrypted-database opener with caller-supplied schema.
 //! - [`blobs`] — content-addressed blob storage (`ensure_schema`, `put`,
 //!   `get`), [`ContentId`], and [`compute_content_id`].
-//! - [`KeyEnvelope`] + [`init_or_open_envelope_key`] — sealed intermediate
-//!   key persisted via [`AtomicBlobStore`].
+//! - [`init_or_open_envelope_key`] — sealed intermediate key persisted via
+//!   [`AtomicBlobStore`].
 //! - [`Lock`] / [`LockGuard`] — cross-process exclusive lock (`flock` /
 //!   `LockFileEx` native, no-op on WASM).
 //! - [`Keystore`] / [`AtomicBlobStore`] — plain-Rust trait surface for
@@ -29,7 +29,7 @@ mod traits;
 mod vault;
 
 pub use blobs::{compute_content_id, ContentId};
-pub use envelope::{init_or_open_envelope_key, KeyEnvelope};
+pub use envelope::init_or_open_envelope_key;
 pub use error::{StoreError, StoreResult};
 pub use lock::{Lock, LockGuard};
 pub use sqlite::{

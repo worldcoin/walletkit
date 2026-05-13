@@ -96,6 +96,20 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for StorageError {
 
 impl From<walletkit_db::StoreError> for StorageError {
     fn from(err: walletkit_db::StoreError) -> Self {
-        Self::VaultDb(err.to_string())
+        match err {
+            walletkit_db::StoreError::Keystore(s) => Self::Keystore(s),
+            walletkit_db::StoreError::BlobStore(s) => Self::BlobStore(s),
+            walletkit_db::StoreError::Lock(s) => Self::Lock(s),
+            walletkit_db::StoreError::Serialization(s) => Self::Serialization(s),
+            walletkit_db::StoreError::Crypto(s) => Self::Crypto(s),
+            walletkit_db::StoreError::InvalidEnvelope(s) => Self::InvalidEnvelope(s),
+            walletkit_db::StoreError::UnsupportedEnvelopeVersion(v) => {
+                Self::UnsupportedEnvelopeVersion(v)
+            }
+            walletkit_db::StoreError::Db(e) => Self::VaultDb(e.to_string()),
+            walletkit_db::StoreError::IntegrityCheckFailed(s) => {
+                Self::CorruptedVault(s)
+            }
+        }
     }
 }

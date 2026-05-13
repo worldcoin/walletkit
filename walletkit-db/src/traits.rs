@@ -1,9 +1,9 @@
 //! Plain-Rust trait surface for consumer-supplied platform integrations.
 //!
-//! Argument shapes mirror `WalletKit`'s existing uniffi-annotated traits
-//! (`Vec<u8>` for byte buffers, owned `String` for paths) so downstream
-//! consumers can blanket-impl these for their own annotated traits without
-//! adapter newtypes.
+//! Argument shapes (`Vec<u8>`, owned `String`) mirror `WalletKit`'s existing
+//! uniffi-annotated traits so consumers can bridge with a thin newtype that
+//! just delegates and maps errors. (A blanket impl across crates is blocked
+//! by Rust's orphan rule, so consumers do need a small wrapper.)
 
 use crate::error::StoreResult;
 

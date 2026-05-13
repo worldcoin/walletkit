@@ -154,7 +154,11 @@ mod tests {
 
         let other_keystore = InMemoryKeystore::new();
         match StorageKeys::init(&other_keystore, &blob_store, &guard, 456) {
-            Err(StorageError::VaultDb(_)) => {}
+            Err(
+                StorageError::Crypto(_)
+                | StorageError::InvalidEnvelope(_)
+                | StorageError::Keystore(_),
+            ) => {}
             Err(err) => panic!("unexpected error: {err}"),
             Ok(_) => panic!("expected error"),
         }
@@ -180,7 +184,11 @@ mod tests {
             .expect("write");
 
         match StorageKeys::init(&keystore, &blob_store, &guard, 456) {
-            Err(StorageError::VaultDb(_)) => {}
+            Err(
+                StorageError::Serialization(_)
+                | StorageError::Crypto(_)
+                | StorageError::UnsupportedEnvelopeVersion(_),
+            ) => {}
             Err(err) => panic!("unexpected error: {err}"),
             Ok(_) => panic!("expected error"),
         }

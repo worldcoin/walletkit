@@ -62,8 +62,7 @@ impl VaultDb {
     ) -> StorageResult<()> {
         let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
         let now_i64 = to_i64(now, "now")?;
-        let conn = &self.conn;
-        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
         let stored = tx
             .query_row(
                 "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
@@ -120,11 +119,10 @@ impl VaultDb {
         let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
         let expires_at_i64 = to_i64(expires_at, "expires_at")?;
 
-        let conn = &self.conn;
-        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
 
         let credential_blob_id = blobs::put(
-            conn,
+            &self.conn,
             BlobKind::CredentialBlob as u8,
             credential_blob.as_slice(),
             now,
@@ -132,7 +130,7 @@ impl VaultDb {
 
         let associated_data_id = if let Some(data) = associated_data.as_ref() {
             Some(blobs::put(
-                conn,
+                &self.conn,
                 BlobKind::AssociatedData as u8,
                 data.as_slice(),
                 now,
@@ -207,8 +205,7 @@ impl VaultDb {
              WHERE (?2 IS NULL OR cr.issuer_schema_id = ?2)
              ORDER BY cr.updated_at DESC";
 
-        let conn = &self.conn;
-        let mut stmt = conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(&[Value::Integer(now_i64), issuer_filter])
             .map_err(|err| map_db_err(&err))?;
         while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
@@ -233,8 +230,7 @@ impl VaultDb {
         credential_id: u64,
     ) -> StorageResult<()> {
         let credential_id_i64 = to_i64(credential_id, "credential_id")?;
-        let conn = &self.conn;
-        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
 
         let deleted = tx
             .execute(
@@ -301,8 +297,7 @@ impl VaultDb {
              ORDER BY cr.updated_at DESC
              LIMIT 1";
 
-        let conn = &self.conn;
-        let mut stmt = conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![expires, issuer_schema_id_i64])
             .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
@@ -328,8 +323,7 @@ impl VaultDb {
         &mut self,
         _lock: &StorageLockGuard,
     ) -> StorageResult<u64> {
-        let conn = &self.conn;
-        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
+        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
 
         let deleted = tx
             .execute("DELETE FROM credential_records", &[])
