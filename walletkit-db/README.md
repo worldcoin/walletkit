@@ -4,9 +4,9 @@ Encrypted on-device storage primitives for WalletKit. SQLCipher (`sqlite3mc`)
 wrapper, vault opener, content-addressed blobs, sealed key envelope,
 cross-process lock.
 
-Consumed by `walletkit-core::storage` (credential vault) today and by
-sibling SDKs that need an encrypted on-device store (e.g. OrbKit's planned
-`OrbPcpStore`) next. Plain Rust, no `uniffi`.
+Consumed by `walletkit-core::storage` (credential vault) and by sibling
+SDKs in the WalletKit workspace that need an encrypted on-device store.
+Plain Rust, no `uniffi`.
 
 ## Intended usage
 
@@ -26,8 +26,8 @@ let k_intermediate = init_or_open_envelope_key(
     &my_keystore_adapter,
     &my_blob_store_adapter,
     &guard,
-    "orb_pcp_keys.bin",
-    b"orbkit:pcp-key-envelope",
+    "my_consumer_keys.bin",
+    b"my-consumer:key-envelope",
     now,
 )?;
 
