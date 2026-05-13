@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::error::{StoreError, StoreResult};
-use crate::lock::LockGuard;
+use crate::lock::Lock;
 use crate::traits::{AtomicBlobStore, Keystore};
 
 const ENVELOPE_VERSION: u32 = 1;
@@ -79,20 +79,22 @@ impl KeyEnvelope {
 /// On subsequent runs, reads the envelope at `filename`, opens it under
 /// `keystore` authenticated by `ad`, and returns the unsealed key.
 ///
-/// Holding `_lock` ensures the read-open / generate-write sequence is
-/// serialized across processes.
+/// `lock` is acquired internally to serialize the read-open / generate-write
+/// sequence across processes, and released before this returns.
 ///
 /// # Errors
 ///
-/// Propagates errors from the keystore, blob store, CBOR codec, or RNG.
+/// Propagates errors from the lock, keystore, blob store, CBOR codec, or
+/// RNG.
 pub fn init_or_open_envelope_key(
     keystore: &dyn Keystore,
     blob_store: &dyn AtomicBlobStore,
-    _lock: &LockGuard,
+    lock: &Lock,
     filename: &str,
     ad: &[u8],
     now: u64,
 ) -> StoreResult<SecretBox<[u8; 32]>> {
+    let _guard = lock.lock()?;
     if let Some(bytes) = blob_store.read(filename.to_string())? {
         let envelope = KeyEnvelope::deserialize(&bytes)?;
         let k_intermediate_bytes = Zeroizing::new(

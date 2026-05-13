@@ -21,7 +21,7 @@ use super::{
     traits::{AtomicBlobStore, DeviceKeystore},
     ACCOUNT_KEYS_FILENAME, ACCOUNT_KEY_ENVELOPE_AD,
 };
-use walletkit_db::LockGuard;
+use walletkit_db::Lock;
 
 /// In-memory account keys derived from the account key envelope.
 ///
@@ -42,7 +42,7 @@ impl StorageKeys {
     pub fn init(
         keystore: &dyn DeviceKeystore,
         blob_store: &dyn AtomicBlobStore,
-        lock: &LockGuard,
+        lock: &Lock,
         now: u64,
     ) -> StorageResult<Self> {
         let intermediate_key = walletkit_db::init_or_open_envelope_key(
@@ -130,11 +130,10 @@ mod tests {
         let blob_store = InMemoryBlobStore::new();
         let lock_path = temp_lock_path();
         let lock = Lock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
         let keys_first =
-            StorageKeys::init(&keystore, &blob_store, &guard, 100).expect("init");
+            StorageKeys::init(&keystore, &blob_store, &lock, 100).expect("init");
         let keys_second =
-            StorageKeys::init(&keystore, &blob_store, &guard, 200).expect("init");
+            StorageKeys::init(&keystore, &blob_store, &lock, 200).expect("init");
 
         assert_eq!(
             keys_first.intermediate_key.expose_secret(),
@@ -149,11 +148,10 @@ mod tests {
         let blob_store = InMemoryBlobStore::new();
         let lock_path = temp_lock_path();
         let lock = Lock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        StorageKeys::init(&keystore, &blob_store, &guard, 123).expect("init");
+        StorageKeys::init(&keystore, &blob_store, &lock, 123).expect("init");
 
         let other_keystore = InMemoryKeystore::new();
-        match StorageKeys::init(&other_keystore, &blob_store, &guard, 456) {
+        match StorageKeys::init(&other_keystore, &blob_store, &lock, 456) {
             Err(
                 StorageError::Crypto(_)
                 | StorageError::InvalidEnvelope(_)
@@ -171,8 +169,7 @@ mod tests {
         let blob_store = InMemoryBlobStore::new();
         let lock_path = temp_lock_path();
         let lock = Lock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("lock");
-        StorageKeys::init(&keystore, &blob_store, &guard, 123).expect("init");
+        StorageKeys::init(&keystore, &blob_store, &lock, 123).expect("init");
 
         let mut bytes = blob_store
             .read(ACCOUNT_KEYS_FILENAME.to_string())
@@ -183,7 +180,7 @@ mod tests {
             .write_atomic(ACCOUNT_KEYS_FILENAME.to_string(), bytes)
             .expect("write");
 
-        match StorageKeys::init(&keystore, &blob_store, &guard, 456) {
+        match StorageKeys::init(&keystore, &blob_store, &lock, 456) {
             Err(
                 StorageError::Serialization(_)
                 | StorageError::Crypto(_)

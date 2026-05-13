@@ -1,9 +1,9 @@
 //! Encrypted vault database for credential storage.
 //!
-//! Thin wrapper over [`walletkit_db::open_vault`]: the credential-specific
-//! schema, queries, and backup-table list live here; the underlying open /
-//! key / integrity-check machinery and the shared `blob_objects` table come
-//! from [`walletkit_db`].
+//! Thin wrapper over [`walletkit_db::Vault`]: the credential-specific schema,
+//! queries, and backup-table list live here; the underlying open / key /
+//! integrity-check machinery and the shared `blob_objects` table come from
+//! [`walletkit_db`].
 
 mod helpers;
 mod schema;
@@ -14,83 +14,83 @@ use std::path::Path;
 
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{BlobKind, CredentialRecord};
-use crate::storage::StorageLockGuard;
 use helpers::{map_db_err, map_record, to_i64, to_u64};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
-use walletkit_db::{blobs, cipher, open_vault, params, Connection, StepResult, Value};
+use walletkit_db::{blobs, cipher, params, Lock, StepResult, Value, Vault};
 
 pub(crate) use schema::BACKUP_TABLES;
 
 /// Encrypted vault database wrapper.
+///
+/// Wraps [`walletkit_db::Vault`]: mutating methods acquire the vault's lock
+/// internally and run inside a SQL transaction; read methods bypass the
+/// lock (`SQLite` WAL handles concurrent readers).
 #[derive(Debug)]
 pub struct CredentialVault {
-    conn: Connection,
+    vault: Vault,
 }
 
 impl CredentialVault {
-    /// Opens or creates the encrypted vault database at `path`.
+    /// Opens or creates the encrypted vault database at `path`. Takes
+    /// ownership of `lock`; subsequent mutations re-acquire it through
+    /// [`walletkit_db::Vault::mutate`].
     ///
     /// # Errors
     ///
-    /// Returns an error if the database cannot be opened, keyed, or initialized.
+    /// Returns an error if the database cannot be opened, keyed, or
+    /// initialized.
     pub fn new(
         path: &Path,
         k_intermediate: &SecretBox<[u8; 32]>,
-        lock: &StorageLockGuard,
+        lock: Lock,
     ) -> StorageResult<Self> {
-        let conn = open_vault(path, k_intermediate, lock, |conn| {
+        let vault = Vault::open(path, k_intermediate, lock, |conn| {
             blobs::ensure_schema(conn)?;
             ensure_schema(conn)
         })?;
-        Ok(Self { conn })
+        Ok(Self { vault })
     }
 
     /// Initializes or validates the leaf index for this vault.
     ///
-    /// The leaf index is the account's position in the registry tree and must be
-    /// consistent for all subsequent operations. A mismatch returns an error.
+    /// The leaf index is the account's position in the registry tree and must
+    /// be consistent for all subsequent operations. A mismatch returns an
+    /// error.
     ///
     /// # Errors
     ///
     /// Returns an error if the stored leaf index does not match.
-    pub fn init_leaf_index(
-        &mut self,
-        _lock: &StorageLockGuard,
-        leaf_index: u64,
-        now: u64,
-    ) -> StorageResult<()> {
+    pub fn init_leaf_index(&self, leaf_index: u64, now: u64) -> StorageResult<()> {
         let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
         let now_i64 = to_i64(now, "now")?;
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
-        let stored = tx
-            .query_row(
-                "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?3)
-                 ON CONFLICT(schema_version) DO UPDATE SET
-                     leaf_index = CASE
-                         WHEN vault_meta.leaf_index IS NULL
-                         THEN excluded.leaf_index
-                         ELSE vault_meta.leaf_index
-                     END
-                 RETURNING leaf_index",
-                params![
-                    VAULT_SCHEMA_VERSION,
-                    leaf_index_i64,
-                    now_i64,
-                ],
-                |stmt| Ok(stmt.column_i64(0)),
-            )
-            .map_err(|err| map_db_err(&err))?;
-        if stored != leaf_index_i64 {
-            let expected = to_u64(stored, "leaf_index")?;
-            return Err(StorageError::InvalidLeafIndex {
-                expected,
-                provided: leaf_index,
-            });
-        }
-        tx.commit().map_err(|err| map_db_err(&err))?;
-        Ok(())
+        self.vault.mutate(|conn| {
+            let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
+            let stored = tx
+                .query_row(
+                    "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?3)
+                     ON CONFLICT(schema_version) DO UPDATE SET
+                         leaf_index = CASE
+                             WHEN vault_meta.leaf_index IS NULL
+                             THEN excluded.leaf_index
+                             ELSE vault_meta.leaf_index
+                         END
+                     RETURNING leaf_index",
+                    params![VAULT_SCHEMA_VERSION, leaf_index_i64, now_i64],
+                    |stmt| Ok(stmt.column_i64(0)),
+                )
+                .map_err(|err| map_db_err(&err))?;
+            if stored != leaf_index_i64 {
+                let expected = to_u64(stored, "leaf_index")?;
+                return Err(StorageError::InvalidLeafIndex {
+                    expected,
+                    provided: leaf_index,
+                });
+            }
+            tx.commit().map_err(|err| map_db_err(&err))?;
+            Ok(())
+        })
     }
 
     /// Stores a credential and optional associated data.
@@ -104,8 +104,7 @@ impl CredentialVault {
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::needless_pass_by_value)]
     pub fn store_credential(
-        &mut self,
-        _lock: &StorageLockGuard,
+        &self,
         issuer_schema_id: u64,
         subject_blinding_factor: Vec<u8>,
         genesis_issued_at: u64,
@@ -119,57 +118,60 @@ impl CredentialVault {
         let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
         let expires_at_i64 = to_i64(expires_at, "expires_at")?;
 
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+        self.vault.mutate(|conn| {
+            let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
-        let credential_blob_id = blobs::put(
-            &self.conn,
-            BlobKind::CredentialBlob as u8,
-            credential_blob.as_slice(),
-            now,
-        )?;
-
-        let associated_data_id = if let Some(data) = associated_data.as_ref() {
-            Some(blobs::put(
-                &self.conn,
-                BlobKind::AssociatedData as u8,
-                data.as_slice(),
+            let credential_blob_id = blobs::put(
+                conn,
+                BlobKind::CredentialBlob as u8,
+                credential_blob.as_slice(),
                 now,
-            )?)
-        } else {
-            None
-        };
+            )?;
 
-        let ad_cid_value: Value = associated_data_id
-            .as_ref()
-            .map_or(Value::Null, |cid| Value::Blob(cid.to_vec()));
+            let associated_data_id = associated_data
+                .as_ref()
+                .map(|data| {
+                    blobs::put(
+                        conn,
+                        BlobKind::AssociatedData as u8,
+                        data.as_slice(),
+                        now,
+                    )
+                })
+                .transpose()?;
 
-        let credential_id = tx
-            .query_row(
-                "INSERT INTO credential_records (
-                    issuer_schema_id,
-                    subject_blinding_factor,
-                    genesis_issued_at,
-                    expires_at,
-                    updated_at,
-                    credential_blob_cid,
-                    associated_data_cid
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                RETURNING credential_id",
-                params![
-                    issuer_schema_id_i64,
-                    subject_blinding_factor,
-                    genesis_issued_at_i64,
-                    expires_at_i64,
-                    now_i64,
-                    credential_blob_id.as_slice(),
-                    ad_cid_value,
-                ],
-                |stmt| Ok(stmt.column_i64(0)),
-            )
-            .map_err(|err| map_db_err(&err))?;
+            let ad_cid_value: Value = associated_data_id
+                .as_ref()
+                .map_or(Value::Null, |cid| Value::Blob(cid.to_vec()));
 
-        tx.commit().map_err(|err| map_db_err(&err))?;
-        to_u64(credential_id, "credential_id")
+            let credential_id = tx
+                .query_row(
+                    "INSERT INTO credential_records (
+                        issuer_schema_id,
+                        subject_blinding_factor,
+                        genesis_issued_at,
+                        expires_at,
+                        updated_at,
+                        credential_blob_cid,
+                        associated_data_cid
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                    RETURNING credential_id",
+                    params![
+                        issuer_schema_id_i64,
+                        subject_blinding_factor,
+                        genesis_issued_at_i64,
+                        expires_at_i64,
+                        now_i64,
+                        credential_blob_id.as_slice(),
+                        ad_cid_value,
+                    ],
+                    |stmt| Ok(stmt.column_i64(0)),
+                )
+                .map_err(|err| map_db_err(&err))?;
+
+            tx.commit().map_err(|err| map_db_err(&err))?;
+            to_u64(credential_id, "credential_id")
+        })
     }
 
     /// Lists credential metadata, optionally filtered by issuer schema.
@@ -205,7 +207,11 @@ impl CredentialVault {
              WHERE (?2 IS NULL OR cr.issuer_schema_id = ?2)
              ORDER BY cr.updated_at DESC";
 
-        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        let mut stmt = self
+            .vault
+            .read()
+            .prepare(sql)
+            .map_err(|err| map_db_err(&err))?;
         stmt.bind_values(&[Value::Integer(now_i64), issuer_filter])
             .map_err(|err| map_db_err(&err))?;
         while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
@@ -222,60 +228,59 @@ impl CredentialVault {
     ///
     /// # Errors
     ///
-    /// Returns an error if the delete query fails or the credential ID does not
-    /// exist.
-    pub fn delete_credential(
-        &mut self,
-        _lock: &StorageLockGuard,
-        credential_id: u64,
-    ) -> StorageResult<()> {
+    /// Returns an error if the delete query fails or the credential ID does
+    /// not exist.
+    pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
         let credential_id_i64 = to_i64(credential_id, "credential_id")?;
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+        self.vault.mutate(|conn| {
+            let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
-        let deleted = tx
-            .execute(
-                "DELETE FROM credential_records WHERE credential_id = ?1",
-                params![credential_id_i64],
+            let deleted = tx
+                .execute(
+                    "DELETE FROM credential_records WHERE credential_id = ?1",
+                    params![credential_id_i64],
+                )
+                .map_err(|err| map_db_err(&err))?;
+
+            if deleted == 0 {
+                return Err(StorageError::CredentialIdNotFound { credential_id });
+            }
+
+            // Delete orphaned credential blobs
+            tx.execute(
+                "DELETE FROM blob_objects
+                 WHERE blob_kind = ?1
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM credential_records cr
+                       WHERE cr.credential_blob_cid = blob_objects.content_id
+                   )",
+                params![BlobKind::CredentialBlob.as_i64()],
             )
             .map_err(|err| map_db_err(&err))?;
 
-        if deleted == 0 {
-            return Err(StorageError::CredentialIdNotFound { credential_id });
-        }
+            // Delete orphaned associated data blobs
+            tx.execute(
+                "DELETE FROM blob_objects
+                 WHERE blob_kind = ?1
+                   AND NOT EXISTS (
+                       SELECT 1
+                       FROM credential_records cr
+                       WHERE cr.associated_data_cid = blob_objects.content_id
+                   )",
+                params![BlobKind::AssociatedData.as_i64()],
+            )
+            .map_err(|err| map_db_err(&err))?;
 
-        // Delete orphaned credential blobs
-        tx.execute(
-            "DELETE FROM blob_objects
-             WHERE blob_kind = ?1
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM credential_records cr
-                   WHERE cr.credential_blob_cid = blob_objects.content_id
-               )",
-            params![BlobKind::CredentialBlob.as_i64()],
-        )
-        .map_err(|err| map_db_err(&err))?;
-
-        // Delete orphaned associated data blobs
-        tx.execute(
-            "DELETE FROM blob_objects
-             WHERE blob_kind = ?1
-               AND NOT EXISTS (
-                   SELECT 1
-                   FROM credential_records cr
-                   WHERE cr.associated_data_cid = blob_objects.content_id
-               )",
-            params![BlobKind::AssociatedData.as_i64()],
-        )
-        .map_err(|err| map_db_err(&err))?;
-
-        tx.commit().map_err(|err| map_db_err(&err))?;
-        Ok(())
+            tx.commit().map_err(|err| map_db_err(&err))?;
+            Ok(())
+        })
     }
 
     /// Retrieves the credential bytes and blinding factor by issuer schema ID.
     ///
-    /// Returns the most recent non-expired credential matching the issuer schema ID.
+    /// Returns the most recent non-expired credential matching the issuer
+    /// schema ID.
     ///
     /// # Errors
     ///
@@ -297,7 +302,11 @@ impl CredentialVault {
              ORDER BY cr.updated_at DESC
              LIMIT 1";
 
-        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        let mut stmt = self
+            .vault
+            .read()
+            .prepare(sql)
+            .map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![expires, issuer_schema_id_i64])
             .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
@@ -313,27 +322,26 @@ impl CredentialVault {
     /// **Development only.** Permanently deletes all credentials and their
     /// associated blob data from the vault.
     ///
-    /// This is a destructive, unrecoverable operation. Do not call in production.
-    /// Vault metadata (leaf index, schema version) is preserved.
+    /// This is a destructive, unrecoverable operation. Do not call in
+    /// production. Vault metadata (leaf index, schema version) is preserved.
     ///
     /// # Errors
     ///
     /// Returns an error if the delete operation fails.
-    pub fn danger_delete_all_credentials(
-        &mut self,
-        _lock: &StorageLockGuard,
-    ) -> StorageResult<u64> {
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+    pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
+        self.vault.mutate(|conn| {
+            let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
-        let deleted = tx
-            .execute("DELETE FROM credential_records", &[])
-            .map_err(|err| map_db_err(&err))?;
+            let deleted = tx
+                .execute("DELETE FROM credential_records", &[])
+                .map_err(|err| map_db_err(&err))?;
 
-        tx.execute("DELETE FROM blob_objects", &[])
-            .map_err(|err| map_db_err(&err))?;
+            tx.execute("DELETE FROM blob_objects", &[])
+                .map_err(|err| map_db_err(&err))?;
 
-        tx.commit().map_err(|err| map_db_err(&err))?;
-        Ok(deleted as u64)
+            tx.commit().map_err(|err| map_db_err(&err))?;
+            Ok(deleted as u64)
+        })
     }
 
     /// Runs an integrity check on the vault database.
@@ -342,28 +350,27 @@ impl CredentialVault {
     ///
     /// Returns an error if the check cannot be executed.
     pub fn check_integrity(&self) -> StorageResult<bool> {
-        cipher::integrity_check(&self.conn).map_err(|e| map_db_err(&e))
+        cipher::integrity_check(self.vault.read()).map_err(|e| map_db_err(&e))
     }
 
-    /// Exports a plaintext (unencrypted) copy of the vault to `dest`.
+    /// Exports a plaintext (unencrypted) copy of the vault to `dest`. Runs
+    /// under the vault's lock so concurrent writers cannot interleave.
     ///
     /// The caller is responsible for deleting the exported file after use.
     ///
     /// # Errors
     ///
     /// Returns an error if the export fails.
-    pub fn export_plaintext(
-        &self,
-        dest: &Path,
-        _lock: &StorageLockGuard,
-    ) -> StorageResult<()> {
-        if dest.exists() {
-            std::fs::remove_file(dest).map_err(|e| {
-                StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
-            })?;
-        }
-        cipher::export_plaintext_copy(&self.conn, dest, BACKUP_TABLES)
-            .map_err(|e| map_db_err(&e))
+    pub fn export_plaintext(&self, dest: &Path) -> StorageResult<()> {
+        self.vault.mutate(|conn| {
+            if dest.exists() {
+                std::fs::remove_file(dest).map_err(|e| {
+                    StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
+                })?;
+            }
+            cipher::export_plaintext_copy(conn, dest, BACKUP_TABLES)
+                .map_err(|e| map_db_err(&e))
+        })
     }
 
     /// Imports credentials from a plaintext (unencrypted) vault backup into
@@ -375,18 +382,16 @@ impl CredentialVault {
     /// # Errors
     ///
     /// Returns an error if the import fails.
-    pub fn import_plaintext(
-        &self,
-        source: &Path,
-        _lock: &StorageLockGuard,
-    ) -> StorageResult<()> {
-        cipher::import_plaintext_copy(&self.conn, source, BACKUP_TABLES)
-            .map_err(|e| map_db_err(&e))
+    pub fn import_plaintext(&self, source: &Path) -> StorageResult<()> {
+        self.vault.mutate(|conn| {
+            cipher::import_plaintext_copy(conn, source, BACKUP_TABLES)
+                .map_err(|e| map_db_err(&e))
+        })
     }
 
     /// Borrows the underlying connection for direct SQL access. **Test-only.**
     #[cfg(test)]
     pub(super) const fn raw_connection(&self) -> &walletkit_db::Connection {
-        &self.conn
+        self.vault.read()
     }
 }

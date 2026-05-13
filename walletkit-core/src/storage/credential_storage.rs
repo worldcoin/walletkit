@@ -514,7 +514,7 @@ impl CredentialStoreInner {
     fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
         let guard = self.guard()?;
         if let Some(state) = &mut self.state {
-            state.vault.init_leaf_index(&guard, leaf_index, now)?;
+            state.vault.init_leaf_index(leaf_index, now)?;
             state.leaf_index = leaf_index;
             return Ok(());
         }
@@ -522,20 +522,23 @@ impl CredentialStoreInner {
         let keys = StorageKeys::init(
             self.keystore.as_ref(),
             self.blob_store.as_ref(),
-            &guard,
+            &self.lock,
             now,
         )?;
         let k_intermediate = keys.intermediate_key();
-        let vault =
-            CredentialVault::new(&self.paths.vault_db_path(), k_intermediate, &guard)?;
+        let vault = CredentialVault::new(
+            &self.paths.vault_db_path(),
+            k_intermediate,
+            self.lock.clone(),
+        )?;
         let cache = CacheDb::new(&self.paths.cache_db_path(), k_intermediate, &guard)?;
-        let mut state = StorageState {
+        let state = StorageState {
             keys,
             vault,
             cache,
             leaf_index,
         };
-        state.vault.init_leaf_index(&guard, leaf_index, now)?;
+        state.vault.init_leaf_index(leaf_index, now)?;
         self.state = Some(state);
         Ok(())
     }
@@ -550,9 +553,8 @@ impl CredentialStoreInner {
     }
 
     fn delete_credential(&mut self, credential_id: u64) -> StorageResult<()> {
-        let guard = self.guard()?;
         let state = self.state_mut()?;
-        state.vault.delete_credential(&guard, credential_id)
+        state.vault.delete_credential(credential_id)
     }
 
     fn get_credential(
@@ -603,10 +605,8 @@ impl CredentialStoreInner {
             .map_err(|e| StorageError::Serialization(e.to_string()))?;
         let subject_blinding_factor = blinding_factor.to_bytes();
 
-        let guard = self.guard()?;
         let state = self.state_mut()?;
         state.vault.store_credential(
-            &guard,
             issuer_schema_id,
             subject_blinding_factor,
             genesis_issued_at,
@@ -728,10 +728,9 @@ impl CredentialStoreInner {
     /// Returns the path to the file. The caller is responsible for cleanup.
     #[cfg(not(target_arch = "wasm32"))]
     fn export_vault_for_backup_to_file(&self) -> StorageResult<String> {
-        let guard = self.guard()?;
         let state = self.state()?;
         let dest = self.temp_backup_path();
-        state.vault.export_plaintext(&dest, &guard)?;
+        state.vault.export_plaintext(&dest)?;
         Ok(dest.to_string_lossy().to_string())
     }
 
@@ -754,10 +753,9 @@ impl CredentialStoreInner {
     /// Imports from a plaintext vault file on disk.
     #[cfg(not(target_arch = "wasm32"))]
     fn import_vault_from_file(&self, backup_path: &str) -> StorageResult<()> {
-        let guard = self.guard()?;
         let state = self.state()?;
         let source = std::path::Path::new(backup_path);
-        state.vault.import_plaintext(source, &guard)
+        state.vault.import_plaintext(source)
     }
 
     /// Removes any stale plaintext backup temp files left behind by a
@@ -799,9 +797,8 @@ impl CredentialStoreInner {
     ///
     /// Returns an error if the delete operation fails.
     fn danger_delete_all_credentials(&mut self) -> StorageResult<u64> {
-        let guard = self.guard()?;
         let state = self.state_mut()?;
-        state.vault.danger_delete_all_credentials(&guard)
+        state.vault.danger_delete_all_credentials()
     }
 
     /// Permanently destroys all storage data: encryption keys, vault, and cache.

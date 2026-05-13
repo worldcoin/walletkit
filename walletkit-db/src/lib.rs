@@ -5,7 +5,8 @@
 //!
 //! - [`Connection`], [`Transaction`], [`Statement`], [`cipher`] — encrypted
 //!   `SQLite` (`sqlite3mc`) wrapper with safe Rust types.
-//! - [`open_vault`] — encrypted-database opener with caller-supplied schema.
+//! - [`Vault`] — encrypted-database wrapper with caller-supplied schema and
+//!   lock-enforced mutation.
 //! - [`blobs`] — content-addressed blob storage (`ensure_schema`, `put`,
 //!   `get`), [`ContentId`], and [`compute_content_id`].
 //! - [`init_or_open_envelope_key`] — sealed intermediate key persisted via
@@ -37,7 +38,7 @@ pub use sqlite::{
     StepResult, Transaction, Value,
 };
 pub use traits::{AtomicBlobStore, Keystore};
-pub use vault::open_vault;
+pub use vault::Vault;
 
 #[cfg(test)]
 mod tests;

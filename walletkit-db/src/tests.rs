@@ -288,8 +288,8 @@ mod primitives {
     use super::init_sqlite;
     use crate::envelope::KeyEnvelope;
     use crate::{
-        blobs, compute_content_id, init_or_open_envelope_key, open_vault,
-        AtomicBlobStore, Keystore, Lock, StoreError, StoreResult,
+        blobs, compute_content_id, init_or_open_envelope_key, AtomicBlobStore,
+        Keystore, Lock, StoreError, StoreResult, Vault,
     };
     use secrecy::{ExposeSecret, SecretBox};
     use std::sync::Mutex;
@@ -476,14 +476,13 @@ mod primitives {
         let dir = tempfile::tempdir().expect("create temp dir");
         let lock_path = dir.path().join("envelope.lock");
         let lock = Lock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("acquire");
 
         let keystore = XorKeystore { pad: [0xAA; 32] };
         let blob_store = InMemoryBlobs::new();
         let key_a = init_or_open_envelope_key(
             &keystore,
             &blob_store,
-            &guard,
+            &lock,
             "k.bin",
             b"test-ad",
             100,
@@ -492,7 +491,7 @@ mod primitives {
         let key_b = init_or_open_envelope_key(
             &keystore,
             &blob_store,
-            &guard,
+            &lock,
             "k.bin",
             b"test-ad",
             200,
@@ -502,20 +501,19 @@ mod primitives {
         assert_eq!(key_a.expose_secret(), key_b.expose_secret());
     }
 
-    // ---- open_vault --------------------------------------------------------
+    // ---- Vault -------------------------------------------------------------
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
-    fn test_open_vault_runs_schema_callback() {
+    fn test_vault_open_runs_schema_callback() {
         init_sqlite();
         let dir = tempfile::tempdir().expect("create temp dir");
         let db_path = dir.path().join("vault.sqlite");
         let lock_path = dir.path().join("vault.lock");
         let lock = Lock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("acquire");
         let key = SecretBox::init_with(|| [0x42u8; 32]);
 
-        let conn = open_vault(&db_path, &key, &guard, |conn| {
+        let vault = Vault::open(&db_path, &key, lock, |conn| {
             blobs::ensure_schema(conn)?;
             conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY);",
@@ -523,28 +521,63 @@ mod primitives {
         })
         .expect("open vault");
 
-        let cid = blobs::put(&conn, 7, b"payload", 1000).expect("put");
-        let bytes = blobs::get(&conn, &cid).expect("get").expect("present");
+        let cid: crate::ContentId = vault
+            .mutate::<_, StoreError, _>(|conn| blobs::put(conn, 7, b"payload", 1000))
+            .expect("put");
+        let bytes = blobs::get(vault.read(), &cid)
+            .expect("get")
+            .expect("present");
         assert_eq!(bytes, b"payload");
     }
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
-    fn test_open_vault_rejects_wrong_key() {
+    fn test_vault_open_rejects_wrong_key() {
         init_sqlite();
         let dir = tempfile::tempdir().expect("create temp dir");
         let db_path = dir.path().join("vault.sqlite");
         let lock_path = dir.path().join("vault.lock");
         let lock = Lock::open(&lock_path).expect("open lock");
-        let guard = lock.lock().expect("acquire");
         let key = SecretBox::init_with(|| [0x11u8; 32]);
-        let _ = open_vault(&db_path, &key, &guard, blobs::ensure_schema)
+        let _ = Vault::open(&db_path, &key, lock.clone(), blobs::ensure_schema)
             .expect("create vault");
-        drop(guard);
-        let guard = lock.lock().expect("re-acquire");
         let wrong = SecretBox::init_with(|| [0x22u8; 32]);
         let err =
-            open_vault(&db_path, &wrong, &guard, |_| Ok(())).expect_err("wrong key");
+            Vault::open(&db_path, &wrong, lock, |_| Ok(())).expect_err("wrong key");
         assert!(matches!(err, StoreError::Db(_)));
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_vault_mutate_serializes_writes() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let db_path = dir.path().join("vault.sqlite");
+        let lock_path = dir.path().join("vault.lock");
+        let lock = Lock::open(&lock_path).expect("open lock");
+        let key = SecretBox::init_with(|| [0x55u8; 32]);
+
+        let vault = Vault::open(&db_path, &key, lock, blobs::ensure_schema)
+            .expect("open vault");
+
+        // Two mutations in sequence; lock acquired/released around each.
+        vault
+            .mutate::<_, StoreError, _>(|conn| {
+                blobs::put(conn, 1, b"a", 100)?;
+                Ok(())
+            })
+            .expect("first mutate");
+        vault
+            .mutate::<_, StoreError, _>(|conn| {
+                blobs::put(conn, 1, b"b", 200)?;
+                Ok(())
+            })
+            .expect("second mutate");
+
+        // Reads after the lock is released.
+        let cid_a = blobs::compute_content_id(1, b"a");
+        let cid_b = blobs::compute_content_id(1, b"b");
+        assert_eq!(blobs::get(vault.read(), &cid_a).unwrap().unwrap(), b"a");
+        assert_eq!(blobs::get(vault.read(), &cid_b).unwrap().unwrap(), b"b");
     }
 }

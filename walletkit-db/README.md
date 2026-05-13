@@ -16,7 +16,8 @@ rest of the README straightforward.
 - **Vault** — the encrypted SQLite database file on disk (e.g.
   `account.vault.sqlite`). Holds every row the consumer cares about,
   including the shared `blob_objects` table. Encrypted with sqlite3mc.
-  Opened via `open_vault`.
+  Opened via `Vault::open`; mutated via `Vault::mutate` (which acquires
+  the lock); read via `Vault::read` (which bypasses the lock).
 - **Envelope** — a small CBOR-encoded file on disk (e.g.
   `account_keys.bin`) that holds the *sealed* 32-byte `K_intermediate`.
   Not a vault, not encrypted by sqlite3mc — it's the wrapper around the
@@ -25,7 +26,9 @@ rest of the README straightforward.
 - **Lock** — a separate empty file (e.g. `account.lock`) used as a
   cross-process mutex via `flock` / `LockFileEx`. Not encrypted, not part
   of the vault. Prevents two processes (e.g. extension + main app) from
-  racing on the open-and-mutate path. Managed by `Lock` / `LockGuard`.
+  racing on the open or mutate path. Owned by the `Vault` after `open`;
+  `Vault::mutate` acquires it internally, so consumers never plumb a
+  `LockGuard` through their method signatures.
 - **blob_objects table** — one shared table inside the vault for
   content-addressed bytes. Consumer-specific tables (`credential_records`,
   `pcp_records`, etc.) reference rows here by `content_id` (SHA-256). Big
@@ -40,36 +43,38 @@ rest of the README straightforward.
 
 **Opening from scratch:**
 
-1. Acquire the **Lock** so no other process is mid-open.
-2. Ask `AtomicBlobStore` for the **Envelope** file.
-3. If no envelope: generate `K_intermediate`, seal it with the host's
-   **Keystore**, write the envelope. If envelope exists: read it, unseal
-   with the keystore.
-4. Open the **Vault** SQLite file, key it with `K_intermediate` (sqlite3mc
-   installs its encryption codec).
-5. Run the consumer's schema callback — typically
-   `blobs::ensure_schema(conn)` plus the consumer's domain tables.
-6. Integrity-check the vault, return the open `Connection`.
+1. Open a `Lock` on the lock file path.
+2. `init_or_open_envelope_key(...)` acquires the lock, asks
+   `AtomicBlobStore` for the envelope file. If absent, generates
+   `K_intermediate`, seals it with the host's `Keystore`, writes the
+   envelope. If present, reads it and unseals with the keystore. Releases
+   the lock.
+3. `Vault::open(path, key, lock, ensure_schema)` acquires the lock, opens
+   the SQLite file via sqlite3mc, runs the consumer's schema callback
+   (typically `blobs::ensure_schema(conn)` plus the consumer's domain
+   tables), runs `PRAGMA integrity_check`, releases the lock. Returns
+   a `Vault`.
 
 **Storing a payload:**
 
-1. `blobs::put(conn, kind, bytes, now)` hashes the bytes
-   (`SHA-256("worldid:blob" || [kind] || bytes)`), `INSERT OR IGNORE`s
-   into `blob_objects`, returns the `ContentId`.
-2. The consumer inserts its own row (e.g. `credential_records`)
-   referencing that `content_id`.
-3. The host's `LockGuard` is held throughout the mutation; the consumer's
-   table and `blob_objects` are written in one SQLite transaction.
+1. Inside `vault.mutate(|conn| { ... })`: `blobs::put(conn, kind, bytes,
+   now)` hashes the bytes (`SHA-256("worldid:blob" || [kind] || bytes)`),
+   `INSERT OR IGNORE`s into `blob_objects`, returns the `ContentId`.
+2. The closure inserts the consumer's own row referencing that
+   `content_id`, then commits its transaction.
+3. The lock is held for the entire closure and released on return.
 
 **Reading a payload:**
 
-1. The consumer queries its own table for the row + the `content_id`.
-2. `blobs::get(conn, &content_id)` returns the bytes from `blob_objects`.
-3. No keystore call; the database is already keyed for the session.
+1. `vault.read()` returns `&Connection` directly — no lock acquisition.
+2. The consumer queries its own table for the row + the `content_id`.
+3. `blobs::get(vault.read(), &content_id)` returns the bytes from
+   `blob_objects`.
 
 **Deleting:**
 
-1. The consumer deletes from its own table.
+1. Inside `vault.mutate(|conn| { ... })`: the consumer deletes from its
+   own table.
 2. If no other row references the same `content_id`, call
    `blobs::delete(conn, &content_id)` to GC the orphan from
    `blob_objects`. (walletkit-db doesn't track references; consumers
@@ -218,34 +223,40 @@ A new consumer wires up storage in four steps. Each consumer picks its own
 paths, envelope filename, associated-data namespace, and SQL schema:
 
 ```rust
-use walletkit_db::{blobs, init_or_open_envelope_key, open_vault, Lock};
+use walletkit_db::{blobs, init_or_open_envelope_key, Lock, Vault};
 
 // 1. Cross-process lock. One file per consumer.
 let lock = Lock::open(&paths.lock_path())?;
-let guard = lock.lock()?;
 
 // 2. Unseal or generate the consumer's intermediate key.
 //    Filename + AD are per-consumer so different vaults never share keys.
+//    Acquires `lock` internally, releases on return.
 let k_intermediate = init_or_open_envelope_key(
     &my_keystore_adapter,
     &my_blob_store_adapter,
-    &guard,
+    &lock,
     "my_consumer_keys.bin",
     b"my-consumer:key-envelope",
     now,
 )?;
 
 // 3. Open the encrypted SQLite database with the consumer's own schema.
-let conn = open_vault(&paths.db_path(), &k_intermediate, &guard, |conn| {
+//    Vault takes ownership of `lock` and re-acquires it for each mutation.
+let vault = Vault::open(&paths.db_path(), &k_intermediate, lock, |conn| {
     blobs::ensure_schema(conn)?;      // shared blob_objects table
     my_schema::ensure_schema(conn)    // consumer's own tables
 })?;
 
-// 4. Store and fetch blobs by content id; insert consumer-specific rows
-//    referencing those ids.
-let cid = blobs::put(&conn, MY_KIND_TAG, &payload_bytes, now)?;
-let bytes = blobs::get(&conn, &cid)?.expect("present");
-blobs::delete(&conn, &cid)?;          // GC orphaned bytes on status change
+// 4. Mutations run under a freshly-acquired lock.
+let cid = vault.mutate(|conn| {
+    blobs::put(conn, MY_KIND_TAG, &payload_bytes, now)
+})?;
+
+// Reads bypass the lock (SQLite WAL handles concurrent readers).
+let bytes = blobs::get(vault.read(), &cid)?.expect("present");
+
+// Deletes are mutations.
+vault.mutate(|conn| blobs::delete(conn, &cid))?;
 ```
 
 The consumer brings:
@@ -262,12 +273,15 @@ envelope persistence, and the lock.
 
 ## Public surface
 
-- `open_vault(...) -> StoreResult<Connection>` — open + key + schema +
-  integrity check. Returns the bare `Connection`; consumers compose on top.
+- `Vault::open(path, key, lock, ensure_schema) -> StoreResult<Vault>` —
+  open + key + schema + integrity check.
+- `Vault::read(&self) -> &Connection` — read-only access, no lock.
+- `Vault::mutate(&self, f) -> Result<R, E>` — runs `f` under a
+  freshly-acquired lock; `E: From<StoreError>`.
 - `blobs::{ensure_schema, put, get, delete, compute_content_id}` plus
   `pub type ContentId = [u8; 32]`.
 - `init_or_open_envelope_key(...) -> StoreResult<SecretBox<[u8; 32]>>`.
-- `Lock` / `LockGuard` — native `flock` / `LockFileEx`, no-op on WASM.
+- `Lock` — native `flock` / `LockFileEx`, no-op on WASM.
 - `Keystore` / `AtomicBlobStore` traits — plain Rust. Consumers that expose
   FFI define their own annotated traits and bridge with a small newtype.
 - `Connection`, `Transaction`, `Statement`, `Row`, `StepResult`, `Value`,
