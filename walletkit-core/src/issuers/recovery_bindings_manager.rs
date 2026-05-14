@@ -248,6 +248,7 @@ impl RecoveryBindingManager {
 }
 
 #[cfg(test)]
+#[cfg(all(not(target_arch = "wasm32"), feature = "embed-zkeys"))]
 mod tests {
     use super::*;
     use crate::authenticator::Groth16Materials;
