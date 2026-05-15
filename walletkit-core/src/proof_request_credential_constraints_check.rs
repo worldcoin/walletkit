@@ -1,14 +1,16 @@
-//! Pre-flight check of whether the credential store can satisfy a [`ProofRequest`].
+//! Pre-flight check of whether the credential store can satisfy a proof request.
 //!
 //! # Overview
 //!
-//! [`check_credentials_against_proof_request`] evaluates every request item in
-//! a proof request against the contents of the local [`CredentialStore`] and returns
-//! a [`CredentialConstraintsCheckResult`] describing:
+//! [`crate::proof_request_credential_constraints_check::check_credentials_against_proof_request`]
+//! evaluates every request item in a proof request against the contents of the local
+//! [`crate::storage::CredentialStore`] and returns a
+//! [`crate::proof_request_credential_constraints_check::CredentialConstraintsCheckResult`] describing:
 //!
 //! - **`is_satisfied`** — whether the overall request (including any constraint
 //!   expression) can be fulfilled with the credentials currently in the store.
-//! - **`check_results`** — one [`CredentialConstraintsCheckItem`] per request item,
+//! - **`check_results`** — one
+//!   [`crate::proof_request_credential_constraints_check::CredentialConstraintsCheckItem`] per request item,
 //!   always populated regardless of `is_satisfied`, so the caller can identify
 //!   exactly which credentials are present or missing.
 //!
@@ -20,8 +22,8 @@
 //! 1. **Not expired** — `expires_at > now`.
 //! 2. **Fresh enough** — `genesis_issued_at >= genesis_issued_at_min` (defaults to 0
 //!    when the request item omits the field, meaning any issuance time is accepted).
-//! 3. **Long-lived enough** — `expires_at >= expires_at_min` (defaults to
-//!    [`ProofRequest::created_at`] when the request item omits the field).
+//! 3. **Long-lived enough** — `expires_at > expires_at_min` (defaults to the proof
+//!    request's `created_at` when the request item omits the field).
 //!
 //! Multiple credentials with the same `issuer_schema_id` can exist in the store.
 //! The item is considered satisfied if **any** of them passes all three checks,
@@ -33,7 +35,7 @@
 //! When the proof request carries a constraint expression (`Any`, `All`, or
 //! `Enumerate`), `is_satisfied` reflects whether the expression evaluates to `true`
 //! given the per-item results. The expression is validated for structural limits
-//! (max depth 2, max [`MAX_CONSTRAINT_NODES`] nodes) before evaluation; violations
+//! (max depth 2, max `MAX_CONSTRAINT_NODES` nodes) before evaluation; violations
 //! are returned as errors rather than `is_satisfied = false`.
 //!
 //! When there is no constraint expression every request item must be satisfied.
@@ -44,6 +46,27 @@
 //! iterate `check_results` and surface items where `has_credential` is `false` to
 //! tell the user which credentials are missing or do not meet the request's time
 //! constraints.
+//!
+//! # Examples
+//!
+//! The table below shows how constraints, available credentials, and per-item
+//! results combine. ✓ = `has_credential: true`, ✗ = `has_credential: false`.
+//!
+//! | Request items         | Constraints                      | Credentials in store  | `is_satisfied` | `check_results`                    |
+//! |-----------------------|----------------------------------|-----------------------|----------------|------------------------------------|
+//! | orb, mnc              | _(none)_                         | orb, mnc              | `true`         | orb ✓, mnc ✓                       |
+//! | orb, mnc              | _(none)_                         | orb only              | `false`        | orb ✓, mnc ✗                       |
+//! | orb, mnc              | _(none)_                         | mnc only              | `false`        | orb ✗, mnc ✓                       |
+//! | orb, mnc              | `Any(orb, mnc)`                  | orb only              | `true`         | orb ✓, mnc ✗                       |
+//! | orb, mnc              | `Any(orb, mnc)`                  | mnc only              | `true`         | orb ✗, mnc ✓                       |
+//! | orb, mnc              | `Any(orb, mnc)`                  | _(none)_              | `false`        | orb ✗, mnc ✗                       |
+//! | orb, mnc              | `All(orb, mnc)`                  | orb only              | `false`        | orb ✓, mnc ✗                       |
+//! | orb, mnc              | `All(orb, mnc)`                  | mnc only              | `false`        | orb ✗, mnc ✓                       |
+//! | orb, mnc, passport    | `All(orb, Any(mnc, passport))`   | orb, mnc              | `true`         | orb ✓, mnc ✓, passport ✗          |
+//! | orb, mnc, passport    | `All(orb, Any(mnc, passport))`   | orb, passport         | `true`         | orb ✓, mnc ✗, passport ✓          |
+//! | orb, mnc, passport    | `All(orb, Any(mnc, passport))`   | mnc, passport         | `false`        | orb ✗, mnc ✓, passport ✓          |
+//! | orb, mnc, passport    | `All(passport, Any(orb, mnc))`   | passport, mnc         | `true`         | orb ✗, mnc ✓, passport ✓          |
+//! | orb, mnc, passport    | `All(passport, Any(orb, mnc))`   | orb only              | `false`        | orb ✓, mnc ✗, passport ✗          |
 
 use std::collections::HashMap;
 
