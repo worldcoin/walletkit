@@ -541,6 +541,35 @@ fn test_vault_integrity_check() {
 }
 
 #[test]
+fn test_list_credentials_round_trips_genesis_issued_at() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let lock = StorageLock::open(&lock_path).expect("open lock");
+    let guard = lock.lock().expect("lock");
+    let key = SecretBox::init_with(|| [0x0Cu8; 32]);
+    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+
+    let genesis_issued_at = 123_456_789u64;
+    db.store_credential(
+        &guard,
+        100,
+        sample_blinding_factor(),
+        genesis_issued_at,
+        999_999,
+        b"blob".to_vec(),
+        None,
+        1000,
+    )
+    .expect("store credential");
+
+    let records = db.list_credentials(None, 1000).expect("list credentials");
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].genesis_issued_at, genesis_issued_at);
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
 fn test_vault_corruption_handling() {
     let path = temp_vault_path();
     let key = SecretBox::init_with(|| [0x0Bu8; 32]);
