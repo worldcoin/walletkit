@@ -2,7 +2,7 @@
 //!
 //! # Overview
 //!
-//! [`check_credentials_against_proof_request`] evaluates every [`RequestItem`] in
+//! [`check_credentials_against_proof_request`] evaluates every request item in
 //! a proof request against the contents of the local [`CredentialStore`] and returns
 //! a [`CredentialConstraintsCheckResult`] describing:
 //!
@@ -14,7 +14,7 @@
 //!
 //! # Per-item evaluation
 //!
-//! For each [`RequestItem`] the check verifies that the store contains at least one
+//! For each request item the check verifies that the store contains at least one
 //! credential that is:
 //!
 //! 1. **Not expired** — `expires_at > now`.
@@ -66,7 +66,7 @@ pub enum CredentialConstraintsCheckError {
     ConstraintTooLarge,
 }
 
-/// Check result for a single [`RequestItem`].
+/// Check result for a single request item.
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct CredentialConstraintsCheckItem {
     /// The RP-defined identifier for this request item (e.g. `"orb"`, `"document"`).
@@ -83,7 +83,7 @@ pub struct CredentialConstraintsCheckItem {
 pub struct CredentialConstraintsCheckResult {
     /// `true` when the constraint tree (or all items, if no constraints) is satisfied.
     pub is_satisfied: bool,
-    /// One entry per [`RequestItem`] in the proof request, in the same order.
+    /// One entry per request item in the proof request, in the same order.
     ///
     /// Always populated regardless of `is_satisfied`. When `is_satisfied` is `false`,
     /// items with `has_credential = false` identify what is missing or does not meet
@@ -240,7 +240,8 @@ mod tests {
             ],
             None,
         );
-        let result = check_credentials_against_proof_request(&request, &store, now).unwrap();
+        let result =
+            check_credentials_against_proof_request(&request, &store, now).unwrap();
         assert!(result.is_satisfied);
         assert!(result.check_results.iter().all(|i| i.has_credential));
         cleanup_test_storage(&root);
@@ -257,7 +258,8 @@ mod tests {
             ],
             None,
         );
-        let result = check_credentials_against_proof_request(&request, &store, now).unwrap();
+        let result =
+            check_credentials_against_proof_request(&request, &store, now).unwrap();
         assert!(!result.is_satisfied);
         assert!(result.check_results[0].has_credential);
         assert!(!result.check_results[1].has_credential);
@@ -287,7 +289,8 @@ mod tests {
             None,
         );
 
-        let result = check_credentials_against_proof_request(&request, &store, now).unwrap();
+        let result =
+            check_credentials_against_proof_request(&request, &store, now).unwrap();
         assert!(!result.is_satisfied);
         assert!(!result.check_results[0].has_credential);
         cleanup_test_storage(&root);
@@ -333,7 +336,8 @@ mod tests {
                 ],
             }),
         );
-        let result = check_credentials_against_proof_request(&request, &store, now).unwrap();
+        let result =
+            check_credentials_against_proof_request(&request, &store, now).unwrap();
         assert!(!result.is_satisfied);
         assert!(result.check_results[0].has_credential);
         assert!(!result.check_results[1].has_credential);
@@ -432,9 +436,12 @@ mod tests {
     fn any_abc_only_a_satisfies() {
         let now = 1000;
         let (store, root) = store_with_credentials(&[100], now);
-        let result =
-            check_credentials_against_proof_request(&three_item_request(any_a_or_b_or_c()), &store, now)
-                .unwrap();
+        let result = check_credentials_against_proof_request(
+            &three_item_request(any_a_or_b_or_c()),
+            &store,
+            now,
+        )
+        .unwrap();
         assert!(result.is_satisfied);
         assert!(
             result
@@ -468,9 +475,12 @@ mod tests {
     fn any_abc_only_b_satisfies() {
         let now = 1000;
         let (store, root) = store_with_credentials(&[200], now);
-        let result =
-            check_credentials_against_proof_request(&three_item_request(any_a_or_b_or_c()), &store, now)
-                .unwrap();
+        let result = check_credentials_against_proof_request(
+            &three_item_request(any_a_or_b_or_c()),
+            &store,
+            now,
+        )
+        .unwrap();
         assert!(result.is_satisfied);
         assert!(
             !result
@@ -504,9 +514,12 @@ mod tests {
     fn any_abc_none_present() {
         let now = 1000;
         let (store, root) = store_with_credentials(&[], now);
-        let result =
-            check_credentials_against_proof_request(&three_item_request(any_a_or_b_or_c()), &store, now)
-                .unwrap();
+        let result = check_credentials_against_proof_request(
+            &three_item_request(any_a_or_b_or_c()),
+            &store,
+            now,
+        )
+        .unwrap();
         assert!(!result.is_satisfied);
         assert!(result.check_results.iter().all(|i| !i.has_credential));
         cleanup_test_storage(&root);
@@ -517,9 +530,12 @@ mod tests {
     fn all_a_any_bc_none_present() {
         let now = 1000;
         let (store, root) = store_with_credentials(&[], now);
-        let result =
-            check_credentials_against_proof_request(&three_item_request(all_a_and_b_or_c()), &store, now)
-                .unwrap();
+        let result = check_credentials_against_proof_request(
+            &three_item_request(all_a_and_b_or_c()),
+            &store,
+            now,
+        )
+        .unwrap();
         assert!(!result.is_satisfied);
         cleanup_test_storage(&root);
     }
@@ -529,9 +545,12 @@ mod tests {
     fn all_a_any_bc_all_present() {
         let now = 1000;
         let (store, root) = store_with_credentials(&[100, 200, 300], now);
-        let result =
-            check_credentials_against_proof_request(&three_item_request(all_a_and_b_or_c()), &store, now)
-                .unwrap();
+        let result = check_credentials_against_proof_request(
+            &three_item_request(all_a_and_b_or_c()),
+            &store,
+            now,
+        )
+        .unwrap();
         assert!(result.is_satisfied);
         assert!(result.check_results.iter().all(|i| i.has_credential));
         cleanup_test_storage(&root);
@@ -552,8 +571,12 @@ mod tests {
             vec![RequestItem::new("a".into(), 100, None, None, None)],
             Some(deep),
         );
-        let err = check_credentials_against_proof_request(&request, &store, now).unwrap_err();
-        assert!(matches!(err, CredentialConstraintsCheckError::ConstraintTooDeep));
+        let err =
+            check_credentials_against_proof_request(&request, &store, now).unwrap_err();
+        assert!(matches!(
+            err,
+            CredentialConstraintsCheckError::ConstraintTooDeep
+        ));
         cleanup_test_storage(&root);
     }
 
@@ -571,8 +594,12 @@ mod tests {
             .map(|i| RequestItem::new(format!("t{i}"), i as u64, None, None, None))
             .collect();
         let request = dummy_request(items, Some(expr));
-        let err = check_credentials_against_proof_request(&request, &store, now).unwrap_err();
-        assert!(matches!(err, CredentialConstraintsCheckError::ConstraintTooLarge));
+        let err =
+            check_credentials_against_proof_request(&request, &store, now).unwrap_err();
+        assert!(matches!(
+            err,
+            CredentialConstraintsCheckError::ConstraintTooLarge
+        ));
         cleanup_test_storage(&root);
     }
 
@@ -605,7 +632,8 @@ mod tests {
             vec![RequestItem::new("a".into(), 100, None, Some(600), None)],
             None,
         );
-        let result = check_credentials_against_proof_request(&request, &store, now).unwrap();
+        let result =
+            check_credentials_against_proof_request(&request, &store, now).unwrap();
         assert!(!result.is_satisfied);
         assert!(!result.check_results[0].has_credential);
         cleanup_test_storage(&root);
@@ -620,7 +648,8 @@ mod tests {
             vec![RequestItem::new("a".into(), 100, None, None, Some(5000))],
             None,
         );
-        let result = check_credentials_against_proof_request(&request, &store, now).unwrap();
+        let result =
+            check_credentials_against_proof_request(&request, &store, now).unwrap();
         assert!(!result.is_satisfied);
         assert!(!result.check_results[0].has_credential);
         cleanup_test_storage(&root);
@@ -635,7 +664,8 @@ mod tests {
             vec![RequestItem::new("a".into(), 100, None, None, Some(5000))],
             None,
         );
-        let result = check_credentials_against_proof_request(&request, &store, now).unwrap();
+        let result =
+            check_credentials_against_proof_request(&request, &store, now).unwrap();
         assert!(!result.is_satisfied);
         assert!(!result.check_results[0].has_credential);
         cleanup_test_storage(&root);
