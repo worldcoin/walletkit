@@ -94,19 +94,13 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for StorageError {
     }
 }
 
-/// Maps `walletkit_db::StoreError` variants 1-1 onto `StorageError`.
+/// 1-1 variant mapping is intentional: hosts pattern-match on `StorageError`
+/// for UX, and `walletkit-db` is uniffi-free by design, so the translation
+/// has to live in each FFI-exporting consumer. Don't flatten.
 ///
-/// The two enums look like mirrors and they are, on purpose. `StorageError`
-/// is `#[derive(uniffi::Error)]` and hosts (Kotlin / Swift) pattern-match on
-/// the variant to drive UX (keystore failure means re-authenticate; lock
-/// failure means retry; etc.). Collapsing this to a single `VaultDb(String)`
-/// would erase that variant identity at the FFI boundary.
-///
-/// The "two enums kept in lockstep forever" cost is real but small: nine
-/// mapping lines, and the set of possible `StoreError` variants is bounded
-/// by what encrypted `SQLite` + envelope + lock + blobs can fail at. Adding a
-/// new variant means adding one line here. If you're tempted to flatten:
-/// don't, without a coordinated host change first.
+/// TODO: when a second consumer (`OrbKit`, `IssuerKit`) ships its own
+/// uniffi-exported error mirroring `StoreError`, extract this mapping into a
+/// shared `walletkit-ffi-shared` crate. Not worth it for one consumer.
 impl From<walletkit_db::StoreError> for StorageError {
     fn from(err: walletkit_db::StoreError) -> Self {
         match err {
