@@ -22,7 +22,7 @@ mod transaction;
 mod value;
 
 pub use connection::Connection;
-pub use error::{Error, Result};
+pub use error::{DbResult, Error};
 pub use statement::{Row, Statement, StepResult};
 pub use transaction::Transaction;
 pub use value::Value;

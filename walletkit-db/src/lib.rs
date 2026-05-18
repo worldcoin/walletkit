@@ -34,8 +34,8 @@ pub use envelope::init_or_open_envelope_key;
 pub use error::{StoreError, StoreResult};
 pub use lock::{Lock, LockGuard};
 pub use sqlite::{
-    cipher, Connection, Error as DbError, Result as DbResult, Row, Statement,
-    StepResult, Transaction, Value,
+    cipher, Connection, DbResult, Error as DbError, Row, Statement, StepResult,
+    Transaction, Value,
 };
 pub use traits::{AtomicBlobStore, Keystore};
 pub use vault::Vault;

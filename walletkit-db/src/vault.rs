@@ -20,7 +20,7 @@ use secrecy::SecretBox;
 
 use crate::error::{StoreError, StoreResult};
 use crate::lock::Lock;
-use crate::sqlite::{cipher, Connection, Result as DbResult};
+use crate::sqlite::{cipher, Connection, DbResult};
 
 /// Open encrypted database paired with the lock that serializes its
 /// mutations.

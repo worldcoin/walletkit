@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 
 use crate::error::{StoreError, StoreResult};
 use crate::params;
-use crate::sqlite::{Connection, Error as DbError, Result as DbResult};
+use crate::sqlite::{Connection, DbResult, Error as DbError};
 
 const CONTENT_ID_PREFIX: &[u8] = b"worldid:blob";
 

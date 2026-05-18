@@ -3,7 +3,7 @@
 //! Automatically rolls back on drop unless explicitly committed.
 
 use super::connection::Connection;
-use super::error::Result;
+use super::error::DbResult;
 use super::statement::{Row, Statement};
 use super::value::Value;
 
@@ -22,7 +22,7 @@ impl<'conn> Transaction<'conn> {
     ///
     /// When `immediate` is true, the transaction acquires a RESERVED lock
     /// immediately (`BEGIN IMMEDIATE`) rather than deferring it.
-    pub(super) fn begin(conn: &'conn Connection, immediate: bool) -> Result<Self> {
+    pub(super) fn begin(conn: &'conn Connection, immediate: bool) -> DbResult<Self> {
         let sql = if immediate {
             "BEGIN IMMEDIATE"
         } else {
@@ -40,7 +40,7 @@ impl<'conn> Transaction<'conn> {
     /// # Errors
     ///
     /// Returns `Error` if the COMMIT statement fails.
-    pub fn commit(mut self) -> Result<()> {
+    pub fn commit(mut self) -> DbResult<()> {
         self.conn.execute_batch("COMMIT")?;
         self.committed = true;
         Ok(())
@@ -54,7 +54,7 @@ impl<'conn> Transaction<'conn> {
     ///
     /// Returns `Error` if any statement fails.
     #[allow(dead_code)]
-    pub fn execute_batch(&self, sql: &str) -> Result<()> {
+    pub fn execute_batch(&self, sql: &str) -> DbResult<()> {
         self.conn.execute_batch(sql)
     }
 
@@ -63,7 +63,7 @@ impl<'conn> Transaction<'conn> {
     /// # Errors
     ///
     /// Returns `Error` if preparation or execution fails.
-    pub fn execute(&self, sql: &str, params: &[Value]) -> Result<usize> {
+    pub fn execute(&self, sql: &str, params: &[Value]) -> DbResult<usize> {
         self.conn.execute(sql, params)
     }
 
@@ -76,8 +76,8 @@ impl<'conn> Transaction<'conn> {
         &self,
         sql: &str,
         params: &[Value],
-        mapper: impl FnOnce(&Row<'_, '_>) -> Result<T>,
-    ) -> Result<T> {
+        mapper: impl FnOnce(&Row<'_, '_>) -> DbResult<T>,
+    ) -> DbResult<T> {
         self.conn.query_row(sql, params, mapper)
     }
 
@@ -86,7 +86,7 @@ impl<'conn> Transaction<'conn> {
     /// # Errors
     ///
     /// Returns `Error` if the SQL is invalid.
-    pub fn prepare(&self, sql: &str) -> Result<Statement<'_>> {
+    pub fn prepare(&self, sql: &str) -> DbResult<Statement<'_>> {
         self.conn.prepare(sql)
     }
 }

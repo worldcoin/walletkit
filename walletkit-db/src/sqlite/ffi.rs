@@ -3,7 +3,7 @@
 //! This module is the **only** place in the codebase that contains `unsafe` code
 //! or C types (`*mut c_void`, `CString`, etc.). It exposes two safe handle types
 //! -- [`RawDb`] and [`RawStmt`] -- whose methods perform the underlying FFI calls
-//! and translate results into idiomatic Rust ([`Result`], `String`, `Vec<u8>`).
+//! and translate results into idiomatic Rust ([`DbResult`], `String`, `Vec<u8>`).
 //!
 //! Why `unsafe` is required: `SQLite` is a C library. Calling any C function from
 //! Rust is `unsafe` by definition because the Rust compiler cannot verify memory
@@ -26,7 +26,7 @@ use std::os::raw::{c_char, c_int, c_void};
 
 use zeroize::Zeroize;
 
-use super::error::{Error, Result};
+use super::error::{DbResult, Error};
 
 // -- SQLite constants (plain `i32`, no C types leaked to callers) -------------
 
@@ -75,7 +75,7 @@ unsafe impl Send for RawDb {}
 
 impl RawDb {
     /// Opens (or creates) a database at the given `path`.
-    pub fn open(path: &str, flags: i32) -> Result<Self> {
+    pub fn open(path: &str, flags: i32) -> DbResult<Self> {
         let c_path = to_cstring(path)?;
         let mut ptr: *mut c_void = std::ptr::null_mut();
 
@@ -109,7 +109,7 @@ impl RawDb {
     }
 
     /// Executes one or more semicolon-separated SQL statements. No results.
-    pub fn exec(&self, sql: &str) -> Result<()> {
+    pub fn exec(&self, sql: &str) -> DbResult<()> {
         let c_sql = to_cstring(sql)?;
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
@@ -147,7 +147,7 @@ impl RawDb {
     /// Like [`exec`](Self::exec) but zeroizes the internal `CString` buffer
     /// after the FFI call. Use for SQL that contains sensitive material (e.g.
     /// `PRAGMA key`).
-    pub fn exec_zeroized(&self, sql: &str) -> Result<()> {
+    pub fn exec_zeroized(&self, sql: &str) -> DbResult<()> {
         let c_sql = to_cstring(sql)?;
         let mut errmsg: *mut c_char = std::ptr::null_mut();
 
@@ -187,7 +187,7 @@ impl RawDb {
     }
 
     /// Prepares a single SQL statement for execution.
-    pub fn prepare(&self, sql: &str) -> Result<RawStmt<'_>> {
+    pub fn prepare(&self, sql: &str) -> DbResult<RawStmt<'_>> {
         let c_sql = to_cstring(sql)?;
         let mut stmt_ptr: *mut c_void = std::ptr::null_mut();
 
@@ -252,7 +252,7 @@ impl std::fmt::Debug for RawDb {
 
 impl RawStmt<'_> {
     /// Executes a single step. Returns `SQLITE_ROW` or `SQLITE_DONE`.
-    pub fn step(&mut self) -> Result<i32> {
+    pub fn step(&mut self) -> DbResult<i32> {
         // Safety: self.ptr is a valid prepared statement.
         let rc = unsafe { raw::sqlite3_step(self.ptr) };
         match rc {
@@ -264,7 +264,7 @@ impl RawStmt<'_> {
 
     /// Resets the statement so it can be stepped again.
     #[allow(dead_code)]
-    pub fn reset(&mut self) -> Result<()> {
+    pub fn reset(&mut self) -> DbResult<()> {
         // Safety: self.ptr is valid.
         let rc = unsafe { raw::sqlite3_reset(self.ptr) };
         if rc == SQLITE_OK as c_int {
@@ -276,13 +276,13 @@ impl RawStmt<'_> {
 
     // -- Binding --------------------------------------------------------------
 
-    pub fn bind_i64(&mut self, idx: i32, value: i64) -> Result<()> {
+    pub fn bind_i64(&mut self, idx: i32, value: i64) -> DbResult<()> {
         // Safety: self.ptr is valid; idx is a 1-based parameter index.
         let rc = unsafe { raw::sqlite3_bind_int64(self.ptr, idx as c_int, value) };
         check(rc, self)
     }
 
-    pub fn bind_blob(&mut self, idx: i32, value: &[u8]) -> Result<()> {
+    pub fn bind_blob(&mut self, idx: i32, value: &[u8]) -> DbResult<()> {
         // Safety: value.as_ptr() is valid for value.len() bytes.
         // SQLITE_TRANSIENT tells SQLite to copy the data immediately.
         let rc = unsafe {
@@ -297,7 +297,7 @@ impl RawStmt<'_> {
         check(rc, self)
     }
 
-    pub fn bind_text(&mut self, idx: i32, value: &str) -> Result<()> {
+    pub fn bind_text(&mut self, idx: i32, value: &str) -> DbResult<()> {
         // Safety: value.as_ptr() is valid for value.len() bytes.
         // SQLITE_TRANSIENT tells SQLite to copy the data immediately.
         let rc = unsafe {
@@ -312,7 +312,7 @@ impl RawStmt<'_> {
         check(rc, self)
     }
 
-    pub fn bind_null(&mut self, idx: i32) -> Result<()> {
+    pub fn bind_null(&mut self, idx: i32) -> DbResult<()> {
         // Safety: self.ptr is valid.
         let rc = unsafe { raw::sqlite3_bind_null(self.ptr, idx as c_int) };
         check(rc, self)
@@ -385,7 +385,7 @@ impl Drop for RawStmt<'_> {
 
 // -- Helpers (private) --------------------------------------------------------
 
-fn to_cstring(s: &str) -> Result<CString> {
+fn to_cstring(s: &str) -> DbResult<CString> {
     CString::new(s)
         .map_err(|e| Error::new(SQLITE_ERROR, format!("nul byte in string: {e}")))
 }
@@ -404,7 +404,7 @@ fn errmsg_from_ptr(db: *mut c_void) -> String {
     }
 }
 
-fn check(rc: c_int, stmt: &RawStmt) -> Result<()> {
+fn check(rc: c_int, stmt: &RawStmt) -> DbResult<()> {
     if rc == SQLITE_OK as c_int {
         Ok(())
     } else {

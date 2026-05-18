@@ -70,18 +70,18 @@ impl StorageKeys {
 
 struct Ks<'a>(&'a dyn DeviceKeystore);
 impl walletkit_db::Keystore for Ks<'_> {
-    fn seal(&self, ad: Vec<u8>, pt: Vec<u8>) -> walletkit_db::StoreResult<Vec<u8>> {
+    fn seal(&self, aad: Vec<u8>, pt: Vec<u8>) -> walletkit_db::StoreResult<Vec<u8>> {
         self.0
-            .seal(ad, pt)
+            .seal(aad, pt)
             .map_err(|e| walletkit_db::StoreError::Keystore(e.to_string()))
     }
     fn open_sealed(
         &self,
-        ad: Vec<u8>,
+        aad: Vec<u8>,
         ct: Vec<u8>,
     ) -> walletkit_db::StoreResult<Vec<u8>> {
         self.0
-            .open_sealed(ad, ct)
+            .open_sealed(aad, ct)
             .map_err(|e| walletkit_db::StoreError::Keystore(e.to_string()))
     }
 }

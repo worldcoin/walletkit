@@ -40,4 +40,4 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 /// Result alias for [`Error`].
-pub type Result<T> = std::result::Result<T, Error>;
+pub type DbResult<T> = std::result::Result<T, Error>;

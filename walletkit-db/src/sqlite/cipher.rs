@@ -37,7 +37,7 @@ use secrecy::{ExposeSecret, SecretBox};
 use zeroize::Zeroizing;
 
 use super::connection::Connection;
-use super::error::{Error, Result};
+use super::error::{DbResult, Error};
 
 /// Opens a database, applies the encryption key, and configures the connection.
 ///
@@ -53,7 +53,7 @@ pub fn open_encrypted(
     path: &Path,
     k_intermediate: &SecretBox<[u8; 32]>,
     read_only: bool,
-) -> Result<Connection> {
+) -> DbResult<Connection> {
     let conn = Connection::open(path, read_only)?;
     apply_key(&conn, k_intermediate)?;
     configure_connection(&conn)?;
@@ -70,7 +70,7 @@ pub fn open_encrypted(
 /// After keying, a lightweight read (`SELECT count(*) FROM sqlite_master`)
 /// verifies the key is correct. If it's wrong, `sqlite3mc` fails with
 /// `SQLITE_NOTADB` on the first page read.
-fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> Result<()> {
+fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> DbResult<()> {
     // Hex-encode the key and build the PRAGMA. Both are zeroized on drop.
     let key_hex = Zeroizing::new(hex::encode(k_intermediate.expose_secret()));
     let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", key_hex.as_str()));
@@ -105,7 +105,7 @@ fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> Result<
 /// - `foreign_keys = ON` -- enforces referential integrity constraints.
 /// - `secure_delete = ON` -- overwrites deleted content with zeroes so
 ///   sensitive data does not linger in free pages.
-fn configure_connection(conn: &Connection) -> Result<()> {
+fn configure_connection(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
          PRAGMA journal_mode = WAL;
@@ -132,7 +132,7 @@ pub fn export_plaintext_copy(
     conn: &Connection,
     dest_path: &Path,
     tables: &[&str],
-) -> Result<()> {
+) -> DbResult<()> {
     let dest_str = dest_path.to_string_lossy();
     let attach_sql = format!(
         "ATTACH DATABASE '{}' AS backup KEY '';",
@@ -180,7 +180,7 @@ pub fn import_plaintext_copy(
     conn: &Connection,
     source_path: &Path,
     tables: &[&str],
-) -> Result<()> {
+) -> DbResult<()> {
     if !source_path.exists() {
         return Err(Error::new(
             -1,
@@ -237,7 +237,7 @@ pub fn import_plaintext_copy(
 /// # Errors
 ///
 /// Returns `Error` if the integrity check query fails.
-pub fn integrity_check(conn: &Connection) -> Result<bool> {
+pub fn integrity_check(conn: &Connection) -> DbResult<bool> {
     let result = conn.query_row("PRAGMA integrity_check;", &[], |stmt| {
         Ok(stmt.column_text(0))
     })?;

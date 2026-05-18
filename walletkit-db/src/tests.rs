@@ -285,6 +285,11 @@ fn test_cipher_import_rejects_non_empty_destination() {
 // -------------------------------------------------------------------------
 
 mod primitives {
+    //! Storage-primitive tests: `compute_content_id` and `KeyEnvelope`
+    //! frozen-byte format guards, `Lock` exclusivity and cross-thread
+    //! serialization, `init_or_open_envelope_key` round-trip, and
+    //! `Vault::open` schema-callback / wrong-key behavior.
+
     use super::init_sqlite;
     use crate::envelope::KeyEnvelope;
     use crate::{
@@ -293,11 +298,6 @@ mod primitives {
     };
     use secrecy::{ExposeSecret, SecretBox};
     use std::sync::Mutex;
-
-    // ---- compute_content_id format guard --------------------------------
-    //
-    // The hash domain is part of the on-disk format. Changing this test
-    // means breaking every existing user database.
 
     #[test]
     fn test_compute_content_id_byte_stable() {
@@ -315,8 +315,6 @@ mod primitives {
         let cid2 = compute_content_id(2, b"hello");
         assert_ne!(cid, cid2, "kind tag must affect content id");
     }
-
-    // ---- KeyEnvelope CBOR format guard ----------------------------------
 
     #[test]
     fn test_key_envelope_round_trip() {
@@ -360,8 +358,6 @@ mod primitives {
             Ok(_) => panic!("expected UnsupportedEnvelopeVersion, got Ok"),
         }
     }
-
-    // ---- Lock --------------------------------------------------------------
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
@@ -416,11 +412,8 @@ mod primitives {
         thread_a.join().expect("thread join");
     }
 
-    // ---- Envelope helper end-to-end ----------------------------------------
-    //
-    // Uses a stub Keystore that XORs with a fixed pad. Good enough to verify
-    // the seal -> persist -> open round-trip on the envelope wiring.
-
+    /// Stub `Keystore` that XORs with a fixed pad. Good enough to verify
+    /// the seal → persist → open round-trip on the envelope wiring.
     struct XorKeystore {
         pad: [u8; 32],
     }
@@ -500,8 +493,6 @@ mod primitives {
 
         assert_eq!(key_a.expose_secret(), key_b.expose_secret());
     }
-
-    // ---- Vault -------------------------------------------------------------
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
