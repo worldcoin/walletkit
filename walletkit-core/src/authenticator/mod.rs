@@ -817,7 +817,7 @@ mod tests {
             cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
         };
         use alloy::primitives::address;
-        use world_id_core::primitives::Config;
+        use world_id_core::primitives::{Config, ServiceEndpoint};
 
         let _ = rustls::crypto::ring::default_provider().install_default();
 
@@ -841,8 +841,12 @@ mod tests {
             Some(mock_server.url()),
             480,
             address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
-            "https://indexer.us.id-infra.worldcoin.dev".to_string(),
-            "https://gateway.id-infra.worldcoin.dev".to_string(),
+            ServiceEndpoint::direct(
+                "https://indexer.us.id-infra.worldcoin.dev".to_string(),
+            ),
+            ServiceEndpoint::direct(
+                "https://gateway.id-infra.worldcoin.dev".to_string(),
+            ),
             vec![],
             2,
         )

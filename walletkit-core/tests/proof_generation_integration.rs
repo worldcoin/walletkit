@@ -38,7 +38,7 @@ use walletkit_core::{
 };
 use world_id_core::primitives::{rp::RpId, FieldElement, Nullifier};
 use world_id_core::{
-    requests::{ProofRequest, RequestItem, RequestVersion},
+    requests::{ProofRequest, ProofType, RequestItem, RequestVersion},
     Authenticator as CoreAuthenticator, EdDSAPrivateKey,
 };
 
@@ -235,6 +235,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let proof_request_core = ProofRequest {
         id: "staging_test_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::Uniqueness,
         created_at,
         expires_at,
         rp_id,
@@ -455,6 +456,7 @@ async fn e2e_session_proof() -> Result<()> {
     let init_request = ProofRequest {
         id: "session_init_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::CreateSession,
         created_at,
         expires_at,
         rp_id,
@@ -506,6 +508,7 @@ async fn e2e_session_proof() -> Result<()> {
     let session_proof_request_core = ProofRequest {
         id: "session_proof_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::Session,
         created_at,
         expires_at,
         rp_id,
