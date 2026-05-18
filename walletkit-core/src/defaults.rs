@@ -172,3 +172,129 @@ pub fn default_config_with_ohttp(
     let gateway = ohttp_endpoint(gateway_url(environment), Region::Us, environment);
     build_config(environment, rpc_url, region, indexer, gateway)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_ENVS: &[Environment] = &[Environment::Staging, Environment::Production];
+    const ALL_REGIONS: &[Region] = &[Region::Us, Region::Eu, Region::Ap];
+
+    #[test]
+    fn default_config_builds_direct_endpoints_for_every_env_and_region() {
+        for env in ALL_ENVS {
+            for region in ALL_REGIONS {
+                let config = default_config(env, None, Some(*region))
+                    .expect("default_config should succeed");
+
+                assert!(
+                    matches!(config.indexer(), ServiceEndpoint::Direct { .. }),
+                    "indexer should be Direct for env={env:?} region={region:?}"
+                );
+                assert!(
+                    matches!(config.gateway(), ServiceEndpoint::Direct { .. }),
+                    "gateway should be Direct for env={env:?} region={region:?}"
+                );
+                assert_eq!(config.indexer_url(), indexer_url(*region, env));
+                assert_eq!(config.gateway_url(), gateway_url(env));
+            }
+        }
+    }
+
+    #[test]
+    fn default_config_with_ohttp_builds_ohttp_endpoints_with_region_specific_relays() {
+        for env in ALL_ENVS {
+            for region in ALL_REGIONS {
+                let config = default_config_with_ohttp(env, None, Some(*region))
+                    .expect("default_config_with_ohttp should succeed");
+
+                match config.indexer() {
+                    ServiceEndpoint::Ohttp {
+                        url,
+                        relay_url,
+                        key_config_base64,
+                    } => {
+                        assert_eq!(url, &indexer_url(*region, env));
+                        assert_eq!(relay_url, &ohttp_relay_url(*region, env));
+                        assert_eq!(key_config_base64, ohttp_key_config(*region, env));
+                    }
+                    other => panic!(
+                        "indexer should be Ohttp for env={env:?} region={region:?}, got {other:?}"
+                    ),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn default_config_with_ohttp_pins_gateway_to_us_relay_regardless_of_region() {
+        for env in ALL_ENVS {
+            for region in ALL_REGIONS {
+                let config = default_config_with_ohttp(env, None, Some(*region))
+                    .expect("default_config_with_ohttp should succeed");
+
+                match config.gateway() {
+                    ServiceEndpoint::Ohttp {
+                        url,
+                        relay_url,
+                        key_config_base64,
+                    } => {
+                        assert_eq!(url, &gateway_url(env));
+                        assert_eq!(relay_url, &ohttp_relay_url(Region::Us, env));
+                        assert_eq!(
+                            key_config_base64,
+                            ohttp_key_config(Region::Us, env)
+                        );
+                    }
+                    other => panic!(
+                        "gateway should be Ohttp for env={env:?} region={region:?}, got {other:?}"
+                    ),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn default_config_defaults_region_when_not_specified() {
+        let with_default = default_config(&Environment::Staging, None, None).unwrap();
+        let with_explicit_default =
+            default_config(&Environment::Staging, None, Some(Region::default()))
+                .unwrap();
+        assert_eq!(
+            with_default.indexer_url(),
+            with_explicit_default.indexer_url(),
+        );
+    }
+
+    #[test]
+    fn both_builders_round_trip_through_config_json() {
+        for env in ALL_ENVS {
+            for region in ALL_REGIONS {
+                let direct = default_config(env, None, Some(*region)).unwrap();
+                let direct_json = serde_json::to_string(&direct).unwrap();
+                let direct_parsed = Config::from_json(&direct_json).unwrap();
+                assert!(matches!(
+                    direct_parsed.indexer(),
+                    ServiceEndpoint::Direct { .. }
+                ));
+                assert!(matches!(
+                    direct_parsed.gateway(),
+                    ServiceEndpoint::Direct { .. }
+                ));
+
+                let ohttp =
+                    default_config_with_ohttp(env, None, Some(*region)).unwrap();
+                let ohttp_json = serde_json::to_string(&ohttp).unwrap();
+                let ohttp_parsed = Config::from_json(&ohttp_json).unwrap();
+                assert!(matches!(
+                    ohttp_parsed.indexer(),
+                    ServiceEndpoint::Ohttp { .. }
+                ));
+                assert!(matches!(
+                    ohttp_parsed.gateway(),
+                    ServiceEndpoint::Ohttp { .. }
+                ));
+            }
+        }
+    }
+}
