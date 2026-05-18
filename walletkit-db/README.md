@@ -73,26 +73,15 @@ After `PRAGMA key`, sqlite3mc takes over inside SQLite's pager. ChaCha20-Poly130
 
 **Defense-in-depth lever:** host policy on the keystore entry (iOS `kSecAccessControlBiometryCurrentSet`, Android `setUserAuthenticationRequired(true)`). walletkit-db is neutral; the policy lives in the Kotlin/Swift code that creates `K_device`.
 
-## Host-side contract for multi-consumer isolation
+## Per-consumer isolation
 
-When multiple consumers share the device (credential vault, future PCP store, future NFC issuer, etc.), trust isolation between them depends on the **host** wiring each consumer to its own resources. walletkit-db cryptographically enforces only the AD binding; the rest is host discipline.
+If multiple consumers share the device (today the credential vault; later an OrbKit PCP store, etc.), the host has to give each one its own secrets and its own files:
 
-**Hosts MUST, per consumer:**
+1. A separate hardware keystore entry (Secure Enclave key / Android Keystore alias).
+2. A separate AD label passed to `init_or_open_envelope_key`.
+3. A separate envelope filename, vault file, and lock file.
 
-1. **A distinct hardware keystore entry.** Each consumer's `Keystore` impl must point at a separate Secure Enclave key / Android Keystore alias. Sharing one entry across consumers means a compromised consumer can ask the OS to unseal another's envelope.
-2. **A distinct AD** passed to `init_or_open_envelope_key`. AD binding makes envelopes non-fungible — sealed under one AD, will not open under another.
-3. **A distinct envelope filename, vault file, and lock file.** No shared paths.
-
-**What walletkit-db enforces vs what it can't:**
-
-| Guarantee | Enforced by |
-|---|---|
-| Envelope sealed under AD `X` won't open under AD `Y` | walletkit-db (AEAD on `Keystore::open_sealed`) |
-| Opening vault `A` with vault `B`'s `K_intermediate` fails | walletkit-db + sqlite3mc (`SQLITE_NOTADB`) |
-| Consumer `A` cannot ask the keystore for consumer `B`'s `K_device` | **Host.** Requires distinct keystore entries with distinct identities. |
-| Consumer `A` cannot read consumer `B`'s envelope from disk | **Host.** Requires per-consumer file paths inside the app sandbox. |
-
-A future IssuerKit layer is the long-term home for enforcing one-keystore-entry-per-issuer in code. Until then this contract lives in the host integration.
+walletkit-db cryptographically binds operations to AD: an envelope sealed under one AD won't open under another. Everything else is host wiring. Sharing a keystore entry across consumers breaks the isolation.
 
 ## Usage
 
