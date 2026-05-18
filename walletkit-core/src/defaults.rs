@@ -148,11 +148,10 @@ pub fn default_config(
     build_config(environment, rpc_url, region, indexer, gateway)
 }
 
-/// Builds a [`Config`] for the given [`Environment`] using OHTTP service
-/// endpoints. Opt-in alternative to [`default_config`] for consumers that
-/// want their indexer/gateway traffic to flow through the Cloudflare OHTTP
-/// relay.
+/// Builds a [`Config`] for the given [`Environment`] using OHTTP endpoints.
 ///
+/// Opt-in alternative to [`default_config`] for consumers that want their
+/// indexer/gateway traffic to flow through the Cloudflare OHTTP relay.
 /// The indexer endpoint follows the caller's region; the gateway endpoint is
 /// always pinned to the US OHTTP relay because the `world-id-gateway` is
 /// centralised in the US cluster.
@@ -167,8 +166,7 @@ pub fn default_config_with_ohttp(
     region: Option<Region>,
 ) -> Result<Config, WalletKitError> {
     let region = region.unwrap_or_default();
-    let indexer =
-        ohttp_endpoint(indexer_url(region, environment), region, environment);
+    let indexer = ohttp_endpoint(indexer_url(region, environment), region, environment);
     let gateway = ohttp_endpoint(gateway_url(environment), Region::Us, environment);
     build_config(environment, rpc_url, region, indexer, gateway)
 }
@@ -218,8 +216,8 @@ mod tests {
                         assert_eq!(relay_url, &ohttp_relay_url(*region, env));
                         assert_eq!(key_config_base64, ohttp_key_config(*region, env));
                     }
-                    other => panic!(
-                        "indexer should be Ohttp for env={env:?} region={region:?}, got {other:?}"
+                    direct @ ServiceEndpoint::Direct { .. } => panic!(
+                        "indexer should be Ohttp for env={env:?} region={region:?}, got {direct:?}"
                     ),
                 }
             }
@@ -246,8 +244,8 @@ mod tests {
                             ohttp_key_config(Region::Us, env)
                         );
                     }
-                    other => panic!(
-                        "gateway should be Ohttp for env={env:?} region={region:?}, got {other:?}"
+                    direct @ ServiceEndpoint::Direct { .. } => panic!(
+                        "gateway should be Ohttp for env={env:?} region={region:?}, got {direct:?}"
                     ),
                 }
             }

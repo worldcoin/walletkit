@@ -394,8 +394,7 @@ impl Authenticator {
         materials: Arc<Groth16Materials>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config =
-            defaults::default_config_with_ohttp(environment, rpc_url, region)?;
+        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
         let authenticator = CoreAuthenticator::init(seed, config)
             .await?
             .with_proof_materials(
@@ -725,8 +724,7 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config =
-            defaults::default_config_with_ohttp(environment, rpc_url, region)?;
+        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;
