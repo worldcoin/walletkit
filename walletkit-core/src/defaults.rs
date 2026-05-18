@@ -129,7 +129,8 @@ impl DefaultConfig for Config {
     ) -> Result<Self, WalletKitError> {
         let region = region.unwrap_or_default();
 
-        let indexer = ohttp_endpoint(indexer_url(region, environment), region, environment);
+        let indexer =
+            ohttp_endpoint(indexer_url(region, environment), region, environment);
         // The world-id-gateway is centralized in the US cluster — only the
         // US OHTTP relay/gateway is configured to forward to it. Route
         // gateway traffic through US regardless of the user's region.

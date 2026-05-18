@@ -190,8 +190,8 @@ mod tests {
     use world_id_core::{
         primitives::rp::RpId,
         requests::{
-            ConstraintExpr, ConstraintNode, ProofRequest as CoreProofRequest, ProofType,
-            RequestItem, RequestVersion,
+            ConstraintExpr, ConstraintNode, ProofRequest as CoreProofRequest,
+            ProofType, RequestItem, RequestVersion,
         },
         FieldElement as CoreFieldElement,
     };
