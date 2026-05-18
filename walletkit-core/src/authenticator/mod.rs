@@ -11,8 +11,7 @@ use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::{AuthenticatorPublicKeySet, Config},
-    Authenticator as CoreAuthenticator, AuthenticatorConfig,
-    Credential as CoreCredential, CredentialInput,
+    Authenticator as CoreAuthenticator, Credential as CoreCredential, CredentialInput,
     InitializingAuthenticator as CoreInitializingAuthenticator,
     OnchainKeyRepresentable, Signer,
 };
@@ -361,7 +360,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config.into())
+        let authenticator = CoreAuthenticator::init(seed, config)
             .await?
             .with_proof_materials(
                 Arc::clone(&materials.query),
@@ -388,7 +387,7 @@ impl Authenticator {
         materials: Arc<Groth16Materials>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
+        let config = Config::from_json(config).map_err(|_| {
             WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
@@ -658,8 +657,7 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config =
-            AuthenticatorConfig::from_environment(environment, rpc_url, region)?;
+        let config = Config::from_environment(environment, rpc_url, region)?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;
@@ -688,7 +686,7 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
+        let config = Config::from_json(config).map_err(|_| {
             WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
