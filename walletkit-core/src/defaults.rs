@@ -1,5 +1,5 @@
 use alloy_core::primitives::{address, Address};
-use world_id_core::{primitives::Config, AuthenticatorConfig, OhttpClientConfig};
+use world_id_core::primitives::{Config, ServiceEndpoint};
 
 use crate::{error::WalletKitError, Environment, Region};
 
@@ -48,6 +48,13 @@ fn indexer_url(region: Region, environment: &Environment) -> String {
         Environment::Production => "world.org",
     };
     format!("https://indexer.{region}.id-infra.{domain}")
+}
+
+fn gateway_url(environment: &Environment) -> String {
+    match environment {
+        Environment::Staging => "https://gateway.id-infra.worldcoin.dev".to_string(),
+        Environment::Production => "https://gateway.id-infra.world.org".to_string(),
+    }
 }
 
 /// Build a [`Config`] from well-known defaults for a given [`Environment`].
@@ -102,33 +109,16 @@ const fn ohttp_key_config(region: Region, environment: &Environment) -> &'static
     }
 }
 
-impl DefaultConfig for AuthenticatorConfig {
-    fn from_environment(
-        environment: &Environment,
-        rpc_url: Option<String>,
-        region: Option<Region>,
-    ) -> Result<Self, WalletKitError> {
-        let region = region.unwrap_or_default();
-        let config = Config::from_environment(environment, rpc_url, Some(region))?;
-
-        let ohttp_indexer = Some(OhttpClientConfig::new(
-            ohttp_relay_url(region, environment),
-            ohttp_key_config(region, environment).to_string(),
-        ));
-        // The world-id-gateway is centralized in the US cluster — only the
-        // US OHTTP relay/gateway is configured to forward to it. Route
-        // gateway traffic through US regardless of the user's region.
-        let ohttp_gateway = Some(OhttpClientConfig::new(
-            ohttp_relay_url(Region::Us, environment),
-            ohttp_key_config(Region::Us, environment).to_string(),
-        ));
-
-        Ok(Self {
-            config,
-            ohttp_indexer,
-            ohttp_gateway,
-        })
-    }
+fn ohttp_endpoint(
+    url: String,
+    region: Region,
+    environment: &Environment,
+) -> ServiceEndpoint {
+    ServiceEndpoint::ohttp(
+        url,
+        ohttp_relay_url(region, environment),
+        ohttp_key_config(region, environment).to_string(),
+    )
 }
 
 impl DefaultConfig for Config {
@@ -139,28 +129,27 @@ impl DefaultConfig for Config {
     ) -> Result<Self, WalletKitError> {
         let region = region.unwrap_or_default();
 
-        match environment {
-            Environment::Staging => Self::new(
-                rpc_url,
-                480, // Staging also runs on World Chain Mainnet
-                STAGING_WORLD_ID_REGISTRY,
-                indexer_url(region, environment),
-                "https://gateway.id-infra.worldcoin.dev".to_string(),
-                oprf_node_urls(region, environment),
-                3,
-            )
-            .map_err(WalletKitError::from),
+        let indexer = ohttp_endpoint(indexer_url(region, environment), region, environment);
+        // The world-id-gateway is centralized in the US cluster — only the
+        // US OHTTP relay/gateway is configured to forward to it. Route
+        // gateway traffic through US regardless of the user's region.
+        let gateway = ohttp_endpoint(gateway_url(environment), Region::Us, environment);
 
-            Environment::Production => Self::new(
-                rpc_url,
-                480,
-                WORLD_ID_REGISTRY,
-                indexer_url(region, environment),
-                "https://gateway.id-infra.world.org".to_string(),
-                oprf_node_urls(region, environment),
-                3,
-            )
-            .map_err(WalletKitError::from),
-        }
+        let (chain_id, registry_address) = match environment {
+            // Staging also runs on World Chain Mainnet.
+            Environment::Staging => (480, STAGING_WORLD_ID_REGISTRY),
+            Environment::Production => (480, WORLD_ID_REGISTRY),
+        };
+
+        Self::new(
+            rpc_url,
+            chain_id,
+            registry_address,
+            indexer,
+            gateway,
+            oprf_node_urls(region, environment),
+            3,
+        )
+        .map_err(WalletKitError::from)
     }
 }
