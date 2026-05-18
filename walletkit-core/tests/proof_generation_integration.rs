@@ -38,7 +38,7 @@ use walletkit_core::{
 };
 use world_id_core::primitives::{rp::RpId, FieldElement, Nullifier};
 use world_id_core::{
-    requests::{ProofRequest, RequestItem, RequestVersion},
+    requests::{ProofRequest, ProofType, RequestItem, RequestVersion},
     Authenticator as CoreAuthenticator, EdDSAPrivateKey,
 };
 
@@ -131,14 +131,11 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
             .wrap_err("failed to load embedded nullifier material")?,
     );
 
-    let core_authenticator = CoreAuthenticator::init_or_register(
-        &seed,
-        config.into(),
-        Some(recovery_address),
-    )
-    .await
-    .wrap_err("account creation/init failed")?
-    .with_proof_materials(query_material, nullifier_material);
+    let core_authenticator =
+        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
+            .await
+            .wrap_err("account creation/init failed")?
+            .with_proof_materials(query_material, nullifier_material);
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -235,6 +232,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let proof_request_core = ProofRequest {
         id: "staging_test_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::Uniqueness,
         created_at,
         expires_at,
         rp_id,
@@ -354,14 +352,11 @@ async fn e2e_session_proof() -> Result<()> {
             .wrap_err("failed to load embedded nullifier material")?,
     );
 
-    let core_authenticator = CoreAuthenticator::init_or_register(
-        &seed,
-        config.into(),
-        Some(recovery_address),
-    )
-    .await
-    .wrap_err("account creation/init failed")?
-    .with_proof_materials(query_material, nullifier_material);
+    let core_authenticator =
+        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
+            .await
+            .wrap_err("account creation/init failed")?
+            .with_proof_materials(query_material, nullifier_material);
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -455,6 +450,7 @@ async fn e2e_session_proof() -> Result<()> {
     let init_request = ProofRequest {
         id: "session_init_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::CreateSession,
         created_at,
         expires_at,
         rp_id,
@@ -506,6 +502,7 @@ async fn e2e_session_proof() -> Result<()> {
     let session_proof_request_core = ProofRequest {
         id: "session_proof_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::Session,
         created_at,
         expires_at,
         rp_id,

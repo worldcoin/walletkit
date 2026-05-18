@@ -191,7 +191,7 @@ mod tests {
         primitives::rp::RpId,
         requests::{
             ConstraintExpr, ConstraintNode, ProofRequest as CoreProofRequest,
-            RequestItem, RequestVersion,
+            ProofType, RequestItem, RequestVersion,
         },
         FieldElement as CoreFieldElement,
     };
@@ -211,6 +211,7 @@ mod tests {
         let core = CoreProofRequest {
             id: "test".to_string(),
             version: RequestVersion::V1,
+            proof_type: ProofType::Uniqueness,
             created_at: 0,
             expires_at: u64::MAX,
             rp_id: RpId::new(1),

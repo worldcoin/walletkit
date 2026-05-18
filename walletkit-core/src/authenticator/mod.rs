@@ -11,8 +11,7 @@ use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::{AuthenticatorPublicKeySet, Config},
-    Authenticator as CoreAuthenticator, AuthenticatorConfig,
-    Credential as CoreCredential, CredentialInput,
+    Authenticator as CoreAuthenticator, Credential as CoreCredential, CredentialInput,
     InitializingAuthenticator as CoreInitializingAuthenticator,
     OnchainKeyRepresentable, Signer,
 };
@@ -291,6 +290,7 @@ impl Authenticator {
     /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
     ///   a valid address.
     /// - Returns a network error if the gateway request fails.
+    #[allow(deprecated)]
     pub async fn initiate_recovery_agent_update(
         &self,
         new_recovery_agent: String,
@@ -317,6 +317,7 @@ impl Authenticator {
     ///
     /// # Errors
     /// Returns a network error if the gateway request fails.
+    #[allow(deprecated)]
     pub async fn execute_recovery_agent_update(
         &self,
     ) -> Result<String, WalletKitError> {
@@ -334,6 +335,7 @@ impl Authenticator {
     ///
     /// # Errors
     /// Returns a network error if the gateway request fails.
+    #[allow(deprecated)]
     pub async fn cancel_recovery_agent_update(&self) -> Result<String, WalletKitError> {
         let request_id = self.inner.cancel_recovery_agent_update().await?;
 
@@ -361,7 +363,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config.into())
+        let authenticator = CoreAuthenticator::init(seed, config)
             .await?
             .with_proof_materials(
                 Arc::clone(&materials.query),
@@ -388,12 +390,11 @@ impl Authenticator {
         materials: Arc<Groth16Materials>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
-            WalletKitError::InvalidInput {
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
-            }
-        })?;
+            })?;
         let authenticator = CoreAuthenticator::init(seed, config)
             .await?
             .with_proof_materials(
@@ -658,8 +659,7 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config =
-            AuthenticatorConfig::from_environment(environment, rpc_url, region)?;
+        let config = Config::from_environment(environment, rpc_url, region)?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;
@@ -688,12 +688,11 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
-            WalletKitError::InvalidInput {
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
-            }
-        })?;
+            })?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;
@@ -819,7 +818,7 @@ mod tests {
             cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
         };
         use alloy::primitives::address;
-        use world_id_core::primitives::Config;
+        use world_id_core::primitives::{Config, ServiceEndpoint};
 
         let _ = rustls::crypto::ring::default_provider().install_default();
 
@@ -843,8 +842,12 @@ mod tests {
             Some(mock_server.url()),
             480,
             address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
-            "https://indexer.us.id-infra.worldcoin.dev".to_string(),
-            "https://gateway.id-infra.worldcoin.dev".to_string(),
+            ServiceEndpoint::direct(
+                "https://indexer.us.id-infra.worldcoin.dev".to_string(),
+            ),
+            ServiceEndpoint::direct(
+                "https://gateway.id-infra.worldcoin.dev".to_string(),
+            ),
             vec![],
             2,
         )

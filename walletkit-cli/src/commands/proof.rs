@@ -12,8 +12,8 @@ use rand::rngs::OsRng;
 use walletkit_core::requests::ProofRequest;
 use world_id_core::primitives::{rp::RpId, FieldElement};
 use world_id_core::requests::{
-    ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, RequestItem,
-    RequestVersion,
+    ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, ProofType,
+    RequestItem, RequestVersion,
 };
 
 use crate::output;
@@ -363,6 +363,7 @@ fn build_test_request(
     Ok(CoreProofRequest {
         id: "test_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::Uniqueness,
         created_at,
         expires_at,
         rp_id,
