@@ -57,12 +57,12 @@ Replace `VERSION` with the desired WalletKit version.
 To test local changes before publishing a release, use the build script to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
 
 ```bash
-./kotlin/build_android_local.sh 0.3.1
+./kotlin/local_kotlin.sh 0.3.1
 ```
 
 Example with custom Rust locations:
 ```bash
-RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo ./kotlin/build_android_local.sh 0.1.0-SNAPSHOT
+RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo ./kotlin/local_kotlin.sh 0.1.0-SNAPSHOT
 ```
 
 > **Note**: The script can be run from any working directory (it resolves its own location). It sets `RUSTUP_HOME` and `CARGO_HOME` to `/tmp` by default to avoid Docker permission issues when using `cross`. You can override them by exporting your own values.

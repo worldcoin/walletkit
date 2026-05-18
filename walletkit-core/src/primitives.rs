@@ -1,4 +1,4 @@
-use alloy_primitives::Address;
+use alloy_core::primitives::Address;
 use std::str::FromStr;
 
 use crate::error::WalletKitError;

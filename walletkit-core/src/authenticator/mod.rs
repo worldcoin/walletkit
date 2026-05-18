@@ -4,7 +4,7 @@ use crate::{
     defaults::DefaultConfig, error::WalletKitError,
     primitives::ParseFromForeignBinding, Environment, FieldElement, Region,
 };
-use alloy_primitives::Address;
+use alloy_core::primitives::Address;
 use ruint::aliases::U256;
 use ruint_uniffi::Uint256;
 use std::sync::Arc;
@@ -789,11 +789,6 @@ pub fn recovery_data_from_seed(seed: &[u8]) -> Result<RecoveryData, WalletKitErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::tests_utils::{
-        cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
-    };
-    use alloy::primitives::address;
-    use world_id_core::primitives::Config;
 
     #[test]
     fn test_recovery_data_from_seed() {
@@ -820,6 +815,12 @@ mod tests {
     #[cfg(feature = "embed-zkeys")]
     #[tokio::test]
     async fn test_init_with_config_and_materials() {
+        use crate::storage::tests_utils::{
+            cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
+        };
+        use alloy::primitives::address;
+        use world_id_core::primitives::Config;
+
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         let mut mock_server = mockito::Server::new_async().await;

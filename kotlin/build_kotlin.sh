@@ -1,42 +1,42 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
+set -e
 
-# Creates Kotlin/JNA bindings for the `walletkit` library.
-# This mirrors the Bedrock Kotlin build flow.
+## This script is only used for local builds. For production releases, the code is in the CI workflow.
 
-PROJECT_ROOT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KOTLIN_DIR="$PROJECT_ROOT_PATH/kotlin"
-JAVA_SRC_DIR="$KOTLIN_DIR/walletkit/src/main/java"
-LIBS_DIR="$KOTLIN_DIR/libs"
-CARGO_FEATURES="compress-zkeys,v3"
+echo "Building WalletKit Android SDK..."
 
-# Clean previous artifacts
-rm -rf "$JAVA_SRC_DIR" "$LIBS_DIR"
-mkdir -p "$JAVA_SRC_DIR" "$LIBS_DIR"
+CARGO_FEATURES="compress-zkeys,embed-zkeys,v3"
 
-echo "🟢 Building Rust cdylib for host platform"
-cargo build --package walletkit --release --features "$CARGO_FEATURES"
+# Create jniLibs directories
+mkdir -p ./walletkit/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64,x86}
 
-# Determine the correct library file extension and copy it
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    LIB_FILE="$PROJECT_ROOT_PATH/target/release/libwalletkit.dylib"
-    cp "$LIB_FILE" "$LIBS_DIR/"
-    echo "📦 Copied libwalletkit.dylib for macOS"
-elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    LIB_FILE="$PROJECT_ROOT_PATH/target/release/libwalletkit.so"
-    cp "$LIB_FILE" "$LIBS_DIR/"
-    echo "📦 Copied libwalletkit.so for Linux"
-else
-    echo "❌ Unsupported OS: $OSTYPE"
-    exit 1
-fi
+# Build for all Android architectures
+echo "Building for aarch64-linux-android..."
+cross build -p walletkit --release --target=aarch64-linux-android --features "$CARGO_FEATURES"
 
-echo "🟡 Generating Kotlin bindings via uniffi-bindgen"
-cargo run -p uniffi-bindgen -- generate \
-  "$LIB_FILE" \
-  --language kotlin \
+echo "Building for armv7-linux-androideabi..."
+cross build -p walletkit --release --target=armv7-linux-androideabi --features "$CARGO_FEATURES"
+
+echo "Building for x86_64-linux-android..."
+cross build -p walletkit --release --target=x86_64-linux-android --features "$CARGO_FEATURES"
+
+echo "Building for i686-linux-android..."
+cross build -p walletkit --release --target=i686-linux-android --features "$CARGO_FEATURES"
+
+# Move .so files to jniLibs
+echo "Moving native libraries..."
+mv ../target/aarch64-linux-android/release/libwalletkit.so ./walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so
+mv ../target/armv7-linux-androideabi/release/libwalletkit.so ./walletkit/src/main/jniLibs/armeabi-v7a/libwalletkit.so
+mv ../target/x86_64-linux-android/release/libwalletkit.so ./walletkit/src/main/jniLibs/x86_64/libwalletkit.so
+mv ../target/i686-linux-android/release/libwalletkit.so ./walletkit/src/main/jniLibs/x86/libwalletkit.so
+
+# Generate Kotlin bindings
+echo "Generating Kotlin bindings..."
+cargo run -p uniffi-bindgen generate \
+  ./walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so \
   --library \
-  --crate walletkit_core \
-  --out-dir "$JAVA_SRC_DIR"
+  --language kotlin \
+  --no-format \
+  --out-dir walletkit/src/main/java
 
-echo "✅ Kotlin bindings written to $JAVA_SRC_DIR"
+echo "✅ Build complete!"

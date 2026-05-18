@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0](https://github.com/worldcoin/walletkit/compare/v0.17.1...v0.18.0) - 2026-05-15
+
+### Other
+
+- add credential pre-flight check against proof requests ([#404](https://github.com/worldcoin/walletkit/pull/404))
+
+## [0.17.1](https://github.com/worldcoin/walletkit/compare/v0.17.0...v0.17.1) - 2026-05-08
+
+### Fixed
+
+- ffi builds embedding keys ([#401](https://github.com/worldcoin/walletkit/pull/401))
+
+## [0.17.0](https://github.com/worldcoin/walletkit/compare/v0.16.1...v0.17.0) - 2026-05-04
+
+### Added
+
+- enable WASM compilation for walletkit ([#362](https://github.com/worldcoin/walletkit/pull/362))
+
 ## [0.16.1](https://github.com/worldcoin/walletkit/compare/v0.16.0...v0.16.1) - 2026-05-03
 
 ### Added

@@ -51,6 +51,8 @@ pub struct CredentialRecord {
     pub credential_id: u64,
     /// Issuer schema identifier.
     pub issuer_schema_id: u64,
+    /// Genesis issuance timestamp (seconds).
+    pub genesis_issued_at: u64,
     /// Expiry timestamp (seconds).
     pub expires_at: u64,
     /// Whether the credential is expired at query time (`now >= expires_at`).

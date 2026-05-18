@@ -201,6 +201,7 @@ impl CredentialVault {
         let sql = "SELECT
                 cr.credential_id,
                 cr.issuer_schema_id,
+                cr.genesis_issued_at,
                 cr.expires_at,
                 CASE WHEN cr.expires_at <= ?1 THEN 1 ELSE 0 END AS is_expired
              FROM credential_records cr
