@@ -371,6 +371,7 @@ fn build_test_request(
             STAGING_RP_ID
         )))
         .wrap_err("failed to construct oprf_key_id")?,
+        proof_type: Default::default(),
         session_id: None,
         action: Some(action),
         signature,

@@ -215,6 +215,7 @@ mod tests {
             expires_at: u64::MAX,
             rp_id: RpId::new(1),
             oprf_key_id: OprfKeyId::new(U160::from(1u64)),
+            proof_type: Default::default(),
             session_id: None,
             action: None,
             signature: Signature::test_signature(),

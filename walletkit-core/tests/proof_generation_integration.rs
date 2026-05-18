@@ -99,6 +99,7 @@ sol!(
 /// 3. Proof generation with real staging OPRF nodes
 /// 4. On-chain proof verification via the staging `WorldIDVerifier`
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires staging infrastructure and a registered seed"]
 async fn e2e_authenticator_generate_proof() -> Result<()> {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -239,6 +240,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         expires_at,
         rp_id,
         oprf_key_id: OprfKeyId::new(U160::from(RP_ID)),
+        proof_type: Default::default(),
         session_id: None,
         action: Some(action),
         signature,
@@ -322,6 +324,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
 /// Run with:
 ///   `cargo test --test proof_generation_integration --features default -- --ignored e2e_session_proof`
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires staging infrastructure and a registered seed"]
 async fn e2e_session_proof() -> Result<()> {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -459,6 +462,7 @@ async fn e2e_session_proof() -> Result<()> {
         expires_at,
         rp_id,
         oprf_key_id: OprfKeyId::new(U160::from(RP_ID)),
+        proof_type: Default::default(),
         session_id: None, // no session yet
         action: None,
         signature,
@@ -510,6 +514,7 @@ async fn e2e_session_proof() -> Result<()> {
         expires_at,
         rp_id,
         oprf_key_id: OprfKeyId::new(U160::from(RP_ID)),
+        proof_type: Default::default(),
         session_id: Some(session_id),
         action: None,
         signature: session_signature,

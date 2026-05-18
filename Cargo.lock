@@ -7194,6 +7194,15 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72e971b7c52f9a91a499ed15580da6dbfd593c6ad9c6d519c6b72c7f0c421355"
 dependencies = [
+ "taceo-oprf-types",
+]
+
+[[package]]
+name = "taceo-oprf"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72389c80580ec74d8ab188c723f6b0253885867ffac41213a31e4554b4fd0658"
+dependencies = [
  "taceo-oprf-client",
  "taceo-oprf-core",
  "taceo-oprf-types",
@@ -7201,9 +7210,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-client"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b593b9ad62eac8e01229d1c764d2ea204241adfbd7ef6e292ec4027dc9421fc7"
+checksum = "e3991b17184d2be29e13ae22ef982f9ea3d1111d67236805cd7729116235461c"
 dependencies = [
  "ark-ec",
  "ciborium",
@@ -7225,9 +7234,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-core"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d538b7fe97e0df8118f8b2a322f27d7e6585b4dfa1acc8da19196ade5696060"
+checksum = "c1409d82e88ad002d7946f6b5d37395a1d532133d9320b3284e27120ee1162db"
 dependencies = [
  "ark-ec",
  "ark-ff 0.5.0",
@@ -7247,9 +7256,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-types"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb1fcb204762878cb53c645ca08030c38c35146c2eec627d3b18aaac85bab707"
+checksum = "13304cda45c09c625f278b2f8e49de5f583e447a276804d41877bfcf5e89f68e"
 dependencies = [
  "alloy",
  "ark-ff 0.5.0",
@@ -8224,7 +8233,7 @@ dependencies = [
  "sha2 0.10.9",
  "strum 0.27.2",
  "subtle",
- "taceo-oprf",
+ "taceo-oprf 0.13.0",
  "test-case",
  "thiserror 2.0.18",
  "tokio",
@@ -8971,9 +8980,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-authenticator"
-version = "0.10.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d3084544b704ff793fa2e7afc23f7bd2122a46573bd03b40c68dde243815cd"
+checksum = "8fed5aa94fe924d855a2ca40aadaae517315a2a24666d83092174b3c71a29456"
 dependencies = [
  "alloy",
  "anyhow",
@@ -8995,7 +9004,7 @@ dependencies = [
  "taceo-ark-babyjubjub",
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
- "taceo-oprf",
+ "taceo-oprf 0.14.0",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "tokio",
@@ -9007,9 +9016,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-core"
-version = "0.10.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3025419c521b306f2832402599bc0c04f3b36d72fb86627f84a923e39a383e95"
+checksum = "26f136a169a1e2decbbf741c208961446d2f3377a19c930634aebee39f0fb6d3"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -9020,9 +9029,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-primitives"
-version = "0.10.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aac72195188ba2f738d67b2de4e7a88b39f4537b949164e335e34a899d7148a7"
+checksum = "e19522e167d925e0c920671b41bb96edc82e7508f2d2730177c38c6cce2aa2c6"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -9046,7 +9055,7 @@ dependencies = [
  "taceo-ark-serde-compat",
  "taceo-circom-types",
  "taceo-eddsa-babyjubjub",
- "taceo-oprf",
+ "taceo-oprf 0.14.0",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "url",
@@ -9055,9 +9064,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-proof"
-version = "0.10.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a3d18e19b2a64ee0d8e1e6e8c2a2ae3263afca198871a3fdfe0f12481487325"
+checksum = "098bb682b011c10c6a954927325470078000f771646df3264a079aba4b3295f9"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -9077,7 +9086,7 @@ dependencies = [
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
  "taceo-groth16-sol",
- "taceo-oprf",
+ "taceo-oprf 0.14.0",
  "taceo-poseidon2",
  "tar",
  "thiserror 2.0.18",
@@ -9089,9 +9098,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-registries"
-version = "0.10.2"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fb73513f88d6565e9b8acf0ac0fdb53b737a79bbb01ee80077aff6b236ea551"
+checksum = "078bb8742f799133b9e5ff3eb1f4b3b1c9905ce479921be4c53ccb83467c1092"
 dependencies = [
  "alloy",
  "anyhow",

@@ -11,8 +11,7 @@ use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::{AuthenticatorPublicKeySet, Config},
-    Authenticator as CoreAuthenticator, AuthenticatorConfig,
-    Credential as CoreCredential, CredentialInput,
+    Authenticator as CoreAuthenticator, Credential as CoreCredential, CredentialInput,
     InitializingAuthenticator as CoreInitializingAuthenticator,
     OnchainKeyRepresentable, Signer,
 };
@@ -142,6 +141,7 @@ pub struct Authenticator {
     store: Arc<CredentialStore>,
 }
 
+#[allow(deprecated)]
 #[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
@@ -361,7 +361,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config.into())
+        let authenticator = CoreAuthenticator::init(seed, config)
             .await?
             .with_proof_materials(
                 Arc::clone(&materials.query),
@@ -388,12 +388,11 @@ impl Authenticator {
         materials: Arc<Groth16Materials>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
-            WalletKitError::InvalidInput {
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
-            }
-        })?;
+            })?;
         let authenticator = CoreAuthenticator::init(seed, config)
             .await?
             .with_proof_materials(
@@ -658,8 +657,7 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config =
-            AuthenticatorConfig::from_environment(environment, rpc_url, region)?;
+        let config = Config::from_environment(environment, rpc_url, region)?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;
@@ -688,12 +686,11 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
-            WalletKitError::InvalidInput {
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
-            }
-        })?;
+            })?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;
@@ -843,8 +840,12 @@ mod tests {
             Some(mock_server.url()),
             480,
             address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
-            "https://indexer.us.id-infra.worldcoin.dev".to_string(),
-            "https://gateway.id-infra.worldcoin.dev".to_string(),
+            world_id_core::primitives::ServiceEndpoint::direct(
+                "https://indexer.us.id-infra.worldcoin.dev".to_string(),
+            ),
+            world_id_core::primitives::ServiceEndpoint::direct(
+                "https://gateway.id-infra.worldcoin.dev".to_string(),
+            ),
             vec![],
             2,
         )
