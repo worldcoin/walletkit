@@ -57,22 +57,6 @@ fn gateway_url(environment: &Environment) -> String {
     }
 }
 
-/// Build a [`Config`] from well-known defaults for a given [`Environment`].
-pub trait DefaultConfig {
-    /// Returns a config populated with the default URLs and addresses for the given environment.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`WalletKitError`] if the configuration cannot be constructed (e.g. invalid RPC URL).
-    fn from_environment(
-        environment: &Environment,
-        rpc_url: Option<String>,
-        region: Option<Region>,
-    ) -> Result<Self, WalletKitError>
-    where
-        Self: Sized;
-}
-
 fn ohttp_relay_url(region: Region, environment: &Environment) -> String {
     let path = match environment {
         Environment::Staging => format!("{region}-world-id-stage"),
@@ -121,36 +105,70 @@ fn ohttp_endpoint(
     )
 }
 
-impl DefaultConfig for Config {
-    fn from_environment(
-        environment: &Environment,
-        rpc_url: Option<String>,
-        region: Option<Region>,
-    ) -> Result<Self, WalletKitError> {
-        let region = region.unwrap_or_default();
+fn build_config(
+    environment: &Environment,
+    rpc_url: Option<String>,
+    region: Region,
+    indexer: ServiceEndpoint,
+    gateway: ServiceEndpoint,
+) -> Result<Config, WalletKitError> {
+    let (chain_id, registry_address) = match environment {
+        // Staging also runs on World Chain Mainnet.
+        Environment::Staging => (480, STAGING_WORLD_ID_REGISTRY),
+        Environment::Production => (480, WORLD_ID_REGISTRY),
+    };
 
-        let indexer =
-            ohttp_endpoint(indexer_url(region, environment), region, environment);
-        // The world-id-gateway is centralized in the US cluster — only the
-        // US OHTTP relay/gateway is configured to forward to it. Route
-        // gateway traffic through US regardless of the user's region.
-        let gateway = ohttp_endpoint(gateway_url(environment), Region::Us, environment);
+    Config::new(
+        rpc_url,
+        chain_id,
+        registry_address,
+        indexer,
+        gateway,
+        oprf_node_urls(region, environment),
+        3,
+    )
+    .map_err(WalletKitError::from)
+}
 
-        let (chain_id, registry_address) = match environment {
-            // Staging also runs on World Chain Mainnet.
-            Environment::Staging => (480, STAGING_WORLD_ID_REGISTRY),
-            Environment::Production => (480, WORLD_ID_REGISTRY),
-        };
+/// Builds a [`Config`] for the given [`Environment`] using direct (non-OHTTP)
+/// service endpoints — the default for SDK consumers.
+///
+/// # Errors
+///
+/// Returns [`WalletKitError`] if the configuration cannot be constructed
+/// (e.g. invalid RPC URL).
+pub fn default_config(
+    environment: &Environment,
+    rpc_url: Option<String>,
+    region: Option<Region>,
+) -> Result<Config, WalletKitError> {
+    let region = region.unwrap_or_default();
+    let indexer = ServiceEndpoint::direct(indexer_url(region, environment));
+    let gateway = ServiceEndpoint::direct(gateway_url(environment));
+    build_config(environment, rpc_url, region, indexer, gateway)
+}
 
-        Self::new(
-            rpc_url,
-            chain_id,
-            registry_address,
-            indexer,
-            gateway,
-            oprf_node_urls(region, environment),
-            3,
-        )
-        .map_err(WalletKitError::from)
-    }
+/// Builds a [`Config`] for the given [`Environment`] using OHTTP service
+/// endpoints. Opt-in alternative to [`default_config`] for consumers that
+/// want their indexer/gateway traffic to flow through the Cloudflare OHTTP
+/// relay.
+///
+/// The indexer endpoint follows the caller's region; the gateway endpoint is
+/// always pinned to the US OHTTP relay because the `world-id-gateway` is
+/// centralised in the US cluster.
+///
+/// # Errors
+///
+/// Returns [`WalletKitError`] if the configuration cannot be constructed
+/// (e.g. invalid RPC URL).
+pub fn default_config_with_ohttp(
+    environment: &Environment,
+    rpc_url: Option<String>,
+    region: Option<Region>,
+) -> Result<Config, WalletKitError> {
+    let region = region.unwrap_or_default();
+    let indexer =
+        ohttp_endpoint(indexer_url(region, environment), region, environment);
+    let gateway = ohttp_endpoint(gateway_url(environment), Region::Us, environment);
+    build_config(environment, rpc_url, region, indexer, gateway)
 }
