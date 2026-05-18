@@ -107,6 +107,14 @@ pub fn init_or_open_envelope_key(
         let mut k_intermediate = Zeroizing::new([0u8; 32]);
         getrandom::fill(k_intermediate.as_mut())
             .map_err(|err| StoreError::Crypto(format!("rng failure: {err}")))?;
+        // TODO: `keystore.seal(_, Vec<u8>)` requires the plaintext as an
+        // owned heap allocation because the trait shape matches
+        // walletkit-core's uniffi `DeviceKeystore` so the adapter stays
+        // zero-copy. That `Vec<u8>` is NOT zeroized on drop — key bytes
+        // can linger in the allocator's freelist. Improve by either
+        // (a) changing the trait to take a stack reference and updating
+        // the host bridges, or (b) wrapping the `to_vec()` result in
+        // `Zeroizing` and ensuring `Keystore` impls don't clone it.
         let wrapped = keystore.seal(ad.to_vec(), k_intermediate.to_vec())?;
         let envelope = KeyEnvelope::new(wrapped, now);
         let bytes = envelope.serialize()?;
