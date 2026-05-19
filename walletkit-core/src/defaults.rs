@@ -265,6 +265,22 @@ mod tests {
     }
 
     #[test]
+    fn default_config_with_ohttp_defaults_region_when_not_specified() {
+        let with_default =
+            default_config_with_ohttp(&Environment::Staging, None, None).unwrap();
+        let with_explicit_default = default_config_with_ohttp(
+            &Environment::Staging,
+            None,
+            Some(Region::default()),
+        )
+        .unwrap();
+        assert_eq!(
+            with_default.indexer_url(),
+            with_explicit_default.indexer_url(),
+        );
+    }
+
+    #[test]
     fn both_builders_round_trip_through_config_json() {
         for env in ALL_ENVS {
             for region in ALL_REGIONS {
