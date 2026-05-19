@@ -4,6 +4,12 @@
 //! queries, and backup-table list live here; the underlying open / key /
 //! integrity-check machinery and the shared `blob_objects` table come from
 //! [`walletkit_db`].
+//!
+//! No flock around mutations — `SQLite`'s own WAL-mode locking serializes
+//! cross-process writers. `CredentialStore` acquires the shared
+//! [`crate::storage::StorageLock`] only for operations that mix `SQLite`
+//! with filesystem state (`export_plaintext` / `import_plaintext`,
+//! `destroy_storage`) or for the envelope-init bootstrap race.
 
 mod helpers;
 mod schema;
@@ -17,24 +23,18 @@ use crate::storage::types::{BlobKind, CredentialRecord};
 use helpers::{map_db_err, map_record, to_i64, to_u64};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
-use walletkit_db::{blobs, cipher, params, Lock, StepResult, Value, Vault};
+use walletkit_db::{blobs, cipher, params, StepResult, Value, Vault};
 
 pub(crate) use schema::BACKUP_TABLES;
 
-/// Encrypted vault database wrapper.
-///
-/// Wraps [`walletkit_db::Vault`]: mutating methods acquire the vault's lock
-/// internally and run inside a SQL transaction; read methods bypass the
-/// lock (`SQLite` WAL handles concurrent readers).
+/// Encrypted vault database wrapper around [`walletkit_db::Vault`].
 #[derive(Debug)]
 pub struct CredentialVault {
     vault: Vault,
 }
 
 impl CredentialVault {
-    /// Opens or creates the encrypted vault database at `path`. Takes
-    /// ownership of `lock`; subsequent mutations re-acquire it through
-    /// [`walletkit_db::Vault::mutate`].
+    /// Opens or creates the encrypted vault database at `path`.
     ///
     /// # Errors
     ///
@@ -43,9 +43,8 @@ impl CredentialVault {
     pub fn new(
         path: &Path,
         k_intermediate: &SecretBox<[u8; 32]>,
-        lock: Lock,
     ) -> StorageResult<Self> {
-        let vault = Vault::open(path, k_intermediate, lock, |conn| {
+        let vault = Vault::open(path, k_intermediate, |conn| {
             blobs::ensure_schema(conn)?;
             ensure_schema(conn)
         })?;
@@ -64,7 +63,8 @@ impl CredentialVault {
     pub fn init_leaf_index(&self, leaf_index: u64, now: u64) -> StorageResult<()> {
         let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
         let now_i64 = to_i64(now, "now")?;
-        self.vault.mutate(|conn| {
+        {
+            let conn = self.vault.connection();
             let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
             let stored = tx
                 .query_row(
@@ -90,7 +90,7 @@ impl CredentialVault {
             }
             tx.commit().map_err(|err| map_db_err(&err))?;
             Ok(())
-        })
+        }
     }
 
     /// Stores a credential and optional associated data.
@@ -118,7 +118,8 @@ impl CredentialVault {
         let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
         let expires_at_i64 = to_i64(expires_at, "expires_at")?;
 
-        self.vault.mutate(|conn| {
+        {
+            let conn = self.vault.connection();
             let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
             let credential_blob_id = blobs::put(
@@ -171,7 +172,7 @@ impl CredentialVault {
 
             tx.commit().map_err(|err| map_db_err(&err))?;
             to_u64(credential_id, "credential_id")
-        })
+        }
     }
 
     /// Lists credential metadata, optionally filtered by issuer schema.
@@ -210,7 +211,7 @@ impl CredentialVault {
 
         let mut stmt = self
             .vault
-            .read()
+            .connection()
             .prepare(sql)
             .map_err(|err| map_db_err(&err))?;
         stmt.bind_values(&[Value::Integer(now_i64), issuer_filter])
@@ -233,7 +234,8 @@ impl CredentialVault {
     /// not exist.
     pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
         let credential_id_i64 = to_i64(credential_id, "credential_id")?;
-        self.vault.mutate(|conn| {
+        {
+            let conn = self.vault.connection();
             let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
             let deleted = tx
@@ -275,7 +277,7 @@ impl CredentialVault {
 
             tx.commit().map_err(|err| map_db_err(&err))?;
             Ok(())
-        })
+        }
     }
 
     /// Retrieves the credential bytes and blinding factor by issuer schema ID.
@@ -305,7 +307,7 @@ impl CredentialVault {
 
         let mut stmt = self
             .vault
-            .read()
+            .connection()
             .prepare(sql)
             .map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![expires, issuer_schema_id_i64])
@@ -330,7 +332,8 @@ impl CredentialVault {
     ///
     /// Returns an error if the delete operation fails.
     pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
-        self.vault.mutate(|conn| {
+        {
+            let conn = self.vault.connection();
             let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
             let deleted = tx
@@ -342,7 +345,7 @@ impl CredentialVault {
 
             tx.commit().map_err(|err| map_db_err(&err))?;
             Ok(deleted as u64)
-        })
+        }
     }
 
     /// Runs an integrity check on the vault database.
@@ -351,7 +354,7 @@ impl CredentialVault {
     ///
     /// Returns an error if the check cannot be executed.
     pub fn check_integrity(&self) -> StorageResult<bool> {
-        cipher::integrity_check(self.vault.read()).map_err(|e| map_db_err(&e))
+        cipher::integrity_check(self.vault.connection()).map_err(|e| map_db_err(&e))
     }
 
     /// Exports a plaintext (unencrypted) copy of the vault to `dest`. Runs
@@ -363,7 +366,8 @@ impl CredentialVault {
     ///
     /// Returns an error if the export fails.
     pub fn export_plaintext(&self, dest: &Path) -> StorageResult<()> {
-        self.vault.mutate(|conn| {
+        {
+            let conn = self.vault.connection();
             if dest.exists() {
                 std::fs::remove_file(dest).map_err(|e| {
                     StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
@@ -371,7 +375,7 @@ impl CredentialVault {
             }
             cipher::export_plaintext_copy(conn, dest, BACKUP_TABLES)
                 .map_err(|e| map_db_err(&e))
-        })
+        }
     }
 
     /// Imports credentials from a plaintext (unencrypted) vault backup into
@@ -384,15 +388,16 @@ impl CredentialVault {
     ///
     /// Returns an error if the import fails.
     pub fn import_plaintext(&self, source: &Path) -> StorageResult<()> {
-        self.vault.mutate(|conn| {
+        {
+            let conn = self.vault.connection();
             cipher::import_plaintext_copy(conn, source, BACKUP_TABLES)
                 .map_err(|e| map_db_err(&e))
-        })
+        }
     }
 
     /// Borrows the underlying connection for direct SQL access. **Test-only.**
     #[cfg(test)]
     pub(super) const fn raw_connection(&self) -> &walletkit_db::Connection {
-        self.vault.read()
+        self.vault.connection()
     }
 }

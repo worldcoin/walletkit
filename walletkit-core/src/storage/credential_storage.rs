@@ -521,16 +521,8 @@ impl CredentialStoreInner {
             now,
         )?;
         let k_intermediate = keys.intermediate_key();
-        let vault = CredentialVault::new(
-            &self.paths.vault_db_path(),
-            k_intermediate,
-            self.lock.clone(),
-        )?;
-        let cache = CacheDb::new(
-            &self.paths.cache_db_path(),
-            k_intermediate,
-            self.lock.clone(),
-        )?;
+        let vault = CredentialVault::new(&self.paths.vault_db_path(), k_intermediate)?;
+        let cache = CacheDb::new(&self.paths.cache_db_path(), k_intermediate)?;
         let state = StorageState {
             keys,
             vault,
@@ -719,8 +711,13 @@ impl CredentialStoreInner {
 
     /// Exports the vault to a temporary plaintext file in the worldid directory.
     /// Returns the path to the file. The caller is responsible for cleanup.
+    ///
+    /// Holds the cross-process lock for the duration of the export so a
+    /// concurrent writer can't interleave between the stale-file cleanup
+    /// and the ATTACH-based plaintext copy.
     #[cfg(not(target_arch = "wasm32"))]
     fn export_vault_for_backup_to_file(&self) -> StorageResult<String> {
+        let _guard = self.guard()?;
         let state = self.state()?;
         let dest = self.temp_backup_path();
         state.vault.export_plaintext(&dest)?;
@@ -744,8 +741,12 @@ impl CredentialStoreInner {
     }
 
     /// Imports from a plaintext vault file on disk.
+    ///
+    /// Holds the cross-process lock for the duration of the import so a
+    /// concurrent writer can't interleave with the ATTACH-based copy.
     #[cfg(not(target_arch = "wasm32"))]
     fn import_vault_from_file(&self, backup_path: &str) -> StorageResult<()> {
+        let _guard = self.guard()?;
         let state = self.state()?;
         let source = std::path::Path::new(backup_path);
         state.vault.import_plaintext(source)

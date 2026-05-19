@@ -6,7 +6,7 @@ use std::path::Path;
 use secrecy::SecretBox;
 
 use crate::storage::error::StorageResult;
-use walletkit_db::{Lock, Vault};
+use walletkit_db::Vault;
 
 use super::schema;
 use super::util::map_io_err;
@@ -24,15 +24,12 @@ use super::util::map_io_err;
 pub(super) fn open_or_rebuild(
     path: &Path,
     k_intermediate: &SecretBox<[u8; 32]>,
-    lock: Lock,
 ) -> StorageResult<Vault> {
-    if let Ok(vault) =
-        Vault::open(path, k_intermediate, lock.clone(), schema::ensure_schema)
-    {
+    if let Ok(vault) = Vault::open(path, k_intermediate, schema::ensure_schema) {
         return Ok(vault);
     }
     delete_cache_files(path)?;
-    Vault::open(path, k_intermediate, lock, schema::ensure_schema).map_err(Into::into)
+    Vault::open(path, k_intermediate, schema::ensure_schema).map_err(Into::into)
 }
 
 /// Deletes the cache DB and its WAL/SHM sidecar files if present.

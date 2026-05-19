@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::storage::error::StorageResult;
 use secrecy::SecretBox;
-use walletkit_db::{Lock, Vault};
+use walletkit_db::Vault;
 
 mod maintenance;
 mod merkle;
@@ -16,8 +16,7 @@ mod util;
 /// Encrypted cache database wrapper.
 ///
 /// Stores non-authoritative, regenerable data (proof cache, session keys,
-/// replay guard). Wraps [`walletkit_db::Vault`]: mutations acquire the
-/// vault's lock via `Vault::mutate`; reads bypass the lock.
+/// replay guard). Wraps [`walletkit_db::Vault`].
 ///
 /// Unlike the credential vault, cache corruption is recoverable: open
 /// failures or integrity failures trigger a wipe-and-rebuild rather than
@@ -28,9 +27,7 @@ pub struct CacheDb {
 }
 
 impl CacheDb {
-    /// Opens or rebuilds the encrypted cache database at `path`. Takes
-    /// ownership of `lock`; subsequent mutations re-acquire it through
-    /// [`walletkit_db::Vault::mutate`].
+    /// Opens or rebuilds the encrypted cache database at `path`.
     ///
     /// If the database is corrupted or unreadable, the file is deleted
     /// and a fresh empty cache is created.
@@ -41,9 +38,8 @@ impl CacheDb {
     pub fn new(
         path: &Path,
         k_intermediate: &SecretBox<[u8; 32]>,
-        lock: Lock,
     ) -> StorageResult<Self> {
-        let vault = maintenance::open_or_rebuild(path, k_intermediate, lock)?;
+        let vault = maintenance::open_or_rebuild(path, k_intermediate)?;
         Ok(Self { vault })
     }
 
@@ -56,7 +52,7 @@ impl CacheDb {
     ///
     /// Returns an error if the query fails.
     pub fn merkle_cache_get(&self, valid_until: u64) -> StorageResult<Option<Vec<u8>>> {
-        merkle::get(self.vault.read(), valid_until)
+        merkle::get(self.vault.connection(), valid_until)
     }
 
     /// Inserts a cached Merkle proof with a TTL. Existing entries for the
@@ -71,8 +67,7 @@ impl CacheDb {
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        self.vault
-            .mutate(|conn| merkle::put(conn, proof_bytes, now, ttl_seconds))
+        merkle::put(self.vault.connection(), proof_bytes, now, ttl_seconds)
     }
 
     /// Fetches a cached `session_id_r_seed` for the given `oprf_seed`.
@@ -87,7 +82,7 @@ impl CacheDb {
         oprf_seed: [u8; 32],
         now: u64,
     ) -> StorageResult<Option<[u8; 32]>> {
-        session::get(self.vault.read(), oprf_seed, now)
+        session::get(self.vault.connection(), oprf_seed, now)
     }
 
     /// Stores a `session_id_r_seed` keyed by `oprf_seed` with a TTL.
@@ -102,9 +97,13 @@ impl CacheDb {
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        self.vault.mutate(|conn| {
-            session::put(conn, oprf_seed, session_id_r_seed, now, ttl_seconds)
-        })
+        session::put(
+            self.vault.connection(),
+            oprf_seed,
+            session_id_r_seed,
+            now,
+            ttl_seconds,
+        )
     }
 
     /// Checks whether a replay guard entry exists for the given nullifier.
@@ -122,7 +121,7 @@ impl CacheDb {
         nullifier: [u8; 32],
         now: u64,
     ) -> StorageResult<bool> {
-        nullifiers::is_nullifier_replay(self.vault.read(), nullifier, now)
+        nullifiers::is_nullifier_replay(self.vault.connection(), nullifier, now)
     }
 
     /// After a proof has been successfully generated, creates a replay guard
@@ -132,15 +131,13 @@ impl CacheDb {
     ///
     /// Returns an error if the query to the cache unexpectedly fails.
     pub fn replay_guard_set(&self, nullifier: [u8; 32], now: u64) -> StorageResult<()> {
-        self.vault
-            .mutate(|conn| nullifiers::replay_guard_set(conn, nullifier, now))
+        nullifiers::replay_guard_set(self.vault.connection(), nullifier, now)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::StorageLock;
     use secrecy::SecretBox;
     use std::fs;
     use std::path::PathBuf;
@@ -173,10 +170,9 @@ mod tests {
         let path = temp_cache_path();
         let key = SecretBox::init_with(|| [0x11u8; 32]);
         let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let db = CacheDb::new(&path, &key, lock.clone()).expect("create cache");
+        let db = CacheDb::new(&path, &key).expect("create cache");
         drop(db);
-        CacheDb::new(&path, &key, lock).expect("open cache");
+        CacheDb::new(&path, &key).expect("open cache");
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }
@@ -186,8 +182,7 @@ mod tests {
         let path = temp_cache_path();
         let key = SecretBox::init_with(|| [0x22u8; 32]);
         let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let db = CacheDb::new(&path, &key, lock.clone()).expect("create cache");
+        let db = CacheDb::new(&path, &key).expect("create cache");
         let oprf_seed = [0x01u8; 32];
         let r_seed = [0x02u8; 32];
         let now = 1_000;
@@ -197,7 +192,7 @@ mod tests {
 
         fs::write(&path, b"corrupt").expect("corrupt cache file");
 
-        let db = CacheDb::new(&path, &key, lock).expect("rebuild cache");
+        let db = CacheDb::new(&path, &key).expect("rebuild cache");
         let value = db
             .session_seed_get(oprf_seed, now)
             .expect("get session seed");
@@ -211,8 +206,7 @@ mod tests {
         let path = temp_cache_path();
         let key = SecretBox::init_with(|| [0x33u8; 32]);
         let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let db = CacheDb::new(&path, &key, lock).expect("create cache");
+        let db = CacheDb::new(&path, &key).expect("create cache");
         db.merkle_cache_put(&[1, 2, 3], 100, 10)
             .expect("put merkle proof");
         let hit = db.merkle_cache_get(105).expect("get merkle proof");
@@ -228,8 +222,7 @@ mod tests {
         let path = temp_cache_path();
         let key = SecretBox::init_with(|| [0x44u8; 32]);
         let lock_path = temp_lock_path();
-        let lock = StorageLock::open(&lock_path).expect("open lock");
-        let db = CacheDb::new(&path, &key, lock).expect("create cache");
+        let db = CacheDb::new(&path, &key).expect("create cache");
         let oprf_seed = [0x55u8; 32];
         let r_seed = [0x66u8; 32];
         let now = 100;
