@@ -33,9 +33,7 @@ use alloy::sol;
 use alloy_core::primitives::U160;
 use eyre::{Context as _, Result};
 use taceo_oprf::types::OprfKeyId;
-use walletkit_core::{
-    defaults::DefaultConfig, Authenticator, Environment, Groth16Materials,
-};
+use walletkit_core::{defaults, Authenticator, Environment, Groth16Materials};
 use world_id_core::primitives::{rp::RpId, FieldElement, Nullifier};
 use world_id_core::{
     requests::{ProofRequest, ProofType, RequestItem, RequestVersion},
@@ -116,12 +114,9 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let seed = [7u8; 32];
     let recovery_address = alloy::primitives::Address::ZERO;
 
-    let config = world_id_core::primitives::Config::from_environment(
-        &Environment::Staging,
-        Some(rpc_url.clone()),
-        None,
-    )
-    .wrap_err("failed to build staging config")?;
+    let config =
+        defaults::default_config(&Environment::Staging, Some(rpc_url.clone()), None)
+            .wrap_err("failed to build staging config")?;
     let query_material = Arc::new(
         world_id_core::proof::load_embedded_query_material()
             .wrap_err("failed to load embedded query material")?,
@@ -337,12 +332,9 @@ async fn e2e_session_proof() -> Result<()> {
     let seed = [7u8; 32];
     let recovery_address = alloy::primitives::Address::ZERO;
 
-    let config = world_id_core::primitives::Config::from_environment(
-        &Environment::Staging,
-        Some(rpc_url.clone()),
-        None,
-    )
-    .wrap_err("failed to build staging config")?;
+    let config =
+        defaults::default_config(&Environment::Staging, Some(rpc_url.clone()), None)
+            .wrap_err("failed to build staging config")?;
     let query_material = Arc::new(
         world_id_core::proof::load_embedded_query_material()
             .wrap_err("failed to load embedded query material")?,

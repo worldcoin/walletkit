@@ -1,8 +1,8 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
 use crate::{
-    defaults::DefaultConfig, error::WalletKitError,
-    primitives::ParseFromForeignBinding, Environment, FieldElement, Region,
+    defaults, error::WalletKitError, primitives::ParseFromForeignBinding, Environment,
+    FieldElement, Region,
 };
 use alloy_core::primitives::Address;
 use ruint::aliases::U256;
@@ -362,7 +362,39 @@ impl Authenticator {
         materials: Arc<Groth16Materials>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url, region)?;
+        let config = defaults::default_config(environment, rpc_url, region)?;
+        let authenticator = CoreAuthenticator::init(seed, config)
+            .await?
+            .with_proof_materials(
+                Arc::clone(&materials.query),
+                Arc::clone(&materials.nullifier),
+            );
+        Ok(Self {
+            inner: authenticator,
+            store,
+        })
+    }
+
+    /// Initializes a new Authenticator from a seed using SDK defaults routed
+    /// through the OHTTP relay. Opt-in alternative to
+    /// [`Authenticator::init_with_defaults`].
+    ///
+    /// The user's World ID must already be registered in the `WorldIDRegistry`,
+    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::init` for potential errors.
+    #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    pub async fn init_with_ohttp_defaults(
+        seed: &[u8],
+        rpc_url: Option<String>,
+        environment: &Environment,
+        region: Option<Region>,
+        materials: Arc<Groth16Materials>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
         let authenticator = CoreAuthenticator::init(seed, config)
             .await?
             .with_proof_materials(
@@ -659,7 +691,40 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = Config::from_environment(environment, rpc_url, region)?;
+        let config = defaults::default_config(environment, rpc_url, region)?;
+
+        let initializing_authenticator =
+            CoreAuthenticator::register(seed, config, recovery_address).await?;
+
+        Ok(Self(initializing_authenticator))
+    }
+
+    /// Registers a new World ID using SDK defaults routed through the OHTTP
+    /// relay. Opt-in alternative to
+    /// [`InitializingAuthenticator::register_with_defaults`].
+    ///
+    /// This returns immediately and does not wait for registration to complete.
+    /// The returned `InitializingAuthenticator` can be used to poll the registration status.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::register` for potential errors.
+    #[uniffi::constructor]
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "gateway_register",
+        skip_all
+    )]
+    pub async fn register_with_ohttp_defaults(
+        seed: &[u8],
+        rpc_url: Option<String>,
+        environment: &Environment,
+        region: Option<Region>,
+        recovery_address: Option<String>,
+    ) -> Result<Self, WalletKitError> {
+        let recovery_address =
+            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
+
+        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;

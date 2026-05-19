@@ -37,14 +37,25 @@ pub async fn register_and_poll(
     } else {
         let env = resolve_environment(cli)?;
         let region = resolve_region(cli)?;
-        InitializingAuthenticator::register_with_defaults(
-            seed,
-            cli.rpc_url.clone(),
-            &env,
-            region,
-            recovery_address.map(String::from),
-        )
-        .await
+        if cli.ohttp_defaults {
+            InitializingAuthenticator::register_with_ohttp_defaults(
+                seed,
+                cli.rpc_url.clone(),
+                &env,
+                region,
+                recovery_address.map(String::from),
+            )
+            .await
+        } else {
+            InitializingAuthenticator::register_with_defaults(
+                seed,
+                cli.rpc_url.clone(),
+                &env,
+                region,
+                recovery_address.map(String::from),
+            )
+            .await
+        }
     };
 
     let init_auth = match result {
@@ -119,14 +130,25 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
     } else {
         let env = resolve_environment(cli)?;
         let region = resolve_region(cli)?;
-        InitializingAuthenticator::register_with_defaults(
-            &seed,
-            cli.rpc_url.clone(),
-            &env,
-            region,
-            recovery_address.map(String::from),
-        )
-        .await
+        if cli.ohttp_defaults {
+            InitializingAuthenticator::register_with_ohttp_defaults(
+                &seed,
+                cli.rpc_url.clone(),
+                &env,
+                region,
+                recovery_address.map(String::from),
+            )
+            .await
+        } else {
+            InitializingAuthenticator::register_with_defaults(
+                &seed,
+                cli.rpc_url.clone(),
+                &env,
+                region,
+                recovery_address.map(String::from),
+            )
+            .await
+        }
     };
 
     let init_auth = match result {
