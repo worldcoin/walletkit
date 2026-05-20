@@ -172,7 +172,8 @@ fn test_content_id_deduplication() {
         )
         .expect("store credential");
     let count = db
-        .vault.connection()
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -184,7 +185,8 @@ fn test_content_id_deduplication() {
         .expect("delete first credential");
 
     let count_after_first_delete = db
-        .vault.connection()
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -196,7 +198,8 @@ fn test_content_id_deduplication() {
         .expect("delete second credential");
 
     let count_after_second_delete = db
-        .vault.connection()
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -325,7 +328,8 @@ fn test_delete_credential_by_id() {
         .expect("store credential");
 
     let blob_count_before = db
-        .vault.connection()
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -340,7 +344,8 @@ fn test_delete_credential_by_id() {
     assert!(records.is_empty());
 
     let blob_count_after = db
-        .vault.connection()
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -384,7 +389,8 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
         .expect("store credential");
 
     let associated_before = db
-        .vault.connection()
+        .vault
+        .connection()
         .query_row(
             "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
             params![BlobKind::AssociatedData.as_i64()],
@@ -398,7 +404,8 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
         .expect("delete credential");
 
     let associated_after = db
-        .vault.connection()
+        .vault
+        .connection()
         .query_row(
             "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
             params![BlobKind::AssociatedData.as_i64()],
@@ -446,7 +453,8 @@ fn test_danger_delete_all_credentials() {
     assert!(records.is_empty());
 
     let blob_count = db
-        .vault.connection()
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
