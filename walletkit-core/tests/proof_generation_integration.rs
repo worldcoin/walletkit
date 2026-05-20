@@ -461,16 +461,44 @@ async fn e2e_session_proof() -> Result<()> {
         constraints: None,
     };
 
-    // Use the core authenticator to generate a session ID (calls OPRF)
-    let (session_id, session_id_r_seed) = core_authenticator
-        .build_session_id(&init_request, None, None)
+    let init_proof_request: walletkit_core::requests::ProofRequest =
+        init_request.into();
+    let init_proof_response = authenticator
+        .generate_proof(&init_proof_request, Some(now))
         .await
-        .wrap_err("generate_session_id failed")?;
+        .wrap_err("generate_proof (create session) failed")?;
+    let init_response: world_id_core::requests::ProofResponse =
+        init_proof_response.into_inner();
+    assert!(
+        init_response.error.is_none(),
+        "proof response contains error"
+    );
+    assert_eq!(init_response.responses.len(), 1);
 
-    // Cache the r_seed so generate_proof finds it
-    store
-        .store_session_seed(session_id.oprf_seed, session_id_r_seed, now)
-        .wrap_err("store_session_seed failed")?;
+    let init_response_item = &init_response.responses[0];
+    assert!(
+        init_response_item.is_session(),
+        "create-session response should contain a session proof"
+    );
+    assert!(
+        init_response_item.session_nullifier.is_some(),
+        "create-session response should have a session_nullifier"
+    );
+    assert!(
+        init_response_item.nullifier.is_none(),
+        "create-session response should not have a uniqueness nullifier"
+    );
+
+    let session_id = init_response
+        .session_id
+        .expect("create-session response should include session_id");
+    let cached_seed = store
+        .get_session_seed(session_id.oprf_seed, now)
+        .wrap_err("get_session_seed failed")?;
+    assert!(
+        cached_seed.is_some(),
+        "create-session should cache session_id_r_seed"
+    );
 
     eprintln!(
         "Phase 4 complete: session created (commitment={:?})",

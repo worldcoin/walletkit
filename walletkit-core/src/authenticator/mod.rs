@@ -542,9 +542,10 @@ impl Authenticator {
         ))
         .await?;
 
-        // Cache session seed if returned
+        // Cache session seed if returned. Create-session requests do not carry a
+        // session_id, so use the session_id generated in the proof response.
         if let Some(seed) = result.session_id_r_seed {
-            if let Some(session_id) = proof_request.0.session_id {
+            if let Some(session_id) = result.proof_response.session_id {
                 if let Err(err) =
                     self.store
                         .store_session_seed(session_id.oprf_seed, seed, now)
