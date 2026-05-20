@@ -8,21 +8,11 @@ use walletkit_db::{Connection, DbResult};
 
 pub(super) const VAULT_SCHEMA_VERSION: i64 = 1;
 
-/// Tables included in plaintext vault backups.
-///
-/// `vault_meta` is intentionally excluded: on restore, the destination vault
-/// already has its own `vault_meta` (created by `ensure_schema` +
-/// `init_leaf_index`) with the authoritative `leaf_index` from the
-/// authenticator.
-///
-/// **Note:** New tables added to the vault schema must be added here too.
-pub const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
-
 /// Creates the credential-vault tables, indexes, and triggers.
 ///
 /// **Backup sensitivity:** Schema changes here affect plaintext vault
 /// backups.
-/// - New tables must be added to [`BACKUP_TABLES`].
+/// - New tables must be added to [`super::BACKUP_TABLES`].
 /// - Column changes (especially new `NOT NULL` columns without defaults) can
 ///   break restoring older backups into a newer schema.
 pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {

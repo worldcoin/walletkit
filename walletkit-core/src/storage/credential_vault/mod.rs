@@ -19,7 +19,15 @@ use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
 use walletkit_db::{blobs, cipher, params, StepResult, Value, Vault};
 
-pub(crate) use schema::BACKUP_TABLES;
+/// Tables included in plaintext vault backups, in order.
+///
+/// `vault_meta` is intentionally excluded: on restore, the destination vault
+/// already has its own `vault_meta` (created by `schema::ensure_schema` +
+/// `init_leaf_index`) with the authoritative `leaf_index` from the
+/// authenticator.
+///
+/// **Note:** New tables added to the vault schema must be added here too.
+pub(crate) const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
 
 /// Encrypted vault database wrapper around [`walletkit_db::Vault`].
 #[derive(Debug)]
