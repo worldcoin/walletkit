@@ -56,7 +56,8 @@ mod imp {
     use std::fs::{self, File, OpenOptions};
     use std::sync::Arc;
 
-    /// A file-backed lock that serializes storage mutations across processes.
+    /// File-backed cross-process exclusive lock. See the module docs for
+    /// what it's for (and what it isn't).
     #[derive(Debug, Clone)]
     pub struct Lock {
         file: Arc<File>,
