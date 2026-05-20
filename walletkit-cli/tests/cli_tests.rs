@@ -8,6 +8,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+use world_id_core::primitives::SessionId;
+
 fn walletkit_bin() -> PathBuf {
     let path = PathBuf::from(env!("CARGO_BIN_EXE_walletkit"));
     assert!(path.exists(), "binary not found at {}", path.display());
@@ -286,6 +288,126 @@ fn auth_recovery_data_json_has_all_keys() {
     assert!(data["authenticator_address"].as_str().is_some());
     assert!(data["authenticator_pubkey"].as_str().is_some());
     assert!(data["offchain_signer_commitment"].as_str().is_some());
+}
+
+#[test]
+fn proof_generate_test_request_defaults_to_uniqueness() {
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--json",
+            "proof",
+            "generate-test-request",
+            "--issuer-schema-id",
+            "47",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("invalid json");
+    let data = &parsed["data"];
+    assert_eq!(data["proof_type"], "uniqueness");
+    assert!(data["action"].as_str().is_some());
+    assert!(data["session_id"].is_null());
+}
+
+#[test]
+fn proof_generate_test_request_supports_create_session() {
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--json",
+            "proof",
+            "generate-test-request",
+            "--issuer-schema-id",
+            "47",
+            "--proof-type",
+            "create-session",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("invalid json");
+    let data = &parsed["data"];
+    assert_eq!(data["proof_type"], "create_session");
+    assert!(data["action"].is_null());
+    assert!(data["session_id"].is_null());
+}
+
+#[test]
+fn proof_generate_test_request_supports_session() {
+    let session_id = serde_json::to_value(SessionId::default())
+        .expect("session id should serialize")
+        .as_str()
+        .expect("session id should serialize as string")
+        .to_string();
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--json",
+            "proof",
+            "generate-test-request",
+            "--issuer-schema-id",
+            "47",
+            "--proof-type",
+            "session",
+            "--session-id",
+            &session_id,
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("invalid json");
+    let data = &parsed["data"];
+    assert_eq!(data["proof_type"], "session");
+    assert!(data["action"].is_null());
+    assert_eq!(data["session_id"].as_str(), Some(session_id.as_str()));
+}
+
+#[test]
+fn proof_generate_test_request_requires_session_id_for_session() {
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--json",
+            "proof",
+            "generate-test-request",
+            "--issuer-schema-id",
+            "47",
+            "--proof-type",
+            "session",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stderr).expect("invalid json");
+    assert!(
+        parsed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("--session-id is required"),
+        "expected missing session id error, got: {stderr}"
+    );
 }
 
 #[test]
