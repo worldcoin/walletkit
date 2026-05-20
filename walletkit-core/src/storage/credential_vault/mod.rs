@@ -5,7 +5,6 @@
 //! integrity-check machinery and the shared `blob_objects` table come from
 //! [`walletkit_db`].
 
-mod helpers;
 mod schema;
 #[cfg(test)]
 mod tests;
@@ -14,10 +13,9 @@ use std::path::Path;
 
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{BlobKind, CredentialRecord};
-use helpers::{map_db_err, map_record, to_i64, to_u64};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
-use walletkit_db::{blobs, cipher, params, StepResult, Value, Vault};
+use walletkit_db::{blobs, cipher, params, DbError, Row, StepResult, Value, Vault};
 
 /// Tables included in plaintext vault backups, in order.
 ///
@@ -406,4 +404,35 @@ impl CredentialVault {
                 .map_err(|e| map_db_err(&e))
         }
     }
+}
+
+fn map_record(row: &Row<'_, '_>) -> StorageResult<CredentialRecord> {
+    let credential_id = row.column_i64(0);
+    let issuer_schema_id = row.column_i64(1);
+    let genesis_issued_at = row.column_i64(2);
+    let expires_at = row.column_i64(3);
+    let is_expired = row.column_i64(4);
+    Ok(CredentialRecord {
+        credential_id: to_u64(credential_id, "credential_id")?,
+        issuer_schema_id: to_u64(issuer_schema_id, "issuer_schema_id")?,
+        genesis_issued_at: to_u64(genesis_issued_at, "genesis_issued_at")?,
+        expires_at: to_u64(expires_at, "expires_at")?,
+        is_expired: is_expired != 0,
+    })
+}
+
+fn to_i64(value: u64, label: &str) -> StorageResult<i64> {
+    i64::try_from(value).map_err(|_| {
+        StorageError::VaultDb(format!("{label} out of range for i64: {value}"))
+    })
+}
+
+fn to_u64(value: i64, label: &str) -> StorageResult<u64> {
+    u64::try_from(value).map_err(|_| {
+        StorageError::VaultDb(format!("{label} out of range for u64: {value}"))
+    })
+}
+
+fn map_db_err(err: &DbError) -> StorageError {
+    StorageError::VaultDb(err.to_string())
 }

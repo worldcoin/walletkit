@@ -1,6 +1,5 @@
 //! Vault database unit tests.
 
-use super::helpers::map_db_err;
 use super::*;
 use secrecy::SecretBox;
 use std::fs;
