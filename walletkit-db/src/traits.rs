@@ -1,4 +1,4 @@
-//! Plain-Rust trait surface for consumer-supplied platform integrations.
+//! Interfaces for consumer-supplied platform integrations.
 //!
 //! Argument shapes (`Vec<u8>`, owned `String`) mirror `WalletKit`'s existing
 //! uniffi-annotated traits so consumers can bridge with a thin newtype that

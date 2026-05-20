@@ -5,8 +5,8 @@
 //!
 //! - [`Connection`], [`Transaction`], [`Statement`], [`cipher`] — encrypted
 //!   `SQLite` (`sqlite3mc`) wrapper with safe Rust types.
-//! - [`Vault`] — encrypted-database wrapper with caller-supplied schema and
-//!   lock-enforced mutation.
+//! - [`Vault`] — encrypted-database wrapper around a caller-supplied schema,
+//!   exposing the underlying [`Connection`].
 //! - [`blobs`] — content-addressed blob storage (`ensure_schema`, `put`,
 //!   `get`), [`ContentId`], and [`compute_content_id`].
 //! - [`init_or_open_envelope_key`] — sealed intermediate key persisted via

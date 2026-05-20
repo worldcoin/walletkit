@@ -135,3 +135,136 @@ fn parse_key_32(bytes: &[u8], label: &str) -> StoreResult<[u8; 32]> {
     out.copy_from_slice(bytes);
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{init_or_open_envelope_key, KeyEnvelope};
+    use crate::{AtomicBlobStore, Keystore, Lock, StoreError, StoreResult};
+    use secrecy::ExposeSecret;
+    use std::sync::Mutex;
+
+    #[test]
+    fn test_key_envelope_round_trip() {
+        let envelope = KeyEnvelope::new(vec![1, 2, 3], 123);
+        let bytes = envelope.serialize().expect("serialize");
+        let decoded = KeyEnvelope::deserialize(&bytes).expect("deserialize");
+        assert_eq!(decoded.version, 1);
+        assert_eq!(decoded.wrapped_k_intermediate, vec![1, 2, 3]);
+        assert_eq!(decoded.created_at, 123);
+        assert_eq!(decoded.updated_at, 123);
+    }
+
+    #[test]
+    fn test_key_envelope_cbor_bytes_frozen() {
+        // Frozen CBOR encoding for the canonical envelope. Round-trip alone
+        // doesn't catch field-order or type drift; this byte-level check
+        // does. Updating this hex without an on-disk format review breaks
+        // every existing user database.
+        let envelope = KeyEnvelope::new(vec![1, 2, 3], 123);
+        let bytes = envelope.serialize().expect("serialize");
+        // CBOR map of 4 entries: version=1, wrapped_k_intermediate=[1,2,3],
+        // created_at=123, updated_at=123. Reproducible from the struct;
+        // hex captured by serializing the canonical envelope above.
+        let expected = hex::decode(
+            "a46776657273696f6e0176777261707065645f6b5f696e7465726d656469617465830102036a637265617465645f6174187b6a757064617465645f6174187b",
+        ).expect("decode hex");
+        assert_eq!(
+            bytes, expected,
+            "KeyEnvelope CBOR layout changed; on-disk envelope format would drift"
+        );
+    }
+
+    #[test]
+    fn test_key_envelope_unsupported_version() {
+        let mut envelope = KeyEnvelope::new(vec![1, 2, 3], 123);
+        envelope.version = 99;
+        let bytes = envelope.serialize().expect("serialize");
+        match KeyEnvelope::deserialize(&bytes) {
+            Err(StoreError::UnsupportedEnvelopeVersion(v)) => assert_eq!(v, 99),
+            Err(err) => panic!("expected UnsupportedEnvelopeVersion, got: {err}"),
+            Ok(_) => panic!("expected UnsupportedEnvelopeVersion, got Ok"),
+        }
+    }
+
+    /// Stub `Keystore` that XORs with a fixed pad. Good enough to verify
+    /// the seal → persist → open round-trip on the envelope wiring.
+    struct XorKeystore {
+        pad: [u8; 32],
+    }
+
+    impl Keystore for XorKeystore {
+        fn seal(&self, _ad: Vec<u8>, plaintext: Vec<u8>) -> StoreResult<Vec<u8>> {
+            Ok(plaintext
+                .iter()
+                .enumerate()
+                .map(|(i, b)| b ^ self.pad[i % 32])
+                .collect())
+        }
+        fn open_sealed(
+            &self,
+            _ad: Vec<u8>,
+            ciphertext: Vec<u8>,
+        ) -> StoreResult<Vec<u8>> {
+            Ok(ciphertext
+                .iter()
+                .enumerate()
+                .map(|(i, b)| b ^ self.pad[i % 32])
+                .collect())
+        }
+    }
+
+    struct InMemoryBlobs {
+        inner: Mutex<std::collections::HashMap<String, Vec<u8>>>,
+    }
+    impl InMemoryBlobs {
+        fn new() -> Self {
+            Self {
+                inner: Mutex::new(std::collections::HashMap::new()),
+            }
+        }
+    }
+    impl AtomicBlobStore for InMemoryBlobs {
+        fn read(&self, path: String) -> StoreResult<Option<Vec<u8>>> {
+            Ok(self.inner.lock().unwrap().get(&path).cloned())
+        }
+        fn write_atomic(&self, path: String, bytes: Vec<u8>) -> StoreResult<()> {
+            self.inner.lock().unwrap().insert(path, bytes);
+            Ok(())
+        }
+        fn delete(&self, path: String) -> StoreResult<()> {
+            self.inner.lock().unwrap().remove(&path);
+            Ok(())
+        }
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_init_or_open_envelope_key_round_trip() {
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let lock_path = dir.path().join("envelope.lock");
+        let lock = Lock::open(&lock_path).expect("open lock");
+
+        let keystore = XorKeystore { pad: [0xAA; 32] };
+        let blob_store = InMemoryBlobs::new();
+        let key_a = init_or_open_envelope_key(
+            &keystore,
+            &blob_store,
+            &lock,
+            "k.bin",
+            b"test-ad",
+            100,
+        )
+        .expect("init");
+        let key_b = init_or_open_envelope_key(
+            &keystore,
+            &blob_store,
+            &lock,
+            "k.bin",
+            b"test-ad",
+            200,
+        )
+        .expect("re-open");
+
+        assert_eq!(key_a.expose_secret(), key_b.expose_secret());
+    }
+}

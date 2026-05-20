@@ -1,11 +1,15 @@
-//! Cross-process exclusive lock used to serialize writes.
+//! Cross-process exclusive lock.
 //!
-//! On native platforms (Unix, Windows) a file-based `flock` / `LockFileEx`
-//! lock is used to serialize writes across processes.
+//! Used by [`crate::init_or_open_envelope_key`] to serialize the first-install
+//! envelope bootstrap, and acquired by consumers for operations that mix
+//! `SQLite` with filesystem state (e.g. plaintext export / import). `SQLite`
+//! handles cross-process writer serialization for ordinary mutations itself
+//! via WAL-mode file locks; this lock is not required for those.
 //!
-//! On WASM targets the lock is a no-op because the runtime is single-threaded
-//! (sqlite-wasm-rs is compiled with `SQLITE_THREADSAFE=0`) and runs in a
-//! dedicated Web Worker.
+//! On native platforms (Unix, Windows) the lock is backed by a file via
+//! `flock` / `LockFileEx`. On WASM it is a no-op because the runtime is
+//! single-threaded (`sqlite-wasm-rs` is compiled with `SQLITE_THREADSAFE=0`)
+//! and runs in a dedicated Web Worker.
 
 use std::path::Path;
 
@@ -271,6 +275,62 @@ mod imp {
             bytes_to_unlock_high: u32,
             overlapped: *mut OVERLAPPED,
         ) -> i32;
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::Lock;
+
+        #[test]
+        fn test_lock_is_exclusive() {
+            let dir = tempfile::tempdir().expect("create temp dir");
+            let path = dir.path().join("lock.lock");
+            let lock_a = Lock::open(&path).expect("open lock");
+            let guard = lock_a.lock().expect("acquire lock");
+
+            let lock_b = Lock::open(&path).expect("open lock");
+            let blocked = lock_b.try_lock().expect("try lock");
+            assert!(blocked.is_none());
+
+            drop(guard);
+            let guard = lock_b.try_lock().expect("try lock");
+            assert!(guard.is_some());
+        }
+
+        #[test]
+        fn test_lock_serializes_across_threads() {
+            use std::sync::mpsc;
+            use std::thread;
+
+            let dir = tempfile::tempdir().expect("create temp dir");
+            let path = dir.path().join("lock.lock");
+            let lock = Lock::open(&path).expect("open lock");
+
+            let (locked_tx, locked_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let (released_tx, released_rx) = mpsc::channel();
+
+            let thread_a = thread::spawn(move || {
+                let guard = lock.lock().expect("lock in thread");
+                locked_tx.send(()).expect("signal locked");
+                release_rx.recv().expect("wait release");
+                drop(guard);
+                released_tx.send(()).expect("signal released");
+            });
+
+            locked_rx.recv().expect("wait locked");
+            let lock_b = Lock::open(&path).expect("open lock");
+            let blocked = lock_b.try_lock().expect("try lock");
+            assert!(blocked.is_none());
+
+            release_tx.send(()).expect("release");
+            released_rx.recv().expect("wait released");
+
+            let guard = lock_b.try_lock().expect("try lock");
+            assert!(guard.is_some());
+
+            thread_a.join().expect("thread join");
+        }
     }
 }
 

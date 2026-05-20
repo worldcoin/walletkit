@@ -1,14 +1,11 @@
 //! Vault database unit tests.
 
-#![allow(clippy::redundant_clone)]
-
 use super::helpers::map_db_err;
 use super::*;
 use secrecy::SecretBox;
 use std::fs;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
-use walletkit_db::compute_content_id;
 
 fn temp_vault_path() -> PathBuf {
     let mut path = std::env::temp_dir();
@@ -147,13 +144,6 @@ fn test_store_credential_with_associated_data() {
 }
 
 #[test]
-fn test_content_id_determinism() {
-    let a = compute_content_id(BlobKind::CredentialBlob as u8, b"data");
-    let b = compute_content_id(BlobKind::CredentialBlob as u8, b"data");
-    assert_eq!(a, b);
-}
-
-#[test]
 fn test_content_id_deduplication() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
@@ -182,7 +172,7 @@ fn test_content_id_deduplication() {
         )
         .expect("store credential");
     let count = db
-        .raw_connection()
+        .vault.connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -194,7 +184,7 @@ fn test_content_id_deduplication() {
         .expect("delete first credential");
 
     let count_after_first_delete = db
-        .raw_connection()
+        .vault.connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -206,7 +196,7 @@ fn test_content_id_deduplication() {
         .expect("delete second credential");
 
     let count_after_second_delete = db
-        .raw_connection()
+        .vault.connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -335,7 +325,7 @@ fn test_delete_credential_by_id() {
         .expect("store credential");
 
     let blob_count_before = db
-        .raw_connection()
+        .vault.connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -350,7 +340,7 @@ fn test_delete_credential_by_id() {
     assert!(records.is_empty());
 
     let blob_count_after = db
-        .raw_connection()
+        .vault.connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -394,7 +384,7 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
         .expect("store credential");
 
     let associated_before = db
-        .raw_connection()
+        .vault.connection()
         .query_row(
             "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
             params![BlobKind::AssociatedData.as_i64()],
@@ -408,7 +398,7 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
         .expect("delete credential");
 
     let associated_after = db
-        .raw_connection()
+        .vault.connection()
         .query_row(
             "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
             params![BlobKind::AssociatedData.as_i64()],
@@ -456,7 +446,7 @@ fn test_danger_delete_all_credentials() {
     assert!(records.is_empty());
 
     let blob_count = db
-        .raw_connection()
+        .vault.connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -497,18 +487,13 @@ fn test_vault_integrity_check() {
 
 #[test]
 fn test_credential_vault_on_disk_format_guard() {
-    // This is the on-disk-format guard required by the storage-primitives
-    // refactor: any change to schemas, CBOR layout, content_id derivation,
-    // or cipher configuration that breaks compatibility with vault files
-    // written by `main` must fail this test.
-    //
-    // The test:
-    //   1. Stores a credential with a deterministic plaintext payload.
-    //   2. Asserts the `content_id` written into `blob_objects` equals a
-    //      hard-coded SHA-256 — locks the kind-tag + prefix derivation.
-    //   3. Closes the vault, reopens it under the same key, fetches the
-    //      credential back and asserts byte-equality with the original.
-    //      A schema or cipher mismatch would surface here.
+    // On-disk format guard. Stores a credential via the public API and
+    // asserts that the row lands in `blob_objects` with a frozen
+    // content_id, then reopens the vault and reads the payload back
+    // byte-for-byte. Catches:
+    //   - changes to `compute_content_id` (hash domain, kind-tag wiring)
+    //   - changes to `BlobKind::CredentialBlob` (= 0x01)
+    //   - schema or cipher drift in `credential_records`
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
     let key = SecretBox::init_with(|| [0xA5u8; 32]);
@@ -529,15 +514,8 @@ fn test_credential_vault_on_disk_format_guard() {
         .expect("store credential")
     };
 
-    // Frozen content_id for the credential blob. SHA-256(b"worldid:blob"
-    // || [BlobKind::CredentialBlob as u8 = 0x01] || credential_bytes).
-    //
-    // Verified to match `main`: the SHA-256 derivation in
-    // `walletkit_db::compute_content_id` is a line-by-line move of the
-    // pre-refactor `compute_content_id` in walletkit-core/storage/vault/
-    // helpers.rs (commit 9ff3b47), so the hex here equals what `main`
-    // would write for the same `(BlobKind::CredentialBlob, credential_bytes)`.
-    // Reproducible via:
+    // SHA-256(b"worldid:blob" || [BlobKind::CredentialBlob as u8 = 0x01]
+    // || credential_bytes). Reproducible via:
     //   printf 'worldid:blob\x01on-disk-guard-credential-payload' \
     //     | shasum -a 256
     let expected_cid_hex =
@@ -545,7 +523,7 @@ fn test_credential_vault_on_disk_format_guard() {
 
     let db = CredentialVault::new(&path, &key).expect("reopen vault");
     let stored_cid_hex: String = db
-        .raw_connection()
+        .vault.connection()
         .query_row(
             "SELECT lower(hex(credential_blob_cid)) FROM credential_records WHERE credential_id = ?1",
             params![i64::try_from(credential_id).unwrap()],

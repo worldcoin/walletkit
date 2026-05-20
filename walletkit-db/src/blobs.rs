@@ -139,3 +139,25 @@ fn check_cid_len(cid: &[u8]) -> StoreResult<()> {
         )))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::compute_content_id;
+
+    #[test]
+    fn test_compute_content_id_byte_stable() {
+        // SHA-256(b"worldid:blob" || [0x01] || b"hello"). Frozen value;
+        // changing this hash means breaking every existing user database.
+        let cid = compute_content_id(1, b"hello");
+        let expected: [u8; 32] = hex::decode(
+            "ed4eba40f11beec64d0607586f09b7529418ef31bf2c46cf9b8b905615f2e7ca",
+        )
+        .expect("decode hex")
+        .try_into()
+        .expect("32 bytes");
+        assert_eq!(cid, expected);
+
+        let cid2 = compute_content_id(2, b"hello");
+        assert_ne!(cid, cid2, "kind tag must affect content id");
+    }
+}

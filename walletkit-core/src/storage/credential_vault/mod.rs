@@ -4,12 +4,6 @@
 //! queries, and backup-table list live here; the underlying open / key /
 //! integrity-check machinery and the shared `blob_objects` table come from
 //! [`walletkit_db`].
-//!
-//! No flock around mutations — `SQLite`'s own WAL-mode locking serializes
-//! cross-process writers. `CredentialStore` acquires the shared
-//! [`crate::storage::StorageLock`] only for operations that mix `SQLite`
-//! with filesystem state (`export_plaintext` / `import_plaintext`,
-//! `destroy_storage`) or for the envelope-init bootstrap race.
 
 mod helpers;
 mod schema;
@@ -101,8 +95,14 @@ impl CredentialVault {
     /// # Errors
     ///
     /// Returns an error if any insert fails.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "fields mirror the credential record schema"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "byte buffers are consumed here; callers don't reuse them"
+    )]
     pub fn store_credential(
         &self,
         issuer_schema_id: u64,
@@ -357,10 +357,13 @@ impl CredentialVault {
         cipher::integrity_check(self.vault.connection()).map_err(|e| map_db_err(&e))
     }
 
-    /// Exports a plaintext (unencrypted) copy of the vault to `dest`. Runs
-    /// under the vault's lock so concurrent writers cannot interleave.
+    /// Exports a plaintext (unencrypted) copy of the vault to `dest`.
     ///
-    /// The caller is responsible for deleting the exported file after use.
+    /// Callers that need cross-process exclusion (to keep a concurrent
+    /// writer from interleaving between stale-file cleanup and the
+    /// `ATTACH`-based copy) must hold [`crate::storage::StorageLock`]
+    /// themselves. The caller is also responsible for deleting the
+    /// exported file after use.
     ///
     /// # Errors
     ///
@@ -381,8 +384,9 @@ impl CredentialVault {
     /// Imports credentials from a plaintext (unencrypted) vault backup into
     /// an empty vault. Intended for restore on a fresh install.
     ///
-    /// The caller is responsible for deleting the source file after the
-    /// import completes.
+    /// Callers that need cross-process exclusion must hold
+    /// [`crate::storage::StorageLock`] themselves. The caller is also
+    /// responsible for deleting the source file after the import completes.
     ///
     /// # Errors
     ///
@@ -393,11 +397,5 @@ impl CredentialVault {
             cipher::import_plaintext_copy(conn, source, BACKUP_TABLES)
                 .map_err(|e| map_db_err(&e))
         }
-    }
-
-    /// Borrows the underlying connection for direct SQL access. **Test-only.**
-    #[cfg(test)]
-    pub(super) const fn raw_connection(&self) -> &walletkit_db::Connection {
-        self.vault.connection()
     }
 }

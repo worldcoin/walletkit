@@ -8,9 +8,9 @@ Consumed by `walletkit-core::storage` (credential vault) and by sibling SDKs in 
 
 Five physical pieces. Knowing what each one is and isn't makes everything else straightforward.
 
-- **Vault** — the encrypted SQLite file on disk (e.g. `account.vault.sqlite`). Opened by `Vault::open`; mutated via `Vault::mutate` (which holds the lock for the closure); read via `Vault::read` (which bypasses it).
+- **Vault** — the encrypted SQLite file on disk (e.g. `account.vault.sqlite`). Opened by `Vault::open`; accessed via `Vault::connection() -> &Connection`. SQLite's WAL-mode file locks serialize cross-process writers; walletkit-db doesn't layer another lock on top.
 - **Envelope** — a small CBOR file (e.g. `account_keys.bin`) holding the sealed 32-byte `K_intermediate`. The seal is done by the host's hardware keystore. Managed by `init_or_open_envelope_key` + `KeyEnvelope`.
-- **Lock** — a separate empty file used as a cross-process mutex via `flock` / `LockFileEx`. Owned by the `Vault` after open; consumers never plumb a `LockGuard` through their method signatures.
+- **Lock** — a separate empty file used as a cross-process mutex via `flock` / `LockFileEx`. Acquired internally by `init_or_open_envelope_key` (envelope-init bootstrap race) and by consumers around operations that mix SQL with filesystem state (e.g. plaintext export/import).
 - **`blob_objects` table** — one shared table inside the vault for content-addressed bytes, keyed by SHA-256. Consumer-specific tables reference rows here by `content_id`. Managed by `blobs::*`.
 - **`Keystore` + `AtomicBlobStore`** — two traits the host implements. `Keystore` seals/unseals bytes under `K_device`; `AtomicBlobStore` reads/writes the envelope file. walletkit-db never touches the OS keystore or the filesystem directly.
 
@@ -23,7 +23,7 @@ flowchart TB
         BS["AtomicBlobStore (uniffi)"]
     end
     subgraph WKDB["walletkit-db (this crate)"]
-        OV["Vault::open / mutate / read"]
+        OV["Vault::open / connection"]
         Blobs["blobs::{ensure_schema, put, get, delete}"]
         Env["init_or_open_envelope_key"]
         Lock["Lock / LockGuard"]
@@ -105,24 +105,23 @@ let k_intermediate = init_or_open_envelope_key(
 )?;
 
 // 3. Open the encrypted SQLite database with the consumer's own schema.
-let vault = Vault::open(&paths.db_path(), &k_intermediate, lock, |conn| {
+let vault = Vault::open(&paths.db_path(), &k_intermediate, |conn| {
     blobs::ensure_schema(conn)?;
     my_schema::ensure_schema(conn)
 })?;
 
 // 4. Store / read / delete.
-let cid = vault.mutate(|conn| {
-    blobs::put(conn, MY_KIND_TAG, &payload_bytes, now)
-})?;
-let bytes = blobs::get(vault.read(), &cid)?.expect("present");
-vault.mutate(|conn| blobs::delete(conn, &cid))?;
+let conn = vault.connection();
+let cid = blobs::put(conn, MY_KIND_TAG, &payload_bytes, now)?;
+let bytes = blobs::get(conn, &cid)?.expect("present");
+blobs::delete(conn, &cid)?;
 ```
 
 The consumer brings a `Keystore` impl, an `AtomicBlobStore` impl, a `kind: u8` tag space, and its own SQL schema. The crate handles cipher setup, schema dispatch, integrity check, content hashing (`SHA-256("worldid:blob" || [kind] || plaintext)`), CBOR envelope persistence, and the lock.
 
 ## Public surface
 
-- `Vault::open(path, key, lock, ensure_schema) -> StoreResult<Vault>`, `Vault::read(&self) -> &Connection`, `Vault::mutate(&self, f) -> Result<R, E>`.
+- `Vault::open(path, key, ensure_schema) -> StoreResult<Vault>`, `Vault::connection(&self) -> &Connection`.
 - `blobs::{ensure_schema, put, get, delete, compute_content_id}` plus `pub type ContentId = [u8; 32]`.
 - `init_or_open_envelope_key(...) -> StoreResult<SecretBox<[u8; 32]>>`.
 - `Lock` / `LockGuard` — native `flock` / `LockFileEx`, no-op on WASM.
@@ -131,7 +130,7 @@ The consumer brings a `Keystore` impl, an `AtomicBlobStore` impl, a `kind: u8` t
 
 ## On-disk format
 
-Schemas, CBOR envelope layout, content_id derivation, and the `account_keys.bin` / `worldid:account-key-envelope` filename + AD tags are byte-stable. Existing user databases keep working without migration. Frozen-byte tests in `src/tests.rs` guard the format.
+Schemas, CBOR envelope layout, content_id derivation, and the `account_keys.bin` / `worldid:account-key-envelope` filename + AD tags are byte-stable. Existing user databases keep working without migration. Frozen-byte tests live next to the code they cover (`blobs.rs`, `envelope.rs`).
 
 ## Platforms
 

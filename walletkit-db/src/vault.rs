@@ -55,12 +55,54 @@ impl Vault {
     }
 
     /// Borrows the underlying connection.
-    ///
-    /// `SQLite` (in WAL mode, which `cipher::open_encrypted` configures)
-    /// serializes cross-process writers via its own file locks. Callers
-    /// don't need to acquire anything to mutate.
     #[must_use]
     pub const fn connection(&self) -> &Connection {
         &self.conn
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Vault;
+    use crate::blobs;
+    use crate::error::StoreError;
+    use crate::tests::init_sqlite;
+    use secrecy::SecretBox;
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_vault_open_runs_schema_callback() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let db_path = dir.path().join("vault.sqlite");
+        let key = SecretBox::init_with(|| [0x42u8; 32]);
+
+        let vault = Vault::open(&db_path, &key, |conn| {
+            blobs::ensure_schema(conn)?;
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY);",
+            )
+        })
+        .expect("open vault");
+
+        let cid = blobs::put(vault.connection(), 7, b"payload", 1000).expect("put");
+        let bytes = blobs::get(vault.connection(), &cid)
+            .expect("get")
+            .expect("present");
+        assert_eq!(bytes, b"payload");
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_vault_open_rejects_wrong_key() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let db_path = dir.path().join("vault.sqlite");
+        let key = SecretBox::init_with(|| [0x11u8; 32]);
+        let _ =
+            Vault::open(&db_path, &key, blobs::ensure_schema).expect("create vault");
+        let wrong = SecretBox::init_with(|| [0x22u8; 32]);
+        let err = Vault::open(&db_path, &wrong, |_| Ok(())).expect_err("wrong key");
+        assert!(matches!(err, StoreError::Db(_)));
     }
 }
