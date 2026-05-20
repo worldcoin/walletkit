@@ -56,3 +56,17 @@ opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.
 panic = "abort"
 debug = false
+
+# ProveKit has an additional `pattern` in the Whir R1CS proof which is used in debugging builds,
+# because this isn't serialized, we explicitly remove it here as WalletKit only uses serialized proofs.
+[profile.dev.package.provekit-common]
+debug-assertions = false
+
+[profile.dev.package.provekit-whir]
+debug-assertions = false
+
+[profile.dev.package.provekit-verifier]
+debug-assertions = false
+
+[profile.dev.package.provekit-prover]
+debug-assertions = false
