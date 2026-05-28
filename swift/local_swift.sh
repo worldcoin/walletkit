@@ -8,7 +8,7 @@ set -e
 
 PROJECT_ROOT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_PATH="$PROJECT_ROOT_PATH/swift" # The base path for the Swift build
-LOCAL_BUILD_PATH="$BASE_PATH/local_build" # Local build artifacts directory
+LOCAL_BUILD_PATH="$BASE_PATH/local_build/walletkit-swift" # Local build artifacts directory
 FRAMEWORK="WalletKit.xcframework"
 
 echo "Building $FRAMEWORK for local iOS development"
@@ -26,42 +26,16 @@ bash "$BASE_PATH/build_swift.sh" "$LOCAL_BUILD_PATH"
 
 echo "Creating Package.swift for local development..."
 
-# Create Package.swift for local development
-cat > $LOCAL_BUILD_PATH/Package.swift << EOF
-// swift-tools-version: 5.7
-// The swift-tools-version declares the minimum version of Swift required to build this package.
-
-import PackageDescription
-
-let package = Package(
-    name: "WalletKit",
-    platforms: [
-        .iOS(.v13)
-    ],
-    products: [
-        .library(
-            name: "WalletKit",
-            targets: ["WalletKit"]),
-    ],
-    dependencies: [
-        .package(url: "https://github.com/attaswift/BigInt.git", from: "5.4.0"),
-    ],
-    targets: [
-        .target(
-            name: "WalletKit",
-            dependencies: [
-                "walletkit_coreFFI",
-                .product(name: "BigInt", package: "BigInt"),
-            ],
-            path: "Sources/WalletKit"
-        ),
-        .binaryTarget(
-            name: "walletkit_coreFFI",
-            path: "WalletKit.xcframework"
-        )
-    ]
-)
-EOF
+awk -v path="$FRAMEWORK" '
+/<binary_target>/ {
+    print "        .binaryTarget("
+    print "            name: \"walletkit_coreFFI\","
+    print "            path: \"" path "\""
+    print "        )"
+    next
+}
+{ print }
+' "$BASE_PATH/Package.swift.template" > "$LOCAL_BUILD_PATH/Package.swift"
 
 echo ""
 echo "✅ Swift package built successfully!"

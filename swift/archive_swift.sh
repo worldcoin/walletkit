@@ -4,6 +4,8 @@ set -e
 # Creates the dynamic Package.swift file for release.
 # Usage: ./archive_swift.sh --asset-url <URL> --checksum <CHECKSUM> --release-version <VERSION>
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Initialize variables
 ASSET_URL=""
 CHECKSUM=""
@@ -56,44 +58,19 @@ echo "   Checksum: $CHECKSUM"
 echo "   Release Version: $RELEASE_VERSION"
 echo ""
 
-cat > Package.swift << EOF
-// swift-tools-version: 5.7
-// The swift-tools-version declares the minimum version of Swift required to build this package.
+awk -v url="$ASSET_URL" -v checksum="$CHECKSUM" '
+/<binary_target>/ {
+    print "        .binaryTarget("
+    print "            name: \"walletkit_coreFFI\","
+    print "            url: \"" url "\","
+    print "            checksum: \"" checksum "\""
+    print "        )"
+    next
+}
+{ print }
+' "$SCRIPT_DIR/Package.swift.template" > Package.swift
 
-// Release version: $RELEASE_VERSION
-
-import PackageDescription
-
-let package = Package(
-    name: "WalletKit",
-    platforms: [
-        .iOS(.v13)
-    ],
-    products: [
-        .library(
-            name: "WalletKit",
-            targets: ["WalletKit"]),
-    ],
-    dependencies: [
-        .package(url: "https://github.com/attaswift/BigInt.git", .upToNextMajor(from: "5.7.0")),
-    ],
-    targets: [
-        .target(
-            name: "WalletKit",
-            dependencies: [
-                "walletkit_coreFFI",
-                .product(name: "BigInt", package: "BigInt"),
-            ],
-            path: "Sources/WalletKit"
-        ),
-        .binaryTarget(
-            name: "walletkit_coreFFI",
-            url: "$ASSET_URL",
-            checksum: "$CHECKSUM"
-        )
-    ]
-)
-EOF
+echo "// Release version: $RELEASE_VERSION" >> Package.swift
 
 swiftlint lint --autocorrect Package.swift
 
