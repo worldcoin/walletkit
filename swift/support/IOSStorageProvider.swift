@@ -1,0 +1,55 @@
+import Foundation
+
+public final class IOSStorageProvider: StorageProvider, @unchecked Sendable {
+    private let keystoreImpl: IOSDeviceKeystore
+    private let blobStoreImpl: IOSAtomicBlobStore
+    private let pathsImpl: StoragePaths
+
+    public init(
+        rootDirectory: URL,
+        keystoreService: String = "walletkit.devicekeystore",
+        keystoreAccount: String = "default"
+    ) throws {
+        let worldidDir = rootDirectory.appendingPathComponent("worldid", isDirectory: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: worldidDir,
+                withIntermediateDirectories: true
+            )
+        } catch {
+            throw StorageError.BlobStore("failed to create storage directory: \(error)")
+        }
+
+        self.pathsImpl = StoragePaths.fromRoot(root: rootDirectory.path)
+        self.keystoreImpl = IOSDeviceKeystore(
+            service: keystoreService,
+            account: keystoreAccount
+        )
+        self.blobStoreImpl = IOSAtomicBlobStore(baseURL: worldidDir)
+    }
+
+    public func keystore() -> DeviceKeystore {
+        keystoreImpl
+    }
+
+    public func blobStore() -> AtomicBlobStore {
+        blobStoreImpl
+    }
+
+    public func paths() -> StoragePaths {
+        pathsImpl
+    }
+}
+
+public enum WalletKitStorage {
+    public static func makeDefaultProvider() throws -> IOSStorageProvider {
+        let fileManager = FileManager.default
+        guard let documents = fileManager.urls(
+            for: .documentDirectory,
+            in: .userDomainMask
+        ).first else {
+            throw StorageError.BlobStore("missing documents directory")
+        }
+        return try IOSStorageProvider(rootDirectory: documents)
+    }
+}

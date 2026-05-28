@@ -24,6 +24,7 @@ fi
 BASE_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TESTS_PATH="$BASE_PATH/tests"
 SOURCES_PATH_NAME="/Sources/WalletKit/"
+SUPPORT_PATH="$BASE_PATH/support"
 
 echo -e "${BLUE}🔨 Step 1: Building Swift bindings${NC}"
 # Run the build_swift.sh script from parent directory
@@ -41,12 +42,24 @@ echo -e "${BLUE}📦 Step 2: Copying generated Swift files to test package${NC}"
 # Ensure the destination directory exists
 mkdir -p "$TESTS_PATH/$SOURCES_PATH_NAME"
 
+# Clear previously staged Swift sources so the test package always mirrors
+# the current generated bindings plus local support helpers.
+rm -f "$TESTS_PATH/$SOURCES_PATH_NAME"/*.swift
+
 # Copy the generated Swift files to the test package
 if [ -f "$BASE_PATH/Sources/WalletKit/walletkit.swift" ]; then
     cp "$BASE_PATH/Sources/WalletKit/walletkit.swift" "$TESTS_PATH/$SOURCES_PATH_NAME"
     echo -e "${GREEN}✅ walletkit.swift copied to test package${NC}"
 else
     echo -e "${RED}✗ Could not find generated Swift bindings at: $BASE_PATH/Sources/WalletKit/walletkit.swift${NC}"
+    exit 1
+fi
+
+if compgen -G "$SUPPORT_PATH/*.swift" > /dev/null; then
+    cp "$SUPPORT_PATH"/*.swift "$TESTS_PATH/$SOURCES_PATH_NAME"
+    echo -e "${GREEN}✅ Swift support files copied to test package${NC}"
+else
+    echo -e "${RED}✗ Could not find Swift support files in: $SUPPORT_PATH${NC}"
     exit 1
 fi
 
