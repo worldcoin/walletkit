@@ -93,3 +93,30 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for StorageError {
         Self::UnexpectedUniFFICallbackError(error.reason)
     }
 }
+
+/// 1-1 variant mapping is intentional: hosts pattern-match on `StorageError`
+/// for UX, and `walletkit-db` is uniffi-free by design, so the translation
+/// has to live in each FFI-exporting consumer. Don't flatten.
+///
+/// TODO: when a second consumer (`OrbKit`, `IssuerKit`) ships its own
+/// uniffi-exported error mirroring `StoreError`, extract this mapping into a
+/// shared `walletkit-ffi-shared` crate. Not worth it for one consumer.
+impl From<walletkit_db::StoreError> for StorageError {
+    fn from(err: walletkit_db::StoreError) -> Self {
+        match err {
+            walletkit_db::StoreError::Keystore(s) => Self::Keystore(s),
+            walletkit_db::StoreError::BlobStore(s) => Self::BlobStore(s),
+            walletkit_db::StoreError::Lock(s) => Self::Lock(s),
+            walletkit_db::StoreError::Serialization(s) => Self::Serialization(s),
+            walletkit_db::StoreError::Crypto(s) => Self::Crypto(s),
+            walletkit_db::StoreError::InvalidEnvelope(s) => Self::InvalidEnvelope(s),
+            walletkit_db::StoreError::UnsupportedEnvelopeVersion(v) => {
+                Self::UnsupportedEnvelopeVersion(v)
+            }
+            walletkit_db::StoreError::Db(e) => Self::VaultDb(e.to_string()),
+            walletkit_db::StoreError::IntegrityCheckFailed(s) => {
+                Self::CorruptedVault(s)
+            }
+        }
+    }
+}

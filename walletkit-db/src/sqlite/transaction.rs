@@ -39,7 +39,7 @@ impl<'conn> Transaction<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the COMMIT statement fails.
+    /// Returns `Error` if the COMMIT statement fails.
     pub fn commit(mut self) -> DbResult<()> {
         self.conn.execute_batch("COMMIT")?;
         self.committed = true;
@@ -52,7 +52,7 @@ impl<'conn> Transaction<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if any statement fails.
+    /// Returns `Error` if any statement fails.
     #[allow(dead_code)]
     pub fn execute_batch(&self, sql: &str) -> DbResult<()> {
         self.conn.execute_batch(sql)
@@ -62,7 +62,7 @@ impl<'conn> Transaction<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if preparation or execution fails.
+    /// Returns `Error` if preparation or execution fails.
     pub fn execute(&self, sql: &str, params: &[Value]) -> DbResult<usize> {
         self.conn.execute(sql, params)
     }
@@ -71,7 +71,7 @@ impl<'conn> Transaction<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if preparation, execution, or the mapper fails.
+    /// Returns `Error` if preparation, execution, or the mapper fails.
     pub fn query_row<T>(
         &self,
         sql: &str,
@@ -85,7 +85,7 @@ impl<'conn> Transaction<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the SQL is invalid.
+    /// Returns `Error` if the SQL is invalid.
     pub fn prepare(&self, sql: &str) -> DbResult<Statement<'_>> {
         self.conn.prepare(sql)
     }

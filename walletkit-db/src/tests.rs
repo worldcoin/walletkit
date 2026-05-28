@@ -2,7 +2,8 @@
 
 use std::sync::OnceLock;
 
-use super::*;
+use crate::params;
+use crate::sqlite::{cipher, Connection, Value};
 use secrecy::SecretBox;
 
 /// Ensures sqlite3mc's global codec registration is complete before any test
@@ -17,7 +18,7 @@ use secrecy::SecretBox;
 /// Calling this at the start of every test ensures exactly one thread
 /// performs the first open (all others block on the `OnceLock`) so that
 /// by the time any test-specific code runs, sqlite3mc is fully initialized.
-fn init_sqlite() {
+pub fn init_sqlite() {
     static INIT: OnceLock<()> = OnceLock::new();
     INIT.get_or_init(|| {
         drop(Connection::open_in_memory().expect("sqlite3mc pre-init"));
@@ -180,4 +181,101 @@ fn test_integrity_check() {
     let conn = Connection::open_in_memory().expect("open in-memory db");
     let ok = cipher::integrity_check(&conn).expect("check");
     assert!(ok);
+}
+
+#[test]
+fn test_cipher_plaintext_export_import_roundtrip() {
+    init_sqlite();
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let src_path = dir.path().join("source.sqlite");
+    let dest_path = dir.path().join("backup.plain.sqlite");
+    let restore_path = dir.path().join("restore.sqlite");
+    let key = SecretBox::init_with(|| [0x11u8; 32]);
+
+    {
+        let conn = cipher::open_encrypted(&src_path, &key, false).expect("open src");
+        conn.execute_batch(
+            "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
+        )
+        .expect("create table");
+        conn.execute(
+            "INSERT INTO widgets (id, val) VALUES (?1, ?2)",
+            params![1_i64, "alpha"],
+        )
+        .expect("insert");
+        conn.execute(
+            "INSERT INTO widgets (id, val) VALUES (?1, ?2)",
+            params![2_i64, "beta"],
+        )
+        .expect("insert");
+
+        cipher::export_plaintext_copy(&conn, &dest_path, &["widgets"]).expect("export");
+    }
+
+    {
+        let conn =
+            cipher::open_encrypted(&restore_path, &key, false).expect("open restore");
+        conn.execute_batch(
+            "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
+        )
+        .expect("create table");
+        cipher::import_plaintext_copy(&conn, &dest_path, &["widgets"]).expect("import");
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM widgets", &[], |row| {
+                Ok(row.column_i64(0))
+            })
+            .expect("count");
+        assert_eq!(count, 2);
+
+        let val = conn
+            .query_row("SELECT val FROM widgets WHERE id = 2", &[], |row| {
+                Ok(row.column_text(0))
+            })
+            .expect("query");
+        assert_eq!(val, "beta");
+    }
+}
+
+#[test]
+fn test_cipher_import_rejects_non_empty_destination() {
+    init_sqlite();
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let src_path = dir.path().join("source.sqlite");
+    let dest_path = dir.path().join("backup.plain.sqlite");
+    let restore_path = dir.path().join("restore.sqlite");
+    let key = SecretBox::init_with(|| [0x22u8; 32]);
+
+    {
+        let conn = cipher::open_encrypted(&src_path, &key, false).expect("open src");
+        conn.execute_batch(
+            "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
+        )
+        .expect("create table");
+        conn.execute(
+            "INSERT INTO widgets (id, val) VALUES (?1, ?2)",
+            params![1_i64, "alpha"],
+        )
+        .expect("insert");
+        cipher::export_plaintext_copy(&conn, &dest_path, &["widgets"]).expect("export");
+    }
+
+    let conn =
+        cipher::open_encrypted(&restore_path, &key, false).expect("open restore");
+    conn.execute_batch(
+        "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
+    )
+    .expect("create table");
+    conn.execute(
+        "INSERT INTO widgets (id, val) VALUES (?1, ?2)",
+        params![99_i64, "preexisting"],
+    )
+    .expect("insert");
+
+    let err = cipher::import_plaintext_copy(&conn, &dest_path, &["widgets"])
+        .expect_err("import should refuse non-empty destination");
+    assert!(
+        err.to_string().contains("non-empty table"),
+        "expected non-empty-table error, got: {err}"
+    );
 }

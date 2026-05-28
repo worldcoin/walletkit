@@ -1,8 +1,6 @@
 //! Vault database unit tests.
 
-use super::helpers::{compute_content_id, map_db_err};
 use super::*;
-use crate::storage::lock::StorageLock;
 use secrecy::SecretBox;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -41,11 +39,9 @@ fn test_vault_create_and_open() {
     let path = temp_vault_path();
     let key = SecretBox::init_with(|| [0x42u8; 32]);
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
-    let db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
     drop(db);
-    VaultDb::new(&path, &key, &guard).expect("open vault");
+    CredentialVault::new(&path, &key).expect("open vault");
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -55,11 +51,9 @@ fn test_vault_wrong_key_fails() {
     let path = temp_vault_path();
     let key = SecretBox::init_with(|| [0x01u8; 32]);
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
-    VaultDb::new(&path, &key, &guard).expect("create vault");
+    CredentialVault::new(&path, &key).expect("create vault");
     let wrong_key = SecretBox::init_with(|| [0x02u8; 32]);
-    let err = VaultDb::new(&path, &wrong_key, &guard).expect_err("wrong key");
+    let err = CredentialVault::new(&path, &wrong_key).expect_err("wrong key");
     match err {
         StorageError::VaultDb(_) | StorageError::CorruptedVault(_) => {}
         _ => panic!("unexpected error: {err}"),
@@ -72,14 +66,10 @@ fn test_vault_wrong_key_fails() {
 fn test_leaf_index_set_once() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x03u8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
-    db.init_leaf_index(&guard, 42, 100)
-        .expect("init leaf index");
-    db.init_leaf_index(&guard, 42, 200)
-        .expect("init leaf index again");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    db.init_leaf_index(42, 100).expect("init leaf index");
+    db.init_leaf_index(42, 200).expect("init leaf index again");
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -88,12 +78,10 @@ fn test_leaf_index_set_once() {
 fn test_leaf_index_immutable() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x04u8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
-    db.init_leaf_index(&guard, 7, 100).expect("init leaf index");
-    let err = db.init_leaf_index(&guard, 8, 200).expect_err("mismatch");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    db.init_leaf_index(7, 100).expect("init leaf index");
+    let err = db.init_leaf_index(8, 200).expect_err("mismatch");
     match err {
         StorageError::InvalidLeafIndex { .. } => {}
         _ => panic!("unexpected error: {err}"),
@@ -106,13 +94,10 @@ fn test_leaf_index_immutable() {
 fn test_store_credential_without_associated_data() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x05u8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
     let credential_id = db
         .store_credential(
-            &guard,
             10,
             sample_blinding_factor(),
             123,
@@ -136,12 +121,9 @@ fn test_store_credential_without_associated_data() {
 fn test_store_credential_with_associated_data() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x06u8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
     db.store_credential(
-        &guard,
         11,
         sample_blinding_factor(),
         456,
@@ -161,23 +143,13 @@ fn test_store_credential_with_associated_data() {
 }
 
 #[test]
-fn test_content_id_determinism() {
-    let a = compute_content_id(BlobKind::CredentialBlob, b"data");
-    let b = compute_content_id(BlobKind::CredentialBlob, b"data");
-    assert_eq!(a, b);
-}
-
-#[test]
 fn test_content_id_deduplication() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x07u8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
     let first_id = db
         .store_credential(
-            &guard,
             12,
             sample_blinding_factor(),
             1,
@@ -189,7 +161,6 @@ fn test_content_id_deduplication() {
         .expect("store credential");
     let second_id = db
         .store_credential(
-            &guard,
             12,
             sample_blinding_factor(),
             1,
@@ -200,7 +171,8 @@ fn test_content_id_deduplication() {
         )
         .expect("store credential");
     let count = db
-        .conn
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -208,11 +180,12 @@ fn test_content_id_deduplication() {
         .expect("count blobs");
     assert_eq!(count, 1);
 
-    db.delete_credential(&guard, first_id)
+    db.delete_credential(first_id)
         .expect("delete first credential");
 
     let count_after_first_delete = db
-        .conn
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -220,11 +193,12 @@ fn test_content_id_deduplication() {
         .expect("count blobs after first delete");
     assert_eq!(count_after_first_delete, 1);
 
-    db.delete_credential(&guard, second_id)
+    db.delete_credential(second_id)
         .expect("delete second credential");
 
     let count_after_second_delete = db
-        .conn
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -240,12 +214,9 @@ fn test_content_id_deduplication() {
 fn test_list_credentials_by_issuer() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x08u8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
     db.store_credential(
-        &guard,
         100,
         sample_blinding_factor(),
         1,
@@ -256,7 +227,6 @@ fn test_list_credentials_by_issuer() {
     )
     .expect("store credential");
     db.store_credential(
-        &guard,
         200,
         sample_blinding_factor(),
         1,
@@ -279,12 +249,9 @@ fn test_list_credentials_by_issuer() {
 fn test_list_credentials_marks_expired() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x09u8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
     db.store_credential(
-        &guard,
         300,
         sample_blinding_factor(),
         1,
@@ -295,7 +262,6 @@ fn test_list_credentials_marks_expired() {
     )
     .expect("store expired credential");
     db.store_credential(
-        &guard,
         301,
         sample_blinding_factor(),
         1,
@@ -319,12 +285,9 @@ fn test_list_credentials_marks_expired() {
 fn test_list_credentials_by_issuer_includes_expired() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x0Au8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
     db.store_credential(
-        &guard,
         500,
         sample_blinding_factor(),
         1,
@@ -349,13 +312,10 @@ fn test_list_credentials_by_issuer_includes_expired() {
 fn test_delete_credential_by_id() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x0Bu8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
     let credential_id = db
         .store_credential(
-            &guard,
             400,
             sample_blinding_factor(),
             1,
@@ -367,7 +327,8 @@ fn test_delete_credential_by_id() {
         .expect("store credential");
 
     let blob_count_before = db
-        .conn
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -375,14 +336,15 @@ fn test_delete_credential_by_id() {
         .expect("count blobs before delete");
     assert_eq!(blob_count_before, 1);
 
-    db.delete_credential(&guard, credential_id)
+    db.delete_credential(credential_id)
         .expect("delete credential");
 
     let records = db.list_credentials(None, 1000).expect("list credentials");
     assert!(records.is_empty());
 
     let blob_count_after = db
-        .conn
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -391,7 +353,7 @@ fn test_delete_credential_by_id() {
     assert_eq!(blob_count_after, 0);
 
     let err = db
-        .delete_credential(&guard, credential_id)
+        .delete_credential(credential_id)
         .expect_err("delete credential again should fail");
     match err {
         StorageError::CredentialIdNotFound {
@@ -410,14 +372,11 @@ fn test_delete_credential_by_id() {
 fn test_delete_credential_cleans_up_orphaned_associated_data() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x0Cu8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
 
     let credential_id = db
         .store_credential(
-            &guard,
             401,
             sample_blinding_factor(),
             1,
@@ -429,7 +388,8 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
         .expect("store credential");
 
     let associated_before = db
-        .conn
+        .vault
+        .connection()
         .query_row(
             "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
             params![BlobKind::AssociatedData.as_i64()],
@@ -439,11 +399,12 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
         .expect("count associated data before delete");
     assert_eq!(associated_before, 1);
 
-    db.delete_credential(&guard, credential_id)
+    db.delete_credential(credential_id)
         .expect("delete credential");
 
     let associated_after = db
-        .conn
+        .vault
+        .connection()
         .query_row(
             "SELECT COUNT(*) FROM blob_objects WHERE blob_kind = ?1",
             params![BlobKind::AssociatedData.as_i64()],
@@ -461,12 +422,9 @@ fn test_delete_credential_cleans_up_orphaned_associated_data() {
 fn test_danger_delete_all_credentials() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x0Cu8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
     db.store_credential(
-        &guard,
         100,
         sample_blinding_factor(),
         1,
@@ -477,7 +435,6 @@ fn test_danger_delete_all_credentials() {
     )
     .expect("store credential 1");
     db.store_credential(
-        &guard,
         200,
         sample_blinding_factor(),
         2,
@@ -488,16 +445,15 @@ fn test_danger_delete_all_credentials() {
     )
     .expect("store credential 2");
 
-    let deleted = db
-        .danger_delete_all_credentials(&guard)
-        .expect("delete all");
+    let deleted = db.danger_delete_all_credentials().expect("delete all");
     assert_eq!(deleted, 2);
 
     let records = db.list_credentials(None, 1000).expect("list credentials");
     assert!(records.is_empty());
 
     let blob_count = db
-        .conn
+        .vault
+        .connection()
         .query_row("SELECT COUNT(*) FROM blob_objects", &[], |stmt| {
             Ok(stmt.column_i64(0))
         })
@@ -513,13 +469,11 @@ fn test_danger_delete_all_credentials() {
 fn test_danger_delete_all_credentials_empty() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x0Du8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
 
     let deleted = db
-        .danger_delete_all_credentials(&guard)
+        .danger_delete_all_credentials()
         .expect("delete all on empty");
     assert_eq!(deleted, 0);
 
@@ -531,11 +485,71 @@ fn test_danger_delete_all_credentials_empty() {
 fn test_vault_integrity_check() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x0Au8; 32]);
-    let db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
     assert!(db.check_integrity().expect("integrity"));
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn test_credential_vault_on_disk_format_guard() {
+    // On-disk format guard. Stores a credential via the public API and
+    // asserts that the row lands in `blob_objects` with a frozen
+    // content_id, then reopens the vault and reads the payload back
+    // byte-for-byte. Catches:
+    //   - changes to `compute_content_id` (hash domain, kind-tag wiring)
+    //   - changes to `BlobKind::CredentialBlob` (= 0x01)
+    //   - schema or cipher drift in `credential_records`
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let key = SecretBox::init_with(|| [0xA5u8; 32]);
+    let credential_bytes = b"on-disk-guard-credential-payload".to_vec();
+    let blinding = sample_blinding_factor();
+
+    let credential_id = {
+        let db = CredentialVault::new(&path, &key).expect("create vault");
+        db.store_credential(
+            42,
+            blinding.clone(),
+            1_700_000_000,
+            1_800_000_000,
+            credential_bytes.clone(),
+            None,
+            1_700_000_001,
+        )
+        .expect("store credential")
+    };
+
+    // SHA-256(b"worldid:blob" || [BlobKind::CredentialBlob as u8 = 0x01]
+    // || credential_bytes). Reproducible via:
+    //   printf 'worldid:blob\x01on-disk-guard-credential-payload' \
+    //     | shasum -a 256
+    let expected_cid_hex =
+        "9281febbd42d05857b399f8481d6842f1e3e4b78401081ca7f0d0fb3a80e9264";
+
+    let db = CredentialVault::new(&path, &key).expect("reopen vault");
+    let stored_cid_hex: String = db
+        .vault.connection()
+        .query_row(
+            "SELECT lower(hex(credential_blob_cid)) FROM credential_records WHERE credential_id = ?1",
+            params![i64::try_from(credential_id).unwrap()],
+            |row| Ok(row.column_text(0)),
+        )
+        .map_err(|err| map_db_err(&err))
+        .expect("fetch cid");
+    assert_eq!(
+        stored_cid_hex, expected_cid_hex,
+        "credential_blob content_id drifted — schema, kind tag, or hash domain changed"
+    );
+
+    let (fetched_blob, fetched_blinding) = db
+        .fetch_credential_and_blinding_factor(42, 1_700_000_500)
+        .expect("fetch credential")
+        .expect("credential present");
+    assert_eq!(fetched_blob, credential_bytes);
+    assert_eq!(fetched_blinding, blinding);
+
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
@@ -544,14 +558,11 @@ fn test_vault_integrity_check() {
 fn test_list_credentials_round_trips_genesis_issued_at() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
     let key = SecretBox::init_with(|| [0x0Cu8; 32]);
-    let mut db = VaultDb::new(&path, &key, &guard).expect("create vault");
+    let db = CredentialVault::new(&path, &key).expect("create vault");
 
     let genesis_issued_at = 123_456_789u64;
     db.store_credential(
-        &guard,
         100,
         sample_blinding_factor(),
         genesis_issued_at,
@@ -574,11 +585,9 @@ fn test_vault_corruption_handling() {
     let path = temp_vault_path();
     let key = SecretBox::init_with(|| [0x0Bu8; 32]);
     let lock_path = temp_lock_path();
-    let lock = StorageLock::open(&lock_path).expect("open lock");
-    let guard = lock.lock().expect("lock");
-    VaultDb::new(&path, &key, &guard).expect("create vault");
+    CredentialVault::new(&path, &key).expect("create vault");
     fs::write(&path, b"corrupt").expect("corrupt file");
-    let err = VaultDb::new(&path, &key, &guard).expect_err("corrupt vault");
+    let err = CredentialVault::new(&path, &key).expect_err("corrupt vault");
     match err {
         StorageError::VaultDb(_) | StorageError::CorruptedVault(_) => {}
         _ => panic!("unexpected error: {err}"),
