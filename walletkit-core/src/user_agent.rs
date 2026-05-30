@@ -1,5 +1,10 @@
 //! User agent for HTTP requests.
 
+const WORLD_APP_USER_AGENT_PRODUCT: &str = "WorldApp";
+const WORLD_ID_APP_USER_AGENT_PRODUCT: &str = "WorldID";
+const WORLD_ID_ANDROID_CLIENT_NAME: &str = "android-id";
+const WORLD_ID_IOS_CLIENT_NAME: &str = "ios-id";
+
 /// Represents a User-Agent string.
 #[derive(Debug, Clone, uniffi::Object)]
 pub struct UserAgent(pub String);
@@ -41,6 +46,19 @@ impl UserAgentBuilder {
         next
     }
 
+    /// Appends the app product segment for the client name.
+    ///
+    /// Uses `WorldID/{app_version}` for World ID app clients (`android-id` / `ios-id`),
+    /// and `WorldApp/{app_version}` for all other clients.
+    #[must_use]
+    pub fn with_app_segment_for_client(
+        &self,
+        app_version: &str,
+        client_name: &str,
+    ) -> Self {
+        self.with_segment(user_agent_product_for_client(client_name), app_version)
+    }
+
     /// Appends `walletkit-core/{crate version}`.
     #[must_use]
     pub fn with_walletkit_segment(&self) -> Self {
@@ -49,6 +67,12 @@ impl UserAgentBuilder {
         next.segments
             .push(format!("walletkit-core/{crate_version}"));
         next
+    }
+
+    /// Appends `{client_name}/{os_version}` to match the app client suffix convention.
+    #[must_use]
+    pub fn with_client_segment(&self, client_name: &str, os_version: &str) -> Self {
+        self.with_segment(client_name, os_version)
     }
 
     /// Finalizes the header value as [`UserAgent`].
@@ -61,6 +85,15 @@ impl UserAgentBuilder {
 impl Default for UserAgentBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+fn user_agent_product_for_client(client_name: &str) -> &'static str {
+    match client_name {
+        WORLD_ID_ANDROID_CLIENT_NAME | WORLD_ID_IOS_CLIENT_NAME => {
+            WORLD_ID_APP_USER_AGENT_PRODUCT
+        }
+        _ => WORLD_APP_USER_AGENT_PRODUCT,
     }
 }
 
@@ -95,6 +128,38 @@ mod tests {
             .with_segment("CLI", "1.2.3"),
         concat!("walletkit-core/", env!("CARGO_PKG_VERSION"), " CLI/1.2.3");
         "walletkit_then_cli"
+    )]
+    #[test_case(
+        &UserAgentBuilder::new()
+            .with_app_segment_for_client("4.0.2500", "android")
+            .with_walletkit_segment()
+            .with_client_segment("android", "15"),
+        concat!("WorldApp/4.0.2500 walletkit-core/", env!("CARGO_PKG_VERSION"), " android/15");
+        "world_app_android_client"
+    )]
+    #[test_case(
+        &UserAgentBuilder::new()
+            .with_app_segment_for_client("4.0.2500", "ios")
+            .with_walletkit_segment()
+            .with_client_segment("ios", "26.4.2"),
+        concat!("WorldApp/4.0.2500 walletkit-core/", env!("CARGO_PKG_VERSION"), " ios/26.4.2");
+        "world_app_ios_client"
+    )]
+    #[test_case(
+        &UserAgentBuilder::new()
+            .with_app_segment_for_client("1.0.100", "android-id")
+            .with_walletkit_segment()
+            .with_client_segment("android-id", "15"),
+        concat!("WorldID/1.0.100 walletkit-core/", env!("CARGO_PKG_VERSION"), " android-id/15");
+        "world_id_android_client"
+    )]
+    #[test_case(
+        &UserAgentBuilder::new()
+            .with_app_segment_for_client("1.0.100", "ios-id")
+            .with_walletkit_segment()
+            .with_client_segment("ios-id", "26.4.2"),
+        concat!("WorldID/1.0.100 walletkit-core/", env!("CARGO_PKG_VERSION"), " ios-id/26.4.2");
+        "world_id_ios_client"
     )]
     fn user_agent_builder_expected(builder: &UserAgentBuilder, expected: &'static str) {
         assert_eq!(builder.build().to_string(), expected);
