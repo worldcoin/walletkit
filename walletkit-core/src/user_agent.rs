@@ -17,6 +17,15 @@ impl std::fmt::Display for UserAgent {
     }
 }
 
+#[uniffi::export]
+impl UserAgent {
+    /// Returns the header value for FFI consumers.
+    #[must_use]
+    pub fn header_value(&self) -> String {
+        self.0.clone()
+    }
+}
+
 /// Builds the [`UserAgent`] string sent as the HTTP `User-Agent` header.
 ///
 /// Starts empty; call [`Self::with_segment`] for arbitrary `name/version` tokens and
@@ -163,5 +172,23 @@ mod tests {
     )]
     fn user_agent_builder_expected(builder: &UserAgentBuilder, expected: &'static str) {
         assert_eq!(builder.build().to_string(), expected);
+    }
+
+    #[test]
+    fn user_agent_exposes_header_value_for_ffi_consumers() {
+        let user_agent = UserAgentBuilder::new()
+            .with_app_segment_for_client("1.0.100", "android-id")
+            .with_walletkit_segment()
+            .with_client_segment("android-id", "15")
+            .build();
+
+        assert_eq!(
+            user_agent.header_value(),
+            concat!(
+                "WorldID/1.0.100 walletkit-core/",
+                env!("CARGO_PKG_VERSION"),
+                " android-id/15"
+            )
+        );
     }
 }
