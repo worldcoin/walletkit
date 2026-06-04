@@ -1,8 +1,8 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
 use crate::{
-    defaults::DefaultConfig, error::WalletKitError,
-    primitives::ParseFromForeignBinding, Environment, FieldElement, Region,
+    defaults, error::WalletKitError, primitives::ParseFromForeignBinding, Environment,
+    FieldElement, Region,
 };
 use alloy_core::primitives::Address;
 use ruint::aliases::U256;
@@ -11,8 +11,7 @@ use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
     primitives::{AuthenticatorPublicKeySet, Config},
-    Authenticator as CoreAuthenticator, AuthenticatorConfig,
-    Credential as CoreCredential, CredentialInput,
+    Authenticator as CoreAuthenticator, Credential as CoreCredential, CredentialInput,
     InitializingAuthenticator as CoreInitializingAuthenticator,
     OnchainKeyRepresentable, Signer,
 };
@@ -291,6 +290,7 @@ impl Authenticator {
     /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
     ///   a valid address.
     /// - Returns a network error if the gateway request fails.
+    #[allow(deprecated)]
     pub async fn initiate_recovery_agent_update(
         &self,
         new_recovery_agent: String,
@@ -317,6 +317,7 @@ impl Authenticator {
     ///
     /// # Errors
     /// Returns a network error if the gateway request fails.
+    #[allow(deprecated)]
     pub async fn execute_recovery_agent_update(
         &self,
     ) -> Result<String, WalletKitError> {
@@ -334,6 +335,7 @@ impl Authenticator {
     ///
     /// # Errors
     /// Returns a network error if the gateway request fails.
+    #[allow(deprecated)]
     pub async fn cancel_recovery_agent_update(&self) -> Result<String, WalletKitError> {
         let request_id = self.inner.cancel_recovery_agent_update().await?;
 
@@ -360,8 +362,40 @@ impl Authenticator {
         materials: Arc<Groth16Materials>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config = Config::from_environment(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config.into())
+        let config = defaults::default_config(environment, rpc_url, region)?;
+        let authenticator = CoreAuthenticator::init(seed, config)
+            .await?
+            .with_proof_materials(
+                Arc::clone(&materials.query),
+                Arc::clone(&materials.nullifier),
+            );
+        Ok(Self {
+            inner: authenticator,
+            store,
+        })
+    }
+
+    /// Initializes a new Authenticator from a seed using SDK defaults routed
+    /// through the OHTTP relay. Opt-in alternative to
+    /// [`Authenticator::init_with_defaults`].
+    ///
+    /// The user's World ID must already be registered in the `WorldIDRegistry`,
+    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::init` for potential errors.
+    #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    pub async fn init_with_ohttp_defaults(
+        seed: &[u8],
+        rpc_url: Option<String>,
+        environment: &Environment,
+        region: Option<Region>,
+        materials: Arc<Groth16Materials>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
+        let authenticator = CoreAuthenticator::init(seed, config)
             .await?
             .with_proof_materials(
                 Arc::clone(&materials.query),
@@ -388,12 +422,11 @@ impl Authenticator {
         materials: Arc<Groth16Materials>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
-            WalletKitError::InvalidInput {
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
-            }
-        })?;
+            })?;
         let authenticator = CoreAuthenticator::init(seed, config)
             .await?
             .with_proof_materials(
@@ -509,9 +542,10 @@ impl Authenticator {
         ))
         .await?;
 
-        // Cache session seed if returned
+        // Cache session seed if returned. Create-session requests do not carry a
+        // session_id, so use the session_id generated in the proof response.
         if let Some(seed) = result.session_id_r_seed {
-            if let Some(session_id) = proof_request.0.session_id {
+            if let Some(session_id) = result.proof_response.session_id {
                 if let Err(err) =
                     self.store
                         .store_session_seed(session_id.oprf_seed, seed, now)
@@ -658,8 +692,40 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config =
-            AuthenticatorConfig::from_environment(environment, rpc_url, region)?;
+        let config = defaults::default_config(environment, rpc_url, region)?;
+
+        let initializing_authenticator =
+            CoreAuthenticator::register(seed, config, recovery_address).await?;
+
+        Ok(Self(initializing_authenticator))
+    }
+
+    /// Registers a new World ID using SDK defaults routed through the OHTTP
+    /// relay. Opt-in alternative to
+    /// [`InitializingAuthenticator::register_with_defaults`].
+    ///
+    /// This returns immediately and does not wait for registration to complete.
+    /// The returned `InitializingAuthenticator` can be used to poll the registration status.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::register` for potential errors.
+    #[uniffi::constructor]
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "gateway_register",
+        skip_all
+    )]
+    pub async fn register_with_ohttp_defaults(
+        seed: &[u8],
+        rpc_url: Option<String>,
+        environment: &Environment,
+        region: Option<Region>,
+        recovery_address: Option<String>,
+    ) -> Result<Self, WalletKitError> {
+        let recovery_address =
+            Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
+
+        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;
@@ -688,12 +754,11 @@ impl InitializingAuthenticator {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = AuthenticatorConfig::from_json(config).map_err(|_| {
-            WalletKitError::InvalidInput {
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
-            }
-        })?;
+            })?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(seed, config, recovery_address).await?;
@@ -789,11 +854,6 @@ pub fn recovery_data_from_seed(seed: &[u8]) -> Result<RecoveryData, WalletKitErr
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::tests_utils::{
-        cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
-    };
-    use alloy::primitives::address;
-    use world_id_core::primitives::Config;
 
     #[test]
     fn test_recovery_data_from_seed() {
@@ -820,6 +880,12 @@ mod tests {
     #[cfg(feature = "embed-zkeys")]
     #[tokio::test]
     async fn test_init_with_config_and_materials() {
+        use crate::storage::tests_utils::{
+            cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
+        };
+        use alloy::primitives::address;
+        use world_id_core::primitives::{Config, ServiceEndpoint};
+
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         let mut mock_server = mockito::Server::new_async().await;
@@ -842,8 +908,12 @@ mod tests {
             Some(mock_server.url()),
             480,
             address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
-            "https://indexer.us.id-infra.worldcoin.dev".to_string(),
-            "https://gateway.id-infra.worldcoin.dev".to_string(),
+            ServiceEndpoint::direct(
+                "https://indexer.us.id-infra.worldcoin.dev".to_string(),
+            ),
+            ServiceEndpoint::direct(
+                "https://gateway.id-infra.worldcoin.dev".to_string(),
+            ),
             vec![],
             2,
         )

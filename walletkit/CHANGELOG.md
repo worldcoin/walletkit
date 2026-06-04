@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.1](https://github.com/worldcoin/walletkit/compare/v0.19.0...v0.19.1) - 2026-06-01
+
+### Other
+
+- [POP-3811] support World ID walletkit user agents ([#416](https://github.com/worldcoin/walletkit/pull/416))
+
+## [0.19.0](https://github.com/worldcoin/walletkit/compare/v0.18.0...v0.19.0) - 2026-05-21
+
+### Added
+
+- support core session proofs ([#412](https://github.com/worldcoin/walletkit/pull/412))
+
+### Other
+
+- default Authenticator to direct service endpoints, add OHTTP opt-in constructors ([#408](https://github.com/worldcoin/walletkit/pull/408))
+- bump world-id-protocol to v0.11.0 ([#406](https://github.com/worldcoin/walletkit/pull/406))
+
+## [0.18.0](https://github.com/worldcoin/walletkit/compare/v0.17.1...v0.18.0) - 2026-05-15
+
+### Other
+
+- add credential pre-flight check against proof requests ([#404](https://github.com/worldcoin/walletkit/pull/404))
+
 ## [0.17.1](https://github.com/worldcoin/walletkit/compare/v0.17.0...v0.17.1) - 2026-05-08
 
 ### Fixed

@@ -33,12 +33,10 @@ use alloy::sol;
 use alloy_core::primitives::U160;
 use eyre::{Context as _, Result};
 use taceo_oprf::types::OprfKeyId;
-use walletkit_core::{
-    defaults::DefaultConfig, Authenticator, Environment, Groth16Materials,
-};
+use walletkit_core::{defaults, Authenticator, Environment, Groth16Materials};
 use world_id_core::primitives::{rp::RpId, FieldElement, Nullifier};
 use world_id_core::{
-    requests::{ProofRequest, RequestItem, RequestVersion},
+    requests::{ProofRequest, ProofType, RequestItem, RequestVersion},
     Authenticator as CoreAuthenticator, EdDSAPrivateKey,
 };
 
@@ -116,12 +114,9 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let seed = [7u8; 32];
     let recovery_address = alloy::primitives::Address::ZERO;
 
-    let config = world_id_core::primitives::Config::from_environment(
-        &Environment::Staging,
-        Some(rpc_url.clone()),
-        None,
-    )
-    .wrap_err("failed to build staging config")?;
+    let config =
+        defaults::default_config(&Environment::Staging, Some(rpc_url.clone()), None)
+            .wrap_err("failed to build staging config")?;
     let query_material = Arc::new(
         world_id_core::proof::load_embedded_query_material()
             .wrap_err("failed to load embedded query material")?,
@@ -131,14 +126,11 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
             .wrap_err("failed to load embedded nullifier material")?,
     );
 
-    let core_authenticator = CoreAuthenticator::init_or_register(
-        &seed,
-        config.into(),
-        Some(recovery_address),
-    )
-    .await
-    .wrap_err("account creation/init failed")?
-    .with_proof_materials(query_material, nullifier_material);
+    let core_authenticator =
+        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
+            .await
+            .wrap_err("account creation/init failed")?
+            .with_proof_materials(query_material, nullifier_material);
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -235,6 +227,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let proof_request_core = ProofRequest {
         id: "staging_test_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::Uniqueness,
         created_at,
         expires_at,
         rp_id,
@@ -339,12 +332,9 @@ async fn e2e_session_proof() -> Result<()> {
     let seed = [7u8; 32];
     let recovery_address = alloy::primitives::Address::ZERO;
 
-    let config = world_id_core::primitives::Config::from_environment(
-        &Environment::Staging,
-        Some(rpc_url.clone()),
-        None,
-    )
-    .wrap_err("failed to build staging config")?;
+    let config =
+        defaults::default_config(&Environment::Staging, Some(rpc_url.clone()), None)
+            .wrap_err("failed to build staging config")?;
     let query_material = Arc::new(
         world_id_core::proof::load_embedded_query_material()
             .wrap_err("failed to load embedded query material")?,
@@ -354,14 +344,11 @@ async fn e2e_session_proof() -> Result<()> {
             .wrap_err("failed to load embedded nullifier material")?,
     );
 
-    let core_authenticator = CoreAuthenticator::init_or_register(
-        &seed,
-        config.into(),
-        Some(recovery_address),
-    )
-    .await
-    .wrap_err("account creation/init failed")?
-    .with_proof_materials(query_material, nullifier_material);
+    let core_authenticator =
+        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
+            .await
+            .wrap_err("account creation/init failed")?
+            .with_proof_materials(query_material, nullifier_material);
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -455,6 +442,7 @@ async fn e2e_session_proof() -> Result<()> {
     let init_request = ProofRequest {
         id: "session_init_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::CreateSession,
         created_at,
         expires_at,
         rp_id,
@@ -473,16 +461,44 @@ async fn e2e_session_proof() -> Result<()> {
         constraints: None,
     };
 
-    // Use the core authenticator to generate a session ID (calls OPRF)
-    let (session_id, session_id_r_seed) = core_authenticator
-        .build_session_id(&init_request, None, None)
+    let init_proof_request: walletkit_core::requests::ProofRequest =
+        init_request.into();
+    let init_proof_response = authenticator
+        .generate_proof(&init_proof_request, Some(now))
         .await
-        .wrap_err("generate_session_id failed")?;
+        .wrap_err("generate_proof (create session) failed")?;
+    let init_response: world_id_core::requests::ProofResponse =
+        init_proof_response.into_inner();
+    assert!(
+        init_response.error.is_none(),
+        "proof response contains error"
+    );
+    assert_eq!(init_response.responses.len(), 1);
 
-    // Cache the r_seed so generate_proof finds it
-    store
-        .store_session_seed(session_id.oprf_seed, session_id_r_seed, now)
-        .wrap_err("store_session_seed failed")?;
+    let init_response_item = &init_response.responses[0];
+    assert!(
+        init_response_item.is_session(),
+        "create-session response should contain a session proof"
+    );
+    assert!(
+        init_response_item.session_nullifier.is_some(),
+        "create-session response should have a session_nullifier"
+    );
+    assert!(
+        init_response_item.nullifier.is_none(),
+        "create-session response should not have a uniqueness nullifier"
+    );
+
+    let session_id = init_response
+        .session_id
+        .expect("create-session response should include session_id");
+    let cached_seed = store
+        .get_session_seed(session_id.oprf_seed, now)
+        .wrap_err("get_session_seed failed")?;
+    assert!(
+        cached_seed.is_some(),
+        "create-session should cache session_id_r_seed"
+    );
 
     eprintln!(
         "Phase 4 complete: session created (commitment={:?})",
@@ -506,6 +522,7 @@ async fn e2e_session_proof() -> Result<()> {
     let session_proof_request_core = ProofRequest {
         id: "session_proof_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::Session,
         created_at,
         expires_at,
         rp_id,

@@ -58,6 +58,10 @@ pub struct Cli {
     )]
     pub config: Option<PathBuf>,
 
+    /// Route default-config init/register through OHTTP (opt-in).
+    #[arg(long, global = true, conflicts_with = "config")]
+    pub ohttp_defaults: bool,
+
     /// RPC URL for World Chain.
     #[arg(long, env = "WORLDCHAIN_RPC_URL", global = true)]
     pub rpc_url: Option<String>,
@@ -230,16 +234,29 @@ pub async fn init_authenticator(
     } else {
         let env = resolve_environment(cli)?;
         let region = resolve_region(cli)?;
-        Authenticator::init_with_defaults(
-            &seed,
-            cli.rpc_url.clone(),
-            &env,
-            region,
-            materials.clone(),
-            store.clone(),
-        )
-        .await
-        .wrap_err("authenticator init failed")?
+        if cli.ohttp_defaults {
+            Authenticator::init_with_ohttp_defaults(
+                &seed,
+                cli.rpc_url.clone(),
+                &env,
+                region,
+                materials.clone(),
+                store.clone(),
+            )
+            .await
+            .wrap_err("authenticator init failed")?
+        } else {
+            Authenticator::init_with_defaults(
+                &seed,
+                cli.rpc_url.clone(),
+                &env,
+                region,
+                materials.clone(),
+                store.clone(),
+            )
+            .await
+            .wrap_err("authenticator init failed")?
+        }
     };
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
