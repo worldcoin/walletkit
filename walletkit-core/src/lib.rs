@@ -83,6 +83,15 @@ impl Environment {
     pub fn poh_recovery_agent_address(&self) -> String {
         defaults::poh_recovery_agent_address(self).to_string()
     }
+
+    /// Returns the `WorldIDVerifier` contract address for this environment.
+    ///
+    /// The `WorldIDVerifier` is the on-chain contract used to verify World ID
+    /// proofs (`verify`/`verifySession`).
+    #[must_use]
+    pub fn world_id_verifier_address(&self) -> String {
+        defaults::world_id_verifier_address(self).to_string()
+    }
 }
 
 /// Region for node selection.

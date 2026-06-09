@@ -19,14 +19,11 @@ use world_id_core::requests::{
 use crate::output;
 
 use super::credential::{issue_test_credential, FAUX_ISSUER_SCHEMA_ID};
-use super::{init_authenticator, Cli};
+use super::{init_authenticator, resolve_environment, Cli};
 
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
 
 const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
-
-const WORLD_ID_VERIFIER: alloy::primitives::Address =
-    alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
 
 sol!(
     #[allow(clippy::too_many_arguments)]
@@ -101,7 +98,7 @@ pub enum ProofCommand {
         /// Path to the proof response JSON, or `-` for stdin.
         #[arg(long)]
         response: String,
-        /// Override the `WorldID` verifier contract address (default: mainnet).
+        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
         #[arg(long)]
         verifier_address: Option<String>,
     },
@@ -110,6 +107,9 @@ pub enum ProofCommand {
         /// Signal string for the proof request.
         #[arg(long, default_value = "test_signal")]
         signal: String,
+        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
+        #[arg(long)]
+        verifier_address: Option<String>,
     },
 }
 
@@ -212,11 +212,19 @@ pub struct VerifyItemResult {
     pub error: Option<String>,
 }
 
+/// Resolves the verifier contract address: the explicit `--verifier-address`
+/// override if provided, otherwise the `WorldIDVerifier` for the CLI's `--environment`.
 fn verifier_address_or_default(
+    cli: &Cli,
     verifier_address: Option<&str>,
 ) -> eyre::Result<alloy::primitives::Address> {
     verifier_address.map_or_else(
-        || Ok(WORLD_ID_VERIFIER),
+        || {
+            resolve_environment(cli)?
+                .world_id_verifier_address()
+                .parse::<alloy::primitives::Address>()
+                .wrap_err("invalid verifier address from environment")
+        },
         |addr| {
             addr.parse::<alloy::primitives::Address>()
                 .wrap_err("invalid verifier address")
@@ -240,7 +248,7 @@ pub async fn verify_proof_onchain(
 
     let rpc_url = cli.rpc_url.as_deref().unwrap_or(DEFAULT_RPC_URL);
     let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-    let verifier_addr = verifier_address_or_default(verifier_address)?;
+    let verifier_addr = verifier_address_or_default(cli, verifier_address)?;
     let verifier_contract = IWorldIDVerifier::new(verifier_addr, &provider);
 
     let action = if proof_request.proof_type == ProofType::Uniqueness {
@@ -514,7 +522,11 @@ fn run_generate_test_request(
 }
 
 /// End-to-end test: issue a test credential, generate a proof, and verify it on-chain.
-async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
+async fn run_test(
+    cli: &Cli,
+    signal: &str,
+    verifier_address: Option<&str>,
+) -> eyre::Result<()> {
     let (authenticator, store) = init_authenticator(cli).await?;
 
     if !cli.json {
@@ -552,7 +564,8 @@ async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
         eprintln!("Verifying proof on-chain...");
     }
     let results =
-        verify_proof_onchain(cli, &proof_request, &proof_response.0, None).await?;
+        verify_proof_onchain(cli, &proof_request, &proof_response.0, verifier_address)
+            .await?;
     let all_passed = results.iter().all(|r| r.verified);
 
     if cli.json {
@@ -604,6 +617,9 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             response,
             verifier_address,
         } => run_verify(cli, request, response, verifier_address.as_deref()).await,
-        ProofCommand::Test { signal } => run_test(cli, signal).await,
+        ProofCommand::Test {
+            signal,
+            verifier_address,
+        } => run_test(cli, signal, verifier_address.as_deref()).await,
     }
 }
