@@ -26,21 +26,6 @@ pub(crate) fn poh_recovery_agent_address(environment: &Environment) -> Address {
     }
 }
 
-/// The **Staging** `WorldIDVerifier` proxy contract address on World Chain Mainnet.
-pub static STAGING_WORLD_ID_VERIFIER: Address =
-    address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
-
-/// The `WorldIDVerifier` proxy contract address on World Chain Mainnet (production).
-pub static WORLD_ID_VERIFIER: Address =
-    address!("0x00000000009E00F9FE82CfeeBB4556686da094d7");
-
-pub(crate) fn world_id_verifier_address(environment: &Environment) -> Address {
-    match environment {
-        Environment::Staging => STAGING_WORLD_ID_VERIFIER,
-        Environment::Production => WORLD_ID_VERIFIER,
-    }
-}
-
 const OPRF_NODE_COUNT: usize = 5;
 
 /// Generates the list of OPRF node URLs for a given region and environment.

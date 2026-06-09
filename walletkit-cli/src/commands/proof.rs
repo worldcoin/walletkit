@@ -18,12 +18,31 @@ use world_id_core::requests::{
 
 use crate::output;
 
+use walletkit_core::Environment;
+
 use super::credential::{issue_test_credential, FAUX_ISSUER_SCHEMA_ID};
 use super::{init_authenticator, resolve_environment, Cli};
 
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
 
 const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
+
+// `WorldIDVerifier` proxy addresses on World Chain Mainnet (chain 480), from
+// world-id-protocol contracts/deployments/core/{staging,production}.json.
+const WORLD_ID_VERIFIER_STAGING: alloy::primitives::Address =
+    alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
+const WORLD_ID_VERIFIER_PRODUCTION: alloy::primitives::Address =
+    alloy::primitives::address!("0x00000000009E00F9FE82CfeeBB4556686da094d7");
+
+/// The default `WorldIDVerifier` contract address for an environment.
+const fn world_id_verifier_address(
+    environment: &Environment,
+) -> alloy::primitives::Address {
+    match environment {
+        Environment::Staging => WORLD_ID_VERIFIER_STAGING,
+        Environment::Production => WORLD_ID_VERIFIER_PRODUCTION,
+    }
+}
 
 sol!(
     #[allow(clippy::too_many_arguments)]
@@ -219,12 +238,7 @@ fn verifier_address_or_default(
     verifier_address: Option<&str>,
 ) -> eyre::Result<alloy::primitives::Address> {
     verifier_address.map_or_else(
-        || {
-            resolve_environment(cli)?
-                .world_id_verifier_address()
-                .parse::<alloy::primitives::Address>()
-                .wrap_err("invalid verifier address from environment")
-        },
+        || Ok(world_id_verifier_address(&resolve_environment(cli)?)),
         |addr| {
             addr.parse::<alloy::primitives::Address>()
                 .wrap_err("invalid verifier address")
