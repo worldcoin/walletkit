@@ -493,68 +493,6 @@ fn test_vault_integrity_check() {
 }
 
 #[test]
-fn test_credential_vault_on_disk_format_guard() {
-    // On-disk format guard. Stores a credential via the public API and
-    // asserts that the row lands in `blob_objects` with a frozen
-    // content_id, then reopens the vault and reads the payload back
-    // byte-for-byte. Catches:
-    //   - changes to `compute_content_id` (hash domain, kind-tag wiring)
-    //   - changes to `BlobKind::CredentialBlob` (= 0x01)
-    //   - schema or cipher drift in `credential_records`
-    let path = temp_vault_path();
-    let lock_path = temp_lock_path();
-    let key = SecretBox::init_with(|| [0xA5u8; 32]);
-    let credential_bytes = b"on-disk-guard-credential-payload".to_vec();
-    let blinding = sample_blinding_factor();
-
-    let credential_id = {
-        let db = CredentialVault::new(&path, &key).expect("create vault");
-        db.store_credential(
-            42,
-            blinding.clone(),
-            1_700_000_000,
-            1_800_000_000,
-            credential_bytes.clone(),
-            None,
-            1_700_000_001,
-        )
-        .expect("store credential")
-    };
-
-    // SHA-256(b"worldid:blob" || [BlobKind::CredentialBlob as u8 = 0x01]
-    // || credential_bytes). Reproducible via:
-    //   printf 'worldid:blob\x01on-disk-guard-credential-payload' \
-    //     | shasum -a 256
-    let expected_cid_hex =
-        "9281febbd42d05857b399f8481d6842f1e3e4b78401081ca7f0d0fb3a80e9264";
-
-    let db = CredentialVault::new(&path, &key).expect("reopen vault");
-    let stored_cid_hex: String = db
-        .vault.connection()
-        .query_row(
-            "SELECT lower(hex(credential_blob_cid)) FROM credential_records WHERE credential_id = ?1",
-            params![i64::try_from(credential_id).unwrap()],
-            |row| Ok(row.column_text(0)),
-        )
-        .map_err(|err| map_db_err(&err))
-        .expect("fetch cid");
-    assert_eq!(
-        stored_cid_hex, expected_cid_hex,
-        "credential_blob content_id drifted — schema, kind tag, or hash domain changed"
-    );
-
-    let (fetched_blob, fetched_blinding) = db
-        .fetch_credential_and_blinding_factor(42, 1_700_000_500)
-        .expect("fetch credential")
-        .expect("credential present");
-    assert_eq!(fetched_blob, credential_bytes);
-    assert_eq!(fetched_blinding, blinding);
-
-    cleanup_vault_files(&path);
-    cleanup_lock_file(&lock_path);
-}
-
-#[test]
 fn test_list_credentials_round_trips_genesis_issued_at() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();

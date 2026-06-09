@@ -142,7 +142,10 @@ fn check_cid_len(cid: &[u8]) -> StoreResult<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::compute_content_id;
+    use super::{compute_content_id, delete, ensure_schema, get, put};
+    use crate::params;
+    use crate::tests::init_sqlite;
+    use crate::Connection;
 
     #[test]
     fn test_compute_content_id_byte_stable() {
@@ -159,5 +162,37 @@ mod tests {
 
         let cid2 = compute_content_id(2, b"hello");
         assert_ne!(cid, cid2, "kind tag must affect content id");
+    }
+
+    #[test]
+    fn test_put_get_delete_round_trip() {
+        init_sqlite();
+
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        ensure_schema(&conn).expect("ensure schema");
+
+        let cid = put(&conn, 7, b"payload", 1000).expect("put");
+        assert_eq!(
+            hex::encode(cid),
+            "1b108fbc2839877f0df50296ab8db5254efe9bb85864c2fc1ac9285a0f55081d"
+        );
+        assert_eq!(cid, compute_content_id(7, b"payload"));
+
+        let stored = get(&conn, &cid).expect("get").expect("present");
+        assert_eq!(stored.as_slice(), b"payload");
+
+        let duplicate_cid = put(&conn, 7, b"payload", 2000).expect("put duplicate");
+        assert_eq!(duplicate_cid, cid);
+        let row_count = conn
+            .query_row(
+                "SELECT COUNT(*) FROM blob_objects WHERE content_id = ?1",
+                params![cid.as_ref()],
+                |row| Ok(row.column_i64(0)),
+            )
+            .expect("count rows");
+        assert_eq!(row_count, 1);
+
+        delete(&conn, &cid).expect("delete");
+        assert!(get(&conn, &cid).expect("get after delete").is_none());
     }
 }
