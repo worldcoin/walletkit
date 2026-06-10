@@ -95,7 +95,7 @@ impl<'conn> Statement<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if any bind call fails.
+    /// Returns `Error` if any bind call fails.
     ///
     /// # Panics
     ///
@@ -117,7 +117,7 @@ impl<'conn> Statement<'conn> {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the step fails.
+    /// Returns `Error` if the step fails.
     pub fn step<'stmt>(&'stmt mut self) -> DbResult<StepResult<'stmt, 'conn>> {
         let rc = self.raw.step()?;
         if rc == ffi::SQLITE_ROW {
