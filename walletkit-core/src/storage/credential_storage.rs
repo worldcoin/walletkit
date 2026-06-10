@@ -877,6 +877,27 @@ mod tests {
         }
     }
 
+    fn wait_for_listener_count(count: &AtomicU32, expected: u32) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+
+        loop {
+            let actual = count.load(Ordering::SeqCst);
+            if actual >= expected {
+                return;
+            }
+
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        panic!(
+            "deadline {deadline:?} exceeded while waiting for listener count to reach {expected}",
+        );
+    }
+
     #[test]
     fn test_replay_guard_field_element_serialization() {
         let root = temp_root_path();
@@ -1620,14 +1641,7 @@ mod tests {
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
 
-        // Give the delivery thread time to process.
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
-        assert_eq!(
-            count.load(Ordering::SeqCst),
-            1,
-            "listener should be notified once"
-        );
+        wait_for_listener_count(&count, 1);
 
         cleanup_test_storage(&root);
     }
@@ -1653,17 +1667,11 @@ mod tests {
         let id = store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
+        wait_for_listener_count(&count, 1);
 
         store.delete_credential(id).expect("delete credential");
 
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
-        // store + delete = 2 notifications
-        assert_eq!(
-            count.load(Ordering::SeqCst),
-            2,
-            "listener should be notified twice"
-        );
+        wait_for_listener_count(&count, 2);
 
         cleanup_test_storage(&root);
     }
@@ -1789,6 +1797,7 @@ mod tests {
         store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
+        wait_for_listener_count(&count, 1);
 
         store.destroy_storage().expect("destroy storage");
 
