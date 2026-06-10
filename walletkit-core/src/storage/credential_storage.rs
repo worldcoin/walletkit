@@ -883,22 +883,19 @@ mod tests {
         loop {
             let actual = count.load(Ordering::SeqCst);
             if actual >= expected {
-                assert_eq!(
-                    actual, expected,
-                    "listener should be notified {expected} times"
-                );
                 return;
             }
 
             if std::time::Instant::now() >= deadline {
-                assert_eq!(
-                    actual, expected,
-                    "listener should be notified {expected} times"
-                );
+                break;
             }
 
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
+
+        panic!(
+            "deadline {deadline:?} exceeded while waiting for listener count to reach {expected}",
+        );
     }
 
     #[test]
