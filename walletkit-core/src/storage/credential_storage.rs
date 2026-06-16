@@ -8,7 +8,6 @@ use world_id_core::FieldElement as CoreFieldElement;
 
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
-use super::lock::{StorageLock, StorageLockGuard};
 use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
@@ -16,7 +15,8 @@ use super::traits::VaultChangedListener;
 use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::CredentialRecord;
 use super::ACCOUNT_KEYS_FILENAME;
-use super::{CacheDb, VaultDb};
+use super::{CacheDb, CredentialVault};
+use super::{StorageLock, StorageLockGuard};
 use crate::{Credential, FieldElement};
 use world_id_core::primitives::merkle::AccountInclusionProof;
 use world_id_core::primitives::TREE_DEPTH;
@@ -87,7 +87,7 @@ struct CredentialStoreInner {
 struct StorageState {
     #[allow(dead_code)]
     keys: StorageKeys,
-    vault: VaultDb,
+    vault: CredentialVault,
     cache: CacheDb,
     leaf_index: u64,
 }
@@ -128,7 +128,7 @@ impl CredentialStoreInner {
     }
 
     fn guard(&self) -> StorageResult<StorageLockGuard> {
-        self.lock.lock()
+        self.lock.lock().map_err(Into::into)
     }
 
     fn state(&self) -> StorageResult<&StorageState> {
@@ -508,9 +508,8 @@ impl CredentialStore {
 
 impl CredentialStoreInner {
     fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
-        let guard = self.guard()?;
         if let Some(state) = &mut self.state {
-            state.vault.init_leaf_index(&guard, leaf_index, now)?;
+            state.vault.init_leaf_index(leaf_index, now)?;
             state.leaf_index = leaf_index;
             return Ok(());
         }
@@ -518,19 +517,19 @@ impl CredentialStoreInner {
         let keys = StorageKeys::init(
             self.keystore.as_ref(),
             self.blob_store.as_ref(),
-            &guard,
+            &self.lock,
             now,
         )?;
         let k_intermediate = keys.intermediate_key();
-        let vault = VaultDb::new(&self.paths.vault_db_path(), k_intermediate, &guard)?;
-        let cache = CacheDb::new(&self.paths.cache_db_path(), k_intermediate, &guard)?;
-        let mut state = StorageState {
+        let vault = CredentialVault::new(&self.paths.vault_db_path(), k_intermediate)?;
+        let cache = CacheDb::new(&self.paths.cache_db_path(), k_intermediate)?;
+        let state = StorageState {
             keys,
             vault,
             cache,
             leaf_index,
         };
-        state.vault.init_leaf_index(&guard, leaf_index, now)?;
+        state.vault.init_leaf_index(leaf_index, now)?;
         self.state = Some(state);
         Ok(())
     }
@@ -545,9 +544,8 @@ impl CredentialStoreInner {
     }
 
     fn delete_credential(&mut self, credential_id: u64) -> StorageResult<()> {
-        let guard = self.guard()?;
         let state = self.state_mut()?;
-        state.vault.delete_credential(&guard, credential_id)
+        state.vault.delete_credential(credential_id)
     }
 
     fn get_credential(
@@ -598,10 +596,8 @@ impl CredentialStoreInner {
             .map_err(|e| StorageError::Serialization(e.to_string()))?;
         let subject_blinding_factor = blinding_factor.to_bytes();
 
-        let guard = self.guard()?;
         let state = self.state_mut()?;
         state.vault.store_credential(
-            &guard,
             issuer_schema_id,
             subject_blinding_factor,
             genesis_issued_at,
@@ -618,10 +614,8 @@ impl CredentialStoreInner {
         session_id_r_seed: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
-        let guard = self.guard()?;
         let state = self.state_mut()?;
         state.cache.session_seed_put(
-            &guard,
             oprf_seed.to_be_bytes(),
             session_id_r_seed.to_be_bytes(),
             now,
@@ -669,7 +663,6 @@ impl CredentialStoreInner {
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
-        let guard = self.guard()?;
         let state = self.state_mut()?;
         // Use JSON for storage instead of CBOR because the `#[serde(flatten)]` property
         // causes the deserialization of `FieldElement`s to appear as human-readable
@@ -679,9 +672,7 @@ impl CredentialStoreInner {
             )
         })?;
 
-        state
-            .cache
-            .merkle_cache_put(&guard, bytes, now, ttl_seconds)
+        state.cache.merkle_cache_put(&bytes, now, ttl_seconds)
     }
 
     /// Checks whether a replay guard entry exists for the given nullifier.
@@ -713,20 +704,23 @@ impl CredentialStoreInner {
         nullifier: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
-        let guard = self.guard()?;
         let nullifier = nullifier.to_be_bytes();
         let state = self.state_mut()?;
-        state.cache.replay_guard_set(&guard, nullifier, now)
+        state.cache.replay_guard_set(nullifier, now)
     }
 
     /// Exports the vault to a temporary plaintext file in the worldid directory.
     /// Returns the path to the file. The caller is responsible for cleanup.
+    ///
+    /// Holds the cross-process lock for the duration of the export so a
+    /// concurrent writer can't interleave between the stale-file cleanup
+    /// and the ATTACH-based plaintext copy.
     #[cfg(not(target_arch = "wasm32"))]
     fn export_vault_for_backup_to_file(&self) -> StorageResult<String> {
-        let guard = self.guard()?;
+        let _guard = self.guard()?;
         let state = self.state()?;
         let dest = self.temp_backup_path();
-        state.vault.export_plaintext(&dest, &guard)?;
+        state.vault.export_plaintext(&dest)?;
         Ok(dest.to_string_lossy().to_string())
     }
 
@@ -747,12 +741,15 @@ impl CredentialStoreInner {
     }
 
     /// Imports from a plaintext vault file on disk.
+    ///
+    /// Holds the cross-process lock for the duration of the import so a
+    /// concurrent writer can't interleave with the ATTACH-based copy.
     #[cfg(not(target_arch = "wasm32"))]
     fn import_vault_from_file(&self, backup_path: &str) -> StorageResult<()> {
-        let guard = self.guard()?;
+        let _guard = self.guard()?;
         let state = self.state()?;
         let source = std::path::Path::new(backup_path);
-        state.vault.import_plaintext(source, &guard)
+        state.vault.import_plaintext(source)
     }
 
     /// Removes any stale plaintext backup temp files left behind by a
@@ -794,9 +791,8 @@ impl CredentialStoreInner {
     ///
     /// Returns an error if the delete operation fails.
     fn danger_delete_all_credentials(&mut self) -> StorageResult<u64> {
-        let guard = self.guard()?;
         let state = self.state_mut()?;
-        state.vault.danger_delete_all_credentials(&guard)
+        state.vault.danger_delete_all_credentials()
     }
 
     /// Permanently destroys all storage data: encryption keys, vault, and cache.
@@ -875,6 +871,27 @@ mod tests {
         fn on_vault_changed(&self) {
             self.0.fetch_add(1, Ordering::SeqCst);
         }
+    }
+
+    fn wait_for_listener_count(count: &AtomicU32, expected: u32) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+
+        loop {
+            let actual = count.load(Ordering::SeqCst);
+            if actual >= expected {
+                return;
+            }
+
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        panic!(
+            "deadline {deadline:?} exceeded while waiting for listener count to reach {expected}",
+        );
     }
 
     #[test]
@@ -1277,7 +1294,7 @@ mod tests {
 
     #[test]
     fn test_import_vault_backup_transaction_atomicity() {
-        use walletkit_db::cipher::BACKUP_TABLES;
+        use crate::storage::credential_vault::BACKUP_TABLES;
         use walletkit_db::Connection;
         use world_id_core::Credential as CoreCredential;
 
@@ -1620,14 +1637,7 @@ mod tests {
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
 
-        // Give the delivery thread time to process.
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
-        assert_eq!(
-            count.load(Ordering::SeqCst),
-            1,
-            "listener should be notified once"
-        );
+        wait_for_listener_count(&count, 1);
 
         cleanup_test_storage(&root);
     }
@@ -1653,17 +1663,11 @@ mod tests {
         let id = store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
+        wait_for_listener_count(&count, 1);
 
         store.delete_credential(id).expect("delete credential");
 
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
-        // store + delete = 2 notifications
-        assert_eq!(
-            count.load(Ordering::SeqCst),
-            2,
-            "listener should be notified twice"
-        );
+        wait_for_listener_count(&count, 2);
 
         cleanup_test_storage(&root);
     }
@@ -1789,6 +1793,7 @@ mod tests {
         store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
+        wait_for_listener_count(&count, 1);
 
         store.destroy_storage().expect("destroy storage");
 

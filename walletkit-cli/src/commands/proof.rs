@@ -6,15 +6,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine as _};
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use rand::rngs::OsRng;
 use walletkit_core::requests::ProofRequest;
-use world_id_core::primitives::{rp::RpId, FieldElement, SessionId};
+use world_id_core::primitives::{rp::RpId, FieldElement, OwnershipProof, SessionId};
 use world_id_core::requests::{
     ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, ProofType,
     RequestItem, RequestVersion,
 };
+use world_id_proof::ownership_proof::verify_ownership_proof;
 
 use crate::output;
 
@@ -129,6 +131,18 @@ pub enum ProofCommand {
         /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
         #[arg(long)]
         verifier_address: Option<String>,
+    },
+    /// Verify a WIP-103 ownership proof from a base64-encoded file.
+    VerifyOwnership {
+        /// Path to a file containing the base64url-encoded ownership proof, or `-` for stdin.
+        #[arg(long)]
+        proof: String,
+        /// Nonce used when generating the proof, as a 32-byte hex field element (with optional `0x` prefix).
+        #[arg(long)]
+        nonce: String,
+        /// Credential `sub` (commitment) the proof claims ownership of, as a 32-byte hex field element.
+        #[arg(long)]
+        sub: String,
     },
 }
 
@@ -362,12 +376,15 @@ fn print_verify_items_human(results: &[VerifyItemResult]) {
     for r in results {
         if r.verified {
             println!(
-                "  [PASS] {} (issuer_schema_id={})",
-                r.identifier, r.issuer_schema_id
+                "  {} {} (issuer_schema_id={})",
+                output::pass_label(),
+                r.identifier,
+                r.issuer_schema_id
             );
         } else {
             println!(
-                "  [FAIL] {} (issuer_schema_id={}): {}",
+                "  {} {} (issuer_schema_id={}): {}",
+                output::fail_label(),
                 r.identifier,
                 r.issuer_schema_id,
                 r.error.as_deref().unwrap_or("unknown")
@@ -606,6 +623,57 @@ async fn run_test(
     Ok(())
 }
 
+fn parse_field_element(value: &str, label: &str) -> eyre::Result<FieldElement> {
+    value.trim().parse::<FieldElement>().wrap_err_with(|| {
+        format!("invalid {label}: expected 32-byte hex field element")
+    })
+}
+
+fn run_verify_ownership(
+    cli: &Cli,
+    proof_path: &str,
+    nonce: &str,
+    sub: &str,
+) -> eyre::Result<()> {
+    let b64 = read_file_or_stdin(proof_path)?;
+    let bytes = BASE64_URL_SAFE_NO_PAD
+        .decode(b64.trim())
+        .wrap_err("invalid base64 ownership proof")?;
+    let proof: OwnershipProof = ciborium::from_reader(&bytes[..])
+        .wrap_err("failed to decode ownership proof CBOR")?;
+
+    let nonce_fe = parse_field_element(nonce, "--nonce")?;
+    let sub_fe = parse_field_element(sub, "--sub")?;
+
+    let result = verify_ownership_proof(&proof, nonce_fe, sub_fe);
+    let merkle_root = proof.merkle_root.to_string();
+
+    if cli.json {
+        output::print_json_data(
+            &serde_json::json!({
+                "verified": result.is_ok(),
+                "merkle_root": merkle_root,
+                "error": result.as_ref().err().map(|e| format!("{e:#}")),
+            }),
+            true,
+        );
+    } else if let Err(ref err) = result {
+        println!(
+            "{} ownership proof verification failed: {err:#}",
+            output::fail_label()
+        );
+        println!("  merkle_root: {merkle_root}");
+    } else {
+        println!("{} ownership proof verified", output::pass_label());
+        println!("  merkle_root: {merkle_root}");
+    }
+
+    if result.is_err() {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
 pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
     match action {
         ProofCommand::Generate { request, now } => {
@@ -635,5 +703,8 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             signal,
             verifier_address,
         } => run_test(cli, signal, verifier_address.as_deref()).await,
+        ProofCommand::VerifyOwnership { proof, nonce, sub } => {
+            run_verify_ownership(cli, proof, nonce, sub)
+        }
     }
 }

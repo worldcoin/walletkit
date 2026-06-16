@@ -5031,6 +5031,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-verifier"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1ff1bcdce6c807b04657898aae2fd863bd4958b7ded64aaad4f10156061d7b6"
+dependencies = [
+ "anyhow",
+ "ark-std 0.5.0",
+ "provekit-common",
+ "provekit-whir",
+ "rayon",
+ "tracing",
+]
+
+[[package]]
 name = "provekit-whir"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7942,7 +7956,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "uniffi",
 ]
@@ -8172,7 +8186,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "uniffi",
  "walletkit-core",
@@ -8180,10 +8194,11 @@ dependencies = [
 
 [[package]]
 name = "walletkit-cli"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "alloy",
  "base64 0.22.1",
+ "ciborium",
  "clap",
  "dirs",
  "eyre",
@@ -8198,11 +8213,12 @@ dependencies = [
  "tracing-subscriber 0.3.23",
  "walletkit-core",
  "world-id-core",
+ "world-id-proof",
 ]
 
 [[package]]
 name = "walletkit-core"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -8250,14 +8266,18 @@ dependencies = [
 
 [[package]]
 name = "walletkit-db"
-version = "0.19.1"
+version = "0.20.0"
 dependencies = [
  "cc",
+ "ciborium",
+ "getrandom 0.3.4",
  "hex",
  "secrecy",
+ "serde",
  "sha2 0.10.9",
  "sqlite-wasm-rs",
  "tempfile",
+ "thiserror 2.0.18",
  "zeroize",
  "zip",
 ]
@@ -9075,6 +9095,7 @@ dependencies = [
  "eyre",
  "provekit-common",
  "provekit-prover",
+ "provekit-verifier",
  "rand 0.8.6",
  "rayon",
  "reqwest 0.12.28",

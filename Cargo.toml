@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.19.1"
+version = "0.20.0"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -39,8 +39,8 @@ world-id-core = { version = "0.11.0", default-features = false }
 world-id-proof = { version = "0.11.0", default-features = false }
 
 # internal
-walletkit-core = { version = "0.19.1", path = "walletkit-core", default-features = false }
-walletkit-db = { version = "0.19.1", path = "walletkit-db" }
+walletkit-core = { version = "0.20.0", path = "walletkit-core", default-features = false }
+walletkit-db = { version = "0.20.0", path = "walletkit-db" }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
@@ -56,3 +56,17 @@ opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.
 panic = "abort"
 debug = false
+
+# ProveKit has an additional `pattern` in the Whir R1CS proof which is used in debugging builds,
+# because this isn't serialized, we explicitly remove it here as WalletKit only uses serialized proofs.
+[profile.dev.package.provekit-common]
+debug-assertions = false
+
+[profile.dev.package.provekit-whir]
+debug-assertions = false
+
+[profile.dev.package.provekit-verifier]
+debug-assertions = false
+
+[profile.dev.package.provekit-prover]
+debug-assertions = false

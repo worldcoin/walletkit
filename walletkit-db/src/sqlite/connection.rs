@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use super::error::{DbError, DbResult};
+use super::error::{DbResult, Error};
 use super::ffi::{self, RawDb};
 use super::statement::{Row, Statement, StepResult};
 use super::transaction::Transaction;
@@ -25,7 +25,7 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if `SQLite` cannot open the file.
+    /// Returns `Error` if `SQLite` cannot open the file.
     pub fn open(path: &Path, read_only: bool) -> DbResult<Self> {
         let path_str = path.to_string_lossy();
         let flags = if read_only {
@@ -46,7 +46,7 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if any statement fails.
+    /// Returns `Error` if any statement fails.
     pub fn execute_batch(&self, sql: &str) -> DbResult<()> {
         self.db.exec(sql)
     }
@@ -57,7 +57,7 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the statement fails.
+    /// Returns `Error` if the statement fails.
     pub fn execute_batch_zeroized(&self, sql: &str) -> DbResult<()> {
         self.db.exec_zeroized(sql)
     }
@@ -66,7 +66,7 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the SQL is invalid.
+    /// Returns `Error` if the SQL is invalid.
     pub fn prepare(&self, sql: &str) -> DbResult<Statement<'_>> {
         let raw_stmt = self.db.prepare(sql)?;
         Ok(Statement::new(raw_stmt))
@@ -78,7 +78,7 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if preparation or execution fails.
+    /// Returns `Error` if preparation or execution fails.
     pub fn execute(&self, sql: &str, params: &[Value]) -> DbResult<usize> {
         let mut stmt = self.prepare(sql)?;
         stmt.bind_values(params)?;
@@ -92,7 +92,7 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if preparation, execution, or the mapper fails,
+    /// Returns `Error` if preparation, execution, or the mapper fails,
     /// or if the query returns no rows.
     pub fn query_row<T>(
         &self,
@@ -105,7 +105,7 @@ impl Connection {
         match stmt.step()? {
             StepResult::Row(row) => mapper(&row),
             StepResult::Done => {
-                Err(DbError::new(ffi::SQLITE_DONE, "query returned no rows"))
+                Err(Error::new(ffi::SQLITE_DONE, "query returned no rows"))
             }
         }
     }
@@ -115,7 +115,7 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if preparation, execution, or the mapper fails.
+    /// Returns `Error` if preparation, execution, or the mapper fails.
     pub fn query_row_optional<T>(
         &self,
         sql: &str,
@@ -134,7 +134,7 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if `BEGIN DEFERRED` fails.
+    /// Returns `Error` if `BEGIN DEFERRED` fails.
     pub fn transaction(&self) -> DbResult<Transaction<'_>> {
         Transaction::begin(self, false)
     }
@@ -143,7 +143,7 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if `BEGIN IMMEDIATE` fails.
+    /// Returns `Error` if `BEGIN IMMEDIATE` fails.
     pub fn transaction_immediate(&self) -> DbResult<Transaction<'_>> {
         Transaction::begin(self, true)
     }
@@ -175,8 +175,88 @@ impl Connection {
     ///
     /// # Errors
     ///
-    /// Returns `DbError` if the in-memory database cannot be opened.
+    /// Returns `Error` if the in-memory database cannot be opened.
     pub fn open_in_memory() -> DbResult<Self> {
         Self::open(Path::new(":memory:"), false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Connection;
+    use crate::params;
+    use crate::sqlite::Value;
+    use crate::test_utils::init_sqlite;
+
+    #[test]
+    fn test_open_in_memory() {
+        init_sqlite();
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT);")
+            .expect("create table");
+        conn.execute(
+            "INSERT INTO t (id, val) VALUES (?1, ?2)",
+            params![1_i64, "hello"],
+        )
+        .expect("insert");
+        let result = conn
+            .query_row("SELECT val FROM t WHERE id = ?1", params![1_i64], |stmt| {
+                Ok(stmt.column_text(0))
+            })
+            .expect("query");
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_query_row_optional_none() {
+        init_sqlite();
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY);")
+            .expect("create table");
+        let result = conn
+            .query_row_optional("SELECT id FROM t WHERE id = 999", &[], |stmt| {
+                Ok(stmt.column_i64(0))
+            })
+            .expect("query");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_blob_round_trip() {
+        init_sqlite();
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, data BLOB);")
+            .expect("create table");
+        let data = vec![0xDE, 0xAD, 0xBE, 0xEF];
+        conn.execute(
+            "INSERT INTO t (id, data) VALUES (?1, ?2)",
+            params![1_i64, data.as_slice()],
+        )
+        .expect("insert");
+        let result = conn
+            .query_row("SELECT data FROM t WHERE id = 1", &[], |stmt| {
+                Ok(stmt.column_blob(0))
+            })
+            .expect("query");
+        assert_eq!(result, data);
+    }
+
+    #[test]
+    fn test_null_handling() {
+        init_sqlite();
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY, val TEXT);")
+            .expect("create table");
+        conn.execute(
+            "INSERT INTO t (id, val) VALUES (?1, ?2)",
+            params![1_i64, Value::Null],
+        )
+        .expect("insert");
+        let result = conn
+            .query_row("SELECT val FROM t WHERE id = 1", &[], |stmt| {
+                Ok(stmt.is_column_null(0))
+            })
+            .expect("query");
+        assert!(result);
     }
 }
