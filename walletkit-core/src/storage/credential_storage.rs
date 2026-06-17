@@ -330,7 +330,8 @@ impl CredentialStore {
     ///
     /// # Errors
     ///
-    /// Returns an error if the store is not initialized or the import fails.
+    /// Returns an error if the store is not initialized, the destination vault
+    /// already contains backup data, or the import fails.
     pub fn import_vault_from_backup(&self, backup_bytes: &[u8]) -> StorageResult<()> {
         let inner = self.lock_inner()?;
         inner.cleanup_stale_backup_files();
@@ -1264,9 +1265,17 @@ mod tests {
 
         let bytes = store.export_vault_for_backup().expect("export vault");
 
-        // Importing into a non-empty vault should fail.
+        // Importing into a non-empty vault should fail with a typed error so
+        // hosts can decide whether to treat the restore as best-effort.
         let result = store.import_vault_from_backup(&bytes);
-        assert!(result.is_err(), "import into non-empty vault should fail");
+        assert!(
+            matches!(
+                result,
+                Err(StorageError::VaultImportDestinationNotEmpty { ref table })
+                    if table == "credential_records"
+            ),
+            "expected non-empty destination error, got: {result:?}"
+        );
 
         // Verify existing data is unchanged after the failed import.
         let (cred, bf) = store

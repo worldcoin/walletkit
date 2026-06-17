@@ -15,7 +15,9 @@ use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{BlobKind, CredentialRecord};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
-use walletkit_db::{blobs, cipher, params, DbError, Row, StepResult, Value, Vault};
+use walletkit_db::{
+    blobs, cipher, params, Connection, DbError, Row, StepResult, Value, Vault,
+};
 
 /// Tables included in plaintext vault backups, in order.
 ///
@@ -384,9 +386,26 @@ impl CredentialVault {
     /// Returns an error if the import fails.
     pub fn import_plaintext(&self, source: &Path) -> StorageResult<()> {
         let conn = self.vault.connection();
+        ensure_backup_destination_empty(conn)?;
         cipher::import_plaintext_copy(conn, source, BACKUP_TABLES)
             .map_err(|e| map_db_err(&e))
     }
+}
+
+fn ensure_backup_destination_empty(conn: &Connection) -> StorageResult<()> {
+    for table in BACKUP_TABLES {
+        let count: i64 = conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), &[], |row| {
+                Ok(row.column_i64(0))
+            })
+            .map_err(|err| map_db_err(&err))?;
+        if count > 0 {
+            return Err(StorageError::VaultImportDestinationNotEmpty {
+                table: (*table).to_string(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn map_record(row: &Row<'_, '_>) -> StorageResult<CredentialRecord> {

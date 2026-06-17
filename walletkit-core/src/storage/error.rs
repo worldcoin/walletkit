@@ -40,6 +40,13 @@ pub enum StorageError {
     #[error("vault db error: {0}")]
     VaultDb(String),
 
+    /// Import failed because the destination vault already contains data.
+    #[error("vault import destination is not empty: {table}")]
+    VaultImportDestinationNotEmpty {
+        /// Destination table that already contains rows.
+        table: String,
+    },
+
     /// Errors coming from the cache database.
     #[error("cache db error: {0}")]
     CacheDb(String),
