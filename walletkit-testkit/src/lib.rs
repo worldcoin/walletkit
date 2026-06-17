@@ -22,3 +22,7 @@
 //!   verification against the staging `WorldIDVerifier` contract.
 //! - A high-level `generate_and_verify_test_proof` convenience that wires the
 //!   whole flow together for either issuance strategy.
+
+pub mod env;
+
+pub use env::TestEnv;
