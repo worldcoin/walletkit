@@ -24,5 +24,6 @@
 //!   whole flow together for either issuance strategy.
 
 pub mod env;
+pub mod storage;
 
 pub use env::TestEnv;
