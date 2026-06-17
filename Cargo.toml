@@ -5,6 +5,7 @@ members = [
   "walletkit",
   "walletkit-db",
   "walletkit-cli",
+  "walletkit-testkit",
 ]
 resolver = "2"
 
