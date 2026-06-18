@@ -23,6 +23,7 @@
 //! - A high-level `generate_and_verify_test_proof` convenience that wires the
 //!   whole flow together for either issuance strategy.
 
+pub mod authenticator;
 pub mod env;
 pub mod proof;
 pub mod storage;
