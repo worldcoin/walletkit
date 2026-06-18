@@ -25,6 +25,7 @@
 
 pub mod authenticator;
 pub mod env;
+pub mod issuer;
 pub mod proof;
 pub mod storage;
 
