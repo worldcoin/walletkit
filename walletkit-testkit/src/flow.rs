@@ -13,7 +13,9 @@ use world_id_core::requests::ProofType;
 
 use crate::authenticator::{init_authenticator, register_account};
 use crate::env::TestEnv;
-use crate::issuer::{issue_faux_credential, issue_local_credential, IssuedTestCredential};
+use crate::issuer::{
+    issue_faux_credential, issue_local_credential, IssuedTestCredential,
+};
 use crate::proof::{build_test_request, verify_proof_onchain, VerifyItemResult};
 
 /// Credential issuance strategy for [`generate_and_verify_test_proof`].

@@ -94,9 +94,9 @@ pub async fn issue_faux_credential(
         .await
         .wrap_err("failed to parse faux issuer response")?;
 
-    let cred_value = body
-        .get("credential")
-        .ok_or_else(|| eyre::eyre!("faux issuer response missing 'credential' field"))?;
+    let cred_value = body.get("credential").ok_or_else(|| {
+        eyre::eyre!("faux issuer response missing 'credential' field")
+    })?;
 
     let cred_bytes =
         serde_json::to_vec(cred_value).wrap_err("failed to serialize credential")?;

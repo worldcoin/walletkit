@@ -8,7 +8,9 @@ use clap::Subcommand;
 use eyre::WrapErr as _;
 use walletkit_core::requests::ProofRequest;
 use walletkit_testkit::issuer::issue_faux_credential;
-use walletkit_testkit::proof::{build_test_request, verify_proof_onchain, VerifyItemResult};
+use walletkit_testkit::proof::{
+    build_test_request, verify_proof_onchain, VerifyItemResult,
+};
 use walletkit_testkit::TestEnv;
 use world_id_core::primitives::{FieldElement, OwnershipProof, SessionId};
 use world_id_core::requests::{
@@ -129,8 +131,7 @@ fn verify_env(cli: &Cli, verifier_address: Option<&str>) -> eyre::Result<TestEnv
         env.worldchain_rpc_url = rpc.to_string();
     }
     if let Some(addr) = verifier_address {
-        env.world_id_verifier =
-            addr.parse().wrap_err("invalid verifier address")?;
+        env.world_id_verifier = addr.parse().wrap_err("invalid verifier address")?;
     }
     Ok(env)
 }
@@ -348,8 +349,7 @@ async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
     if !cli.json {
         eprintln!("Verifying proof on-chain...");
     }
-    let results =
-        verify_proof_onchain(&env, &proof_request, &proof_response.0).await?;
+    let results = verify_proof_onchain(&env, &proof_request, &proof_response.0).await?;
     let all_passed = results.iter().all(|r| r.verified);
 
     if cli.json {

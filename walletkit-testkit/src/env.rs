@@ -18,9 +18,8 @@ use walletkit_core::Environment;
 pub const STAGING_RP_ID: u64 = 46;
 
 /// ECDSA private key (secp256k1) for the staging RP.
-pub const STAGING_RP_SIGNING_KEY: [u8; 32] = hex!(
-    "1111111111111111111111111111111111111111111111111111111111111111"
-);
+pub const STAGING_RP_SIGNING_KEY: [u8; 32] =
+    hex!("1111111111111111111111111111111111111111111111111111111111111111");
 
 /// `WorldIDVerifier` proxy contract address on staging (World Chain Mainnet 480).
 pub const STAGING_WORLD_ID_VERIFIER: Address =
@@ -31,8 +30,7 @@ pub const DEFAULT_WORLDCHAIN_RPC_URL: &str =
     "https://worldchain-mainnet.g.alchemy.com/public";
 
 /// Hosted faux-issuer endpoint (staging).
-pub const FAUX_ISSUER_URL: &str =
-    "https://faux-issuer.us.id-infra.worldcoin.dev/issue";
+pub const FAUX_ISSUER_URL: &str = "https://faux-issuer.us.id-infra.worldcoin.dev/issue";
 
 /// Issuer schema ID served by the hosted faux issuer.
 pub const FAUX_ISSUER_SCHEMA_ID: u64 = 128;
@@ -41,9 +39,8 @@ pub const FAUX_ISSUER_SCHEMA_ID: u64 = 128;
 pub const LOCAL_ISSUER_SCHEMA_ID: u64 = 47;
 
 /// `EdDSA` private key (32 bytes) for the registered local issuer.
-pub const LOCAL_ISSUER_EDDSA_KEY: [u8; 32] = hex!(
-    "1111111111111111111111111111111111111111111111111111111111111111"
-);
+pub const LOCAL_ISSUER_EDDSA_KEY: [u8; 32] =
+    hex!("1111111111111111111111111111111111111111111111111111111111111111");
 
 /// Configuration for the test helpers, centralizing all staging fixtures.
 ///
