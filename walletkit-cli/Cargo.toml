@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 walletkit-core = { workspace = true, features = ["issuers", "embed-zkeys"] }
+walletkit-testkit = { path = "../walletkit-testkit" }
 world-id-core = { workspace = true }
 world-id-proof = { workspace = true, features = ["zk-ownership-verify"] }
 alloy = { version = "2", default-features = false, features = ["contract", "json", "getrandom", "signer-local"] }

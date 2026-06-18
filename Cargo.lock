@@ -8212,6 +8212,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber 0.3.23",
  "walletkit-core",
+ "walletkit-testkit",
  "world-id-core",
  "world-id-proof",
 ]
