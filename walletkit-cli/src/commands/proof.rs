@@ -7,6 +7,7 @@ use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine as _};
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use walletkit_core::requests::ProofRequest;
+use walletkit_core::Environment;
 use walletkit_testkit::issuer::issue_faux_credential;
 use walletkit_testkit::proof::{
     build_test_request, verify_proof_onchain, VerifyItemResult,
@@ -20,9 +21,26 @@ use world_id_proof::ownership_proof::verify_ownership_proof;
 
 use crate::output;
 
-use super::{init_authenticator, Cli};
+use super::{init_authenticator, resolve_environment, Cli};
 
 const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
+
+// `WorldIDVerifier` proxy addresses on World Chain Mainnet (chain 480), from
+// world-id-protocol contracts/deployments/core/{staging,production}.json.
+const WORLD_ID_VERIFIER_STAGING: alloy::primitives::Address =
+    alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
+const WORLD_ID_VERIFIER_PRODUCTION: alloy::primitives::Address =
+    alloy::primitives::address!("0x00000000009E00F9FE82CfeeBB4556686da094d7");
+
+/// The default `WorldIDVerifier` contract address for an environment.
+const fn world_id_verifier_address(
+    environment: &Environment,
+) -> alloy::primitives::Address {
+    match environment {
+        Environment::Staging => WORLD_ID_VERIFIER_STAGING,
+        Environment::Production => WORLD_ID_VERIFIER_PRODUCTION,
+    }
+}
 
 #[derive(Subcommand)]
 pub enum ProofCommand {
@@ -67,7 +85,7 @@ pub enum ProofCommand {
         /// Path to the proof response JSON, or `-` for stdin.
         #[arg(long)]
         response: String,
-        /// Override the `WorldID` verifier contract address (default: mainnet).
+        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
         #[arg(long)]
         verifier_address: Option<String>,
     },
@@ -76,6 +94,9 @@ pub enum ProofCommand {
         /// Signal string for the proof request.
         #[arg(long, default_value = "test_signal")]
         signal: String,
+        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
+        #[arg(long)]
+        verifier_address: Option<String>,
     },
     /// Verify a WIP-103 ownership proof from a base64-encoded file.
     VerifyOwnership {
@@ -124,15 +145,17 @@ fn parse_session_id_arg(session_id: &str) -> Result<SessionId, String> {
 }
 
 /// Builds a [`TestEnv`] for on-chain verification, honoring the CLI's
-/// `--rpc-url` and an optional verifier-address override.
+/// `--rpc-url` and resolving the verifier address from `--verifier-address`
+/// (if provided) or otherwise the `WorldIDVerifier` for the CLI's `--environment`.
 fn verify_env(cli: &Cli, verifier_address: Option<&str>) -> eyre::Result<TestEnv> {
     let mut env = TestEnv::staging();
     if let Some(rpc) = cli.rpc_url.as_deref() {
         env.worldchain_rpc_url = rpc.to_string();
     }
-    if let Some(addr) = verifier_address {
-        env.world_id_verifier = addr.parse().wrap_err("invalid verifier address")?;
-    }
+    env.world_id_verifier = match verifier_address {
+        Some(addr) => addr.parse().wrap_err("invalid verifier address")?,
+        None => world_id_verifier_address(&resolve_environment(cli)?),
+    };
     Ok(env)
 }
 
@@ -312,9 +335,13 @@ fn run_generate_test_request(
 }
 
 /// End-to-end test: issue a test credential, generate a proof, and verify it on-chain.
-async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
+async fn run_test(
+    cli: &Cli,
+    signal: &str,
+    verifier_address: Option<&str>,
+) -> eyre::Result<()> {
     let (authenticator, store) = init_authenticator(cli).await?;
-    let env = verify_env(cli, None)?;
+    let env = verify_env(cli, verifier_address)?;
     let now = now_secs();
 
     if !cli.json {
@@ -452,7 +479,10 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             response,
             verifier_address,
         } => run_verify(cli, request, response, verifier_address.as_deref()).await,
-        ProofCommand::Test { signal } => run_test(cli, signal).await,
+        ProofCommand::Test {
+            signal,
+            verifier_address,
+        } => run_test(cli, signal, verifier_address.as_deref()).await,
         ProofCommand::VerifyOwnership { proof, nonce, sub } => {
             run_verify_ownership(cli, proof, nonce, sub)
         }
