@@ -2,24 +2,19 @@
 //!
 //! `walletkit-core` exposes the storage *traits* ([`StorageProvider`],
 //! [`DeviceKeystore`], [`AtomicBlobStore`]) but ships no reusable provider
-//! *impls*, so every consumer re-rolls them. This module provides two:
+//! *impls*, so every (testing) consumer re-rolls them. This module provides two:
 //!
-//! - [`InMemoryStorageProvider`] — fully ephemeral; an `XChaCha20Poly1305`
-//!   keystore plus an in-memory blob map. Ideal for unit/integration tests that
-//!   want no on-disk footprint.
-//! - [`FsStorageProvider`] — filesystem-backed with a no-op device keystore
-//!   (the `SQLCipher` databases are still encrypted with a random
-//!   `K_intermediate`). Mirrors the CLI's dev-local provider.
+//! - [`InMemoryStorageProvider`] — fully ephemeral; a no-op device keystore
+//!   plus an in-memory blob map. Ideal for unit/integration tests that want no
+//!   on-disk footprint. Test-only: account keys are not encrypted.
+//! - [`FsStorageProvider`] — filesystem-backed with a no-op device keystore.
+//!   Important: This is a test-only provider and must not be used in production.
+//!   Vault encryption keys are stored in plaintext on disk.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use chacha20poly1305::{
-    aead::{Aead, KeyInit, Payload},
-    Key, XChaCha20Poly1305, XNonce,
-};
-use rand::{rngs::OsRng, RngCore};
 use uuid::Uuid;
 use walletkit_core::storage::{
     AtomicBlobStore, CredentialStore, DeviceKeystore, StorageError, StoragePaths,
@@ -27,80 +22,37 @@ use walletkit_core::storage::{
 };
 
 // ---------------------------------------------------------------------------
-// In-memory provider
+// Shared test keystore
 // ---------------------------------------------------------------------------
 
-/// In-memory [`DeviceKeystore`] backed by an ephemeral `XChaCha20Poly1305` key.
+/// No-op device keystore that passes data through without encryption.
 ///
-/// The sealing key is random per instance and never persisted, so sealed data
-/// is only readable for the lifetime of the keystore.
-pub struct InMemoryKeystore {
-    key: [u8; 32],
-}
+/// Suitable only for development and testing. In production the real
+/// `DeviceKeystore` is backed by the platform's secure enclave. Used by both
+/// [`InMemoryStorageProvider`] and [`FsStorageProvider`].
+pub struct NoopDeviceKeystore;
 
-impl InMemoryKeystore {
-    /// Creates a keystore with a fresh random sealing key.
-    #[must_use]
-    pub fn new() -> Self {
-        let mut key = [0u8; 32];
-        OsRng.fill_bytes(&mut key);
-        Self { key }
-    }
-}
-
-impl Default for InMemoryKeystore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl DeviceKeystore for InMemoryKeystore {
+impl DeviceKeystore for NoopDeviceKeystore {
     fn seal(
         &self,
-        associated_data: Vec<u8>,
+        _associated_data: Vec<u8>,
         plaintext: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
-        let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.key));
-        let mut nonce_bytes = [0u8; 24];
-        OsRng.fill_bytes(&mut nonce_bytes);
-        let ciphertext = cipher
-            .encrypt(
-                XNonce::from_slice(&nonce_bytes),
-                Payload {
-                    msg: &plaintext,
-                    aad: &associated_data,
-                },
-            )
-            .map_err(|err| StorageError::Crypto(err.to_string()))?;
-        let mut out = Vec::with_capacity(nonce_bytes.len() + ciphertext.len());
-        out.extend_from_slice(&nonce_bytes);
-        out.extend_from_slice(&ciphertext);
-        Ok(out)
+        Ok(plaintext)
     }
 
     fn open_sealed(
         &self,
-        associated_data: Vec<u8>,
+        _associated_data: Vec<u8>,
         ciphertext: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
-        if ciphertext.len() < 24 {
-            return Err(StorageError::InvalidEnvelope(
-                "keystore ciphertext too short".to_string(),
-            ));
-        }
-        let (nonce_bytes, payload) = ciphertext.split_at(24);
-        let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.key));
-        cipher
-            .decrypt(
-                XNonce::from_slice(nonce_bytes),
-                Payload {
-                    msg: payload,
-                    aad: &associated_data,
-                },
-            )
-            .map_err(|err| StorageError::Crypto(err.to_string()))
+        Ok(ciphertext)
     }
 }
+
+// ---------------------------------------------------------------------------
+// In-memory provider
+// ---------------------------------------------------------------------------
 
 /// In-memory [`AtomicBlobStore`] backed by a `HashMap`.
 pub struct InMemoryBlobStore {
@@ -151,7 +103,7 @@ impl AtomicBlobStore for InMemoryBlobStore {
 
 /// [`StorageProvider`] keeping all state in memory.
 pub struct InMemoryStorageProvider {
-    keystore: Arc<InMemoryKeystore>,
+    keystore: Arc<NoopDeviceKeystore>,
     blob_store: Arc<InMemoryBlobStore>,
     paths: Arc<StoragePaths>,
 }
@@ -162,7 +114,7 @@ impl InMemoryStorageProvider {
     #[must_use]
     pub fn new(root: impl AsRef<Path>) -> Self {
         Self {
-            keystore: Arc::new(InMemoryKeystore::new()),
+            keystore: Arc::new(NoopDeviceKeystore),
             blob_store: Arc::new(InMemoryBlobStore::new()),
             paths: Arc::new(StoragePaths::new(root)),
         }
@@ -186,30 +138,6 @@ impl StorageProvider for InMemoryStorageProvider {
 // ---------------------------------------------------------------------------
 // Filesystem provider
 // ---------------------------------------------------------------------------
-
-/// No-op device keystore that passes data through without encryption.
-///
-/// Suitable only for development and testing. In production the real
-/// `DeviceKeystore` is backed by the platform's secure enclave.
-pub struct NoopDeviceKeystore;
-
-impl DeviceKeystore for NoopDeviceKeystore {
-    fn seal(
-        &self,
-        _associated_data: Vec<u8>,
-        plaintext: Vec<u8>,
-    ) -> Result<Vec<u8>, StorageError> {
-        Ok(plaintext)
-    }
-
-    fn open_sealed(
-        &self,
-        _associated_data: Vec<u8>,
-        ciphertext: Vec<u8>,
-    ) -> Result<Vec<u8>, StorageError> {
-        Ok(ciphertext)
-    }
-}
 
 /// Filesystem-backed [`AtomicBlobStore`].
 ///

@@ -14,7 +14,6 @@ walletkit-core = { workspace = true, features = ["issuers", "embed-zkeys"] }
 world-id-core = { workspace = true, features = ["authenticator", "embed-zkeys"] }
 alloy-core = { workspace = true }
 alloy = { version = "2", default-features = false, features = ["contract", "json", "getrandom", "signer-local"] }
-chacha20poly1305 = "0.10"
 eyre = "0.6"
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
