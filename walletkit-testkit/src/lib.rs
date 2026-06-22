@@ -12,9 +12,8 @@
 //!   on-chain verifier address, World Chain RPC, faux-issuer URL + schema, local
 //!   issuer key + schema). [`TestEnv::default`] is staging; every field is
 //!   overridable.
-//! - Storage providers usable with the `walletkit-core` storage traits:
-//!   an in-memory provider for ephemeral tests and a filesystem-backed provider
-//!   for CLI-style local state.
+//! - Storage providers usable with the `walletkit-core` storage traits: a
+//!   filesystem-backed [`FsStorageProvider`] for tests and CLI-style local state.
 //! - Credential issuance via two interchangeable strategies: the hosted
 //!   faux-issuer (HTTP, schema 128) and a local `EdDSA` issuer (schema 47,
 //!   deterministic, no service dependency).
