@@ -141,14 +141,9 @@ pub struct Authenticator {
     store: Arc<CredentialStore>,
 }
 
-/// Rust-only helpers that are intentionally not exported over UniFFI.
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and an already-parsed
     /// [`Config`].
-    ///
-    /// This is a Rust-only helper (not exported over UniFFI) intended for
-    /// internal consumers such as `walletkit-cli` that already hold a typed
-    /// [`Config`] and don't need to parse it from a JSON string.
     ///
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
