@@ -6,27 +6,26 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine as _};
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use rand::rngs::OsRng;
 use walletkit_core::requests::ProofRequest;
-use world_id_core::primitives::{rp::RpId, FieldElement, SessionId};
+use world_id_core::primitives::{rp::RpId, FieldElement, OwnershipProof, SessionId};
 use world_id_core::requests::{
     ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, ProofType,
     RequestItem, RequestVersion,
 };
+use world_id_proof::ownership_proof::verify_ownership_proof;
 
 use crate::output;
 
 use super::credential::{issue_test_credential, FAUX_ISSUER_SCHEMA_ID};
-use super::{init_authenticator, Cli};
+use super::{init_authenticator, resolve_environment, Cli};
 
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
 
 const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
-
-const WORLD_ID_VERIFIER: alloy::primitives::Address =
-    alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
 
 sol!(
     #[allow(clippy::too_many_arguments)]
@@ -101,7 +100,7 @@ pub enum ProofCommand {
         /// Path to the proof response JSON, or `-` for stdin.
         #[arg(long)]
         response: String,
-        /// Override the `WorldID` verifier contract address (default: mainnet).
+        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
         #[arg(long)]
         verifier_address: Option<String>,
     },
@@ -110,6 +109,21 @@ pub enum ProofCommand {
         /// Signal string for the proof request.
         #[arg(long, default_value = "test_signal")]
         signal: String,
+        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
+        #[arg(long)]
+        verifier_address: Option<String>,
+    },
+    /// Verify a WIP-103 ownership proof from a base64-encoded file.
+    VerifyOwnership {
+        /// Path to a file containing the base64url-encoded ownership proof, or `-` for stdin.
+        #[arg(long)]
+        proof: String,
+        /// Nonce used when generating the proof, as a 32-byte hex field element (with optional `0x` prefix).
+        #[arg(long)]
+        nonce: String,
+        /// Credential `sub` (commitment) the proof claims ownership of, as a 32-byte hex field element.
+        #[arg(long)]
+        sub: String,
     },
 }
 
@@ -212,11 +226,18 @@ pub struct VerifyItemResult {
     pub error: Option<String>,
 }
 
+/// Resolves the verifier contract address: the explicit `--verifier-address`
+/// override if provided, otherwise the `WorldIDVerifier` for the CLI's `--environment`.
 fn verifier_address_or_default(
+    cli: &Cli,
     verifier_address: Option<&str>,
 ) -> eyre::Result<alloy::primitives::Address> {
     verifier_address.map_or_else(
-        || Ok(WORLD_ID_VERIFIER),
+        || {
+            Ok(walletkit_core::defaults::world_id_verifier_address(
+                &resolve_environment(cli)?,
+            ))
+        },
         |addr| {
             addr.parse::<alloy::primitives::Address>()
                 .wrap_err("invalid verifier address")
@@ -240,7 +261,7 @@ pub async fn verify_proof_onchain(
 
     let rpc_url = cli.rpc_url.as_deref().unwrap_or(DEFAULT_RPC_URL);
     let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-    let verifier_addr = verifier_address_or_default(verifier_address)?;
+    let verifier_addr = verifier_address_or_default(cli, verifier_address)?;
     let verifier_contract = IWorldIDVerifier::new(verifier_addr, &provider);
 
     let action = if proof_request.proof_type == ProofType::Uniqueness {
@@ -340,12 +361,15 @@ fn print_verify_items_human(results: &[VerifyItemResult]) {
     for r in results {
         if r.verified {
             println!(
-                "  [PASS] {} (issuer_schema_id={})",
-                r.identifier, r.issuer_schema_id
+                "  {} {} (issuer_schema_id={})",
+                output::pass_label(),
+                r.identifier,
+                r.issuer_schema_id
             );
         } else {
             println!(
-                "  [FAIL] {} (issuer_schema_id={}): {}",
+                "  {} {} (issuer_schema_id={}): {}",
+                output::fail_label(),
                 r.identifier,
                 r.issuer_schema_id,
                 r.error.as_deref().unwrap_or("unknown")
@@ -514,7 +538,11 @@ fn run_generate_test_request(
 }
 
 /// End-to-end test: issue a test credential, generate a proof, and verify it on-chain.
-async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
+async fn run_test(
+    cli: &Cli,
+    signal: &str,
+    verifier_address: Option<&str>,
+) -> eyre::Result<()> {
     let (authenticator, store) = init_authenticator(cli).await?;
 
     if !cli.json {
@@ -552,7 +580,8 @@ async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
         eprintln!("Verifying proof on-chain...");
     }
     let results =
-        verify_proof_onchain(cli, &proof_request, &proof_response.0, None).await?;
+        verify_proof_onchain(cli, &proof_request, &proof_response.0, verifier_address)
+            .await?;
     let all_passed = results.iter().all(|r| r.verified);
 
     if cli.json {
@@ -574,6 +603,57 @@ async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
     }
 
     if !all_passed {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+fn parse_field_element(value: &str, label: &str) -> eyre::Result<FieldElement> {
+    value.trim().parse::<FieldElement>().wrap_err_with(|| {
+        format!("invalid {label}: expected 32-byte hex field element")
+    })
+}
+
+fn run_verify_ownership(
+    cli: &Cli,
+    proof_path: &str,
+    nonce: &str,
+    sub: &str,
+) -> eyre::Result<()> {
+    let b64 = read_file_or_stdin(proof_path)?;
+    let bytes = BASE64_URL_SAFE_NO_PAD
+        .decode(b64.trim())
+        .wrap_err("invalid base64 ownership proof")?;
+    let proof: OwnershipProof = ciborium::from_reader(&bytes[..])
+        .wrap_err("failed to decode ownership proof CBOR")?;
+
+    let nonce_fe = parse_field_element(nonce, "--nonce")?;
+    let sub_fe = parse_field_element(sub, "--sub")?;
+
+    let result = verify_ownership_proof(&proof, nonce_fe, sub_fe);
+    let merkle_root = proof.merkle_root.to_string();
+
+    if cli.json {
+        output::print_json_data(
+            &serde_json::json!({
+                "verified": result.is_ok(),
+                "merkle_root": merkle_root,
+                "error": result.as_ref().err().map(|e| format!("{e:#}")),
+            }),
+            true,
+        );
+    } else if let Err(ref err) = result {
+        println!(
+            "{} ownership proof verification failed: {err:#}",
+            output::fail_label()
+        );
+        println!("  merkle_root: {merkle_root}");
+    } else {
+        println!("{} ownership proof verified", output::pass_label());
+        println!("  merkle_root: {merkle_root}");
+    }
+
+    if result.is_err() {
         std::process::exit(1);
     }
     Ok(())
@@ -604,6 +684,12 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             response,
             verifier_address,
         } => run_verify(cli, request, response, verifier_address.as_deref()).await,
-        ProofCommand::Test { signal } => run_test(cli, signal).await,
+        ProofCommand::Test {
+            signal,
+            verifier_address,
+        } => run_test(cli, signal, verifier_address.as_deref()).await,
+        ProofCommand::VerifyOwnership { proof, nonce, sub } => {
+            run_verify_ownership(cli, proof, nonce, sub)
+        }
     }
 }

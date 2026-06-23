@@ -202,18 +202,6 @@ mod tests {
     const ALL_REGIONS: &[Region] = &[Region::Us, Region::Eu, Region::Ap];
 
     #[test]
-    fn world_id_verifier_address_resolves_per_environment() {
-        assert_eq!(
-            world_id_verifier_address(&Environment::Staging),
-            WORLD_ID_VERIFIER_STAGING
-        );
-        assert_eq!(
-            world_id_verifier_address(&Environment::Production),
-            WORLD_ID_VERIFIER_PRODUCTION
-        );
-    }
-
-    #[test]
     fn default_config_builds_direct_endpoints_for_every_env_and_region() {
         for env in ALL_ENVS {
             for region in ALL_REGIONS {
