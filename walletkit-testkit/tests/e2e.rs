@@ -21,7 +21,6 @@ use walletkit_testkit::flow::{generate_and_verify_test_proof, IssuanceStrategy};
 use walletkit_testkit::storage::{cleanup_storage, temp_root};
 use walletkit_testkit::TestEnv;
 
-/// Shared test seed (matches the existing core integration tests).
 const TEST_SEED: [u8; 32] = [7u8; 32];
 
 fn now_secs() -> u64 {
@@ -44,7 +43,7 @@ fn init_tracing() {
 #[ignore = "requires staging infrastructure"]
 async fn e2e_faux_issuer_proof() {
     init_tracing();
-    let env = TestEnv::staging();
+    let env = TestEnv::default_staging();
     let root = temp_root();
 
     let outcome = generate_and_verify_test_proof(
@@ -70,7 +69,7 @@ async fn e2e_faux_issuer_proof() {
 #[ignore = "requires staging infrastructure"]
 async fn e2e_local_eddsa_proof() {
     init_tracing();
-    let env = TestEnv::staging();
+    let env = TestEnv::default_staging();
     let root = temp_root();
 
     let outcome = generate_and_verify_test_proof(

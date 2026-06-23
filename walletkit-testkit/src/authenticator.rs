@@ -25,6 +25,8 @@ use crate::storage::create_fs_credential_store;
 /// `root`, caches the embedded Groth16 materials, initializes the authenticator
 /// with SDK defaults for `env`'s environment and RPC, and runs `init_storage`
 /// with the given `now` (unix seconds).
+/// Note: The on-chain account must already be registered in the `WorldIDRegistry`,
+/// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
 ///
 /// # Errors
 ///
@@ -43,6 +45,16 @@ pub async fn init_authenticator(
         Groth16Materials::from_cache(Arc::new(paths))
             .wrap_err("failed to load cached Groth16 materials")?,
     );
+
+    let inner = CoreAuthenticator::init(seed, &env.world_id_config.to_string())
+        .await?
+        .with_proof_materials(materials.query.clone(), materials.nullifier.clone());
+
+    let authenticator = Authenticator { inner, store };
+
+    let authenticator =
+        Authenticator::init(seed, &env.world_id_config.to_string(), materials, store)
+            .await?;
 
     let authenticator = Authenticator::init_with_defaults(
         seed,

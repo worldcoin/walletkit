@@ -11,8 +11,9 @@
 //! verify on-chain because the `WorldIDVerifier` resolves the issuer public key
 //! from the on-chain registry by schema id.
 
-use alloy::primitives::{address, hex, Address};
-use walletkit_core::Environment;
+use alloy::primitives::{hex, Address};
+use walletkit_core::{defaults::world_id_verifier_address, Environment, Region};
+use world_id_core::primitives::Config;
 
 /// Staging RP ID registered on the `RpRegistry` contract.
 pub const STAGING_RP_ID: u64 = 46;
@@ -20,10 +21,6 @@ pub const STAGING_RP_ID: u64 = 46;
 /// ECDSA private key (secp256k1) for the staging RP.
 pub const STAGING_RP_SIGNING_KEY: [u8; 32] =
     hex!("1111111111111111111111111111111111111111111111111111111111111111");
-
-/// `WorldIDVerifier` proxy contract address on staging (World Chain Mainnet 480).
-pub const STAGING_WORLD_ID_VERIFIER: Address =
-    address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
 
 /// Default RPC URL for World Chain Mainnet (chain 480).
 pub const DEFAULT_WORLDCHAIN_RPC_URL: &str =
@@ -55,8 +52,6 @@ pub struct TestEnv {
     pub rp_signing_key: [u8; 32],
     /// On-chain `WorldIDVerifier` contract address.
     pub world_id_verifier: Address,
-    /// World Chain RPC URL used for on-chain verification.
-    pub worldchain_rpc_url: String,
     /// Hosted faux-issuer endpoint.
     pub faux_issuer_url: String,
     /// Issuer schema ID served by the hosted faux issuer.
@@ -65,37 +60,52 @@ pub struct TestEnv {
     pub local_issuer_schema_id: u64,
     /// `EdDSA` private key for the local issuer.
     pub local_issuer_eddsa_key: [u8; 32],
-    /// World ID environment these fixtures belong to.
-    pub environment: Environment,
+    /// World Chain RPC URL for the test environment.
+    pub rpc_url: String,
+    /// World ID configuration for the test environment.
+    pub world_id_config: Config,
 }
 
 impl TestEnv {
     /// Returns the staging configuration with all pre-registered fixtures.
     #[must_use]
-    pub fn staging() -> Self {
+    pub fn default_staging() -> Self {
+        let world_id_config = walletkit_core::defaults::default_config(
+            &Environment::Staging,
+            None,
+            Some(Region::Us),
+        )
+        .unwrap();
         Self {
             rp_id: STAGING_RP_ID,
             rp_signing_key: STAGING_RP_SIGNING_KEY,
-            world_id_verifier: STAGING_WORLD_ID_VERIFIER,
-            worldchain_rpc_url: DEFAULT_WORLDCHAIN_RPC_URL.to_string(),
+            world_id_verifier: world_id_verifier_address(&Environment::Staging),
             faux_issuer_url: FAUX_ISSUER_URL.to_string(),
             faux_issuer_schema_id: FAUX_ISSUER_SCHEMA_ID,
             local_issuer_schema_id: LOCAL_ISSUER_SCHEMA_ID,
             local_issuer_eddsa_key: LOCAL_ISSUER_EDDSA_KEY,
-            environment: Environment::Staging,
+            rpc_url: DEFAULT_WORLDCHAIN_RPC_URL.to_string(),
+            world_id_config,
         }
     }
 
-    /// Overrides the World Chain RPC URL, returning the modified config.
-    #[must_use]
-    pub fn with_rpc_url(mut self, rpc_url: impl Into<String>) -> Self {
-        self.worldchain_rpc_url = rpc_url.into();
-        self
+    pub fn default_with_config_and_verifier(config: Config, verifier: Address) -> Self {
+        Self {
+            rp_id: STAGING_RP_ID,
+            rp_signing_key: STAGING_RP_SIGNING_KEY,
+            world_id_verifier: verifier,
+            faux_issuer_url: FAUX_ISSUER_URL.to_string(),
+            faux_issuer_schema_id: FAUX_ISSUER_SCHEMA_ID,
+            local_issuer_schema_id: LOCAL_ISSUER_SCHEMA_ID,
+            local_issuer_eddsa_key: LOCAL_ISSUER_EDDSA_KEY,
+            rpc_url: DEFAULT_WORLDCHAIN_RPC_URL.to_string(),
+            world_id_config: config,
+        }
     }
 }
 
 impl Default for TestEnv {
     fn default() -> Self {
-        Self::staging()
+        Self::default_staging()
     }
 }
