@@ -75,19 +75,12 @@ pub enum Environment {
 #[uniffi::export]
 impl Environment {
     /// Returns the `PoH` Recovery Agent contract address for this environment.
-    ///
-    /// The `PoH` Recovery Agent is a contract users can optionally designate when
-    /// registering a World ID. If they lose access to all authenticators, the
-    /// agent can sign a recovery transaction to restore their account.
     #[must_use]
     pub fn poh_recovery_agent_address(&self) -> String {
         defaults::poh_recovery_agent_address(self).to_string()
     }
 
     /// Returns the `WorldIDVerifier` proxy contract address for this environment.
-    ///
-    /// The `WorldIDVerifier` is the on-chain contract that verifies World ID
-    /// proofs (uniqueness, ownership, etc.) for a given action and relying party.
     #[must_use]
     pub fn world_id_verifier_address(&self) -> String {
         defaults::world_id_verifier_address(self).to_string()
