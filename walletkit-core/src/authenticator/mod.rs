@@ -141,6 +141,31 @@ pub struct Authenticator {
     store: Arc<CredentialStore>,
 }
 
+impl Authenticator {
+    /// Initializes a new Authenticator from a seed and an already-parsed
+    /// [`Config`].
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::init` for potential errors.
+    pub async fn init_with_config(
+        seed: &[u8],
+        config: Config,
+        materials: Arc<Groth16Materials>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let authenticator = CoreAuthenticator::init(seed, config)
+            .await?
+            .with_proof_materials(
+                Arc::clone(&materials.query),
+                Arc::clone(&materials.nullifier),
+            );
+        Ok(Self {
+            inner: authenticator,
+            store,
+        })
+    }
+}
+
 #[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
@@ -363,16 +388,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = defaults::default_config(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config)
-            .await?
-            .with_proof_materials(
-                Arc::clone(&materials.query),
-                Arc::clone(&materials.nullifier),
-            );
-        Ok(Self {
-            inner: authenticator,
-            store,
-        })
+        Self::init_with_config(seed, config, materials, store).await
     }
 
     /// Initializes a new Authenticator from a seed using SDK defaults routed
@@ -395,16 +411,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
-        let authenticator = CoreAuthenticator::init(seed, config)
-            .await?
-            .with_proof_materials(
-                Arc::clone(&materials.query),
-                Arc::clone(&materials.nullifier),
-            );
-        Ok(Self {
-            inner: authenticator,
-            store,
-        })
+        Self::init_with_config(seed, config, materials, store).await
     }
 
     /// Initializes a new Authenticator from a seed and config.
@@ -427,16 +434,7 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        let authenticator = CoreAuthenticator::init(seed, config)
-            .await?
-            .with_proof_materials(
-                Arc::clone(&materials.query),
-                Arc::clone(&materials.nullifier),
-            );
-        Ok(Self {
-            inner: authenticator,
-            store,
-        })
+        Self::init_with_config(seed, config, materials, store).await
     }
 
     /// Generates a proof for the given proof request.
