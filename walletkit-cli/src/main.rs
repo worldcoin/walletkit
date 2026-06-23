@@ -5,6 +5,7 @@
 mod commands;
 mod latency;
 mod output;
+mod provider;
 
 use std::sync::{Arc, Mutex};
 

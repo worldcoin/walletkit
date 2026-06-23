@@ -4,9 +4,8 @@ use clap::Subcommand;
 use eyre::WrapErr as _;
 use walletkit_core::storage::{cache_embedded_groth16_material, StoragePaths};
 
-use walletkit_testkit::storage::create_fs_credential_store;
-
 use crate::output;
+use crate::provider::create_fs_credential_store;
 
 use super::{init_authenticator, resolve_root, Cli};
 

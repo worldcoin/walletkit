@@ -17,7 +17,7 @@ use eyre::WrapErr as _;
 use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
 use walletkit_core::{Authenticator, Groth16Materials};
 
-use walletkit_testkit::storage::create_fs_credential_store;
+use crate::provider::create_fs_credential_store;
 
 /// `WalletKit` CLI — developer tool for World ID wallet operations.
 #[derive(Parser)]

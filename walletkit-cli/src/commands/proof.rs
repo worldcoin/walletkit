@@ -3,44 +3,60 @@
 use std::io::Read;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine as _};
+use alloy::providers::ProviderBuilder;
+use alloy::signers::{local::PrivateKeySigner, SignerSync};
+use alloy::sol;
 use clap::Subcommand;
 use eyre::WrapErr as _;
+use rand::rngs::OsRng;
 use walletkit_core::requests::ProofRequest;
-use walletkit_core::Environment;
-use walletkit_testkit::issuer::issue_faux_credential;
-use walletkit_testkit::proof::{
-    build_test_request, verify_proof_onchain, VerifyItemResult,
-};
-use walletkit_testkit::TestEnv;
-use world_id_core::primitives::{FieldElement, OwnershipProof, SessionId};
+use world_id_core::primitives::{rp::RpId, FieldElement, SessionId};
 use world_id_core::requests::{
     ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, ProofType,
+    RequestItem, RequestVersion,
 };
-use world_id_proof::ownership_proof::verify_ownership_proof;
 
 use crate::output;
 
-use super::{init_authenticator, resolve_environment, Cli};
+use super::credential::{issue_test_credential, FAUX_ISSUER_SCHEMA_ID};
+use super::{init_authenticator, Cli};
+
+const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
 
 const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
 
-// `WorldIDVerifier` proxy addresses on World Chain Mainnet (chain 480), from
-// world-id-protocol contracts/deployments/core/{staging,production}.json.
-const WORLD_ID_VERIFIER_STAGING: alloy::primitives::Address =
+const WORLD_ID_VERIFIER: alloy::primitives::Address =
     alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
-const WORLD_ID_VERIFIER_PRODUCTION: alloy::primitives::Address =
-    alloy::primitives::address!("0x00000000009E00F9FE82CfeeBB4556686da094d7");
 
-/// The default `WorldIDVerifier` contract address for an environment.
-const fn world_id_verifier_address(
-    environment: &Environment,
-) -> alloy::primitives::Address {
-    match environment {
-        Environment::Staging => WORLD_ID_VERIFIER_STAGING,
-        Environment::Production => WORLD_ID_VERIFIER_PRODUCTION,
+sol!(
+    #[allow(clippy::too_many_arguments)]
+    #[sol(rpc)]
+    interface IWorldIDVerifier {
+        function verify(
+            uint256 nullifier,
+            uint256 action,
+            uint64 rpId,
+            uint256 nonce,
+            uint256 signalHash,
+            uint64 expiresAtMin,
+            uint64 issuerSchemaId,
+            uint256 credentialGenesisIssuedAtMin,
+            uint256[5] calldata zeroKnowledgeProof
+        ) external view;
+
+        function verifySession(
+            uint64 rpId,
+            uint256 nonce,
+            uint256 signalHash,
+            uint64 expiresAtMin,
+            uint64 issuerSchemaId,
+            uint256 credentialGenesisIssuedAtMin,
+            uint256 sessionId,
+            uint256[2] calldata sessionNullifier,
+            uint256[5] calldata zeroKnowledgeProof
+        ) external view;
     }
-}
+);
 
 #[derive(Subcommand)]
 pub enum ProofCommand {
@@ -85,7 +101,7 @@ pub enum ProofCommand {
         /// Path to the proof response JSON, or `-` for stdin.
         #[arg(long)]
         response: String,
-        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
+        /// Override the `WorldID` verifier contract address (default: mainnet).
         #[arg(long)]
         verifier_address: Option<String>,
     },
@@ -94,21 +110,6 @@ pub enum ProofCommand {
         /// Signal string for the proof request.
         #[arg(long, default_value = "test_signal")]
         signal: String,
-        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
-        #[arg(long)]
-        verifier_address: Option<String>,
-    },
-    /// Verify a WIP-103 ownership proof from a base64-encoded file.
-    VerifyOwnership {
-        /// Path to a file containing the base64url-encoded ownership proof, or `-` for stdin.
-        #[arg(long)]
-        proof: String,
-        /// Nonce used when generating the proof, as a 32-byte hex field element (with optional `0x` prefix).
-        #[arg(long)]
-        nonce: String,
-        /// Credential `sub` (commitment) the proof claims ownership of, as a 32-byte hex field element.
-        #[arg(long)]
-        sub: String,
     },
 }
 
@@ -144,32 +145,15 @@ fn parse_session_id_arg(session_id: &str) -> Result<SessionId, String> {
         .map_err(|err| format!("invalid session id: {err}"))
 }
 
-/// Builds a [`TestEnv`] for on-chain verification, honoring the CLI's
-/// `--rpc-url` and resolving the verifier address from `--verifier-address`
-/// (if provided) or otherwise the `WorldIDVerifier` for the CLI's `--environment`.
-fn verify_env(cli: &Cli, verifier_address: Option<&str>) -> eyre::Result<TestEnv> {
-    let mut env = TestEnv::staging();
-    if let Some(rpc) = cli.rpc_url.as_deref() {
-        env.worldchain_rpc_url = rpc.to_string();
-    }
-    env.world_id_verifier = match verifier_address {
-        Some(addr) => addr.parse().wrap_err("invalid verifier address")?,
-        None => world_id_verifier_address(&resolve_environment(cli)?),
-    };
-    Ok(env)
-}
-
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time after epoch")
-        .as_secs()
-}
-
 async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Result<()> {
     let (authenticator, _store) = init_authenticator(cli).await?;
 
-    let ts = now.unwrap_or_else(now_secs);
+    let ts = now.unwrap_or_else(|| {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time after epoch")
+            .as_secs()
+    });
 
     let json_str = read_file_or_stdin(request)?;
     let proof_request =
@@ -220,24 +204,152 @@ fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
     Ok(())
 }
 
+/// Result of verifying one proof response item against the `WorldIDVerifier` contract.
+pub struct VerifyItemResult {
+    pub issuer_schema_id: u64,
+    pub identifier: String,
+    pub verified: bool,
+    pub error: Option<String>,
+}
+
+fn verifier_address_or_default(
+    verifier_address: Option<&str>,
+) -> eyre::Result<alloy::primitives::Address> {
+    verifier_address.map_or_else(
+        || Ok(WORLD_ID_VERIFIER),
+        |addr| {
+            addr.parse::<alloy::primitives::Address>()
+                .wrap_err("invalid verifier address")
+        },
+    )
+}
+
+/// Verifies a proof request + response pair on-chain. Returns per-item results.
+pub async fn verify_proof_onchain(
+    cli: &Cli,
+    proof_request: &CoreProofRequest,
+    proof_response: &CoreProofResponse,
+    verifier_address: Option<&str>,
+) -> eyre::Result<Vec<VerifyItemResult>> {
+    if let Some(ref err) = proof_response.error {
+        eyre::bail!("proof response contains error: {err}");
+    }
+    proof_request
+        .validate_response(proof_response)
+        .wrap_err("proof response does not match proof request")?;
+
+    let rpc_url = cli.rpc_url.as_deref().unwrap_or(DEFAULT_RPC_URL);
+    let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
+    let verifier_addr = verifier_address_or_default(verifier_address)?;
+    let verifier_contract = IWorldIDVerifier::new(verifier_addr, &provider);
+
+    let action = if proof_request.proof_type == ProofType::Uniqueness {
+        Some(
+            proof_request
+                .action
+                .ok_or_else(|| eyre::eyre!("proof request has no action"))?,
+        )
+    } else {
+        None
+    };
+    let session_id =
+        if proof_request.proof_type.is_session() {
+            Some(proof_response.session_id.ok_or_else(|| {
+                eyre::eyre!("session proof response missing session_id")
+            })?)
+        } else {
+            None
+        };
+    let nonce = proof_request.nonce;
+    let rp_id = proof_request.rp_id.into_inner();
+
+    let mut results = Vec::new();
+    for response_item in &proof_response.responses {
+        let request_item = proof_request
+            .find_request_by_issuer_schema_id(response_item.issuer_schema_id)
+            .ok_or_else(|| {
+                eyre::eyre!(
+                    "no matching request item for issuer_schema_id={}",
+                    response_item.issuer_schema_id
+                )
+            })?;
+
+        let credential_genesis_issued_at_min = request_item
+            .genesis_issued_at_min
+            .unwrap_or_default()
+            .try_into()?;
+
+        let result = match proof_request.proof_type {
+            ProofType::Uniqueness => {
+                let nullifier = response_item
+                    .nullifier
+                    .ok_or_else(|| eyre::eyre!("response item missing nullifier"))?;
+
+                verifier_contract
+                    .verify(
+                        nullifier.into(),
+                        action.expect("validated above").into(),
+                        rp_id,
+                        nonce.into(),
+                        request_item.signal_hash().into(),
+                        response_item.expires_at_min,
+                        response_item.issuer_schema_id,
+                        credential_genesis_issued_at_min,
+                        response_item.proof.as_ethereum_representation(),
+                    )
+                    .call()
+                    .await
+                    .map(|_| ())
+            }
+            ProofType::CreateSession | ProofType::Session => {
+                let session_nullifier =
+                    response_item.session_nullifier.ok_or_else(|| {
+                        eyre::eyre!("response item missing session_nullifier")
+                    })?;
+                let session_id = session_id.expect("validated above");
+
+                verifier_contract
+                    .verifySession(
+                        rp_id,
+                        nonce.into(),
+                        request_item.signal_hash().into(),
+                        response_item.expires_at_min,
+                        response_item.issuer_schema_id,
+                        credential_genesis_issued_at_min,
+                        session_id.commitment.into(),
+                        session_nullifier.as_ethereum_representation(),
+                        response_item.proof.as_ethereum_representation(),
+                    )
+                    .call()
+                    .await
+                    .map(|_| ())
+            }
+        };
+
+        results.push(VerifyItemResult {
+            issuer_schema_id: response_item.issuer_schema_id,
+            identifier: response_item.identifier.clone(),
+            verified: result.is_ok(),
+            error: result.err().map(|e| format!("{e:#}")),
+        });
+    }
+    Ok(results)
+}
+
 fn print_verify_items_human(results: &[VerifyItemResult]) {
     for r in results {
-        match &r.result {
-            Ok(()) => {
-                println!(
-                    "  {} issuer_schema_id={}",
-                    output::pass_label(),
-                    r.issuer_schema_id
-                );
-            }
-            Err(error) => {
-                println!(
-                    "  {} issuer_schema_id={}: {}",
-                    output::fail_label(),
-                    r.issuer_schema_id,
-                    error
-                );
-            }
+        if r.verified {
+            println!(
+                "  [PASS] {} (issuer_schema_id={})",
+                r.identifier, r.issuer_schema_id
+            );
+        } else {
+            println!(
+                "  [FAIL] {} (issuer_schema_id={}): {}",
+                r.identifier,
+                r.issuer_schema_id,
+                r.error.as_deref().unwrap_or("unknown")
+            );
         }
     }
 }
@@ -248,8 +360,9 @@ fn verify_items_to_json(results: &[VerifyItemResult]) -> Vec<serde_json::Value> 
         .map(|r| {
             serde_json::json!({
                 "issuer_schema_id": r.issuer_schema_id,
-                "verified": r.result.is_ok(),
-                "error": r.result.as_ref().err(),
+                "identifier": r.identifier,
+                "verified": r.verified,
+                "error": r.error,
             })
         })
         .collect()
@@ -269,9 +382,10 @@ async fn run_verify(
     let proof_response: CoreProofResponse =
         serde_json::from_str(&response_json).wrap_err("invalid proof response")?;
 
-    let env = verify_env(cli, verifier_address)?;
-    let results = verify_proof_onchain(&env, &proof_request, &proof_response).await?;
-    let all_passed = results.iter().all(|r| r.result.is_ok());
+    let results =
+        verify_proof_onchain(cli, &proof_request, &proof_response, verifier_address)
+            .await?;
+    let all_passed = results.iter().all(|r| r.verified);
 
     if cli.json {
         output::print_json_data(
@@ -294,6 +408,74 @@ async fn run_verify(
     Ok(())
 }
 
+/// Staging RP ID registered on the `RpRegistry` contract.
+const STAGING_RP_ID: u64 = 46;
+
+/// ECDSA private key for the staging RP (secp256k1).
+const STAGING_RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
+    "1111111111111111111111111111111111111111111111111111111111111111"
+);
+
+/// Builds a signed test proof request using hardcoded staging RP keys.
+fn build_test_request(
+    issuer_schema_id: u64,
+    signal: &str,
+    expires_in: u64,
+    proof_type: ProofType,
+    session_id: Option<SessionId>,
+) -> eyre::Result<CoreProofRequest> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_secs();
+
+    let nonce = FieldElement::random(&mut OsRng);
+    let created_at = now;
+    let expires_at = now + expires_in;
+
+    let signer = PrivateKeySigner::from_bytes(&STAGING_RP_SIGNING_KEY.into())
+        .wrap_err("failed to create signer")?;
+
+    let action =
+        (proof_type == ProofType::Uniqueness).then(|| FieldElement::from(1u64));
+    let msg = world_id_core::primitives::rp::compute_rp_signature_msg(
+        *nonce,
+        created_at,
+        expires_at,
+        action.map(|action| *action),
+    );
+    let signature = signer.sign_message_sync(&msg).wrap_err("signing failed")?;
+
+    let rp_id = RpId::new(STAGING_RP_ID);
+    let request_item = RequestItem::new(
+        "test".to_string(),
+        issuer_schema_id,
+        Some(signal.as_bytes().to_vec()),
+        None,
+        None,
+    );
+
+    Ok(CoreProofRequest {
+        id: "test_request".to_string(),
+        version: RequestVersion::V1,
+        proof_type,
+        created_at,
+        expires_at,
+        rp_id,
+        oprf_key_id: serde_json::from_value(serde_json::json!(format!(
+            "0x{:040x}",
+            STAGING_RP_ID
+        )))
+        .wrap_err("failed to construct oprf_key_id")?,
+        session_id,
+        action,
+        signature,
+        nonce,
+        requests: vec![request_item],
+        constraints: None,
+    })
+}
+
 fn run_generate_test_request(
     cli: &Cli,
     issuer_schema_id: u64,
@@ -312,12 +494,9 @@ fn run_generate_test_request(
         (ProofType::Session, Some(session_id)) => Some(session_id),
         (_, None) => None,
     };
-    let env = TestEnv::staging();
     let request = build_test_request(
-        &env,
         issuer_schema_id,
         signal,
-        now_secs(),
         expires_in,
         proof_type,
         session_id,
@@ -335,28 +514,20 @@ fn run_generate_test_request(
 }
 
 /// End-to-end test: issue a test credential, generate a proof, and verify it on-chain.
-async fn run_test(
-    cli: &Cli,
-    signal: &str,
-    verifier_address: Option<&str>,
-) -> eyre::Result<()> {
+async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
     let (authenticator, store) = init_authenticator(cli).await?;
-    let env = verify_env(cli, verifier_address)?;
-    let now = now_secs();
 
     if !cli.json {
         eprintln!("Issuing test credential from faux issuer...");
     }
-    let issued = issue_faux_credential(&env, &authenticator, &store, now).await?;
+    let issued = issue_test_credential(&authenticator, &store).await?;
 
     if !cli.json {
         eprintln!("Generating test proof request...");
     }
     let proof_request = build_test_request(
-        &env,
-        env.faux_issuer_schema_id,
+        FAUX_ISSUER_SCHEMA_ID,
         signal,
-        now,
         300,
         ProofType::Uniqueness,
         None,
@@ -365,19 +536,24 @@ async fn run_test(
     if !cli.json {
         eprintln!("Generating proof...");
     }
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after epoch")
+        .as_secs();
     let walletkit_request =
         ProofRequest::from_json(&serde_json::to_string(&proof_request)?)
             .wrap_err("invalid proof request")?;
     let proof_response = authenticator
-        .generate_proof(&walletkit_request, Some(now))
+        .generate_proof(&walletkit_request, Some(ts))
         .await
         .wrap_err("proof generation failed")?;
 
     if !cli.json {
         eprintln!("Verifying proof on-chain...");
     }
-    let results = verify_proof_onchain(&env, &proof_request, &proof_response.0).await?;
-    let all_passed = results.iter().all(|r| r.result.is_ok());
+    let results =
+        verify_proof_onchain(cli, &proof_request, &proof_response.0, None).await?;
+    let all_passed = results.iter().all(|r| r.verified);
 
     if cli.json {
         output::print_json_data(
@@ -398,57 +574,6 @@ async fn run_test(
     }
 
     if !all_passed {
-        std::process::exit(1);
-    }
-    Ok(())
-}
-
-fn parse_field_element(value: &str, label: &str) -> eyre::Result<FieldElement> {
-    value.trim().parse::<FieldElement>().wrap_err_with(|| {
-        format!("invalid {label}: expected 32-byte hex field element")
-    })
-}
-
-fn run_verify_ownership(
-    cli: &Cli,
-    proof_path: &str,
-    nonce: &str,
-    sub: &str,
-) -> eyre::Result<()> {
-    let b64 = read_file_or_stdin(proof_path)?;
-    let bytes = BASE64_URL_SAFE_NO_PAD
-        .decode(b64.trim())
-        .wrap_err("invalid base64 ownership proof")?;
-    let proof: OwnershipProof = ciborium::from_reader(&bytes[..])
-        .wrap_err("failed to decode ownership proof CBOR")?;
-
-    let nonce_fe = parse_field_element(nonce, "--nonce")?;
-    let sub_fe = parse_field_element(sub, "--sub")?;
-
-    let result = verify_ownership_proof(&proof, nonce_fe, sub_fe);
-    let merkle_root = proof.merkle_root.to_string();
-
-    if cli.json {
-        output::print_json_data(
-            &serde_json::json!({
-                "verified": result.is_ok(),
-                "merkle_root": merkle_root,
-                "error": result.as_ref().err().map(|e| format!("{e:#}")),
-            }),
-            true,
-        );
-    } else if let Err(ref err) = result {
-        println!(
-            "{} ownership proof verification failed: {err:#}",
-            output::fail_label()
-        );
-        println!("  merkle_root: {merkle_root}");
-    } else {
-        println!("{} ownership proof verified", output::pass_label());
-        println!("  merkle_root: {merkle_root}");
-    }
-
-    if result.is_err() {
         std::process::exit(1);
     }
     Ok(())
@@ -479,12 +604,6 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             response,
             verifier_address,
         } => run_verify(cli, request, response, verifier_address.as_deref()).await,
-        ProofCommand::Test {
-            signal,
-            verifier_address,
-        } => run_test(cli, signal, verifier_address.as_deref()).await,
-        ProofCommand::VerifyOwnership { proof, nonce, sub } => {
-            run_verify_ownership(cli, proof, nonce, sub)
-        }
+        ProofCommand::Test { signal } => run_test(cli, signal).await,
     }
 }
