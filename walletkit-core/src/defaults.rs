@@ -26,6 +26,29 @@ pub(crate) fn poh_recovery_agent_address(environment: &Environment) -> Address {
     }
 }
 
+/// The `WorldIDVerifier` proxy contract address on the staging environment
+/// (World Chain Mainnet, chain 480).
+///
+/// Source: `world-id-protocol` `contracts/deployments/core/staging.json`.
+pub static WORLD_ID_VERIFIER_STAGING: Address =
+    address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
+
+/// The `WorldIDVerifier` proxy contract address on the production environment
+/// (World Chain Mainnet, chain 480).
+///
+/// Source: `world-id-protocol` `contracts/deployments/core/production.json`.
+pub static WORLD_ID_VERIFIER_PRODUCTION: Address =
+    address!("0x00000000009E00F9FE82CfeeBB4556686da094d7");
+
+/// Returns the `WorldIDVerifier` proxy contract address for `environment`.
+#[must_use]
+pub fn world_id_verifier_address(environment: &Environment) -> Address {
+    match environment {
+        Environment::Staging => WORLD_ID_VERIFIER_STAGING,
+        Environment::Production => WORLD_ID_VERIFIER_PRODUCTION,
+    }
+}
+
 const OPRF_NODE_COUNT: usize = 5;
 
 /// Generates the list of OPRF node URLs for a given region and environment.
@@ -177,6 +200,18 @@ mod tests {
 
     const ALL_ENVS: &[Environment] = &[Environment::Staging, Environment::Production];
     const ALL_REGIONS: &[Region] = &[Region::Us, Region::Eu, Region::Ap];
+
+    #[test]
+    fn world_id_verifier_address_resolves_per_environment() {
+        assert_eq!(
+            world_id_verifier_address(&Environment::Staging),
+            WORLD_ID_VERIFIER_STAGING
+        );
+        assert_eq!(
+            world_id_verifier_address(&Environment::Production),
+            WORLD_ID_VERIFIER_PRODUCTION
+        );
+    }
 
     #[test]
     fn default_config_builds_direct_endpoints_for_every_env_and_region() {
