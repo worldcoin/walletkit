@@ -11,6 +11,29 @@ pub static WORLD_ID_REGISTRY: Address =
 pub static STAGING_WORLD_ID_REGISTRY: Address =
     address!("0x8556d07D75025f286fe757C7EeEceC40D54FA16D");
 
+/// The `WorldIDVerifier` proxy contract address on the staging environment
+/// (World Chain Mainnet, chain 480).
+///
+/// Source: `world-id-protocol` `contracts/deployments/core/staging.json`.
+pub static WORLD_ID_VERIFIER_STAGING: Address =
+    address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
+
+/// The `WorldIDVerifier` proxy contract address on the production environment
+/// (World Chain Mainnet, chain 480).
+///
+/// Source: `world-id-protocol` `contracts/deployments/core/production.json`.
+pub static WORLD_ID_VERIFIER_PRODUCTION: Address =
+    address!("0x00000000009E00F9FE82CfeeBB4556686da094d7");
+
+/// Returns the `WorldIDVerifier` proxy contract address for the given environment.
+#[must_use]
+pub fn world_id_verifier_address(environment: &Environment) -> Address {
+    match environment {
+        Environment::Staging => WORLD_ID_VERIFIER_STAGING,
+        Environment::Production => WORLD_ID_VERIFIER_PRODUCTION,
+    }
+}
+
 /// The `PoH` Recovery Agent contract address on the staging environment.
 pub static POH_RECOVERY_AGENT_ADDRESS_STAGING: Address =
     address!("0x8df366ed8ef894f0d1d25dc21b7e36e2d97a7140");
