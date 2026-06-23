@@ -13,9 +13,7 @@ use world_id_core::requests::ProofType;
 
 use crate::authenticator::{init_authenticator, register_account};
 use crate::env::TestEnv;
-use crate::issuer::{
-    issue_faux_credential, issue_local_credential, IssuedTestCredential,
-};
+use crate::issuer::{issue_faux_credential, issue_local_credential, CredentialInfo};
 use crate::proof::{build_test_request, verify_proof_onchain, VerifyItemResult};
 
 /// Credential issuance strategy for [`generate_and_verify_test_proof`].
@@ -31,24 +29,24 @@ pub enum IssuanceStrategy {
 #[derive(Debug, Clone)]
 pub struct TestProofOutcome {
     /// The credential that was issued and stored.
-    pub issued: IssuedTestCredential,
-    /// On-chain verification results, one per response item.
-    pub results: Vec<VerifyItemResult>,
+    pub issued: CredentialInfo,
+    /// On-chain verification result for the single issued credential.
+    pub verification: VerifyItemResult,
 }
 
 impl TestProofOutcome {
-    /// Returns `true` if every response item verified on-chain.
+    /// Returns `true` if the issued credential's proof verified on-chain.
     #[must_use]
-    pub fn all_verified(&self) -> bool {
-        self.results.iter().all(|r| r.verified)
+    pub fn verified(&self) -> bool {
+        self.verification.result.is_ok()
     }
 }
 
-/// How far in the future issued credentials and proof requests expire.
 const CREDENTIAL_TTL_SECS: u64 = 3600;
 const REQUEST_TTL_SECS: u64 = 300;
 
-/// Runs the full issue → prove → verify flow for the given issuance strategy.
+/// Runs the full register → init → issue → build request → generate proof → verify flow
+/// for the given issuance strategy.
 ///
 /// Registers (or initializes) the account, initializes a filesystem-backed
 /// authenticator rooted at `root`, issues a uniqueness credential via `strategy`,
@@ -109,7 +107,18 @@ pub async fn generate_and_verify_test_proof(
         .wrap_err("proof generation failed")?;
     let response = proof_response.into_inner();
 
-    let results = verify_proof_onchain(env, &core_request, &response).await?;
+    let mut results = verify_proof_onchain(env, &core_request, &response).await?;
 
-    Ok(TestProofOutcome { issued, results })
+    eyre::ensure!(
+        results.len() == 1,
+        "expected exactly one verification result, got {}",
+        results.len()
+    );
+
+    let verification = results.remove(0);
+
+    Ok(TestProofOutcome {
+        issued,
+        verification,
+    })
 }

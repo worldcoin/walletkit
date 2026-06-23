@@ -51,8 +51,7 @@ sol!(
 ///
 /// `now` is the request's `created_at` (unix seconds); the request expires at
 /// `now + expires_in`. For uniqueness proofs an `action` of `1` is set and
-/// included in the RP signature; session proofs carry no action. Pass an
-/// existing `session_id` for [`ProofType::Session`].
+/// included in the RP signature. Pass an existing `session_id` for [`ProofType::Session`].
 ///
 /// # Errors
 ///
@@ -119,12 +118,9 @@ pub fn build_test_request(
 pub struct VerifyItemResult {
     /// Issuer schema ID of the verified credential.
     pub issuer_schema_id: u64,
-    /// Identifier of the request item this result corresponds to.
-    pub identifier: String,
-    /// Whether the on-chain `verify`/`verifySession` call succeeded.
-    pub verified: bool,
-    /// Error detail when `verified` is `false`.
-    pub error: Option<String>,
+    /// `Ok(())` if the on-chain `verify`/`verifySession` call succeeded,
+    /// `Err` with the failure details from the contract call otherwise.
+    pub result: Result<(), String>,
 }
 
 /// Verifies a proof request/response pair on-chain against the staging
@@ -228,9 +224,7 @@ pub async fn verify_proof_onchain(
 
         results.push(VerifyItemResult {
             issuer_schema_id: response_item.issuer_schema_id,
-            identifier: response_item.identifier.clone(),
-            verified: result.is_ok(),
-            error: result.err().map(|e| format!("{e:#}")),
+            result: result.map_err(|e| format!("{e:#}")),
         });
     }
     Ok(results)

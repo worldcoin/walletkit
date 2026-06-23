@@ -19,15 +19,13 @@ use world_id_core::{
 
 use crate::env::TestEnv;
 
-/// A credential that was issued and stored for a test.
+/// Small struct to return credential information for the issued/ stored credential.
 #[derive(Debug, Clone)]
-pub struct IssuedTestCredential {
+pub struct CredentialInfo {
     /// Local store ID assigned to the stored credential.
     pub credential_id: u64,
     /// Issuer schema ID the credential was issued under.
     pub issuer_schema_id: u64,
-    /// Credential expiry (unix seconds).
-    pub expires_at: u64,
     /// Blinding factor used to derive the credential subject.
     pub blinding_factor: FieldElement,
 }
@@ -52,7 +50,7 @@ pub fn build_base_credential(
         .expires_at(expires_at)
 }
 
-/// Issues a credential from the hosted faux issuer (HTTP, schema 128) and stores it.
+/// Issues a credential from the faux issuer and stores it.
 ///
 /// Generates a blinding factor via OPRF, requests a credential for the derived
 /// subject, and stores the returned credential with `now` (unix seconds) as the
@@ -67,13 +65,15 @@ pub async fn issue_faux_credential(
     authenticator: &Authenticator,
     store: &CredentialStore,
     now: u64,
-) -> eyre::Result<IssuedTestCredential> {
-    let bf = authenticator
+) -> eyre::Result<CredentialInfo> {
+    let blinding_factor = authenticator
         .generate_credential_blinding_factor_remote(env.faux_issuer_schema_id)
         .await
         .wrap_err("blinding factor generation failed")?;
 
-    let sub_hex = authenticator.compute_credential_sub(&bf).to_hex_string();
+    let sub_hex = authenticator
+        .compute_credential_sub(&blinding_factor)
+        .to_hex_string();
 
     let client = reqwest::Client::new();
     let resp = client
@@ -105,14 +105,13 @@ pub async fn issue_faux_credential(
     let expires_at = cred.expires_at();
 
     let credential_id = store
-        .store_credential(&cred, &bf, expires_at, None, now)
+        .store_credential(&cred, &blinding_factor, expires_at, None, now)
         .wrap_err("store credential failed")?;
 
-    Ok(IssuedTestCredential {
+    Ok(CredentialInfo {
         credential_id,
         issuer_schema_id: env.faux_issuer_schema_id,
-        expires_at,
-        blinding_factor: bf,
+        blinding_factor,
     })
 }
 
@@ -136,7 +135,7 @@ pub async fn issue_local_credential(
     now: u64,
     genesis_issued_at: u64,
     expires_at: u64,
-) -> eyre::Result<IssuedTestCredential> {
+) -> eyre::Result<CredentialInfo> {
     let issuer_secret_key = EdDSAPrivateKey::from_bytes(env.local_issuer_eddsa_key);
     let issuer_public_key = issuer_secret_key.public();
 
@@ -161,10 +160,9 @@ pub async fn issue_local_credential(
         .store_credential(&walletkit_credential, &bf, expires_at, None, now)
         .wrap_err("store credential failed")?;
 
-    Ok(IssuedTestCredential {
+    Ok(CredentialInfo {
         credential_id,
         issuer_schema_id: env.local_issuer_schema_id,
-        expires_at,
         blinding_factor: bf,
     })
 }

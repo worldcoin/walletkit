@@ -222,21 +222,22 @@ fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
 
 fn print_verify_items_human(results: &[VerifyItemResult]) {
     for r in results {
-        if r.verified {
-            println!(
-                "  {} {} (issuer_schema_id={})",
-                output::pass_label(),
-                r.identifier,
-                r.issuer_schema_id
-            );
-        } else {
-            println!(
-                "  {} {} (issuer_schema_id={}): {}",
-                output::fail_label(),
-                r.identifier,
-                r.issuer_schema_id,
-                r.error.as_deref().unwrap_or("unknown")
-            );
+        match &r.result {
+            Ok(()) => {
+                println!(
+                    "  {} issuer_schema_id={}",
+                    output::pass_label(),
+                    r.issuer_schema_id
+                );
+            }
+            Err(error) => {
+                println!(
+                    "  {} issuer_schema_id={}: {}",
+                    output::fail_label(),
+                    r.issuer_schema_id,
+                    error
+                );
+            }
         }
     }
 }
@@ -247,9 +248,8 @@ fn verify_items_to_json(results: &[VerifyItemResult]) -> Vec<serde_json::Value> 
         .map(|r| {
             serde_json::json!({
                 "issuer_schema_id": r.issuer_schema_id,
-                "identifier": r.identifier,
-                "verified": r.verified,
-                "error": r.error,
+                "verified": r.result.is_ok(),
+                "error": r.result.as_ref().err(),
             })
         })
         .collect()
@@ -271,7 +271,7 @@ async fn run_verify(
 
     let env = verify_env(cli, verifier_address)?;
     let results = verify_proof_onchain(&env, &proof_request, &proof_response).await?;
-    let all_passed = results.iter().all(|r| r.verified);
+    let all_passed = results.iter().all(|r| r.result.is_ok());
 
     if cli.json {
         output::print_json_data(
@@ -377,7 +377,7 @@ async fn run_test(
         eprintln!("Verifying proof on-chain...");
     }
     let results = verify_proof_onchain(&env, &proof_request, &proof_response.0).await?;
-    let all_passed = results.iter().all(|r| r.verified);
+    let all_passed = results.iter().all(|r| r.result.is_ok());
 
     if cli.json {
         output::print_json_data(

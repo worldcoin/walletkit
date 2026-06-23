@@ -60,9 +60,9 @@ async fn e2e_faux_issuer_proof() {
 
     cleanup_storage(&root);
     assert!(
-        outcome.all_verified(),
+        outcome.verified(),
         "faux-issued proof should verify on-chain: {:?}",
-        outcome.results
+        outcome.verification
     );
 }
 
@@ -86,8 +86,8 @@ async fn e2e_local_eddsa_proof() {
 
     cleanup_storage(&root);
     assert!(
-        outcome.all_verified(),
+        outcome.verified(),
         "local-EdDSA-issued proof should verify on-chain: {:?}",
-        outcome.results
+        outcome.verification
     );
 }
