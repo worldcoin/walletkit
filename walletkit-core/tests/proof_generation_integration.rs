@@ -60,10 +60,6 @@ const ISSUER_EDDSA_KEY: [u8; 32] = alloy::primitives::hex!(
     "1111111111111111111111111111111111111111111111111111111111111111"
 );
 
-/// `WorldIDVerifier` proxy contract address on staging (World Chain Mainnet 480).
-const WORLD_ID_VERIFIER: alloy::primitives::Address =
-    alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
-
 /// Default RPC URL for World Chain Mainnet (chain 480).
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
 
@@ -272,7 +268,10 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     // ----------------------------------------------------------------
     let provider = ProviderBuilder::new().connect_http(rpc_url.parse().unwrap());
 
-    let verifier = IWorldIDVerifier::new(WORLD_ID_VERIFIER, &provider);
+    let verifier = IWorldIDVerifier::new(
+        walletkit_core::defaults::WORLD_ID_VERIFIER_STAGING,
+        &provider,
+    );
 
     let request_item = proof_request_core
         .find_request_by_issuer_schema_id(ISSUER_SCHEMA_ID)

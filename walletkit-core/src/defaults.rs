@@ -11,21 +11,6 @@ pub static WORLD_ID_REGISTRY: Address =
 pub static STAGING_WORLD_ID_REGISTRY: Address =
     address!("0x8556d07D75025f286fe757C7EeEceC40D54FA16D");
 
-/// The `PoH` Recovery Agent contract address on the staging environment.
-pub static POH_RECOVERY_AGENT_ADDRESS_STAGING: Address =
-    address!("0x8df366ed8ef894f0d1d25dc21b7e36e2d97a7140");
-
-/// The `PoH` Recovery Agent contract address on the production environment.
-pub static POH_RECOVERY_AGENT_ADDRESS_PRODUCTION: Address =
-    address!("0x00000000CBBA8Cb46C8CD414B62213F1B334fC59");
-
-pub(crate) fn poh_recovery_agent_address(environment: &Environment) -> Address {
-    match environment {
-        Environment::Staging => POH_RECOVERY_AGENT_ADDRESS_STAGING,
-        Environment::Production => POH_RECOVERY_AGENT_ADDRESS_PRODUCTION,
-    }
-}
-
 /// The `WorldIDVerifier` proxy contract address on the staging environment
 /// (World Chain Mainnet, chain 480).
 ///
@@ -40,12 +25,27 @@ pub static WORLD_ID_VERIFIER_STAGING: Address =
 pub static WORLD_ID_VERIFIER_PRODUCTION: Address =
     address!("0x00000000009E00F9FE82CfeeBB4556686da094d7");
 
-/// Returns the `WorldIDVerifier` proxy contract address for `environment`.
+/// Returns the `WorldIDVerifier` proxy contract address for the given environment.
 #[must_use]
 pub fn world_id_verifier_address(environment: &Environment) -> Address {
     match environment {
         Environment::Staging => WORLD_ID_VERIFIER_STAGING,
         Environment::Production => WORLD_ID_VERIFIER_PRODUCTION,
+    }
+}
+
+/// The `PoH` Recovery Agent contract address on the staging environment.
+pub static POH_RECOVERY_AGENT_ADDRESS_STAGING: Address =
+    address!("0x8df366ed8ef894f0d1d25dc21b7e36e2d97a7140");
+
+/// The `PoH` Recovery Agent contract address on the production environment.
+pub static POH_RECOVERY_AGENT_ADDRESS_PRODUCTION: Address =
+    address!("0x00000000CBBA8Cb46C8CD414B62213F1B334fC59");
+
+pub(crate) fn poh_recovery_agent_address(environment: &Environment) -> Address {
+    match environment {
+        Environment::Staging => POH_RECOVERY_AGENT_ADDRESS_STAGING,
+        Environment::Production => POH_RECOVERY_AGENT_ADDRESS_PRODUCTION,
     }
 }
 
