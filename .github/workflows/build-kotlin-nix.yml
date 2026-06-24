@@ -30,6 +30,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Prepare /nix
+        run: |
+          if [ -L /nix ]; then
+            sudo rm /nix
+          fi
+          if [ -d /nix ]; then
+            sudo chown root:root /nix
+            sudo chmod 0755 /nix
+          fi
+
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
 
@@ -60,6 +70,16 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      - name: Prepare /nix
+        run: |
+          if [ -L /nix ]; then
+            sudo rm /nix
+          fi
+          if [ -d /nix ]; then
+            sudo chown root:root /nix
+            sudo chmod 0755 /nix
+          fi
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@v17
