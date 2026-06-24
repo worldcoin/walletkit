@@ -16,6 +16,9 @@ jobs:
   build-android-libs:
     name: Build Android library (${{ matrix.target }})
     runs-on: arc-public-8xlarge-amd64-runner
+    permissions:
+      contents: read
+      actions: write # to save Rust cache
 
     strategy:
       fail-fast: true
@@ -35,6 +38,19 @@ jobs:
 
       - name: Enable Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/release
+            target/${{ matrix.target }}
+          key: ${{ runner.os }}-cargo-android-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'flake.lock', 'nix/android.nix') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-android-${{ matrix.target }}-
+            ${{ runner.os }}-cargo-android-
 
       - name: Build for target
         run: |
@@ -56,6 +72,9 @@ jobs:
     name: Build Kotlin AAR
     runs-on: ubuntu-latest
     needs: build-android-libs
+    permissions:
+      contents: read
+      actions: write # to save Rust cache
 
     steps:
       - name: Checkout code
