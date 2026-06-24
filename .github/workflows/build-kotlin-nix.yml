@@ -18,7 +18,7 @@ jobs:
     runs-on: arc-public-8xlarge-amd64-runner
     permissions:
       contents: read
-      actions: write # to save Rust cache
+      actions: write
 
     strategy:
       fail-fast: true
