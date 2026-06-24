@@ -1,0 +1,66 @@
+name: Build Swift FFI Bindings (Nix)
+
+on:
+  workflow_dispatch:
+  # TEMPORARY PUSH TRIGGER FOR TESTING
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  build-swift-xcframework:
+    name: Build Swift XCFramework
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      actions: write # needed for cache save
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/release
+            target/aarch64-apple-ios
+            target/aarch64-apple-ios-sim
+            target/x86_64-apple-ios
+          key: ${{ runner.os }}-cargo-swift-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'flake.lock', 'flake.nix', 'nix/swift.nix', 'swift/build_swift.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-swift-
+
+      - name: Verify Xcode SDKs from Nix shell
+        run: |
+          nix develop .#swift --command bash -lc '
+            xcodebuild -version
+            xcrun --show-sdk-path --sdk iphoneos
+            xcrun --show-sdk-path --sdk iphonesimulator
+          '
+
+      - name: Build Swift XCFramework
+        run: nix develop .#swift --command ./swift/build_swift.sh
+
+      - name: Compress XCFramework binary
+        run: nix develop .#swift --command zip -r WalletKit.xcframework.zip swift/WalletKit.xcframework
+
+      - name: Compute Swift package checksum
+        run: nix develop .#swift --command swift package compute-checksum WalletKit.xcframework.zip
+
+      - name: Upload Swift artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: walletkit-swift-xcframework
+          path: |
+            WalletKit.xcframework.zip
+            swift/Sources/WalletKit
+          if-no-files-found: error
