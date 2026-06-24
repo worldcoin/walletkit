@@ -2,6 +2,8 @@ name: Build Kotlin FFI Bindings (Nix)
 
 on:
   workflow_dispatch:
+  # TEMPORARY PUSH TRIGGER FOR TESTING
+  push:
 
 env:
   # Match the Android release build feature set.
