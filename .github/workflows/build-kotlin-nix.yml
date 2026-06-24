@@ -1,0 +1,105 @@
+name: Build Kotlin FFI Bindings (Nix)
+
+on:
+  workflow_dispatch:
+
+env:
+  # Match the Android release build feature set.
+  WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3
+
+permissions:
+  contents: read
+
+jobs:
+  build-android-libs:
+    name: Build Android library (${{ matrix.target }})
+    runs-on: arc-public-8xlarge-amd64-runner
+
+    strategy:
+      fail-fast: true
+      matrix:
+        target:
+          - aarch64-linux-android
+          - armv7-linux-androideabi
+          - x86_64-linux-android
+          - i686-linux-android
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Build for target
+        run: |
+          nix develop .#android --command cargo build \
+            -p walletkit \
+            --target ${{ matrix.target }} \
+            --release \
+            --locked \
+            --features "$WALLETKIT_CARGO_FEATURES"
+
+      - name: Upload native library
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/libwalletkit.so
+          if-no-files-found: error
+
+  build-kotlin-aar:
+    name: Build Kotlin AAR
+    runs-on: ubuntu-latest
+    needs: build-android-libs
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v13
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Download native libraries
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Move native libraries into jniLibs
+        run: |
+          mkdir -p kotlin/walletkit/src/main/jniLibs/{armeabi-v7a,arm64-v8a,x86,x86_64}
+          cp artifacts/android-armv7-linux-androideabi/libwalletkit.so kotlin/walletkit/src/main/jniLibs/armeabi-v7a/libwalletkit.so
+          cp artifacts/android-aarch64-linux-android/libwalletkit.so kotlin/walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so
+          cp artifacts/android-i686-linux-android/libwalletkit.so kotlin/walletkit/src/main/jniLibs/x86/libwalletkit.so
+          cp artifacts/android-x86_64-linux-android/libwalletkit.so kotlin/walletkit/src/main/jniLibs/x86_64/libwalletkit.so
+
+      - name: Generate Kotlin bindings
+        run: |
+          nix develop . --command cargo run -p uniffi-bindgen -- generate \
+            kotlin/walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so \
+            --library \
+            --language kotlin \
+            --no-format \
+            --out-dir kotlin/walletkit/src/main/java
+
+      - name: Build Kotlin AAR
+        working-directory: kotlin
+        run: ./gradlew --no-daemon walletkit:assembleRelease
+
+      - name: Upload Kotlin AAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: walletkit-kotlin-aar
+          path: kotlin/walletkit/build/outputs/aar/*.aar
+          if-no-files-found: error
