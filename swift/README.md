@@ -15,6 +15,13 @@ To build the Swift project for release/distribution:
     ./swift/build_swift.sh
 ```
 
+With Nix on macOS:
+
+```bash
+    nix develop .#swift
+    ./swift/build_swift.sh
+```
+
 ## Testing WalletKit locally
 
 To build a Swift package that can be imported locally via Swift Package Manager:

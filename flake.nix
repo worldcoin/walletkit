@@ -38,6 +38,8 @@
 
           android = import ./nix/android.nix { inherit pkgs; };
           wasm = import ./nix/wasm.nix { inherit pkgs; };
+        } // pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
+          swift = import ./nix/swift.nix { inherit pkgs; };
         };
       });
 }
