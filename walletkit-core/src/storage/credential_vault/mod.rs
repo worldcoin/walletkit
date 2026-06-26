@@ -1,6 +1,10 @@
 //! Encrypted vault database for credential storage.
+//!
+//! Thin wrapper over [`walletkit_db::Vault`]: the credential-specific schema,
+//! queries, and backup-table list live here; the underlying open / key /
+//! integrity-check machinery and the shared `blob_objects` table come from
+//! [`walletkit_db`].
 
-mod helpers;
 mod schema;
 #[cfg(test)]
 mod tests;
@@ -8,60 +12,59 @@ mod tests;
 use std::path::Path;
 
 use crate::storage::error::{StorageError, StorageResult};
-use crate::storage::lock::StorageLockGuard;
 use crate::storage::types::{BlobKind, CredentialRecord};
-use helpers::{compute_content_id, map_db_err, map_record, to_i64, to_u64};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
-use walletkit_db::cipher;
-use walletkit_db::{params, Connection, StepResult, Value};
+use walletkit_db::{blobs, cipher, params, DbError, Row, StepResult, Value, Vault};
 
-/// Encrypted vault database wrapper.
+/// Tables included in plaintext vault backups, in order.
+///
+/// `vault_meta` is intentionally excluded: on restore, the destination vault
+/// already has its own `vault_meta` (created by `schema::ensure_schema` +
+/// `init_leaf_index`) with the authoritative `leaf_index` from the
+/// authenticator.
+///
+/// **Note:** New tables added to the vault schema must be added here too.
+pub(crate) const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
+
+/// Encrypted vault database wrapper around [`walletkit_db::Vault`].
 #[derive(Debug)]
-pub struct VaultDb {
-    conn: Connection,
+pub struct CredentialVault {
+    vault: Vault,
 }
 
-impl VaultDb {
+impl CredentialVault {
     /// Opens or creates the encrypted vault database at `path`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the database cannot be opened, keyed, or initialized.
+    /// Returns an error if the database cannot be opened, keyed, or
+    /// initialized.
     pub fn new(
         path: &Path,
         k_intermediate: &SecretBox<[u8; 32]>,
-        _lock: &StorageLockGuard,
     ) -> StorageResult<Self> {
-        let conn = cipher::open_encrypted(path, k_intermediate, false)
-            .map_err(|e| map_db_err(&e))?;
-        ensure_schema(&conn)?;
-        let db = Self { conn };
-        if !db.check_integrity()? {
-            return Err(StorageError::CorruptedVault(
-                "integrity_check failed".to_string(),
-            ));
-        }
-        Ok(db)
+        let vault = Vault::open(path, k_intermediate, |conn| {
+            blobs::ensure_schema(conn)?;
+            ensure_schema(conn)
+        })?;
+        Ok(Self { vault })
     }
 
     /// Initializes or validates the leaf index for this vault.
     ///
-    /// The leaf index is the account's position in the registry tree and must be
-    /// consistent for all subsequent operations. A mismatch returns an error.
+    /// The leaf index is the account's position in the registry tree and must
+    /// be consistent for all subsequent operations. A mismatch returns an
+    /// error.
     ///
     /// # Errors
     ///
     /// Returns an error if the stored leaf index does not match.
-    pub fn init_leaf_index(
-        &mut self,
-        _lock: &StorageLockGuard,
-        leaf_index: u64,
-        now: u64,
-    ) -> StorageResult<()> {
+    pub fn init_leaf_index(&self, leaf_index: u64, now: u64) -> StorageResult<()> {
         let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
         let now_i64 = to_i64(now, "now")?;
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
         let stored = tx
             .query_row(
                 "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
@@ -73,11 +76,7 @@ impl VaultDb {
                          ELSE vault_meta.leaf_index
                      END
                  RETURNING leaf_index",
-                params![
-                    VAULT_SCHEMA_VERSION,
-                    leaf_index_i64,
-                    now_i64,
-                ],
+                params![VAULT_SCHEMA_VERSION, leaf_index_i64, now_i64],
                 |stmt| Ok(stmt.column_i64(0)),
             )
             .map_err(|err| map_db_err(&err))?;
@@ -100,11 +99,16 @@ impl VaultDb {
     /// # Errors
     ///
     /// Returns an error if any insert fails.
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::needless_pass_by_value)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "fields mirror the credential record schema"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "byte buffers are consumed here; callers don't reuse them"
+    )]
     pub fn store_credential(
-        &mut self,
-        _lock: &StorageLockGuard,
+        &self,
         issuer_schema_id: u64,
         subject_blinding_factor: Vec<u8>,
         genesis_issued_at: u64,
@@ -113,45 +117,27 @@ impl VaultDb {
         associated_data: Option<Vec<u8>>,
         now: u64,
     ) -> StorageResult<u64> {
-        let credential_blob_id =
-            compute_content_id(BlobKind::CredentialBlob, &credential_blob);
-        let associated_data_id = associated_data
-            .as_ref()
-            .map(|bytes| compute_content_id(BlobKind::AssociatedData, bytes));
         let now_i64 = to_i64(now, "now")?;
         let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
         let genesis_issued_at_i64 = to_i64(genesis_issued_at, "genesis_issued_at")?;
         let expires_at_i64 = to_i64(expires_at, "expires_at")?;
 
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
-        tx.execute(
-            "INSERT OR IGNORE INTO blob_objects (content_id, blob_kind, created_at, bytes)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![
-                credential_blob_id.as_ref(),
-                BlobKind::CredentialBlob.as_i64(),
-                now_i64,
-                credential_blob.as_slice(),
-            ],
-        )
-        .map_err(|err| map_db_err(&err))?;
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
-        if let Some(data) = associated_data {
-            let cid = associated_data_id.as_ref().ok_or_else(|| {
-                StorageError::VaultDb("associated data CID must be present".to_string())
-            })?;
-            tx.execute(
-                "INSERT OR IGNORE INTO blob_objects (content_id, blob_kind, created_at, bytes)
-                 VALUES (?1, ?2, ?3, ?4)",
-                params![
-                    cid.as_ref(),
-                    BlobKind::AssociatedData.as_i64(),
-                    now_i64,
-                    data.as_slice(),
-                ],
-            )
-            .map_err(|err| map_db_err(&err))?;
-        }
+        let credential_blob_id = blobs::put(
+            conn,
+            BlobKind::CredentialBlob as u8,
+            credential_blob.as_slice(),
+            now,
+        )?;
+
+        let associated_data_id = associated_data
+            .as_ref()
+            .map(|data| {
+                blobs::put(conn, BlobKind::AssociatedData as u8, data.as_slice(), now)
+            })
+            .transpose()?;
 
         let ad_cid_value: Value = associated_data_id
             .as_ref()
@@ -175,7 +161,7 @@ impl VaultDb {
                     genesis_issued_at_i64,
                     expires_at_i64,
                     now_i64,
-                    credential_blob_id.as_ref(),
+                    credential_blob_id.as_slice(),
                     ad_cid_value,
                 ],
                 |stmt| Ok(stmt.column_i64(0)),
@@ -213,13 +199,18 @@ impl VaultDb {
         let sql = "SELECT
                 cr.credential_id,
                 cr.issuer_schema_id,
+                cr.genesis_issued_at,
                 cr.expires_at,
                 CASE WHEN cr.expires_at <= ?1 THEN 1 ELSE 0 END AS is_expired
              FROM credential_records cr
              WHERE (?2 IS NULL OR cr.issuer_schema_id = ?2)
              ORDER BY cr.updated_at DESC";
 
-        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        let mut stmt = self
+            .vault
+            .connection()
+            .prepare(sql)
+            .map_err(|err| map_db_err(&err))?;
         stmt.bind_values(&[Value::Integer(now_i64), issuer_filter])
             .map_err(|err| map_db_err(&err))?;
         while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
@@ -236,15 +227,12 @@ impl VaultDb {
     ///
     /// # Errors
     ///
-    /// Returns an error if the delete query fails or the credential ID does not
-    /// exist.
-    pub fn delete_credential(
-        &mut self,
-        _lock: &StorageLockGuard,
-        credential_id: u64,
-    ) -> StorageResult<()> {
+    /// Returns an error if the delete query fails or the credential ID does
+    /// not exist.
+    pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
         let credential_id_i64 = to_i64(credential_id, "credential_id")?;
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
         let deleted = tx
             .execute(
@@ -289,7 +277,8 @@ impl VaultDb {
 
     /// Retrieves the credential bytes and blinding factor by issuer schema ID.
     ///
-    /// Returns the most recent non-expired credential matching the issuer schema ID.
+    /// Returns the most recent non-expired credential matching the issuer
+    /// schema ID.
     ///
     /// # Errors
     ///
@@ -311,7 +300,11 @@ impl VaultDb {
              ORDER BY cr.updated_at DESC
              LIMIT 1";
 
-        let mut stmt = self.conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+        let mut stmt = self
+            .vault
+            .connection()
+            .prepare(sql)
+            .map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![expires, issuer_schema_id_i64])
             .map_err(|err| map_db_err(&err))?;
         match stmt.step().map_err(|err| map_db_err(&err))? {
@@ -327,17 +320,15 @@ impl VaultDb {
     /// **Development only.** Permanently deletes all credentials and their
     /// associated blob data from the vault.
     ///
-    /// This is a destructive, unrecoverable operation. Do not call in production.
-    /// Vault metadata (leaf index, schema version) is preserved.
+    /// This is a destructive, unrecoverable operation. Do not call in
+    /// production. Vault metadata (leaf index, schema version) is preserved.
     ///
     /// # Errors
     ///
     /// Returns an error if the delete operation fails.
-    pub fn danger_delete_all_credentials(
-        &mut self,
-        _lock: &StorageLockGuard,
-    ) -> StorageResult<u64> {
-        let tx = self.conn.transaction().map_err(|err| map_db_err(&err))?;
+    pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
         let deleted = tx
             .execute("DELETE FROM credential_records", &[])
@@ -356,44 +347,75 @@ impl VaultDb {
     ///
     /// Returns an error if the check cannot be executed.
     pub fn check_integrity(&self) -> StorageResult<bool> {
-        cipher::integrity_check(&self.conn).map_err(|e| map_db_err(&e))
+        cipher::integrity_check(self.vault.connection()).map_err(|e| map_db_err(&e))
     }
 
     /// Exports a plaintext (unencrypted) copy of the vault to `dest`.
     ///
-    /// The caller is responsible for deleting the exported file after use.
+    /// Callers that need cross-process exclusion (to keep a concurrent
+    /// writer from interleaving between stale-file cleanup and the
+    /// `ATTACH`-based copy) must hold [`crate::storage::StorageLock`]
+    /// themselves. The caller is also responsible for deleting the
+    /// exported file after use.
     ///
     /// # Errors
     ///
     /// Returns an error if the export fails.
-    pub fn export_plaintext(
-        &self,
-        dest: &Path,
-        _lock: &StorageLockGuard,
-    ) -> StorageResult<()> {
-        // Remove any stale export from a previous failed run.
+    pub fn export_plaintext(&self, dest: &Path) -> StorageResult<()> {
+        let conn = self.vault.connection();
         if dest.exists() {
             std::fs::remove_file(dest).map_err(|e| {
                 StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
             })?;
         }
-        cipher::export_plaintext_copy(&self.conn, dest).map_err(|e| map_db_err(&e))
+        cipher::export_plaintext_copy(conn, dest, BACKUP_TABLES)
+            .map_err(|e| map_db_err(&e))
     }
 
     /// Imports credentials from a plaintext (unencrypted) vault backup into
     /// an empty vault. Intended for restore on a fresh install.
     ///
-    /// The caller is responsible for deleting the source file after the
-    /// import completes.
+    /// Callers that need cross-process exclusion must hold
+    /// [`crate::storage::StorageLock`] themselves. The caller is also
+    /// responsible for deleting the source file after the import completes.
     ///
     /// # Errors
     ///
     /// Returns an error if the import fails.
-    pub fn import_plaintext(
-        &self,
-        source: &Path,
-        _lock: &StorageLockGuard,
-    ) -> StorageResult<()> {
-        cipher::import_plaintext_copy(&self.conn, source).map_err(|e| map_db_err(&e))
+    pub fn import_plaintext(&self, source: &Path) -> StorageResult<()> {
+        let conn = self.vault.connection();
+        cipher::import_plaintext_copy(conn, source, BACKUP_TABLES)
+            .map_err(|e| map_db_err(&e))
     }
+}
+
+fn map_record(row: &Row<'_, '_>) -> StorageResult<CredentialRecord> {
+    let credential_id = row.column_i64(0);
+    let issuer_schema_id = row.column_i64(1);
+    let genesis_issued_at = row.column_i64(2);
+    let expires_at = row.column_i64(3);
+    let is_expired = row.column_i64(4);
+    Ok(CredentialRecord {
+        credential_id: to_u64(credential_id, "credential_id")?,
+        issuer_schema_id: to_u64(issuer_schema_id, "issuer_schema_id")?,
+        genesis_issued_at: to_u64(genesis_issued_at, "genesis_issued_at")?,
+        expires_at: to_u64(expires_at, "expires_at")?,
+        is_expired: is_expired != 0,
+    })
+}
+
+fn to_i64(value: u64, label: &str) -> StorageResult<i64> {
+    i64::try_from(value).map_err(|_| {
+        StorageError::VaultDb(format!("{label} out of range for i64: {value}"))
+    })
+}
+
+fn to_u64(value: i64, label: &str) -> StorageResult<u64> {
+    u64::try_from(value).map_err(|_| {
+        StorageError::VaultDb(format!("{label} out of range for u64: {value}"))
+    })
+}
+
+fn map_db_err(err: &DbError) -> StorageError {
+    StorageError::VaultDb(err.to_string())
 }

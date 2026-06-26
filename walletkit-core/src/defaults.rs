@@ -1,5 +1,5 @@
-use alloy_primitives::{address, Address};
-use world_id_core::{primitives::Config, AuthenticatorConfig, OhttpClientConfig};
+use alloy_core::primitives::{address, Address};
+use world_id_core::primitives::{Config, ServiceEndpoint};
 
 use crate::{error::WalletKitError, Environment, Region};
 
@@ -10,6 +10,29 @@ pub static WORLD_ID_REGISTRY: Address =
 /// The **Staging** World ID Registry contract address also on World Chain Mainnet.
 pub static STAGING_WORLD_ID_REGISTRY: Address =
     address!("0x8556d07D75025f286fe757C7EeEceC40D54FA16D");
+
+/// The `WorldIDVerifier` proxy contract address on the staging environment
+/// (World Chain Mainnet, chain 480).
+///
+/// Source: `world-id-protocol` `contracts/deployments/core/staging.json`.
+pub static WORLD_ID_VERIFIER_STAGING: Address =
+    address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
+
+/// The `WorldIDVerifier` proxy contract address on the production environment
+/// (World Chain Mainnet, chain 480).
+///
+/// Source: `world-id-protocol` `contracts/deployments/core/production.json`.
+pub static WORLD_ID_VERIFIER_PRODUCTION: Address =
+    address!("0x00000000009E00F9FE82CfeeBB4556686da094d7");
+
+/// Returns the `WorldIDVerifier` proxy contract address for the given environment.
+#[must_use]
+pub fn world_id_verifier_address(environment: &Environment) -> Address {
+    match environment {
+        Environment::Staging => WORLD_ID_VERIFIER_STAGING,
+        Environment::Production => WORLD_ID_VERIFIER_PRODUCTION,
+    }
+}
 
 /// The `PoH` Recovery Agent contract address on the staging environment.
 pub static POH_RECOVERY_AGENT_ADDRESS_STAGING: Address =
@@ -50,20 +73,11 @@ fn indexer_url(region: Region, environment: &Environment) -> String {
     format!("https://indexer.{region}.id-infra.{domain}")
 }
 
-/// Build a [`Config`] from well-known defaults for a given [`Environment`].
-pub trait DefaultConfig {
-    /// Returns a config populated with the default URLs and addresses for the given environment.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`WalletKitError`] if the configuration cannot be constructed (e.g. invalid RPC URL).
-    fn from_environment(
-        environment: &Environment,
-        rpc_url: Option<String>,
-        region: Option<Region>,
-    ) -> Result<Self, WalletKitError>
-    where
-        Self: Sized;
+fn gateway_url(environment: &Environment) -> String {
+    match environment {
+        Environment::Staging => "https://gateway.id-infra.worldcoin.dev".to_string(),
+        Environment::Production => "https://gateway.id-infra.world.org".to_string(),
+    }
 }
 
 fn ohttp_relay_url(region: Region, environment: &Environment) -> String {
@@ -102,65 +116,222 @@ const fn ohttp_key_config(region: Region, environment: &Environment) -> &'static
     }
 }
 
-impl DefaultConfig for AuthenticatorConfig {
-    fn from_environment(
-        environment: &Environment,
-        rpc_url: Option<String>,
-        region: Option<Region>,
-    ) -> Result<Self, WalletKitError> {
-        let region = region.unwrap_or_default();
-        let config = Config::from_environment(environment, rpc_url, Some(region))?;
-
-        let ohttp_indexer = Some(OhttpClientConfig::new(
-            ohttp_relay_url(region, environment),
-            ohttp_key_config(region, environment).to_string(),
-        ));
-        // The world-id-gateway is centralized in the US cluster — only the
-        // US OHTTP relay/gateway is configured to forward to it. Route
-        // gateway traffic through US regardless of the user's region.
-        let ohttp_gateway = Some(OhttpClientConfig::new(
-            ohttp_relay_url(Region::Us, environment),
-            ohttp_key_config(Region::Us, environment).to_string(),
-        ));
-
-        Ok(Self {
-            config,
-            ohttp_indexer,
-            ohttp_gateway,
-        })
-    }
+fn ohttp_endpoint(
+    url: String,
+    region: Region,
+    environment: &Environment,
+) -> ServiceEndpoint {
+    ServiceEndpoint::ohttp(
+        url,
+        ohttp_relay_url(region, environment),
+        ohttp_key_config(region, environment).to_string(),
+    )
 }
 
-impl DefaultConfig for Config {
-    fn from_environment(
-        environment: &Environment,
-        rpc_url: Option<String>,
-        region: Option<Region>,
-    ) -> Result<Self, WalletKitError> {
-        let region = region.unwrap_or_default();
+fn build_config(
+    environment: &Environment,
+    rpc_url: Option<String>,
+    region: Region,
+    indexer: ServiceEndpoint,
+    gateway: ServiceEndpoint,
+) -> Result<Config, WalletKitError> {
+    let (chain_id, registry_address) = match environment {
+        // Staging also runs on World Chain Mainnet.
+        Environment::Staging => (480, STAGING_WORLD_ID_REGISTRY),
+        Environment::Production => (480, WORLD_ID_REGISTRY),
+    };
 
-        match environment {
-            Environment::Staging => Self::new(
-                rpc_url,
-                480, // Staging also runs on World Chain Mainnet
-                STAGING_WORLD_ID_REGISTRY,
-                indexer_url(region, environment),
-                "https://gateway.id-infra.worldcoin.dev".to_string(),
-                oprf_node_urls(region, environment),
-                3,
-            )
-            .map_err(WalletKitError::from),
+    Config::new(
+        rpc_url,
+        chain_id,
+        registry_address,
+        indexer,
+        gateway,
+        oprf_node_urls(region, environment),
+        3,
+    )
+    .map_err(WalletKitError::from)
+}
 
-            Environment::Production => Self::new(
-                rpc_url,
-                480,
-                WORLD_ID_REGISTRY,
-                indexer_url(region, environment),
-                "https://gateway.id-infra.world.org".to_string(),
-                oprf_node_urls(region, environment),
-                3,
-            )
-            .map_err(WalletKitError::from),
+/// Builds a [`Config`] for the given [`Environment`] using direct (non-OHTTP)
+/// service endpoints — the default for SDK consumers.
+///
+/// # Errors
+///
+/// Returns [`WalletKitError`] if the configuration cannot be constructed
+/// (e.g. invalid RPC URL).
+pub fn default_config(
+    environment: &Environment,
+    rpc_url: Option<String>,
+    region: Option<Region>,
+) -> Result<Config, WalletKitError> {
+    let region = region.unwrap_or_default();
+    let indexer = ServiceEndpoint::direct(indexer_url(region, environment));
+    let gateway = ServiceEndpoint::direct(gateway_url(environment));
+    build_config(environment, rpc_url, region, indexer, gateway)
+}
+
+/// Builds a [`Config`] for the given [`Environment`] using OHTTP endpoints.
+///
+/// Opt-in alternative to [`default_config`] for consumers that want their
+/// indexer/gateway traffic to flow through the Cloudflare OHTTP relay.
+/// The indexer endpoint follows the caller's region; the gateway endpoint is
+/// always pinned to the US OHTTP relay because the `world-id-gateway` is
+/// centralised in the US cluster.
+///
+/// # Errors
+///
+/// Returns [`WalletKitError`] if the configuration cannot be constructed
+/// (e.g. invalid RPC URL).
+pub fn default_config_with_ohttp(
+    environment: &Environment,
+    rpc_url: Option<String>,
+    region: Option<Region>,
+) -> Result<Config, WalletKitError> {
+    let region = region.unwrap_or_default();
+    let indexer = ohttp_endpoint(indexer_url(region, environment), region, environment);
+    let gateway = ohttp_endpoint(gateway_url(environment), Region::Us, environment);
+    build_config(environment, rpc_url, region, indexer, gateway)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ALL_ENVS: &[Environment] = &[Environment::Staging, Environment::Production];
+    const ALL_REGIONS: &[Region] = &[Region::Us, Region::Eu, Region::Ap];
+
+    #[test]
+    fn default_config_builds_direct_endpoints_for_every_env_and_region() {
+        for env in ALL_ENVS {
+            for region in ALL_REGIONS {
+                let config = default_config(env, None, Some(*region))
+                    .expect("default_config should succeed");
+
+                assert!(
+                    matches!(config.indexer(), ServiceEndpoint::Direct { .. }),
+                    "indexer should be Direct for env={env:?} region={region:?}"
+                );
+                assert!(
+                    matches!(config.gateway(), ServiceEndpoint::Direct { .. }),
+                    "gateway should be Direct for env={env:?} region={region:?}"
+                );
+                assert_eq!(config.indexer_url(), indexer_url(*region, env));
+                assert_eq!(config.gateway_url(), gateway_url(env));
+            }
+        }
+    }
+
+    #[test]
+    fn default_config_with_ohttp_builds_ohttp_endpoints_with_region_specific_relays() {
+        for env in ALL_ENVS {
+            for region in ALL_REGIONS {
+                let config = default_config_with_ohttp(env, None, Some(*region))
+                    .expect("default_config_with_ohttp should succeed");
+
+                match config.indexer() {
+                    ServiceEndpoint::Ohttp {
+                        url,
+                        relay_url,
+                        key_config_base64,
+                    } => {
+                        assert_eq!(url, &indexer_url(*region, env));
+                        assert_eq!(relay_url, &ohttp_relay_url(*region, env));
+                        assert_eq!(key_config_base64, ohttp_key_config(*region, env));
+                    }
+                    direct @ ServiceEndpoint::Direct { .. } => panic!(
+                        "indexer should be Ohttp for env={env:?} region={region:?}, got {direct:?}"
+                    ),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn default_config_with_ohttp_pins_gateway_to_us_relay_regardless_of_region() {
+        for env in ALL_ENVS {
+            for region in ALL_REGIONS {
+                let config = default_config_with_ohttp(env, None, Some(*region))
+                    .expect("default_config_with_ohttp should succeed");
+
+                match config.gateway() {
+                    ServiceEndpoint::Ohttp {
+                        url,
+                        relay_url,
+                        key_config_base64,
+                    } => {
+                        assert_eq!(url, &gateway_url(env));
+                        assert_eq!(relay_url, &ohttp_relay_url(Region::Us, env));
+                        assert_eq!(
+                            key_config_base64,
+                            ohttp_key_config(Region::Us, env)
+                        );
+                    }
+                    direct @ ServiceEndpoint::Direct { .. } => panic!(
+                        "gateway should be Ohttp for env={env:?} region={region:?}, got {direct:?}"
+                    ),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn default_config_defaults_region_when_not_specified() {
+        let with_default = default_config(&Environment::Staging, None, None).unwrap();
+        let with_explicit_default =
+            default_config(&Environment::Staging, None, Some(Region::default()))
+                .unwrap();
+        assert_eq!(
+            with_default.indexer_url(),
+            with_explicit_default.indexer_url(),
+        );
+    }
+
+    #[test]
+    fn default_config_with_ohttp_defaults_region_when_not_specified() {
+        let with_default =
+            default_config_with_ohttp(&Environment::Staging, None, None).unwrap();
+        let with_explicit_default = default_config_with_ohttp(
+            &Environment::Staging,
+            None,
+            Some(Region::default()),
+        )
+        .unwrap();
+        assert_eq!(
+            with_default.indexer_url(),
+            with_explicit_default.indexer_url(),
+        );
+    }
+
+    #[test]
+    fn both_builders_round_trip_through_config_json() {
+        for env in ALL_ENVS {
+            for region in ALL_REGIONS {
+                let direct = default_config(env, None, Some(*region)).unwrap();
+                let direct_json = serde_json::to_string(&direct).unwrap();
+                let direct_parsed = Config::from_json(&direct_json).unwrap();
+                assert!(matches!(
+                    direct_parsed.indexer(),
+                    ServiceEndpoint::Direct { .. }
+                ));
+                assert!(matches!(
+                    direct_parsed.gateway(),
+                    ServiceEndpoint::Direct { .. }
+                ));
+
+                let ohttp =
+                    default_config_with_ohttp(env, None, Some(*region)).unwrap();
+                let ohttp_json = serde_json::to_string(&ohttp).unwrap();
+                let ohttp_parsed = Config::from_json(&ohttp_json).unwrap();
+                assert!(matches!(
+                    ohttp_parsed.indexer(),
+                    ServiceEndpoint::Ohttp { .. }
+                ));
+                assert!(matches!(
+                    ohttp_parsed.gateway(),
+                    ServiceEndpoint::Ohttp { .. }
+                ));
+            }
         }
     }
 }

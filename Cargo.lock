@@ -576,7 +576,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -729,7 +729,7 @@ checksum = "eed3ed3300a998f88639ed619fdbbd88bd82865e00c6a8ecb796c99eb12358f6"
 dependencies = [
  "alloy-json-rpc",
  "alloy-transport",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "reqwest 0.13.3",
  "serde_json",
  "tower",
@@ -2092,9 +2092,9 @@ checksum = "cc14f565cf027a105f7a44ccf9e5b424348421a1d8952a8fc9d499d313107789"
 
 [[package]]
 name = "const-hex"
-version = "1.18.1"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "531185e432bb31db1ecda541e9e7ab21468d4d844ad7505e0546a49b4945d49b"
+checksum = "20d9a563d167a9cce0f94153382b33cb6eded6dfabff03c69ad65a28ea1514e0"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
@@ -2512,9 +2512,9 @@ dependencies = [
 
 [[package]]
 name = "digest"
-version = "0.11.2"
+version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4850db49bf08e663084f7fb5c87d202ef91a3907271aff24a94eb97ff039153c"
+checksum = "f1dd6dbb5841937940781866fa1281a1ff7bd3bf827091440879f9994983d5c2"
 dependencies = [
  "block-buffer 0.12.0",
  "const-oid 0.10.2",
@@ -4357,9 +4357,9 @@ dependencies = [
 
 [[package]]
 name = "p3-challenger"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20e42ba74a49c08c6e99f74cd9b343bfa31aa5721fea55079b18e3fd65f1dcbc"
+checksum = "a7d2d45f5a51dc3f965e8d6da60a6c26c807e88657863d56da275eaa05ad36f1"
 dependencies = [
  "p3-field",
  "p3-maybe-rayon",
@@ -4371,9 +4371,9 @@ dependencies = [
 
 [[package]]
 name = "p3-dft"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e63fa5eb1bd12a240089e72ae3fe10350944d9c166d00a3bfd2a1794db65cf5c"
+checksum = "beabb40bc8ac7f5f95870f271fb844c7e2e1ebb7f0761a8eebb2614b56c6b1c1"
 dependencies = [
  "itertools 0.14.0",
  "p3-field",
@@ -4386,9 +4386,9 @@ dependencies = [
 
 [[package]]
 name = "p3-field"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ebfdb6ef992ae64e9e8f449ac46516ffa584f11afbdf9ee244288c2a633cdf4"
+checksum = "4819a3e4c1882431a63d4847ffa10d110017aee4cb9cf4319ca6dca191930969"
 dependencies = [
  "itertools 0.14.0",
  "num-bigint",
@@ -4416,9 +4416,9 @@ dependencies = [
 
 [[package]]
 name = "p3-matrix"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5542f96504dae8100c91398fb1e3f5ec669eb9c73d9e0b018a93b5fe32bad230"
+checksum = "e6fde449bd2963d394284ec46db8c647e6a5602d90601117b76752072ab54168"
 dependencies = [
  "itertools 0.14.0",
  "p3-field",
@@ -4427,20 +4427,19 @@ dependencies = [
  "rand 0.9.4",
  "serde",
  "tracing",
- "transpose",
 ]
 
 [[package]]
 name = "p3-maybe-rayon"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e5669ca75645f99cd001e9d0289a4eeff2bc2cd9dc3c6c3aaf22643966e83df"
+checksum = "54afab3883d8a14676b492709d6c4e9fa535c36718b737db0817aacfaaaa11f6"
 
 [[package]]
 name = "p3-mds"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "038763af23df9da653065867fd85b38626079031576c86fd537097e5be6a0da0"
+checksum = "3895055d735ac96d010747b3aaabd4c2645b9fd80226960550318db2e25afb75"
 dependencies = [
  "p3-dft",
  "p3-field",
@@ -4451,9 +4450,9 @@ dependencies = [
 
 [[package]]
 name = "p3-monty-31"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57a981d60da3d8cbf8561014e2c186068578405fd69098fa75b43d4afb364a47"
+checksum = "c9fe0be661891af1f703ceaf57334fcbd540804988984dc2b500dd99740e7c81"
 dependencies = [
  "itertools 0.14.0",
  "num-bigint",
@@ -4470,14 +4469,13 @@ dependencies = [
  "serde",
  "spin 0.10.0",
  "tracing",
- "transpose",
 ]
 
 [[package]]
 name = "p3-poseidon2"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "903b73e4f9a7781a18561c74dc169cf03333497b57a8dd02aaeb130c0f386599"
+checksum = "2c6fc2368447576283f8b3849a36095017f25addf06eab9e33b0ce7f96b0b99d"
 dependencies = [
  "p3-field",
  "p3-mds",
@@ -4488,9 +4486,9 @@ dependencies = [
 
 [[package]]
 name = "p3-symmetric"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cd788f04e86dd5c35dd87cad29eefdb6371d2fd5f7664451382eeacae3c3ed0"
+checksum = "a14456a42a7d9e65f13999706f1bca2832175935169b3a54286e18331cf1d82f"
 dependencies = [
  "itertools 0.14.0",
  "p3-field",
@@ -4499,11 +4497,12 @@ dependencies = [
 
 [[package]]
 name = "p3-util"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "663b16021930bc600ecada915c6c3965730a3b9d6a6c23434ccf70bfc29d6881"
+checksum = "911154accf66034b0eec4452956c088f92a200b37a8225c1caed74cfbd38cc8d"
 dependencies = [
  "serde",
+ "transpose",
 ]
 
 [[package]]
@@ -4844,7 +4843,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "log",
  "multimap",
  "once_cell",
@@ -4864,7 +4863,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.10.5",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5029,6 +5028,20 @@ dependencies = [
  "provekit-spongefish",
  "rand 0.8.6",
  "rayon",
+]
+
+[[package]]
+name = "provekit-verifier"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1ff1bcdce6c807b04657898aae2fd863bd4958b7ded64aaad4f10156061d7b6"
+dependencies = [
+ "anyhow",
+ "ark-std 0.5.0",
+ "provekit-common",
+ "provekit-whir",
+ "rayon",
+ "tracing",
 ]
 
 [[package]]
@@ -6605,9 +6618,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.149"
+version = "1.0.150"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83fc039473c5595ace860d8c4fafa220ff474b3fc6bfdb4293327f1a37e94d86"
+checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
 dependencies = [
  "itoa",
  "memchr",
@@ -6648,9 +6661,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.18.0"
+version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd5414fad8e6907dbdd5bc441a50ae8d6e26151a03b1de04d89a5576de61d01f"
+checksum = "f05839ce67618e14a09b286535c0d9c94e85ef25469b0e13cb4f844e5593eb19"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -6667,9 +6680,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.18.0"
+version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3db8978e608f1fe7357e211969fd9abdcae80bac1ba7a3369bb7eb6b404eb65"
+checksum = "cf2ebbe86054f9b45bc3881e865683ccfaccce97b9b4cb53f3039d67f355a334"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -6718,7 +6731,7 @@ checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
 dependencies = [
  "cfg-if",
  "cpufeatures 0.3.0",
- "digest 0.11.2",
+ "digest 0.11.3",
 ]
 
 [[package]]
@@ -6817,9 +6830,9 @@ checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
 name = "siphasher"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2aa850e253778c88a04c3d7323b043aeda9d3e30d5971937c1855769763678e"
+checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
 
 [[package]]
 name = "sized-chunks"
@@ -7194,6 +7207,15 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72e971b7c52f9a91a499ed15580da6dbfd593c6ad9c6d519c6b72c7f0c421355"
 dependencies = [
+ "taceo-oprf-types",
+]
+
+[[package]]
+name = "taceo-oprf"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72389c80580ec74d8ab188c723f6b0253885867ffac41213a31e4554b4fd0658"
+dependencies = [
  "taceo-oprf-client",
  "taceo-oprf-core",
  "taceo-oprf-types",
@@ -7201,9 +7223,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-client"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b593b9ad62eac8e01229d1c764d2ea204241adfbd7ef6e292ec4027dc9421fc7"
+checksum = "e3991b17184d2be29e13ae22ef982f9ea3d1111d67236805cd7729116235461c"
 dependencies = [
  "ark-ec",
  "ciborium",
@@ -7225,9 +7247,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-core"
-version = "0.5.3"
+version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d538b7fe97e0df8118f8b2a322f27d7e6585b4dfa1acc8da19196ade5696060"
+checksum = "c1409d82e88ad002d7946f6b5d37395a1d532133d9320b3284e27120ee1162db"
 dependencies = [
  "ark-ec",
  "ark-ff 0.5.0",
@@ -7247,9 +7269,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-types"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb1fcb204762878cb53c645ca08030c38c35146c2eec627d3b18aaac85bab707"
+checksum = "13304cda45c09c625f278b2f8e49de5f583e447a276804d41877bfcf5e89f68e"
 dependencies = [
  "alloy",
  "ark-ff 0.5.0",
@@ -7934,7 +7956,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.16.0"
+version = "0.20.0"
 dependencies = [
  "uniffi",
 ]
@@ -8164,7 +8186,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit"
-version = "0.16.0"
+version = "0.20.0"
 dependencies = [
  "uniffi",
  "walletkit-core",
@@ -8172,11 +8194,11 @@ dependencies = [
 
 [[package]]
 name = "walletkit-cli"
-version = "0.16.0"
+version = "0.20.0"
 dependencies = [
  "alloy",
- "alloy-primitives",
  "base64 0.22.1",
+ "ciborium",
  "clap",
  "dirs",
  "eyre",
@@ -8191,15 +8213,15 @@ dependencies = [
  "tracing-subscriber 0.3.23",
  "walletkit-core",
  "world-id-core",
+ "world-id-proof",
 ]
 
 [[package]]
 name = "walletkit-core"
-version = "0.16.0"
+version = "0.20.0"
 dependencies = [
  "alloy",
  "alloy-core",
- "alloy-primitives",
  "backon",
  "base64 0.22.1",
  "chacha20poly1305",
@@ -8208,6 +8230,7 @@ dependencies = [
  "ctor",
  "dotenvy",
  "eyre",
+ "getrandom 0.3.4",
  "hex",
  "hkdf",
  "log",
@@ -8225,7 +8248,7 @@ dependencies = [
  "sha2 0.10.9",
  "strum 0.27.2",
  "subtle",
- "taceo-oprf",
+ "taceo-oprf 0.13.0",
  "test-case",
  "thiserror 2.0.18",
  "tokio",
@@ -8243,14 +8266,18 @@ dependencies = [
 
 [[package]]
 name = "walletkit-db"
-version = "0.16.0"
+version = "0.20.0"
 dependencies = [
  "cc",
+ "ciborium",
+ "getrandom 0.3.4",
  "hex",
  "secrecy",
+ "serde",
  "sha2 0.10.9",
  "sqlite-wasm-rs",
  "tempfile",
+ "thiserror 2.0.18",
  "zeroize",
  "zip",
 ]
@@ -8972,8 +8999,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-authenticator"
-version = "0.10.1"
-source = "git+https://github.com/worldcoin/world-id-protocol?branch=wip-102#f3e6b14dfc6882cb4c20124a2178df1c93422e02"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fed5aa94fe924d855a2ca40aadaae517315a2a24666d83092174b3c71a29456"
 dependencies = [
  "alloy",
  "anyhow",
@@ -8982,6 +9010,7 @@ dependencies = [
  "base64 0.22.1",
  "bhttp",
  "eyre",
+ "getrandom 0.3.4",
  "hex",
  "ohttp",
  "rand 0.8.6",
@@ -8994,7 +9023,7 @@ dependencies = [
  "taceo-ark-babyjubjub",
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
- "taceo-oprf",
+ "taceo-oprf 0.14.0",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "tokio",
@@ -9006,8 +9035,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-core"
-version = "0.10.1"
-source = "git+https://github.com/worldcoin/world-id-protocol?branch=wip-102#f3e6b14dfc6882cb4c20124a2178df1c93422e02"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26f136a169a1e2decbbf741c208961446d2f3377a19c930634aebee39f0fb6d3"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -9018,8 +9048,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-primitives"
-version = "0.10.1"
-source = "git+https://github.com/worldcoin/world-id-protocol?branch=wip-102#f3e6b14dfc6882cb4c20124a2178df1c93422e02"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e19522e167d925e0c920671b41bb96edc82e7508f2d2730177c38c6cce2aa2c6"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -9028,7 +9059,7 @@ dependencies = [
  "arrayvec",
  "embed-doc-image",
  "eyre",
- "getrandom 0.2.17",
+ "getrandom 0.3.4",
  "hex",
  "provekit-common",
  "rand 0.8.6",
@@ -9043,7 +9074,7 @@ dependencies = [
  "taceo-ark-serde-compat",
  "taceo-circom-types",
  "taceo-eddsa-babyjubjub",
- "taceo-oprf",
+ "taceo-oprf 0.14.0",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "url",
@@ -9052,8 +9083,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-proof"
-version = "0.10.1"
-source = "git+https://github.com/worldcoin/world-id-protocol?branch=wip-102#f3e6b14dfc6882cb4c20124a2178df1c93422e02"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "098bb682b011c10c6a954927325470078000f771646df3264a079aba4b3295f9"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -9063,6 +9095,7 @@ dependencies = [
  "eyre",
  "provekit-common",
  "provekit-prover",
+ "provekit-verifier",
  "rand 0.8.6",
  "rayon",
  "reqwest 0.12.28",
@@ -9073,7 +9106,7 @@ dependencies = [
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
  "taceo-groth16-sol",
- "taceo-oprf",
+ "taceo-oprf 0.14.0",
  "taceo-poseidon2",
  "tar",
  "thiserror 2.0.18",
@@ -9085,8 +9118,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-registries"
-version = "0.10.1"
-source = "git+https://github.com/worldcoin/world-id-protocol?branch=wip-102#f3e6b14dfc6882cb4c20124a2178df1c93422e02"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "078bb8742f799133b9e5ff3eb1f4b3b1c9905ce479921be4c53ccb83467c1092"
 dependencies = [
  "alloy",
  "anyhow",

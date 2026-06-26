@@ -1,8 +1,12 @@
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{mpsc, Mutex};
 use std::{
     fmt,
-    sync::{mpsc, Arc, Mutex, OnceLock},
-    thread,
+    sync::{Arc, OnceLock},
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::thread;
 
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::{
@@ -117,6 +121,10 @@ impl tracing::field::Visit for EventFieldVisitor {
 /// Forwards walletkit tracing events to the foreign logger.
 struct ForeignLoggerLayer;
 
+// On native targets, log events flow through a channel to avoid making FFI
+// calls from within a UniFFI future-poll context.  On WASM the Logger is
+// called directly because there is no background thread support.
+#[cfg(not(target_arch = "wasm32"))]
 struct LogEvent {
     level: LogLevel,
     message: String,
@@ -132,7 +140,10 @@ struct LogEvent {
 // the tracing layer never makes an FFI call — it only pushes to an in-process
 // queue — and the dedicated delivery thread calls `Logger::log` from a clean
 // stack with no active FFI frames.
+#[cfg(not(target_arch = "wasm32"))]
 static LOG_CHANNEL: OnceLock<Mutex<mpsc::Sender<LogEvent>>> = OnceLock::new();
+#[cfg(target_arch = "wasm32")]
+static LOGGER_INSTANCE: OnceLock<Arc<dyn Logger>> = OnceLock::new();
 static LOGGING_INITIALIZED: OnceLock<()> = OnceLock::new();
 
 impl<S> Layer<S> for ForeignLoggerLayer
@@ -140,9 +151,15 @@ where
     S: Subscriber + for<'span> LookupSpan<'span>,
 {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+        #[cfg(not(target_arch = "wasm32"))]
         let Some(sender) = LOG_CHANNEL.get() else {
             return;
         };
+
+        #[cfg(target_arch = "wasm32")]
+        if LOGGER_INSTANCE.get().is_none() {
+            return;
+        }
 
         let mut visitor = EventFieldVisitor::default();
         event.record(&mut visitor);
@@ -169,6 +186,12 @@ where
         let formatted =
             sanitize_hex_secrets(format!("{} {message}", metadata.target()));
 
+        #[cfg(target_arch = "wasm32")]
+        if let Some(logger) = LOGGER_INSTANCE.get() {
+            logger.log(log_level(*metadata.level()), formatted.clone());
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
         if let Ok(sender) = sender.lock() {
             let _ = sender.send(LogEvent {
                 level: log_level(*metadata.level()),
@@ -246,24 +269,20 @@ pub fn emit_log(level: LogLevel, message: String) {
     }
 }
 
-/// Initializes `WalletKit` tracing and registers a foreign logger sink.
+/// Native platform initializer: wires the foreign logger to a dedicated
+/// delivery thread via an mpsc channel.
 ///
-/// `level` controls the minimum severity for `WalletKit` and its direct
-/// dependencies (taceo, world-id, semaphore). All other crates remain at
-/// `Info` regardless of this setting. Pass `None` to default to `Info`.
-/// The `RUST_LOG` environment variable, when set, always takes precedence.
-///
-/// This function is idempotent. The first call wins; subsequent calls are no-ops.
+/// The channel decouples `ForeignLoggerLayer::on_event` (called from inside
+/// `UniFFI`'s future-poll machinery) from the actual FFI call to `Logger::log`.
+/// Invoking a `UniFFI` foreign callback synchronously while a `UniFFI` frame is
+/// already on the stack causes an `EXC_BAD_ACCESS`; the background thread avoids
+/// that by delivering events from a clean, FFI-free call stack.
 ///
 /// # Panics
 ///
-/// Panics if the dedicated logger delivery thread cannot be spawned.
-#[uniffi::export]
-pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
-    if LOGGING_INITIALIZED.get().is_some() {
-        return;
-    }
-
+/// Panics if the background thread cannot be spawned.
+#[cfg(not(target_arch = "wasm32"))]
+fn init_logging_native(logger: Arc<dyn Logger>) {
     let (tx, rx) = mpsc::channel::<LogEvent>();
     let _ = LOG_CHANNEL.set(Mutex::new(tx));
 
@@ -275,6 +294,42 @@ pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
             }
         })
         .expect("failed to spawn walletkit logger thread");
+}
+
+/// WASM platform initializer: stores the logger directly so that
+/// `ForeignLoggerLayer::on_event` can call it synchronously.
+///
+/// On WASM there is no background-thread risk: the runtime is
+/// single-threaded and cooperative, so no UniFFI future-poll frame can be
+/// on the stack when a tracing event fires.
+#[cfg(target_arch = "wasm32")]
+fn init_logging_wasm(logger: Arc<dyn Logger>) {
+    let _ = LOGGER_INSTANCE.set(logger);
+}
+
+/// Initializes `WalletKit` tracing and registers a foreign logger sink.
+///
+/// `level` controls the minimum severity for `WalletKit` and its direct
+/// dependencies (taceo, world-id, semaphore). All other crates remain at
+/// `Info` regardless of this setting. Pass `None` to default to `Info`.
+/// The `RUST_LOG` environment variable, when set, always takes precedence.
+///
+/// This function is idempotent. The first call wins; subsequent calls are no-ops.
+///
+/// # Panics
+///
+/// Panics if the dedicated logger delivery thread cannot be spawned (native only).
+#[uniffi::export]
+pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
+    if LOGGING_INITIALIZED.get().is_some() {
+        return;
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    init_logging_native(logger);
+
+    #[cfg(target_arch = "wasm32")]
+    init_logging_wasm(logger);
 
     let _ = tracing_log::LogTracer::init();
 

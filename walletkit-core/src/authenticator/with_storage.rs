@@ -1,9 +1,9 @@
-use world_id_core::primitives::merkle::AccountInclusionProof;
-use world_id_core::primitives::TREE_DEPTH;
-
 use crate::error::WalletKitError;
 
 use super::Authenticator;
+
+use world_id_core::primitives::merkle::AccountInclusionProof;
+use world_id_core::primitives::TREE_DEPTH;
 
 /// The amount of time a Merkle inclusion proof remains valid in the cache.
 const MERKLE_PROOF_VALIDITY_SECONDS: u64 = 60 * 15;

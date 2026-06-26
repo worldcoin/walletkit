@@ -1,15 +1,19 @@
-//! Storage lock for serializing writes.
+//! Cross-process exclusive lock.
 //!
-//! On native platforms (Unix, Windows) a file-based `flock`/`LockFileEx` lock
-//! is used to serialize writes across processes.
+//! Used by [`crate::init_or_open_envelope_key`] to serialize the first-install
+//! envelope bootstrap, and acquired by consumers for operations that mix
+//! `SQLite` with filesystem state (e.g. plaintext export / import). `SQLite`
+//! handles cross-process writer serialization for ordinary mutations itself
+//! via WAL-mode file locks; this lock is not required for those.
 //!
-//! On WASM targets the lock is a no-op because the runtime is single-threaded
-//! (sqlite-wasm-rs is compiled with `SQLITE_THREADSAFE=0`) and runs in a
-//! dedicated Web Worker.
+//! On native platforms (Unix, Windows) the lock is backed by a file via
+//! `flock` / `LockFileEx`. On WASM it is a no-op because the runtime is
+//! single-threaded (`sqlite-wasm-rs` is compiled with `SQLITE_THREADSAFE=0`)
+//! and runs in a dedicated Web Worker.
 
 use std::path::Path;
 
-use super::error::{StorageError, StorageResult};
+use crate::error::StoreResult;
 
 // WASM: no-op lock (single-threaded worker, SQLITE_THREADSAFE=0)
 
@@ -19,23 +23,26 @@ mod imp {
 
     /// No-op storage lock for WASM.
     #[derive(Debug, Clone)]
-    pub struct StorageLock;
+    pub struct Lock;
 
     /// No-op lock guard.
     #[derive(Debug)]
-    pub struct StorageLockGuard;
+    pub struct LockGuard;
 
-    impl StorageLock {
-        pub fn open(_path: &Path) -> StorageResult<Self> {
+    impl Lock {
+        /// Opens a no-op lock (WASM is single-threaded).
+        pub fn open(_path: &Path) -> StoreResult<Self> {
             Ok(Self)
         }
 
-        pub fn lock(&self) -> StorageResult<StorageLockGuard> {
-            Ok(StorageLockGuard)
+        /// Acquires a no-op lock (always succeeds).
+        pub fn lock(&self) -> StoreResult<LockGuard> {
+            Ok(LockGuard)
         }
 
-        pub fn try_lock(&self) -> StorageResult<Option<StorageLockGuard>> {
-            Ok(Some(StorageLockGuard))
+        /// Attempts to acquire a no-op lock (always succeeds).
+        pub fn try_lock(&self) -> StoreResult<Option<LockGuard>> {
+            Ok(Some(LockGuard))
         }
     }
 }
@@ -44,29 +51,31 @@ mod imp {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
-    use super::{Path, StorageError, StorageResult};
+    use super::{Path, StoreResult};
+    use crate::error::StoreError;
     use std::fs::{self, File, OpenOptions};
     use std::sync::Arc;
 
-    /// A file-backed lock that serializes storage mutations across processes.
+    /// File-backed cross-process exclusive lock. See the module docs for
+    /// what it's for (and what it isn't).
     #[derive(Debug, Clone)]
-    pub struct StorageLock {
+    pub struct Lock {
         file: Arc<File>,
     }
 
     /// Guard that holds an exclusive lock for its lifetime.
     #[derive(Debug)]
-    pub struct StorageLockGuard {
+    pub struct LockGuard {
         file: Arc<File>,
     }
 
-    impl StorageLock {
+    impl Lock {
         /// Opens or creates the lock file at `path`.
         ///
         /// # Errors
         ///
         /// Returns an error if the file cannot be opened or created.
-        pub fn open(path: &Path) -> StorageResult<Self> {
+        pub fn open(path: &Path) -> StoreResult<Self> {
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).map_err(|err| map_io_err(&err))?;
             }
@@ -87,9 +96,9 @@ mod imp {
         /// # Errors
         ///
         /// Returns an error if the lock cannot be acquired.
-        pub fn lock(&self) -> StorageResult<StorageLockGuard> {
+        pub fn lock(&self) -> StoreResult<LockGuard> {
             lock_exclusive(&self.file).map_err(|err| map_io_err(&err))?;
-            Ok(StorageLockGuard {
+            Ok(LockGuard {
                 file: Arc::clone(&self.file),
             })
         }
@@ -100,9 +109,9 @@ mod imp {
         ///
         /// Returns an error if the lock attempt fails for reasons other than
         /// the lock being held by another process.
-        pub fn try_lock(&self) -> StorageResult<Option<StorageLockGuard>> {
+        pub fn try_lock(&self) -> StoreResult<Option<LockGuard>> {
             if try_lock_exclusive(&self.file).map_err(|err| map_io_err(&err))? {
-                Ok(Some(StorageLockGuard {
+                Ok(Some(LockGuard {
                     file: Arc::clone(&self.file),
                 }))
             } else {
@@ -111,14 +120,14 @@ mod imp {
         }
     }
 
-    impl Drop for StorageLockGuard {
+    impl Drop for LockGuard {
         fn drop(&mut self) {
             let _ = unlock(&self.file);
         }
     }
 
-    fn map_io_err(err: &std::io::Error) -> StorageError {
-        StorageError::Lock(err.to_string())
+    fn map_io_err(err: &std::io::Error) -> StoreError {
+        StoreError::Lock(err.to_string())
     }
 
     // ── Unix flock ──────────────────────────────────────────────────────
@@ -268,68 +277,62 @@ mod imp {
             overlapped: *mut OVERLAPPED,
         ) -> i32;
     }
-}
 
-pub use imp::{StorageLock, StorageLockGuard};
+    #[cfg(test)]
+    mod tests {
+        use super::Lock;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use uuid::Uuid;
+        #[test]
+        fn test_lock_is_exclusive() {
+            let dir = tempfile::tempdir().expect("create temp dir");
+            let path = dir.path().join("lock.lock");
+            let lock_a = Lock::open(&path).expect("open lock");
+            let guard = lock_a.lock().expect("acquire lock");
 
-    fn temp_lock_path() -> std::path::PathBuf {
-        let mut path = std::env::temp_dir();
-        path.push(format!("walletkit-lock-{}.lock", Uuid::new_v4()));
-        path
-    }
+            let lock_b = Lock::open(&path).expect("open lock");
+            let blocked = lock_b.try_lock().expect("try lock");
+            assert!(blocked.is_none());
 
-    #[test]
-    fn test_lock_is_exclusive() {
-        let path = temp_lock_path();
-        let lock_a = StorageLock::open(&path).expect("open lock");
-        let guard = lock_a.lock().expect("acquire lock");
-
-        let lock_b = StorageLock::open(&path).expect("open lock");
-        let blocked = lock_b.try_lock().expect("try lock");
-        assert!(blocked.is_none());
-
-        drop(guard);
-        let guard = lock_b.try_lock().expect("try lock");
-        assert!(guard.is_some());
-
-        let _ = std::fs::remove_file(path);
-    }
-
-    #[test]
-    fn test_lock_serializes_across_threads() {
-        let path = temp_lock_path();
-        let lock = StorageLock::open(&path).expect("open lock");
-
-        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
-        let (release_tx, release_rx) = std::sync::mpsc::channel();
-        let (released_tx, released_rx) = std::sync::mpsc::channel();
-
-        let path_clone = path.clone();
-        let thread_a = std::thread::spawn(move || {
-            let guard = lock.lock().expect("lock in thread");
-            locked_tx.send(()).expect("signal locked");
-            release_rx.recv().expect("wait release");
             drop(guard);
-            released_tx.send(()).expect("signal released");
-            let _ = std::fs::remove_file(path_clone);
-        });
+            let guard = lock_b.try_lock().expect("try lock");
+            assert!(guard.is_some());
+        }
 
-        locked_rx.recv().expect("wait locked");
-        let lock_b = StorageLock::open(&path).expect("open lock");
-        let blocked = lock_b.try_lock().expect("try lock");
-        assert!(blocked.is_none());
+        #[test]
+        fn test_lock_serializes_across_threads() {
+            use std::sync::mpsc;
+            use std::thread;
 
-        release_tx.send(()).expect("release");
-        released_rx.recv().expect("wait released");
+            let dir = tempfile::tempdir().expect("create temp dir");
+            let path = dir.path().join("lock.lock");
+            let lock = Lock::open(&path).expect("open lock");
 
-        let guard = lock_b.try_lock().expect("try lock");
-        assert!(guard.is_some());
+            let (locked_tx, locked_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let (released_tx, released_rx) = mpsc::channel();
 
-        thread_a.join().expect("thread join");
+            let thread_a = thread::spawn(move || {
+                let guard = lock.lock().expect("lock in thread");
+                locked_tx.send(()).expect("signal locked");
+                release_rx.recv().expect("wait release");
+                drop(guard);
+                released_tx.send(()).expect("signal released");
+            });
+
+            locked_rx.recv().expect("wait locked");
+            let lock_b = Lock::open(&path).expect("open lock");
+            let blocked = lock_b.try_lock().expect("try lock");
+            assert!(blocked.is_none());
+
+            release_tx.send(()).expect("release");
+            released_rx.recv().expect("wait released");
+
+            let guard = lock_b.try_lock().expect("try lock");
+            assert!(guard.is_some());
+
+            thread_a.join().expect("thread join");
+        }
     }
 }
+
+pub use imp::{Lock, LockGuard};

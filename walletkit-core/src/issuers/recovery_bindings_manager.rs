@@ -19,8 +19,8 @@ use crate::issuers::pop_backend_client::RecoveryBindingResponse;
 use crate::issuers::PopBackendClient;
 use crate::user_agent::UserAgentBuilder;
 use crate::Environment;
-use alloy_primitives::keccak256;
-use alloy_primitives::Address;
+use alloy_core::primitives::keccak256;
+use alloy_core::primitives::Address;
 use std::string::String;
 /// Represents a recovery binding.
 #[derive(Debug, PartialEq, Eq, uniffi::Record)]
@@ -248,8 +248,10 @@ impl RecoveryBindingManager {
 }
 
 #[cfg(test)]
+#[cfg(all(not(target_arch = "wasm32"), feature = "embed-zkeys"))]
 mod tests {
     use super::*;
+    use crate::authenticator::Groth16Materials;
     use crate::storage::cache_embedded_groth16_material;
     use crate::storage::tests_utils::{temp_root_path, InMemoryStorageProvider};
     use crate::storage::CredentialStore;
@@ -377,13 +379,17 @@ mod tests {
         let store = create_test_credential_store();
         let paths = store.storage_paths().unwrap();
         cache_embedded_groth16_material(&paths).expect("cache groth16 material");
+        let materials = Arc::new(
+            Groth16Materials::from_cache(Arc::new(paths.clone()))
+                .expect("load groth16 material"),
+        );
 
         let authenticator = Authenticator::init_with_defaults(
             seed,
             Some(rpc_url.clone()),
             &Environment::Staging,
             None,
-            &paths,
+            materials,
             store.clone(),
         )
         .await

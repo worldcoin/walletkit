@@ -1,18 +1,4 @@
 //! Platform interfaces for credential storage.
-//!
-//! ## Key structure
-//!
-//! - `K_device`: device-bound root key managed by `DeviceKeystore`.
-//! - `account_keys.bin`: account key envelope stored via `AtomicBlobStore` and
-//!   containing `DeviceKeystore::seal` of `K_intermediate` with associated data
-//!   `worldid:account-key-envelope`.
-//! - `K_intermediate`: 32-byte per-account key unsealed at init and kept in
-//!   memory for the lifetime of the storage handle.
-//! - `SQLCipher` databases: `account.vault.sqlite` (authoritative) and
-//!   `account.cache.sqlite` (non-authoritative) are opened with `K_intermediate`.
-//! - Derived keys: per relying-party session keys may be derived from
-//!   `K_intermediate` and cached in `account.cache.sqlite` for performance.
-//!   cached in `account.cache.sqlite` for performance.
 
 use std::sync::Arc;
 
@@ -20,7 +6,7 @@ use super::error::StorageResult;
 use super::paths::StoragePaths;
 
 /// Device keystore interface used to seal and open account keys.
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+#[uniffi::export(with_foreign)]
 pub trait DeviceKeystore: Send + Sync {
     /// Seals plaintext under the device-bound key, authenticating `associated_data`.
     ///
@@ -52,7 +38,7 @@ pub trait DeviceKeystore: Send + Sync {
 }
 
 /// Atomic blob store for small binary files (e.g., `account_keys.bin`).
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+#[uniffi::export(with_foreign)]
 pub trait AtomicBlobStore: Send + Sync {
     /// Reads the blob at `path`, if present.
     ///
@@ -77,7 +63,7 @@ pub trait AtomicBlobStore: Send + Sync {
 }
 
 /// Provider responsible for platform-specific storage components and paths.
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+#[uniffi::export(with_foreign)]
 pub trait StorageProvider: Send + Sync {
     /// Returns the device keystore implementation.
     fn keystore(&self) -> Arc<dyn DeviceKeystore>;

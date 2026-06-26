@@ -6,7 +6,6 @@
     clippy::similar_names,
     clippy::too_many_lines
 )]
-#![cfg(feature = "storage")]
 
 //! End-to-end integration test for `Authenticator::generate_proof` (World ID v4)
 //! using **staging infrastructure** (real OPRF nodes, indexer, gateway, on-chain registries).
@@ -31,13 +30,13 @@ use rand::rngs::OsRng;
 use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
-use alloy_primitives::U160;
+use alloy_core::primitives::U160;
 use eyre::{Context as _, Result};
-use walletkit_core::storage::cache_embedded_groth16_material;
-use walletkit_core::{defaults::DefaultConfig, Authenticator, Environment};
-use world_id_core::primitives::{rp::RpId, FieldElement, Nullifier, OprfKeyId};
+use taceo_oprf::types::OprfKeyId;
+use walletkit_core::{defaults, Authenticator, Environment, Groth16Materials};
+use world_id_core::primitives::{rp::RpId, FieldElement, Nullifier};
 use world_id_core::{
-    requests::{ProofRequest, RequestItem, RequestVersion},
+    requests::{ProofRequest, ProofType, RequestItem, RequestVersion},
     Authenticator as CoreAuthenticator, EdDSAPrivateKey,
 };
 
@@ -60,10 +59,6 @@ const ISSUER_SCHEMA_ID: u64 = 47;
 const ISSUER_EDDSA_KEY: [u8; 32] = alloy::primitives::hex!(
     "1111111111111111111111111111111111111111111111111111111111111111"
 );
-
-/// `WorldIDVerifier` proxy contract address on staging (World Chain Mainnet 480).
-const WORLD_ID_VERIFIER: alloy::primitives::Address =
-    alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
 
 /// Default RPC URL for World Chain Mainnet (chain 480).
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
@@ -115,12 +110,9 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let seed = [7u8; 32];
     let recovery_address = alloy::primitives::Address::ZERO;
 
-    let config = world_id_core::primitives::Config::from_environment(
-        &Environment::Staging,
-        Some(rpc_url.clone()),
-        None,
-    )
-    .wrap_err("failed to build staging config")?;
+    let config =
+        defaults::default_config(&Environment::Staging, Some(rpc_url.clone()), None)
+            .wrap_err("failed to build staging config")?;
     let query_material = Arc::new(
         world_id_core::proof::load_embedded_query_material()
             .wrap_err("failed to load embedded query material")?,
@@ -130,14 +122,11 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
             .wrap_err("failed to load embedded nullifier material")?,
     );
 
-    let core_authenticator = CoreAuthenticator::init_or_register(
-        &seed,
-        config.into(),
-        Some(recovery_address),
-    )
-    .await
-    .wrap_err("account creation/init failed")?
-    .with_proof_materials(query_material, nullifier_material);
+    let core_authenticator =
+        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
+            .await
+            .wrap_err("account creation/init failed")?
+            .with_proof_materials(query_material, nullifier_material);
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -146,16 +135,17 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     // Phase 2: Authenticator init with walletkit wrapper
     // ----------------------------------------------------------------
     let store = common::create_test_credential_store();
-    let paths = store.storage_paths().wrap_err("storage_paths failed")?;
-    cache_embedded_groth16_material(&paths)
-        .wrap_err("cache_embedded_groth16_material failed")?;
+    let materials = Arc::new(
+        Groth16Materials::from_embedded()
+            .wrap_err("failed to load embedded groth16 materials")?,
+    );
 
     let authenticator = Authenticator::init_with_defaults(
         &seed,
         Some(rpc_url.clone()),
         &Environment::Staging,
         None,
-        &paths,
+        materials,
         store.clone(),
     )
     .await
@@ -233,6 +223,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let proof_request_core = ProofRequest {
         id: "staging_test_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::Uniqueness,
         created_at,
         expires_at,
         rp_id,
@@ -268,7 +259,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     let nullifier = response_item
         .nullifier
         .expect("uniqueness proof should have nullifier");
-    assert_ne!(nullifier, Nullifier::new(FieldElement::ZERO)); // TODO: Add `Nullifier::ZERO`
+    assert_ne!(nullifier, Nullifier::new(FieldElement::ZERO));
 
     eprintln!("Phase 4 complete: proof generated (nullifier={nullifier:?})");
 
@@ -277,7 +268,10 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     // ----------------------------------------------------------------
     let provider = ProviderBuilder::new().connect_http(rpc_url.parse().unwrap());
 
-    let verifier = IWorldIDVerifier::new(WORLD_ID_VERIFIER, &provider);
+    let verifier = IWorldIDVerifier::new(
+        walletkit_core::defaults::WORLD_ID_VERIFIER_STAGING,
+        &provider,
+    );
 
     let request_item = proof_request_core
         .find_request_by_issuer_schema_id(ISSUER_SCHEMA_ID)
@@ -337,12 +331,9 @@ async fn e2e_session_proof() -> Result<()> {
     let seed = [7u8; 32];
     let recovery_address = alloy::primitives::Address::ZERO;
 
-    let config = world_id_core::primitives::Config::from_environment(
-        &Environment::Staging,
-        Some(rpc_url.clone()),
-        None,
-    )
-    .wrap_err("failed to build staging config")?;
+    let config =
+        defaults::default_config(&Environment::Staging, Some(rpc_url.clone()), None)
+            .wrap_err("failed to build staging config")?;
     let query_material = Arc::new(
         world_id_core::proof::load_embedded_query_material()
             .wrap_err("failed to load embedded query material")?,
@@ -352,14 +343,11 @@ async fn e2e_session_proof() -> Result<()> {
             .wrap_err("failed to load embedded nullifier material")?,
     );
 
-    let core_authenticator = CoreAuthenticator::init_or_register(
-        &seed,
-        config.into(),
-        Some(recovery_address),
-    )
-    .await
-    .wrap_err("account creation/init failed")?
-    .with_proof_materials(query_material, nullifier_material);
+    let core_authenticator =
+        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
+            .await
+            .wrap_err("account creation/init failed")?
+            .with_proof_materials(query_material, nullifier_material);
 
     let leaf_index = core_authenticator.leaf_index();
     eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
@@ -368,16 +356,17 @@ async fn e2e_session_proof() -> Result<()> {
     // Phase 2: Authenticator init with walletkit wrapper
     // ----------------------------------------------------------------
     let store = common::create_test_credential_store();
-    let paths = store.storage_paths().wrap_err("storage_paths failed")?;
-    cache_embedded_groth16_material(&paths)
-        .wrap_err("cache_embedded_groth16_material failed")?;
+    let materials = Arc::new(
+        Groth16Materials::from_embedded()
+            .wrap_err("failed to load embedded groth16 materials")?,
+    );
 
     let authenticator = Authenticator::init_with_defaults(
         &seed,
         Some(rpc_url.clone()),
         &Environment::Staging,
         None,
-        &paths,
+        materials,
         store.clone(),
     )
     .await
@@ -452,6 +441,7 @@ async fn e2e_session_proof() -> Result<()> {
     let init_request = ProofRequest {
         id: "session_init_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::CreateSession,
         created_at,
         expires_at,
         rp_id,
@@ -470,16 +460,44 @@ async fn e2e_session_proof() -> Result<()> {
         constraints: None,
     };
 
-    // Use the core authenticator to generate a session ID (calls OPRF)
-    let (session_id, session_id_r_seed) = core_authenticator
-        .build_session_id(&init_request, None, None)
+    let init_proof_request: walletkit_core::requests::ProofRequest =
+        init_request.into();
+    let init_proof_response = authenticator
+        .generate_proof(&init_proof_request, Some(now))
         .await
-        .wrap_err("generate_session_id failed")?;
+        .wrap_err("generate_proof (create session) failed")?;
+    let init_response: world_id_core::requests::ProofResponse =
+        init_proof_response.into_inner();
+    assert!(
+        init_response.error.is_none(),
+        "proof response contains error"
+    );
+    assert_eq!(init_response.responses.len(), 1);
 
-    // Cache the r_seed so generate_proof finds it
-    store
-        .store_session_seed(session_id.oprf_seed, session_id_r_seed, now)
-        .wrap_err("store_session_seed failed")?;
+    let init_response_item = &init_response.responses[0];
+    assert!(
+        init_response_item.is_session(),
+        "create-session response should contain a session proof"
+    );
+    assert!(
+        init_response_item.session_nullifier.is_some(),
+        "create-session response should have a session_nullifier"
+    );
+    assert!(
+        init_response_item.nullifier.is_none(),
+        "create-session response should not have a uniqueness nullifier"
+    );
+
+    let session_id = init_response
+        .session_id
+        .expect("create-session response should include session_id");
+    let cached_seed = store
+        .get_session_seed(session_id.oprf_seed, now)
+        .wrap_err("get_session_seed failed")?;
+    assert!(
+        cached_seed.is_some(),
+        "create-session should cache session_id_r_seed"
+    );
 
     eprintln!(
         "Phase 4 complete: session created (commitment={:?})",
@@ -503,6 +521,7 @@ async fn e2e_session_proof() -> Result<()> {
     let session_proof_request_core = ProofRequest {
         id: "session_proof_request".to_string(),
         version: RequestVersion::V1,
+        proof_type: ProofType::Session,
         created_at,
         expires_at,
         rp_id,

@@ -15,7 +15,7 @@ use clap::{Parser, Subcommand};
 use eyre::WrapErr as _;
 
 use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
-use walletkit_core::Authenticator;
+use walletkit_core::{Authenticator, Groth16Materials};
 
 use crate::provider::create_fs_credential_store;
 
@@ -57,6 +57,10 @@ pub struct Cli {
         conflicts_with_all = ["environment", "region"]
     )]
     pub config: Option<PathBuf>,
+
+    /// Route default-config init/register through OHTTP (opt-in).
+    #[arg(long, global = true, conflicts_with = "config")]
+    pub ohttp_defaults: bool,
 
     /// RPC URL for World Chain.
     #[arg(long, env = "WORLDCHAIN_RPC_URL", global = true)]
@@ -218,24 +222,41 @@ pub async fn init_authenticator(
     let store = create_fs_credential_store(&root)?;
     let paths = store.storage_paths()?;
     cache_embedded_groth16_material(&paths)?;
+    let materials = Arc::new(
+        Groth16Materials::from_cache(Arc::new(paths.clone()))
+            .wrap_err("failed to load cached Groth16 materials")?,
+    );
 
     let authenticator = if let Some(ref config) = config_json {
-        Authenticator::init(&seed, config, &paths, store.clone())
+        Authenticator::init(&seed, config, materials.clone(), store.clone())
             .await
             .wrap_err("authenticator init failed")?
     } else {
         let env = resolve_environment(cli)?;
         let region = resolve_region(cli)?;
-        Authenticator::init_with_defaults(
-            &seed,
-            cli.rpc_url.clone(),
-            &env,
-            region,
-            &paths,
-            store.clone(),
-        )
-        .await
-        .wrap_err("authenticator init failed")?
+        if cli.ohttp_defaults {
+            Authenticator::init_with_ohttp_defaults(
+                &seed,
+                cli.rpc_url.clone(),
+                &env,
+                region,
+                materials.clone(),
+                store.clone(),
+            )
+            .await
+            .wrap_err("authenticator init failed")?
+        } else {
+            Authenticator::init_with_defaults(
+                &seed,
+                cli.rpc_url.clone(),
+                &env,
+                region,
+                materials.clone(),
+                store.clone(),
+            )
+            .await
+            .wrap_err("authenticator init failed")?
+        }
     };
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();

@@ -3,22 +3,19 @@
 //!
 //! # Example
 //!
-//! ```rust,no_run
+//! ```rust,ignore
+//! // Note: `Groth16Materials::from_embedded` requires the `embed-zkeys` Cargo feature.
+//! // On native targets you can alternatively use `Groth16Materials::from_cache` after
+//! // calling `storage::cache_embedded_groth16_material` to populate the on-disk cache.
 //! use std::sync::Arc;
 //! use walletkit_core::requests::ProofRequest;
-//! use walletkit_core::storage::{
-//!     cache_embedded_groth16_material, CredentialStore, StoragePaths,
-//! };
-//! use walletkit_core::{Authenticator, Environment};
+//! use walletkit_core::storage::CredentialStore;
+//! use walletkit_core::{Authenticator, Environment, Groth16Materials};
 //!
-//! /// Platform layer provides a [`CredentialStore`] backed by a
-//! /// device-specific [`StorageProvider`](walletkit_core::storage::StorageProvider).
 //! async fn generate_world_id_proof(
 //!     store: Arc<CredentialStore>,
 //! ) -> Result<(), Box<dyn std::error::Error>> {
-//!     // Cache Groth16 proving material to disk (idempotent).
-//!     let paths = StoragePaths::from_root("/data/walletkit".into());
-//!     cache_embedded_groth16_material(&paths)?;
+//!     let materials = Arc::new(Groth16Materials::from_embedded()?);
 //!
 //!     // Initialize an authenticator for an already-registered World ID.
 //!     let seed = b"my_secret_seed_at_length_32_bytes!";
@@ -27,7 +24,7 @@
 //!         None, // uses default RPC URL
 //!         &Environment::Staging,
 //!         None, // uses default region
-//!         &paths,
+//!         materials,
 //!         store,
 //!     )
 //!     .await?;
@@ -50,7 +47,9 @@ use strum::{Display, EnumString};
 /// Installs the ring crypto provider as the default for rustls.
 /// Uses the `ctor` crate to ensure this runs when the dynamic library loads,
 /// before any user code executes.
-#[cfg(not(test))]
+///
+/// On WASM targets, rustls is not used (reqwest uses the browser fetch API).
+#[cfg(all(not(test), not(target_arch = "wasm32")))]
 #[ctor::ctor]
 fn init() {
     rustls::crypto::ring::default_provider()
@@ -76,19 +75,21 @@ pub enum Environment {
 #[uniffi::export]
 impl Environment {
     /// Returns the `PoH` Recovery Agent contract address for this environment.
-    ///
-    /// The `PoH` Recovery Agent is a contract users can optionally designate when
-    /// registering a World ID. If they lose access to all authenticators, the
-    /// agent can sign a recovery transaction to restore their account.
     #[must_use]
     pub fn poh_recovery_agent_address(&self) -> String {
         defaults::poh_recovery_agent_address(self).to_string()
+    }
+
+    /// Returns the `WorldIDVerifier` proxy contract address for this environment.
+    #[must_use]
+    pub fn world_id_verifier_address(&self) -> String {
+        defaults::world_id_verifier_address(self).to_string()
     }
 }
 
 /// Region for node selection.
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, uniffi::Enum, EnumString, Display,
+    Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, Display, uniffi::Enum,
 )]
 #[strum(serialize_all = "lowercase")]
 pub enum Region {
@@ -114,13 +115,12 @@ mod credential;
 pub use credential::Credential;
 
 /// Credential storage primitives for World ID v4.
-#[cfg(feature = "storage")]
 pub mod storage;
 
 mod authenticator;
 pub use authenticator::{
-    Authenticator, InitializingAuthenticator, RecoveryData, RecoveryUpdateSignature,
-    RegistrationStatus,
+    Authenticator, Groth16Materials, InitializingAuthenticator, RecoveryData,
+    RecoveryUpdateSignature, RegistrationStatus,
 };
 
 /// Default configuration values for each [`Environment`].
@@ -132,6 +132,9 @@ pub use user_agent::{UserAgent, UserAgentBuilder};
 
 /// Proof requests and responses in World ID v4.
 pub mod requests;
+
+/// Pre-flight check of whether stored credentials can satisfy a [`requests::ProofRequest`].
+pub mod proof_request_credential_constraints_check;
 
 mod proof;
 pub use proof::OwnershipProof;
@@ -159,7 +162,7 @@ pub mod v3;
 // Private modules
 ////////////////////////////////////////////////////////////////////////////////
 
-#[cfg(any(feature = "issuers", feature = "storage"))]
+#[cfg(any(feature = "issuers", feature = "v3"))]
 mod http_request;
 pub(crate) mod primitives;
 

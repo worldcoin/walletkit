@@ -42,7 +42,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
+          toolchain: 1.94.1
           components: clippy,rustfmt
 
       - name: Install Foundry
@@ -60,6 +60,45 @@ jobs:
       - name: Run clippy (no default features)
         run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
+  wasm-check:
+    name: WASM walletkit compile check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.94.1
+          targets: wasm32-unknown-unknown
+
+      # clang-18 (LLVM 18) is the minimum version that supports the C23
+      # [[noreturn]] attribute syntax used in sqlite-wasm-rs's wasm-shim.h.
+      # The system clang on Ubuntu (clang-14) predates C23 attribute support
+      # and fails to compile the shim, so we must install a newer toolchain explicitly.
+      - name: Install LLVM toolchain for WASM C build
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang-18 llvm-18
+
+      - name: Configure C toolchain for wasm32
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "CC_wasm32_unknown_unknown=clang-18" >> "$GITHUB_ENV"
+          echo "AR_wasm32_unknown_unknown=llvm-ar-18" >> "$GITHUB_ENV"
+          clang-18 --version | head -n1
+          llvm-ar-18 --version | head -n1
+
+      - name: Run WASM compile check
+        run: cargo check -p walletkit --target wasm32-unknown-unknown
+
   swift-build-and-test:
     name: Swift Build & Foreign Binding Tests
     runs-on: macos-14
@@ -74,7 +113,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
+          toolchain: 1.94.1
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
 
       - name: Cache Rust build artifacts
@@ -113,7 +152,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.92.0
+          toolchain: 1.94.1
 
       - name: Setup Java
         uses: actions/setup-java@v3
@@ -145,7 +184,7 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.92.0 # MSRV
+          - 1.94.1 # MSRV
 
     steps:
       - name: Checkout code
@@ -192,7 +231,7 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check ${{ matrix.checks }}
-          rust-version: 1.92.0
+          rust-version: 1.94.1
 
   docs:
     name: Check docs

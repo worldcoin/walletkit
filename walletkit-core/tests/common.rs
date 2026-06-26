@@ -6,7 +6,6 @@
     clippy::missing_panics_doc,
     clippy::must_use_candidate
 )]
-#![cfg(feature = "storage")]
 
 //! Common test utilities shared across integration tests.
 

@@ -9,7 +9,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.16.0"
+version = "0.20.0"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -30,17 +30,17 @@ categories = ["api-bindings", "cryptography::cryptocurrencies"]
 
 
 [workspace.dependencies]
-alloy-core = { version = "1", default-features = false, features = [
-  "sol-types",
+alloy-core = { version = "1", default-features = false, features = ["sol-types"] }
+uniffi = { version = "0.31.0", features = [
+  "tokio",
+  "wasm-unstable-single-threaded",
 ] }
-alloy-primitives = { version = "1", default-features = false }
-uniffi = { version = "0.31.0", features = ["tokio"] }
-world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", branch = "wip-102", default-features = false }
-world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", branch = "wip-102", default-features = false }
+world-id-core = { version = "0.11.0", default-features = false }
+world-id-proof = { version = "0.11.0", default-features = false }
 
 # internal
-walletkit-core = { version = "0.16.0", path = "walletkit-core", default-features = false }
-walletkit-db = { version = "0.16.0", path = "walletkit-db" }
+walletkit-core = { version = "0.20.0", path = "walletkit-core", default-features = false }
+walletkit-db = { version = "0.20.0", path = "walletkit-db" }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
@@ -56,3 +56,17 @@ opt-level = 'z' # Optimize for size.
 lto = true      # Enable Link Time Optimization.
 panic = "abort"
 debug = false
+
+# ProveKit has an additional `pattern` in the Whir R1CS proof which is used in debugging builds,
+# because this isn't serialized, we explicitly remove it here as WalletKit only uses serialized proofs.
+[profile.dev.package.provekit-common]
+debug-assertions = false
+
+[profile.dev.package.provekit-whir]
+debug-assertions = false
+
+[profile.dev.package.provekit-verifier]
+debug-assertions = false
+
+[profile.dev.package.provekit-prover]
+debug-assertions = false

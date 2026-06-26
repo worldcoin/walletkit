@@ -5,7 +5,6 @@ use world_id_core::{
 };
 use world_id_proof::ProofError;
 
-#[cfg(feature = "storage")]
 use crate::storage::StorageError;
 
 /// Error outputs from `WalletKit`
@@ -186,6 +185,10 @@ pub enum WalletKitError {
         /// The error message from the OHTTP layer
         error: String,
     },
+
+    /// The session proof action or session OPRF seed is not valid for the session OPRF module.
+    #[error("invalid_action_for_session")]
+    InvalidActionSession,
 }
 
 impl From<reqwest::Error> for WalletKitError {
@@ -232,6 +235,7 @@ impl From<WorldIdRequestAuthError> for WalletKitError {
             }
             WorldIdRequestAuthError::InvalidTimestamp => Self::InvalidTimestamp,
             WorldIdRequestAuthError::RpSignatureExpired => Self::RpSignatureExpired,
+            WorldIdRequestAuthError::InvalidActionSession => Self::InvalidActionSession,
             _ => Self::ProofGeneration {
                 error: error.to_string(),
             },
@@ -259,7 +263,6 @@ impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
     }
 }
 
-#[cfg(feature = "storage")]
 impl From<StorageError> for WalletKitError {
     fn from(error: StorageError) -> Self {
         Self::Generic {
@@ -338,6 +341,7 @@ mod tests {
             }
             WalletKitError::InvalidTimestamp => Some("invalid_timestamp"),
             WalletKitError::RpSignatureExpired => Some("rp_signature_expired"),
+            WalletKitError::InvalidActionSession => Some("invalid_action_for_session"),
             _ => None,
         }
     }
@@ -367,6 +371,10 @@ mod tests {
             (
                 WorldIdRequestAuthError::RpSignatureExpired,
                 "rp_signature_expired",
+            ),
+            (
+                WorldIdRequestAuthError::InvalidActionSession,
+                "invalid_action_for_session",
             ),
         ];
 

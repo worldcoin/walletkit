@@ -38,3 +38,16 @@ rustflags = [
   "-Clink-arg=-z",
   "-Clink-arg=common-page-size=4096",
 ]
+
+# getrandom 0.3 requires an explicit backend for wasm32-unknown-unknown.
+# WalletKit's wasm build runs in JavaScript hosts, so use the wasm_js backend.
+[target.wasm32-unknown-unknown]
+rustflags = [
+  "--cfg",
+  'getrandom_backend="wasm_js"',
+]
+
+[env]
+# sqlite-wasm-rs uses C23-style [[noreturn]] attributes in its shim.
+# Keep cc/clang invocations for wasm32 on a C standard that accepts them.
+CFLAGS_wasm32_unknown_unknown = "-std=gnu2x"

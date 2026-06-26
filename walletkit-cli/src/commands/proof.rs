@@ -6,27 +6,26 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine as _};
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use rand::rngs::OsRng;
 use walletkit_core::requests::ProofRequest;
-use world_id_core::primitives::{rp::RpId, FieldElement};
+use world_id_core::primitives::{rp::RpId, FieldElement, OwnershipProof, SessionId};
 use world_id_core::requests::{
-    ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, RequestItem,
-    RequestVersion,
+    ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, ProofType,
+    RequestItem, RequestVersion,
 };
+use world_id_proof::ownership_proof::verify_ownership_proof;
 
 use crate::output;
 
 use super::credential::{issue_test_credential, FAUX_ISSUER_SCHEMA_ID};
-use super::{init_authenticator, Cli};
+use super::{init_authenticator, resolve_environment, Cli};
 
 const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
 
 const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
-
-const WORLD_ID_VERIFIER: alloy::primitives::Address =
-    alloy::primitives::address!("0x703a6316c975DEabF30b637c155edD53e24657DB");
 
 sol!(
     #[allow(clippy::too_many_arguments)]
@@ -41,6 +40,18 @@ sol!(
             uint64 expiresAtMin,
             uint64 issuerSchemaId,
             uint256 credentialGenesisIssuedAtMin,
+            uint256[5] calldata zeroKnowledgeProof
+        ) external view;
+
+        function verifySession(
+            uint64 rpId,
+            uint256 nonce,
+            uint256 signalHash,
+            uint64 expiresAtMin,
+            uint64 issuerSchemaId,
+            uint256 credentialGenesisIssuedAtMin,
+            uint256 sessionId,
+            uint256[2] calldata sessionNullifier,
             uint256[5] calldata zeroKnowledgeProof
         ) external view;
     }
@@ -74,6 +85,12 @@ pub enum ProofCommand {
         /// Seconds from now until the request expires.
         #[arg(long, default_value = "300")]
         expires_in: u64,
+        /// Proof type to generate.
+        #[arg(long, value_parser = parse_proof_type_arg, default_value = "uniqueness")]
+        proof_type: ProofType,
+        /// Existing session ID for `--proof-type session`.
+        #[arg(long, value_parser = parse_session_id_arg)]
+        session_id: Option<SessionId>,
     },
     /// Verify a previously generated proof on-chain via the `WorldIDVerifier` contract.
     Verify {
@@ -83,7 +100,7 @@ pub enum ProofCommand {
         /// Path to the proof response JSON, or `-` for stdin.
         #[arg(long)]
         response: String,
-        /// Override the `WorldID` verifier contract address (default: mainnet).
+        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
         #[arg(long)]
         verifier_address: Option<String>,
     },
@@ -92,6 +109,21 @@ pub enum ProofCommand {
         /// Signal string for the proof request.
         #[arg(long, default_value = "test_signal")]
         signal: String,
+        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
+        #[arg(long)]
+        verifier_address: Option<String>,
+    },
+    /// Verify a WIP-103 ownership proof from a base64-encoded file.
+    VerifyOwnership {
+        /// Path to a file containing the base64url-encoded ownership proof, or `-` for stdin.
+        #[arg(long)]
+        proof: String,
+        /// Nonce used when generating the proof, as a 32-byte hex field element (with optional `0x` prefix).
+        #[arg(long)]
+        nonce: String,
+        /// Credential `sub` (commitment) the proof claims ownership of, as a 32-byte hex field element.
+        #[arg(long)]
+        sub: String,
     },
 }
 
@@ -111,6 +143,20 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<String> {
         );
         Ok(std::fs::read_to_string(path)?)
     }
+}
+
+fn parse_proof_type_arg(value: &str) -> Result<ProofType, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "uniqueness" => Ok(ProofType::Uniqueness),
+        "create-session" | "create_session" => Ok(ProofType::CreateSession),
+        "session" => Ok(ProofType::Session),
+        _ => Err("expected one of: uniqueness, create-session, session".to_string()),
+    }
+}
+
+fn parse_session_id_arg(session_id: &str) -> Result<SessionId, String> {
+    serde_json::from_value(serde_json::Value::String(session_id.to_string()))
+        .map_err(|err| format!("invalid session id: {err}"))
 }
 
 async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Result<()> {
@@ -148,20 +194,26 @@ async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Resul
 fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
     let json_str = read_file_or_stdin(request)?;
     let proof_request =
-        ProofRequest::from_json(&json_str).wrap_err("invalid proof request")?;
+        CoreProofRequest::from_json(&json_str).wrap_err("invalid proof request")?;
 
     if cli.json {
         let normalized: serde_json::Value = serde_json::from_str(&json_str)?;
         let full = serde_json::json!({
-            "id": proof_request.id(),
-            "version": proof_request.version(),
+            "id": proof_request.id,
+            "version": proof_request.version as u8,
+            "proof_type": proof_request.proof_type,
+            "has_session_id": proof_request.session_id.is_some(),
+            "has_action": proof_request.action.is_some(),
             "raw": normalized,
         });
         output::print_json_data(&full, true);
     } else {
         println!("Proof Request:");
-        println!("  id:      {}", proof_request.id());
-        println!("  version: {}", proof_request.version());
+        println!("  id:             {}", proof_request.id);
+        println!("  version:        {}", proof_request.version as u8);
+        println!("  proof_type:     {:?}", proof_request.proof_type);
+        println!("  has_session_id: {}", proof_request.session_id.is_some());
+        println!("  has_action:     {}", proof_request.action.is_some());
     }
     Ok(())
 }
@@ -174,6 +226,25 @@ pub struct VerifyItemResult {
     pub error: Option<String>,
 }
 
+/// Resolves the verifier contract address: the explicit `--verifier-address`
+/// override if provided, otherwise the `WorldIDVerifier` for the CLI's `--environment`.
+fn verifier_address_or_default(
+    cli: &Cli,
+    verifier_address: Option<&str>,
+) -> eyre::Result<alloy::primitives::Address> {
+    verifier_address.map_or_else(
+        || {
+            Ok(walletkit_core::defaults::world_id_verifier_address(
+                &resolve_environment(cli)?,
+            ))
+        },
+        |addr| {
+            addr.parse::<alloy::primitives::Address>()
+                .wrap_err("invalid verifier address")
+        },
+    )
+}
+
 /// Verifies a proof request + response pair on-chain. Returns per-item results.
 pub async fn verify_proof_onchain(
     cli: &Cli,
@@ -184,20 +255,32 @@ pub async fn verify_proof_onchain(
     if let Some(ref err) = proof_response.error {
         eyre::bail!("proof response contains error: {err}");
     }
+    proof_request
+        .validate_response(proof_response)
+        .wrap_err("proof response does not match proof request")?;
 
     let rpc_url = cli.rpc_url.as_deref().unwrap_or(DEFAULT_RPC_URL);
     let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
-    let verifier_addr = match verifier_address {
-        Some(addr) => addr
-            .parse::<alloy::primitives::Address>()
-            .wrap_err("invalid verifier address")?,
-        None => WORLD_ID_VERIFIER,
-    };
+    let verifier_addr = verifier_address_or_default(cli, verifier_address)?;
     let verifier_contract = IWorldIDVerifier::new(verifier_addr, &provider);
 
-    let action = proof_request.action.ok_or_else(|| {
-        eyre::eyre!("proof request has no action (session proofs not supported)")
-    })?;
+    let action = if proof_request.proof_type == ProofType::Uniqueness {
+        Some(
+            proof_request
+                .action
+                .ok_or_else(|| eyre::eyre!("proof request has no action"))?,
+        )
+    } else {
+        None
+    };
+    let session_id =
+        if proof_request.proof_type.is_session() {
+            Some(proof_response.session_id.ok_or_else(|| {
+                eyre::eyre!("session proof response missing session_id")
+            })?)
+        } else {
+            None
+        };
     let nonce = proof_request.nonce;
     let rp_id = proof_request.rp_id.into_inner();
 
@@ -212,27 +295,57 @@ pub async fn verify_proof_onchain(
                 )
             })?;
 
-        let nullifier = response_item
-            .nullifier
-            .ok_or_else(|| eyre::eyre!("response item missing nullifier"))?;
+        let credential_genesis_issued_at_min = request_item
+            .genesis_issued_at_min
+            .unwrap_or_default()
+            .try_into()?;
 
-        let result = verifier_contract
-            .verify(
-                nullifier.into(),
-                action.into(),
-                rp_id,
-                nonce.into(),
-                request_item.signal_hash().into(),
-                response_item.expires_at_min,
-                response_item.issuer_schema_id,
-                request_item
-                    .genesis_issued_at_min
-                    .unwrap_or_default()
-                    .try_into()?,
-                response_item.proof.as_ethereum_representation(),
-            )
-            .call()
-            .await;
+        let result = match proof_request.proof_type {
+            ProofType::Uniqueness => {
+                let nullifier = response_item
+                    .nullifier
+                    .ok_or_else(|| eyre::eyre!("response item missing nullifier"))?;
+
+                verifier_contract
+                    .verify(
+                        nullifier.into(),
+                        action.expect("validated above").into(),
+                        rp_id,
+                        nonce.into(),
+                        request_item.signal_hash().into(),
+                        response_item.expires_at_min,
+                        response_item.issuer_schema_id,
+                        credential_genesis_issued_at_min,
+                        response_item.proof.as_ethereum_representation(),
+                    )
+                    .call()
+                    .await
+                    .map(|_| ())
+            }
+            ProofType::CreateSession | ProofType::Session => {
+                let session_nullifier =
+                    response_item.session_nullifier.ok_or_else(|| {
+                        eyre::eyre!("response item missing session_nullifier")
+                    })?;
+                let session_id = session_id.expect("validated above");
+
+                verifier_contract
+                    .verifySession(
+                        rp_id,
+                        nonce.into(),
+                        request_item.signal_hash().into(),
+                        response_item.expires_at_min,
+                        response_item.issuer_schema_id,
+                        credential_genesis_issued_at_min,
+                        session_id.commitment.into(),
+                        session_nullifier.as_ethereum_representation(),
+                        response_item.proof.as_ethereum_representation(),
+                    )
+                    .call()
+                    .await
+                    .map(|_| ())
+            }
+        };
 
         results.push(VerifyItemResult {
             issuer_schema_id: response_item.issuer_schema_id,
@@ -248,12 +361,15 @@ fn print_verify_items_human(results: &[VerifyItemResult]) {
     for r in results {
         if r.verified {
             println!(
-                "  [PASS] {} (issuer_schema_id={})",
-                r.identifier, r.issuer_schema_id
+                "  {} {} (issuer_schema_id={})",
+                output::pass_label(),
+                r.identifier,
+                r.issuer_schema_id
             );
         } else {
             println!(
-                "  [FAIL] {} (issuer_schema_id={}): {}",
+                "  {} {} (issuer_schema_id={}): {}",
+                output::fail_label(),
                 r.identifier,
                 r.issuer_schema_id,
                 r.error.as_deref().unwrap_or("unknown")
@@ -286,7 +402,7 @@ async fn run_verify(
     let response_json = read_file_or_stdin(response_path)?;
 
     let proof_request: CoreProofRequest =
-        serde_json::from_str(&request_json).wrap_err("invalid proof request")?;
+        CoreProofRequest::from_json(&request_json).wrap_err("invalid proof request")?;
     let proof_response: CoreProofResponse =
         serde_json::from_str(&response_json).wrap_err("invalid proof response")?;
 
@@ -329,6 +445,8 @@ fn build_test_request(
     issuer_schema_id: u64,
     signal: &str,
     expires_in: u64,
+    proof_type: ProofType,
+    session_id: Option<SessionId>,
 ) -> eyre::Result<CoreProofRequest> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -342,12 +460,13 @@ fn build_test_request(
     let signer = PrivateKeySigner::from_bytes(&STAGING_RP_SIGNING_KEY.into())
         .wrap_err("failed to create signer")?;
 
-    let action = FieldElement::from(1u64);
+    let action =
+        (proof_type == ProofType::Uniqueness).then(|| FieldElement::from(1u64));
     let msg = world_id_core::primitives::rp::compute_rp_signature_msg(
         *nonce,
         created_at,
         expires_at,
-        Some(*action),
+        action.map(|action| *action),
     );
     let signature = signer.sign_message_sync(&msg).wrap_err("signing failed")?;
 
@@ -363,6 +482,7 @@ fn build_test_request(
     Ok(CoreProofRequest {
         id: "test_request".to_string(),
         version: RequestVersion::V1,
+        proof_type,
         created_at,
         expires_at,
         rp_id,
@@ -371,8 +491,8 @@ fn build_test_request(
             STAGING_RP_ID
         )))
         .wrap_err("failed to construct oprf_key_id")?,
-        session_id: None,
-        action: Some(action),
+        session_id,
+        action,
         signature,
         nonce,
         requests: vec![request_item],
@@ -385,8 +505,26 @@ fn run_generate_test_request(
     issuer_schema_id: u64,
     signal: &str,
     expires_in: u64,
+    proof_type: ProofType,
+    session_id: Option<SessionId>,
 ) -> eyre::Result<()> {
-    let request = build_test_request(issuer_schema_id, signal, expires_in)?;
+    let session_id = match (proof_type, session_id) {
+        (ProofType::Uniqueness | ProofType::CreateSession, Some(_)) => {
+            eyre::bail!("--session-id is only valid with --proof-type session");
+        }
+        (ProofType::Session, None) => {
+            eyre::bail!("--session-id is required with --proof-type session");
+        }
+        (ProofType::Session, Some(session_id)) => Some(session_id),
+        (_, None) => None,
+    };
+    let request = build_test_request(
+        issuer_schema_id,
+        signal,
+        expires_in,
+        proof_type,
+        session_id,
+    )?;
     let json = serde_json::to_string_pretty(&request)?;
 
     if cli.json {
@@ -400,7 +538,11 @@ fn run_generate_test_request(
 }
 
 /// End-to-end test: issue a test credential, generate a proof, and verify it on-chain.
-async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
+async fn run_test(
+    cli: &Cli,
+    signal: &str,
+    verifier_address: Option<&str>,
+) -> eyre::Result<()> {
     let (authenticator, store) = init_authenticator(cli).await?;
 
     if !cli.json {
@@ -411,7 +553,13 @@ async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
     if !cli.json {
         eprintln!("Generating test proof request...");
     }
-    let proof_request = build_test_request(FAUX_ISSUER_SCHEMA_ID, signal, 300)?;
+    let proof_request = build_test_request(
+        FAUX_ISSUER_SCHEMA_ID,
+        signal,
+        300,
+        ProofType::Uniqueness,
+        None,
+    )?;
 
     if !cli.json {
         eprintln!("Generating proof...");
@@ -432,7 +580,8 @@ async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
         eprintln!("Verifying proof on-chain...");
     }
     let results =
-        verify_proof_onchain(cli, &proof_request, &proof_response.0, None).await?;
+        verify_proof_onchain(cli, &proof_request, &proof_response.0, verifier_address)
+            .await?;
     let all_passed = results.iter().all(|r| r.verified);
 
     if cli.json {
@@ -459,6 +608,57 @@ async fn run_test(cli: &Cli, signal: &str) -> eyre::Result<()> {
     Ok(())
 }
 
+fn parse_field_element(value: &str, label: &str) -> eyre::Result<FieldElement> {
+    value.trim().parse::<FieldElement>().wrap_err_with(|| {
+        format!("invalid {label}: expected 32-byte hex field element")
+    })
+}
+
+fn run_verify_ownership(
+    cli: &Cli,
+    proof_path: &str,
+    nonce: &str,
+    sub: &str,
+) -> eyre::Result<()> {
+    let b64 = read_file_or_stdin(proof_path)?;
+    let bytes = BASE64_URL_SAFE_NO_PAD
+        .decode(b64.trim())
+        .wrap_err("invalid base64 ownership proof")?;
+    let proof: OwnershipProof = ciborium::from_reader(&bytes[..])
+        .wrap_err("failed to decode ownership proof CBOR")?;
+
+    let nonce_fe = parse_field_element(nonce, "--nonce")?;
+    let sub_fe = parse_field_element(sub, "--sub")?;
+
+    let result = verify_ownership_proof(&proof, nonce_fe, sub_fe);
+    let merkle_root = proof.merkle_root.to_string();
+
+    if cli.json {
+        output::print_json_data(
+            &serde_json::json!({
+                "verified": result.is_ok(),
+                "merkle_root": merkle_root,
+                "error": result.as_ref().err().map(|e| format!("{e:#}")),
+            }),
+            true,
+        );
+    } else if let Err(ref err) = result {
+        println!(
+            "{} ownership proof verification failed: {err:#}",
+            output::fail_label()
+        );
+        println!("  merkle_root: {merkle_root}");
+    } else {
+        println!("{} ownership proof verified", output::pass_label());
+        println!("  merkle_root: {merkle_root}");
+    }
+
+    if result.is_err() {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
 pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
     match action {
         ProofCommand::Generate { request, now } => {
@@ -469,12 +669,27 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             issuer_schema_id,
             signal,
             expires_in,
-        } => run_generate_test_request(cli, *issuer_schema_id, signal, *expires_in),
+            proof_type,
+            session_id,
+        } => run_generate_test_request(
+            cli,
+            *issuer_schema_id,
+            signal,
+            *expires_in,
+            *proof_type,
+            *session_id,
+        ),
         ProofCommand::Verify {
             request,
             response,
             verifier_address,
         } => run_verify(cli, request, response, verifier_address.as_deref()).await,
-        ProofCommand::Test { signal } => run_test(cli, signal).await,
+        ProofCommand::Test {
+            signal,
+            verifier_address,
+        } => run_test(cli, signal, verifier_address.as_deref()).await,
+        ProofCommand::VerifyOwnership { proof, nonce, sub } => {
+            run_verify_ownership(cli, proof, nonce, sub)
+        }
     }
 }

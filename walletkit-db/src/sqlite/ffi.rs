@@ -26,7 +26,7 @@ use std::os::raw::{c_char, c_int, c_void};
 
 use zeroize::Zeroize;
 
-use super::error::{DbError, DbResult};
+use super::error::{DbResult, Error};
 
 // -- SQLite constants (plain `i32`, no C types leaked to callers) -------------
 
@@ -102,7 +102,7 @@ impl RawDb {
                 }
                 m
             };
-            return Err(DbError::new(rc, msg));
+            return Err(Error::new(rc, msg));
         }
 
         Ok(Self { ptr })
@@ -141,7 +141,7 @@ impl RawDb {
             }
             s
         };
-        Err(DbError::new(rc, msg))
+        Err(Error::new(rc, msg))
     }
 
     /// Like [`exec`](Self::exec) but zeroizes the internal `CString` buffer
@@ -183,7 +183,7 @@ impl RawDb {
             }
             s
         };
-        Err(DbError::new(rc, msg))
+        Err(Error::new(rc, msg))
     }
 
     /// Prepares a single SQL statement for execution.
@@ -204,7 +204,7 @@ impl RawDb {
         };
 
         if rc != SQLITE_OK as c_int || stmt_ptr.is_null() {
-            return Err(DbError::new(rc, self.errmsg()));
+            return Err(Error::new(rc, self.errmsg()));
         }
 
         Ok(RawStmt {
@@ -258,7 +258,7 @@ impl RawStmt<'_> {
         match rc {
             SQLITE_ROW => Ok(SQLITE_ROW),
             SQLITE_DONE => Ok(SQLITE_DONE),
-            other => Err(DbError::new(other, self.errmsg())),
+            other => Err(Error::new(other, self.errmsg())),
         }
     }
 
@@ -270,7 +270,7 @@ impl RawStmt<'_> {
         if rc == SQLITE_OK as c_int {
             Ok(())
         } else {
-            Err(DbError::new(rc, self.errmsg()))
+            Err(Error::new(rc, self.errmsg()))
         }
     }
 
@@ -387,7 +387,7 @@ impl Drop for RawStmt<'_> {
 
 fn to_cstring(s: &str) -> DbResult<CString> {
     CString::new(s)
-        .map_err(|e| DbError::new(SQLITE_ERROR, format!("nul byte in string: {e}")))
+        .map_err(|e| Error::new(SQLITE_ERROR, format!("nul byte in string: {e}")))
 }
 
 fn errmsg_from_ptr(db: *mut c_void) -> String {
@@ -408,7 +408,7 @@ fn check(rc: c_int, stmt: &RawStmt) -> DbResult<()> {
     if rc == SQLITE_OK as c_int {
         Ok(())
     } else {
-        Err(DbError::new(rc, stmt.errmsg()))
+        Err(Error::new(rc, stmt.errmsg()))
     }
 }
 
@@ -515,7 +515,7 @@ mod raw {
         wasm::sqlite3_open_v2(filename.cast(), pp_db.cast(), flags, z_vfs.cast())
     }
     pub unsafe fn sqlite3_close_v2(db: *mut c_void) -> c_int {
-        wasm::sqlite3_close_v2(db.cast())
+        wasm::sqlite3_close(db.cast())
     }
     pub unsafe fn sqlite3_exec(
         db: *mut c_void,
@@ -567,7 +567,12 @@ mod raw {
         n: c_int,
         destructor: isize,
     ) -> c_int {
-        wasm::sqlite3_bind_blob(stmt.cast(), index, value, n, destructor)
+        // WASM bindings use typed destructor callbacks instead of SQLite's
+        // sentinel `isize` values. This shim only supports `SQLITE_TRANSIENT`,
+        // which matches all current callers and ensures SQLite copies the data
+        // immediately.
+        assert_eq!(destructor, super::SQLITE_TRANSIENT);
+        wasm::sqlite3_bind_blob(stmt.cast(), index, value, n, wasm::SQLITE_TRANSIENT())
     }
     pub unsafe fn sqlite3_bind_text(
         stmt: *mut c_void,
@@ -576,7 +581,18 @@ mod raw {
         n: c_int,
         destructor: isize,
     ) -> c_int {
-        wasm::sqlite3_bind_text(stmt.cast(), index, value.cast(), n, destructor)
+        // WASM bindings use typed destructor callbacks instead of SQLite's
+        // sentinel `isize` values. This shim only supports `SQLITE_TRANSIENT`,
+        // which matches all current callers and ensures SQLite copies the text
+        // immediately.
+        assert_eq!(destructor, super::SQLITE_TRANSIENT);
+        wasm::sqlite3_bind_text(
+            stmt.cast(),
+            index,
+            value.cast(),
+            n,
+            wasm::SQLITE_TRANSIENT(),
+        )
     }
     pub unsafe fn sqlite3_bind_null(stmt: *mut c_void, index: c_int) -> c_int {
         wasm::sqlite3_bind_null(stmt.cast(), index)
