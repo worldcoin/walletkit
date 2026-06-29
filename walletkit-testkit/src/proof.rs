@@ -10,12 +10,14 @@ use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
 use eyre::WrapErr as _;
 use rand::rngs::OsRng;
+use uuid::Uuid;
 use world_id_core::primitives::{rp::RpId, FieldElement, SessionId};
 use world_id_core::requests::{
     ProofRequest, ProofResponse, ProofType, RequestItem, RequestVersion,
 };
 
 use crate::env::TestEnv;
+use crate::utils::now_secs;
 
 sol!(
     #[allow(clippy::too_many_arguments)]
@@ -62,14 +64,13 @@ pub fn build_test_request(
     env: &TestEnv,
     issuer_schema_id: u64,
     signal: &str,
-    now: u64,
     expires_in: u64,
     proof_type: ProofType,
     session_id: Option<SessionId>,
 ) -> eyre::Result<ProofRequest> {
     let nonce = FieldElement::random(&mut OsRng);
-    let created_at = now;
-    let expires_at = now + expires_in;
+    let created_at = now_secs();
+    let expires_at = created_at + expires_in;
 
     let signer = PrivateKeySigner::from_bytes(&env.rp_signing_key.into())
         .wrap_err("failed to create RP signer")?;
@@ -84,16 +85,20 @@ pub fn build_test_request(
     );
     let signature = signer.sign_message_sync(&msg).wrap_err("signing failed")?;
 
+    let item_id = Uuid::new_v4().to_string();
+
     let request_item = RequestItem::new(
-        "test".to_string(),
+        item_id,
         issuer_schema_id,
         Some(signal.as_bytes().to_vec()),
         None,
         None,
     );
 
+    let id = Uuid::new_v4().to_string();
+
     Ok(ProofRequest {
-        id: "test_request".to_string(),
+        id,
         version: RequestVersion::V1,
         proof_type,
         created_at,

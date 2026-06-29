@@ -15,20 +15,13 @@
     reason = "integration tests"
 )]
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use walletkit_testkit::flow::{generate_and_verify_test_proof, IssuanceStrategy};
 use walletkit_testkit::storage::{cleanup_storage, temp_root};
-use walletkit_testkit::TestEnv;
+use walletkit_testkit::utils::now_secs;
+use walletkit_testkit::{generate_and_verify_test_proof, CredentialType, TestEnv};
 
 const TEST_SEED: [u8; 32] = [7u8; 32];
-
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time after epoch")
-        .as_secs()
-}
+const SIGNAL: &str = "test_signal";
+const CREDENTIAL_TTL_SECS: u64 = 3600;
 
 fn init_tracing() {
     let _ = tracing_subscriber::fmt()
@@ -47,12 +40,11 @@ async fn e2e_faux_issuer_proof() {
     let root = temp_root();
 
     let outcome = generate_and_verify_test_proof(
+        CredentialType::Faux,
         &env,
         &TEST_SEED,
         &root,
-        IssuanceStrategy::Faux,
-        "test_signal",
-        now_secs(),
+        SIGNAL,
     )
     .await
     .expect("faux-issuer flow should succeed");
@@ -72,13 +64,18 @@ async fn e2e_local_eddsa_proof() {
     let env = TestEnv::default_staging();
     let root = temp_root();
 
+    let now = now_secs();
+    let credential_type = CredentialType::Local {
+        genesis_issued_at: now,
+        expires_at: now + CREDENTIAL_TTL_SECS,
+    };
+
     let outcome = generate_and_verify_test_proof(
+        credential_type,
         &env,
         &TEST_SEED,
         &root,
-        IssuanceStrategy::LocalEdDSA,
-        "test_signal",
-        now_secs(),
+        SIGNAL,
     )
     .await
     .expect("local-EdDSA flow should succeed");
