@@ -37,7 +37,7 @@ pub async fn init_authenticator(
     seed: &[u8],
     root: &Path,
     now: u64,
-) -> eyre::Result<(Arc<Authenticator>, Arc<CredentialStore>)> {
+) -> eyre::Result<(Authenticator, Arc<CredentialStore>)> {
     let store = create_fs_credential_store(root)?;
     let paths = store.storage_paths()?;
     cache_embedded_groth16_material(&paths)?;
@@ -59,7 +59,7 @@ pub async fn init_authenticator(
         .init_storage(now)
         .wrap_err("storage init failed")?;
 
-    Ok((Arc::new(authenticator), store))
+    Ok((authenticator, store))
 }
 
 /// Registers (or initializes) the on-chain account and returns its `leaf_index`.
