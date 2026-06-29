@@ -68,6 +68,10 @@ pub struct TestEnv {
 
 impl TestEnv {
     /// Returns the staging configuration with all pre-registered fixtures.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the default World ID config for staging cannot be built.
     #[must_use]
     pub fn default_staging() -> Self {
         let world_id_config = walletkit_core::defaults::default_config(
@@ -89,6 +93,9 @@ impl TestEnv {
         }
     }
 
+    /// Returns the staging configuration with the given World ID `config` and
+    /// verifier address, keeping all other pre-registered staging fixtures.
+    #[must_use]
     pub fn default_with_config_and_verifier(config: Config, verifier: Address) -> Self {
         Self {
             rp_id: STAGING_RP_ID,

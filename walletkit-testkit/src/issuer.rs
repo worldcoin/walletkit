@@ -1,6 +1,6 @@
-//! Test credential issuance.
+//! Test credential acquisition.
 //!
-//! Two interchangeable strategies, both producing an [`IssuedTestCredential`]
+//! Three interchangeable credential sources, all producing a [`CredentialInfo`]
 //! stored in the provided [`CredentialStore`]:
 //!
 //! - [`issue_faux_credential`] — calls the hosted faux issuer over HTTP
@@ -9,6 +9,10 @@
 //!   registered staging issuer's `EdDSA` key (schema 47). Deterministic and
 //!   service-independent, but requires the account `leaf_index` (see
 //!   [`crate::authenticator::register_account`]).
+//! - [`import_credential`] — stores a credential issued **externally** (e.g. by
+//!   the orb enrollment backend), pairing it with the blinding factor used to
+//!   derive its `sub`. [`import_credential_rederiving_bf`] re-fetches that
+//!   blinding factor from the OPRF nodes when the caller did not retain it.
 
 use eyre::WrapErr as _;
 use walletkit_core::storage::CredentialStore;
@@ -165,4 +169,87 @@ pub async fn issue_local_credential(
         issuer_schema_id: env.local_issuer_schema_id,
         blinding_factor: bf,
     })
+}
+
+/// Imports an **externally-issued** credential into `store`.
+///
+/// The credential is paired with the `blinding_factor` that was used to derive
+/// its `sub` (the caller necessarily holds it, since the `sub` must be computed
+/// and sent to the issuer before issuance). This is the third credential source
+/// alongside [`issue_faux_credential`] / [`issue_local_credential`], e.g. for a
+/// real credential obtained from the orb enrollment backend.
+///
+/// `now` (unix seconds) is the store reference time. `associated_data` is passed
+/// through to `store_credential` (issuance uses `None`; orb-tools used an empty
+/// `Some(vec![])`). `issuer_schema_id` and `expires_at` are read off the
+/// credential.
+///
+/// # Errors
+///
+/// Returns an error if storing the credential fails.
+pub fn import_credential(
+    store: &CredentialStore,
+    credential: &Credential,
+    blinding_factor: &FieldElement,
+    associated_data: Option<Vec<u8>>,
+    now: u64,
+) -> eyre::Result<CredentialInfo> {
+    let credential_id = store
+        .store_credential(
+            credential,
+            blinding_factor,
+            credential.expires_at(),
+            associated_data,
+            now,
+        )
+        .wrap_err("store credential failed")?;
+
+    Ok(CredentialInfo {
+        credential_id,
+        issuer_schema_id: credential.issuer_schema_id(),
+        blinding_factor: blinding_factor.clone(),
+    })
+}
+
+/// Re-derives the blinding factor from the OPRF nodes, then imports `credential`.
+///
+/// Use only when the blinding factor was not retained; prefer
+/// [`import_credential`] otherwise (re-derivation costs an extra OPRF
+/// round-trip). The OPRF-derived blinding factor is deterministic for a given
+/// authenticator identity and schema id, so it can be reproduced.
+///
+/// `bf_schema_id` MUST be the `issuer_schema_id` that was passed when the
+/// credential's `sub` was originally generated — this can differ from
+/// [`Credential::issuer_schema_id`]. The re-derived factor is checked against
+/// the credential's `sub` and a mismatch is an error, so a wrong `bf_schema_id`
+/// fails loudly here rather than silently storing an unprovable credential.
+///
+/// # Errors
+///
+/// Returns an error if the blinding-factor re-derivation fails, if the
+/// re-derived factor does not reproduce the credential's `sub`, or if storing
+/// the credential fails.
+pub async fn import_credential_rederiving_bf(
+    authenticator: &Authenticator,
+    store: &CredentialStore,
+    credential: &Credential,
+    bf_schema_id: u64,
+    associated_data: Option<Vec<u8>>,
+    now: u64,
+) -> eyre::Result<CredentialInfo> {
+    let bf = authenticator
+        .generate_credential_blinding_factor_remote(bf_schema_id)
+        .await
+        .wrap_err("blinding factor re-derivation failed")?;
+
+    if authenticator.compute_credential_sub(&bf).to_hex_string()
+        != credential.sub().to_hex_string()
+    {
+        eyre::bail!(
+            "re-derived blinding factor does not match credential sub \
+             (wrong bf_schema_id={bf_schema_id}?)"
+        );
+    }
+
+    import_credential(store, credential, &bf, associated_data, now)
 }

@@ -1,7 +1,7 @@
 //! Authenticator setup helpers.
 //!
 //! [`init_authenticator`] builds a filesystem-backed [`Authenticator`] ready to
-//! generate proofs (cached Groth16 materials + `init_with_defaults` +
+//! generate proofs (cached Groth16 materials + `init_with_config` +
 //! `init_storage`), mirroring the CLI's setup. [`register_account`] registers
 //! (or initializes) the on-chain account via [`CoreAuthenticator::init_or_register`]
 //! and returns its `leaf_index`, which the local-`EdDSA` issuer needs to build a
@@ -13,7 +13,7 @@ use std::sync::Arc;
 use alloy::primitives::Address;
 use eyre::WrapErr as _;
 use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
-use walletkit_core::{defaults, Authenticator, Groth16Materials};
+use walletkit_core::{Authenticator, Groth16Materials};
 use world_id_core::Authenticator as CoreAuthenticator;
 
 use crate::env::TestEnv;
