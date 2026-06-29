@@ -46,21 +46,9 @@ pub async fn init_authenticator(
             .wrap_err("failed to load cached Groth16 materials")?,
     );
 
-    let inner = CoreAuthenticator::init(seed, &env.world_id_config.to_string())
-        .await?
-        .with_proof_materials(materials.query.clone(), materials.nullifier.clone());
-
-    let authenticator = Authenticator { inner, store };
-
-    let authenticator =
-        Authenticator::init(seed, &env.world_id_config.to_string(), materials, store)
-            .await?;
-
-    let authenticator = Authenticator::init_with_defaults(
+    let authenticator = Authenticator::init_with_config(
         seed,
-        Some(env.worldchain_rpc_url.clone()),
-        &env.environment,
-        None,
+        env.world_id_config.clone(),
         materials,
         store.clone(),
     )
@@ -77,8 +65,8 @@ pub async fn init_authenticator(
 /// Registers (or initializes) the on-chain account and returns its `leaf_index`.
 ///
 /// Wraps [`CoreAuthenticator::init_or_register`] against `env`'s environment and
-/// RPC. The `leaf_index` is required to build a credential subject for the
-/// local-`EdDSA` issuance path.
+/// RPC. I.e. the account is registered only if it doesn't exist yet. A new account
+/// can be created by using a fresh seed.
 ///
 /// # Errors
 ///
@@ -89,17 +77,13 @@ pub async fn register_account(
     seed: &[u8],
     recovery_address: Option<Address>,
 ) -> eyre::Result<u64> {
-    let config = defaults::default_config(
-        &env.environment,
-        Some(env.worldchain_rpc_url.clone()),
-        None,
+    let core_authenticator = CoreAuthenticator::init_or_register(
+        seed,
+        env.world_id_config.clone(),
+        recovery_address,
     )
-    .wrap_err("failed to build config")?;
-
-    let core_authenticator =
-        CoreAuthenticator::init_or_register(seed, config, recovery_address)
-            .await
-            .wrap_err("account creation/init failed")?;
+    .await
+    .wrap_err("account creation/init failed")?;
 
     Ok(core_authenticator.leaf_index())
 }
