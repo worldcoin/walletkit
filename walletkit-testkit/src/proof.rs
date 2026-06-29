@@ -148,7 +148,7 @@ pub async fn verify_proof_onchain(
         .validate_response(proof_response)
         .wrap_err("proof response does not match proof request")?;
 
-    let provider = ProviderBuilder::new().connect_http(env.worldchain_rpc_url.parse()?);
+    let provider = ProviderBuilder::new().connect_http(env.rpc_url.parse()?);
     let verifier_contract = IWorldIDVerifier::new(env.world_id_verifier, &provider);
 
     let nonce = proof_request.nonce;

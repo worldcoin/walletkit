@@ -37,7 +37,7 @@ pub struct TestProofOutcome {
 impl TestProofOutcome {
     /// Returns `true` if the issued credential's proof verified on-chain.
     #[must_use]
-    pub fn verified(&self) -> bool {
+    pub const fn verified(&self) -> bool {
         self.verification.result.is_ok()
     }
 }
