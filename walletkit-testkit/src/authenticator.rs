@@ -1,11 +1,4 @@
 //! Authenticator setup helpers.
-//!
-//! [`init_authenticator`] builds a filesystem-backed [`Authenticator`] ready to
-//! generate proofs (cached Groth16 materials + `init_with_config` +
-//! `init_storage`), mirroring the CLI's setup. [`register_account`] registers
-//! (or initializes) the on-chain account via [`CoreAuthenticator::init_or_register`]
-//! and returns its `leaf_index`, which the local-`EdDSA` issuer needs to build a
-//! credential subject.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -21,10 +14,10 @@ use crate::storage::create_fs_credential_store;
 
 /// Initializes a filesystem-backed [`Authenticator`] and its [`CredentialStore`].
 ///
-/// Creates an [`crate::storage::FsStorageProvider`]-backed store rooted at
+/// Creates an [`storage::FsStorageProvider`]-backed store rooted at
 /// `root`, caches the embedded Groth16 materials, initializes the authenticator
 /// with SDK defaults for `env`'s environment and RPC, and runs `init_storage`
-/// with the given `now` (unix seconds).
+/// with the current time.
 /// Note: The on-chain account must already be registered in the `WorldIDRegistry`,
 /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
 ///

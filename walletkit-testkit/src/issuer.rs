@@ -1,19 +1,4 @@
 //! Test credential acquisition.
-//!
-//! Three interchangeable credential sources, all producing a [`CredentialInfo`]
-//! stored in the provided [`CredentialStore`]:
-//!
-//! - [`issue_faux_credential`] — calls the hosted faux issuer over HTTP
-//!   (schema 128). Exercises the real hosted issuer service.
-//! - [`issue_local_credential`] — signs a credential locally with the
-//!   registered staging issuer's `EdDSA` key (schema 47). Deterministic and
-//!   service-independent, but requires the account `leaf_index` (see
-//!   [`crate::authenticator::register_account`]).
-//! - [`import_credential`] — stores a credential issued **externally** (e.g. by
-//!   the orb enrollment backend), pairing it with the blinding factor used to
-//!   derive its `sub`. [`import_credential_rederiving_bf`] re-fetches that
-//!   blinding factor from the OPRF nodes when the caller did not retain it.
-
 use std::future::Future;
 
 use eyre::WrapErr as _;
@@ -85,8 +70,7 @@ pub async fn import_credential(
 /// Issues a credential from the faux issuer and stores it.
 ///
 /// Generates a blinding factor via OPRF, requests a credential for the derived
-/// subject, and stores the returned credential with `now` (unix seconds) as the
-/// reference time.
+/// subject.
 ///
 /// # Errors
 ///
@@ -147,7 +131,7 @@ pub async fn issue_faux_credential(
 ///
 /// Generates a blinding factor via OPRF, builds a credential subject from
 /// `leaf_index`, signs it with the configured issuer key, and stores it with
-/// `genesis_issued_at` and `expires_at` are set explicitly on the credential.
+/// `genesis_issued_at` and `expires_at`.
 ///
 /// # Errors
 ///

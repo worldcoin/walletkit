@@ -1,9 +1,4 @@
 //! Proof-request construction and on-chain verification.
-//!
-//! [`build_test_request`] assembles a [`ProofRequest`] signed by the staging RP
-//! key from a [`TestEnv`], replacing the hardcoded constants the CLI and
-//! integration tests previously carried. On-chain verification (added alongside)
-//! checks a request/response pair against the staging `WorldIDVerifier`.
 
 use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
@@ -51,9 +46,8 @@ sol!(
 
 /// Builds a proof [`ProofRequest`] signed by the RP key configured in `env`.
 ///
-/// `now` is the request's `created_at` (unix seconds); the request expires at
-/// `now + expires_in`. For uniqueness proofs an `action` of `1` is set and
-/// included in the RP signature. Pass an existing `session_id` for [`ProofType::Session`].
+/// The request expires at `created_at + expires_in`. For uniqueness proofs an `action` of `1` is set and
+/// included in the RP signature. Pass an existing `session_id` for `ProofType::Session` proofs.
 ///
 /// # Errors
 ///
@@ -128,12 +122,8 @@ pub struct VerifyItemResult {
     pub result: Result<(), String>,
 }
 
-/// Verifies a proof request/response pair on-chain against the staging
-/// `WorldIDVerifier`, returning one [`VerifyItemResult`] per response item.
-///
-/// The verifier contract address and RPC URL are taken from `env`. Uniqueness
-/// proofs are checked via `verify`; create-session and session proofs via
-/// `verifySession`.
+/// Verifies a proof request/response pair on-chain against the configured `WorldIDVerifier`,
+/// returning one `VerifyItemResult` per response item.
 ///
 /// # Errors
 ///

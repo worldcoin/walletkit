@@ -1,12 +1,4 @@
-//! Reusable [`StorageProvider`] implementations for tests.
-//!
-//! `walletkit-core` exposes the storage *traits* ([`StorageProvider`],
-//! [`DeviceKeystore`], [`AtomicBlobStore`]) but ships no reusable provider
-//! *impls*, so every (testing) consumer re-rolls them. This module provides
-//! [`FsStorageProvider`]: filesystem-backed with a no-op device keystore.
-//!
-//! Important: This is a test-only provider and must not be used in production.
-//! Vault encryption keys are stored in plaintext on disk.
+//! Reusable `StorageProvider` implementations for tests.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,10 +8,6 @@ use walletkit_core::storage::{
     AtomicBlobStore, CredentialStore, DeviceKeystore, StorageError, StoragePaths,
     StorageProvider,
 };
-
-// ---------------------------------------------------------------------------
-// Shared test keystore
-// ---------------------------------------------------------------------------
 
 /// No-op device keystore that passes data through without encryption.
 ///
@@ -45,10 +33,6 @@ impl DeviceKeystore for NoopDeviceKeystore {
         Ok(ciphertext)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Filesystem provider
-// ---------------------------------------------------------------------------
 
 /// Filesystem-backed [`AtomicBlobStore`].
 ///
@@ -145,10 +129,6 @@ impl StorageProvider for FsStorageProvider {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Store constructors and helpers
-// ---------------------------------------------------------------------------
-
 /// Returns a unique, non-existent temp directory path for test storage.
 #[must_use]
 pub fn temp_root() -> PathBuf {
@@ -157,7 +137,7 @@ pub fn temp_root() -> PathBuf {
     path
 }
 
-/// Creates a [`CredentialStore`] backed by the filesystem at `root`.
+/// Creates a `CredentialStore` backed by the filesystem at `root`.
 ///
 /// # Errors
 ///

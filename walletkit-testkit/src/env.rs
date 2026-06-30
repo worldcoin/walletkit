@@ -1,16 +1,4 @@
 //! Test environment configuration.
-//!
-//! [`TestEnv`] centralizes every staging-registered constant that the test
-//! helpers need — RP id/signing key, on-chain verifier address, World Chain RPC,
-//! and the two issuer fixtures (hosted faux-issuer and local `EdDSA`). The
-//! [`Default`] impl returns [`TestEnv::staging`]; individual fields can be
-//! overridden for pointing helpers at other environments or fixtures.
-//!
-//! All fixtures are pre-registered on staging: the RP on the `RpRegistry`
-//! contract and both issuers on the `CredentialSchemaIssuerRegistry`. Proofs
-//! verify on-chain because the `WorldIDVerifier` resolves the issuer public key
-//! from the on-chain registry by schema id.
-
 use alloy::primitives::{hex, Address};
 use walletkit_core::{defaults::world_id_verifier_address, Environment, Region};
 use world_id_core::primitives::Config;
@@ -41,7 +29,7 @@ pub const LOCAL_ISSUER_EDDSA_KEY: [u8; 32] =
 
 /// Configuration for the test helpers, centralizing all staging fixtures.
 ///
-/// Construct with [`TestEnv::staging`] (also the [`Default`]) and override any
+/// Construct with [`TestEnv::default_staging`] (also the [`Default`]) and override any
 /// field as needed. Every helper in this crate takes a `&TestEnv` so callers can
 /// point the same flow at a different RP, verifier, RPC, or issuer.
 #[derive(Debug, Clone)]
