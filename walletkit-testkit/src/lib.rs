@@ -31,6 +31,11 @@ use crate::{
 };
 
 /// Initializes an authenticator and registers an account.
+///
+/// # Errors
+///
+/// Returns an error if account registration or authenticator initialization
+/// fails.
 pub async fn init_and_register_account(
     env: &TestEnv,
     seed: &[u8],
@@ -77,7 +82,7 @@ pub enum CredentialType {
 impl CredentialType {
     /// Returns the issuer schema ID a credential of this type will be issued under.
     #[must_use]
-    pub fn issuer_schema_id(&self, env: &TestEnv) -> u64 {
+    pub const fn issuer_schema_id(&self, env: &TestEnv) -> u64 {
         match self {
             Self::Local { .. } => env.local_issuer_schema_id,
             Self::Faux => env.faux_issuer_schema_id,
@@ -98,7 +103,7 @@ pub struct TestProofOutcome {
 impl TestProofOutcome {
     /// Returns `true` if the issued credential's proof verified on-chain.
     #[must_use]
-    pub fn verified(&self) -> bool {
+    pub const fn verified(&self) -> bool {
         self.verification.result.is_ok()
     }
 }
