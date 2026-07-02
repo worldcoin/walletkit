@@ -53,6 +53,12 @@ pub trait DeviceKeystore: Send + Sync {
 }
 
 /// Atomic blob store for small binary files (e.g., `account_keys.bin`).
+///
+/// `path` is a bare, storage-relative filename (e.g. `account_keys.bin`), not an
+/// absolute path — the implementation resolves it against whatever root it chooses.
+/// That root is independent of [`StoragePaths`], so the key envelope need not live
+/// under `<root>/worldid/`; a host that backs up or deletes an account must persist
+/// and remove these blobs separately from the `worldid/` files.
 #[uniffi::export(with_foreign)]
 pub trait AtomicBlobStore: Send + Sync {
     /// Reads the blob at `path`, if present.

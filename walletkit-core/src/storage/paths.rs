@@ -1,14 +1,22 @@
 //! Storage path helpers.
 //!
-//! All credential storage artifacts live under `<root>/worldid/`:
+//! [`StoragePaths`] governs the on-disk files under `<root>/worldid/`:
 //!
 //! ```text
-//! account_keys.bin            # DeviceKeystore-sealed K_intermediate envelope
 //! account.cache.sqlite        # sqlite3mc-encrypted cache DB (keyed by K_intermediate)
 //! account.vault.sqlite        # sqlite3mc-encrypted vault DB (keyed by K_intermediate)
 //! lock                        # account-scoped lock
 //! groth16/                    # cached Groth16 proving material
 //! ```
+//!
+//! The account key envelope (`account_keys.bin`) is **not** covered by
+//! [`StoragePaths`]. It is persisted through the host's `AtomicBlobStore` using the
+//! bare filename `account_keys.bin`, so its physical location is whatever root the
+//! host roots that blob store at — which need not be `<root>/worldid/`. For example,
+//! the CLI provider roots the blob store at `<root>`, writing the envelope to
+//! `<root>/account_keys.bin` alongside (not inside) the `worldid/` directory. Host
+//! implementors backing up or deleting an account MUST include the envelope from the
+//! blob store in addition to the `worldid/` files.
 //!
 //! Filenames are fixed and generic by design: none of them encode a relying-party
 //! ID, action name, issuer name, or the account's leaf index, so directory listings

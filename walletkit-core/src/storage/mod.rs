@@ -32,8 +32,11 @@
 //!
 //! ## On-disk layout
 //!
-//! All artifacts live under `<root>/worldid/`; see [`crate::storage::StoragePaths`]
-//! for the full file layout.
+//! The vault, cache, and lock live under `<root>/worldid/` — see
+//! [`crate::storage::StoragePaths`]. The account key envelope (`account_keys.bin`) is
+//! written separately through the host's [`crate::storage::AtomicBlobStore`] and its
+//! location is host-determined (not necessarily under `worldid/`); backup and
+//! deletion must include it.
 //!
 //! ## Security and privacy properties
 //!

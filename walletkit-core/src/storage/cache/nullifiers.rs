@@ -1,10 +1,18 @@
 //! Used-nullifier cache helpers for replay protection.
 //!
-//! Records each disclosed nullifier so a repeated disclosure of the same
-//! nullifier can be detected and refused. Enforcement is transactional. A
-//! grace period ([`REPLAY_REQUEST_NBF_SECONDS`]) delays enforcement so a proof
-//! that failed to reach the RP can be retried; entries expire after
-//! [`REPLAY_REQUEST_TTL_SECONDS`] and may be pruned.
+//! Records each disclosed nullifier so a later disclosure of the same nullifier
+//! can be detected and refused. A grace period ([`REPLAY_REQUEST_NBF_SECONDS`])
+//! delays enforcement so a proof that failed to reach the RP can be retried;
+//! entries expire after [`REPLAY_REQUEST_TTL_SECONDS`] and may be pruned.
+//!
+//! Each `replay_guard_set` insert is atomic and idempotent. Detection is *not*
+//! atomic end-to-end, though: the proof flow calls `is_nullifier_replay` (a read),
+//! generates the proof, then calls `replay_guard_set` (the insert) as separate
+//! steps, holding no lock across them. Two concurrent requests for the same
+//! nullifier can therefore both pass the check before either records its guard and
+//! both disclose. This guard defends against sequential reuse, not a concurrent
+//! race; callers that need strict single-use must serialize the check-and-set
+//! themselves.
 
 use crate::storage::error::StorageResult;
 use walletkit_db::Connection;
