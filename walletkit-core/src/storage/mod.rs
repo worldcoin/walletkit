@@ -1,18 +1,11 @@
-//! On-device encrypted storage for World ID credentials.
+//! # Credential Store
 //!
-//! # Goal
+//! On-device consisted encrypted storage for World ID credentials.
 //!
-//! A consistent method to store credentials:
-//!
-//! - Consistent API across different credential types.
-//! - Store different versions of the same credential.
-//! - Eventually (not yet implemented):
-//!   - Awareness of a credential on multiple devices (sync, originating authenticator).
-//!   - Pruning/compaction.
-//!   - Purging.
-//!   - Per-credential encryption keys (hardware-backed where available) with access
-//!     control proportional to each credential's sensitivity, rather than the single
-//!     vault-wide `K_intermediate` used today.
+//! The storage layer handles structured storage of all credentials and their
+//! associated data (only storage, the semantics of the associated data is the
+//! Issuer's responsibility). In addition the storage layer handles encryption
+//! and clean up after expiration.
 //!
 //! # Components
 //!
