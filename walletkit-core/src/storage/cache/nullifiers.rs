@@ -26,7 +26,7 @@ const REPLAY_REQUEST_NBF_SECONDS: u64 = 600; // 10 minutes
 /// Retention window for a replay guard entry.
 ///
 /// Bounded rather than indefinite so the cache doesn't grow into a permanent
-/// on-device record of every action ever performed.
+/// record.
 static REPLAY_REQUEST_TTL_SECONDS: u64 = 60 * 60 * 24 * 365; // 1 year
 
 /// Checks whether a replay guard entry exists for the given nullifier.
