@@ -39,6 +39,10 @@ pub use walletkit_db::ContentId;
 pub type RequestId = [u8; 32];
 
 /// Nullifier identifier used for replay safety.
+///
+/// Replay guard entries keyed by a nullifier are intentionally short-lived
+/// (bounded by TTL) to avoid accumulating a long-lived "interaction history"
+/// on device.
 pub type Nullifier = [u8; 32];
 
 /// In-memory representation of stored credential metadata.

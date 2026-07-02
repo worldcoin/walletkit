@@ -1,4 +1,18 @@
 //! Storage path helpers.
+//!
+//! All credential storage artifacts live under `<root>/worldid/`:
+//!
+//! ```text
+//! account_keys.bin            # DeviceKeystore-sealed K_intermediate envelope
+//! account.cache.sqlite        # sqlite3mc-encrypted cache DB (keyed by K_intermediate)
+//! account.vault.sqlite        # sqlite3mc-encrypted vault DB (keyed by K_intermediate)
+//! lock                        # account-scoped lock
+//! groth16/                    # cached Groth16 proving material
+//! ```
+//!
+//! Filenames are fixed and generic by design: none of them encode a relying-party
+//! ID, action name, issuer name, or the account's leaf index, so directory listings
+//! and backup archives don't leak which accounts or actions exist on a device.
 
 use std::path::{Path, PathBuf};
 
