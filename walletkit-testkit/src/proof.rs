@@ -3,10 +3,11 @@
 use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
+use alloy_core::primitives::U160;
 use eyre::WrapErr as _;
 use rand::rngs::OsRng;
 use uuid::Uuid;
-use world_id_core::primitives::{rp::RpId, FieldElement, SessionId};
+use world_id_core::primitives::{rp::RpId, FieldElement, OprfKeyId, SessionId};
 use world_id_core::requests::{
     ProofRequest, ProofResponse, ProofType, RequestItem, RequestVersion,
 };
@@ -52,8 +53,7 @@ sol!(
 /// # Errors
 ///
 /// Returns an error if the RP signer cannot be constructed from the configured
-/// key, if signing the RP message fails, or if the `oprf_key_id` cannot be
-/// derived from the RP id.
+/// key or if signing the RP message fails.
 pub fn build_test_request(
     env: &TestEnv,
     issuer_schema_id: u64,
@@ -98,11 +98,7 @@ pub fn build_test_request(
         created_at,
         expires_at,
         rp_id: RpId::new(env.rp_id),
-        oprf_key_id: serde_json::from_value(serde_json::json!(format!(
-            "0x{:040x}",
-            env.rp_id
-        )))
-        .wrap_err("failed to construct oprf_key_id")?,
+        oprf_key_id: OprfKeyId::new(U160::from(env.rp_id)),
         session_id,
         action,
         signature,
