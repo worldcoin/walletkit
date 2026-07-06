@@ -72,11 +72,21 @@ impl AtomicBlobStore for FsAtomicBlobStore {
                 StorageError::BlobStore(format!("mkdir {}: {e}", parent.display()))
             })?;
         }
-        let tmp = full.with_extension("tmp");
+        // Unique per target and per write: `with_extension` would map same-stem
+        // siblings (e.g. `vault.sqlite` / `vault.sqlite-wal`) to one tmp path.
+        let file_name = full.file_name().ok_or_else(|| {
+            StorageError::BlobStore(format!("no file name in {}", full.display()))
+        })?;
+        let tmp = full.with_file_name(format!(
+            "{}.{}.tmp",
+            file_name.to_string_lossy(),
+            Uuid::new_v4()
+        ));
         std::fs::write(&tmp, &bytes).map_err(|e| {
             StorageError::BlobStore(format!("write {}: {e}", tmp.display()))
         })?;
         std::fs::rename(&tmp, &full).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
             StorageError::BlobStore(format!("rename {}: {e}", full.display()))
         })?;
         Ok(())
