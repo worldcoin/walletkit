@@ -19,7 +19,9 @@ use walletkit_testkit::storage::{cleanup_storage, temp_root};
 use walletkit_testkit::utils::now_secs;
 use walletkit_testkit::{generate_and_verify_test_proof, CredentialType, TestEnv};
 
-const TEST_SEED: [u8; 32] = [7u8; 32];
+// Distinct seeds so the parallel tests drive independent staging identities.
+const FAUX_TEST_SEED: [u8; 32] = [7u8; 32];
+const LOCAL_TEST_SEED: [u8; 32] = [8u8; 32];
 const SIGNAL: &str = "test_signal";
 const CREDENTIAL_TTL_SECS: u64 = 3600;
 
@@ -42,7 +44,7 @@ async fn e2e_faux_issuer_proof() {
     let outcome = generate_and_verify_test_proof(
         CredentialType::Faux,
         &env,
-        &TEST_SEED,
+        &FAUX_TEST_SEED,
         &root,
         SIGNAL,
     )
@@ -73,7 +75,7 @@ async fn e2e_local_eddsa_proof() {
     let outcome = generate_and_verify_test_proof(
         credential_type,
         &env,
-        &TEST_SEED,
+        &LOCAL_TEST_SEED,
         &root,
         SIGNAL,
     )
