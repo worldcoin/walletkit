@@ -21,7 +21,8 @@ use eyre::Context;
 use walletkit_core::{
     storage::CredentialStore, Authenticator, Credential, FieldElement,
 };
-use world_id_core::requests::ProofType;
+pub use world_id_core::primitives::SessionId;
+pub use world_id_core::requests::ProofType;
 
 use crate::{
     authenticator::{init_authenticator, register_account},
@@ -91,13 +92,18 @@ impl CredentialType {
     }
 }
 
-/// Outcome of [`CredentialType::generate_and_verify_test_proof`].
+/// Outcome of [`generate_and_verify_test_proof`].
 #[derive(Debug, Clone)]
 pub struct TestProofOutcome {
     /// Local store ID of the issued credential.
     pub credential_id: u64,
     /// On-chain verification result for the single issued credential.
     pub verification: VerifyItemResult,
+    /// Session ID from the proof response (`None` for uniqueness proofs).
+    ///
+    /// For `ProofType::CreateSession` this is the newly created session, which
+    /// can be passed to a follow-up `ProofType::Session` request.
+    pub session_id: Option<SessionId>,
 }
 
 impl TestProofOutcome {
@@ -144,19 +150,26 @@ pub async fn issue_credential(
     }
 }
 
-/// Registers an account, issues a credential of this type, generates a
-/// uniqueness proof for `signal`, and verifies it on-chain.
+/// Registers an account, issues a credential of this type, generates a proof
+/// of `proof_type` for `signal`, and verifies it on-chain.
+///
+/// For `ProofType::Session`, pass the `session_id` of an existing session
+/// (e.g. from a prior `ProofType::CreateSession` outcome); otherwise pass
+/// `None`.
 ///
 /// # Errors
 ///
 /// Returns an error if account setup, credential issuance, proof generation,
-/// or on-chain verification setup fails.
+/// on-chain verification setup fails, or if `proof_type` and `session_id`
+/// are inconsistent.
 pub async fn generate_and_verify_test_proof(
     credential_type: CredentialType,
     env: &TestEnv,
     seed: &[u8],
     root: &Path,
     signal: &str,
+    proof_type: ProofType,
+    session_id: Option<SessionId>,
 ) -> eyre::Result<TestProofOutcome> {
     let issuer_schema_id = credential_type.issuer_schema_id(env);
 
@@ -174,8 +187,8 @@ pub async fn generate_and_verify_test_proof(
         issuer_schema_id,
         signal,
         REQUEST_TTL_SECS,
-        ProofType::Uniqueness,
-        None,
+        proof_type,
+        session_id,
     )
     .wrap_err("failed to build proof request")?;
 
@@ -199,5 +212,6 @@ pub async fn generate_and_verify_test_proof(
     Ok(TestProofOutcome {
         credential_id,
         verification: results.remove(0),
+        session_id: response.session_id,
     })
 }

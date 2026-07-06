@@ -53,7 +53,8 @@ sol!(
 /// # Errors
 ///
 /// Returns an error if the RP signer cannot be constructed from the configured
-/// key or if signing the RP message fails.
+/// key, if signing the RP message fails, or if `proof_type` and `session_id`
+/// are inconsistent (e.g. `ProofType::Session` without a `session_id`).
 pub fn build_test_request(
     env: &TestEnv,
     issuer_schema_id: u64,
@@ -91,7 +92,7 @@ pub fn build_test_request(
 
     let id = Uuid::new_v4().to_string();
 
-    Ok(ProofRequest {
+    let request = ProofRequest {
         id,
         version: RequestVersion::V1,
         proof_type,
@@ -105,7 +106,11 @@ pub fn build_test_request(
         nonce,
         requests: vec![request_item],
         constraints: None,
-    })
+    };
+    request
+        .validate_proof_type()
+        .wrap_err("inconsistent proof_type / session_id combination")?;
+    Ok(request)
 }
 
 /// Result of verifying one proof-response item against the `WorldIDVerifier`.

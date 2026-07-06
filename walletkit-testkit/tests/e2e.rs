@@ -17,11 +17,14 @@
 
 use tempfile::TempDir;
 use walletkit_testkit::utils::now_secs;
-use walletkit_testkit::{generate_and_verify_test_proof, CredentialType, TestEnv};
+use walletkit_testkit::{
+    generate_and_verify_test_proof, CredentialType, ProofType, TestEnv,
+};
 
 // Distinct seeds so the parallel tests drive independent staging identities.
 const FAUX_TEST_SEED: [u8; 32] = [7u8; 32];
 const LOCAL_TEST_SEED: [u8; 32] = [8u8; 32];
+const SESSION_TEST_SEED: [u8; 32] = [9u8; 32];
 const SIGNAL: &str = "test_signal";
 const CREDENTIAL_TTL_SECS: u64 = 3600;
 
@@ -47,6 +50,8 @@ async fn e2e_faux_issuer_proof() {
         &FAUX_TEST_SEED,
         root.path(),
         SIGNAL,
+        ProofType::Uniqueness,
+        None,
     )
     .await
     .expect("faux-issuer flow should succeed");
@@ -77,6 +82,8 @@ async fn e2e_local_eddsa_proof() {
         &LOCAL_TEST_SEED,
         root.path(),
         SIGNAL,
+        ProofType::Uniqueness,
+        None,
     )
     .await
     .expect("local-EdDSA flow should succeed");
@@ -84,6 +91,42 @@ async fn e2e_local_eddsa_proof() {
     assert!(
         outcome.verified(),
         "local-EdDSA-issued proof should verify on-chain: {:?}",
+        outcome.verification
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires staging infrastructure"]
+async fn e2e_session_proof() {
+    init_tracing();
+    let env = TestEnv::default_staging();
+    let root = TempDir::new().expect("failed to create temp storage dir");
+
+    let now = now_secs();
+    let credential_type = CredentialType::Local {
+        genesis_issued_at: now,
+        expires_at: now + CREDENTIAL_TTL_SECS,
+    };
+
+    let outcome = generate_and_verify_test_proof(
+        credential_type,
+        &env,
+        &SESSION_TEST_SEED,
+        root.path(),
+        SIGNAL,
+        ProofType::CreateSession,
+        None,
+    )
+    .await
+    .expect("create-session flow should succeed");
+
+    assert!(
+        outcome.session_id.is_some(),
+        "create-session response should carry the new session_id"
+    );
+    assert!(
+        outcome.verified(),
+        "session proof should verify on-chain: {:?}",
         outcome.verification
     );
 }
