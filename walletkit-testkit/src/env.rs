@@ -56,10 +56,10 @@ pub struct TestEnv {
 
 impl TestEnv {
     /// Returns the staging configuration with all pre-registered fixtures.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the default World ID config for staging cannot be built.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "unreachable: default_config only fails parsing a caller-supplied rpc_url"
+    )]
     #[must_use]
     pub fn default_staging() -> Self {
         let world_id_config = walletkit_core::defaults::default_config(
@@ -67,7 +67,7 @@ impl TestEnv {
             None,
             Some(Region::Us),
         )
-        .unwrap();
+        .expect("infallible: default_config only fails parsing a caller-supplied rpc_url, and none is passed");
         Self {
             rp_id: STAGING_RP_ID,
             rp_signing_key: STAGING_RP_SIGNING_KEY,
