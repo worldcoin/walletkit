@@ -15,7 +15,7 @@
     reason = "integration tests"
 )]
 
-use walletkit_testkit::storage::{cleanup_storage, temp_root};
+use tempfile::TempDir;
 use walletkit_testkit::utils::now_secs;
 use walletkit_testkit::{generate_and_verify_test_proof, CredentialType, TestEnv};
 
@@ -39,19 +39,18 @@ fn init_tracing() {
 async fn e2e_faux_issuer_proof() {
     init_tracing();
     let env = TestEnv::default_staging();
-    let root = temp_root();
+    let root = TempDir::new().expect("failed to create temp storage dir");
 
     let outcome = generate_and_verify_test_proof(
         CredentialType::Faux,
         &env,
         &FAUX_TEST_SEED,
-        &root,
+        root.path(),
         SIGNAL,
     )
     .await
     .expect("faux-issuer flow should succeed");
 
-    cleanup_storage(&root);
     assert!(
         outcome.verified(),
         "faux-issued proof should verify on-chain: {:?}",
@@ -64,7 +63,7 @@ async fn e2e_faux_issuer_proof() {
 async fn e2e_local_eddsa_proof() {
     init_tracing();
     let env = TestEnv::default_staging();
-    let root = temp_root();
+    let root = TempDir::new().expect("failed to create temp storage dir");
 
     let now = now_secs();
     let credential_type = CredentialType::Local {
@@ -76,13 +75,12 @@ async fn e2e_local_eddsa_proof() {
         credential_type,
         &env,
         &LOCAL_TEST_SEED,
-        &root,
+        root.path(),
         SIGNAL,
     )
     .await
     .expect("local-EdDSA flow should succeed");
 
-    cleanup_storage(&root);
     assert!(
         outcome.verified(),
         "local-EdDSA-issued proof should verify on-chain: {:?}",

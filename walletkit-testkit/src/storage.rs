@@ -139,14 +139,6 @@ impl StorageProvider for FsStorageProvider {
     }
 }
 
-/// Returns a unique, non-existent temp directory path for test storage.
-#[must_use]
-pub fn temp_root() -> PathBuf {
-    let mut path = std::env::temp_dir();
-    path.push(format!("walletkit-test-{}", Uuid::new_v4()));
-    path
-}
-
 /// Creates a `CredentialStore` backed by the filesystem at `root`.
 ///
 /// # Errors
@@ -157,24 +149,4 @@ pub fn create_fs_credential_store(
 ) -> Result<Arc<CredentialStore>, StorageError> {
     let provider = FsStorageProvider::open(root);
     Ok(Arc::new(CredentialStore::from_provider(&provider)?))
-}
-
-/// Removes all on-disk artifacts (vault, cache, lock, `WorldID` dir) under `root`.
-///
-/// Best-effort: missing files are ignored. Use to clean up after
-/// [`FsStorageProvider`]-backed tests.
-pub fn cleanup_storage(root: &Path) {
-    let paths = StoragePaths::new(root);
-    let vault = paths.vault_db_path();
-    let cache = paths.cache_db_path();
-    let lock = paths.lock_path();
-    let _ = std::fs::remove_file(&vault);
-    let _ = std::fs::remove_file(vault.with_extension("sqlite-wal"));
-    let _ = std::fs::remove_file(vault.with_extension("sqlite-shm"));
-    let _ = std::fs::remove_file(&cache);
-    let _ = std::fs::remove_file(cache.with_extension("sqlite-wal"));
-    let _ = std::fs::remove_file(cache.with_extension("sqlite-shm"));
-    let _ = std::fs::remove_file(lock);
-    let _ = std::fs::remove_dir_all(paths.worldid_dir());
-    let _ = std::fs::remove_dir_all(paths.root());
 }
