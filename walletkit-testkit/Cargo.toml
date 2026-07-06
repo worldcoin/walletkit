@@ -11,7 +11,8 @@ publish = false
 
 [dependencies]
 walletkit-core = { workspace = true, features = ["issuers", "embed-zkeys"] }
-world-id-core = { workspace = true, features = ["authenticator", "embed-zkeys"] }
+# `embed-zkeys` comes in via `walletkit-core/embed-zkeys`, which forwards it.
+world-id-core = { workspace = true, features = ["authenticator"] }
 alloy-core = { workspace = true }
 alloy = { version = "2", default-features = false, features = ["contract", "json", "getrandom", "signer-local"] }
 eyre = "0.6"
