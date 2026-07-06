@@ -5,14 +5,6 @@
 //! delays enforcement so a proof that failed to reach the RP can be retried;
 //! entries expire after [`REPLAY_REQUEST_TTL_SECONDS`] and may be pruned.
 //!
-//! Each `replay_guard_set` insert is atomic and idempotent. Detection is *not*
-//! atomic end-to-end, though: the proof flow calls `is_nullifier_replay` (a read),
-//! generates the proof, then calls `replay_guard_set` (the insert) as separate
-//! steps, holding no lock across them. Two concurrent requests for the same
-//! nullifier can therefore both pass the check before either records its guard and
-//! both disclose. This guard defends against sequential reuse, not a concurrent
-//! race; callers that need strict single-use must serialize the check-and-set
-//! themselves.
 
 use crate::storage::error::StorageResult;
 use walletkit_db::Connection;
@@ -31,10 +23,7 @@ use super::util::{
 /// FUTURE: Parametrize this as a configuration option.
 const REPLAY_REQUEST_NBF_SECONDS: u64 = 600; // 10 minutes
 
-/// Retention window for a replay guard entry.
-///
-/// Bounded rather than indefinite so the cache doesn't grow into a permanent
-/// record.
+/// Retention window for a replay guard entry. Bounded to avoid indefinite growth.
 static REPLAY_REQUEST_TTL_SECONDS: u64 = 60 * 60 * 24 * 365; // 1 year
 
 /// Checks whether a replay guard entry exists for the given nullifier.

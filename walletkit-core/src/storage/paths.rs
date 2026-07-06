@@ -17,10 +17,6 @@
 //! `<root>/account_keys.bin` alongside (not inside) the `worldid/` directory. Host
 //! implementors backing up or deleting an account MUST include the envelope from the
 //! blob store in addition to the `worldid/` files.
-//!
-//! Filenames are fixed and generic by design: none of them encode a relying-party
-//! ID, action name, issuer name, or the account's leaf index, so directory listings
-//! and backup archives don't leak which accounts or actions exist on a device.
 
 use std::path::{Path, PathBuf};
 

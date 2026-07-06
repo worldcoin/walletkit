@@ -1,6 +1,6 @@
 //! Merkle proof cache helpers.
 
-use crate::storage::{cache::util::CACHE_KEY_PREFIX_MERKLE, error::StorageResult};
+use crate::storage::{cache::schema::CACHE_KEY_PREFIX_MERKLE, error::StorageResult};
 use walletkit_db::Connection;
 
 use super::util::{

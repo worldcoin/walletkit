@@ -41,12 +41,7 @@
 //! ## Security and privacy properties
 //!
 //! Encryption, the sealed-envelope threat model, and integrity checks are covered by
-//! the `walletkit-db` README. Specific to credential storage:
-//!
-//! - No filesystem paths encode `leaf_index`, RP identifiers, issuer names, or action
-//!   name. See [`crate::storage::StoragePaths`].
-//! - The vault (authoritative) holds the `leaf_index`, credentials, and blobs; the
-//!   cache DB holds only regenerable, TTL-bounded entries.
+//! the `walletkit-db` README.
 
 pub mod cache;
 pub mod credential_storage;
