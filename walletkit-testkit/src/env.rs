@@ -7,6 +7,10 @@ use world_id_core::primitives::Config;
 pub const STAGING_RP_ID: u64 = 46;
 
 /// ECDSA private key (secp256k1) for the staging RP.
+///
+/// WARNING: intentionally public and only authorized for the pre-registered
+/// *staging* RP. Never reuse against non-staging environments — non-staging
+/// setups must supply their own `rp_signing_key`.
 pub const STAGING_RP_SIGNING_KEY: [u8; 32] =
     hex!("1111111111111111111111111111111111111111111111111111111111111111");
 
@@ -24,6 +28,10 @@ pub const FAUX_ISSUER_SCHEMA_ID: u64 = 128;
 pub const LOCAL_ISSUER_SCHEMA_ID: u64 = 47;
 
 /// `EdDSA` private key (32 bytes) for the registered local issuer.
+///
+/// WARNING: intentionally public and only authorized for the issuer schema
+/// registered on *staging*. Never reuse against non-staging environments —
+/// non-staging setups must supply their own `local_issuer_eddsa_key`.
 pub const LOCAL_ISSUER_EDDSA_KEY: [u8; 32] =
     hex!("1111111111111111111111111111111111111111111111111111111111111111");
 
@@ -32,6 +40,11 @@ pub const LOCAL_ISSUER_EDDSA_KEY: [u8; 32] =
 /// Construct with [`TestEnv::default_staging`] (also the [`Default`]) and override any
 /// field as needed. Every helper in this crate takes a `&TestEnv` so callers can
 /// point the same flow at a different RP, verifier, RPC, or issuer.
+///
+/// All defaults are *staging* fixtures: the embedded private keys are
+/// intentionally public and authorized on staging only. When targeting any
+/// other environment, supply your own `rp_signing_key` and
+/// `local_issuer_eddsa_key` — never reuse the staging defaults.
 #[derive(Debug, Clone)]
 pub struct TestEnv {
     /// RP ID registered on the `RpRegistry` contract.
