@@ -31,6 +31,9 @@ use crate::{
     utils::now_secs,
 };
 
+/// Time-to-live applied to generated test proof requests.
+const REQUEST_TTL_SECS: u64 = 300;
+
 /// Initializes an authenticator and registers an account.
 ///
 /// # Errors
@@ -113,9 +116,6 @@ impl TestProofOutcome {
         self.verification.result.is_ok()
     }
 }
-
-/// Time-to-live applied to generated test proof requests.
-const REQUEST_TTL_SECS: u64 = 300;
 
 /// Issues a credential of the given type.
 ///
