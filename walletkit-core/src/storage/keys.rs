@@ -1,17 +1,10 @@
-//! Key hierarchy management for credential storage.
+//! Key management for credential storage.
 //!
-//! ## Key structure
-//!
-//! - `K_device`: device-bound root key managed by `DeviceKeystore`.
-//! - `account_keys.bin`: account key envelope stored via `AtomicBlobStore` and
-//!   containing `DeviceKeystore::seal` of `K_intermediate` with associated data
-//!   `worldid:account-key-envelope`.
-//! - `K_intermediate`: 32-byte per-account key unsealed at init and kept in
-//!   memory for the lifetime of the storage handle.
-//! - `SQLCipher` databases: `account.vault.sqlite` (authoritative) and
-//!   `account.cache.sqlite` (non-authoritative) are opened with `K_intermediate`.
-//! - Derived keys: per relying-party session keys may be derived from
-//!   `K_intermediate` and cached in `account.cache.sqlite` for performance.
+//! [`StorageKeys`] opens (or creates on first use) the account key envelope via
+//! `walletkit-db` and holds the resulting `K_intermediate` in memory for the lifetime
+//! of the storage handle; both databases are opened with it. The `K_device` →
+//! `K_intermediate` hierarchy, envelope sealing, and encryption are described in the
+//! `walletkit-db` README.
 
 use secrecy::SecretBox;
 use zeroize::{Zeroize, ZeroizeOnDrop};

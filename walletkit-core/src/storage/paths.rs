@@ -1,4 +1,22 @@
 //! Storage path helpers.
+//!
+//! [`StoragePaths`] governs the on-disk files under `<root>/worldid/`:
+//!
+//! ```text
+//! account.cache.sqlite        # sqlite3mc-encrypted cache DB (keyed by K_intermediate)
+//! account.vault.sqlite        # sqlite3mc-encrypted vault DB (keyed by K_intermediate)
+//! lock                        # account-scoped lock
+//! groth16/                    # cached Groth16 proving material
+//! ```
+//!
+//! The account key envelope (`account_keys.bin`) is **not** covered by
+//! [`StoragePaths`]. It is persisted through the host's `AtomicBlobStore` using the
+//! bare filename `account_keys.bin`, so its physical location is whatever root the
+//! host roots that blob store at — which need not be `<root>/worldid/`. For example,
+//! the CLI provider roots the blob store at `<root>`, writing the envelope to
+//! `<root>/account_keys.bin` alongside (not inside) the `worldid/` directory. Host
+//! implementors backing up or deleting an account MUST include the envelope from the
+//! blob store in addition to the `worldid/` files.
 
 use std::path::{Path, PathBuf};
 

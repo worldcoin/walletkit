@@ -1,4 +1,19 @@
 //! Platform interfaces for credential storage.
+//!
+//! These traits are the platform integration boundary. The host selects the storage
+//! root and provides a [`DeviceKeystore`] and [`AtomicBlobStore`]; core storage code
+//! is root-agnostic and consumes a provider-supplied [`StoragePaths`].
+//!
+//! # Expected platform components
+//!
+//! - **iOS (Swift):** [`DeviceKeystore`] backed by Keychain / Secure Enclave;
+//!   [`AtomicBlobStore`] over the app container filesystem (atomic replace).
+//! - **Android (Kotlin):** [`DeviceKeystore`] backed by the Android Keystore;
+//!   [`AtomicBlobStore`] over app internal storage (atomic replace).
+//! - **Node.js:** file-backed [`DeviceKeystore`] (development; production can use an
+//!   OS keystore); [`AtomicBlobStore`] over app internal storage.
+//! - **Browser (WASM):** `WebCrypto`-backed [`DeviceKeystore`]; [`AtomicBlobStore`]
+//!   over an origin-private storage namespace.
 
 use std::sync::Arc;
 

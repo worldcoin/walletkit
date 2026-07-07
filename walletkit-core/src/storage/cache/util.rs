@@ -2,7 +2,10 @@
 
 use std::io;
 
-use crate::storage::error::{StorageError, StorageResult};
+use crate::storage::{
+    cache::schema::{CACHE_KEY_PREFIX_REPLAY_NULLIFIER, CACHE_KEY_PREFIX_SESSION},
+    error::{StorageError, StorageResult},
+};
 use walletkit_db::{params, Connection, DbError, Transaction};
 
 /// Maps a database error into a cache storage error.
@@ -34,10 +37,6 @@ pub(super) fn parse_fixed_bytes<const N: usize>(
     out.copy_from_slice(bytes);
     Ok(out)
 }
-
-pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
-pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
-pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x03;
 
 /// Timestamps for cache entry insertion and expiry.
 #[derive(Clone, Copy, Debug)]
