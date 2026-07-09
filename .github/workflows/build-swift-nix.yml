@@ -15,9 +15,10 @@ jobs:
     # which Nix cannot pin, so the image + DEVELOPER_DIR determine the toolchain.
     runs-on: macos-26
     env:
-      # Pin the Xcode version. The nix swift shell respects an existing DEVELOPER_DIR
-      # as long as it contains the iOS platform SDKs.
-      DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
+      # Pin the Xcode version. The nix swift shell exports this as DEVELOPER_DIR and
+      # fails if it lacks the iOS platform SDKs. (Plain DEVELOPER_DIR would not survive
+      # into the shell — nix's apple-sdk hook overwrites it.)
+      WALLETKIT_DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
     permissions:
       contents: read
       actions: write # needed for cache save
@@ -53,6 +54,11 @@ jobs:
         run: |
           nix develop .#swift --command bash -lc '
             xcodebuild -version
+            # Keep in sync with the DEVELOPER_DIR pin above.
+            xcodebuild -version | grep -q "^Xcode 26.5" || {
+              echo "error: unexpected Xcode version, expected 26.5" >&2
+              exit 1
+            }
             xcrun --show-sdk-path --sdk iphoneos
             xcrun --show-sdk-path --sdk iphonesimulator
           '

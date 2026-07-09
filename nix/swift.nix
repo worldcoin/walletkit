@@ -70,10 +70,23 @@ pkgs.mkShell {
 
   shellHook = ''
     export PATH="${appleTools}/bin:$PATH"
+    # Nix's apple-sdk setup hook exports SDKROOT/DEVELOPER_DIR pointing at the
+    # Nix macOS SDK, which lacks the iOS platforms — discard both and re-derive.
+    # (This also clobbers any DEVELOPER_DIR set outside the shell, which is why
+    # the pin below uses its own variable.)
     unset SDKROOT
+    unset DEVELOPER_DIR
 
-    if [ -d /Applications/Xcode.app/Contents/Developer ] \
-      && [ ! -d "''${DEVELOPER_DIR:-}/Platforms/iPhoneSimulator.platform" ]; then
+    if [ -n "''${WALLETKIT_DEVELOPER_DIR:-}" ]; then
+      # Explicit Xcode pin (e.g. CI): fail instead of silently building
+      # with a different Xcode.
+      if [ ! -d "$WALLETKIT_DEVELOPER_DIR/Platforms/iPhoneSimulator.platform" ]; then
+        echo "error: WALLETKIT_DEVELOPER_DIR=$WALLETKIT_DEVELOPER_DIR has no iOS platform SDKs" >&2
+        exit 1
+      fi
+      export DEVELOPER_DIR="$WALLETKIT_DEVELOPER_DIR"
+    elif [ -d /Applications/Xcode.app/Contents/Developer ]; then
+      # No pin: default Xcode install, or whatever xcode-select points at.
       export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
     fi
 
