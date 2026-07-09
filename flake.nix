@@ -15,7 +15,10 @@
       "x86_64-darwin"
     ] (system:
       let
-        overlays = [ (import rust-overlay) ];
+        overlays = [
+          (import rust-overlay)
+          (final: prev: { nargo = final.callPackage ./nix/nargo.nix { }; })
+        ];
         pkgs = import nixpkgs {
           inherit system overlays;
           config = {
@@ -33,6 +36,7 @@
               rustToolchain
               pkgs.curl
               pkgs.git
+              pkgs.nargo
             ];
           };
 

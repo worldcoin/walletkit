@@ -40,6 +40,7 @@ pkgs.mkShell {
     pkgs.cmake
     pkgs.curl
     pkgs.git
+    pkgs.nargo
     pkgs.ninja
     pkgs.rsync
     pkgs.swiftlint

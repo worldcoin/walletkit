@@ -10,6 +10,7 @@ pkgs.mkShell {
     llvm.bintools-unwrapped
     pkgs.curl
     pkgs.git
+    pkgs.nargo
   ];
 
   # Use unwrapped clang: cc-wrapper injects host hardening flags that are invalid for wasm.

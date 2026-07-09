@@ -32,6 +32,7 @@ pkgs.mkShell {
     androidNdkPackage
     pkgs.curl
     pkgs.git
+    pkgs.nargo
   ];
 
   ANDROID_API_LEVEL = androidApiLevel;
