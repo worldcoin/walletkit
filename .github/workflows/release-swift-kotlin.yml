@@ -104,7 +104,7 @@ jobs:
           # Copy non-binary source files
           cp -r swift/Sources/ target-repo/Sources
 
-          # Prepare Package.swift (swiftlint comes from the nix shell)
+          # Prepare Package.swift
           nix develop .#swift --command ./swift/archive_swift.sh --asset-url "$ASSET_URL" --checksum "$CHECKSUM" --release-version "$NEW_VERSION"
           cp Package.swift target-repo/
 

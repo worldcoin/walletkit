@@ -4,7 +4,6 @@ on:
   workflow_dispatch:
 
 env:
-  # Match the Android release build feature set.
   WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3
 
 permissions:
