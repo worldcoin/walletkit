@@ -82,11 +82,11 @@ export RUSTFLAGS="-C link-arg=-Wl,-application_extension \
                   -C embed-bitcode=no"
 
 # Build for all iOS targets
-cargo build --package $PACKAGE_NAME --target aarch64-apple-ios-sim --release \
+cargo build --package $PACKAGE_NAME --target aarch64-apple-ios-sim --release --locked \
   --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" --features "$CARGO_FEATURES"
-cargo build --package $PACKAGE_NAME --target aarch64-apple-ios --release \
+cargo build --package $PACKAGE_NAME --target aarch64-apple-ios --release --locked \
   --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" --features "$CARGO_FEATURES"
-cargo build --package $PACKAGE_NAME --target x86_64-apple-ios --release \
+cargo build --package $PACKAGE_NAME --target x86_64-apple-ios --release --locked \
   --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" --target-dir "$TARGET_DIR" --features "$CARGO_FEATURES"
 echo "Rust packages built. Combining simulator targets into universal binary..."
 
@@ -100,7 +100,7 @@ lipo -info $BASE_PATH/ios_build/target/universal-ios-sim/release/lib${PACKAGE_NA
 echo "Generating Swift bindings..."
 
 # Generate Swift bindings using uniffi
-cargo run -p uniffi-bindgen --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" \
+cargo run -p uniffi-bindgen --locked --manifest-path "$PROJECT_ROOT_PATH/Cargo.toml" \
   --target-dir "$TARGET_DIR" -- generate \
   "$TARGET_DIR/aarch64-apple-ios-sim/release/lib${PACKAGE_NAME}.dylib" \
   --library \

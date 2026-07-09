@@ -69,5 +69,6 @@ fi
 exec nix develop .#android --command cargo build \
   -p walletkit \
   --release \
+  --locked \
   --target "${TARGET}" \
   --features compress-zkeys,embed-zkeys,v3
