@@ -51,7 +51,7 @@ jobs:
             ~/.cargo/git
             target/release
             target/${{ matrix.target }}
-          key: ${{ runner.os }}-cargo-android-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'flake.lock', 'nix/android.nix') }}
+          key: ${{ runner.os }}-cargo-android-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'flake.lock', 'flake.nix', 'nix/**/*.nix') }}
           restore-keys: |
             ${{ runner.os }}-cargo-android-${{ matrix.target }}-
             ${{ runner.os }}-cargo-android-

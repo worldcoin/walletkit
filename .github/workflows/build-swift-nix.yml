@@ -45,7 +45,7 @@ jobs:
             target/aarch64-apple-ios
             target/aarch64-apple-ios-sim
             target/x86_64-apple-ios
-          key: ${{ runner.os }}-cargo-swift-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'flake.lock', 'flake.nix', 'nix/swift.nix', 'swift/build_swift.sh') }}
+          key: ${{ runner.os }}-cargo-swift-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'flake.lock', 'flake.nix', 'nix/**/*.nix', 'swift/build_swift.sh') }}
           restore-keys: |
             ${{ runner.os }}-cargo-swift-
 
