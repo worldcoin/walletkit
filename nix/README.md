@@ -70,8 +70,15 @@ Possible, if you bring the dependencies yourself:
 
 - **Host / wasm / iOS**: `rustup` picks the toolchain and targets up from
   `rust-toolchain.toml`, and `.cargo/config.toml` carries the target
-  rustflags. iOS additionally needs Xcode; wasm needs clang ≥ 18 exported
-  as `CC_wasm32_unknown_unknown` (see `nix/wasm.nix`).
+  rustflags. wasm needs clang ≥ 18 exported as `CC_wasm32_unknown_unknown`
+  (see `nix/wasm.nix`). iOS additionally needs:
+  - full Xcode with the iOS SDKs — if `xcode-select -p` points at
+    CommandLineTools, builds fail with `SDK "iphoneos" cannot be located`;
+    fix with `sudo xcode-select -s /Applications/Xcode.app` or
+    `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`
+    (the Nix shell does this fallback for you)
+  - `cmake` (`brew install cmake`) — aws-lc-sys builds its C code with it
+  - `swiftlint`, but only for `archive_swift.sh` (release packaging)
 - **Android**: you need NDK r27 and the `CC_*`/`AR_*`/
   `CARGO_TARGET_*_LINKER` env vars pointing into it — exactly what
   `nix/android.nix` sets. There is no script for the manual setup; the
