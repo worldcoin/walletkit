@@ -8,17 +8,27 @@ This folder contains Swift support files for WalletKit:
 
 ## Building the Swift bindings
 
-To build the Swift project for release/distribution:
+Building always uses the **host Xcode** (Apple's iOS SDKs can't be provided
+through Nix), so either way you need macOS with full Xcode installed.
+
+The recommended path is the Nix devshell, which provides everything else —
+the pinned Rust toolchain and iOS targets, `cmake`, `swiftlint` — and takes
+care of selecting a usable Xcode (it also validates the `WALLETKIT_DEVELOPER_DIR`
+pin, which is how CI ensures a specific Xcode version):
 
 ```bash
     # run from the walletkit directory
+    nix develop .#swift
     ./swift/build_swift.sh
 ```
 
-With Nix on macOS:
+Without Nix, install the dependencies yourself — `rustup` (picks up
+`rust-toolchain.toml` automatically) and `cmake` — and make sure
+`xcode-select -p` points at full Xcode, not CommandLineTools
+(see [`nix/README.md`](../nix/README.md) for details):
 
 ```bash
-    nix develop .#swift
+    # run from the walletkit directory
     ./swift/build_swift.sh
 ```
 
