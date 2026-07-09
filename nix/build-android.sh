@@ -65,8 +65,9 @@ if [[ "${valid_target}" != true ]]; then
   exit 1
 fi
 
+# Keep in sync with WALLETKIT_CARGO_FEATURES in the release workflows.
 exec nix develop .#android --command cargo build \
   -p walletkit \
   --release \
   --target "${TARGET}" \
-  --features compress-zkeys,v3
+  --features compress-zkeys,embed-zkeys,v3

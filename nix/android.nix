@@ -7,6 +7,9 @@ let
     ndkVersion = "27.2.12479018";
   };
   androidNdkPackage = androidPackages.ndk-bundle;
+  # These paths reach into the internal layout of the nixpkgs androidenv derivation
+  # (there is no stable API for them). Pinned via flake.lock, but expect them to be
+  # the first thing to break on a `nix flake update`.
   androidNdkHome = "${androidNdkPackage}/libexec/android-sdk/ndk-bundle";
   androidToolchainPlatform = if pkgs.stdenv.isDarwin then "darwin-x86_64" else "linux-x86_64";
   androidToolchainBin = "${androidNdkHome}/toolchains/llvm/prebuilt/${androidToolchainPlatform}/bin";
@@ -69,6 +72,6 @@ pkgs.mkShell {
     echo "  targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android (API $ANDROID_API_LEVEL)"
     echo "  ndk:    $ANDROID_NDK_HOME"
     echo ""
-    echo "Build with: cargo build -p walletkit --release --target aarch64-linux-android --features compress-zkeys,v3"
+    echo "Build with: cargo build -p walletkit --release --target aarch64-linux-android --features compress-zkeys,embed-zkeys,v3"
   '';
 }
