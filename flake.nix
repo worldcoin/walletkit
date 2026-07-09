@@ -11,6 +11,7 @@
   outputs = { nixpkgs, flake-utils, rust-overlay, ... }:
     flake-utils.lib.eachSystem [
       "x86_64-linux"
+      "aarch64-linux"
       "aarch64-darwin"
       "x86_64-darwin"
     ] (system:
@@ -40,8 +41,11 @@
             ];
           };
 
-          android = import ./nix/android.nix { inherit pkgs; };
           wasm = import ./nix/wasm.nix { inherit pkgs; };
+        } // pkgs.lib.optionalAttrs (!(pkgs.stdenv.isLinux && pkgs.stdenv.isAarch64)) {
+          # The Android NDK has no aarch64-linux prebuilt toolchain
+          # (on aarch64 Docker hosts, run the container as linux/amd64).
+          android = import ./nix/android.nix { inherit pkgs; };
         } // pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
           swift = import ./nix/swift.nix { inherit pkgs; };
         };
