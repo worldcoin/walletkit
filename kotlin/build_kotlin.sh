@@ -2,6 +2,19 @@
 set -e
 
 ## This script is only used for local builds. For production releases, the code is in the CI workflow.
+##
+## Requires the Android cross-compilation environment (NDK linkers etc.).
+## The easiest way to get it is the Nix devshell:
+##   nix develop .#android --command ./kotlin/build_kotlin.sh
+## or, without Nix installed, via Docker:
+##   nix/docker.sh android ./kotlin/build_kotlin.sh
+
+if [ -z "${CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER:-}" ]; then
+  echo "error: Android cross-compilation environment not configured." >&2
+  echo "Run inside the Nix devshell:  nix develop .#android --command $0" >&2
+  echo "or via Docker without Nix:    nix/docker.sh android $0" >&2
+  exit 1
+fi
 
 echo "Building WalletKit Android SDK..."
 
@@ -12,16 +25,16 @@ mkdir -p ./walletkit/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64,x86}
 
 # Build for all Android architectures
 echo "Building for aarch64-linux-android..."
-cross build -p walletkit --release --target=aarch64-linux-android --features "$CARGO_FEATURES"
+cargo build -p walletkit --release --locked --target=aarch64-linux-android --features "$CARGO_FEATURES"
 
 echo "Building for armv7-linux-androideabi..."
-cross build -p walletkit --release --target=armv7-linux-androideabi --features "$CARGO_FEATURES"
+cargo build -p walletkit --release --locked --target=armv7-linux-androideabi --features "$CARGO_FEATURES"
 
 echo "Building for x86_64-linux-android..."
-cross build -p walletkit --release --target=x86_64-linux-android --features "$CARGO_FEATURES"
+cargo build -p walletkit --release --locked --target=x86_64-linux-android --features "$CARGO_FEATURES"
 
 echo "Building for i686-linux-android..."
-cross build -p walletkit --release --target=i686-linux-android --features "$CARGO_FEATURES"
+cargo build -p walletkit --release --locked --target=i686-linux-android --features "$CARGO_FEATURES"
 
 # Move .so files to jniLibs
 echo "Moving native libraries..."

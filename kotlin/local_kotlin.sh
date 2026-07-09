@@ -3,10 +3,6 @@ set -e
 
 echo "Building WalletKit Android SDK for local development..."
 
-# Set rustup and cargo home to /tmp to prevent Docker permission issues
-export RUSTUP_HOME="${RUSTUP_HOME:-/tmp/.rustup}"
-export CARGO_HOME="${CARGO_HOME:-/tmp/.cargo}"
-
 # Version is required
 if [ -z "$1" ]; then
     echo "Error: Version parameter is required"
@@ -18,12 +14,20 @@ fi
 VERSION="$1"
 echo "Using version: $VERSION"
 
-# Build using kotlin/build.sh
+# Build using kotlin/build_kotlin.sh inside the Nix android shell
+# (via Docker if Nix isn't installed; see nix/README.md).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "Building WalletKit SDK..."
-./build_kotlin.sh
+if command -v nix >/dev/null 2>&1; then
+    (cd .. && nix develop .#android --command bash -c 'cd kotlin && ./build_kotlin.sh')
+elif command -v docker >/dev/null 2>&1; then
+    ../nix/docker.sh android bash -c 'cd kotlin && ./build_kotlin.sh'
+else
+    echo "Error: need Nix or Docker to build (see nix/README.md)"
+    exit 1
+fi
 
 # Publish to Maven Local
 echo "Publishing to Maven Local..."
