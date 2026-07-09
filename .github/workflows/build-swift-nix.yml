@@ -2,8 +2,6 @@ name: Build Swift FFI Bindings (Nix)
 
 on:
   workflow_dispatch:
-  # TEMPORARY PUSH TRIGGER FOR TESTING
-  push:
 
 permissions:
   contents: read
