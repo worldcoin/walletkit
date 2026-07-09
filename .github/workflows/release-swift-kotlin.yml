@@ -174,13 +174,7 @@ jobs:
             ${{ runner.os }}-cargo-android-
 
       - name: Build for target
-        run: |
-          nix develop .#android --command cargo build \
-            -p walletkit \
-            --target ${{ matrix.settings.target }} \
-            --release \
-            --locked \
-            --features "$WALLETKIT_CARGO_FEATURES"
+        run: ./nix/build-android.sh --target ${{ matrix.settings.target }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -221,22 +215,8 @@ jobs:
         with:
           path: artifacts
 
-      - name: Move artifacts
-        run: |
-          mkdir -p kotlin/walletkit/src/main/jniLibs/{armeabi-v7a,arm64-v8a,x86,x86_64}
-          cp artifacts/android-armv7-linux-androideabi/libwalletkit.so kotlin/walletkit/src/main/jniLibs/armeabi-v7a/libwalletkit.so
-          cp artifacts/android-aarch64-linux-android/libwalletkit.so kotlin/walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so
-          cp artifacts/android-i686-linux-android/libwalletkit.so kotlin/walletkit/src/main/jniLibs/x86/libwalletkit.so
-          cp artifacts/android-x86_64-linux-android/libwalletkit.so kotlin/walletkit/src/main/jniLibs/x86_64/libwalletkit.so
-
-      - name: Generate bindings
-        run: |
-          nix develop . --command cargo run -p uniffi-bindgen --locked -- generate \
-            kotlin/walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so \
-            --library \
-            --language kotlin \
-            --no-format \
-            --out-dir kotlin/walletkit/src/main/java
+      - name: Assemble jniLibs & generate bindings
+        run: nix develop . --command ./kotlin/build_kotlin.sh --artifacts-dir artifacts
 
       - name: Publish
         working-directory: kotlin

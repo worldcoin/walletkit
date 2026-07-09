@@ -65,10 +65,10 @@ if [[ "${valid_target}" != true ]]; then
   exit 1
 fi
 
-# Keep in sync with WALLETKIT_CARGO_FEATURES in the release workflows.
+# Defaults to the release feature set; CI overrides via WALLETKIT_CARGO_FEATURES.
 exec nix develop .#android --command cargo build \
   -p walletkit \
   --release \
   --locked \
   --target "${TARGET}" \
-  --features compress-zkeys,embed-zkeys,v3
+  --features "${WALLETKIT_CARGO_FEATURES:-compress-zkeys,embed-zkeys,v3}"
