@@ -36,6 +36,10 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
+      # TODO: magic-nix-cache relies on a reverse-engineered GitHub cache API and may
+      # break without notice (its free tier was already EOL'd once in Feb 2025).
+      # If it dies, builds still work, just slower. Consider migrating to
+      # nix-community/cache-nix-action or a real Cachix/FlakeHub cache.
       - name: Enable Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@v13
 
@@ -83,6 +87,7 @@ jobs:
       - name: Install Nix
         uses: cachix/install-nix-action@v31
 
+      # TODO: see note on magic-nix-cache fragility in the build-android-libs job.
       - name: Enable Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@v13
 
