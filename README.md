@@ -40,13 +40,10 @@ Replace `VERSION` with the desired WalletKit version.
 
 ### Prerequisites
 
-1. **Docker Desktop**: Required for cross-compilation
-   - The build uses [`cross`](https://github.com/cross-rs/cross) which runs builds in Docker containers with all necessary toolchains
-   - Install via Homebrew:
-     ```bash
-     brew install --cask docker
-     ```
-   - Launch Docker Desktop and ensure it's running before building
+1. **Nix** (or Docker): The Android cross-compilation toolchain (Rust, NDK, linkers) is provided
+   by the Nix devshells — see [`nix/README.md`](nix/README.md).
+   - With Nix installed, builds run inside `nix develop .#android`.
+   - Without Nix, `nix/docker.sh android <command>` runs the same shell in a Docker container.
 
 2. **Android SDK + NDK**: Required for Gradle Android tasks
    - Install via Android Studio > Settings > Android SDK (ensure the NDK is installed)
@@ -65,7 +62,7 @@ Example with custom Rust locations:
 RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo ./kotlin/local_kotlin.sh 0.1.0-SNAPSHOT
 ```
 
-> **Note**: The script can be run from any working directory (it resolves its own location). It sets `RUSTUP_HOME` and `CARGO_HOME` to `/tmp` by default to avoid Docker permission issues when using `cross`. You can override them by exporting your own values.
+> **Note**: The script can be run from any working directory (it resolves its own location). The Rust cross-compilation runs inside the Nix `android` devshell, or in a Docker container if Nix isn't installed.
 
 This will:
 1. Build the Rust library for all Android architectures (arm64-v8a, armeabi-v7a, x86_64, x86)
