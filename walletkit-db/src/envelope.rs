@@ -107,15 +107,14 @@ pub fn init_or_open_envelope_key(
         let mut k_intermediate = Zeroizing::new([0u8; 32]);
         getrandom::fill(k_intermediate.as_mut())
             .map_err(|err| StoreError::Crypto(format!("rng failure: {err}")))?;
-        // TODO: `keystore.seal(_, Vec<u8>)` requires the plaintext as an
-        // owned heap allocation because the trait shape matches
-        // walletkit-core's uniffi `DeviceKeystore` so the adapter stays
-        // zero-copy. That `Vec<u8>` is NOT zeroized on drop — key bytes
-        // can linger in the allocator's freelist. Improve by either
-        // (a) changing the trait to take a stack reference and updating
-        // the host bridges, or (b) wrapping the `to_vec()` result in
-        // `Zeroizing` and ensuring `Keystore` impls don't clone it.
-        let wrapped = keystore.seal(ad.to_vec(), k_intermediate.to_vec())?;
+        // `keystore.seal` borrows the plaintext, so `k_intermediate` is
+        // never copied into an un-zeroized `Vec<u8>` at this layer. A
+        // `Keystore` bridging to an owned-only interface (e.g. a uniffi
+        // callback like walletkit-core's `DeviceKeystore`) still needs one
+        // owned copy to cross that boundary; that is an accepted,
+        // uniffi-imposed limitation (callback interfaces only support
+        // pass-by-value), not something fixable from this layer.
+        let wrapped = keystore.seal(ad, k_intermediate.as_slice())?;
         let envelope = KeyEnvelope::new(wrapped, now);
         let bytes = envelope.serialize()?;
         blob_store.write_atomic(filename.to_string(), bytes)?;
@@ -193,7 +192,7 @@ mod tests {
     }
 
     impl Keystore for XorKeystore {
-        fn seal(&self, _ad: Vec<u8>, plaintext: Vec<u8>) -> StoreResult<Vec<u8>> {
+        fn seal(&self, _ad: &[u8], plaintext: &[u8]) -> StoreResult<Vec<u8>> {
             Ok(plaintext
                 .iter()
                 .enumerate()

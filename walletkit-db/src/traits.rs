@@ -1,9 +1,13 @@
 //! Interfaces for consumer-supplied platform integrations.
 //!
-//! Argument shapes (`Vec<u8>`, owned `String`) mirror `WalletKit`'s existing
-//! uniffi-annotated traits so consumers can bridge with a thin newtype that
-//! just delegates and maps errors. (A blanket impl across crates is blocked
-//! by Rust's orphan rule, so consumers do need a small wrapper.)
+//! Argument shapes (`Vec<u8>`, owned `String`) mostly mirror `WalletKit`'s
+//! existing uniffi-annotated traits so consumers can bridge with a thin
+//! newtype that just delegates and maps errors. (A blanket impl across
+//! crates is blocked by Rust's orphan rule, so consumers do need a small
+//! wrapper.) `Keystore::seal` is the one exception: it borrows its
+//! plaintext so the secret is never owned by this crate longer than
+//! necessary; a bridge to an owned-only interface (e.g. a uniffi callback)
+//! still needs one copy at that boundary.
 
 use crate::error::StoreResult;
 
@@ -16,11 +20,15 @@ pub trait Keystore: Send + Sync {
     /// Seals plaintext under the device-bound key, authenticating `aad`
     /// (additional authenticated data).
     ///
+    /// `plaintext` is borrowed rather than owned so that callers holding it
+    /// in a zeroizing buffer (e.g. `Zeroizing<[u8; 32]>`) never have to
+    /// hand ownership of an un-zeroized copy to this trait.
+    ///
     /// # Errors
     ///
     /// Returns an error if the keystore refuses the operation or the seal
     /// fails.
-    fn seal(&self, aad: Vec<u8>, plaintext: Vec<u8>) -> StoreResult<Vec<u8>>;
+    fn seal(&self, aad: &[u8], plaintext: &[u8]) -> StoreResult<Vec<u8>>;
 
     /// Opens ciphertext under the device-bound key, verifying `aad`. The
     /// same `aad` supplied at seal time must be supplied here or the open
