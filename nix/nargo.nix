@@ -22,7 +22,9 @@ let
       hash = "sha256-v25Eqc0dqMnERdIcaYtAZ4o9bveda3txjCSdZp0HCWY=";
     };
   };
-  artifact = artifacts.${stdenv.hostPlatform.system};
+  artifact =
+    artifacts.${stdenv.hostPlatform.system}
+      or (throw "nargo: no prebuilt binary for ${stdenv.hostPlatform.system}");
 in stdenv.mkDerivation rec {
   pname = "nargo";
   version = "1.0.0-beta.11";
@@ -46,6 +48,9 @@ in stdenv.mkDerivation rec {
   meta = {
     description = "Noir compiler and package manager";
     homepage = "https://noir-lang.org";
+    license = with lib.licenses; [ mit asl20 ];
+    sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
+    platforms = lib.attrNames artifacts;
     mainProgram = "nargo";
   };
 }
