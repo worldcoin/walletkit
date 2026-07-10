@@ -1,51 +1,31 @@
-name: Release FFI Bindings (Swift & Kotlin)
+name: Test Native FFI Builds (Nix)
 
+# Temporary branch-only workflow for validating the Nix release build flow.
+# Revert this change after the test run; it deliberately performs no publishing.
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      - nix/android-devshell
 
 env:
-  # The feature flags with which the Android library is built.
-  # For iOS, this is set in the `build_swift.sh` file.
   WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3
 
+permissions:
+  contents: read
+
 jobs:
-  pre-release-checks:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      new_version: ${{ steps.version.outputs.new_version }}
-      commit_sha: ${{ github.sha }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Get new version
-        id: version
-        run: |
-          NEW_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.workspace_members[0]' | cut -d '#' -f2)
-          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-
   build-swift:
-    # Pinned image (not macos-latest): the XCFramework is built with the host Xcode,
-    # which Nix cannot pin, so the image + WALLETKIT_DEVELOPER_DIR determine the toolchain.
+    name: Build Swift native libraries
     runs-on: macos-26
-    needs: pre-release-checks
     env:
-      # Pin the Xcode version. The nix swift shell exports this as DEVELOPER_DIR and
-      # fails if it lacks the iOS platform SDKs.
       WALLETKIT_DEVELOPER_DIR: /Applications/Xcode_26.5.app/Contents/Developer
     permissions:
-      contents: write
+      contents: read
       actions: write # to save Rust cache
 
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
       - name: Install Nix
         uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
@@ -89,97 +69,25 @@ jobs:
       - name: Build the project (iOS, with temporary UniFFI ASan workaround)
         run: nix develop .#swift --command ./swift/build_swift.sh
 
-      - name: Compress XCFramework binary
-        run: nix develop .#swift --command zip -r WalletKit.xcframework.zip swift/WalletKit.xcframework
-
-      - name: Checkout swift repo
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          repository: worldcoin/walletkit-swift
-          token: ${{ secrets.WALLETKIT_BOT_TOKEN }}
-          path: target-repo
-
-      - name: Create draft release in walletkit-swift & upload binaries
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        id: release
-        with:
-          repository: worldcoin/walletkit-swift
-          name: ${{ needs.pre-release-checks.outputs.new_version }}
-          tag_name: ${{ needs.pre-release-checks.outputs.new_version }}
-          make_latest: false
-          draft: true
-          fail_on_unmatched_files: true
-          files: WalletKit.xcframework.zip
-          token: ${{ secrets.WALLETKIT_BOT_TOKEN }}
-
-      - name: Get metadata
-        id: meta
-        run: |
-          ASSET_URL="${{ fromJSON(steps.release.outputs.assets)[0].url }}.zip"
-          echo "asset_url=${ASSET_URL}" >> $GITHUB_OUTPUT
-
-          CHECKSUM=$(nix develop .#swift --command swift package compute-checksum WalletKit.xcframework.zip)
-          echo "checksum=${CHECKSUM}" >> $GITHUB_OUTPUT
-
-      - name: Commit swift build
-        env:
-          GITHUB_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
-          ASSET_URL: ${{ steps.meta.outputs.asset_url }}
-          CHECKSUM: ${{ steps.meta.outputs.checksum }}
-          NEW_VERSION: ${{ needs.pre-release-checks.outputs.new_version }}
-
-        run: |
-          # Copy non-binary source files
-          cp -r swift/Sources/ target-repo/Sources
-
-          # Prepare Package.swift
-          nix develop .#swift --command ./swift/archive_swift.sh --asset-url "$ASSET_URL" --checksum "$CHECKSUM" --release-version "$NEW_VERSION"
-          cp Package.swift target-repo/
-
-          # Commit changes
-          cd target-repo
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-          git add .
-          git commit -m "Release $NEW_VERSION"
-
-          # Tag the release
-          git tag $NEW_VERSION
-          git push
-          git push origin $NEW_VERSION
-
-      - name: Mark release as latest
-        env:
-          GH_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
-        run: |
-          gh release edit ${{ needs.pre-release-checks.outputs.new_version }} \
-            --repo worldcoin/walletkit-swift \
-            --draft=false \
-            --latest
-
-  prepare-kotlin:
-    name: Prepare Kotlin
+  build-android:
+    name: Build Android native library (${{ matrix.target }})
     runs-on: arc-public-8xlarge-amd64-runner
-    needs: [pre-release-checks]
     permissions:
       contents: read
       actions: write # to save Rust cache
 
-    # Each target is built separately to run in parallel. Running sequentially takes vastly more time.
     strategy:
       fail-fast: true
       matrix:
-        settings:
-          - target: aarch64-linux-android
-          - target: armv7-linux-androideabi
-          - target: x86_64-linux-android
-          - target: i686-linux-android
+        target:
+          - aarch64-linux-android
+          - armv7-linux-androideabi
+          - x86_64-linux-android
+          - i686-linux-android
 
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
       - name: Install Nix
         uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
@@ -195,60 +103,11 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target/release
-            target/${{ matrix.settings.target }}
-          key: ${{ runner.os }}-cargo-android-${{ matrix.settings.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'flake.lock', 'flake.nix', 'nix/**/*.nix') }}
+            target/${{ matrix.target }}
+          key: ${{ runner.os }}-cargo-android-${{ matrix.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'flake.lock', 'flake.nix', 'nix/**/*.nix') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-android-${{ matrix.settings.target }}-
+            ${{ runner.os }}-cargo-android-${{ matrix.target }}-
             ${{ runner.os }}-cargo-android-
 
       - name: Build for target
-        run: ./nix/build-android.sh --target ${{ matrix.settings.target }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: android-${{ matrix.settings.target }}
-          path: ./target/${{ matrix.settings.target }}/release/libwalletkit.so
-          if-no-files-found: error
-
-  publish-kotlin:
-    name: Publish Kotlin
-    runs-on: ubuntu-latest
-    needs: [pre-release-checks, prepare-kotlin]
-    permissions:
-      contents: write
-      packages: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-        with:
-          ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
-
-      - name: Install Nix
-        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
-
-      # TODO: see note on magic-nix-cache fragility in the build-swift job.
-      - name: Enable Nix cache
-        uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
-
-      - name: Setup Java
-        uses: actions/setup-java@17f84c3641ba7b8f6deff6309fc4c864478f5d62 # v3.14.1
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Download Artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          path: artifacts
-
-      - name: Assemble jniLibs & generate bindings
-        run: nix develop . --command ./kotlin/build_kotlin.sh --artifacts-dir artifacts
-
-      - name: Publish
-        working-directory: kotlin
-        run: ./gradlew walletkit:publish
-        env:
-          GITHUB_ACTOR: wld-walletkit-bot
-          GITHUB_TOKEN: ${{ github.token }}
+        run: ./nix/build-android.sh --target ${{ matrix.target }}
