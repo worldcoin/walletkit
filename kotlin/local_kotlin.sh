@@ -23,7 +23,7 @@ echo "Building WalletKit SDK..."
 if command -v nix >/dev/null 2>&1; then
     (cd .. && nix develop .#android --command ./kotlin/build_kotlin.sh)
 elif command -v docker >/dev/null 2>&1; then
-    ../nix/docker.sh android ./kotlin/build_kotlin.sh
+    ../nix/docker.sh develop .#android --command ./kotlin/build_kotlin.sh
 else
     echo "Error: need Nix or Docker to build (see nix/README.md)"
     exit 1

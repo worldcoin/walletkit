@@ -42,8 +42,8 @@ Replace `VERSION` with the desired WalletKit version.
 
 1. **Nix** (or Docker): The Android cross-compilation toolchain (Rust, NDK, linkers) is provided
    by the Nix devshells — see [`nix/README.md`](nix/README.md).
-   - With Nix installed, builds run inside `nix develop .#android`.
-   - Without Nix, `nix/docker.sh android <command>` runs the same shell in a Docker container.
+   - With Nix installed, builds run inside `nix develop .#android` (recommended).
+   - Without Nix, `nix/docker.sh develop .#android --command <command>` runs the same shell in a Linux/amd64 Docker container.
 
 2. **Android SDK + NDK**: Required for Gradle Android tasks
    - Install via Android Studio > Settings > Android SDK (ensure the NDK is installed)

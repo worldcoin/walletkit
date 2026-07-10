@@ -10,7 +10,7 @@ set -euo pipefail
 ## etc.). The easiest way to get it is the Nix devshell:
 ##   nix develop .#android --command ./kotlin/build_kotlin.sh
 ## or, without Nix installed, via Docker:
-##   nix/docker.sh android ./kotlin/build_kotlin.sh
+##   nix/docker.sh develop .#android --command ./kotlin/build_kotlin.sh
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -71,7 +71,7 @@ if [[ -z "${ARTIFACTS_DIR}" ]]; then
   if [[ -z "${CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER:-}" ]]; then
     echo "error: Android cross-compilation environment not configured." >&2
     echo "Run inside the Nix devshell:  nix develop .#android --command $0" >&2
-    echo "or via Docker without Nix:    nix/docker.sh android $0" >&2
+    echo "or via Docker without Nix:    nix/docker.sh develop .#android --command $0" >&2
     exit 1
   fi
 

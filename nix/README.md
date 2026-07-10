@@ -42,25 +42,31 @@ a specific Xcode install.
 
 ## No Nix installed? Use Docker
 
-`nix/docker.sh` runs any Linux-compatible shell (`default`, `android`,
-`wasm`) inside a `nixos/nix` container — the only host dependency is Docker:
+`nix/docker.sh` proxies Nix commands into a `nixos/nix` container — the only
+host dependency is Docker. Its arguments intentionally match the native Nix CLI:
 
 ```bash
-nix/docker.sh android ./kotlin/build_kotlin.sh   # Android libs + Kotlin bindings
-nix/docker.sh wasm cargo build -p walletkit --release --locked --target wasm32-unknown-unknown
-nix/docker.sh default                            # interactive shell
+nix/docker.sh develop .#android --command ./kotlin/build_kotlin.sh
+nix/docker.sh develop .#wasm --command cargo build -p walletkit --release --locked --target wasm32-unknown-unknown
+nix/docker.sh develop .#default                  # interactive shell
+nix/docker.sh flake show                         # other Nix commands work too
 ```
+
+Native Nix is recommended when available. The Docker wrapper always uses a
+`linux/amd64` container because the Android NDK does not ship an aarch64-linux
+host toolchain. Consequently, it runs under emulation on ARM hosts such as Apple
+Silicon and is slower than `nix develop` directly.
 
 Notes:
 
-- The Nix store is kept in the `walletkit-nix-store` Docker volume, so
-  toolchains download only on the first run (`docker volume rm
-  walletkit-nix-store` to reclaim the space).
-- The Android NDK only ships an x86_64 Linux toolchain, so on Apple
-  Silicon the `android` shell runs the container as `linux/amd64` —
-  enable Rosetta emulation in Docker Desktop settings (on by default in
-  recent versions). Expect it to be slower than native.
-- The `swift` shell cannot run in Docker (needs macOS + Xcode).
+- The Nix store is kept in the `walletkit-nix-store-amd64` Docker volume, so
+  toolchains download only on the first run. Remove it with `docker volume rm
+  walletkit-nix-store-amd64` to reclaim the space. Cargo uses the corresponding
+  `walletkit-cargo-home-amd64` volume.
+- On Apple Silicon, enable Rosetta emulation in Docker Desktop settings (on by
+  default in recent versions).
+- Do not use `nix/docker.sh develop .#swift`: the Swift shell needs macOS and
+  Xcode, which a Linux container cannot provide. Use native Nix instead.
 - On Linux hosts, files created by the container (e.g. `target/`) are
   root-owned.
 
