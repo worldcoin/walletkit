@@ -31,6 +31,7 @@ pkgs.mkShell {
     androidNdkPackage
     pkgs.curl
     pkgs.git
+    pkgs.jdk17
     pkgs.nargo
   ];
 

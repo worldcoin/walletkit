@@ -1,16 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-## Builds the Android native libraries and assembles the Kotlin bindings
-## (jniLibs layout + UniFFI-generated sources). Used both locally and by CI,
-## which builds the native libraries in a parallel matrix and passes them in
-## via --artifacts-dir.
-##
-## Building requires the Android cross-compilation environment (NDK linkers
-## etc.). The easiest way to get it is the Nix devshell:
-##   nix develop .#android --command ./kotlin/build_kotlin.sh
-## or, without Nix installed, via Docker:
-##   nix/docker.sh develop .#android --command ./kotlin/build_kotlin.sh
+# Build Android native libraries and assemble the Kotlin JNI/UniFFI bindings.
+# Usage: ./kotlin/build_kotlin.sh [--artifacts-dir <dir>]
+# See nix/README.md for build environment setup.
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 

@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Build the Kotlin bindings and publish them to Maven Local.
+# Usage: ./kotlin/local_kotlin.sh <version>
+# See nix/README.md for build environment setup.
+
 echo "Building WalletKit Android SDK for local development..."
 
 # Version is required
@@ -14,20 +18,11 @@ fi
 VERSION="$1"
 echo "Using version: $VERSION"
 
-# Build using kotlin/build_kotlin.sh inside the Nix android shell
-# (via Docker if Nix isn't installed; see nix/README.md).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "Building WalletKit SDK..."
-if command -v nix >/dev/null 2>&1; then
-    (cd .. && nix develop .#android --command ./kotlin/build_kotlin.sh)
-elif command -v docker >/dev/null 2>&1; then
-    ../nix/docker.sh develop .#android --command ./kotlin/build_kotlin.sh
-else
-    echo "Error: need Nix or Docker to build (see nix/README.md)"
-    exit 1
-fi
+./build_kotlin.sh
 
 # Publish to Maven Local
 echo "Publishing to Maven Local..."

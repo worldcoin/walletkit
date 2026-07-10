@@ -28,6 +28,7 @@ Convenience wrappers (they enter the right shell for you):
 nix/build-android.sh --target aarch64-linux-android
 nix/build-wasm.sh
 nix develop .#android --command ./kotlin/build_kotlin.sh   # full Android jniLibs + bindings
+nix develop .#android --command ./kotlin/local_kotlin.sh 0.3.1  # publish to Maven Local
 ```
 
 ## No Nix installed? Use Docker
