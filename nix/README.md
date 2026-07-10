@@ -1,7 +1,8 @@
 # Nix development environments
 
 This directory contains the Nix devshells and helper scripts used to
-cross-compile WalletKit for Android, iOS and wasm, both locally and in CI.
+cross-compile WalletKit for Android and wasm, both locally and in CI.
+Swift/iOS builds intentionally continue to use their existing host Xcode setup.
 
 The flake provides **devshells, not packages**: the shells pin the Rust
 toolchain (from `rust-toolchain.toml`), the Android NDK, nargo and every
@@ -14,7 +15,6 @@ ordinary `cargo build` invocations run inside a shell.
 |---|---|---|
 | `default` | Host builds, uniffi-bindgen, nargo | all |
 | `android` | Cross-compile the 4 Android targets (NDK, linkers, API 23) | linux/darwin x86_64, darwin aarch64 |
-| `swift` | iOS targets via the **host** Xcode | macOS only |
 | `wasm` | `wasm32-unknown-unknown` with a wasm-safe clang | all |
 
 ```bash
@@ -27,18 +27,8 @@ Convenience wrappers (they enter the right shell for you):
 ```bash
 nix/build-android.sh --target aarch64-linux-android
 nix/build-wasm.sh
-nix/build-swift.sh                                   # macOS + Xcode required
 nix develop .#android --command ./kotlin/build_kotlin.sh   # full Android jniLibs + bindings
 ```
-
-## iOS is only partially hermetic
-
-Apple's iOS SDKs cannot be redistributed through nixpkgs, so the `swift`
-shell deliberately escapes to the host Xcode (`/usr/bin/xcrun` etc.).
-Nix pins everything else; the Xcode version comes from the machine.
-CI pins it via `WALLETKIT_DEVELOPER_DIR` — the shell fails loudly if that
-path lacks the iOS SDKs. You can use the same variable locally to select
-a specific Xcode install.
 
 ## No Nix installed? Use Docker
 
@@ -65,8 +55,8 @@ Notes:
   `walletkit-cargo-home-amd64` volume.
 - On Apple Silicon, enable Rosetta emulation in Docker Desktop settings (on by
   default in recent versions).
-- Do not use `nix/docker.sh develop .#swift`: the Swift shell needs macOS and
-  Xcode, which a Linux container cannot provide. Use native Nix instead.
+- The flake does not provide a Swift shell. Swift builds depend on the host
+  macOS/Xcode configuration; see [`swift/README.md`](../swift/README.md).
 - On Linux hosts, files created by the container (e.g. `target/`) are
   root-owned.
 
@@ -74,17 +64,10 @@ Notes:
 
 Possible, if you bring the dependencies yourself:
 
-- **Host / wasm / iOS**: `rustup` picks the toolchain and targets up from
+- **Host / wasm**: `rustup` picks the toolchain and targets up from
   `rust-toolchain.toml`, and `.cargo/config.toml` carries the target
   rustflags. wasm needs clang ≥ 18 exported as `CC_wasm32_unknown_unknown`
-  (see `nix/wasm.nix`). iOS additionally needs:
-  - full Xcode with the iOS SDKs — if `xcode-select -p` points at
-    CommandLineTools, builds fail with `SDK "iphoneos" cannot be located`;
-    fix with `sudo xcode-select -s /Applications/Xcode.app` or
-    `export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`
-    (the Nix shell does this fallback for you)
-  - `cmake` (`brew install cmake`) — aws-lc-sys builds its C code with it
-  - `swiftlint`, but only for `archive_swift.sh` (release packaging)
+  (see `nix/wasm.nix`).
 - **Android**: you need NDK r27 and the `CC_*`/`AR_*`/
   `CARGO_TARGET_*_LINKER` env vars pointing into it — exactly what
   `nix/android.nix` sets. There is no script for the manual setup; the

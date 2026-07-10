@@ -10,8 +10,8 @@ set -euo pipefail
 #   nix/docker.sh develop .#wasm --command cargo build --release --target wasm32-unknown-unknown
 #   nix/docker.sh flake show
 #
-# The Swift shell cannot work in this Linux container because it needs macOS
-# and Xcode. Use native Nix for `nix develop .#swift`.
+# Swift builds are not provided by the flake because they depend on macOS and
+# the host Xcode configuration; use the existing Swift build flow instead.
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 

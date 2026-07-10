@@ -46,8 +46,6 @@
           # The Android NDK has no aarch64-linux prebuilt toolchain
           # (on aarch64 Docker hosts, run the container as linux/amd64).
           android = import ./nix/android.nix { inherit pkgs; };
-        } // pkgs.lib.optionalAttrs pkgs.stdenv.isDarwin {
-          swift = import ./nix/swift.nix { inherit pkgs; };
         };
       });
 }
