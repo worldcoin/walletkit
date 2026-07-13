@@ -9,6 +9,7 @@ set -e
 
 PROJECT_ROOT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_PATH="$PROJECT_ROOT_PATH/swift" # The base path for the Swift build
+source "$BASE_PATH/make_walletkit_framework.sh"
 PACKAGE_NAME="walletkit"
 TARGET_DIR="$PROJECT_ROOT_PATH/target"
 SUPPORT_SOURCES_DIR="$BASE_PATH/support"
@@ -49,7 +50,6 @@ if [[ "$OUTPUT_DIR" != /* ]]; then
 fi
 
 SWIFT_SOURCES_DIR="$OUTPUT_DIR/Sources/WalletKit"
-SWIFT_HEADERS_DIR="$BASE_PATH/ios_build/Headers/WalletKit"
 FRAMEWORK_OUTPUT="$OUTPUT_DIR/$FRAMEWORK"
 
 echo "Building $FRAMEWORK to $FRAMEWORK_OUTPUT"
@@ -62,7 +62,6 @@ rm -rf "$FRAMEWORK_OUTPUT"
 mkdir -p "$BASE_PATH/ios_build/bindings"
 mkdir -p "$BASE_PATH/ios_build/target/universal-ios-sim/release"
 mkdir -p "$SWIFT_SOURCES_DIR"
-mkdir -p "$SWIFT_HEADERS_DIR"
 
 echo "Building Rust packages for iOS targets..."
 
@@ -117,16 +116,28 @@ if [ -d "$SUPPORT_SOURCES_DIR" ]; then
     rsync -a "$SUPPORT_SOURCES_DIR"/ "$SWIFT_SOURCES_DIR"/
 fi
 
-# Move headers
-mv $BASE_PATH/ios_build/bindings/walletkit_coreFFI.h $SWIFT_HEADERS_DIR/
-cat $BASE_PATH/ios_build/bindings/walletkit_coreFFI.modulemap > $SWIFT_HEADERS_DIR/module.modulemap
-
 echo "Creating XCFramework..."
+
+# Assemble a proper walletkit_coreFFI.framework bundle per platform slice.
+# `xcodebuild -create-xcframework -library/-headers` relies on Clang's
+# implicit subdirectory modulemap search, which recent SDKs disabled — a
+# framework module isn't subject to that search.
+make_walletkit_framework "$BASE_PATH/ios_build/Frameworks/ios-arm64/walletkit_coreFFI.framework" \
+  "$TARGET_DIR/aarch64-apple-ios/release/lib${PACKAGE_NAME}.a" \
+  iPhoneOS \
+  "$BASE_PATH/ios_build/bindings/walletkit_coreFFI.h" \
+  "$BASE_PATH/ios_build/bindings/walletkit_coreFFI.modulemap"
+
+make_walletkit_framework "$BASE_PATH/ios_build/Frameworks/ios-arm64_x86_64-simulator/walletkit_coreFFI.framework" \
+  "$BASE_PATH/ios_build/target/universal-ios-sim/release/lib${PACKAGE_NAME}.a" \
+  iPhoneSimulator \
+  "$BASE_PATH/ios_build/bindings/walletkit_coreFFI.h" \
+  "$BASE_PATH/ios_build/bindings/walletkit_coreFFI.modulemap"
 
 # Create XCFramework
 xcodebuild -create-xcframework \
-  -library "$TARGET_DIR/aarch64-apple-ios/release/lib${PACKAGE_NAME}.a" -headers $BASE_PATH/ios_build/Headers \
-  -library $BASE_PATH/ios_build/target/universal-ios-sim/release/lib${PACKAGE_NAME}.a -headers $BASE_PATH/ios_build/Headers \
+  -framework "$BASE_PATH/ios_build/Frameworks/ios-arm64/walletkit_coreFFI.framework" \
+  -framework "$BASE_PATH/ios_build/Frameworks/ios-arm64_x86_64-simulator/walletkit_coreFFI.framework" \
   -output $FRAMEWORK_OUTPUT
 
 # Clean up intermediate build files
