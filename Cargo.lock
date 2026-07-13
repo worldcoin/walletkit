@@ -7437,22 +7437,13 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72e971b7c52f9a91a499ed15580da6dbfd593c6ad9c6d519c6b72c7f0c421355"
-dependencies = [
- "taceo-oprf-types 0.13.1",
-]
-
-[[package]]
-name = "taceo-oprf"
 version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b4f49c8462cb704e9a141490e36b9aba424e4b23524331ecd938c3451c50bd9"
 dependencies = [
  "taceo-oprf-client",
- "taceo-oprf-core 0.6.0",
- "taceo-oprf-types 0.14.0",
+ "taceo-oprf-core",
+ "taceo-oprf-types",
 ]
 
 [[package]]
@@ -7469,36 +7460,14 @@ dependencies = [
  "http",
  "serde",
  "taceo-ark-babyjubjub",
- "taceo-oprf-core 0.6.0",
- "taceo-oprf-types 0.14.0",
+ "taceo-oprf-core",
+ "taceo-oprf-types",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "tokio",
  "tokio-tungstenite",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "taceo-oprf-core"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1409d82e88ad002d7946f6b5d37395a1d532133d9320b3284e27120ee1162db"
-dependencies = [
- "ark-ec",
- "ark-ff 0.5.0",
- "ark-serialize 0.5.0",
- "blake3",
- "itertools 0.14.0",
- "num-bigint",
- "rand 0.8.6",
- "serde",
- "subtle",
- "taceo-ark-babyjubjub",
- "taceo-ark-serde-compat",
- "taceo-poseidon2",
- "uuid",
- "zeroize",
 ]
 
 [[package]]
@@ -7525,28 +7494,6 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-types"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13304cda45c09c625f278b2f8e49de5f583e447a276804d41877bfcf5e89f68e"
-dependencies = [
- "alloy",
- "ark-ff 0.5.0",
- "ark-serialize 0.5.0",
- "async-trait",
- "eyre",
- "http",
- "ruint",
- "serde",
- "taceo-ark-babyjubjub",
- "taceo-ark-serde-compat",
- "taceo-circom-types",
- "taceo-groth16-sol",
- "taceo-oprf-core 0.5.4",
- "uuid",
-]
-
-[[package]]
-name = "taceo-oprf-types"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "244714781d0b350440fff4af252e73f62776174b7932b32bb9e51b81b7f22490"
@@ -7563,7 +7510,7 @@ dependencies = [
  "taceo-ark-serde-compat",
  "taceo-circom-types",
  "taceo-groth16-sol",
- "taceo-oprf-core 0.6.0",
+ "taceo-oprf-core",
  "uuid",
 ]
 
@@ -8531,7 +8478,7 @@ dependencies = [
  "sha2 0.10.9",
  "strum 0.27.2",
  "subtle",
- "taceo-oprf 0.13.0",
+ "taceo-oprf",
  "test-case",
  "thiserror 2.0.18",
  "tokio",
@@ -9120,7 +9067,7 @@ dependencies = [
  "taceo-ark-babyjubjub",
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
- "taceo-oprf 0.16.0",
+ "taceo-oprf",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "tokio",
@@ -9171,7 +9118,7 @@ dependencies = [
  "taceo-ark-serde-compat",
  "taceo-circom-types",
  "taceo-eddsa-babyjubjub",
- "taceo-oprf 0.16.0",
+ "taceo-oprf",
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "url",
@@ -9204,7 +9151,7 @@ dependencies = [
  "taceo-eddsa-babyjubjub",
  "taceo-groth16-material",
  "taceo-groth16-sol",
- "taceo-oprf 0.16.0",
+ "taceo-oprf",
  "taceo-poseidon2",
  "tar",
  "thiserror 2.0.18",
