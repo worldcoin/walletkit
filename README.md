@@ -50,18 +50,18 @@ Replace `VERSION` with the desired WalletKit version.
 
 ### Building and publishing
 
-To test local changes before publishing a release, use the build script to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
+To test local changes before publishing a release, use the Kotlin xtask to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
 
 ```bash
-nix develop .#android --command ./kotlin/local_kotlin.sh 0.3.1
+nix develop .#android --command cargo xtask kotlin local 0.3.1
 ```
 
 Example with custom Rust locations:
 ```bash
-RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo ./kotlin/local_kotlin.sh 0.1.0-SNAPSHOT
+RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo cargo xtask kotlin local 0.1.0-SNAPSHOT
 ```
 
-> **Note**: The script resolves its own location, but does not provision or enter the build environment. Run it from the Nix `android` devshell or with the required dependencies configured manually.
+> **Note**: The xtask runs from the workspace root, but does not provision or enter the build environment. Run it from the Nix `android` devshell or with the required dependencies configured manually.
 
 This will:
 1. Build the Rust library for all Android architectures (arm64-v8a, armeabi-v7a, x86_64, x86)
