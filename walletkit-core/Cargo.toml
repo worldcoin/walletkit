@@ -22,69 +22,69 @@ name = "walletkit_core"
 
 [dependencies]
 alloy-core = { workspace = true }
-backon = "1.6"
-base64 = { version = "0.22" }
-hex = "0.4"
-hkdf = "0.12"
-log = "0.4"
-rand = "0.8.6"
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
-ruint = { version = "1.17", default-features = false, features = ["alloc"] }
-ruint-uniffi = { version = "0.1", features = ["serde"] }
+backon = { workspace = true }
+base64 = { workspace = true }
+ciborium = { workspace = true }
+hex = { workspace = true }
+hkdf = { workspace = true }
+log = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+ruint = { workspace = true, features = ["alloc"] }
+ruint-uniffi = { workspace = true, features = ["serde"] }
+secrecy = { workspace = true }
+semaphore-rs = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+strum = { workspace = true, features = ["derive"] }
+subtle = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
+tracing-log = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 uniffi = { workspace = true }
-secrecy = "0.10"
-semaphore-rs = { version = "0.5.1", optional = true }
-serde = "1"
-serde_json = "1"
-sha2 = "0.10"
-strum = { version = "0.27", features = ["derive"] }
-subtle = "2"
-thiserror = "2"
-tokio = { version = "1", features = ["sync"] }
-tracing = "0.1"
-tracing-log = "0.2"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-zeroize = "1"
-uuid = { version = "1.10", features = ["v4"] }
+uuid = { workspace = true, features = ["v4"] }
+walletkit-db = { workspace = true }
 world-id-core = { workspace = true, features = ["authenticator"] }
 world-id-proof = { workspace = true }
-ciborium = "0.2.2"
-walletkit-db = { workspace = true }
+zeroize = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom = { workspace = true, features = ["wasm_js"] }
 
 # Native-only dependencies (not available on wasm32)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-ctor = "0.2"
-reqwest = { version = "0.12", default-features = false, features = [
-  "brotli",
-  "rustls-tls",
-] }
-rustls = { version = "0.23", features = ["ring"] }
+ctor = { workspace = true }
+reqwest = { workspace = true, features = ["brotli", "rustls-tls"] }
+rustls = { workspace = true, features = ["ring"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+sha2 = { workspace = true, features = ["force-soft"] }
 
 [dev-dependencies]
-alloy = { version = "2", default-features = false, features = [
+alloy = { workspace = true, features = [
   "getrandom",
   "json",
   "contract",
   "node-bindings",
   "signer-local",
 ] }
-chacha20poly1305 = "0.10"
-chrono = "0.4.41"
-dotenvy = "0.15.7"
-eyre = "0.6"
-mockito = "1.6"
-regex = "1.11"
-taceo-oprf = { version = "0.16", default-features = false, features = [
+chacha20poly1305 = { workspace = true }
+chrono = { workspace = true }
+dotenvy = { workspace = true }
+eyre = { workspace = true }
+mockito = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
+taceo-oprf = { workspace = true, features = [
   "types",
 ] } # TODO: remove once OprfKeyId gets removed from request
-test-case = "3.3"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-tokio-test = "0.4"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-rand = "0.8.6"
+test-case = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tokio-test = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 
 
 [features]
@@ -125,6 +125,3 @@ no-default-features = true
 # access, and world-id-core/embed-zkeys downloads circuit files at compile
 # time. The crate-level doc example is marked `ignore` for this reason.
 features = ["issuers"]
-
-[target.'cfg(target_os = "android")'.dependencies]
-sha2 = { version = "0.10", features = ["force-soft"] }
