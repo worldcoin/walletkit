@@ -1,11 +1,11 @@
 [workspace]
 members = [
-  "uniffi-bindgen",
-  "walletkit-core",
-  "walletkit",
-  "walletkit-db",
-  "walletkit-cli",
-  "walletkit-testkit",
+  "crates/uniffi-bindgen",
+  "crates/walletkit-core",
+  "crates/walletkit",
+  "crates/walletkit-db",
+  "crates/walletkit-cli",
+  "crates/walletkit-testkit",
 ]
 resolver = "2"
 
@@ -85,8 +85,8 @@ world-id-core = { version = "0.12.0", default-features = false }
 world-id-proof = { version = "0.12.0", default-features = false }
 
 # internal
-walletkit-core = { version = "0.20.0", path = "walletkit-core", default-features = false }
-walletkit-db = { version = "0.20.0", path = "walletkit-db" }
+walletkit-core = { version = "0.20.0", path = "crates/walletkit-core", default-features = false }
+walletkit-db = { version = "0.20.0", path = "crates/walletkit-db" }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }

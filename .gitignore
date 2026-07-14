@@ -32,7 +32,7 @@ cache/
 **/out/build-info
 
 # Allow storage cache module sources.
-!walletkit-core/src/storage/cache/
-!walletkit-core/src/storage/cache/**
+!crates/walletkit-core/src/storage/cache/
+!crates/walletkit-core/src/storage/cache/**
 
 # NOTE: Cargo.lock is not ignored because it is used for FFI builds (Swift & Kotlin)
