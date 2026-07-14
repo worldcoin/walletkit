@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 
-echo "Building WalletKit Android SDK for local development..."
+# Build the Kotlin bindings and publish them to Maven Local.
+# Usage: ./kotlin/local_kotlin.sh <version>
+# See nix/README.md for build environment setup.
 
-# Set rustup and cargo home to /tmp to prevent Docker permission issues
-export RUSTUP_HOME="${RUSTUP_HOME:-/tmp/.rustup}"
-export CARGO_HOME="${CARGO_HOME:-/tmp/.cargo}"
+echo "Building WalletKit Android SDK for local development..."
 
 # Version is required
 if [ -z "$1" ]; then
@@ -18,7 +18,6 @@ fi
 VERSION="$1"
 echo "Using version: $VERSION"
 
-# Build using kotlin/build.sh
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 

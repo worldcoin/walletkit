@@ -1,42 +1,103 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-## This script is only used for local builds. For production releases, the code is in the CI workflow.
+# Build Android native libraries and assemble the Kotlin JNI/UniFFI bindings.
+# Usage: ./kotlin/build_kotlin.sh [--artifacts-dir <dir>]
+# See nix/README.md for build environment setup.
 
-echo "Building WalletKit Android SDK..."
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-CARGO_FEATURES="compress-zkeys,embed-zkeys,v3"
+readonly TARGETS=(
+  "aarch64-linux-android"
+  "armv7-linux-androideabi"
+  "x86_64-linux-android"
+  "i686-linux-android"
+)
 
-# Create jniLibs directories
-mkdir -p ./walletkit/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64,x86}
+abi_for_target() {
+  case "$1" in
+  aarch64-linux-android) echo "arm64-v8a" ;;
+  armv7-linux-androideabi) echo "armeabi-v7a" ;;
+  x86_64-linux-android) echo "x86_64" ;;
+  i686-linux-android) echo "x86" ;;
+  esac
+}
 
-# Build for all Android architectures
-echo "Building for aarch64-linux-android..."
-cross build -p walletkit --release --target=aarch64-linux-android --features "$CARGO_FEATURES"
+usage() {
+  cat <<EOF
+Usage: $0 [--artifacts-dir <dir>]
 
-echo "Building for armv7-linux-androideabi..."
-cross build -p walletkit --release --target=armv7-linux-androideabi --features "$CARGO_FEATURES"
+Options:
+  --artifacts-dir <dir>  Skip the cargo builds and take prebuilt libraries
+                         from <dir>/android-<target>/libwalletkit.so
+                         (the layout produced by the CI build matrix).
 
-echo "Building for x86_64-linux-android..."
-cross build -p walletkit --release --target=x86_64-linux-android --features "$CARGO_FEATURES"
+EOF
+}
 
-echo "Building for i686-linux-android..."
-cross build -p walletkit --release --target=i686-linux-android --features "$CARGO_FEATURES"
+ARTIFACTS_DIR=""
 
-# Move .so files to jniLibs
-echo "Moving native libraries..."
-mv ../target/aarch64-linux-android/release/libwalletkit.so ./walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so
-mv ../target/armv7-linux-androideabi/release/libwalletkit.so ./walletkit/src/main/jniLibs/armeabi-v7a/libwalletkit.so
-mv ../target/x86_64-linux-android/release/libwalletkit.so ./walletkit/src/main/jniLibs/x86_64/libwalletkit.so
-mv ../target/i686-linux-android/release/libwalletkit.so ./walletkit/src/main/jniLibs/x86/libwalletkit.so
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --artifacts-dir)
+    if [[ $# -lt 2 ]]; then
+      echo "error: --artifacts-dir requires a value" >&2
+      usage >&2
+      exit 1
+    fi
+    ARTIFACTS_DIR="$2"
+    shift 2
+    ;;
+  --help | -h)
+    usage
+    exit 0
+    ;;
+  *)
+    echo "error: unknown argument: $1" >&2
+    usage >&2
+    exit 1
+    ;;
+  esac
+done
+
+if [[ -z "${ARTIFACTS_DIR}" ]]; then
+  if [[ -z "${CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER:-}" ]]; then
+    echo "error: Android cross-compilation environment not configured." >&2
+    echo "Run inside the Nix devshell:  nix develop .#android --command $0" >&2
+    echo "or via Docker without Nix:    nix/docker.sh develop .#android --command $0" >&2
+    exit 1
+  fi
+
+  # Defaults to the release feature set; CI overrides via WALLETKIT_CARGO_FEATURES.
+  CARGO_FEATURES="${WALLETKIT_CARGO_FEATURES:-compress-zkeys,embed-zkeys,v3}"
+
+  echo "Building WalletKit Android SDK..."
+  for target in "${TARGETS[@]}"; do
+    echo "Building for ${target}..."
+    cargo build -p walletkit --release --locked --target "${target}" --features "$CARGO_FEATURES"
+  done
+fi
+
+# Copy .so files into the jniLibs layout
+echo "Copying native libraries..."
+for target in "${TARGETS[@]}"; do
+  abi="$(abi_for_target "${target}")"
+  if [[ -n "${ARTIFACTS_DIR}" ]]; then
+    src="${ARTIFACTS_DIR}/android-${target}/libwalletkit.so"
+  else
+    src="target/${target}/release/libwalletkit.so"
+  fi
+  mkdir -p "kotlin/walletkit/src/main/jniLibs/${abi}"
+  cp "${src}" "kotlin/walletkit/src/main/jniLibs/${abi}/libwalletkit.so"
+done
 
 # Generate Kotlin bindings
 echo "Generating Kotlin bindings..."
-cargo run -p uniffi-bindgen generate \
-  ./walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so \
+cargo run -p uniffi-bindgen --locked -- generate \
+  kotlin/walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so \
   --library \
   --language kotlin \
   --no-format \
-  --out-dir walletkit/src/main/java
+  --out-dir kotlin/walletkit/src/main/java
 
 echo "✅ Build complete!"
