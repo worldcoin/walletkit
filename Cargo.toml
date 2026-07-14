@@ -77,10 +77,12 @@ uniffi = { version = "0.31.0", features = [
   "wasm-unstable-single-threaded",
 ] }
 uuid = "1.10"
-world-id-core = { version = "0.12.0", default-features = false }
-world-id-proof = { version = "0.12.0", default-features = false }
 zeroize = "1"
 zip = { version = "2", default-features = false }
+
+# world-id-protocol crates
+world-id-core = { version = "0.12.0", default-features = false }
+world-id-proof = { version = "0.12.0", default-features = false }
 
 # internal
 walletkit-core = { version = "0.20.0", path = "walletkit-core", default-features = false }
