@@ -25,7 +25,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
-      - uses: worldcoin/bedrock/.github/actions/version-alignment@23d5dab82292027174c40ab1c4b5dee790e1fadf # main
+      - uses: worldcoin/bedrock/.github/actions/version-alignment@857c252013ac52cea24f5d7add3475a909d663f2 # main
         with:
           uniffi_version: ${{ vars.UNIFFI_VERSION }}
           rust_toolchain_channel: ${{ vars.RUST_TOOLCHAIN_CHANNEL }}
@@ -46,12 +46,6 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
-
-      # Install nargo
-      - uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
-        with:
-          # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
-          toolchain: v1.0.0-beta.11
 
       # Install nargo
       - uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
@@ -129,12 +123,6 @@ jobs:
         uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
           cache-targets: "true"
-
-      # Install nargo
-      - uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
-        with:
-          # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
-          toolchain: v1.0.0-beta.11
 
       # Install nargo
       - uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
@@ -259,12 +247,6 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@b00af27efadbc7b4ca8b82abbd903b17cc874d2a # v1.9.0
-
-      # Install nargo
-      - uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
-        with:
-          # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
-          toolchain: v1.0.0-beta.11
 
       # Install nargo
       - uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
