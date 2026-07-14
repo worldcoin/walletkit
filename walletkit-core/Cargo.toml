@@ -77,7 +77,7 @@ dotenvy = "0.15.7"
 eyre = "0.6"
 mockito = "1.6"
 regex = "1.11"
-taceo-oprf = { version = "0.13", default-features = false, features = [
+taceo-oprf = { version = "0.16", default-features = false, features = [
   "types",
 ] } # TODO: remove once OprfKeyId gets removed from request
 test-case = "3.3"
