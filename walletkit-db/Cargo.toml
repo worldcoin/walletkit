@@ -15,29 +15,29 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-ciborium = "0.2.2"
-getrandom = "0.3"
-hex = "0.4"
-secrecy = "0.10"
-serde = { version = "1", features = ["derive"] }
-sha2 = "0.10"
-thiserror = "2"
-zeroize = { version = "1", features = ["derive"] }
+ciborium = { workspace = true }
+getrandom = { workspace = true }
+hex = { workspace = true }
+secrecy = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true, features = ["derive"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
-sha2 = { version = "0.10", features = ["force-soft"] }
+sha2 = { workspace = true, features = ["force-soft"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.3", features = ["wasm_js"] }
-sqlite-wasm-rs = { version = "0.5", features = ["sqlite3mc"] }
+getrandom = { workspace = true, features = ["wasm_js"] }
+sqlite-wasm-rs = { workspace = true, features = ["sqlite3mc"] }
 
 [build-dependencies]
-cc = "1"
-zip = { version = "2", default-features = false, features = ["deflate"] }
-sha2 = "0.10"
+cc = { workspace = true }
+sha2 = { workspace = true }
+zip = { workspace = true, features = ["deflate"] }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
 
 [lints]
 workspace = true
