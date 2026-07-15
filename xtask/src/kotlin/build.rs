@@ -55,9 +55,7 @@ fn ensure_android_toolchain(sh: &Shell) -> Result<()> {
                 target.rust_name.replace('-', "_").to_ascii_uppercase()
             )
         })
-        .filter(|variable| {
-            !sh.var_os(variable).is_some_and(|linker| !linker.is_empty())
-        })
+        .filter(|variable| !sh.var_os(variable).is_none_or(|linker| linker.is_empty()))
         .collect::<Vec<_>>();
 
     if !missing_linkers.is_empty() {
