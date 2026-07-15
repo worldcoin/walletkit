@@ -47,17 +47,27 @@ pub(super) fn run(sh: &Shell, artifacts_dir: Option<&Path>) -> Result<()> {
 }
 
 fn ensure_android_toolchain(sh: &Shell) -> Result<()> {
-    let linker_is_configured = sh
-        .var_os("CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER")
-        .is_some_and(|linker| !linker.is_empty());
+    let missing_linkers = ANDROID_TARGETS
+        .iter()
+        .map(|target| {
+            format!(
+                "CARGO_TARGET_{}_LINKER",
+                target.rust_name.replace('-', "_").to_ascii_uppercase()
+            )
+        })
+        .filter(|variable| {
+            !sh.var_os(variable).is_some_and(|linker| !linker.is_empty())
+        })
+        .collect::<Vec<_>>();
 
-    if !linker_is_configured {
+    if !missing_linkers.is_empty() {
         bail!(
-            "Android cross-compilation environment is not configured.\n\
+            "Android cross-compilation environment is not configured; missing:\n  {}\n\
              Run inside the Nix devshell:\n  \
              nix develop .#android --command cargo xtask kotlin build\n\
              Or use Docker without Nix:\n  \
-             nix/docker.sh develop .#android --command cargo xtask kotlin build"
+             nix/docker.sh develop .#android --command cargo xtask kotlin build",
+            missing_linkers.join("\n  ")
         );
     }
 
