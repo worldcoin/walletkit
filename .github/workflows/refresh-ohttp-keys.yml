@@ -71,7 +71,7 @@ jobs:
       - name: Update key config files
         run: |
           set -euo pipefail
-          DIR="walletkit-core/src/ohttp_keys"
+          DIR="crates/walletkit-core/src/ohttp_keys"
 
           declare -A FILES=(
             [STAGING_US]="staging_us.b64"
@@ -89,13 +89,13 @@ jobs:
       - name: Check for changes
         id: diff
         run: |
-          if git diff --quiet walletkit-core/src/ohttp_keys/; then
+          if git diff --quiet crates/walletkit-core/src/ohttp_keys/; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "No key config changes detected"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Key configs changed:"
-            git diff --stat walletkit-core/src/ohttp_keys/
+            git diff --stat crates/walletkit-core/src/ohttp_keys/
           fi
 
       - name: Create pull request
