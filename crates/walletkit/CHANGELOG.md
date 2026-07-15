@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1](https://github.com/worldcoin/walletkit/compare/v0.20.0...v0.20.1) - 2026-07-15
+
+### Other
+
+- move Rust crates into crates/ directory ([#443](https://github.com/worldcoin/walletkit/pull/443))
+- replace android cross-rs cross compilation setup with a nix based one ([#434](https://github.com/worldcoin/walletkit/pull/434))
+
 ## [0.20.0](https://github.com/worldcoin/walletkit/compare/v0.19.1...v0.20.0) - 2026-06-10
 
 ### Other
