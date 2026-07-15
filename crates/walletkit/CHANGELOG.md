@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.2](https://github.com/worldcoin/walletkit/compare/v0.20.1...v0.20.2) - 2026-07-15
+
+### Other
+
+- bump release version to republish Swift and Kotlin FFI artifacts
+
 ## [0.20.1](https://github.com/worldcoin/walletkit/compare/v0.20.0...v0.20.1) - 2026-07-15
 
 ### Other
