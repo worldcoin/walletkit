@@ -205,45 +205,9 @@ fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
     Ok(())
 }
 
-/// CLI-facing view of one verified proof-response item.
-///
-/// `walletkit_testkit`'s [`VerifyItemResult`] reports only the issuer schema id
-/// and the verification outcome; the CLI also surfaces the response item's
-/// `identifier`, recovered by pairing each result with its response item.
-struct VerifyItemDisplay {
-    issuer_schema_id: u64,
-    identifier: String,
-    verified: bool,
-    error: Option<String>,
-}
-
-/// Verifies a proof request/response pair on-chain via `walletkit_testkit`,
-/// pairing each per-item result back with its response item to recover the
-/// `identifier` for display. `walletkit_testkit::proof::verify_proof_onchain`
-/// returns one result per response item, in order.
-async fn verify_for_display(
-    env: &TestEnv,
-    proof_request: &CoreProofRequest,
-    proof_response: &CoreProofResponse,
-) -> eyre::Result<Vec<VerifyItemDisplay>> {
-    let results: Vec<VerifyItemResult> =
-        verify_proof_onchain(env, proof_request, proof_response).await?;
-
-    Ok(results
-        .into_iter()
-        .zip(&proof_response.responses)
-        .map(|(result, response_item)| VerifyItemDisplay {
-            issuer_schema_id: result.issuer_schema_id,
-            identifier: response_item.identifier.clone(),
-            verified: result.result.is_ok(),
-            error: result.result.err(),
-        })
-        .collect())
-}
-
-fn print_verify_items_human(results: &[VerifyItemDisplay]) {
+fn print_verify_items_human(results: &[VerifyItemResult]) {
     for r in results {
-        if r.verified {
+        if r.result.is_ok() {
             println!(
                 "  {} {} (issuer_schema_id={})",
                 output::pass_label(),
@@ -256,21 +220,21 @@ fn print_verify_items_human(results: &[VerifyItemDisplay]) {
                 output::fail_label(),
                 r.identifier,
                 r.issuer_schema_id,
-                r.error.as_deref().unwrap_or("unknown")
+                r.result.as_ref().err().map_or("unknown", String::as_str)
             );
         }
     }
 }
 
-fn verify_items_to_json(results: &[VerifyItemDisplay]) -> Vec<serde_json::Value> {
+fn verify_items_to_json(results: &[VerifyItemResult]) -> Vec<serde_json::Value> {
     results
         .iter()
         .map(|r| {
             serde_json::json!({
                 "issuer_schema_id": r.issuer_schema_id,
                 "identifier": r.identifier,
-                "verified": r.verified,
-                "error": r.error,
+                "verified": r.result.is_ok(),
+                "error": r.result.as_ref().err(),
             })
         })
         .collect()
@@ -291,8 +255,8 @@ async fn run_verify(
         serde_json::from_str(&response_json).wrap_err("invalid proof response")?;
 
     let env = cli_test_env(cli, verifier_address)?;
-    let results = verify_for_display(&env, &proof_request, &proof_response).await?;
-    let all_passed = results.iter().all(|r| r.verified);
+    let results = verify_proof_onchain(&env, &proof_request, &proof_response).await?;
+    let all_passed = results.iter().all(|r| r.result.is_ok());
 
     if cli.json {
         output::print_json_data(
@@ -394,8 +358,8 @@ async fn run_test(
     if !cli.json {
         eprintln!("Verifying proof on-chain...");
     }
-    let results = verify_for_display(&env, &proof_request, &proof_response.0).await?;
-    let all_passed = results.iter().all(|r| r.verified);
+    let results = verify_proof_onchain(&env, &proof_request, &proof_response.0).await?;
+    let all_passed = results.iter().all(|r| r.result.is_ok());
 
     if cli.json {
         output::print_json_data(
