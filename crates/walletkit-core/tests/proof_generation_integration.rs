@@ -13,11 +13,10 @@
 //!
 //! These build on [`walletkit_testkit`] so the staging fixtures (RP, issuer
 //! schemas, keys, verifier, RPC) live in a single [`TestEnv`] instead of being
-//! duplicated here. They are `#[ignore]`d — like the testkit e2e suite — because
-//! they require live staging infrastructure.
+//! duplicated here.
 //!
 //! Run with:
-//!   `cargo test --test proof_generation_integration --features embed-zkeys -- --ignored`
+//!   `cargo test --test proof_generation_integration --features embed-zkeys`
 
 use alloy::primitives::Address;
 use rand::rngs::OsRng;
@@ -54,7 +53,6 @@ fn init_tracing() {
 /// against staging infrastructure: account registration, local-EdDSA credential
 /// issuance, proof generation, and on-chain verification.
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires staging infrastructure"]
 async fn e2e_authenticator_generate_proof() -> Result<()> {
     init_tracing();
 
@@ -94,7 +92,6 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
 /// WIP-103 ownership proof shares the session proof's Merkle root (i.e. both
 /// prove inclusion of the same on-chain account).
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "requires staging infrastructure"]
 async fn e2e_session_proof() -> Result<()> {
     init_tracing();
 
