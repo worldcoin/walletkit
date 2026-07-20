@@ -1,12 +1,12 @@
 //! `walletkit credential` subcommands — credential management.
 
 use std::io::Read;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use walletkit_core::{Credential, FieldElement};
 use walletkit_testkit::env::TestEnv;
+use walletkit_testkit::utils::now_secs;
 
 use crate::output;
 
@@ -63,10 +63,6 @@ pub enum CredentialCommand {
     },
 }
 
-fn now_secs() -> eyre::Result<u64> {
-    Ok(SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs())
-}
-
 const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
 
 fn read_file_or_stdin(path: &str) -> eyre::Result<Vec<u8>> {
@@ -117,7 +113,7 @@ async fn run_import(
         })
         .transpose()?;
 
-    let now = now_secs()?;
+    let now = now_secs();
     let id = store
         .store_credential(&cred, &bf, expires_at, ad, now)
         .wrap_err("store credential failed")?;
@@ -144,7 +140,7 @@ async fn run_import(
 
 async fn run_list(cli: &Cli, issuer_schema_id: Option<u64>) -> eyre::Result<()> {
     let (_authenticator, store) = init_authenticator(cli).await?;
-    let now = now_secs()?;
+    let now = now_secs();
     let records = store
         .list_credentials(issuer_schema_id, now)
         .wrap_err("list credentials failed")?;
@@ -184,7 +180,7 @@ async fn run_list(cli: &Cli, issuer_schema_id: Option<u64>) -> eyre::Result<()> 
 
 async fn run_show(cli: &Cli, issuer_schema_id: u64) -> eyre::Result<()> {
     let (_authenticator, store) = init_authenticator(cli).await?;
-    let now = now_secs()?;
+    let now = now_secs();
     let result = store
         .get_credential(issuer_schema_id, now)
         .wrap_err("get credential failed")?;
@@ -219,38 +215,31 @@ pub struct IssuedTestCredential {
     pub blinding_factor: FieldElement,
 }
 
-/// Issues a test credential from the staging faux issuer (schema 128).
+/// Issues a test credential from the faux issuer configured in `env`.
 ///
-/// Delegates the issuance + storage to `walletkit_testkit`, then reads the
-/// stored credential back to recover the `expires_at` and `blinding_factor`
-/// the CLI surfaces (the testkit helper returns only the local credential id).
+/// Delegates the issuance + storage to `walletkit_testkit`, which returns the
+/// issued credential and its blinding factor directly.
 pub async fn issue_test_credential(
+    env: &TestEnv,
     authenticator: &walletkit_core::Authenticator,
     store: &walletkit_core::storage::CredentialStore,
 ) -> eyre::Result<IssuedTestCredential> {
-    let env = TestEnv::default_staging();
-    let credential_id =
-        walletkit_testkit::issuer::issue_faux_credential(&env, authenticator, store)
+    let issued =
+        walletkit_testkit::issuer::issue_faux_credential(env, authenticator, store)
             .await?;
 
-    let issuer_schema_id = env.faux_issuer_schema_id;
-    let now = now_secs()?;
-    let (cred, bf) = store
-        .get_credential(issuer_schema_id, now)
-        .wrap_err("failed to read issued credential")?
-        .ok_or_else(|| eyre::eyre!("issued credential not found in store"))?;
-
     Ok(IssuedTestCredential {
-        credential_id,
-        issuer_schema_id,
-        expires_at: cred.expires_at(),
-        blinding_factor: bf,
+        credential_id: issued.credential_id,
+        issuer_schema_id: env.faux_issuer_schema_id,
+        expires_at: issued.credential.expires_at(),
+        blinding_factor: issued.blinding_factor,
     })
 }
 
 async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
     let (authenticator, store) = init_authenticator(cli).await?;
-    let result = issue_test_credential(&authenticator, &store).await?;
+    let env = TestEnv::default_staging();
+    let result = issue_test_credential(&env, &authenticator, &store).await?;
 
     if cli.json {
         output::print_json_data(
