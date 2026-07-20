@@ -26,7 +26,10 @@ pub use world_id_core::requests::ProofType;
 
 use crate::{
     authenticator::{init_authenticator, register_account},
-    issuer::{issue_custom_credential, issue_faux_credential, issue_local_credential},
+    issuer::{
+        issue_custom_credential, issue_faux_credential, issue_local_credential,
+        IssuedCredential,
+    },
     proof::{build_test_request, verify_proof_onchain, VerifyItemResult},
     utils::now_secs,
 };
@@ -127,7 +130,7 @@ pub async fn issue_credential(
     credential_type: CredentialType,
     authenticator: &Authenticator,
     store: &CredentialStore,
-) -> eyre::Result<u64> {
+) -> eyre::Result<IssuedCredential> {
     match credential_type {
         CredentialType::Local {
             genesis_issued_at,
@@ -180,7 +183,8 @@ pub async fn generate_and_verify_test_proof(
 
     let credential_id = issue_credential(env, credential_type, &authenticator, &store)
         .await
-        .wrap_err("credential issuance failed")?;
+        .wrap_err("credential issuance failed")?
+        .credential_id;
 
     let core_request = build_test_request(
         env,

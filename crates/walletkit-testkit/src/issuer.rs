@@ -11,6 +11,17 @@ use world_id_core::{
 use crate::env::TestEnv;
 use crate::utils::now_secs;
 
+/// A credential issued by one of the issuer helpers, together with its local
+/// store id and the blinding factor used to derive its subject.
+pub struct IssuedCredential {
+    /// Local store id of the issued credential.
+    pub credential_id: u64,
+    /// The issued credential.
+    pub credential: Credential,
+    /// Blinding factor used to derive the credential subject.
+    pub blinding_factor: FieldElement,
+}
+
 /// Builds an unsigned base credential with subject derived from `leaf_index`
 /// and `blinding_factor`.
 ///
@@ -80,7 +91,7 @@ pub async fn issue_faux_credential(
     env: &TestEnv,
     authenticator: &Authenticator,
     store: &CredentialStore,
-) -> eyre::Result<u64> {
+) -> eyre::Result<IssuedCredential> {
     let blinding_factor = authenticator
         .generate_credential_blinding_factor_remote(env.faux_issuer_schema_id)
         .await
@@ -123,7 +134,11 @@ pub async fn issue_faux_credential(
         .store_credential(&cred, &blinding_factor, expires_at, None, now_secs())
         .wrap_err("store credential failed")?;
 
-    Ok(credential_id)
+    Ok(IssuedCredential {
+        credential_id,
+        credential: cred,
+        blinding_factor,
+    })
 }
 
 /// Issues a credential signed locally by the staging issuer's `EdDSA` key
@@ -143,7 +158,7 @@ pub async fn issue_local_credential(
     store: &CredentialStore,
     genesis_issued_at: u64,
     expires_at: u64,
-) -> eyre::Result<u64> {
+) -> eyre::Result<IssuedCredential> {
     let issuer_secret_key = EdDSAPrivateKey::from_bytes(env.local_issuer_eddsa_key);
     let issuer_public_key = issuer_secret_key.public();
 
@@ -168,7 +183,11 @@ pub async fn issue_local_credential(
         .store_credential(&walletkit_credential, &bf, expires_at, None, now_secs())
         .wrap_err("store credential failed")?;
 
-    Ok(credential_id)
+    Ok(IssuedCredential {
+        credential_id,
+        credential: walletkit_credential,
+        blinding_factor: bf,
+    })
 }
 
 /// Issues a credential from a custom issuer and stores it.
@@ -184,7 +203,7 @@ pub async fn issue_custom_credential<F, Fut>(
     store: &CredentialStore,
     schema_id: u64,
     issue_credential: F,
-) -> eyre::Result<u64>
+) -> eyre::Result<IssuedCredential>
 where
     F: FnOnce(FieldElement) -> Fut + Send,
     Fut: Future<Output = eyre::Result<Credential>> + Send,
@@ -201,5 +220,9 @@ where
         .store_credential(&credential, &bf, credential.expires_at(), None, now_secs())
         .wrap_err("store credential failed")?;
 
-    Ok(credential_id)
+    Ok(IssuedCredential {
+        credential_id,
+        credential,
+        blinding_factor: bf,
+    })
 }
