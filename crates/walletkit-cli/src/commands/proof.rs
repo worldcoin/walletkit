@@ -1,7 +1,6 @@
 //! `walletkit proof` subcommands — proof generation, inspection, and on-chain verification.
 
 use std::io::Read;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine as _};
 use clap::Subcommand;
@@ -11,6 +10,7 @@ use walletkit_testkit::env::TestEnv;
 use walletkit_testkit::proof::{
     build_test_request, verify_proof_onchain, VerifyItemResult,
 };
+use walletkit_testkit::utils::now_secs;
 use world_id_core::primitives::{FieldElement, OwnershipProof, SessionId};
 use world_id_core::requests::{
     ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, ProofType,
@@ -26,21 +26,26 @@ const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
 
 /// Builds a [`TestEnv`] from the CLI flags for on-chain operations.
 ///
-/// Starts from the staging fixtures (RP id/key, faux issuer) and overrides the
-/// World Chain RPC URL (`--rpc-url`) and the `WorldIDVerifier` address — the
-/// explicit `--verifier-address` if given, otherwise the verifier for the CLI's
-/// `--environment`.
+/// Keeps the World ID config and the `WorldIDVerifier` address consistent by
+/// deriving both from the CLI's `--environment` (the verifier can be overridden
+/// with `--verifier-address`), and applies the `--rpc-url` override for World
+/// Chain calls. The RP id/key and faux issuer stay on the staging fixtures.
 fn cli_test_env(cli: &Cli, verifier_address: Option<&str>) -> eyre::Result<TestEnv> {
-    let mut env = TestEnv::default_staging();
+    let environment = resolve_environment(cli)?;
+    let verifier = match verifier_address {
+        Some(addr) => addr.parse().wrap_err("invalid verifier address")?,
+        None => walletkit_core::defaults::world_id_verifier_address(&environment),
+    };
+    let config = walletkit_core::defaults::default_config(
+        &environment,
+        cli.rpc_url.clone(),
+        Some(walletkit_core::Region::Us),
+    )
+    .wrap_err("failed to build World ID config")?;
+    let mut env = TestEnv::default_with_config_and_verifier(config, verifier);
     if let Some(rpc_url) = cli.rpc_url.as_deref() {
         env.rpc_url = rpc_url.to_string();
     }
-    env.world_id_verifier = match verifier_address {
-        Some(addr) => addr.parse().wrap_err("invalid verifier address")?,
-        None => walletkit_core::defaults::world_id_verifier_address(
-            &resolve_environment(cli)?,
-        ),
-    };
     Ok(env)
 }
 
@@ -149,12 +154,7 @@ fn parse_session_id_arg(session_id: &str) -> Result<SessionId, String> {
 async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Result<()> {
     let (authenticator, _store) = init_authenticator(cli).await?;
 
-    let ts = now.unwrap_or_else(|| {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time after epoch")
-            .as_secs()
-    });
+    let ts = now.unwrap_or_else(now_secs);
 
     let json_str = read_file_or_stdin(request)?;
     let proof_request =
@@ -365,7 +365,7 @@ async fn run_test(
     if !cli.json {
         eprintln!("Issuing test credential from faux issuer...");
     }
-    let issued = issue_test_credential(&authenticator, &store).await?;
+    let issued = issue_test_credential(&env, &authenticator, &store).await?;
 
     if !cli.json {
         eprintln!("Generating test proof request...");
@@ -382,10 +382,7 @@ async fn run_test(
     if !cli.json {
         eprintln!("Generating proof...");
     }
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time after epoch")
-        .as_secs();
+    let ts = now_secs();
     let walletkit_request =
         ProofRequest::from_json(&serde_json::to_string(&proof_request)?)
             .wrap_err("invalid proof request")?;

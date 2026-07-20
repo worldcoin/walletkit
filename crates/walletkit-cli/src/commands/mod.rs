@@ -9,7 +9,6 @@ mod setup;
 mod wallet;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use eyre::WrapErr as _;
@@ -18,6 +17,7 @@ use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
 use walletkit_core::{Authenticator, Groth16Materials};
 
 use walletkit_testkit::storage::create_fs_credential_store;
+use walletkit_testkit::utils::now_secs;
 
 /// `WalletKit` CLI — developer tool for World ID wallet operations.
 #[derive(Parser)]
@@ -259,7 +259,7 @@ pub async fn init_authenticator(
         }
     };
 
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let now = now_secs();
     authenticator
         .init_storage(now)
         .wrap_err("storage init failed")?;
