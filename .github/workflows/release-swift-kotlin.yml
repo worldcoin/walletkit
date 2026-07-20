@@ -217,7 +217,7 @@ jobs:
           path: artifacts
 
       - name: Assemble jniLibs & generate bindings
-        run: nix develop . --command ./kotlin/build_kotlin.sh --artifacts-dir artifacts
+        run: nix develop . --command cargo xtask kotlin build --artifacts-dir artifacts
 
       - name: Publish
         working-directory: kotlin

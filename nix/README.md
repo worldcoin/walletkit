@@ -27,8 +27,8 @@ Convenience wrappers (they enter the right shell for you):
 ```bash
 nix/build-android.sh --target aarch64-linux-android
 nix/build-wasm.sh
-nix develop .#android --command ./kotlin/build_kotlin.sh   # full Android jniLibs + bindings
-nix develop .#android --command ./kotlin/local_kotlin.sh 0.3.1  # publish to Maven Local
+nix develop .#android --command cargo xtask kotlin build   # full Android jniLibs + bindings
+nix develop .#android --command cargo xtask kotlin local 0.3.1  # publish to Maven Local
 ```
 
 ## No Nix installed? Use Docker
@@ -37,7 +37,7 @@ nix develop .#android --command ./kotlin/local_kotlin.sh 0.3.1  # publish to Mav
 host dependency is Docker. Its arguments intentionally match the native Nix CLI:
 
 ```bash
-nix/docker.sh develop .#android --command ./kotlin/build_kotlin.sh
+nix/docker.sh develop .#android --command cargo xtask kotlin build
 nix/docker.sh develop .#wasm --command cargo build -p walletkit --release --locked --target wasm32-unknown-unknown
 nix/docker.sh develop .#default                  # interactive shell
 nix/docker.sh flake show                         # other Nix commands work too

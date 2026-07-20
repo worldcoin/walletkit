@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Usage:
 #   nix/docker.sh develop .#android
-#   nix/docker.sh develop .#android --command ./kotlin/build_kotlin.sh
+#   nix/docker.sh develop .#android --command cargo xtask kotlin build
 #   nix/docker.sh develop .#wasm --command cargo build --release --target wasm32-unknown-unknown
 #   nix/docker.sh flake show
 #

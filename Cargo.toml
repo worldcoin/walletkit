@@ -6,6 +6,7 @@ members = [
   "crates/walletkit-db",
   "crates/walletkit-cli",
   "crates/walletkit-testkit",
+  "xtask",
 ]
 resolver = "2"
 
@@ -15,8 +16,8 @@ license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
 readme = "./README.md"
-homepage = "https://docs.world.org" # TODO: Update to specific WalletKit page
-rust-version = "1.91" # MSRV
+homepage = "https://docs.world.org"                             # TODO: Update to specific WalletKit page
+rust-version = "1.91"                                           # MSRV
 repository = "https://github.com/worldcoin/walletkit"
 exclude = ["tests/"]
 keywords = ["ZKP", "WorldID", "World", "Identity", "Semaphore"]
@@ -25,7 +26,9 @@ categories = ["api-bindings", "cryptography::cryptocurrencies"]
 
 [workspace.dependencies]
 alloy = { version = "2", default-features = false }
-alloy-core = { version = "1", default-features = false, features = ["sol-types"] }
+alloy-core = { version = "1", default-features = false, features = [
+  "sol-types",
+] }
 backon = "1.6"
 base64 = "0.22"
 cc = "1"
@@ -70,6 +73,7 @@ uniffi = { version = "0.31.0", features = [
   "wasm-unstable-single-threaded",
 ] }
 uuid = "1.10"
+xshell = "0.2.7"
 zeroize = "1"
 zip = { version = "2", default-features = false }
 
