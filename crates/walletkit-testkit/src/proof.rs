@@ -118,6 +118,8 @@ pub fn build_test_request(
 pub struct VerifyItemResult {
     /// Issuer schema ID of the verified credential.
     pub issuer_schema_id: u64,
+    /// RP-defined identifier of the response item that was verified.
+    pub identifier: String,
     /// `Ok(())` if the on-chain `verify`/`verifySession` call succeeded,
     /// `Err` with the failure details from the contract call otherwise.
     pub result: Result<(), String>,
@@ -220,6 +222,7 @@ pub async fn verify_proof_onchain(
 
         results.push(VerifyItemResult {
             issuer_schema_id: response_item.issuer_schema_id,
+            identifier: response_item.identifier.clone(),
             result: result.map_err(|e| format!("{e:#}")),
         });
     }
