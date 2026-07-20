@@ -55,7 +55,7 @@ fn ensure_android_toolchain(sh: &Shell) -> Result<()> {
                 target.rust_name.replace('-', "_").to_ascii_uppercase()
             )
         })
-        .filter(|variable| !sh.var_os(variable).is_none_or(|linker| linker.is_empty()))
+        .filter(|variable| sh.var_os(variable).is_none_or(|linker| linker.is_empty()))
         .collect::<Vec<_>>();
 
     if !missing_linkers.is_empty() {
@@ -148,4 +148,33 @@ fn generate_bindings(sh: &Shell) -> Result<()> {
     )
     .run()
     .wrap_err("failed to generate Kotlin bindings")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn android_toolchain_requires_nonempty_linkers() -> Result<()> {
+        let sh = Shell::new()?;
+
+        for target in &ANDROID_TARGETS {
+            let variable = format!(
+                "CARGO_TARGET_{}_LINKER",
+                target.rust_name.replace('-', "_").to_ascii_uppercase()
+            );
+            sh.set_var(variable, "/ndk/clang");
+        }
+
+        ensure_android_toolchain(&sh)?;
+
+        sh.set_var("CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER", "");
+        let error =
+            ensure_android_toolchain(&sh).expect_err("empty linker should be rejected");
+        assert!(error
+            .to_string()
+            .contains("CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER"));
+
+        Ok(())
+    }
 }
