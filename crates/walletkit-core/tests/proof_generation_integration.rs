@@ -137,6 +137,20 @@ async fn e2e_session_proof() -> Result<()> {
         .wrap_err("generate_proof (create session) failed")?
         .into_inner();
     assert!(create_response.error.is_none(), "create-session error");
+    assert_eq!(create_response.responses.len(), 1);
+    let create_item = &create_response.responses[0];
+    assert!(
+        create_item.is_session(),
+        "create-session response should contain a session proof"
+    );
+    assert!(
+        create_item.session_nullifier.is_some(),
+        "create-session response should have a session_nullifier"
+    );
+    assert!(
+        create_item.nullifier.is_none(),
+        "create-session response should not have a uniqueness nullifier"
+    );
     let session_id = create_response
         .session_id
         .expect("create-session response should include session_id");
@@ -182,11 +196,11 @@ async fn e2e_session_proof() -> Result<()> {
 
     // Phase 5: an independent ownership proof must share the session proof's
     // Merkle root — both prove inclusion of the same on-chain account.
-    let blinding_factor = authenticator
-        .generate_credential_blinding_factor_remote(schema_id)
-        .await
-        .wrap_err("blinding factor generation failed")?;
-    let sub = authenticator.compute_credential_sub(&blinding_factor);
+    let (credential, blinding_factor) = store
+        .get_credential(schema_id, now)
+        .wrap_err("failed to retrieve issued credential")?
+        .ok_or_else(|| eyre::eyre!("issued credential missing from store"))?;
+    let sub = credential.sub();
     let nonce = FieldElement::random(&mut OsRng).into();
     let ownership_proof = authenticator
         .prove_credential_sub(&nonce, &blinding_factor, &sub)
