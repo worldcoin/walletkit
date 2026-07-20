@@ -8426,7 +8426,6 @@ dependencies = [
 name = "walletkit-cli"
 version = "0.20.2"
 dependencies = [
- "alloy",
  "base64 0.22.1",
  "ciborium",
  "clap",
@@ -8434,7 +8433,6 @@ dependencies = [
  "eyre",
  "hex",
  "rand 0.8.6",
- "reqwest 0.12.28",
  "serde",
  "serde_json",
  "tempfile",
@@ -8442,6 +8440,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber 0.3.23",
  "walletkit-core",
+ "walletkit-testkit",
  "world-id-core",
  "world-id-proof",
 ]

@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use walletkit_core::{Credential, FieldElement};
+use walletkit_testkit::env::TestEnv;
 
 use crate::output;
 
@@ -210,9 +211,6 @@ async fn run_show(cli: &Cli, issuer_schema_id: u64) -> eyre::Result<()> {
     Ok(())
 }
 
-const FAUX_ISSUER_URL: &str = "https://faux-issuer.us.id-infra.worldcoin.dev/issue";
-pub const FAUX_ISSUER_SCHEMA_ID: u64 = 128;
-
 /// Result of issuing a test credential from the faux issuer.
 pub struct IssuedTestCredential {
     pub credential_id: u64,
@@ -222,56 +220,30 @@ pub struct IssuedTestCredential {
 }
 
 /// Issues a test credential from the staging faux issuer (schema 128).
+///
+/// Delegates the issuance + storage to `walletkit_testkit`, then reads the
+/// stored credential back to recover the `expires_at` and `blinding_factor`
+/// the CLI surfaces (the testkit helper returns only the local credential id).
 pub async fn issue_test_credential(
     authenticator: &walletkit_core::Authenticator,
     store: &walletkit_core::storage::CredentialStore,
 ) -> eyre::Result<IssuedTestCredential> {
-    let bf = authenticator
-        .generate_credential_blinding_factor_remote(FAUX_ISSUER_SCHEMA_ID)
-        .await
-        .wrap_err("blinding factor generation failed")?;
+    let env = TestEnv::default_staging();
+    let credential_id =
+        walletkit_testkit::issuer::issue_faux_credential(&env, authenticator, store)
+            .await?;
 
-    let sub = authenticator.compute_credential_sub(&bf);
-    let sub_hex = sub.to_hex_string();
-
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(FAUX_ISSUER_URL)
-        .json(&serde_json::json!({ "sub": sub_hex }))
-        .send()
-        .await
-        .wrap_err("faux issuer request failed")?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        eyre::bail!("faux issuer returned {status}: {body}");
-    }
-
-    let body: serde_json::Value = resp
-        .json()
-        .await
-        .wrap_err("failed to parse faux issuer response")?;
-
-    let cred_value = body.get("credential").ok_or_else(|| {
-        eyre::eyre!("faux issuer response missing 'credential' field")
-    })?;
-
-    let cred_bytes =
-        serde_json::to_vec(cred_value).wrap_err("failed to serialize credential")?;
-    let cred = Credential::from_bytes(cred_bytes)
-        .wrap_err("invalid credential from faux issuer")?;
-    let expires_at = cred.expires_at();
-
+    let issuer_schema_id = env.faux_issuer_schema_id;
     let now = now_secs()?;
-    let id = store
-        .store_credential(&cred, &bf, expires_at, None, now)
-        .wrap_err("store credential failed")?;
+    let (cred, bf) = store
+        .get_credential(issuer_schema_id, now)
+        .wrap_err("failed to read issued credential")?
+        .ok_or_else(|| eyre::eyre!("issued credential not found in store"))?;
 
     Ok(IssuedTestCredential {
-        credential_id: id,
-        issuer_schema_id: FAUX_ISSUER_SCHEMA_ID,
-        expires_at,
+        credential_id,
+        issuer_schema_id,
+        expires_at: cred.expires_at(),
         blinding_factor: bf,
     })
 }
