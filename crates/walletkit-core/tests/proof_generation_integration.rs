@@ -2,493 +2,145 @@
     missing_docs,
     clippy::missing_errors_doc,
     clippy::missing_panics_doc,
-    clippy::must_use_candidate,
     clippy::similar_names,
-    clippy::too_many_lines
+    clippy::too_many_lines,
+    reason = "integration tests"
 )]
 
-//! End-to-end integration test for `Authenticator::generate_proof` (World ID v4)
-//! using **staging infrastructure** (real OPRF nodes, indexer, gateway, on-chain registries).
+//! End-to-end integration tests for `walletkit_core::Authenticator::generate_proof`
+//! (World ID v4) against **staging infrastructure** (real OPRF nodes, indexer,
+//! gateway, faux/local issuer, and the on-chain `WorldIDVerifier`).
 //!
-//! Prerequisites:
-//! - A registered RP on the staging `RpRegistry` contract (hardcoded below)
-//! - A registered issuer on the staging `CredentialSchemaIssuerRegistry` (hardcoded below)
-//! - Staging OPRF key-gen must have picked up both registrations
+//! These build on [`walletkit_testkit`] so the staging fixtures (RP, issuer
+//! schemas, keys, verifier, RPC) live in a single [`TestEnv`] instead of being
+//! duplicated here. They are `#[ignore]`d — like the testkit e2e suite — because
+//! they require live staging infrastructure.
 //!
 //! Run with:
-//!   `cargo test --test proof_generation_integration --features default -- --ignored`
+//!   `cargo test --test proof_generation_integration --features embed-zkeys -- --ignored`
 
-mod common;
-
-use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
-
+use alloy::primitives::Address;
 use rand::rngs::OsRng;
-
-use alloy::providers::ProviderBuilder;
-use alloy::signers::{local::PrivateKeySigner, SignerSync};
-use alloy::sol;
-use alloy_core::primitives::U160;
-use eyre::{Context as _, Result};
-use taceo_oprf::types::OprfKeyId;
-use walletkit_core::{defaults, Authenticator, Environment, Groth16Materials};
-use world_id_core::primitives::{rp::RpId, FieldElement, Nullifier};
-use world_id_core::{
-    requests::{ProofRequest, ProofType, RequestItem, RequestVersion},
-    Authenticator as CoreAuthenticator, EdDSAPrivateKey,
+use tempfile::TempDir;
+use walletkit_testkit::issuer::issue_local_credential;
+use walletkit_testkit::proof::build_test_request;
+use walletkit_testkit::utils::now_secs;
+use walletkit_testkit::{
+    generate_and_verify_test_proof, init_and_register_account, CredentialType,
+    ProofType, TestEnv,
 };
+use world_id_core::primitives::FieldElement;
 
-// ---------------------------------------------------------------------------
-// Staging-registered constants
-// ---------------------------------------------------------------------------
+use eyre::{Result, WrapErr as _};
 
-/// RP ID registered on the staging `RpRegistry` contract.
-const RP_ID: u64 = 46;
+// Distinct seeds so these tests drive independent staging identities, both from
+// each other and from the `walletkit-testkit` e2e suite (which uses [7], [8], [9]).
+const UNIQUENESS_TEST_SEED: [u8; 32] = [17u8; 32];
+const SESSION_TEST_SEED: [u8; 32] = [19u8; 32];
+const SIGNAL: &str = "my_signal";
+const CREDENTIAL_TTL_SECS: u64 = 3600;
+const REQUEST_TTL_SECS: u64 = 300;
 
-/// ECDSA private key for the registered RP (secp256k1).
-const RP_SIGNING_KEY: [u8; 32] = alloy::primitives::hex!(
-    "1111111111111111111111111111111111111111111111111111111111111111"
-);
-
-/// Issuer schema ID registered on the staging `CredentialSchemaIssuerRegistry`.
-const ISSUER_SCHEMA_ID: u64 = 47;
-
-/// `EdDSA` private key (32 bytes) for the registered issuer.
-const ISSUER_EDDSA_KEY: [u8; 32] = alloy::primitives::hex!(
-    "1111111111111111111111111111111111111111111111111111111111111111"
-);
-
-/// Default RPC URL for World Chain Mainnet (chain 480).
-const DEFAULT_RPC_URL: &str = "https://worldchain-mainnet.g.alchemy.com/public";
-
-// ---------------------------------------------------------------------------
-// On-chain WorldIDVerifier binding (only the `verify` function)
-// ---------------------------------------------------------------------------
-sol!(
-    #[allow(clippy::too_many_arguments)]
-    #[sol(rpc)]
-    interface IWorldIDVerifier {
-        function verify(
-            uint256 nullifier,
-            uint256 action,
-            uint64 rpId,
-            uint256 nonce,
-            uint256 signalHash,
-            uint64 expiresAtMin,
-            uint64 issuerSchemaId,
-            uint256 credentialGenesisIssuedAtMin,
-            uint256[5] calldata zeroKnowledgeProof
-        ) external view;
-    }
-);
-
-/// Full end-to-end proof generation through `walletkit_core::Authenticator::generate_proof`
-/// against staging infrastructure.
-///
-/// This test exercises:
-/// 1. Account registration (or init if already registered) via the staging gateway
-/// 2. Credential issuance (signed by a pre-registered staging issuer)
-/// 3. Proof generation with real staging OPRF nodes
-/// 4. On-chain proof verification via the staging `WorldIDVerifier`
-#[tokio::test(flavor = "multi_thread")]
-async fn e2e_authenticator_generate_proof() -> Result<()> {
+fn init_tracing() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .try_init();
+}
 
-    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
-        .unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
+/// Full end-to-end uniqueness proof through `walletkit_core::Authenticator`
+/// against staging infrastructure: account registration, local-EdDSA credential
+/// issuance, proof generation, and on-chain verification.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires staging infrastructure"]
+async fn e2e_authenticator_generate_proof() -> Result<()> {
+    init_tracing();
 
-    // ----------------------------------------------------------------
-    // Phase 1: Account registration
-    // ----------------------------------------------------------------
-    let seed = [7u8; 32];
-    let recovery_address = alloy::primitives::Address::ZERO;
+    let env = TestEnv::default_staging();
+    let root = TempDir::new().wrap_err("failed to create temp storage dir")?;
 
-    let config =
-        defaults::default_config(&Environment::Staging, Some(rpc_url.clone()), None)
-            .wrap_err("failed to build staging config")?;
-    let query_material = Arc::new(
-        world_id_core::proof::load_embedded_query_material()
-            .wrap_err("failed to load embedded query material")?,
-    );
-    let nullifier_material = Arc::new(
-        world_id_core::proof::load_embedded_nullifier_material()
-            .wrap_err("failed to load embedded nullifier material")?,
-    );
-
-    let core_authenticator =
-        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
-            .await
-            .wrap_err("account creation/init failed")?
-            .with_proof_materials(query_material, nullifier_material);
-
-    let leaf_index = core_authenticator.leaf_index();
-    eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
-
-    // ----------------------------------------------------------------
-    // Phase 2: Authenticator init with walletkit wrapper
-    // ----------------------------------------------------------------
-    let store = common::create_test_credential_store();
-    let materials = Arc::new(
-        Groth16Materials::from_embedded()
-            .wrap_err("failed to load embedded groth16 materials")?,
-    );
-
-    let authenticator = Authenticator::init_with_defaults(
-        &seed,
-        Some(rpc_url.clone()),
-        &Environment::Staging,
-        None,
-        materials,
-        store.clone(),
-    )
-    .await
-    .wrap_err("failed to init walletkit Authenticator")?;
-
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time after epoch")
-        .as_secs();
-
-    authenticator
-        .init_storage(now)
-        .wrap_err("init_storage failed")?;
-
-    eprintln!("Phase 2 complete: authenticator initialized");
-
-    // ----------------------------------------------------------------
-    // Phase 3: Credential issuance
-    // ----------------------------------------------------------------
-    let issuer_sk = EdDSAPrivateKey::from_bytes(ISSUER_EDDSA_KEY);
-    let issuer_pk = issuer_sk.public();
-
-    let blinding_factor = authenticator
-        .generate_credential_blinding_factor_remote(ISSUER_SCHEMA_ID)
-        .await
-        .wrap_err("blinding factor generation failed")?;
-
-    let mut credential = common::build_base_credential(
-        ISSUER_SCHEMA_ID,
-        leaf_index,
-        now,
-        now + 3600, // expires in 1 hour
-        blinding_factor.0,
-    );
-    credential.issuer = issuer_pk;
-    let credential_hash = credential.hash().wrap_err("failed to hash credential")?;
-    credential.signature = Some(issuer_sk.sign(*credential_hash));
-
-    let walletkit_credential: walletkit_core::Credential = credential.clone().into();
-    store
-        .store_credential(
-            &walletkit_credential,
-            &blinding_factor,
-            now + 3600,
-            None,
-            now,
-        )
-        .wrap_err("store_credential failed")?;
-
-    eprintln!("Phase 3 complete: credential issued and stored");
-
-    // ----------------------------------------------------------------
-    // Phase 4: Proof generation
-    // ----------------------------------------------------------------
-    let rp_signer = PrivateKeySigner::from_bytes(&RP_SIGNING_KEY.into())
-        .expect("invalid RP ECDSA key");
-
-    let nonce = FieldElement::random(&mut OsRng);
-    let created_at = now;
-    let expires_at = now + 300;
-    let action = FieldElement::from(1u64);
-
-    let rp_msg = world_id_core::primitives::rp::compute_rp_signature_msg(
-        *nonce,
-        created_at,
-        expires_at,
-        Some(*action),
-    );
-    let signature = rp_signer
-        .sign_message_sync(&rp_msg)
-        .wrap_err("failed to sign RP message")?;
-
-    let rp_id = RpId::new(RP_ID);
-
-    let proof_request_core = ProofRequest {
-        id: "staging_test_request".to_string(),
-        version: RequestVersion::V1,
-        proof_type: ProofType::Uniqueness,
-        created_at,
-        expires_at,
-        rp_id,
-        oprf_key_id: OprfKeyId::new(U160::from(RP_ID)),
-        session_id: None,
-        action: Some(action),
-        signature,
-        nonce,
-        requests: vec![RequestItem {
-            identifier: "credential identifier".to_string(),
-            issuer_schema_id: ISSUER_SCHEMA_ID,
-            signal: Some(b"my_signal".to_vec()),
-            genesis_issued_at_min: None,
-            expires_at_min: None,
-        }],
-        constraints: None,
+    let now = now_secs();
+    let credential_type = CredentialType::Local {
+        genesis_issued_at: now,
+        expires_at: now + CREDENTIAL_TTL_SECS,
     };
 
-    let proof_request: walletkit_core::requests::ProofRequest =
-        proof_request_core.clone().into();
+    let outcome = generate_and_verify_test_proof(
+        credential_type,
+        &env,
+        &UNIQUENESS_TEST_SEED,
+        root.path(),
+        SIGNAL,
+        ProofType::Uniqueness,
+        None,
+    )
+    .await
+    .wrap_err("uniqueness flow should succeed")?;
 
-    let proof_response = authenticator
-        .generate_proof(&proof_request, Some(now))
-        .await
-        .wrap_err("generate_proof failed")?;
-
-    // TODO: ProofResponse should expose fields/methods for use by binding consumer
-    let response: world_id_core::requests::ProofResponse = proof_response.into_inner();
-    assert!(response.error.is_none(), "proof response contains error");
-    assert_eq!(response.responses.len(), 1);
-
-    let response_item = &response.responses[0];
-    let nullifier = response_item
-        .nullifier
-        .expect("uniqueness proof should have nullifier");
-    assert_ne!(nullifier, Nullifier::new(FieldElement::ZERO));
-
-    eprintln!("Phase 4 complete: proof generated (nullifier={nullifier:?})");
-
-    // ----------------------------------------------------------------
-    // Phase 5: On-chain verification
-    // ----------------------------------------------------------------
-    let provider = ProviderBuilder::new().connect_http(rpc_url.parse().unwrap());
-
-    let verifier = IWorldIDVerifier::new(
-        walletkit_core::defaults::WORLD_ID_VERIFIER_STAGING,
-        &provider,
+    assert!(
+        outcome.verified(),
+        "uniqueness proof should verify on-chain: {:?}",
+        outcome.verification
     );
-
-    let request_item = proof_request_core
-        .find_request_by_issuer_schema_id(ISSUER_SCHEMA_ID)
-        .unwrap();
-
-    verifier
-        .verify(
-            nullifier.into(),
-            action.into(),
-            RP_ID,
-            nonce.into(),
-            request_item.signal_hash().into(),
-            response_item.expires_at_min,
-            ISSUER_SCHEMA_ID,
-            request_item
-                .genesis_issued_at_min
-                .unwrap_or_default()
-                .try_into()
-                .expect("u64 fits into U256"),
-            response_item.proof.as_ethereum_representation(),
-        )
-        .call()
-        .await
-        .wrap_err("on-chain proof verification failed")?;
-
-    eprintln!("Phase 5 complete: on-chain verification passed");
 
     Ok(())
 }
 
-/// End-to-end session proof generation through `walletkit_core::Authenticator::generate_proof`
-/// against staging infrastructure.
-///
-/// This test exercises:
-/// 1. Account registration (or init if already registered) via the staging gateway
-/// 2. Credential issuance (signed by a pre-registered staging issuer)
-/// 3. Session ID generation and seed caching
-/// 4. Session proof generation with a cached `session_id_r_seed`
-///
-/// Run with:
-///   `cargo test --test proof_generation_integration --features default -- --ignored e2e_session_proof`
+/// End-to-end session flow through `walletkit_core::Authenticator` against
+/// staging infrastructure: creates a session, generates a follow-up session
+/// proof reusing the session, and asserts that an independently generated
+/// WIP-103 ownership proof shares the session proof's Merkle root (i.e. both
+/// prove inclusion of the same on-chain account).
 #[tokio::test(flavor = "multi_thread")]
+#[ignore = "requires staging infrastructure"]
 async fn e2e_session_proof() -> Result<()> {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .try_init();
+    init_tracing();
 
-    let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
-        .unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
+    let env = TestEnv::default_staging();
+    let root = TempDir::new().wrap_err("failed to create temp storage dir")?;
+    let schema_id = env.local_issuer_schema_id;
 
-    // ----------------------------------------------------------------
-    // Phase 1: Account registration
-    // ----------------------------------------------------------------
-    let seed = [7u8; 32];
-    let recovery_address = alloy::primitives::Address::ZERO;
-
-    let config =
-        defaults::default_config(&Environment::Staging, Some(rpc_url.clone()), None)
-            .wrap_err("failed to build staging config")?;
-    let query_material = Arc::new(
-        world_id_core::proof::load_embedded_query_material()
-            .wrap_err("failed to load embedded query material")?,
-    );
-    let nullifier_material = Arc::new(
-        world_id_core::proof::load_embedded_nullifier_material()
-            .wrap_err("failed to load embedded nullifier material")?,
-    );
-
-    let core_authenticator =
-        CoreAuthenticator::init_or_register(&seed, config, Some(recovery_address))
-            .await
-            .wrap_err("account creation/init failed")?
-            .with_proof_materials(query_material, nullifier_material);
-
-    let leaf_index = core_authenticator.leaf_index();
-    eprintln!("Phase 1 complete: account ready (leaf_index={leaf_index})");
-
-    // ----------------------------------------------------------------
-    // Phase 2: Authenticator init with walletkit wrapper
-    // ----------------------------------------------------------------
-    let store = common::create_test_credential_store();
-    let materials = Arc::new(
-        Groth16Materials::from_embedded()
-            .wrap_err("failed to load embedded groth16 materials")?,
-    );
-
-    let authenticator = Authenticator::init_with_defaults(
-        &seed,
-        Some(rpc_url.clone()),
-        &Environment::Staging,
-        None,
-        materials,
-        store.clone(),
+    // Phase 1: register the account and initialize a filesystem-backed authenticator.
+    let (authenticator, store) = init_and_register_account(
+        &env,
+        &SESSION_TEST_SEED,
+        root.path(),
+        Some(Address::ZERO),
     )
     .await
-    .wrap_err("failed to init walletkit Authenticator")?;
+    .wrap_err("account setup failed")?;
 
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time after epoch")
-        .as_secs();
-
-    authenticator
-        .init_storage(now)
-        .wrap_err("init_storage failed")?;
-
-    eprintln!("Phase 2 complete: authenticator initialized");
-
-    // ----------------------------------------------------------------
-    // Phase 3: Credential issuance
-    // ----------------------------------------------------------------
-    let issuer_sk = EdDSAPrivateKey::from_bytes(ISSUER_EDDSA_KEY);
-    let issuer_pk = issuer_sk.public();
-
-    let blinding_factor = authenticator
-        .generate_credential_blinding_factor_remote(ISSUER_SCHEMA_ID)
-        .await
-        .wrap_err("blinding factor generation failed")?;
-
-    let mut credential = common::build_base_credential(
-        ISSUER_SCHEMA_ID,
-        leaf_index,
+    // Phase 2: issue a local-EdDSA credential to prove over.
+    let now = now_secs();
+    issue_local_credential(
+        &env,
+        &authenticator,
+        &store,
         now,
-        now + 3600,
-        blinding_factor.0,
-    );
-    credential.issuer = issuer_pk;
-    let credential_hash = credential.hash().wrap_err("failed to hash credential")?;
-    credential.signature = Some(issuer_sk.sign(*credential_hash));
+        now + CREDENTIAL_TTL_SECS,
+    )
+    .await
+    .wrap_err("credential issuance failed")?;
 
-    let walletkit_credential: walletkit_core::Credential = credential.clone().into();
-    store
-        .store_credential(
-            &walletkit_credential,
-            &blinding_factor,
-            now + 3600,
-            None,
-            now,
-        )
-        .wrap_err("store_credential failed")?;
-
-    eprintln!("Phase 3 complete: credential issued and stored");
-
-    // ----------------------------------------------------------------
-    // Phase 4: Session ID generation and seed caching
-    // ----------------------------------------------------------------
-    let rp_signer = PrivateKeySigner::from_bytes(&RP_SIGNING_KEY.into())
-        .expect("invalid RP ECDSA key");
-
-    let nonce = FieldElement::random(&mut OsRng);
-    let created_at = now;
-    let expires_at = now + 300;
-
-    // Build a first proof request without session_id to generate one
-    let rp_msg = world_id_core::primitives::rp::compute_rp_signature_msg(
-        *nonce, created_at, expires_at, None, // no action for session proofs
-    );
-    let signature = rp_signer
-        .sign_message_sync(&rp_msg)
-        .wrap_err("failed to sign RP message")?;
-
-    let rp_id = RpId::new(RP_ID);
-
-    let init_request = ProofRequest {
-        id: "session_init_request".to_string(),
-        version: RequestVersion::V1,
-        proof_type: ProofType::CreateSession,
-        created_at,
-        expires_at,
-        rp_id,
-        oprf_key_id: OprfKeyId::new(U160::from(RP_ID)),
-        session_id: None, // no session yet
-        action: None,
-        signature,
-        nonce,
-        requests: vec![RequestItem {
-            identifier: "credential identifier".to_string(),
-            issuer_schema_id: ISSUER_SCHEMA_ID,
-            signal: None,
-            genesis_issued_at_min: None,
-            expires_at_min: None,
-        }],
-        constraints: None,
-    };
-
-    let init_proof_request: walletkit_core::requests::ProofRequest =
-        init_request.into();
-    let init_proof_response = authenticator
-        .generate_proof(&init_proof_request, Some(now))
+    // Phase 3: create a session and confirm the session seed is cached.
+    let create_request = build_test_request(
+        &env,
+        schema_id,
+        SIGNAL,
+        REQUEST_TTL_SECS,
+        ProofType::CreateSession,
+        None,
+    )
+    .wrap_err("failed to build create-session request")?;
+    let create_response = authenticator
+        .generate_proof(&create_request.clone().into(), Some(now_secs()))
         .await
-        .wrap_err("generate_proof (create session) failed")?;
-    let init_response: world_id_core::requests::ProofResponse =
-        init_proof_response.into_inner();
-    assert!(
-        init_response.error.is_none(),
-        "proof response contains error"
-    );
-    assert_eq!(init_response.responses.len(), 1);
-
-    let init_response_item = &init_response.responses[0];
-    assert!(
-        init_response_item.is_session(),
-        "create-session response should contain a session proof"
-    );
-    assert!(
-        init_response_item.session_nullifier.is_some(),
-        "create-session response should have a session_nullifier"
-    );
-    assert!(
-        init_response_item.nullifier.is_none(),
-        "create-session response should not have a uniqueness nullifier"
-    );
-
-    let session_id = init_response
+        .wrap_err("generate_proof (create session) failed")?
+        .into_inner();
+    assert!(create_response.error.is_none(), "create-session error");
+    let session_id = create_response
         .session_id
         .expect("create-session response should include session_id");
     let cached_seed = store
@@ -499,87 +151,54 @@ async fn e2e_session_proof() -> Result<()> {
         "create-session should cache session_id_r_seed"
     );
 
-    eprintln!(
-        "Phase 4 complete: session created (commitment={:?})",
-        session_id.commitment
-    );
-
-    // ----------------------------------------------------------------
-    // Phase 5: Session proof generation
-    // ----------------------------------------------------------------
-    let session_nonce = FieldElement::random(&mut OsRng);
-    let session_rp_msg = world_id_core::primitives::rp::compute_rp_signature_msg(
-        *session_nonce,
-        created_at,
-        expires_at,
-        None,
-    );
-    let session_signature = rp_signer
-        .sign_message_sync(&session_rp_msg)
-        .wrap_err("failed to sign session RP message")?;
-
-    let session_proof_request_core = ProofRequest {
-        id: "session_proof_request".to_string(),
-        version: RequestVersion::V1,
-        proof_type: ProofType::Session,
-        created_at,
-        expires_at,
-        rp_id,
-        oprf_key_id: OprfKeyId::new(U160::from(RP_ID)),
-        session_id: Some(session_id),
-        action: None,
-        signature: session_signature,
-        nonce: session_nonce,
-        requests: vec![RequestItem {
-            identifier: "credential identifier".to_string(),
-            issuer_schema_id: ISSUER_SCHEMA_ID,
-            signal: None,
-            genesis_issued_at_min: None,
-            expires_at_min: None,
-        }],
-        constraints: None,
-    };
-
-    let proof_request: walletkit_core::requests::ProofRequest =
-        session_proof_request_core.into();
-
-    let proof_response = authenticator
-        .generate_proof(&proof_request, Some(now))
+    // Phase 4: generate a follow-up session proof reusing the session.
+    let session_request = build_test_request(
+        &env,
+        schema_id,
+        SIGNAL,
+        REQUEST_TTL_SECS,
+        ProofType::Session,
+        Some(session_id),
+    )
+    .wrap_err("failed to build session request")?;
+    let session_response = authenticator
+        .generate_proof(&session_request.clone().into(), Some(now_secs()))
         .await
-        .wrap_err("generate_proof (session) failed")?;
+        .wrap_err("generate_proof (session) failed")?
+        .into_inner();
+    assert!(session_response.error.is_none(), "session proof error");
+    assert_eq!(session_response.responses.len(), 1);
 
-    let response: world_id_core::requests::ProofResponse = proof_response.into_inner();
-    assert!(response.error.is_none(), "proof response contains error");
-    assert_eq!(response.responses.len(), 1);
-
-    let response_item = &response.responses[0];
+    let session_item = &session_response.responses[0];
     assert!(
-        response_item.is_session(),
+        session_item.is_session(),
         "response should be a session proof"
     );
     assert!(
-        response_item.session_nullifier.is_some(),
+        session_item.session_nullifier.is_some(),
         "session proof should have a session_nullifier"
     );
     assert!(
-        response_item.nullifier.is_none(),
+        session_item.nullifier.is_none(),
         "session proof should not have a uniqueness nullifier"
     );
 
-    eprintln!("Phase 5 complete: session proof generated");
-
-    // ----------------------------------------------------------------
-    // Ownership Proof Generation
-    // ----------------------------------------------------------------
+    // Phase 5: an independent ownership proof must share the session proof's
+    // Merkle root — both prove inclusion of the same on-chain account.
+    let blinding_factor = authenticator
+        .generate_credential_blinding_factor_remote(schema_id)
+        .await
+        .wrap_err("blinding factor generation failed")?;
+    let sub = authenticator.compute_credential_sub(&blinding_factor);
     let nonce = FieldElement::random(&mut OsRng).into();
-    let sub = credential.sub.into();
     let ownership_proof = authenticator
         .prove_credential_sub(&nonce, &blinding_factor, &sub)
         .await
-        .expect("can generate a correct ownership proof");
+        .wrap_err("ownership proof generation failed")?;
     assert_eq!(
         ownership_proof.merkle_root().to_u256(),
-        response_item.proof.as_ethereum_representation()[4]
+        session_item.proof.as_ethereum_representation()[4],
+        "ownership proof Merkle root should match the session proof"
     );
 
     Ok(())
