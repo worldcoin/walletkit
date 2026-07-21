@@ -8,12 +8,7 @@
 )]
 
 //! End-to-end integration tests for `walletkit_core::Authenticator::generate_proof`
-//! (World ID v4) against **staging infrastructure** (real OPRF nodes, indexer,
-//! gateway, faux/local issuer, and the on-chain `WorldIDVerifier`).
-//!
-//! These build on [`walletkit_testkit`] so the staging fixtures (RP, issuer
-//! schemas, keys, verifier, RPC) live in a single [`TestEnv`] instead of being
-//! duplicated here.
+//! against **staging infrastructure**
 //!
 //! Run with:
 //!   `cargo test --test proof_generation_integration --features embed-zkeys`
