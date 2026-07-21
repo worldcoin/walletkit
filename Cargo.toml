@@ -84,6 +84,8 @@ world-id-proof = { version = "0.12.0", default-features = false }
 # internal
 walletkit-core = { version = "0.20.2", path = "crates/walletkit-core", default-features = false }
 walletkit-db = { version = "0.20.2", path = "crates/walletkit-db" }
+# Unpublished test helpers
+walletkit-testkit = { path = "crates/walletkit-testkit" }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
