@@ -8426,6 +8426,7 @@ dependencies = [
 name = "walletkit-cli"
 version = "0.20.2"
 dependencies = [
+ "alloy-core",
  "base64 0.22.1",
  "ciborium",
  "clap",
