@@ -7,6 +7,7 @@ use clap::Subcommand;
 use eyre::WrapErr as _;
 use walletkit_core::requests::ProofRequest;
 use walletkit_testkit::env::TestEnv;
+use walletkit_testkit::issuer::issue_faux_credential;
 use walletkit_testkit::proof::{
     build_test_request, verify_proof_onchain, VerifyItemResult,
 };
@@ -19,7 +20,6 @@ use world_id_proof::ownership_proof::verify_ownership_proof;
 
 use crate::output;
 
-use super::credential::issue_test_credential;
 use super::{
     init_authenticator, resolve_built_config, resolve_test_rpc_url,
     resolve_verifier_address, Cli,
@@ -291,14 +291,15 @@ async fn run_test(
     if !cli.json {
         eprintln!("Issuing test credential from faux issuer...");
     }
-    let issued = issue_test_credential(&env, &authenticator, &store).await?;
+    let issued = issue_faux_credential(&env, &authenticator, &store).await?;
+    let issuer_schema_id = issued.credential.issuer_schema_id();
 
     if !cli.json {
         eprintln!("Generating test proof request...");
     }
     let proof_request = build_test_request(
         &env,
-        issued.issuer_schema_id,
+        issuer_schema_id,
         signal,
         300,
         ProofType::Uniqueness,
@@ -327,7 +328,7 @@ async fn run_test(
         output::print_json_data(
             &serde_json::json!({
                 "credential_id": issued.credential_id,
-                "issuer_schema_id": issued.issuer_schema_id,
+                "issuer_schema_id": issuer_schema_id,
                 "blinding_factor": issued.blinding_factor.to_hex_string(),
                 "verified": all_passed,
                 "results": verify_items_to_json(&results),

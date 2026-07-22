@@ -2,15 +2,25 @@
 
 use std::io::Read;
 
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
 use eyre::WrapErr as _;
 use walletkit_core::{Credential, FieldElement};
 use walletkit_testkit::env::TestEnv;
+use walletkit_testkit::issuer::import_credential;
 use walletkit_testkit::utils::now_secs;
+use walletkit_testkit::{issue_credential, CredentialType};
 
 use crate::output;
 
 use super::{init_authenticator, Cli};
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum TestCredentialIssuer {
+    /// Hosted staging faux issuer (schema 128).
+    Faux,
+    /// Local `EdDSA` issuer registered on staging (schema 47).
+    Local,
+}
 
 #[derive(Subcommand)]
 pub enum CredentialCommand {
@@ -22,9 +32,6 @@ pub enum CredentialCommand {
         /// Blinding factor as hex. When omitted, generated via OPRF.
         #[arg(long)]
         blinding_factor: Option<String>,
-        /// Expiration timestamp (unix seconds).
-        #[arg(long)]
-        expires_at: u64,
         /// Optional associated data (base64-encoded).
         #[arg(long)]
         associated_data: Option<String>,
@@ -47,19 +54,23 @@ pub enum CredentialCommand {
         #[arg(long)]
         credential_id: u64,
     },
-    /// Issue a test credential from the staging faux issuer (issuer schema 128).
-    IssueTest,
-    /// Generate a credential blinding factor via OPRF nodes.
-    BlindingFactor {
+    /// Issue a credential from a staging test issuer.
+    IssueTest {
+        /// Test issuer to use.
+        #[arg(long, value_enum, default_value = "faux")]
+        issuer: TestCredentialIssuer,
+        /// Credential lifetime in seconds (local issuer only; defaults to 3600).
+        #[arg(long)]
+        expires_in: Option<u64>,
+    },
+    /// Generate or accept a blinding factor and derive its credential subject.
+    DeriveSub {
         /// Issuer schema ID.
         #[arg(long)]
         issuer_schema_id: u64,
-    },
-    /// Compute a credential sub from a blinding factor.
-    ComputeSub {
-        /// Blinding factor as hex.
+        /// Existing blinding factor as hex. When omitted, generated via OPRF.
         #[arg(long)]
-        blinding_factor: String,
+        blinding_factor: Option<String>,
     },
 }
 
@@ -87,7 +98,6 @@ async fn run_import(
     cli: &Cli,
     credential: &str,
     blinding_factor: Option<&str>,
-    expires_at: u64,
     associated_data: Option<&str>,
 ) -> eyre::Result<()> {
     let (authenticator, store) = init_authenticator(cli).await?;
@@ -95,14 +105,11 @@ async fn run_import(
     let cred_bytes = read_file_or_stdin(credential)?;
     let cred = Credential::from_bytes(cred_bytes).wrap_err("invalid credential")?;
 
-    let bf = match blinding_factor {
-        Some(hex) => FieldElement::try_from_hex_string(hex)
-            .wrap_err("invalid blinding factor")?,
-        None => authenticator
-            .generate_credential_blinding_factor_remote(cred.issuer_schema_id())
-            .await
-            .wrap_err("blinding factor generation failed")?,
-    };
+    let bf = blinding_factor
+        .map(|hex| {
+            FieldElement::try_from_hex_string(hex).wrap_err("invalid blinding factor")
+        })
+        .transpose()?;
 
     let ad = associated_data
         .map(|b64| {
@@ -113,18 +120,16 @@ async fn run_import(
         })
         .transpose()?;
 
-    let now = now_secs();
-    let id = store
-        .store_credential(&cred, &bf, expires_at, ad, now)
-        .wrap_err("store credential failed")?;
-
+    let imported =
+        import_credential(&store, &authenticator, &cred, bf.as_ref(), ad).await?;
     let issuer_schema_id = cred.issuer_schema_id();
-    let blinding_factor_hex = bf.to_hex_string();
+    let expires_at = cred.expires_at();
+    let blinding_factor_hex = imported.blinding_factor.to_hex_string();
 
     if cli.json {
         output::print_json_data(
             &serde_json::json!({
-                "credential_id": id,
+                "credential_id": imported.credential_id,
                 "issuer_schema_id": issuer_schema_id,
                 "expires_at": expires_at,
                 "blinding_factor": blinding_factor_hex,
@@ -132,7 +137,10 @@ async fn run_import(
             true,
         );
     } else {
-        println!("Credential stored (id={id}, issuer_schema_id={issuer_schema_id})");
+        println!(
+            "Credential stored (id={}, issuer_schema_id={issuer_schema_id})",
+            imported.credential_id
+        );
         println!("  blinding_factor: {blinding_factor_hex}");
     }
     Ok(())
@@ -207,61 +215,101 @@ async fn run_show(cli: &Cli, issuer_schema_id: u64) -> eyre::Result<()> {
     Ok(())
 }
 
-/// Result of issuing a test credential from the faux issuer.
-pub struct IssuedTestCredential {
-    pub credential_id: u64,
-    pub issuer_schema_id: u64,
-    pub expires_at: u64,
-    pub blinding_factor: FieldElement,
-}
-
-/// Issues a test credential from the faux issuer configured in `env`.
-///
-/// Delegates the issuance + storage to `walletkit_testkit`, which returns the
-/// issued credential and its blinding factor directly.
-pub async fn issue_test_credential(
-    env: &TestEnv,
-    authenticator: &walletkit_core::Authenticator,
-    store: &walletkit_core::storage::CredentialStore,
-) -> eyre::Result<IssuedTestCredential> {
-    let issued =
-        walletkit_testkit::issuer::issue_faux_credential(env, authenticator, store)
-            .await?;
-
-    Ok(IssuedTestCredential {
-        credential_id: issued.credential_id,
-        issuer_schema_id: env.faux_issuer_schema_id,
-        expires_at: issued.credential.expires_at(),
-        blinding_factor: issued.blinding_factor,
-    })
-}
-
-async fn run_issue_test(cli: &Cli) -> eyre::Result<()> {
-    let (authenticator, store) = init_authenticator(cli).await?;
+async fn run_issue_test(
+    cli: &Cli,
+    issuer_kind: TestCredentialIssuer,
+    expires_in: Option<u64>,
+) -> eyre::Result<()> {
     let env = TestEnv::default_staging();
-    let result = issue_test_credential(&env, &authenticator, &store).await?;
+    let (issuer_name, credential_type) = match issuer_kind {
+        TestCredentialIssuer::Faux => {
+            eyre::ensure!(
+                expires_in.is_none(),
+                "--expires-in is only valid with --issuer local"
+            );
+            ("faux", CredentialType::Faux)
+        }
+        TestCredentialIssuer::Local => {
+            let genesis_issued_at = now_secs();
+            let expires_at = genesis_issued_at
+                .checked_add(expires_in.unwrap_or(3600))
+                .ok_or_else(|| eyre::eyre!("credential expiration overflow"))?;
+            (
+                "local",
+                CredentialType::Local {
+                    genesis_issued_at,
+                    expires_at,
+                },
+            )
+        }
+    };
+    let (authenticator, store) = init_authenticator(cli).await?;
+    let issued =
+        issue_credential(&env, credential_type, &authenticator, &store).await?;
+    let issuer_schema_id = issued.credential.issuer_schema_id();
+    let expires_at = issued.credential.expires_at();
 
     if cli.json {
         output::print_json_data(
             &serde_json::json!({
-                "credential_id": result.credential_id,
-                "issuer_schema_id": result.issuer_schema_id,
-                "expires_at": result.expires_at,
-                "blinding_factor": result.blinding_factor.to_hex_string(),
+                "credential_id": issued.credential_id,
+                "issuer": issuer_name,
+                "issuer_schema_id": issuer_schema_id,
+                "expires_at": expires_at,
+                "blinding_factor": issued.blinding_factor.to_hex_string(),
             }),
             true,
         );
     } else {
         println!(
-            "Credential issued from faux issuer (id={})",
-            result.credential_id
+            "Credential issued from {issuer_name} issuer (id={})",
+            issued.credential_id
         );
-        println!("  issuer_schema_id: {}", result.issuer_schema_id);
-        println!("  expires_at: {}", result.expires_at);
+        println!("  issuer_schema_id: {issuer_schema_id}");
+        println!("  expires_at: {expires_at}");
         println!(
             "  blinding_factor: {}",
-            result.blinding_factor.to_hex_string()
+            issued.blinding_factor.to_hex_string()
         );
+    }
+    Ok(())
+}
+
+async fn run_derive_sub(
+    cli: &Cli,
+    issuer_schema_id: u64,
+    blinding_factor: Option<&str>,
+) -> eyre::Result<()> {
+    let supplied_blinding_factor = blinding_factor
+        .map(|value| {
+            FieldElement::try_from_hex_string(value).wrap_err("invalid blinding factor")
+        })
+        .transpose()?;
+    let (authenticator, _store) = init_authenticator(cli).await?;
+    let blinding_factor = match supplied_blinding_factor {
+        Some(blinding_factor) => blinding_factor,
+        None => authenticator
+            .generate_credential_blinding_factor_remote(issuer_schema_id)
+            .await
+            .wrap_err("blinding factor generation failed")?,
+    };
+    let sub = authenticator.compute_credential_sub(&blinding_factor);
+    let blinding_factor = blinding_factor.to_hex_string();
+    let sub = sub.to_hex_string();
+
+    if cli.json {
+        output::print_json_data(
+            &serde_json::json!({
+                "issuer_schema_id": issuer_schema_id,
+                "blinding_factor": blinding_factor,
+                "sub": sub,
+            }),
+            true,
+        );
+    } else {
+        println!("issuer_schema_id: {issuer_schema_id}");
+        println!("blinding_factor:  {blinding_factor}");
+        println!("sub:              {sub}");
     }
     Ok(())
 }
@@ -271,14 +319,12 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
         CredentialCommand::Import {
             credential,
             blinding_factor,
-            expires_at,
             associated_data,
         } => {
             run_import(
                 cli,
                 credential,
                 blinding_factor.as_deref(),
-                *expires_at,
                 associated_data.as_deref(),
             )
             .await
@@ -289,39 +335,13 @@ pub async fn run(cli: &Cli, action: &CredentialCommand) -> eyre::Result<()> {
         CredentialCommand::Show { issuer_schema_id } => {
             run_show(cli, *issuer_schema_id).await
         }
-        CredentialCommand::IssueTest => run_issue_test(cli).await,
-        CredentialCommand::BlindingFactor { issuer_schema_id } => {
-            let (authenticator, _store) = init_authenticator(cli).await?;
-            let bf = authenticator
-                .generate_credential_blinding_factor_remote(*issuer_schema_id)
-                .await
-                .wrap_err("blinding factor generation failed")?;
-            let hex = bf.to_hex_string();
-
-            if cli.json {
-                output::print_json_data(
-                    &serde_json::json!({ "blinding_factor": hex }),
-                    true,
-                );
-            } else {
-                println!("{hex}");
-            }
-            Ok(())
+        CredentialCommand::IssueTest { issuer, expires_in } => {
+            run_issue_test(cli, *issuer, *expires_in).await
         }
-        CredentialCommand::ComputeSub { blinding_factor } => {
-            let (authenticator, _store) = init_authenticator(cli).await?;
-            let bf = FieldElement::try_from_hex_string(blinding_factor)
-                .wrap_err("invalid blinding factor")?;
-            let sub = authenticator.compute_credential_sub(&bf);
-            let hex = sub.to_hex_string();
-
-            if cli.json {
-                output::print_json_data(&serde_json::json!({ "sub": hex }), true);
-            } else {
-                println!("{hex}");
-            }
-            Ok(())
-        }
+        CredentialCommand::DeriveSub {
+            issuer_schema_id,
+            blinding_factor,
+        } => run_derive_sub(cli, *issuer_schema_id, blinding_factor.as_deref()).await,
         CredentialCommand::Delete { credential_id } => {
             let (_authenticator, store) = init_authenticator(cli).await?;
             store
