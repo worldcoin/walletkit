@@ -69,18 +69,27 @@ pub struct TestEnv {
 
 impl TestEnv {
     /// Returns the staging configuration with all pre-registered fixtures.
-    #[expect(
-        clippy::missing_panics_doc,
-        reason = "unreachable: default_config only fails parsing a caller-supplied rpc_url"
-    )]
+    ///
+    /// The World Chain RPC endpoint defaults to the public rate-limited
+    /// [`DEFAULT_WORLDCHAIN_RPC_URL`] and can be overridden via the
+    /// `WORLDCHAIN_RPC_URL` environment variable (set in CI). The override
+    /// applies to both `rpc_url` and `world_id_config`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `WORLDCHAIN_RPC_URL` is set to an invalid URL.
     #[must_use]
     pub fn default_staging() -> Self {
+        let rpc_url = std::env::var("WORLDCHAIN_RPC_URL")
+            .unwrap_or_else(|_| DEFAULT_WORLDCHAIN_RPC_URL.to_string());
         let world_id_config = walletkit_core::defaults::default_config(
             &Environment::Staging,
-            None,
+            Some(rpc_url.clone()),
             Some(Region::Us),
         )
-        .expect("infallible: default_config only fails parsing a caller-supplied rpc_url, and none is passed");
+        .expect(
+            "failed to build staging config: WORLDCHAIN_RPC_URL must be a valid URL",
+        );
         Self {
             rp_id: STAGING_RP_ID,
             rp_signing_key: STAGING_RP_SIGNING_KEY,
@@ -89,7 +98,7 @@ impl TestEnv {
             faux_issuer_schema_id: FAUX_ISSUER_SCHEMA_ID,
             local_issuer_schema_id: LOCAL_ISSUER_SCHEMA_ID,
             local_issuer_eddsa_key: LOCAL_ISSUER_EDDSA_KEY,
-            rpc_url: DEFAULT_WORLDCHAIN_RPC_URL.to_string(),
+            rpc_url,
             world_id_config,
         }
     }
