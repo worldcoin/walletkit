@@ -516,7 +516,10 @@ mod tests {
             None,
         )
         .unwrap();
-        let cli = parse_cli(&["auth", "info"]);
+        let mut cli = parse_cli(&["auth", "info"]);
+        // Ignore any ambient WORLDCHAIN_RPC_URL (clap reads it via `env`); this
+        // test exercises the no-flag fallback to config.
+        cli.rpc_url = None;
         assert_eq!(
             resolve_test_rpc_url(&cli, &config),
             "https://from-config.invalid/rpc"
