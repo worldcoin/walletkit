@@ -20,32 +20,25 @@ use world_id_proof::ownership_proof::verify_ownership_proof;
 use crate::output;
 
 use super::credential::issue_test_credential;
-use super::{init_authenticator, resolve_environment, Cli};
+use super::{
+    init_authenticator, resolve_built_config, resolve_test_rpc_url,
+    resolve_verifier_address, Cli,
+};
 
 const MAX_INPUT_BYTES: u64 = 10 * 1024 * 1024; // 10 MiB
 
 /// Builds a [`TestEnv`] from the CLI flags for on-chain operations.
 ///
-/// Keeps the World ID config and the `WorldIDVerifier` address consistent by
-/// deriving both from the CLI's `--environment` (the verifier can be overridden
-/// with `--verifier-address`), and applies the `--rpc-url` override for World
-/// Chain calls. The RP id/key and faux issuer stay on the staging fixtures.
+/// Uses the same World ID [`Config`] resolution as authenticator init
+/// (`--authenticator-config` / `--environment` / `--region` / `--ohttp-defaults` /
+/// `--rpc-url`). The verifier comes from `--verifier-address` or a known
+/// staging/production registry mapping. RP id/key and faux issuer stay on the
+/// staging fixtures.
 fn cli_test_env(cli: &Cli, verifier_address: Option<&str>) -> eyre::Result<TestEnv> {
-    let environment = resolve_environment(cli)?;
-    let verifier = match verifier_address {
-        Some(addr) => addr.parse().wrap_err("invalid verifier address")?,
-        None => walletkit_core::defaults::world_id_verifier_address(&environment),
-    };
-    let config = walletkit_core::defaults::default_config(
-        &environment,
-        cli.rpc_url.clone(),
-        Some(walletkit_core::Region::Us),
-    )
-    .wrap_err("failed to build World ID config")?;
+    let config = resolve_built_config(cli)?;
+    let verifier = resolve_verifier_address(verifier_address, &config)?;
     let mut env = TestEnv::default_with_config_and_verifier(config, verifier);
-    if let Some(rpc_url) = cli.rpc_url.as_deref() {
-        env.rpc_url = rpc_url.to_string();
-    }
+    env.rpc_url = resolve_test_rpc_url(cli, &env.world_id_config);
     Ok(env)
 }
 
@@ -59,12 +52,6 @@ pub enum ProofCommand {
         /// Override current time (unix seconds) for deterministic testing.
         #[arg(long)]
         now: Option<u64>,
-    },
-    /// Inspect a proof request without generating a proof.
-    InspectRequest {
-        /// Path to proof request JSON, or `-` for stdin.
-        #[arg(long)]
-        request: String,
     },
     /// Generate a signed test proof request using hardcoded staging RP keys.
     GenerateTestRequest {
@@ -92,7 +79,8 @@ pub enum ProofCommand {
         /// Path to the proof response JSON, or `-` for stdin.
         #[arg(long)]
         response: String,
-        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
+        /// Override the `WorldID` verifier contract address (defaults from the
+        /// known staging/production registry in the resolved authenticator config).
         #[arg(long)]
         verifier_address: Option<String>,
     },
@@ -101,7 +89,8 @@ pub enum ProofCommand {
         /// Signal string for the proof request.
         #[arg(long, default_value = "test_signal")]
         signal: String,
-        /// Override the `WorldID` verifier contract address (defaults to the verifier for `--environment`).
+        /// Override the `WorldID` verifier contract address (defaults from the
+        /// known staging/production registry in the resolved authenticator config).
         #[arg(long)]
         verifier_address: Option<String>,
     },
@@ -174,33 +163,6 @@ async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Resul
         output::print_json_data(&parsed, true);
     } else {
         println!("{response_json}");
-    }
-    Ok(())
-}
-
-fn run_inspect_request(cli: &Cli, request: &str) -> eyre::Result<()> {
-    let json_str = read_file_or_stdin(request)?;
-    let proof_request =
-        CoreProofRequest::from_json(&json_str).wrap_err("invalid proof request")?;
-
-    if cli.json {
-        let normalized: serde_json::Value = serde_json::from_str(&json_str)?;
-        let full = serde_json::json!({
-            "id": proof_request.id,
-            "version": proof_request.version as u8,
-            "proof_type": proof_request.proof_type,
-            "has_session_id": proof_request.session_id.is_some(),
-            "has_action": proof_request.action.is_some(),
-            "raw": normalized,
-        });
-        output::print_json_data(&full, true);
-    } else {
-        println!("Proof Request:");
-        println!("  id:             {}", proof_request.id);
-        println!("  version:        {}", proof_request.version as u8);
-        println!("  proof_type:     {:?}", proof_request.proof_type);
-        println!("  has_session_id: {}", proof_request.session_id.is_some());
-        println!("  has_action:     {}", proof_request.action.is_some());
     }
     Ok(())
 }
@@ -441,7 +403,6 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
         ProofCommand::Generate { request, now } => {
             run_generate(cli, request, *now).await
         }
-        ProofCommand::InspectRequest { request } => run_inspect_request(cli, request),
         ProofCommand::GenerateTestRequest {
             issuer_schema_id,
             signal,
