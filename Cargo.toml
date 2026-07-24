@@ -11,7 +11,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.20.2"
+version = "0.20.3"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -82,8 +82,8 @@ world-id-core = { version = "0.12.0", default-features = false }
 world-id-proof = { version = "0.12.0", default-features = false }
 
 # internal
-walletkit-core = { version = "0.20.2", path = "crates/walletkit-core", default-features = false }
-walletkit-db = { version = "0.20.2", path = "crates/walletkit-db" }
+walletkit-core = { version = "0.20.3", path = "crates/walletkit-core", default-features = false }
+walletkit-db = { version = "0.20.3", path = "crates/walletkit-db" }
 # Unpublished test helpers
 walletkit-testkit = { path = "crates/walletkit-testkit" }
 
