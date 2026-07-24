@@ -4,8 +4,9 @@
 //! extracts the pre-built `sqlite3mc_amalgamation.c` / `.h`, and compiles them
 //! into a static library.
 //!
-//! On WASM targets compilation is skipped because `sqlite-wasm-rs` provides
-//! the pre-compiled WASM binary.
+//! Compilation is skipped for WASM, where `sqlite-wasm-rs` provides the
+//! pre-compiled binary, and on docs.rs, where builds have no network access
+//! and rustdoc does not link the native symbols.
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -22,15 +23,21 @@ const EXPECTED_SHA256: &str =
     "3462d3f09e91daa829b8787d93f451168fbafc4ccbf9d579f5e4117416f5c82d";
 
 fn main() {
-    build_sqlite3mc();
-}
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
 
-fn build_sqlite3mc() {
+    if std::env::var_os("DOCS_RS").is_some() {
+        return;
+    }
+
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch == "wasm32" {
         return;
     }
 
+    build_sqlite3mc();
+}
+
+fn build_sqlite3mc() {
     let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not set"));
     let source_dir = out_dir.join(format!("sqlite3mc-{SQLITE3MC_VERSION}"));
     let amalgamation_c = source_dir.join("sqlite3mc_amalgamation.c");
