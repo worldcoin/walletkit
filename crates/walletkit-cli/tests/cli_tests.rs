@@ -411,6 +411,90 @@ fn proof_generate_test_request_requires_session_id_for_session() {
 }
 
 #[test]
+fn credential_issue_test_supports_faux_and_local_issuers() {
+    let output = Command::new(walletkit_bin())
+        .args(["credential", "issue-test", "--help"])
+        .output()
+        .expect("failed to run");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("--issuer <ISSUER>"), "stdout: {stdout}");
+    assert!(stdout.contains("faux"), "stdout: {stdout}");
+    assert!(stdout.contains("local"), "stdout: {stdout}");
+}
+
+#[test]
+fn credential_issue_test_rejects_expiration_for_faux_issuer() {
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--json",
+            "credential",
+            "issue-test",
+            "--issuer",
+            "faux",
+            "--expires-in",
+            "60",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stderr).expect("invalid json");
+    assert!(
+        parsed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("--expires-in is only valid with --issuer local"),
+        "unexpected error: {stderr}"
+    );
+}
+
+#[test]
+fn credential_help_lists_derive_sub_only() {
+    let output = Command::new(walletkit_bin())
+        .args(["credential", "--help"])
+        .output()
+        .expect("failed to run");
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("derive-sub"), "stdout: {stdout}");
+    assert!(!stdout.contains("blinding-factor"), "stdout: {stdout}");
+    assert!(!stdout.contains("compute-sub"), "stdout: {stdout}");
+}
+
+#[test]
+fn credential_derive_sub_rejects_invalid_blinding_factor() {
+    let output = Command::new(walletkit_bin())
+        .args([
+            "--json",
+            "credential",
+            "derive-sub",
+            "--issuer-schema-id",
+            "47",
+            "--blinding-factor",
+            "invalid",
+        ])
+        .output()
+        .expect("failed to run");
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stderr).expect("invalid json");
+    assert!(
+        parsed["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("invalid blinding factor"),
+        "unexpected error: {stderr}"
+    );
+}
+
+#[test]
 fn setup_fails_if_wallet_exists() {
     let root = temp_root();
 
