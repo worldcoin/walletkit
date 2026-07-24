@@ -40,13 +40,9 @@ Replace `VERSION` with the desired WalletKit version.
 
 ### Prerequisites
 
-1. **Docker Desktop**: Required for cross-compilation
-   - The build uses [`cross`](https://github.com/cross-rs/cross) which runs builds in Docker containers with all necessary toolchains
-   - Install via Homebrew:
-     ```bash
-     brew install --cask docker
-     ```
-   - Launch Docker Desktop and ensure it's running before building
+1. **Nix**: The Android cross-compilation toolchain (Rust, NDK, linkers) is provided
+   by the Nix devshell — see [`nix/README.md`](nix/README.md). Without Nix, you
+   must provision the equivalent dependencies manually.
 
 2. **Android SDK + NDK**: Required for Gradle Android tasks
    - Install via Android Studio > Settings > Android SDK (ensure the NDK is installed)
@@ -54,18 +50,18 @@ Replace `VERSION` with the desired WalletKit version.
 
 ### Building and publishing
 
-To test local changes before publishing a release, use the build script to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
+To test local changes before publishing a release, use the Kotlin xtask to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
 
 ```bash
-./kotlin/local_kotlin.sh 0.3.1
+nix develop .#android --command cargo xtask kotlin local 0.3.1
 ```
 
 Example with custom Rust locations:
 ```bash
-RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo ./kotlin/local_kotlin.sh 0.1.0-SNAPSHOT
+RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo cargo xtask kotlin local 0.1.0-SNAPSHOT
 ```
 
-> **Note**: The script can be run from any working directory (it resolves its own location). It sets `RUSTUP_HOME` and `CARGO_HOME` to `/tmp` by default to avoid Docker permission issues when using `cross`. You can override them by exporting your own values.
+> **Note**: The xtask runs from the workspace root, but does not provision or enter the build environment. Run it from the Nix `android` devshell or with the required dependencies configured manually.
 
 This will:
 1. Build the Rust library for all Android architectures (arm64-v8a, armeabi-v7a, x86_64, x86)

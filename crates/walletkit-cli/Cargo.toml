@@ -1,0 +1,39 @@
+[package]
+name = "walletkit-cli"
+description = "Developer CLI for WalletKit — World ID authenticator, credential management, and proof generation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "walletkit"
+path = "src/main.rs"
+
+[dependencies]
+alloy = { workspace = true, features = ["contract", "json", "getrandom", "signer-local"] }
+base64 = { workspace = true }
+ciborium = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
+dirs = { workspace = true }
+eyre = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "registry"] }
+walletkit-core = { workspace = true, features = ["issuers", "embed-zkeys"] }
+world-id-core = { workspace = true }
+world-id-proof = { workspace = true, features = ["zk-ownership-verify"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

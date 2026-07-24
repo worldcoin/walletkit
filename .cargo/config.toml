@@ -1,5 +1,8 @@
 # Configuration for direct cargo builds (without cross)
 
+[alias]
+xtask = "run --package xtask --"
+
 # max-page-size=16384:
 # Android 15 (API 35) introduces support for 16KB page sizes to improve performance on devices with larger RAM.
 # Apps with native libraries MUST be compiled with 16KB ELF alignment or they will crash on startup

@@ -1,0 +1,43 @@
+[package]
+name = "walletkit-db"
+description = "Encrypted on-device storage primitives for WalletKit (SQLCipher wrapper, vault, content-addressed blobs, key envelope)."
+publish = true
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+exclude.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+ciborium = { workspace = true }
+getrandom = { workspace = true }
+hex = { workspace = true }
+secrecy = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+zeroize = { workspace = true, features = ["derive"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+sha2 = { workspace = true, features = ["force-soft"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }
+sqlite-wasm-rs = { workspace = true, features = ["sqlite3mc"] }
+
+[build-dependencies]
+cc = { workspace = true }
+sha2 = { workspace = true }
+zip = { workspace = true, features = ["deflate"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

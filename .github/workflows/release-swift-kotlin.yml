@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
       - name: Get new version
         id: version
@@ -29,6 +29,8 @@ jobs:
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
   build-swift:
+    # Swift depends on the host macOS/Xcode configuration and intentionally does
+    # not run inside Nix.
     runs-on: macos-latest
     needs: pre-release-checks
     permissions:
@@ -36,7 +38,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
@@ -46,6 +48,12 @@ jobs:
           toolchain: 1.92.0
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
           components: rustfmt
+
+      # Install nargo
+      - uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
+        with:
+          # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
+          toolchain: v1.0.0-beta.11
 
       # Includes temporary downstream UniFFI callback vtable patch:
       # https://github.com/mozilla/uniffi-rs/pull/2821
@@ -57,14 +65,14 @@ jobs:
           zip -r WalletKit.xcframework.zip swift/WalletKit.xcframework
 
       - name: Checkout swift repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           repository: worldcoin/walletkit-swift
           token: ${{ secrets.WALLETKIT_BOT_TOKEN }}
           path: target-repo
 
       - name: Create draft release in walletkit-swift & upload binaries
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         id: release
         with:
           repository: worldcoin/walletkit-swift
@@ -126,11 +134,9 @@ jobs:
     name: Prepare Kotlin
     runs-on: arc-public-8xlarge-amd64-runner
     needs: [pre-release-checks]
-    env:
-      CARGO_HOME: /home/runner/_work/_cargo
-      RUSTUP_HOME: /home/runner/_work/_rustup
     permissions:
-      contents: write # to upload artifacts
+      contents: read
+      actions: write # to save Rust cache
 
     # Each target is built separately to run in parallel. Running sequentially takes vastly more time.
     strategy:
@@ -143,31 +149,36 @@ jobs:
           - target: i686-linux-android
 
     steps:
-      - name: Add Cargo to PATH
-        run: echo "$CARGO_HOME/bin" >> $GITHUB_PATH
-
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.92.0
-          targets: ${{ matrix.settings.target }}
-          components: rustfmt
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
 
-      - name: Install Cross
-        run: |
-          cargo install cross --git https://github.com/cross-rs/cross --locked
+      # TODO: magic-nix-cache is best-effort; builds still work without it.
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
+
+      - name: Cache Rust build artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/release
+            target/${{ matrix.settings.target }}
+          key: ${{ runner.os }}-cargo-android-${{ matrix.settings.target }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml', 'flake.lock', 'flake.nix', 'nix/**/*.nix') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-android-${{ matrix.settings.target }}-
+            ${{ runner.os }}-cargo-android-
 
       - name: Build for target
-        run: |
-          CROSS_NO_WARNINGS=0 cross build -p walletkit --target ${{ matrix.settings.target }} --release --locked --features "$WALLETKIT_CARGO_FEATURES"
+        run: ./nix/build-android.sh --target ${{ matrix.settings.target }}
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: android-${{ matrix.settings.target }}
           path: ./target/${{ matrix.settings.target }}/release/libwalletkit.so
@@ -183,40 +194,30 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: 1.92.0
-          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android,i686-linux-android
-          components: rustfmt
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+
+      # TODO: magic-nix-cache is best-effort; builds still work without it.
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
 
       - name: Setup Java
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@17f84c3641ba7b8f6deff6309fc4c864478f5d62 # v3.14.1
         with:
           distribution: temurin
           java-version: 17
 
       - name: Download Artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          path: .
+          path: artifacts
 
-      - name: Move artifacts
-        run: |
-          mkdir -p kotlin/walletkit/src/main/jniLibs && cd kotlin/walletkit/src/main/jniLibs
-          mkdir armeabi-v7a arm64-v8a x86 x86_64
-          mv /home/runner/work/walletkit/walletkit/android-armv7-linux-androideabi/libwalletkit.so ./armeabi-v7a/libwalletkit.so
-          mv /home/runner/work/walletkit/walletkit/android-aarch64-linux-android/libwalletkit.so ./arm64-v8a/libwalletkit.so
-          mv /home/runner/work/walletkit/walletkit/android-i686-linux-android/libwalletkit.so ./x86/libwalletkit.so
-          mv /home/runner/work/walletkit/walletkit/android-x86_64-linux-android/libwalletkit.so ./x86_64/libwalletkit.so
-
-      - name: Generate bindings
-        working-directory: kotlin
-        run: cargo run -p uniffi-bindgen generate ./walletkit/src/main/jniLibs/arm64-v8a/libwalletkit.so --library --language kotlin --no-format --out-dir walletkit/src/main/java
+      - name: Assemble jniLibs & generate bindings
+        run: nix develop . --command cargo xtask kotlin build --artifacts-dir artifacts
 
       - name: Publish
         working-directory: kotlin
