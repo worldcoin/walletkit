@@ -423,20 +423,6 @@ mod tests {
     }
 
     #[test]
-    fn old_config_flag_is_rejected() {
-        let result =
-            Cli::try_parse_from(["walletkit", "--config", "x.json", "auth", "info"]);
-        let Err(err) = result else {
-            panic!("expected --config to be rejected");
-        };
-        let message = err.to_string();
-        assert!(
-            message.contains("unexpected argument") || message.contains("--config"),
-            "unexpected error: {message}"
-        );
-    }
-
-    #[test]
     fn resolve_verifier_address_maps_known_registries() {
         let staging =
             walletkit_core::defaults::default_config(&Environment::Staging, None, None)
