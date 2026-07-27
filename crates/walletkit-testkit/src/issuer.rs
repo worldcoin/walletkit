@@ -22,6 +22,15 @@ pub struct IssuedCredential {
     pub blinding_factor: FieldElement,
 }
 
+/// Result of importing an externally-issued credential.
+#[derive(Debug, Clone)]
+pub struct ImportedCredential {
+    /// Local store id of the imported credential.
+    pub credential_id: u64,
+    /// Blinding factor stored with the credential.
+    pub blinding_factor: FieldElement,
+}
+
 /// Builds an unsigned base credential with subject derived from `leaf_index`
 /// and `blinding_factor`.
 ///
@@ -48,18 +57,18 @@ pub fn build_base_credential(
 ///
 /// # Errors
 ///
-/// Returns an error if blinding-factor generation, storing the credential, or
-/// parsing the credential fails.
+/// Returns an error if blinding-factor generation or storing the credential
+/// fails.
 pub async fn import_credential(
     store: &CredentialStore,
     authenticator: &Authenticator,
     credential: &Credential,
     blinding_factor: Option<&FieldElement>,
     associated_data: Option<Vec<u8>>,
-) -> eyre::Result<u64> {
+) -> eyre::Result<ImportedCredential> {
     let blinding_factor = match blinding_factor {
-        Some(bf) => bf,
-        None => &authenticator
+        Some(bf) => bf.clone(),
+        None => authenticator
             .generate_credential_blinding_factor_remote(credential.issuer_schema_id())
             .await
             .wrap_err("blinding factor generation failed")?,
@@ -68,14 +77,17 @@ pub async fn import_credential(
     let credential_id = store
         .store_credential(
             credential,
-            blinding_factor,
+            &blinding_factor,
             credential.expires_at(),
             associated_data,
             now_secs(),
         )
         .wrap_err("store credential failed")?;
 
-    Ok(credential_id)
+    Ok(ImportedCredential {
+        credential_id,
+        blinding_factor,
+    })
 }
 
 /// Issues a credential from the faux issuer and stores it.

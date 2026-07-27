@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.3](https://github.com/worldcoin/walletkit/compare/v0.20.2...v0.20.3) - 2026-07-24
+
+### Other
+
+- *(kotlin)* replace build scripts with xtask ([#442](https://github.com/worldcoin/walletkit/pull/442))
+- use walletkit-testkit for core proof-generation integration tests ([#449](https://github.com/worldcoin/walletkit/pull/449))
+- disable sqlite3mc download in docs.rs ([#451](https://github.com/worldcoin/walletkit/pull/451))
+
 ## [0.20.2](https://github.com/worldcoin/walletkit/compare/v0.20.1...v0.20.2) - 2026-07-15
 
 ### Other

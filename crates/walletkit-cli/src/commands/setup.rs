@@ -3,7 +3,7 @@
 use walletkit_core::storage::cache_embedded_groth16_material;
 
 use crate::output;
-use crate::provider::create_fs_credential_store;
+use walletkit_testkit::storage::create_fs_credential_store;
 
 use super::auth::{register_and_poll, RegisterOutcome};
 use super::{resolve_root, Cli};
