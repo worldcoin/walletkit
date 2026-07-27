@@ -1,6 +1,6 @@
-//! WalletKit is the reference implementation for World ID clients.
+//! `WalletKit` is the reference implementation for World ID clients.
 //!
-//! It provides the Rust API and UniFFI bindings used by mobile applications
+//! It provides the Rust API and `UniFFI` bindings used by mobile applications
 //! to interact with World ID. The public API is re-exported from
 //! [`walletkit_core`].
 
