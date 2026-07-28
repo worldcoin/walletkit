@@ -1,6 +1,5 @@
 //! iOS library, Swift binding, and `XCFramework` generation.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use eyre::{bail, Result, WrapErr as _};
@@ -191,46 +190,49 @@ fn generate_bindings(sh: &Shell, sources_dir: &Path) -> Result<()> {
 
     let generated_source = bindings_dir.join("walletkit_core.swift");
     let destination = sources_dir.join("walletkit.swift");
-    fs::rename(&generated_source, &destination).wrap_err_with(|| {
-        format!(
-            "failed to move {} to {}",
-            generated_source.display(),
-            destination.display()
-        )
-    })?;
+    sh.copy_file(&generated_source, &destination)
+        .wrap_err_with(|| {
+            format!(
+                "failed to move {} to {}",
+                generated_source.display(),
+                destination.display()
+            )
+        })?;
+    sh.remove_path(&generated_source)?;
 
     if sh.path_exists(SUPPORT_SOURCES_DIR) {
-        copy_directory_contents(Path::new(SUPPORT_SOURCES_DIR), sources_dir)?;
+        copy_directory_contents(sh, Path::new(SUPPORT_SOURCES_DIR), sources_dir)?;
     }
 
     Ok(())
 }
 
-fn copy_directory_contents(source: &Path, destination: &Path) -> Result<()> {
-    for entry in fs::read_dir(source)
+fn copy_directory_contents(
+    sh: &Shell,
+    source: &Path,
+    destination: &Path,
+) -> Result<()> {
+    for source_path in sh
+        .read_dir(source)
         .wrap_err_with(|| format!("failed to read {}", source.display()))?
     {
-        let entry =
-            entry.wrap_err_with(|| format!("failed to read {}", source.display()))?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        let file_type = entry
-            .file_type()
-            .wrap_err_with(|| format!("failed to inspect {}", source_path.display()))?;
+        let file_name = source_path
+            .file_name()
+            .expect("directory entries must have a file name");
+        let destination_path = destination.join(file_name);
 
-        if file_type.is_dir() {
-            fs::create_dir_all(&destination_path).wrap_err_with(|| {
-                format!("failed to create {}", destination_path.display())
-            })?;
-            copy_directory_contents(&source_path, &destination_path)?;
+        if source_path.is_dir() {
+            sh.create_dir(&destination_path)?;
+            copy_directory_contents(sh, &source_path, &destination_path)?;
         } else {
-            fs::copy(&source_path, &destination_path).wrap_err_with(|| {
-                format!(
-                    "failed to copy {} to {}",
-                    source_path.display(),
-                    destination_path.display()
-                )
-            })?;
+            sh.copy_file(&source_path, &destination_path)
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to copy {} to {}",
+                        source_path.display(),
+                        destination_path.display()
+                    )
+                })?;
         }
     }
 
@@ -296,7 +298,8 @@ fn make_framework(
     sh.copy_file(static_library, framework_dir.join("walletkit_coreFFI"))?;
     sh.copy_file(header, framework_dir.join("Headers/walletkit_coreFFI.h"))?;
 
-    let modulemap_contents = fs::read_to_string(modulemap)
+    let modulemap_contents = sh
+        .read_file(modulemap)
         .wrap_err_with(|| format!("failed to read {}", modulemap.display()))?;
     let framework_modulemap = modulemap_contents
         .lines()
@@ -308,12 +311,12 @@ fn make_framework(
         })
         .collect::<Vec<_>>()
         .join("\n");
-    fs::write(
+    sh.write_file(
         framework_dir.join("Modules/module.modulemap"),
         format!("{framework_modulemap}\n"),
     )?;
 
-    fs::write(
+    sh.write_file(
         framework_dir.join("Info.plist"),
         framework_info_plist(platform),
     )?;

@@ -1,8 +1,5 @@
 //! Release Swift package manifest generation.
 
-use std::fs;
-use std::path::Path;
-
 use eyre::{ensure, Result, WrapErr as _};
 use xshell::{cmd, Shell};
 
@@ -25,11 +22,12 @@ pub(super) fn run(
     );
 
     println!("Creating release Package.swift for WalletKit {release_version}...");
-    let template = fs::read_to_string(PACKAGE_TEMPLATE)
+    let template = sh
+        .read_file(PACKAGE_TEMPLATE)
         .wrap_err_with(|| format!("failed to read {PACKAGE_TEMPLATE}"))?;
     let manifest =
         package::release_manifest(&template, asset_url, checksum, release_version)?;
-    fs::write(Path::new(RELEASE_MANIFEST), manifest)
+    sh.write_file(RELEASE_MANIFEST, manifest)
         .wrap_err_with(|| format!("failed to write {RELEASE_MANIFEST}"))?;
 
     cmd!(sh, "swiftlint lint --autocorrect {RELEASE_MANIFEST}")

@@ -1,6 +1,5 @@
 //! Swift foreign-binding tests.
 
-use std::fs;
 use std::path::Path;
 
 use eyre::{bail, Result, WrapErr as _};
@@ -63,6 +62,7 @@ fn prepare_test_package(sh: &Shell) -> Result<()> {
     sh.remove_path(TEST_SOURCES_DIR)?;
     sh.create_dir(TEST_SOURCES_DIR)?;
     copy_directory_contents(
+        sh,
         Path::new(GENERATED_SOURCES_DIR),
         Path::new(TEST_SOURCES_DIR),
     )?;
@@ -72,31 +72,32 @@ fn prepare_test_package(sh: &Shell) -> Result<()> {
     Ok(())
 }
 
-fn copy_directory_contents(source: &Path, destination: &Path) -> Result<()> {
-    for entry in fs::read_dir(source)
+fn copy_directory_contents(
+    sh: &Shell,
+    source: &Path,
+    destination: &Path,
+) -> Result<()> {
+    for source_path in sh
+        .read_dir(source)
         .wrap_err_with(|| format!("failed to read {}", source.display()))?
     {
-        let entry =
-            entry.wrap_err_with(|| format!("failed to read {}", source.display()))?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        let file_type = entry
-            .file_type()
-            .wrap_err_with(|| format!("failed to inspect {}", source_path.display()))?;
+        let file_name = source_path
+            .file_name()
+            .expect("directory entries must have a file name");
+        let destination_path = destination.join(file_name);
 
-        if file_type.is_dir() {
-            fs::create_dir_all(&destination_path).wrap_err_with(|| {
-                format!("failed to create {}", destination_path.display())
-            })?;
-            copy_directory_contents(&source_path, &destination_path)?;
+        if source_path.is_dir() {
+            sh.create_dir(&destination_path)?;
+            copy_directory_contents(sh, &source_path, &destination_path)?;
         } else {
-            fs::copy(&source_path, &destination_path).wrap_err_with(|| {
-                format!(
-                    "failed to copy {} to {}",
-                    source_path.display(),
-                    destination_path.display()
-                )
-            })?;
+            sh.copy_file(&source_path, &destination_path)
+                .wrap_err_with(|| {
+                    format!(
+                        "failed to copy {} to {}",
+                        source_path.display(),
+                        destination_path.display()
+                    )
+                })?;
         }
     }
 
@@ -112,17 +113,15 @@ fn remove_derived_data(sh: &Shell) -> Result<()> {
         return Ok(());
     }
 
-    for entry in fs::read_dir(&derived_data)
+    for path in sh
+        .read_dir(&derived_data)
         .wrap_err_with(|| format!("failed to read {}", derived_data.display()))?
     {
-        let entry = entry
-            .wrap_err_with(|| format!("failed to read {}", derived_data.display()))?;
-        if entry
-            .file_name()
-            .to_string_lossy()
-            .starts_with("WalletKitForeignTestPackage-")
-        {
-            sh.remove_path(entry.path())?;
+        if path.file_name().is_some_and(|name| {
+            name.to_string_lossy()
+                .starts_with("WalletKitForeignTestPackage-")
+        }) {
+            sh.remove_path(path)?;
         }
     }
     Ok(())

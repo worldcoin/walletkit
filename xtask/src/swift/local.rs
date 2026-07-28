@@ -1,6 +1,5 @@
 //! Local Swift package generation.
 
-use std::fs;
 use std::path::Path;
 
 use eyre::{Result, WrapErr as _};
@@ -20,11 +19,12 @@ pub(super) fn run(sh: &Shell) -> Result<()> {
     build::run(sh, Some(Path::new("local_build/walletkit-swift")))?;
 
     println!("Creating Package.swift for local development...");
-    let template = fs::read_to_string(PACKAGE_TEMPLATE)
+    let template = sh
+        .read_file(PACKAGE_TEMPLATE)
         .wrap_err_with(|| format!("failed to read {PACKAGE_TEMPLATE}"))?;
     let manifest = package::local_manifest(&template, FRAMEWORK_NAME)?;
     let manifest_path = Path::new(LOCAL_BUILD_DIR).join("Package.swift");
-    fs::write(&manifest_path, manifest)
+    sh.write_file(&manifest_path, manifest)
         .wrap_err_with(|| format!("failed to write {}", manifest_path.display()))?;
 
     println!("Swift package built successfully.");
