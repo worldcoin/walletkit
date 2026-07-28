@@ -141,11 +141,24 @@ fn find_simulator(sh: &Shell) -> Result<String> {
 fn simulator_id(devices: &str, preferred_name: &str) -> Option<String> {
     devices
         .lines()
-        .find(|line| line.contains(preferred_name))
-        .and_then(|line| line.split_once('('))
-        .and_then(|(_, suffix)| suffix.split_once(')'))
-        .map(|(identifier, _)| identifier.trim().to_owned())
-        .filter(|identifier| !identifier.is_empty())
+        .filter(|line| line.contains(preferred_name))
+        .find_map(|line| {
+            line.split(['(', ')'])
+                .map(str::trim)
+                .find(|value| is_uuid(value))
+                .map(str::to_owned)
+        })
+}
+
+fn is_uuid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if matches!(index, 8 | 13 | 18 | 23) {
+                byte == b'-'
+            } else {
+                byte.is_ascii_hexdigit()
+            }
+        })
 }
 
 fn prepare_simulator(sh: &Shell, simulator_id: &str) -> Result<()> {
@@ -207,6 +220,16 @@ mod tests {
         assert_eq!(
             simulator_id(DEVICES, "iPhone").as_deref(),
             Some("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")
+        );
+    }
+
+    #[test]
+    fn skips_parenthesized_text_in_device_name() {
+        let devices = "    iPhone SE (3rd generation) (11111111-2222-3333-4444-555555555555) (Shutdown)";
+
+        assert_eq!(
+            simulator_id(devices, "iPhone").as_deref(),
+            Some("11111111-2222-3333-4444-555555555555")
         );
     }
 }
