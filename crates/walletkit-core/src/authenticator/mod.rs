@@ -265,9 +265,8 @@ impl Authenticator {
     /// raw signature bytes and signing nonce without submitting anything to the
     /// gateway.
     ///
-    /// This is the signing-only counterpart of [`Self::initiate_recovery_agent_update`].
-    /// Callers can use the returned bytes to build and submit the gateway request
-    /// themselves.
+    /// Callers can use the returned bytes to build and submit the gateway
+    /// request themselves.
     ///
     /// # Warning
     /// This method uses the `onchain_signer` (secp256k1 ECDSA) and produces a
@@ -301,11 +300,14 @@ impl Authenticator {
         })
     }
 
-    /// Initiates a time-locked recovery agent update (14-day cooldown).
+    /// Updates the holder's recovery agent (WIP-102).
     ///
-    /// Signs an EIP-712 `InitiateRecoveryAgentUpdate` payload and submits it to
-    /// the gateway. Returns the gateway request ID that can be used to poll
-    /// status.
+    /// On a V2 registry the new agent becomes effective immediately, but for a
+    /// revert window any authenticator can call
+    /// [`Self::revert_recovery_agent_update`] to roll back. During that window
+    /// the *previous* agent remains the only valid signer for `recoverAccount`,
+    /// which mitigates a compromised authenticator silently swapping in an
+    /// attacker-controlled recovery address.
     ///
     /// # Arguments
     /// * `new_recovery_agent` — the checksummed hex address of the new recovery
@@ -315,54 +317,33 @@ impl Authenticator {
     /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
     ///   a valid address.
     /// - Returns a network error if the gateway request fails.
-    #[allow(deprecated)]
-    pub async fn initiate_recovery_agent_update(
+    pub async fn update_recovery_agent(
         &self,
         new_recovery_agent: String,
     ) -> Result<String, WalletKitError> {
         let new_recovery_agent =
             Address::parse_from_ffi(&new_recovery_agent, "new_recovery_agent")?;
 
-        let request_id = self
-            .inner
-            .initiate_recovery_agent_update(new_recovery_agent)
-            .await?;
+        let request_id = self.inner.update_recovery_agent(new_recovery_agent).await?;
 
         Ok(request_id.to_string())
     }
 
-    /// Executes a pending recovery agent update after the 14-day cooldown has
-    /// elapsed.
+    /// Reverts an in-flight recovery agent update during the revert window
+    /// (WIP-102).
     ///
-    /// This call is **permissionless** — no signature is required. The contract
-    /// enforces the cooldown and will revert with
-    /// `RecoveryAgentUpdateStillInCooldown` if called too early.
+    /// Must be called within the revert window after
+    /// [`Self::update_recovery_agent`]. During that window any authenticator
+    /// can revert the update; the previous recovery agent stays effective
+    /// until the window expires.
     ///
-    /// Returns the gateway request ID that can be used to poll status.
-    ///
-    /// # Errors
-    /// Returns a network error if the gateway request fails.
-    #[allow(deprecated)]
-    pub async fn execute_recovery_agent_update(
-        &self,
-    ) -> Result<String, WalletKitError> {
-        let request_id = self.inner.execute_recovery_agent_update().await?;
-
-        Ok(request_id.to_string())
-    }
-
-    /// Cancels a pending time-locked recovery agent update before the cooldown
-    /// expires.
-    ///
-    /// Signs an EIP-712 `CancelRecoveryAgentUpdate` payload and submits it to
-    /// the gateway. Returns the gateway request ID that can be used to poll
-    /// status.
+    /// Signs an EIP-712 `CancelRecoveryAgentUpdate` payload (the typehash is
+    /// reused on V2) and submits it to the gateway.
     ///
     /// # Errors
     /// Returns a network error if the gateway request fails.
-    #[allow(deprecated)]
-    pub async fn cancel_recovery_agent_update(&self) -> Result<String, WalletKitError> {
-        let request_id = self.inner.cancel_recovery_agent_update().await?;
+    pub async fn revert_recovery_agent_update(&self) -> Result<String, WalletKitError> {
+        let request_id = self.inner.revert_recovery_agent_update().await?;
 
         Ok(request_id.to_string())
     }
