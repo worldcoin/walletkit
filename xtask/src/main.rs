@@ -1,6 +1,7 @@
 //! Repository automation for `WalletKit`.
 
 mod kotlin;
+mod swift;
 
 use std::path::Path;
 
@@ -22,6 +23,12 @@ enum Command {
         #[command(subcommand)]
         command: kotlin::Command,
     },
+
+    /// Swift/iOS automation.
+    Swift {
+        #[command(subcommand)]
+        command: swift::Command,
+    },
 }
 
 fn main() -> Result<()> {
@@ -31,6 +38,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Kotlin { command } => kotlin::run(&sh, &command),
+        Command::Swift { command } => swift::run(&sh, &command),
     }
 }
 

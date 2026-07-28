@@ -7,17 +7,17 @@ Foreign binding tests that verify the FFI (Foreign Function Interface) between R
 From the repository root:
 
 ```bash
-./swift/test_swift.sh
+cargo xtask swift test
 ```
 
-This script will automatically:
+This command will automatically:
 
 1. Build the Rust library for iOS targets
 2. Generate Swift bindings via UniFFI
 3. Copy bindings to the test package
 4. Run the tests on iOS Simulator
 
-**Note:** You don't need to run `build_swift.sh` separately - the test script does it for you.
+**Note:** You don't need to run the build task separately; the test task builds the Swift artifacts before running the suite. Use `--skip-build` to test existing artifacts.
 
 ## What These Tests Verify
 

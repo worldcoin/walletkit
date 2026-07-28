@@ -6,7 +6,7 @@ on:
 
 env:
   # The feature flags with which the Android library is built.
-  # For iOS, this is set in the `build_swift.sh` file.
+  # Used by both the Kotlin and Swift xtasks.
   WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3
 
 jobs:
@@ -58,7 +58,7 @@ jobs:
       # Includes temporary downstream UniFFI callback vtable patch:
       # https://github.com/mozilla/uniffi-rs/pull/2821
       - name: Build the project (iOS, with temporary UniFFI ASan workaround)
-        run: ./swift/build_swift.sh
+        run: cargo xtask swift build
 
       - name: Compress XCFramework binary
         run: |
@@ -106,7 +106,7 @@ jobs:
 
           # Prepare Package.swift
           brew install swiftlint
-          ./swift/archive_swift.sh --asset-url "$ASSET_URL" --checksum "$CHECKSUM" --release-version "$NEW_VERSION"
+          cargo xtask swift archive --asset-url "$ASSET_URL" --checksum "$CHECKSUM" --release-version "$NEW_VERSION"
           cp Package.swift target-repo/
 
           # Commit changes
