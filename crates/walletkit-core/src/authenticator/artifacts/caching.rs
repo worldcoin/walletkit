@@ -11,21 +11,18 @@ use crate::{error::WalletKitError, storage::StoragePaths};
 
 /// A crate specific source for ZK Artifacts
 ///
-/// Performs loading & caching of the provided nullifier & query materials to the filesystem.
+/// Loads ZK Artifacts from embedded data & caches the resulting artifacts (for the Query &
+/// Nullifier proofs) on the filesystem.
 ///
-/// ownership material is delegated to the underlying source.
+/// Primary reason for caching is amortization of decompression costs.
 #[derive(Clone, uniffi::Object)]
-pub struct ZkArtifacts {
+pub struct CachingZkArtifacts {
     storage_paths: Arc<StoragePaths>,
     inner: Arc<dyn ZkArtifactSource>,
 }
 
 #[uniffi::export]
-pub trait WalletKitZkArtifactSource: ZkArtifactSource + Send {}
-impl<T> WalletKitZkArtifactSource for T where T: ZkArtifactSource + Send {}
-
-#[uniffi::export]
-impl ZkArtifacts {
+impl CachingZkArtifacts {
     #[uniffi::constructor]
     pub fn new(storage_paths: Arc<StoragePaths>) -> Self {
         Self {
@@ -54,7 +51,7 @@ impl ZkArtifacts {
     }
 }
 
-impl ZkArtifactSource for ZkArtifacts {
+impl ZkArtifactSource for CachingZkArtifacts {
     fn query_material(&self) -> Result<Arc<CircomGroth16Material>, ZkArtifactError> {
         let maybe_query_material = self.try_query_material_from_cache()?;
         if let Some(query_material) = maybe_query_material {
@@ -102,7 +99,7 @@ impl ZkArtifactSource for ZkArtifacts {
     }
 }
 
-impl ZkArtifacts {
+impl CachingZkArtifacts {
     pub fn try_query_material_from_cache(
         &self,
     ) -> Result<Option<Arc<CircomGroth16Material>>, ZkArtifactError> {
