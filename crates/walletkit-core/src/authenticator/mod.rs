@@ -22,6 +22,7 @@ use crate::storage::CredentialStore;
 use crate::storage::StoragePaths;
 use crate::OwnershipProof;
 
+mod artifacts;
 mod with_storage;
 
 /// ZK Proof material for both Groth16 proofs (query & nullifier proofs)
