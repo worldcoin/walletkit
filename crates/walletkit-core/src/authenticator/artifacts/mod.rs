@@ -1,3 +1,5 @@
+//! Artifact sources & traits for loading/caching & managing ZK Artifacts
+
 use world_id_core::artifacts::ZkArtifactSource;
 
 /// A blanket implementation interface that allows the ZK Artifact source implementations to be

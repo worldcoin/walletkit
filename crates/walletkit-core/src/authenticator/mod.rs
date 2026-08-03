@@ -21,7 +21,7 @@ use crate::requests::{ProofRequest, ProofResponse};
 use crate::storage::CredentialStore;
 use crate::OwnershipProof;
 
-mod artifacts;
+pub mod artifacts;
 mod with_storage;
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.

@@ -1,3 +1,5 @@
+//! This module defines a wrapper for an embedded artifact source
+
 use std::sync::Arc;
 
 use world_id_core::artifacts::{error::ZkArtifactError, ZkArtifactSource};
@@ -12,9 +14,17 @@ use world_id_proof::{
 #[derive(Debug, Clone, uniffi::Object)]
 pub struct EmbeddedZkArtifacts;
 
+impl Default for EmbeddedZkArtifacts {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[uniffi::export]
 impl EmbeddedZkArtifacts {
+    /// Constructs a new [`EmbeddedZkArtifacts`]
     #[uniffi::constructor]
+    #[must_use]
     pub const fn new() -> Self {
         Self
     }

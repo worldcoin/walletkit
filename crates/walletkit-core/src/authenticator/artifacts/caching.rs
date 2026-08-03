@@ -1,3 +1,6 @@
+//! This module defines the `CachingZkArtifacts` struct - an artifact source that caches the query
+//! & nullifier material on the filesystem.
+
 use std::{path::Path, sync::Arc};
 
 use world_id_core::artifacts::{error::ZkArtifactError, ZkArtifactKind};
@@ -23,7 +26,9 @@ pub struct CachingZkArtifacts {
 
 #[uniffi::export]
 impl CachingZkArtifacts {
+    /// Constructs a new [`CachingZkArtifacts`]
     #[uniffi::constructor]
+    #[must_use]
     pub fn new(storage_paths: Arc<StoragePaths>) -> Self {
         Self {
             storage_paths,
@@ -35,6 +40,10 @@ impl CachingZkArtifacts {
     ///
     /// In practice - this methods loads the materials using the normal path and discards the
     /// results.
+    ///
+    /// # Errors
+    /// This method can return an error if a filesystem operation fails when loading the cached
+    /// artifacts.
     pub fn preload(&self) -> Result<(), WalletKitError> {
         let _query_material = self.query_material().map_err(|error| {
             WalletKitError::Groth16MaterialEmbeddedLoad {
@@ -100,6 +109,12 @@ impl ZkArtifactSource for CachingZkArtifacts {
 }
 
 impl CachingZkArtifacts {
+    /// Attempts to load the **query** Gorth16 material from cache
+    ///
+    /// Returns `Ok(None)` if cached material does not exist or is invalid/corrupted
+    ///
+    /// # Errors
+    /// Can fail on an io operation when loading files from cache
     pub fn try_query_material_from_cache(
         &self,
     ) -> Result<Option<Arc<CircomGroth16Material>>, ZkArtifactError> {
@@ -110,6 +125,12 @@ impl CachingZkArtifacts {
         )
     }
 
+    /// Attempts to load the **nullifier** Gorth16 material from cache
+    ///
+    /// Returns `Ok(None)` if cached material does not exist or is invalid/corrupted
+    ///
+    /// # Errors
+    /// Can fail on an io operation when loading files from cache
     pub fn try_nullifier_material_from_cache(
         &self,
     ) -> Result<Option<Arc<CircomGroth16Material>>, ZkArtifactError> {
@@ -128,6 +149,9 @@ impl CachingZkArtifacts {
     ) -> Result<(), ZkArtifactError> {
         let zkey_path = zkey_path.as_ref();
         let graph_path = graph_path.as_ref();
+
+        ensure_parent_dir_of(kind, zkey_path)?;
+        ensure_parent_dir_of(kind, graph_path)?;
 
         material
             .serializer()
@@ -186,4 +210,23 @@ impl CachingZkArtifacts {
             }),
         }
     }
+}
+
+fn ensure_parent_dir_of(
+    kind: ZkArtifactKind,
+    zkey_path: impl AsRef<Path>,
+) -> Result<(), ZkArtifactError> {
+    let zkey_path = zkey_path.as_ref();
+
+    if let Some(parent) = zkey_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| ZkArtifactError::Load {
+            kind,
+            message: format!(
+                "Failed to create parent directory for {}: {error}",
+                zkey_path.display()
+            ),
+        })?;
+    }
+
+    Ok(())
 }

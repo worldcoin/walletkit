@@ -117,7 +117,7 @@ pub use credential::Credential;
 /// Credential storage primitives for World ID v4.
 pub mod storage;
 
-mod authenticator;
+pub mod authenticator;
 pub use authenticator::{
     Authenticator, InitializingAuthenticator, RecoveryData, RecoveryUpdateSignature,
     RegistrationStatus,
