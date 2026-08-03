@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::Path, sync::Arc};
 
 use world_id_core::artifacts::{error::ZkArtifactError, ZkArtifactKind};
 use world_id_proof::{
@@ -11,12 +7,9 @@ use world_id_proof::{
     OwnershipVerifier, ZkeyError,
 };
 
-use crate::{
-    error::WalletKitError,
-    storage::{StorageError, StoragePaths, StorageResult},
-};
+use crate::{error::WalletKitError, storage::StoragePaths};
 
-/// A WalletKit specific source for ZK Artifacts
+/// A crate specific source for ZK Artifacts
 ///
 /// Performs loading & caching of the provided nullifier & query materials to the filesystem.
 ///
@@ -196,12 +189,4 @@ impl ZkArtifacts {
             }),
         }
     }
-}
-
-fn write_atomic(path: &Path, bytes: &[u8]) -> StorageResult<()> {
-    let tmp_path = PathBuf::from(format!("{}.tmp", path.to_string_lossy()));
-    fs::write(&tmp_path, bytes)
-        .map_err(|error| StorageError::CacheDb(error.to_string()))?;
-    fs::rename(&tmp_path, path)
-        .map_err(|error| StorageError::CacheDb(error.to_string()))
 }

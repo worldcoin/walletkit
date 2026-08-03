@@ -11,7 +11,6 @@ use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
-    artifacts::ZkArtifactSource,
     primitives::{AuthenticatorPublicKeySet, Config},
     Authenticator as CoreAuthenticator, Credential as CoreCredential, CredentialInput,
     InitializingAuthenticator as CoreInitializingAuthenticator,
@@ -20,122 +19,10 @@ use world_id_core::{
 
 use crate::requests::{ProofRequest, ProofResponse};
 use crate::storage::CredentialStore;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::storage::StoragePaths;
 use crate::OwnershipProof;
 
 mod artifacts;
 mod with_storage;
-
-/// ZK Proof material for both Groth16 proofs (query & nullifier proofs)
-#[derive(Clone, uniffi::Object)]
-pub struct Groth16Materials {
-    query: Arc<world_id_core::proof::CircomGroth16Material>,
-    nullifier: Arc<world_id_core::proof::CircomGroth16Material>,
-}
-
-impl std::fmt::Debug for Groth16Materials {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Groth16Materials").finish_non_exhaustive()
-    }
-}
-
-/// Constructors that require embedded zkeys compiled into the binary.
-///
-/// Enable the `embed-zkeys` Cargo feature to activate these.
-#[cfg(feature = "embed-zkeys")]
-#[uniffi::export]
-impl Groth16Materials {
-    /// Loads Groth16 material from the embedded (compiled-in) zkeys and graphs.
-    ///
-    /// Requires the `embed-zkeys` feature. The material is baked into the binary at
-    /// compile time so no filesystem access is required, and this works on every
-    /// platform including WASM.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the embedded material cannot be loaded or verified.
-    #[uniffi::constructor]
-    pub fn from_embedded() -> Result<Self, WalletKitError> {
-        let query =
-            world_id_core::proof::load_embedded_query_material().map_err(|error| {
-                WalletKitError::Groth16MaterialEmbeddedLoad {
-                    error: error.to_string(),
-                }
-            })?;
-        let nullifier = world_id_core::proof::load_embedded_nullifier_material()
-            .map_err(|error| WalletKitError::Groth16MaterialEmbeddedLoad {
-                error: error.to_string(),
-            })?;
-        Ok(Self {
-            query: Arc::new(query),
-            nullifier: Arc::new(nullifier),
-        })
-    }
-}
-
-/// Constructors that load Groth16 material from the native filesystem.
-///
-/// Not available on WASM targets (no filesystem access).
-#[cfg(not(target_arch = "wasm32"))]
-#[uniffi::export]
-impl Groth16Materials {
-    /// Loads Groth16 material from cached files on disk.
-    ///
-    /// Use `storage::cache_embedded_groth16_material` (requires the `embed-zkeys` feature)
-    /// to populate the cache before calling this.
-    ///
-    /// Not available on WASM (no filesystem).
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the cached files cannot be read or verified.
-    #[uniffi::constructor]
-    // `Arc<StoragePaths>` must be taken by value: UniFFI constructors receive
-    // object arguments as owned `Arc`s across the FFI boundary, so passing by
-    // reference is not an option here.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "UniFFI constructors require owned Arc arguments"
-    )]
-    pub fn from_cache(paths: Arc<StoragePaths>) -> Result<Self, WalletKitError> {
-        let query_zkey = paths.query_zkey_path();
-        let nullifier_zkey = paths.nullifier_zkey_path();
-        let query_graph = paths.query_graph_path();
-        let nullifier_graph = paths.nullifier_graph_path();
-
-        let query = world_id_core::proof::load_query_material_from_paths(
-            &query_zkey,
-            &query_graph,
-        )
-        .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
-            path: format!(
-                "{} and {}",
-                query_zkey.to_string_lossy(),
-                query_graph.to_string_lossy()
-            ),
-            error: error.to_string(),
-        })?;
-
-        let nullifier = world_id_core::proof::load_nullifier_material_from_paths(
-            &nullifier_zkey,
-            &nullifier_graph,
-        )
-        .map_err(|error| WalletKitError::Groth16MaterialCacheInvalid {
-            path: format!(
-                "{} and {}",
-                nullifier_zkey.to_string_lossy(),
-                nullifier_graph.to_string_lossy()
-            ),
-            error: error.to_string(),
-        })?;
-
-        Ok(Self {
-            query: Arc::new(query),
-            nullifier: Arc::new(nullifier),
-        })
-    }
-}
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
