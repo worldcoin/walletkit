@@ -5170,6 +5170,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "provekit-r1cs-compiler"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5b67c82ed3d51c2d564551d65d56e8c1b8efa1f9d4fd1e83a0d185f990ebfac"
+dependencies = [
+ "anyhow",
+ "ark-bn254",
+ "ark-ff 0.5.0",
+ "ark-std 0.5.0",
+ "postcard",
+ "provekit-common",
+ "provekit-whir",
+ "provekit_acir",
+ "provekit_noirc_abi",
+ "provekit_noirc_artifacts",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "provekit-spongefish"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9127,6 +9148,7 @@ dependencies = [
  "once_cell",
  "provekit-common",
  "provekit-prover",
+ "provekit-r1cs-compiler",
  "provekit-verifier",
  "rand 0.8.6",
  "rayon",

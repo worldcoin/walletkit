@@ -745,8 +745,11 @@ mod tests {
     #[cfg(feature = "embed-zkeys")]
     #[tokio::test]
     async fn test_init_with_config_and_materials() {
-        use crate::storage::tests_utils::{
-            cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
+        use crate::{
+            authenticator::artifacts::caching::CachingZkArtifacts,
+            storage::tests_utils::{
+                cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
+            },
         };
         use alloy::primitives::address;
         use world_id_core::primitives::{Config, ServiceEndpoint};
@@ -790,10 +793,11 @@ mod tests {
         let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
 
-        let materials =
-            Arc::new(Groth16Materials::from_embedded().expect("load materials"));
+        let artifacts =
+            Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
+
         let _authenticator =
-            Authenticator::init(&[2u8; 32], &config, materials, Arc::new(store))
+            Authenticator::init(&[2u8; 32], &config, artifacts, Arc::new(store))
                 .await
                 .unwrap();
         drop(mock_server);

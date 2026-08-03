@@ -5,8 +5,9 @@ use std::sync::Arc;
 
 use alloy::primitives::Address;
 use eyre::WrapErr as _;
-use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
-use walletkit_core::{Authenticator, Groth16Materials};
+use walletkit_core::authenticator::artifacts::embedded::EmbeddedZkArtifacts;
+use walletkit_core::storage::CredentialStore;
+use walletkit_core::Authenticator;
 use world_id_core::Authenticator as CoreAuthenticator;
 
 use crate::env::TestEnv;
@@ -32,17 +33,12 @@ pub async fn init_authenticator(
     now: u64,
 ) -> eyre::Result<(Authenticator, Arc<CredentialStore>)> {
     let store = create_fs_credential_store(root)?;
-    let paths = store.storage_paths()?;
-    cache_embedded_groth16_material(&paths)?;
-    let materials = Arc::new(
-        Groth16Materials::from_cache(Arc::new(paths))
-            .wrap_err("failed to load cached Groth16 materials")?,
-    );
 
     let authenticator = Authenticator::init_with_config(
         seed,
         env.world_id_config.clone(),
-        materials,
+        // TODO: ?!?
+        Arc::new(EmbeddedZkArtifacts),
         store.clone(),
     )
     .await
@@ -74,6 +70,8 @@ pub async fn register_account(
         seed,
         env.world_id_config.clone(),
         recovery_address,
+        // TODO: ?!?
+        Arc::new(EmbeddedZkArtifacts),
     )
     .await
     .wrap_err("account creation/init failed")?;

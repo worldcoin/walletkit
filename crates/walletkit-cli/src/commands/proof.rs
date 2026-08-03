@@ -5,6 +5,7 @@ use std::io::Read;
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine as _};
 use clap::Subcommand;
 use eyre::WrapErr as _;
+use walletkit_core::authenticator::artifacts::embedded::EmbeddedZkArtifacts;
 use walletkit_core::requests::ProofRequest;
 use walletkit_testkit::env::TestEnv;
 use walletkit_testkit::issuer::issue_faux_credential;
@@ -370,7 +371,8 @@ fn run_verify_ownership(
     let nonce_fe = parse_field_element(nonce, "--nonce")?;
     let sub_fe = parse_field_element(sub, "--sub")?;
 
-    let result = verify_ownership_proof(&proof, nonce_fe, sub_fe);
+    // TODO: Use a shared zk artifacts source?
+    let result = verify_ownership_proof(&proof, nonce_fe, sub_fe, &EmbeddedZkArtifacts);
     let merkle_root = proof.merkle_root.to_string();
 
     if cli.json {

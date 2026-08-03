@@ -1,8 +1,12 @@
 //! `walletkit wallet` subcommands — local setup and inspection.
 
+use std::sync::Arc;
+
 use clap::Subcommand;
 use eyre::WrapErr as _;
-use walletkit_core::storage::{cache_embedded_groth16_material, StoragePaths};
+use walletkit_core::{
+    authenticator::artifacts::caching::CachingZkArtifacts, storage::StoragePaths,
+};
 
 use crate::output;
 use walletkit_testkit::storage::create_fs_credential_store;
@@ -41,8 +45,11 @@ fn run_init(cli: &Cli) -> eyre::Result<()> {
     let root = resolve_root(cli)?;
     std::fs::create_dir_all(&root)?;
     let store = create_fs_credential_store(&root)?;
-    let paths = store.storage_paths()?;
-    cache_embedded_groth16_material(&paths)?;
+    let paths = Arc::new(store.paths()?);
+
+    // TODO: Extract to a common artifact source for tests
+    // TODO: Do we even need this here?
+    CachingZkArtifacts::new(paths.clone()).preload()?;
 
     // Generate and persist a 32-byte seed if one doesn't exist yet.
     let seed_path = root.join("seed");

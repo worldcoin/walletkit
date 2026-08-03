@@ -13,10 +13,11 @@ use std::sync::Arc;
 use alloy_core::primitives::Address;
 use clap::{Parser, Subcommand};
 use eyre::WrapErr as _;
+use walletkit_core::authenticator::artifacts::caching::CachingZkArtifacts;
 use world_id_core::primitives::Config;
 
-use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
-use walletkit_core::{Authenticator, Groth16Materials};
+use walletkit_core::storage::CredentialStore;
+use walletkit_core::Authenticator;
 
 use walletkit_testkit::env::DEFAULT_WORLDCHAIN_RPC_URL;
 use walletkit_testkit::storage::create_fs_credential_store;
@@ -313,19 +314,16 @@ pub async fn init_authenticator(
 
     let store = create_fs_credential_store(&root)?;
     let paths = store.storage_paths()?;
-    cache_embedded_groth16_material(&paths)?;
-    let materials = Arc::new(
-        Groth16Materials::from_cache(Arc::new(paths.clone()))
-            .wrap_err("failed to load cached Groth16 materials")?,
-    );
+
+    let artifacts = Arc::new(CachingZkArtifacts::new(Arc::new(paths)));
 
     let authenticator = if let Some(ref config) = config_json {
-        Authenticator::init(&seed, config, materials.clone(), store.clone())
+        Authenticator::init(&seed, config, artifacts.clone(), store.clone())
             .await
             .wrap_err("authenticator init failed")?
     } else {
         let config = resolve_built_config(cli)?;
-        Authenticator::init_with_config(&seed, config, materials.clone(), store.clone())
+        Authenticator::init_with_config(&seed, config, artifacts.clone(), store.clone())
             .await
             .wrap_err("authenticator init failed")?
     };

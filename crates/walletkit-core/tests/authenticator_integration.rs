@@ -2,13 +2,16 @@
 
 mod common;
 
+use std::sync::Arc;
+
 use alloy::node_bindings::AnvilInstance;
 use alloy::primitives::U256;
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
+use walletkit_core::authenticator::artifacts::caching::CachingZkArtifacts;
 use walletkit_core::defaults::STAGING_WORLD_ID_REGISTRY;
 use walletkit_core::error::WalletKitError;
-use walletkit_core::{Authenticator, Environment, Groth16Materials};
+use walletkit_core::{Authenticator, Environment};
 use world_id_core::world_id_registry::WorldIdRegistry;
 
 fn setup_anvil() -> AnvilInstance {
@@ -34,9 +37,8 @@ async fn test_authenticator_integration() {
 
     let authenticator_seeder = PrivateKeySigner::random();
     let store = common::create_test_credential_store();
-    let materials = std::sync::Arc::new(
-        Groth16Materials::from_embedded().expect("load groth16 materials"),
-    );
+
+    let artifacts = Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
 
     // When account doesn't exist, this should fail
     let authenticator = Authenticator::init_with_defaults(
@@ -44,7 +46,7 @@ async fn test_authenticator_integration() {
         Some(anvil.endpoint()),
         &Environment::Staging,
         None,
-        materials.clone(),
+        artifacts.clone(),
         store.clone(),
     )
     .await
@@ -80,7 +82,7 @@ async fn test_authenticator_integration() {
         Some(anvil.endpoint()),
         &Environment::Staging,
         None,
-        materials,
+        artifacts.clone(),
         store,
     )
     .await

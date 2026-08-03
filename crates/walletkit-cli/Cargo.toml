@@ -33,7 +33,7 @@ tracing-subscriber = { workspace = true, features = [
 walletkit-core = { workspace = true, features = ["issuers", "embed-zkeys"] }
 walletkit-testkit = { workspace = true }
 world-id-core = { workspace = true }
-world-id-proof = { workspace = true }
+world-id-proof = { workspace = true, features = ["embed-zk-artifacts"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

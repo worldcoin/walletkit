@@ -64,6 +64,8 @@ rustls = { workspace = true, features = ["ring"] }
 sha2 = { workspace = true, features = ["force-soft"] }
 
 [dev-dependencies]
+world-id-proof = { workspace = true, features = ["embed-zk-artifacts"] }
+
 alloy = { workspace = true, features = [
   "getrandom",
   "json",
