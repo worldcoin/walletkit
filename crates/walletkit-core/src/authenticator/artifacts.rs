@@ -6,31 +6,52 @@ use std::{
 
 use world_id_core::artifacts::{error::ZkArtifactError, ZkArtifactKind};
 use world_id_proof::{
-    artifacts::ZkArtifactSource, CircomGroth16Material, CircomGroth16MaterialBuilder,
-    OwnershipProver, OwnershipVerifier,
+    artifacts::{embedded::EmbeddedZkArtifacts, ZkArtifactSource},
+    CircomGroth16Material, CircomGroth16MaterialBuilder, OwnershipProver,
+    OwnershipVerifier,
 };
 
-use crate::storage::{StorageError, StoragePaths, StorageResult};
+use crate::{
+    error::WalletKitError,
+    storage::{StorageError, StoragePaths, StorageResult},
+};
 
 /// A WalletKit specific source for ZK Artifacts
 ///
 /// Performs loading & caching of the provided nullifier & query materials to the filesystem.
 ///
 /// ownership material is delegated to the underlying source.
+#[derive(Clone, uniffi::Object)]
 pub struct ZkArtifacts {
     storage_paths: Arc<StoragePaths>,
     inner: Arc<dyn ZkArtifactSource>,
 }
 
-// TODO: Expose with Uniffi
+#[uniffi::export]
 impl ZkArtifacts {
+    #[uniffi::constructor]
+    pub fn new(storage_paths: Arc<StoragePaths>) -> Self {
+        Self {
+            storage_paths,
+            inner: Arc::new(EmbeddedZkArtifacts),
+        }
+    }
+
     /// Preloads the nullifier & query materials and caches them to the filesystem.
     ///
     /// In practice - this methods loads the materials using the normal path and discards the
     /// results.
-    pub fn preload(&self) -> Result<(), ZkArtifactError> {
-        let _query_material = self.query_material()?;
-        let _nullifier_material = self.nullifier_material()?;
+    pub fn preload(&self) -> Result<(), WalletKitError> {
+        let _query_material = self.query_material().map_err(|error| {
+            WalletKitError::Groth16MaterialEmbeddedLoad {
+                error: format!("Failed to preload query material: {error}"),
+            }
+        })?;
+        let _nullifier_material = self.nullifier_material().map_err(|error| {
+            WalletKitError::Groth16MaterialEmbeddedLoad {
+                error: format!("Failed to preload nullifier material: {error}"),
+            }
+        })?;
 
         Ok(())
     }
