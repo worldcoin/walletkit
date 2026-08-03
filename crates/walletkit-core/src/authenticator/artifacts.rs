@@ -28,6 +28,10 @@ pub struct ZkArtifacts {
 }
 
 #[uniffi::export]
+pub trait WalletKitZkArtifactSource: ZkArtifactSource + Send {}
+impl<T> WalletKitZkArtifactSource for T where T: ZkArtifactSource + Send {}
+
+#[uniffi::export]
 impl ZkArtifacts {
     #[uniffi::constructor]
     pub fn new(storage_paths: Arc<StoragePaths>) -> Self {

@@ -1,7 +1,8 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
 use crate::{
-    defaults, error::WalletKitError, primitives::ParseFromForeignBinding, Environment,
+    authenticator::artifacts::WalletKitZkArtifactSource, defaults,
+    error::WalletKitError, primitives::ParseFromForeignBinding, Environment,
     FieldElement, Region,
 };
 use alloy_core::primitives::Address;
@@ -10,6 +11,7 @@ use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestState},
+    artifacts::ZkArtifactSource,
     primitives::{AuthenticatorPublicKeySet, Config},
     Authenticator as CoreAuthenticator, Credential as CoreCredential, CredentialInput,
     InitializingAuthenticator as CoreInitializingAuthenticator,
@@ -151,15 +153,11 @@ impl Authenticator {
     pub async fn init_with_config(
         seed: &[u8],
         config: Config,
-        materials: Arc<Groth16Materials>,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
-        let authenticator = CoreAuthenticator::init(seed, config)
-            .await?
-            .with_proof_materials(
-                Arc::clone(&materials.query),
-                Arc::clone(&materials.nullifier),
-            );
+        let authenticator = CoreAuthenticator::init(seed, config, artifacts).await?;
+
         Ok(Self {
             inner: authenticator,
             store,
@@ -366,11 +364,11 @@ impl Authenticator {
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
-        materials: Arc<Groth16Materials>,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = defaults::default_config(environment, rpc_url, region)?;
-        Self::init_with_config(seed, config, materials, store).await
+        Self::init_with_config(seed, config, artifacts, store).await
     }
 
     /// Initializes a new Authenticator from a seed using SDK defaults routed
@@ -389,11 +387,11 @@ impl Authenticator {
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
-        materials: Arc<Groth16Materials>,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
-        Self::init_with_config(seed, config, materials, store).await
+        Self::init_with_config(seed, config, artifacts, store).await
     }
 
     /// Initializes a new Authenticator from a seed and config.
@@ -408,7 +406,7 @@ impl Authenticator {
     pub async fn init(
         seed: &[u8],
         config: &str,
-        materials: Arc<Groth16Materials>,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config =
@@ -416,7 +414,7 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        Self::init_with_config(seed, config, materials, store).await
+        Self::init_with_config(seed, config, artifacts, store).await
     }
 
     /// Generates a proof for the given proof request.
