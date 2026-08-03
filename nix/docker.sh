@@ -11,7 +11,7 @@ set -euo pipefail
 #   nix/docker.sh flake show
 #
 # Swift builds are not provided by the flake because they depend on macOS and
-# the host Xcode configuration; use the existing Swift build flow instead.
+# the host Xcode configuration; use `cargo xtask swift` on macOS instead.
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 

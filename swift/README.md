@@ -2,42 +2,45 @@
 
 This folder contains Swift support files for WalletKit:
 
-1. Script to cross-compile and build Swift bindings.
-2. Script to build a Swift package for local development.
-3. Foreign tests (XCTest suite) for Swift under `tests/`.
+1. Swift Package Manager configuration.
+2. Foreign tests (XCTest suite) under `tests/`.
+
+Swift automation is implemented by the workspace xtask and requires macOS with
+Xcode, the iOS Rust targets, and `nargo` v1.0.0-beta.11 installed.
 
 ## Building the Swift bindings
 
-To build the Swift project for release/distribution:
+Run from anywhere in the workspace:
 
 ```bash
-    # run from the walletkit directory
-    ./swift/build_swift.sh
+cargo xtask swift build
 ```
+
+This cross-compiles WalletKit, generates the UniFFI Swift bindings, and creates
+`swift/WalletKit.xcframework`.
 
 ## Testing WalletKit locally
 
-To build a Swift package that can be imported locally via Swift Package Manager:
+Build a package that can be imported locally through Swift Package Manager:
 
 ```bash
-    # run from the walletkit directory
-    ./swift/local_swift.sh
+cargo xtask swift local
 ```
 
-This creates a complete Swift package in `swift/local_build/` that you can import in your iOS project.
+The complete package is created at `swift/local_build/walletkit-swift`.
 
 ## Integration via Package.swift
 
-Add the local package to your Package.swift dependencies:
+Add the local package to your `Package.swift` dependencies:
 
 ```swift
 dependencies: [
-    .package(name: "WalletKit", path: "../../../walletkit/swift/local_build"),
+    .package(name: "WalletKit", path: "../../../walletkit/swift/local_build/walletkit-swift"),
     // ... other dependencies
 ],
 ```
 
-Then add it to specific targets that need WalletKit functionality:
+Then add it to the targets that need WalletKit:
 
 ```swift
 .target(
@@ -45,13 +48,19 @@ Then add it to specific targets that need WalletKit functionality:
     dependencies: [
         .product(name: "WalletKit", package: "WalletKit"),
         // ... other dependencies
-    ]
+    ],
 ),
 ```
 
 ## Running foreign tests for Swift
 
 ```bash
-    # run from the walletkit directory
-    ./swift/test_swift.sh
+cargo xtask swift test
+```
+
+The command builds the bindings and runs the test suite on an available iPhone
+simulator. To test artifacts built separately, as CI does, run:
+
+```bash
+cargo xtask swift test --skip-build
 ```

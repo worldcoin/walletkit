@@ -36,6 +36,21 @@ Replace `VERSION` with the desired WalletKit version.
 
 2. Sync Gradle.
 
+## Local development (iOS/Swift)
+
+On macOS with Xcode and the iOS Rust targets installed, build a local Swift
+package with:
+
+```bash
+cargo xtask swift local
+```
+
+The package is written to `swift/local_build/walletkit-swift`. Build only the
+bindings and XCFramework with `cargo xtask swift build`, or run the foreign
+binding tests with `cargo xtask swift test`.
+
+See [`swift/README.md`](swift/README.md) for package integration details.
+
 ## Local development (Android/Kotlin)
 
 ### Prerequisites

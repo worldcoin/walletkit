@@ -2,7 +2,7 @@
 
 This directory contains the Nix devshells and helper scripts used to
 cross-compile WalletKit for Android and wasm, both locally and in CI.
-Swift/iOS builds intentionally continue to use their existing host Xcode setup.
+Swift/iOS builds intentionally use the host Xcode setup through `cargo xtask swift`.
 
 The flake provides **devshells, not packages**: the shells pin the Rust
 toolchain (from `rust-toolchain.toml`), the Android NDK, nargo and every

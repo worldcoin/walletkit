@@ -19,7 +19,8 @@ fi
 LOCAL_BUILD_PATH="$SCRIPT_DIR/local_build/walletkit-swift"
 
 echo "Building the WalletKit Swift package..."
-bash "$SCRIPT_DIR/local_swift.sh"
+cd "$PROJECT_ROOT"
+cargo xtask swift local
 
 echo "Finding Package.swift files that reference walletkit-swift..."
 PACKAGE_FILES=$(grep -rl "worldcoin/walletkit-swift" "$WORLD_APP_PATH" --include="Package.swift" --exclude-dir=".build" --exclude-dir=".claude" || true)

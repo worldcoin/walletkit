@@ -133,7 +133,7 @@ jobs:
       # Includes temporary downstream UniFFI callback vtable patch:
       # https://github.com/mozilla/uniffi-rs/pull/2821
       - name: Build the Swift project (with temporary UniFFI ASan workaround)
-        run: ./swift/build_swift.sh
+        run: cargo xtask swift build
 
       - name: Upload Swift build artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -166,6 +166,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # master
+        with:
+          toolchain: 1.94.1
+
       - name: Select Xcode ${{ matrix.xcode-version }}
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
@@ -178,7 +183,7 @@ jobs:
           path: swift
 
       - name: Run Swift foreign binding tests
-        run: ./swift/run_swift_tests.sh
+        run: cargo xtask swift test --skip-build
 
       - name: Install SwiftLint
         run: |
