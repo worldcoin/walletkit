@@ -8,7 +8,7 @@ use world_id_core::artifacts::{error::ZkArtifactError, ZkArtifactKind};
 use world_id_proof::{
     artifacts::{embedded::EmbeddedZkArtifacts, ZkArtifactSource},
     CircomGroth16Material, CircomGroth16MaterialBuilder, OwnershipProver,
-    OwnershipVerifier,
+    OwnershipVerifier, ZkeyError,
 };
 
 use crate::{
@@ -163,14 +163,38 @@ impl ZkArtifacts {
             return Ok(None);
         }
 
-        let material = CircomGroth16MaterialBuilder::new()
-            .build_from_paths(zkey_path, graph_path)
-            .map_err(|error| ZkArtifactError::Load {
-                kind,
-                message: error.to_string(),
-            })?;
+        let (zkey_fingerprint, graph_fingerprint) = match kind {
+            ZkArtifactKind::QueryMaterial => (
+                world_id_proof::QUERY_ZKEY_FINGERPRINT,
+                world_id_proof::QUERY_GRAPH_FINGERPRINT,
+            ),
+            ZkArtifactKind::NullifierMaterial => (
+                world_id_proof::NULLIFIER_ZKEY_FINGERPRINT,
+                world_id_proof::NULLIFIER_GRAPH_FINGERPRINT,
+            ),
+            // NOTE: Odd edge case because ZkArtifactKind also covers ownership proof artifacts
+            //       but this should never happen in practice
+            _ => ("", ""),
+        };
 
-        Ok(Some(Arc::new(material)))
+        match CircomGroth16MaterialBuilder::new()
+            .fingerprint_graph(graph_fingerprint.to_string())
+            .fingerprint_zkey(zkey_fingerprint.to_string())
+            .build_from_paths(zkey_path, graph_path)
+        {
+            Ok(material) => Ok(Some(Arc::new(material))),
+            // Cache is invalid or corrupted - return None so material is reloaded and re-cached
+            Err(
+                ZkeyError::GraphFingerprintMismatch(_)
+                | ZkeyError::ZkeyFingerprintMismatch(_)
+                | ZkeyError::ZkeyInvalid(_)
+                | ZkeyError::GraphInvalid(_),
+            ) => Ok(None),
+            Err(other) => Err(ZkArtifactError::Load {
+                kind,
+                message: other.to_string(),
+            }),
+        }
     }
 }
 
