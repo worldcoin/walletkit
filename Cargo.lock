@@ -3811,6 +3811,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5157,27 +5166,6 @@ dependencies = [
  "provekit_noir_artifact_cli",
  "provekit_noirc_abi",
  "rayon",
- "tracing",
-]
-
-[[package]]
-name = "provekit-r1cs-compiler"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5b67c82ed3d51c2d564551d65d56e8c1b8efa1f9d4fd1e83a0d185f990ebfac"
-dependencies = [
- "anyhow",
- "ark-bn254",
- "ark-ff 0.5.0",
- "ark-std 0.5.0",
- "postcard",
- "provekit-common",
- "provekit-whir",
- "provekit_acir",
- "provekit_noirc_abi",
- "provekit_noirc_artifacts",
- "serde",
- "serde_json",
  "tracing",
 ]
 
@@ -7437,9 +7425,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf"
-version = "0.16.0"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b4f49c8462cb704e9a141490e36b9aba424e4b23524331ecd938c3451c50bd9"
+checksum = "c10bf82ba41bbc8a6693362d67738145c77bdcec36345d85d4a86d2fb7dc44dc"
 dependencies = [
  "taceo-oprf-client",
  "taceo-oprf-core",
@@ -7448,9 +7436,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-client"
-version = "0.10.0"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48183803ac1bb90342e06a55b7deca62e9159880395b3d307dca151af05e230d"
+checksum = "3cc6179c5bad58f1210bd8872963960145227e8488dfedb4893538acecc5f8ae"
 dependencies = [
  "ark-ec",
  "ciborium",
@@ -7472,15 +7460,15 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-core"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ac9ec6121784fe3d57b25e70e4a19f1ae2f8330addb9c44b5874fb3c6be5195"
+checksum = "be7f117e2bff79209ce40cdf4af6d566501cb1e63d2e1f9be6134a3bd3a3a2a3"
 dependencies = [
  "ark-ec",
  "ark-ff 0.5.0",
  "ark-serialize 0.5.0",
  "blake3",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "num-bigint",
  "rand 0.8.6",
  "serde",
@@ -7494,11 +7482,10 @@ dependencies = [
 
 [[package]]
 name = "taceo-oprf-types"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "244714781d0b350440fff4af252e73f62776174b7932b32bb9e51b81b7f22490"
+checksum = "f4b3645c7a7592e8aacdb4ca7270e75da3cca6061ae012521f3cb0dd01ff0b16"
 dependencies = [
- "alloy",
  "ark-ff 0.5.0",
  "ark-serialize 0.5.0",
  "async-trait",
@@ -7508,8 +7495,6 @@ dependencies = [
  "serde",
  "taceo-ark-babyjubjub",
  "taceo-ark-serde-compat",
- "taceo-circom-types",
- "taceo-groth16-sol",
  "taceo-oprf-core",
  "uuid",
 ]
@@ -9045,9 +9030,9 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "world-id-authenticator"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c743f08da4f92f47561e510fccbd9db226feb7388b5bd9679550c2d8e9ef514"
+checksum = "cc05e2d364f3613e562aef520913a0044b71e504c1d19e8c6b9d80e61bc5af8b"
 dependencies = [
  "alloy",
  "anyhow",
@@ -9081,9 +9066,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-core"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdc6cfcaf67749219972188a405ba38364ef0f40964d25aba40021927a21ca9d"
+checksum = "5e741ad4aa64d9a681ad4b325b0f49235a84af78af1f359dcbbbb66312286c43"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -9094,9 +9079,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-primitives"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ddb8dc9ec0316bb1b9daacad251cc57cdc309a3f55510ca374e2bb8100ff567a"
+checksum = "7430d4229c914b7136a028ad478dacc7983a8bfb926af9f5a4e5e31550d4f1cf"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -9129,9 +9114,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-proof"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5087b31d9249b38a7f383fe8f3c230109d9a00bcc09167ca34ef3b7fbf458e6"
+checksum = "0530a43963153b34ba8a9f91a781c50771c8baef3a69bddfa230b75d2c84b3ff"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -9139,9 +9124,9 @@ dependencies = [
  "ark-groth16",
  "ark-serialize 0.5.0",
  "eyre",
+ "once_cell",
  "provekit-common",
  "provekit-prover",
- "provekit-r1cs-compiler",
  "provekit-verifier",
  "rand 0.8.6",
  "rayon",
@@ -9165,9 +9150,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-registries"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14399f991de75691319f0e2968769f429bb14091524a39b65e79a4a7e014eac1"
+checksum = "f47e1d0889ef5c5ee541621bb12cb4dfa64e3f0e3730c8fae08c075dfec6d67e"
 dependencies = [
  "alloy",
  "anyhow",
