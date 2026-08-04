@@ -377,7 +377,6 @@ mod tests {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let store = create_test_credential_store();
 
-        // TODO: Extract to a common artifact source for tests
         let artifacts =
             Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
 

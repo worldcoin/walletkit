@@ -194,6 +194,13 @@ impl CachingZkArtifacts {
         match CircomGroth16MaterialBuilder::new()
             .fingerprint_graph(graph_fingerprint.to_string())
             .fingerprint_zkey(zkey_fingerprint.to_string())
+            // TODO: We should expose https://github.com/worldcoin/world-id-protocol/blob/main/crates/proof/src/nullifier_proof.rs#L69-L78
+            //       and reuse it here
+            .bbf_num_2_bits_helper()
+            .bbf_inv()
+            .bbf_legendre()
+            .bbf_sqrt_input()
+            .bbf_sqrt_unchecked()
             .build_from_paths(zkey_path, graph_path)
         {
             Ok(material) => Ok(Some(Arc::new(material))),

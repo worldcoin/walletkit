@@ -91,7 +91,15 @@ walletkit-testkit = { workspace = true }
 
 
 [features]
-default = ["issuers"]
+default = [
+  "issuers",
+  # embed-zkeys is a default feature because none of the current implementations
+  # provide any other way of loading the artifacts.
+  #
+  # Once we add a method of e.g. downloading the artifacts at runtime
+  # we can make this feature non-default
+  "embed-zkeys",
+]
 
 # Enables point-compression on all verifying keys. This results in ~2x smaller bundle size, but decompression is very expensive,
 # using it requires proper handling to ensure decompression is done once and cached. By default walletkit-swift and walletkit-android
