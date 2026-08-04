@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use alloy_core::primitives::Address;
 use clap::{Parser, Subcommand};
-use eyre::WrapErr as _;
+use eyre::Context;
 use walletkit_core::authenticator::artifacts::caching::CachingZkArtifacts;
 use world_id_core::primitives::Config;
 
@@ -154,7 +154,7 @@ fn resolve_root(cli: &Cli) -> eyre::Result<PathBuf> {
 fn resolve_seed(cli: &Cli) -> eyre::Result<Vec<u8>> {
     if let Some(ref hex_seed) = cli.seed {
         let bytes = hex::decode(hex_seed.trim_start_matches("0x"))
-            .wrap_err("invalid hex seed")?;
+            .context("invalid hex seed")?;
         eyre::ensure!(
             bytes.len() == 32,
             "seed must be exactly 32 bytes, got {}",
@@ -176,9 +176,9 @@ fn resolve_seed(cli: &Cli) -> eyre::Result<Vec<u8>> {
         let seed_path = root.join("seed");
         if seed_path.exists() {
             let hex_str = std::fs::read_to_string(&seed_path)
-                .wrap_err("failed to read seed file")?;
+                .context("failed to read seed file")?;
             let bytes =
-                hex::decode(hex_str.trim()).wrap_err("invalid hex in seed file")?;
+                hex::decode(hex_str.trim()).context("invalid hex in seed file")?;
             eyre::ensure!(
                 bytes.len() == 32,
                 "seed file must contain exactly 32 bytes, got {}",
@@ -217,7 +217,7 @@ fn resolve_region(cli: &Cli) -> eyre::Result<Option<walletkit_core::Region>> {
 pub fn resolve_config(cli: &Cli) -> eyre::Result<Option<String>> {
     match &cli.authenticator_config {
         Some(path) => {
-            let json = std::fs::read_to_string(path).wrap_err_with(|| {
+            let json = std::fs::read_to_string(path).with_context(|| {
                 format!(
                     "failed to read authenticator config file {}",
                     path.display()
@@ -237,7 +237,7 @@ pub fn resolve_config(cli: &Cli) -> eyre::Result<Option<String>> {
 /// `--environment` / `--region` are invalid, or if default config construction fails.
 fn resolve_built_config(cli: &Cli) -> eyre::Result<Config> {
     if let Some(config_json) = resolve_config(cli)? {
-        Config::from_json(&config_json).wrap_err("invalid authenticator config JSON")
+        Config::from_json(&config_json).context("invalid authenticator config JSON")
     } else {
         let environment = resolve_environment(cli)?;
         let region = resolve_region(cli)?;
@@ -254,7 +254,7 @@ fn resolve_built_config(cli: &Cli) -> eyre::Result<Config> {
                 region,
             )
         }
-        .wrap_err("failed to build World ID config")
+        .context("failed to build World ID config")
     }
 }
 
@@ -273,7 +273,7 @@ fn resolve_verifier_address(
     config: &Config,
 ) -> eyre::Result<Address> {
     if let Some(addr) = verifier_address {
-        return addr.parse::<Address>().wrap_err("invalid verifier address");
+        return addr.parse::<Address>().context("invalid verifier address");
     }
 
     let registry = *config.registry_address();
@@ -320,18 +320,18 @@ pub async fn init_authenticator(
     let authenticator = if let Some(ref config) = config_json {
         Authenticator::init(&seed, config, artifacts.clone(), store.clone())
             .await
-            .wrap_err("authenticator init failed")?
+            .context("authenticator init failed")?
     } else {
         let config = resolve_built_config(cli)?;
         Authenticator::init_with_config(&seed, config, artifacts.clone(), store.clone())
             .await
-            .wrap_err("authenticator init failed")?
+            .context("authenticator init failed")?
     };
 
     let now = now_secs();
     authenticator
         .init_storage(now)
-        .wrap_err("storage init failed")?;
+        .context("storage init failed")?;
 
     Ok((Arc::new(authenticator), store))
 }

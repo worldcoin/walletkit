@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use eyre::{bail, Result, WrapErr as _};
+use eyre::{bail, Context, Result};
 use xshell::{cmd, Shell};
 
 const CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3";
@@ -33,11 +33,11 @@ fn build_host_bindings(sh: &Shell) -> Result<()> {
         "cargo build -p walletkit --release --locked --features {CARGO_FEATURES}"
     )
     .run()
-    .wrap_err("failed to build the host WalletKit library")?;
+    .context("failed to build the host WalletKit library")?;
 
     let library = host_library()?;
     sh.copy_file(&library, HOST_LIBRARIES_DIR)
-        .wrap_err_with(|| format!("failed to copy {}", library.display()))?;
+        .with_context(|| format!("failed to copy {}", library.display()))?;
 
     println!("Generating Kotlin test bindings...");
     cmd!(
@@ -45,7 +45,7 @@ fn build_host_bindings(sh: &Shell) -> Result<()> {
         "cargo run -p uniffi-bindgen --locked -- generate {library} --language kotlin --library --crate walletkit_core --out-dir {JAVA_SOURCE_DIR}"
     )
     .run()
-    .wrap_err("failed to generate Kotlin test bindings")
+    .context("failed to generate Kotlin test bindings")
 }
 
 fn host_library() -> Result<PathBuf> {
@@ -72,7 +72,7 @@ fn run_gradle_tests(sh: &Shell) -> Result<()> {
         "./gradlew --no-daemon walletkit-tests:test --info --continue"
     )
     .run()
-    .wrap_err("Kotlin/JVM tests failed")
+    .context("Kotlin/JVM tests failed")
 }
 
 fn ensure_java_home(sh: &Shell) {

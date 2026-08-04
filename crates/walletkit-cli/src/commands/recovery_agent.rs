@@ -1,7 +1,7 @@
 //! `walletkit recovery-agent` subcommands — recovery agent management (WIP-102).
 
 use clap::Subcommand;
-use eyre::WrapErr as _;
+use eyre::Context;
 
 use crate::output;
 
@@ -27,7 +27,7 @@ pub async fn run(cli: &Cli, action: &RecoveryAgentCommand) -> eyre::Result<()> {
             let request_id = authenticator
                 .update_recovery_agent(new_recovery_agent.clone())
                 .await
-                .wrap_err("update recovery agent failed")?;
+                .context("update recovery agent failed")?;
 
             let data = serde_json::json!({ "request_id": request_id });
             if cli.json {
@@ -40,7 +40,7 @@ pub async fn run(cli: &Cli, action: &RecoveryAgentCommand) -> eyre::Result<()> {
             let request_id = authenticator
                 .revert_recovery_agent_update()
                 .await
-                .wrap_err("revert recovery agent update failed")?;
+                .context("revert recovery agent update failed")?;
 
             let data = serde_json::json!({ "request_id": request_id });
             if cli.json {

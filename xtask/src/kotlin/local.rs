@@ -1,6 +1,6 @@
 //! Maven Local publishing.
 
-use eyre::{bail, Result, WrapErr as _};
+use eyre::{bail, Context, Result};
 use xshell::{cmd, Shell};
 
 use super::build;
@@ -21,7 +21,7 @@ pub(super) fn run(sh: &Shell, version: &str) -> Result<()> {
         "./gradlew :walletkit:publishToMavenLocal {version_property}"
     )
     .run()
-    .wrap_err("failed to publish WalletKit to Maven Local")?;
+    .context("failed to publish WalletKit to Maven Local")?;
 
     println!("Published org.world:walletkit:{version} to Maven Local.");
     Ok(())

@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use eyre::{bail, Result, WrapErr as _};
+use eyre::{bail, Context, Result};
 use xshell::{cmd, Shell};
 
 const DEFAULT_CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3";
@@ -142,7 +142,7 @@ fn build_native_libraries(sh: &Shell) -> Result<()> {
             "cargo build --package {PACKAGE_NAME} --target {target} --release --locked --target-dir {TARGET_DIR} --features {features}"
         )
         .run()
-        .wrap_err_with(|| format!("failed to build WalletKit for {target}"))?;
+        .with_context(|| format!("failed to build WalletKit for {target}"))?;
     }
 
     Ok(())
@@ -169,10 +169,10 @@ fn create_universal_simulator_library(sh: &Shell) -> Result<()> {
         "lipo -create {arm_library} {intel_library} -output {output}"
     )
     .run()
-    .wrap_err("failed to create universal iOS simulator library")?;
+    .context("failed to create universal iOS simulator library")?;
     cmd!(sh, "lipo -info {output}")
         .run()
-        .wrap_err("failed to inspect universal iOS simulator library")
+        .context("failed to inspect universal iOS simulator library")
 }
 
 fn generate_bindings(sh: &Shell, sources_dir: &Path) -> Result<()> {
@@ -186,12 +186,12 @@ fn generate_bindings(sh: &Shell, sources_dir: &Path) -> Result<()> {
         "cargo run -p uniffi-bindgen --locked --target-dir {TARGET_DIR} -- generate {library} --library --crate walletkit_core --language swift --no-format --out-dir {bindings_dir}"
     )
     .run()
-    .wrap_err("failed to generate Swift bindings")?;
+    .context("failed to generate Swift bindings")?;
 
     let generated_source = bindings_dir.join("walletkit_core.swift");
     let destination = sources_dir.join("walletkit.swift");
     sh.copy_file(&generated_source, &destination)
-        .wrap_err_with(|| {
+        .with_context(|| {
             format!(
                 "failed to move {} to {}",
                 generated_source.display(),
@@ -214,7 +214,7 @@ fn copy_directory_contents(
 ) -> Result<()> {
     for source_path in sh
         .read_dir(source)
-        .wrap_err_with(|| format!("failed to read {}", source.display()))?
+        .with_context(|| format!("failed to read {}", source.display()))?
     {
         let file_name = source_path
             .file_name()
@@ -226,7 +226,7 @@ fn copy_directory_contents(
             copy_directory_contents(sh, &source_path, &destination_path)?;
         } else {
             sh.copy_file(&source_path, &destination_path)
-                .wrap_err_with(|| {
+                .with_context(|| {
                     format!(
                         "failed to copy {} to {}",
                         source_path.display(),
@@ -281,7 +281,7 @@ fn create_xcframework(sh: &Shell, framework_output: &Path) -> Result<()> {
         "xcodebuild -create-xcframework -framework {device_framework} -framework {simulator_framework} -output {framework_output}"
     )
     .run()
-    .wrap_err("failed to create WalletKit XCFramework")
+    .context("failed to create WalletKit XCFramework")
 }
 
 fn make_framework(
@@ -300,7 +300,7 @@ fn make_framework(
 
     let modulemap_contents = sh
         .read_file(modulemap)
-        .wrap_err_with(|| format!("failed to read {}", modulemap.display()))?;
+        .with_context(|| format!("failed to read {}", modulemap.display()))?;
     let framework_modulemap = modulemap_contents
         .lines()
         .map(|line| {

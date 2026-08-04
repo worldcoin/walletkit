@@ -4,7 +4,7 @@ use std::io::Read;
 
 use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine as _};
 use clap::Subcommand;
-use eyre::WrapErr as _;
+use eyre::Context;
 use walletkit_core::requests::ProofRequest;
 use walletkit_testkit::env::TestEnv;
 use walletkit_testkit::issuer::issue_faux_credential;
@@ -119,7 +119,7 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<String> {
         Ok(buf)
     } else {
         let meta =
-            std::fs::metadata(path).wrap_err_with(|| format!("cannot read {path}"))?;
+            std::fs::metadata(path).with_context(|| format!("cannot read {path}"))?;
         eyre::ensure!(
             meta.len() <= MAX_INPUT_BYTES,
             "input file too large (max 10 MiB)"
@@ -149,16 +149,16 @@ async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Resul
 
     let json_str = read_file_or_stdin(request)?;
     let proof_request =
-        ProofRequest::from_json(&json_str).wrap_err("invalid proof request")?;
+        ProofRequest::from_json(&json_str).context("invalid proof request")?;
 
     let response = authenticator
         .generate_proof(&proof_request, Some(ts))
         .await
-        .wrap_err("proof generation failed")?;
+        .context("proof generation failed")?;
 
     let response_json = response
         .to_json()
-        .wrap_err("response serialization failed")?;
+        .context("response serialization failed")?;
 
     if cli.json {
         let parsed: serde_json::Value = serde_json::from_str(&response_json)?;
@@ -214,9 +214,9 @@ async fn run_verify(
     let response_json = read_file_or_stdin(response_path)?;
 
     let proof_request: CoreProofRequest =
-        CoreProofRequest::from_json(&request_json).wrap_err("invalid proof request")?;
+        CoreProofRequest::from_json(&request_json).context("invalid proof request")?;
     let proof_response: CoreProofResponse =
-        serde_json::from_str(&response_json).wrap_err("invalid proof response")?;
+        serde_json::from_str(&response_json).context("invalid proof response")?;
 
     let env = cli_test_env(cli, verifier_address)?;
     let results = verify_proof_onchain(&env, &proof_request, &proof_response).await?;
@@ -314,11 +314,11 @@ async fn run_test(
     let ts = now_secs();
     let walletkit_request =
         ProofRequest::from_json(&serde_json::to_string(&proof_request)?)
-            .wrap_err("invalid proof request")?;
+            .context("invalid proof request")?;
     let proof_response = authenticator
         .generate_proof(&walletkit_request, Some(ts))
         .await
-        .wrap_err("proof generation failed")?;
+        .context("proof generation failed")?;
 
     if !cli.json {
         eprintln!("Verifying proof on-chain...");
@@ -351,9 +351,10 @@ async fn run_test(
 }
 
 fn parse_field_element(value: &str, label: &str) -> eyre::Result<FieldElement> {
-    value.trim().parse::<FieldElement>().wrap_err_with(|| {
-        format!("invalid {label}: expected 32-byte hex field element")
-    })
+    value
+        .trim()
+        .parse::<FieldElement>()
+        .with_context(|| format!("invalid {label}: expected 32-byte hex field element"))
 }
 
 fn run_verify_ownership(
@@ -365,9 +366,9 @@ fn run_verify_ownership(
     let b64 = read_file_or_stdin(proof_path)?;
     let bytes = BASE64_URL_SAFE_NO_PAD
         .decode(b64.trim())
-        .wrap_err("invalid base64 ownership proof")?;
+        .context("invalid base64 ownership proof")?;
     let proof: OwnershipProof = ciborium::from_reader(&bytes[..])
-        .wrap_err("failed to decode ownership proof CBOR")?;
+        .context("failed to decode ownership proof CBOR")?;
 
     let nonce_fe = parse_field_element(nonce, "--nonce")?;
     let sub_fe = parse_field_element(sub, "--sub")?;

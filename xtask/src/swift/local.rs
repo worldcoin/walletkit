@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use eyre::{Result, WrapErr as _};
+use eyre::{Context, Result};
 use xshell::Shell;
 
 use super::{build, package};
@@ -21,11 +21,11 @@ pub(super) fn run(sh: &Shell) -> Result<()> {
     println!("Creating Package.swift for local development...");
     let template = sh
         .read_file(PACKAGE_TEMPLATE)
-        .wrap_err_with(|| format!("failed to read {PACKAGE_TEMPLATE}"))?;
+        .with_context(|| format!("failed to read {PACKAGE_TEMPLATE}"))?;
     let manifest = package::local_manifest(&template, FRAMEWORK_NAME)?;
     let manifest_path = Path::new(LOCAL_BUILD_DIR).join("Package.swift");
     sh.write_file(&manifest_path, manifest)
-        .wrap_err_with(|| format!("failed to write {}", manifest_path.display()))?;
+        .with_context(|| format!("failed to write {}", manifest_path.display()))?;
 
     println!("Swift package built successfully.");
     println!("Package location: {LOCAL_BUILD_DIR}");

@@ -4,7 +4,7 @@ use alloy::providers::ProviderBuilder;
 use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use alloy::sol;
 use alloy_core::primitives::U160;
-use eyre::WrapErr as _;
+use eyre::Context;
 use rand::rngs::OsRng;
 use uuid::Uuid;
 use world_id_core::primitives::{rp::RpId, FieldElement, OprfKeyId, SessionId};
@@ -68,7 +68,7 @@ pub fn build_test_request(
     let expires_at = created_at + expires_in;
 
     let signer = PrivateKeySigner::from_bytes(&env.rp_signing_key.into())
-        .wrap_err("failed to create RP signer")?;
+        .context("failed to create RP signer")?;
 
     let action =
         (proof_type == ProofType::Uniqueness).then(|| FieldElement::from(1u64));
@@ -78,7 +78,7 @@ pub fn build_test_request(
         expires_at,
         action.map(|action| *action),
     );
-    let signature = signer.sign_message_sync(&msg).wrap_err("signing failed")?;
+    let signature = signer.sign_message_sync(&msg).context("signing failed")?;
 
     let item_id = Uuid::new_v4().to_string();
 
@@ -109,7 +109,7 @@ pub fn build_test_request(
     };
     request
         .validate_proof_type()
-        .wrap_err("inconsistent proof_type / session_id combination")?;
+        .context("inconsistent proof_type / session_id combination")?;
     Ok(request)
 }
 
@@ -144,7 +144,7 @@ pub async fn verify_proof_onchain(
     }
     proof_request
         .validate_response(proof_response)
-        .wrap_err("proof response does not match proof request")?;
+        .context("proof response does not match proof request")?;
 
     let provider = ProviderBuilder::new().connect_http(env.rpc_url.parse()?);
     let verifier_contract = IWorldIDVerifier::new(env.world_id_verifier, &provider);

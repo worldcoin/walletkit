@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use eyre::{bail, Result, WrapErr as _};
+use eyre::{bail, Context, Result};
 use xshell::{cmd, Shell};
 
 use super::build;
@@ -40,7 +40,7 @@ fn ensure_macos() -> Result<()> {
 fn ensure_simulator_sdk(sh: &Shell) -> Result<()> {
     let sdks = cmd!(sh, "xcodebuild -showsdks")
         .read()
-        .wrap_err("failed to list installed Xcode SDKs")?;
+        .context("failed to list installed Xcode SDKs")?;
     if !sdks.contains("iphonesimulator") {
         bail!("no iOS Simulator SDK is installed; available SDKs:\n{sdks}");
     }
@@ -79,7 +79,7 @@ fn copy_directory_contents(
 ) -> Result<()> {
     for source_path in sh
         .read_dir(source)
-        .wrap_err_with(|| format!("failed to read {}", source.display()))?
+        .with_context(|| format!("failed to read {}", source.display()))?
     {
         let file_name = source_path
             .file_name()
@@ -91,7 +91,7 @@ fn copy_directory_contents(
             copy_directory_contents(sh, &source_path, &destination_path)?;
         } else {
             sh.copy_file(&source_path, &destination_path)
-                .wrap_err_with(|| {
+                .with_context(|| {
                     format!(
                         "failed to copy {} to {}",
                         source_path.display(),
@@ -115,7 +115,7 @@ fn remove_derived_data(sh: &Shell) -> Result<()> {
 
     for path in sh
         .read_dir(&derived_data)
-        .wrap_err_with(|| format!("failed to read {}", derived_data.display()))?
+        .with_context(|| format!("failed to read {}", derived_data.display()))?
     {
         if path.file_name().is_some_and(|name| {
             name.to_string_lossy()
@@ -130,7 +130,7 @@ fn remove_derived_data(sh: &Shell) -> Result<()> {
 fn find_simulator(sh: &Shell) -> Result<String> {
     let devices = cmd!(sh, "xcrun simctl list devices available")
         .read()
-        .wrap_err("failed to list available iOS simulators")?;
+        .context("failed to list available iOS simulators")?;
 
     simulator_id(&devices, "iPhone 16")
         .or_else(|| simulator_id(&devices, "iPhone"))
@@ -172,13 +172,13 @@ fn prepare_simulator(sh: &Shell, simulator_id: &str) -> Result<()> {
         .run();
     cmd!(sh, "xcrun simctl erase {simulator_id}")
         .run()
-        .wrap_err("failed to erase iOS simulator")?;
+        .context("failed to erase iOS simulator")?;
     cmd!(sh, "xcrun simctl boot {simulator_id}")
         .run()
-        .wrap_err("failed to boot iOS simulator")?;
+        .context("failed to boot iOS simulator")?;
     cmd!(sh, "xcrun simctl bootstatus {simulator_id} -b")
         .run()
-        .wrap_err("iOS simulator failed to finish booting")
+        .context("iOS simulator failed to finish booting")
 }
 
 fn is_ci(sh: &Shell) -> bool {
@@ -197,7 +197,7 @@ fn run_tests(sh: &Shell, simulator_id: &str) -> Result<()> {
         "xcodebuild test -scheme WalletKitForeignTestPackage -destination {destination} -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO"
     )
     .run()
-    .wrap_err("Swift foreign-binding tests failed")
+    .context("Swift foreign-binding tests failed")
 }
 
 #[cfg(test)]

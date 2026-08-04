@@ -1,7 +1,7 @@
 //! Test credential acquisition.
 use std::future::Future;
 
-use eyre::WrapErr as _;
+use eyre::Context;
 use walletkit_core::storage::CredentialStore;
 use walletkit_core::{Authenticator, Credential, FieldElement};
 use world_id_core::{
@@ -71,7 +71,7 @@ pub async fn import_credential(
         None => authenticator
             .generate_credential_blinding_factor_remote(credential.issuer_schema_id())
             .await
-            .wrap_err("blinding factor generation failed")?,
+            .context("blinding factor generation failed")?,
     };
 
     let credential_id = store
@@ -82,7 +82,7 @@ pub async fn import_credential(
             associated_data,
             now_secs(),
         )
-        .wrap_err("store credential failed")?;
+        .context("store credential failed")?;
 
     Ok(ImportedCredential {
         credential_id,
@@ -107,7 +107,7 @@ pub async fn issue_faux_credential(
     let blinding_factor = authenticator
         .generate_credential_blinding_factor_remote(env.faux_issuer_schema_id)
         .await
-        .wrap_err("blinding factor generation failed")?;
+        .context("blinding factor generation failed")?;
 
     let sub_hex = authenticator
         .compute_credential_sub(&blinding_factor)
@@ -119,7 +119,7 @@ pub async fn issue_faux_credential(
         .json(&serde_json::json!({ "sub": sub_hex }))
         .send()
         .await
-        .wrap_err("faux issuer request failed")?;
+        .context("faux issuer request failed")?;
 
     if !resp.status().is_success() {
         let status = resp.status();
@@ -130,21 +130,21 @@ pub async fn issue_faux_credential(
     let body: serde_json::Value = resp
         .json()
         .await
-        .wrap_err("failed to parse faux issuer response")?;
+        .context("failed to parse faux issuer response")?;
 
     let cred_value = body.get("credential").ok_or_else(|| {
         eyre::eyre!("faux issuer response missing 'credential' field")
     })?;
 
     let cred_bytes =
-        serde_json::to_vec(cred_value).wrap_err("failed to serialize credential")?;
+        serde_json::to_vec(cred_value).context("failed to serialize credential")?;
     let cred = Credential::from_bytes(cred_bytes)
-        .wrap_err("invalid credential from faux issuer")?;
+        .context("invalid credential from faux issuer")?;
     let expires_at = cred.expires_at();
 
     let credential_id = store
         .store_credential(&cred, &blinding_factor, expires_at, None, now_secs())
-        .wrap_err("store credential failed")?;
+        .context("store credential failed")?;
 
     Ok(IssuedCredential {
         credential_id,
@@ -177,7 +177,7 @@ pub async fn issue_local_credential(
     let bf = authenticator
         .generate_credential_blinding_factor_remote(env.local_issuer_schema_id)
         .await
-        .wrap_err("blinding factor generation failed")?;
+        .context("blinding factor generation failed")?;
 
     let mut credential = build_base_credential(
         env.local_issuer_schema_id,
@@ -187,13 +187,13 @@ pub async fn issue_local_credential(
         bf.0,
     );
     credential.issuer = issuer_public_key;
-    let credential_hash = credential.hash().wrap_err("failed to hash credential")?;
+    let credential_hash = credential.hash().context("failed to hash credential")?;
     credential.signature = Some(issuer_secret_key.sign(*credential_hash));
 
     let walletkit_credential: Credential = credential.into();
     let credential_id = store
         .store_credential(&walletkit_credential, &bf, expires_at, None, now_secs())
-        .wrap_err("store credential failed")?;
+        .context("store credential failed")?;
 
     Ok(IssuedCredential {
         credential_id,
@@ -223,14 +223,14 @@ where
     let bf = authenticator
         .generate_credential_blinding_factor_remote(schema_id)
         .await
-        .wrap_err("blinding factor generation failed")?;
+        .context("blinding factor generation failed")?;
     let sub = authenticator.compute_credential_sub(&bf);
     let credential = issue_credential(sub)
         .await
-        .wrap_err("Failed to issue credential")?;
+        .context("Failed to issue credential")?;
     let credential_id = store
         .store_credential(&credential, &bf, credential.expires_at(), None, now_secs())
-        .wrap_err("store credential failed")?;
+        .context("store credential failed")?;
 
     Ok(IssuedCredential {
         credential_id,

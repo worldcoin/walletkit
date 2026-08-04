@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use eyre::{bail, Result, WrapErr as _};
+use eyre::{bail, Context, Result};
 use xshell::{cmd, Shell};
 
 const DEFAULT_CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3";
@@ -84,7 +84,7 @@ fn build_native_libraries(sh: &Shell) -> Result<()> {
             "cargo build -p walletkit --release --locked --target {rust_target} --features {features}"
         )
         .run()
-        .wrap_err_with(|| format!("failed to build WalletKit for {rust_target}"))?;
+        .with_context(|| format!("failed to build WalletKit for {rust_target}"))?;
     }
 
     Ok(())
@@ -106,7 +106,7 @@ fn copy_native_libraries(sh: &Shell, artifacts_dir: Option<&Path>) -> Result<()>
         let destination = destination_dir.join("libwalletkit.so");
 
         sh.create_dir(&destination_dir)?;
-        sh.copy_file(&source, &destination).wrap_err_with(|| {
+        sh.copy_file(&source, &destination).with_context(|| {
             format!(
                 "failed to copy {} to {}",
                 source.display(),
@@ -147,7 +147,7 @@ fn generate_bindings(sh: &Shell) -> Result<()> {
         "cargo run -p uniffi-bindgen --locked -- generate {library} --library --language kotlin --no-format --out-dir {KOTLIN_SOURCE_DIR}"
     )
     .run()
-    .wrap_err("failed to generate Kotlin bindings")
+    .context("failed to generate Kotlin bindings")
 }
 
 #[cfg(test)]

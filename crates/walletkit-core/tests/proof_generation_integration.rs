@@ -25,7 +25,7 @@ use walletkit_testkit::{
 };
 use world_id_core::primitives::FieldElement;
 
-use eyre::{Result, WrapErr as _};
+use eyre::{Context, Result};
 
 // Distinct seeds so these tests drive independent staging identities, both from
 // each other and from the `walletkit-testkit` e2e suite (which uses [7], [8], [9]).
@@ -52,7 +52,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
     init_tracing();
 
     let env = TestEnv::default_staging();
-    let root = TempDir::new().wrap_err("failed to create temp storage dir")?;
+    let root = TempDir::new().context("failed to create temp storage dir")?;
 
     let now = now_secs();
     let credential_type = CredentialType::Local {
@@ -70,7 +70,7 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         None,
     )
     .await
-    .wrap_err("uniqueness flow should succeed")?;
+    .context("uniqueness flow should succeed")?;
 
     assert!(
         outcome.verified(),
@@ -91,7 +91,7 @@ async fn e2e_session_proof() -> Result<()> {
     init_tracing();
 
     let env = TestEnv::default_staging();
-    let root = TempDir::new().wrap_err("failed to create temp storage dir")?;
+    let root = TempDir::new().context("failed to create temp storage dir")?;
     let schema_id = env.local_issuer_schema_id;
 
     // Phase 1: register the account and initialize a filesystem-backed authenticator.
@@ -102,7 +102,7 @@ async fn e2e_session_proof() -> Result<()> {
         Some(Address::ZERO),
     )
     .await
-    .wrap_err("account setup failed")?;
+    .context("account setup failed")?;
 
     // Phase 2: issue a local-EdDSA credential to prove over.
     let now = now_secs();
@@ -114,7 +114,7 @@ async fn e2e_session_proof() -> Result<()> {
         now + CREDENTIAL_TTL_SECS,
     )
     .await
-    .wrap_err("credential issuance failed")?;
+    .context("credential issuance failed")?;
 
     // Phase 3: create a session and confirm the session seed is cached.
     let create_request = build_test_request(
@@ -125,11 +125,11 @@ async fn e2e_session_proof() -> Result<()> {
         ProofType::CreateSession,
         None,
     )
-    .wrap_err("failed to build create-session request")?;
+    .context("failed to build create-session request")?;
     let create_response = authenticator
         .generate_proof(&create_request.clone().into(), Some(now_secs()))
         .await
-        .wrap_err("generate_proof (create session) failed")?
+        .context("generate_proof (create session) failed")?
         .into_inner();
     assert!(create_response.error.is_none(), "create-session error");
     assert_eq!(create_response.responses.len(), 1);
@@ -151,7 +151,7 @@ async fn e2e_session_proof() -> Result<()> {
         .expect("create-session response should include session_id");
     let cached_seed = store
         .get_session_seed(session_id.oprf_seed, now)
-        .wrap_err("get_session_seed failed")?;
+        .context("get_session_seed failed")?;
     assert!(
         cached_seed.is_some(),
         "create-session should cache session_id_r_seed"
@@ -166,11 +166,11 @@ async fn e2e_session_proof() -> Result<()> {
         ProofType::Session,
         Some(session_id),
     )
-    .wrap_err("failed to build session request")?;
+    .context("failed to build session request")?;
     let session_response = authenticator
         .generate_proof(&session_request.clone().into(), Some(now_secs()))
         .await
-        .wrap_err("generate_proof (session) failed")?
+        .context("generate_proof (session) failed")?
         .into_inner();
     assert!(session_response.error.is_none(), "session proof error");
     assert_eq!(session_response.responses.len(), 1);
@@ -193,14 +193,14 @@ async fn e2e_session_proof() -> Result<()> {
     // Merkle root — both prove inclusion of the same on-chain account.
     let (credential, blinding_factor) = store
         .get_credential(schema_id, now)
-        .wrap_err("failed to retrieve issued credential")?
+        .context("failed to retrieve issued credential")?
         .ok_or_else(|| eyre::eyre!("issued credential missing from store"))?;
     let sub = credential.sub();
     let nonce = FieldElement::random(&mut OsRng).into();
     let ownership_proof = authenticator
         .prove_credential_sub(&nonce, &blinding_factor, &sub)
         .await
-        .wrap_err("ownership proof generation failed")?;
+        .context("ownership proof generation failed")?;
     assert_eq!(
         ownership_proof.merkle_root().to_u256(),
         session_item.proof.as_ethereum_representation()[4],

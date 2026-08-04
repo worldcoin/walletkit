@@ -52,10 +52,10 @@ pub async fn init_and_register_account(
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     register_account(env, seed, recovery_address, root)
         .await
-        .wrap_err("account registration failed")?;
+        .context("account registration failed")?;
     let (authenticator, store) = init_authenticator(env, seed, root, now)
         .await
-        .wrap_err("authenticator initialization failed")?;
+        .context("authenticator initialization failed")?;
 
     Ok((authenticator, store))
 }
@@ -179,11 +179,11 @@ pub async fn generate_and_verify_test_proof(
     let (authenticator, store) =
         init_and_register_account(env, seed, root, Some(Address::ZERO))
             .await
-            .wrap_err("account setup failed")?;
+            .context("account setup failed")?;
 
     let credential_id = issue_credential(env, credential_type, &authenticator, &store)
         .await
-        .wrap_err("credential issuance failed")?
+        .context("credential issuance failed")?
         .credential_id;
 
     let core_request = build_test_request(
@@ -194,19 +194,19 @@ pub async fn generate_and_verify_test_proof(
         proof_type,
         session_id,
     )
-    .wrap_err("failed to build proof request")?;
+    .context("failed to build proof request")?;
 
     let walletkit_request: walletkit_core::requests::ProofRequest =
         core_request.clone().into();
     let proof_response = authenticator
         .generate_proof(&walletkit_request, Some(now_secs()))
         .await
-        .wrap_err("proof generation failed")?;
+        .context("proof generation failed")?;
     let response = proof_response.into_inner();
 
     let mut results = verify_proof_onchain(env, &core_request, &response)
         .await
-        .wrap_err("on-chain verification failed")?;
+        .context("on-chain verification failed")?;
     eyre::ensure!(
         results.len() == 1,
         "expected exactly one verification result, got {}",

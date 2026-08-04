@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use alloy::primitives::Address;
-use eyre::WrapErr as _;
+use eyre::Context;
 use walletkit_core::storage::CredentialStore;
 use walletkit_core::Authenticator;
 use world_id_core::Authenticator as CoreAuthenticator;
@@ -43,11 +43,11 @@ pub async fn init_authenticator(
         store.clone(),
     )
     .await
-    .wrap_err("authenticator init failed")?;
+    .context("authenticator init failed")?;
 
     authenticator
         .init_storage(now)
-        .wrap_err("storage init failed")?;
+        .context("storage init failed")?;
 
     Ok((authenticator, store))
 }
@@ -79,7 +79,7 @@ pub async fn register_account(
         artifacts,
     )
     .await
-    .wrap_err("account creation/init failed")?;
+    .context("account creation/init failed")?;
 
     Ok(core_authenticator.leaf_index())
 }

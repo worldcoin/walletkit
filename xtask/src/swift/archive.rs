@@ -1,6 +1,6 @@
 //! Release Swift package manifest generation.
 
-use eyre::{ensure, Result, WrapErr as _};
+use eyre::{ensure, Context, Result};
 use xshell::{cmd, Shell};
 
 use super::package;
@@ -24,15 +24,15 @@ pub(super) fn run(
     println!("Creating release Package.swift for WalletKit {release_version}...");
     let template = sh
         .read_file(PACKAGE_TEMPLATE)
-        .wrap_err_with(|| format!("failed to read {PACKAGE_TEMPLATE}"))?;
+        .with_context(|| format!("failed to read {PACKAGE_TEMPLATE}"))?;
     let manifest =
         package::release_manifest(&template, asset_url, checksum, release_version)?;
     sh.write_file(RELEASE_MANIFEST, manifest)
-        .wrap_err_with(|| format!("failed to write {RELEASE_MANIFEST}"))?;
+        .with_context(|| format!("failed to write {RELEASE_MANIFEST}"))?;
 
     cmd!(sh, "swiftlint lint --autocorrect {RELEASE_MANIFEST}")
         .run()
-        .wrap_err("failed to lint the release Package.swift")?;
+        .context("failed to lint the release Package.swift")?;
 
     println!("Package.swift built successfully for version {release_version}.");
     Ok(())
