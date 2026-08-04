@@ -106,7 +106,7 @@ issuers = []
 # Embeds compiled zkeys into the binary at compile time for `EmbeddedZkArtifacts`.
 # On native targets, `CachingZkArtifacts` can cache the embedded material on disk.
 # Disable this feature for environments where binary size matters (e.g. WASM).
-embed-zkeys = ["world-id-proof/embed-zkeys"]
+embed-zkeys = ["world-id-proof/embed-zk-artifacts"]
 
 # SECTION: V3 Feature Flags
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.
