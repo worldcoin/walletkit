@@ -1,10 +1,7 @@
 //! `walletkit setup` — one-shot wallet initialization and account registration.
 
-use std::sync::Arc;
-
 use crate::output;
-use walletkit_core::authenticator::artifacts::caching::CachingZkArtifacts;
-use walletkit_testkit::storage::create_fs_credential_store;
+use walletkit_testkit::storage::create_artifact_source;
 
 use super::auth::{register_and_poll, RegisterOutcome};
 use super::{resolve_root, Cli};
@@ -22,10 +19,8 @@ pub async fn run(cli: &Cli, poll_interval: u64) -> eyre::Result<()> {
 
     // --- wallet init ---
     std::fs::create_dir_all(&root)?;
-    let store = create_fs_credential_store(&root)?;
 
-    // TODO: Extract to a common artifact source for tests
-    CachingZkArtifacts::new(Arc::new(store.paths()?)).preload()?;
+    create_artifact_source(&root).preload()?;
 
     // Generate and persist a 32-byte seed.
     let mut seed = vec![0u8; 32];
