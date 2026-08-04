@@ -31,8 +31,8 @@ pub async fn init_authenticator(
     root: &Path,
     now: u64,
 ) -> eyre::Result<(Authenticator, Arc<CredentialStore>)> {
-    let store = create_fs_credential_store(&root)?;
-    let artifacts = create_artifact_source(&root);
+    let store = create_fs_credential_store(root)?;
+    let artifacts = create_artifact_source(root);
 
     artifacts.preload()?;
 
