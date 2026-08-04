@@ -3,9 +3,13 @@
 
 use std::{path::Path, sync::Arc};
 
-use world_id_core::artifacts::{error::ZkArtifactError, ZkArtifactKind};
+use world_id_core::artifacts::{
+    error::ZkArtifactError, ZkArtifactKind, ZkArtifactSourceExt,
+};
 use world_id_proof::{
-    artifacts::{embedded::EmbeddedZkArtifacts, ZkArtifactSource},
+    artifacts::{
+        cached::CachedZkArtifactSource, embedded::EmbeddedZkArtifacts, ZkArtifactSource,
+    },
     CircomGroth16Material, CircomGroth16MaterialBuilder, OwnershipProver,
     OwnershipVerifier, ZkeyError,
 };
@@ -18,11 +22,8 @@ use crate::{error::WalletKitError, storage::StoragePaths};
 /// Nullifier proofs) on the filesystem.
 ///
 /// Primary reason for caching is amortization of decompression costs.
-#[derive(Clone, uniffi::Object)]
-pub struct CachingZkArtifacts {
-    storage_paths: Arc<StoragePaths>,
-    inner: Arc<dyn ZkArtifactSource>,
-}
+#[derive(uniffi::Object)]
+pub struct CachingZkArtifacts(CachedZkArtifactSource);
 
 #[uniffi::export]
 impl CachingZkArtifacts {
@@ -30,10 +31,8 @@ impl CachingZkArtifacts {
     #[uniffi::constructor]
     #[must_use]
     pub fn new(storage_paths: Arc<StoragePaths>) -> Self {
-        Self {
-            storage_paths,
-            inner: Arc::new(EmbeddedZkArtifacts),
-        }
+        let inner = CachingZkArtifactsInner::new(storage_paths).cached();
+        Self(inner)
     }
 
     /// Preloads the nullifier & query materials and caches them to the filesystem.
@@ -61,6 +60,46 @@ impl CachingZkArtifacts {
 }
 
 impl ZkArtifactSource for CachingZkArtifacts {
+    fn query_material(&self) -> Result<Arc<CircomGroth16Material>, ZkArtifactError> {
+        self.0.query_material()
+    }
+
+    fn nullifier_material(
+        &self,
+    ) -> Result<Arc<CircomGroth16Material>, ZkArtifactError> {
+        self.0.nullifier_material()
+    }
+
+    fn ownership_prover(&self) -> Result<OwnershipProver, ZkArtifactError> {
+        self.0.ownership_prover()
+    }
+
+    fn ownership_verifier(&self) -> Result<OwnershipVerifier, ZkArtifactError> {
+        self.0.ownership_verifier()
+    }
+}
+
+/// An inner implementation layer of the caching zk artifacts source.
+///
+/// It implements the caching logic & exists to be wrapped by the `CachedZkArtifactSource` which
+/// provides in-memory caching of the artifacts.
+#[derive(Clone, uniffi::Object)]
+struct CachingZkArtifactsInner {
+    storage_paths: Arc<StoragePaths>,
+    inner: Arc<dyn ZkArtifactSource>,
+}
+
+impl CachingZkArtifactsInner {
+    #[must_use]
+    fn new(storage_paths: Arc<StoragePaths>) -> Self {
+        Self {
+            storage_paths,
+            inner: Arc::new(EmbeddedZkArtifacts),
+        }
+    }
+}
+
+impl ZkArtifactSource for CachingZkArtifactsInner {
     fn query_material(&self) -> Result<Arc<CircomGroth16Material>, ZkArtifactError> {
         let maybe_query_material = self.try_query_material_from_cache()?;
         if let Some(query_material) = maybe_query_material {
@@ -108,14 +147,14 @@ impl ZkArtifactSource for CachingZkArtifacts {
     }
 }
 
-impl CachingZkArtifacts {
+impl CachingZkArtifactsInner {
     /// Attempts to load the **query** Gorth16 material from cache
     ///
     /// Returns `Ok(None)` if cached material does not exist or is invalid/corrupted
     ///
     /// # Errors
     /// Can fail on an io operation when loading files from cache
-    pub fn try_query_material_from_cache(
+    fn try_query_material_from_cache(
         &self,
     ) -> Result<Option<Arc<CircomGroth16Material>>, ZkArtifactError> {
         Self::try_material_from_cache(
@@ -131,7 +170,7 @@ impl CachingZkArtifacts {
     ///
     /// # Errors
     /// Can fail on an io operation when loading files from cache
-    pub fn try_nullifier_material_from_cache(
+    fn try_nullifier_material_from_cache(
         &self,
     ) -> Result<Option<Arc<CircomGroth16Material>>, ZkArtifactError> {
         Self::try_material_from_cache(
