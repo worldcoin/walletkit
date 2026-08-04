@@ -4,9 +4,7 @@ use std::sync::Arc;
 
 use clap::Subcommand;
 use eyre::WrapErr as _;
-use walletkit_core::{
-    authenticator::artifacts::caching::CachingZkArtifacts, storage::StoragePaths,
-};
+use walletkit_core::storage::StoragePaths;
 
 use crate::output;
 use walletkit_testkit::storage::{create_artifact_source, create_fs_credential_store};
