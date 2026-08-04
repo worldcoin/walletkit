@@ -9,7 +9,7 @@ use walletkit_core::{
 };
 
 use crate::output;
-use walletkit_testkit::storage::create_fs_credential_store;
+use walletkit_testkit::storage::{create_artifact_source, create_fs_credential_store};
 
 use super::{init_authenticator, resolve_root, Cli};
 
@@ -45,11 +45,10 @@ fn run_init(cli: &Cli) -> eyre::Result<()> {
     let root = resolve_root(cli)?;
     std::fs::create_dir_all(&root)?;
     let store = create_fs_credential_store(&root)?;
+    let artifacts = create_artifact_source(&root);
     let paths = Arc::new(store.paths()?);
 
-    // TODO: Extract to a common artifact source for tests
-    // TODO: Do we even need this here?
-    CachingZkArtifacts::new(paths.clone()).preload()?;
+    artifacts.preload()?;
 
     // Generate and persist a 32-byte seed if one doesn't exist yet.
     let seed_path = root.join("seed");
