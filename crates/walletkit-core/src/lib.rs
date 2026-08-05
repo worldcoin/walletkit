@@ -4,18 +4,18 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! // Note: `Groth16Materials::from_embedded` requires the `embed-zkeys` Cargo feature.
-//! // On native targets you can alternatively use `Groth16Materials::from_cache` after
-//! // calling `storage::cache_embedded_groth16_material` to populate the on-disk cache.
+//! // Note: `EmbeddedZkArtifacts` requires the `embed-zkeys` Cargo feature.
+//! // On native targets, use `CachingZkArtifacts` to cache embedded material on disk.
 //! use std::sync::Arc;
+//! use walletkit_core::authenticator::artifacts::embedded::EmbeddedZkArtifacts;
 //! use walletkit_core::requests::ProofRequest;
 //! use walletkit_core::storage::CredentialStore;
-//! use walletkit_core::{Authenticator, Environment, Groth16Materials};
+//! use walletkit_core::{Authenticator, Environment};
 //!
 //! async fn generate_world_id_proof(
 //!     store: Arc<CredentialStore>,
 //! ) -> Result<(), Box<dyn std::error::Error>> {
-//!     let materials = Arc::new(Groth16Materials::from_embedded()?);
+//!     let artifacts = Arc::new(EmbeddedZkArtifacts::new());
 //!
 //!     // Initialize an authenticator for an already-registered World ID.
 //!     let seed = b"my_secret_seed_at_length_32_bytes!";
@@ -24,7 +24,7 @@
 //!         None, // uses default RPC URL
 //!         &Environment::Staging,
 //!         None, // uses default region
-//!         materials,
+//!         artifacts,
 //!         store,
 //!     )
 //!     .await?;
@@ -117,10 +117,10 @@ pub use credential::Credential;
 /// Credential storage primitives for World ID v4.
 pub mod storage;
 
-mod authenticator;
+pub mod authenticator;
 pub use authenticator::{
-    Authenticator, Groth16Materials, InitializingAuthenticator, RecoveryData,
-    RecoveryUpdateSignature, RegistrationStatus,
+    Authenticator, InitializingAuthenticator, RecoveryData, RecoveryUpdateSignature,
+    RegistrationStatus,
 };
 
 /// Default configuration values for each [`Environment`].

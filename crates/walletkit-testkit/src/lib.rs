@@ -50,7 +50,7 @@ pub async fn init_and_register_account(
     recovery_address: Option<Address>,
 ) -> eyre::Result<(Authenticator, Arc<CredentialStore>)> {
     let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    register_account(env, seed, recovery_address)
+    register_account(env, seed, recovery_address, root)
         .await
         .wrap_err("account registration failed")?;
     let (authenticator, store) = init_authenticator(env, seed, root, now)

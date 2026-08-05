@@ -64,6 +64,8 @@ rustls = { workspace = true, features = ["ring"] }
 sha2 = { workspace = true, features = ["force-soft"] }
 
 [dev-dependencies]
+world-id-proof = { workspace = true, features = ["embed-zk-artifacts"] }
+
 alloy = { workspace = true, features = [
   "getrandom",
   "json",
@@ -89,18 +91,30 @@ walletkit-testkit = { workspace = true }
 
 
 [features]
-default = ["issuers"]
+default = [
+  "issuers",
+  # embed-zkeys is a default feature because none of the current implementations
+  # provide any other way of loading the artifacts.
+  #
+  # Once we add a method of e.g. downloading the artifacts at runtime
+  # we can make this feature non-default
+  "embed-zkeys",
+]
 
 # Enables point-compression on all verifying keys. This results in ~2x smaller bundle size, but decompression is very expensive,
 # using it requires proper handling to ensure decompression is done once and cached. By default walletkit-swift and walletkit-android
 # ship with compressed keys. But this is disabled for tests.
-compress-zkeys = ["world-id-core/compress-zkeys"]
+compress-zkeys = [
+  "world-id-proof/compress-zkeys",
+  "world-id-proof/zstd-compress-zkeys",
+]
+
 issuers = []
 
-# Embeds compiled zkeys into the binary at compile time, enabling `Groth16Materials::from_embedded`.
-# Also activates `cache_embedded_groth16_material` on native targets.
+# Embeds compiled zkeys into the binary at compile time for `EmbeddedZkArtifacts`.
+# On native targets, `CachingZkArtifacts` can cache the embedded material on disk.
 # Disable this feature for environments where binary size matters (e.g. WASM).
-embed-zkeys = ["world-id-core/embed-zkeys", "world-id-core/zstd-compress-zkeys"]
+embed-zkeys = ["world-id-proof/embed-zk-artifacts"]
 
 # SECTION: V3 Feature Flags
 # Before conventions were introduced for external nullifiers with `app_id` & `action`, raw field elements were used.

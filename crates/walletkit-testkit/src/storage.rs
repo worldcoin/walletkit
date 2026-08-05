@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use uuid::Uuid;
+use walletkit_core::authenticator::artifacts::caching::CachingZkArtifacts;
 use walletkit_core::storage::{
     AtomicBlobStore, CredentialStore, DeviceKeystore, StorageError, StoragePaths,
     StorageProvider,
@@ -149,4 +150,12 @@ pub fn create_fs_credential_store(
 ) -> Result<Arc<CredentialStore>, StorageError> {
     let provider = FsStorageProvider::open(root);
     Ok(Arc::new(CredentialStore::from_provider(&provider)?))
+}
+
+/// Creates a `WalletKitZkArtifactSource` backed by the filesystem at `root`.
+#[must_use]
+pub fn create_artifact_source(root: &Path) -> Arc<CachingZkArtifacts> {
+    let provider = FsStorageProvider::open(root);
+
+    Arc::new(CachingZkArtifacts::new(provider.paths()))
 }

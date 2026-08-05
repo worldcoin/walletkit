@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use alloy::primitives::Address;
 use eyre::WrapErr as _;
-use walletkit_core::storage::{cache_embedded_groth16_material, CredentialStore};
-use walletkit_core::{Authenticator, Groth16Materials};
+use walletkit_core::storage::CredentialStore;
+use walletkit_core::Authenticator;
 use world_id_core::Authenticator as CoreAuthenticator;
 
 use crate::env::TestEnv;
-use crate::storage::create_fs_credential_store;
+use crate::storage::{create_artifact_source, create_fs_credential_store};
 
 /// Initializes a filesystem-backed [`Authenticator`] and its [`CredentialStore`].
 ///
@@ -32,17 +32,14 @@ pub async fn init_authenticator(
     now: u64,
 ) -> eyre::Result<(Authenticator, Arc<CredentialStore>)> {
     let store = create_fs_credential_store(root)?;
-    let paths = store.storage_paths()?;
-    cache_embedded_groth16_material(&paths)?;
-    let materials = Arc::new(
-        Groth16Materials::from_cache(Arc::new(paths))
-            .wrap_err("failed to load cached Groth16 materials")?,
-    );
+    let artifacts = create_artifact_source(root);
+
+    artifacts.preload()?;
 
     let authenticator = Authenticator::init_with_config(
         seed,
         env.world_id_config.clone(),
-        materials,
+        artifacts,
         store.clone(),
     )
     .await
@@ -69,11 +66,17 @@ pub async fn register_account(
     env: &TestEnv,
     seed: &[u8],
     recovery_address: Option<Address>,
+    root: impl AsRef<Path>,
 ) -> eyre::Result<u64> {
+    let root = root.as_ref();
+
+    let artifacts = create_artifact_source(root);
+
     let core_authenticator = CoreAuthenticator::init_or_register(
         seed,
         env.world_id_config.clone(),
         recovery_address,
+        artifacts,
     )
     .await
     .wrap_err("account creation/init failed")?;

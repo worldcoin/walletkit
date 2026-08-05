@@ -251,8 +251,7 @@ impl RecoveryBindingManager {
 #[cfg(all(not(target_arch = "wasm32"), feature = "embed-zkeys"))]
 mod tests {
     use super::*;
-    use crate::authenticator::Groth16Materials;
-    use crate::storage::cache_embedded_groth16_material;
+    use crate::authenticator::artifacts::caching::CachingZkArtifacts;
     use crate::storage::tests_utils::{temp_root_path, InMemoryStorageProvider};
     use crate::storage::CredentialStore;
     use mockito::ServerGuard;
@@ -377,19 +376,16 @@ mod tests {
     async fn create_test_authenticator(seed: &[u8], rpc_url: String) -> Authenticator {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let store = create_test_credential_store();
-        let paths = store.storage_paths().unwrap();
-        cache_embedded_groth16_material(&paths).expect("cache groth16 material");
-        let materials = Arc::new(
-            Groth16Materials::from_cache(Arc::new(paths.clone()))
-                .expect("load groth16 material"),
-        );
+
+        let artifacts =
+            Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
 
         let authenticator = Authenticator::init_with_defaults(
             seed,
             Some(rpc_url.clone()),
             &Environment::Staging,
             None,
-            materials,
+            artifacts,
             store.clone(),
         )
         .await

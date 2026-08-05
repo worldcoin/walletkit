@@ -11,6 +11,7 @@ use walletkit_testkit::issuer::issue_faux_credential;
 use walletkit_testkit::proof::{
     build_test_request, verify_proof_onchain, VerifyItemResult,
 };
+use walletkit_testkit::storage::create_artifact_source;
 use walletkit_testkit::utils::now_secs;
 use world_id_core::primitives::{FieldElement, OwnershipProof, SessionId};
 use world_id_core::requests::{
@@ -18,6 +19,7 @@ use world_id_core::requests::{
 };
 use world_id_proof::ownership_proof::verify_ownership_proof;
 
+use crate::commands::resolve_root;
 use crate::output;
 
 use super::{
@@ -370,7 +372,10 @@ fn run_verify_ownership(
     let nonce_fe = parse_field_element(nonce, "--nonce")?;
     let sub_fe = parse_field_element(sub, "--sub")?;
 
-    let result = verify_ownership_proof(&proof, nonce_fe, sub_fe);
+    let root = resolve_root(cli)?;
+    let artifacts = create_artifact_source(&root);
+
+    let result = verify_ownership_proof(&proof, nonce_fe, sub_fe, artifacts.as_ref());
     let merkle_root = proof.merkle_root.to_string();
 
     if cli.json {
