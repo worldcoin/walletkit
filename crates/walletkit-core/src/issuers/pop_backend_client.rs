@@ -301,13 +301,13 @@ mod tests {
         drop(server);
     }
 
-    #[test_case("{\"error\":\"IdentityNotFound\"}", "identity_not_found")]
+    #[test_case(r#"{"error":"IdentityNotFound"}"#, "identity_not_found")]
     #[test_case(
-        "{\"error\":\"NoSuccessfulCaptureFound\"}",
+        r#"{"error":"NoSuccessfulCaptureFound"}"#,
         "no_successful_capture_found"
     )]
-    #[test_case("{\"error\":\"DebugReportNotFound\"}", "debug_report_not_found")]
-    #[test_case("{\"error\":\"SomethingNewFromTheBackend\"}", "debug_report_not_found")]
+    #[test_case(r#"{"error":"DebugReportNotFound"}"#, "debug_report_not_found")]
+    #[test_case(r#"{"error":"SomethingNewFromTheBackend"}"#, "debug_report_not_found")]
     #[test_case("not json at all", "debug_report_not_found")]
     #[tokio::test]
     async fn test_register_recovery_agent_404_maps_to_eligibility_error(
