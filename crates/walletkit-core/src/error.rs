@@ -176,6 +176,15 @@ pub enum WalletKitError {
     #[error("debug_report_not_found")]
     DebugReportNotFound,
 
+    /// The `PoP` backend has no identity for the credential's `sub`, so the recovery binding
+    /// was attempted before the credential refresh that associates the `sub` with a signup.
+    #[error("identity_not_found")]
+    IdentityNotFound,
+
+    /// The identity exists but has no successful capture to check recovery eligibility against.
+    #[error("no_successful_capture_found")]
+    NoSuccessfulCaptureFound,
+
     /// The user is not eligible for recovery
     #[error("not_eligible_for_recovery")]
     NotEligibleForRecovery,

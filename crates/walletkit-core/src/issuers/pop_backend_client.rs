@@ -27,6 +27,12 @@ struct ChallengeResponse {
     challenge: String,
 }
 
+/// Error body returned by the recovery binding endpoints, carrying the sentinel error name.
+#[derive(Deserialize)]
+struct RecoveryBindingErrorResponse {
+    error: String,
+}
+
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct RecoveryBindingResponse {
     #[serde(rename = "recoveryAgent")]
@@ -64,7 +70,9 @@ impl PopBackendClient {
     ///
     /// # Errors
     ///
-    /// * [`WalletKitError::DebugReportNotFound`] — HTTP 404 Not Found.
+    /// * [`WalletKitError::IdentityNotFound`], [`WalletKitError::NoSuccessfulCaptureFound`],
+    ///   [`WalletKitError::DebugReportNotFound`]: HTTP 404 Not Found, split by the body's
+    ///   `error` field (see [`eligibility_error`]).
     /// * [`WalletKitError::NotEligibleForRecovery`] — HTTP 412 Precondition Failed.
     /// * [`WalletKitError::NetworkError`] — any other non-success status; the response body is in
     ///   `error` and the HTTP status in `status`. This includes conflicts (e.g. HTTP 409) and
@@ -88,7 +96,7 @@ impl PopBackendClient {
         let response_status = response.status();
         match response_status {
             reqwest::StatusCode::CREATED | reqwest::StatusCode::OK => Ok(()),
-            reqwest::StatusCode::NOT_FOUND => Err(WalletKitError::DebugReportNotFound),
+            reqwest::StatusCode::NOT_FOUND => Err(eligibility_error(response).await),
             reqwest::StatusCode::PRECONDITION_FAILED => {
                 Err(WalletKitError::NotEligibleForRecovery)
             }
@@ -221,10 +229,31 @@ impl PopBackendClient {
     }
 }
 
+/// Maps a 404 from `POST /api/v1/recovery-binding` to the eligibility failure that caused it.
+///
+/// The backend returns 404 for three distinct causes (missing identity, no successful capture,
+/// missing debug report) and distinguishes them only by the `error` field of the body. Only the
+/// first is repairable by the caller (refreshing the credential associates the `sub` with a
+/// signup), so collapsing them leaves callers retrying the two that cannot be repaired.
+/// Unrecognized bodies keep the historical [`WalletKitError::DebugReportNotFound`] mapping.
+async fn eligibility_error(response: reqwest::Response) -> WalletKitError {
+    match response
+        .json::<RecoveryBindingErrorResponse>()
+        .await
+        .map(|body| body.error)
+        .as_deref()
+    {
+        Ok("IdentityNotFound") => WalletKitError::IdentityNotFound,
+        Ok("NoSuccessfulCaptureFound") => WalletKitError::NoSuccessfulCaptureFound,
+        _ => WalletKitError::DebugReportNotFound,
+    }
+}
+
 #[cfg(test)]
 mod tests {
 
     use super::*;
+    use test_case::test_case;
 
     #[tokio::test]
     async fn test_register_recovery_agent_success() {
@@ -272,18 +301,28 @@ mod tests {
         drop(server);
     }
 
+    #[test_case("{\"error\":\"IdentityNotFound\"}", "identity_not_found")]
+    #[test_case(
+        "{\"error\":\"NoSuccessfulCaptureFound\"}",
+        "no_successful_capture_found"
+    )]
+    #[test_case("{\"error\":\"DebugReportNotFound\"}", "debug_report_not_found")]
+    #[test_case("{\"error\":\"SomethingNewFromTheBackend\"}", "debug_report_not_found")]
+    #[test_case("not json at all", "debug_report_not_found")]
     #[tokio::test]
-    async fn test_register_recovery_agent_no_debug_report() {
+    async fn test_register_recovery_agent_404_maps_to_eligibility_error(
+        response_body: &str,
+        expected_error: &str,
+    ) {
         let mut server = mockito::Server::new_async().await;
         let url = server.url();
 
-        let recovery_agent = "0x1234567890abcdef".to_string();
         let request = ManageRecoveryBindingRequest {
             sub: "test-sub-123".to_string(),
             leaf_index: 42,
             signature: "0x1234567890abcdef".to_string(),
             nonce: "0x1234567890abcdef1".to_string(),
-            recovery_agent: recovery_agent.clone(),
+            recovery_agent: "0x1234567890abcdef".to_string(),
         };
 
         let mock = server
@@ -298,7 +337,7 @@ mod tests {
             .match_header("X-Auth-Signature", "security_token")
             .match_header("X-Auth-Challenge", "challenge")
             .with_status(404)
-            .with_body("{\"error\":\"DebugReportNotFound\"}")
+            .with_body(response_body)
             .create_async()
             .await;
 
@@ -313,12 +352,8 @@ mod tests {
             )
             .await;
 
-        assert!(result.is_err(), "Expected error but got success");
-        let err = result.unwrap_err();
-        assert!(
-            matches!(err, WalletKitError::DebugReportNotFound),
-            "Expected DebugReportNotFound error, got: {err:?}"
-        );
+        let err = result.expect_err("Expected error but got success");
+        assert_eq!(err.to_string(), expected_error);
         mock.assert_async().await;
         drop(server);
     }
