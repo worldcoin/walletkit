@@ -71,8 +71,8 @@ impl PopBackendClient {
     /// # Errors
     ///
     /// * [`WalletKitError::IdentityNotFound`], [`WalletKitError::NoSuccessfulCaptureFound`],
-    ///   [`WalletKitError::DebugReportNotFound`]: HTTP 404 Not Found, split by the body's
-    ///   `error` field (see [`eligibility_error`]).
+    ///   [`WalletKitError::DebugReportNotFound`]: HTTP 404 Not Found, split by the `error`
+    ///   field of the response body. An unrecognized body maps to `DebugReportNotFound`.
     /// * [`WalletKitError::NotEligibleForRecovery`] — HTTP 412 Precondition Failed.
     /// * [`WalletKitError::NetworkError`] — any other non-success status; the response body is in
     ///   `error` and the HTTP status in `status`. This includes conflicts (e.g. HTTP 409) and
