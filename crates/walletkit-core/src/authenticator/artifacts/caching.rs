@@ -37,7 +37,7 @@ impl CachingZkArtifacts {
         Self(inner)
     }
 
-    /// Returns this caching implementation as a WalletKit ZK artifact source.
+    /// Returns this caching implementation as a `WalletKit` ZK artifact source.
     ///
     /// This explicit conversion is required by foreign-language bindings, which do not preserve
     /// Rust blanket trait implementations as class inheritance.
