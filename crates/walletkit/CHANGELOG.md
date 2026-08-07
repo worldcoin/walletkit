@@ -7,17 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.20.5](https://github.com/worldcoin/walletkit/compare/v0.20.4...v0.20.5) - 2026-08-07
+## [0.21.0](https://github.com/worldcoin/walletkit/compare/v0.20.4...v0.21.0) - 2026-08-07
 
-### Added
+### Changed
 
-- WIP-102 update/revert recovery agent ([#381](https://github.com/worldcoin/walletkit/pull/381))
+- [**breaking**] replace the recovery-agent initiate/execute/cancel flow with update/revert ([#381](https://github.com/worldcoin/walletkit/pull/381))
+- [**breaking**] replace `Groth16Materials` with `ZkArtifactSource` implementations ([#458](https://github.com/worldcoin/walletkit/pull/458), [#463](https://github.com/worldcoin/walletkit/pull/463))
 
 ### Other
 
-- Update WalletKit to use `ZkArtifactSource` trait ([#458](https://github.com/worldcoin/walletkit/pull/458))
 - *(swift)* replace build scripts with xtask ([#455](https://github.com/worldcoin/walletkit/pull/455))
-- Expose caching ZK artifacts as an artifact source ([#463](https://github.com/worldcoin/walletkit/pull/463))
 
 ## [0.20.4](https://github.com/worldcoin/walletkit/compare/v0.20.3...v0.20.4) - 2026-07-27
 
