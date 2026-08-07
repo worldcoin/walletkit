@@ -16,6 +16,8 @@ use world_id_proof::{
 
 use crate::{error::WalletKitError, storage::StoragePaths};
 
+use super::WalletKitZkArtifactSource;
+
 /// A crate specific source for ZK Artifacts
 ///
 /// Loads ZK Artifacts from embedded data & caches the resulting artifacts (for the Query &
@@ -33,6 +35,17 @@ impl CachingZkArtifacts {
     pub fn new(storage_paths: Arc<StoragePaths>) -> Self {
         let inner = CachingZkArtifactsInner::new(storage_paths).cached();
         Self(inner)
+    }
+
+    /// Returns this caching implementation as a `WalletKit` ZK artifact source.
+    ///
+    /// This explicit conversion is required by foreign-language bindings, which do not preserve
+    /// Rust blanket trait implementations as class inheritance.
+    #[must_use]
+    pub fn as_zk_artifact_source(
+        self: Arc<Self>,
+    ) -> Arc<dyn WalletKitZkArtifactSource> {
+        self
     }
 
     /// Preloads the nullifier & query materials and caches them to the filesystem.
