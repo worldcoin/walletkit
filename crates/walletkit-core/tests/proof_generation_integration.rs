@@ -18,12 +18,14 @@ use rand::rngs::OsRng;
 use tempfile::TempDir;
 use walletkit_testkit::issuer::issue_local_credential;
 use walletkit_testkit::proof::build_test_request;
+use walletkit_testkit::storage::create_artifact_source;
 use walletkit_testkit::utils::now_secs;
 use walletkit_testkit::{
     generate_and_verify_test_proof, init_and_register_account, CredentialType,
     ProofType, TestEnv,
 };
-use world_id_core::primitives::FieldElement;
+use world_id_core::primitives::{FieldElement, OwnershipProof as CoreOwnershipProof};
+use world_id_proof::ownership_proof::verify_ownership_proof;
 
 use eyre::{Result, WrapErr as _};
 
@@ -206,6 +208,54 @@ async fn e2e_session_proof() -> Result<()> {
         session_item.proof.as_ethereum_representation()[4],
         "ownership proof Merkle root should match the session proof"
     );
+
+    // Phase 6: the proof must actually verify. Matching Merkle roots says the
+    // proof covers the right account; it says nothing about validity, so a
+    // prover emitting structurally-valid garbage would satisfy Phase 5 alone.
+    let artifacts = create_artifact_source(root.path());
+    let encoded = ownership_proof.encode().wrap_err("encoding failed")?;
+    let core_proof: CoreOwnershipProof = ciborium::from_reader(&encoded[..])
+        .wrap_err("failed to decode the ownership proof")?;
+
+    verify_ownership_proof(&core_proof, nonce.0, sub.0, artifacts.as_ref())
+        .wrap_err("ownership proof should verify against the embedded verifier")?;
+
+    // Phase 7: and it must fail when tampered with. Without these, a verifier
+    // that returned Ok unconditionally would look healthy.
+    let mut wrong_root = core_proof.clone();
+    wrong_root.merkle_root = FieldElement::from(1u64);
+    assert!(
+        verify_ownership_proof(&wrong_root, nonce.0, sub.0, artifacts.as_ref())
+            .is_err(),
+        "verification must reject a mutated merkle_root"
+    );
+
+    let mut flipped_byte = core_proof.clone();
+    flipped_byte.proof.narg_string[0] ^= 0x01;
+    assert!(
+        verify_ownership_proof(&flipped_byte, nonce.0, sub.0, artifacts.as_ref())
+            .is_err(),
+        "verification must reject a flipped narg_string byte"
+    );
+
+    let wrong_sub = FieldElement::from(2u64);
+    assert!(
+        verify_ownership_proof(&core_proof, nonce.0, wrong_sub, artifacts.as_ref())
+            .is_err(),
+        "verification must reject a proof presented for a different sub"
+    );
+
+    // Phase 8: the payload the host forwards must be the shape the verifier
+    // parses, built from a real proof rather than a fixture.
+    let body = ownership_proof
+        .to_verification_request_json("6f1a8b2c-0e4d-4a7b-9c3e-5d2f8a1b7c40", &sub)
+        .wrap_err("verification request serialization failed")?;
+    let body: serde_json::Value = serde_json::from_str(&body)
+        .wrap_err("verification request is not valid JSON")?;
+    assert_eq!(body["challenge_type"], "enrollment");
+    assert_eq!(body["credential_sub"], sub.to_hex_string().as_str());
+    assert!(body["proof"]["proof"]["narg_string"].is_string());
+    assert!(body["proof"]["proof"]["hints"].is_string());
 
     Ok(())
 }

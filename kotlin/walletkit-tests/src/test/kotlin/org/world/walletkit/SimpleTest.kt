@@ -1,10 +1,13 @@
 package org.world.walletkit
 
+import uniffi.walletkit_core.FieldElement
 import uniffi.walletkit_core.LogLevel
 import uniffi.walletkit_core.Logger
+import uniffi.walletkit_core.OwnershipProof
 import uniffi.walletkit_core.emitLog
 import uniffi.walletkit_core.initLogging
 import kotlin.test.Test
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 private class CapturingLogger : Logger {
@@ -45,5 +48,20 @@ class SimpleTest {
                 level == LogLevel.INFO && message.contains("bridge test")
             }
         assertTrue(hasBridgedMessage, "expected info-level bridged log")
+    }
+
+    /// Binds the WIP-103 verification-request builder as a value, so a rename,
+    /// a dropped `#[uniffi::export]`, or a changed parameter type fails to
+    /// compile here. Generating a proof to call it needs a registered account
+    /// and staging network, which belongs in the Rust integration suite.
+    @Test
+    fun ownershipProofExposesVerificationRequestBuilder() {
+        fun callBuilder(
+            proof: OwnershipProof,
+            challengeId: String,
+            credentialSub: FieldElement,
+        ): String = proof.toVerificationRequestJson(challengeId, credentialSub)
+
+        assertNotNull(::callBuilder)
     }
 }
