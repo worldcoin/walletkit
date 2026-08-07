@@ -103,12 +103,8 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the challenge fetch, signing, or backend request fails,
     /// or if the user is not eligible for recovery ([`WalletKitError::NotEligibleForRecovery`]).
-    /// or if the backend has no identity for `sub` ([`WalletKitError::IdentityNotFound`]), which
-    /// means the credential refresh that associates `sub` with a signup has not completed, so a
-    /// retry only succeeds after it does.
-    /// or if the identity has no successful capture ([`WalletKitError::NoSuccessfulCaptureFound`])
-    /// or no debug report ([`WalletKitError::DebugReportNotFound`]); neither is repairable by
-    /// retrying the bind.
+    /// or if the user fails the eligibility check ([`WalletKitError::IdentityNotFound`],
+    /// [`WalletKitError::NoSuccessfulCaptureFound`], [`WalletKitError::DebugReportNotFound`]).
     /// or if any other unexpected error occurs ([`WalletKitError::NetworkError`]).
     pub async fn bind_recovery_agent(
         &self,

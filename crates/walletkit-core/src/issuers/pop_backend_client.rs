@@ -229,14 +229,9 @@ impl PopBackendClient {
     }
 }
 
-/// Maps a 404 from `POST /api/v1/recovery-binding` to the eligibility failure that caused it.
+/// Maps a 404 from `POST /api/v1/recovery-binding` to the eligibility failure named in the body.
 ///
-/// The backend returns 404 for three distinct causes (missing identity, no successful capture,
-/// missing debug report) and distinguishes them only by the `error` field of the body, whose value
-/// is the sentinel name from signup-service `shared/recoveryeligibility/checker.go`. Only the
-/// first is repairable by the caller (refreshing the credential associates the `sub` with a
-/// signup), so collapsing them leaves callers retrying the two that cannot be repaired.
-/// Unrecognized bodies keep the historical [`WalletKitError::DebugReportNotFound`] mapping.
+/// An unrecognized body keeps the historical [`WalletKitError::DebugReportNotFound`] mapping.
 async fn eligibility_error(response: reqwest::Response) -> WalletKitError {
     match response
         .json::<RecoveryBindingErrorResponse>()
