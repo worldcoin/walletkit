@@ -50,10 +50,8 @@ class SimpleTest {
         assertTrue(hasBridgedMessage, "expected info-level bridged log")
     }
 
-    /// Binds the WIP-103 verification-request builder as a value, so a rename,
-    /// a dropped `#[uniffi::export]`, or a changed parameter type fails to
-    /// compile here. Generating a proof to call it needs a registered account
-    /// and staging network, which belongs in the Rust integration suite.
+    // Compile-time only: a rename, a dropped export, or a changed parameter
+    // type fails here. Calling it needs a proof, so that stays in Rust.
     @Test
     fun ownershipProofExposesVerificationRequestBuilder() {
         fun callBuilder(
