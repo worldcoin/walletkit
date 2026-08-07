@@ -30,6 +30,11 @@ jobs:
           uniffi_version: ${{ vars.UNIFFI_VERSION }}
           rust_toolchain_channel: ${{ vars.RUST_TOOLCHAIN_CHANNEL }}
 
+      # Runs on the runner's preinstalled cargo, which honours rust-toolchain.toml.
+      # No nargo install: the check reads pinned versions, it does not compile Noir.
+      - name: Check nargo pins against Cargo.lock
+        run: cargo xtask nargo check-pins
+
   lint:
     name: Format, Clippy & Build
     runs-on: ubuntu-latest

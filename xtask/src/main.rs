@@ -1,6 +1,7 @@
 //! Repository automation for `WalletKit`.
 
 mod kotlin;
+mod nargo;
 mod swift;
 
 use std::path::Path;
@@ -24,6 +25,12 @@ enum Command {
         command: kotlin::Command,
     },
 
+    /// Noir toolchain pinning.
+    Nargo {
+        #[command(subcommand)]
+        command: nargo::Command,
+    },
+
     /// Swift/iOS automation.
     Swift {
         #[command(subcommand)]
@@ -38,6 +45,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Command::Kotlin { command } => kotlin::run(&sh, &command),
+        Command::Nargo { command } => nargo::run(&sh, &command),
         Command::Swift { command } => swift::run(&sh, &command),
     }
 }

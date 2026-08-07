@@ -27,7 +27,7 @@ struct FrameworkSlice<'a> {
 pub(super) fn run(sh: &Shell, output_dir: Option<&Path>) -> Result<()> {
     ensure_macos()?;
     ensure_ios_sdks(sh)?;
-    ensure_nargo(sh)?;
+    crate::nargo::ensure_installed(sh)?;
 
     let output_dir = resolve_output_dir(output_dir);
     let sources_dir = output_dir.join("Sources/WalletKit");
@@ -82,21 +82,6 @@ fn ensure_ios_sdks(sh: &Shell) -> Result<()> {
                  sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer"
             );
         }
-    }
-    Ok(())
-}
-
-fn ensure_nargo(sh: &Shell) -> Result<()> {
-    if cmd!(sh, "nargo --version")
-        .quiet()
-        .ignore_stdout()
-        .ignore_stderr()
-        .run()
-        .is_err()
-    {
-        bail!(
-            "nargo v1.0.0-beta.11 is required; install it with noirup or use the Nix default devshell"
-        );
     }
     Ok(())
 }

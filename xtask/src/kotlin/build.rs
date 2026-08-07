@@ -36,6 +36,7 @@ const ANDROID_TARGETS: [AndroidTarget; 4] = [
 pub(super) fn run(sh: &Shell, artifacts_dir: Option<&Path>) -> Result<()> {
     if artifacts_dir.is_none() {
         ensure_android_toolchain(sh)?;
+        crate::nargo::ensure_installed(sh)?;
         build_native_libraries(sh)?;
     }
 
