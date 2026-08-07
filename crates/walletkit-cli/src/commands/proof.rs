@@ -105,7 +105,11 @@ pub enum ProofCommand {
         /// Credential blinding factor, as a 32-byte hex field element.
         #[arg(long)]
         blinding_factor: String,
-        /// Path to write the base64url-encoded proof to; stdout when omitted.
+        /// Challenge UUID from the verifier. When set, emits the full
+        /// `POST /api/v4/verify` body instead of the bare proof.
+        #[arg(long)]
+        challenge_id: Option<String>,
+        /// Path to write the output to; stdout when omitted.
         #[arg(long)]
         output: Option<String>,
     },
@@ -377,6 +381,7 @@ async fn run_prove_ownership(
     cli: &Cli,
     nonce: &str,
     blinding_factor: &str,
+    challenge_id: Option<&str>,
     output_path: Option<&str>,
 ) -> eyre::Result<()> {
     let nonce = WalletKitFieldElement::try_from_hex_string(nonce)
@@ -393,12 +398,17 @@ async fn run_prove_ownership(
         .await
         .wrap_err("ownership proof generation failed")?;
 
-    let encoded = proof.encode_b64().wrap_err("failed to encode proof")?;
+    let payload = match challenge_id {
+        Some(challenge_id) => proof
+            .to_verification_request_json(challenge_id, &sub)
+            .wrap_err("failed to build the verification request")?,
+        None => proof.encode_b64().wrap_err("failed to encode proof")?,
+    };
     let merkle_root = proof.merkle_root().to_hex_string();
     let sub = sub.to_hex_string();
 
     if let Some(path) = output_path {
-        std::fs::write(path, &encoded)
+        std::fs::write(path, &payload)
             .wrap_err_with(|| format!("failed to write proof to {path}"))?;
     }
 
@@ -407,7 +417,9 @@ async fn run_prove_ownership(
             &serde_json::json!({
                 "sub": sub,
                 "merkle_root": merkle_root,
-                "proof": output_path.is_none().then_some(encoded),
+                "bytes": payload.len(),
+                "verification_request": challenge_id.is_some(),
+                "payload": output_path.is_none().then_some(payload),
                 "output": output_path,
             }),
             true,
@@ -416,9 +428,10 @@ async fn run_prove_ownership(
         println!("{} ownership proof generated", output::pass_label());
         println!("  sub:         {sub}");
         println!("  merkle_root: {merkle_root}");
+        println!("  bytes:       {}", payload.len());
         match output_path {
             Some(path) => println!("  written to:  {path}"),
-            None => println!("\n{encoded}"),
+            None => println!("\n{payload}"),
         }
     }
     Ok(())
@@ -503,8 +516,18 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
         ProofCommand::ProveOwnership {
             nonce,
             blinding_factor,
+            challenge_id,
             output,
-        } => run_prove_ownership(cli, nonce, blinding_factor, output.as_deref()).await,
+        } => {
+            run_prove_ownership(
+                cli,
+                nonce,
+                blinding_factor,
+                challenge_id.as_deref(),
+                output.as_deref(),
+            )
+            .await
+        }
         ProofCommand::VerifyOwnership { proof, nonce, sub } => {
             run_verify_ownership(cli, proof, nonce, sub)
         }
