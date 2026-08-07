@@ -176,6 +176,14 @@ pub enum WalletKitError {
     #[error("debug_report_not_found")]
     DebugReportNotFound,
 
+    /// The backend has no identity for the credential's `sub`
+    #[error("identity_not_found")]
+    IdentityNotFound,
+
+    /// The identity has no successful capture to check recovery eligibility against
+    #[error("no_successful_capture_found")]
+    NoSuccessfulCaptureFound,
+
     /// The user is not eligible for recovery
     #[error("not_eligible_for_recovery")]
     NotEligibleForRecovery,
