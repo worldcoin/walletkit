@@ -450,6 +450,11 @@ impl Authenticator {
     /// - Returns a network error if the Merkle inclusion proof cannot be
     ///   fetched from the indexer.
     /// - Returns [`WalletKitError::ProofGeneration`] if the ZK proof fails.
+    #[tracing::instrument(
+        target = "walletkit_latency",
+        name = "ownership_proof",
+        skip_all
+    )]
     pub async fn prove_credential_sub(
         &self,
         nonce: &FieldElement,
@@ -475,15 +480,20 @@ impl Authenticator {
                 .as_secs();
 
             let inclusion_proof = self.fetch_inclusion_proof_with_cache(now).await?;
-            let proof = self
-                .inner
-                .prove_credential_sub(
+
+            // Nested under `ownership_proof` and a sibling of the fetch's
+            // `indexer_inclusion_proof`, so WHIR proving cost is attributable on
+            // its own rather than inferred by subtraction.
+            let proof = tracing::Instrument::instrument(
+                self.inner.prove_credential_sub(
                     nonce.0,
                     blinding_factor.0,
                     sub.0,
                     Some(inclusion_proof),
-                )
-                .await?;
+                ),
+                tracing::info_span!(target: "walletkit_latency", "whir_proving"),
+            )
+            .await?;
 
             Ok(OwnershipProof(proof))
         }

@@ -6,6 +6,7 @@ use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine as _};
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use walletkit_core::requests::ProofRequest;
+use walletkit_core::FieldElement as WalletKitFieldElement;
 use walletkit_testkit::env::TestEnv;
 use walletkit_testkit::issuer::issue_faux_credential;
 use walletkit_testkit::proof::{
@@ -96,6 +97,19 @@ pub enum ProofCommand {
         #[arg(long)]
         verifier_address: Option<String>,
     },
+    /// Generate a WIP-103 ownership proof for a credential `sub`.
+    ProveOwnership {
+        /// Nonce from the verifier's challenge endpoint, as a 32-byte hex field element.
+        #[arg(long)]
+        nonce: String,
+        /// Credential blinding factor, as a 32-byte hex field element.
+        #[arg(long)]
+        blinding_factor: String,
+        /// Path to write the base64url-encoded proof to; stdout when omitted.
+        #[arg(long)]
+        output: Option<String>,
+    },
+
     /// Verify a WIP-103 ownership proof from a base64-encoded file.
     VerifyOwnership {
         /// Path to a file containing the base64url-encoded ownership proof, or `-` for stdin.
@@ -356,6 +370,60 @@ fn parse_field_element(value: &str, label: &str) -> eyre::Result<FieldElement> {
     })
 }
 
+/// The nonce is supplied by the caller rather than fetched: walletkit has no
+/// verifier client, so the host redeems `POST /api/v4/zkp/challenge/enrollment`
+/// and passes the `nonce` in.
+async fn run_prove_ownership(
+    cli: &Cli,
+    nonce: &str,
+    blinding_factor: &str,
+    output_path: Option<&str>,
+) -> eyre::Result<()> {
+    let nonce = WalletKitFieldElement::try_from_hex_string(nonce)
+        .wrap_err("invalid --nonce: expected 32-byte hex field element")?;
+    let blinding_factor = WalletKitFieldElement::try_from_hex_string(blinding_factor)
+        .wrap_err(
+        "invalid --blinding-factor: expected 32-byte hex field element",
+    )?;
+
+    let (authenticator, _store) = init_authenticator(cli).await?;
+    let sub = authenticator.compute_credential_sub(&blinding_factor);
+    let proof = authenticator
+        .prove_credential_sub(&nonce, &blinding_factor, &sub)
+        .await
+        .wrap_err("ownership proof generation failed")?;
+
+    let encoded = proof.encode_b64().wrap_err("failed to encode proof")?;
+    let merkle_root = proof.merkle_root().to_hex_string();
+    let sub = sub.to_hex_string();
+
+    if let Some(path) = output_path {
+        std::fs::write(path, &encoded)
+            .wrap_err_with(|| format!("failed to write proof to {path}"))?;
+    }
+
+    if cli.json {
+        output::print_json_data(
+            &serde_json::json!({
+                "sub": sub,
+                "merkle_root": merkle_root,
+                "proof": output_path.is_none().then_some(encoded),
+                "output": output_path,
+            }),
+            true,
+        );
+    } else {
+        println!("{} ownership proof generated", output::pass_label());
+        println!("  sub:         {sub}");
+        println!("  merkle_root: {merkle_root}");
+        match output_path {
+            Some(path) => println!("  written to:  {path}"),
+            None => println!("\n{encoded}"),
+        }
+    }
+    Ok(())
+}
+
 fn run_verify_ownership(
     cli: &Cli,
     proof_path: &str,
@@ -432,6 +500,11 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             signal,
             verifier_address,
         } => run_test(cli, signal, verifier_address.as_deref()).await,
+        ProofCommand::ProveOwnership {
+            nonce,
+            blinding_factor,
+            output,
+        } => run_prove_ownership(cli, nonce, blinding_factor, output.as_deref()).await,
         ProofCommand::VerifyOwnership { proof, nonce, sub } => {
             run_verify_ownership(cli, proof, nonce, sub)
         }
