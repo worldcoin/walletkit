@@ -17,7 +17,7 @@ pub(super) fn run(sh: &Shell, skip_build: bool) -> Result<()> {
     ensure_macos()?;
 
     if !skip_build {
-        build::run(sh, None)?;
+        build::run(sh, None, build::Profile::Release)?;
     }
 
     ensure_simulator_sdk(sh)?;
