@@ -22,7 +22,7 @@ pub enum Command {
     Test(TestOptions),
 
     /// Build a Swift package for local development.
-    Local,
+    Local(LocalOptions),
 
     /// Generate the release `Package.swift` manifest.
     Archive(ArchiveOptions),
@@ -36,6 +36,15 @@ pub struct BuildOptions {
     /// Relative paths are resolved from the `swift` directory. Defaults to `swift`.
     #[arg(value_name = "OUTPUT_DIR")]
     output_dir: Option<PathBuf>,
+}
+
+/// Options for building a local Swift package.
+#[derive(Args)]
+pub struct LocalOptions {
+    /// Build an unoptimized binary with full debug symbols, for LLDB source-level
+    /// debugging of Rust code. Not suitable for distribution.
+    #[arg(long)]
+    debug: bool,
 }
 
 /// Options for running Swift foreign-binding tests.
@@ -65,9 +74,11 @@ pub struct ArchiveOptions {
 /// Runs a Swift/iOS task.
 pub fn run(sh: &Shell, command: &Command) -> Result<()> {
     match command {
-        Command::Build(options) => build::run(sh, options.output_dir.as_deref()),
+        Command::Build(options) => {
+            build::run(sh, options.output_dir.as_deref(), build::Profile::Release)
+        }
         Command::Test(options) => test::run(sh, options.skip_build),
-        Command::Local => local::run(sh),
+        Command::Local(options) => local::run(sh, options.debug),
         Command::Archive(options) => archive::run(
             sh,
             &options.asset_url,

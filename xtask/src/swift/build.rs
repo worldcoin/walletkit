@@ -18,13 +18,58 @@ const IOS_TARGETS: [&str; 3] = [
     "x86_64-apple-ios",
 ];
 
+/// Build profile for the native libraries backing the `XCFramework`. Both profiles build
+/// the same iOS targets; only optimization level, symbols, and output directory differ.
+#[derive(Clone, Copy)]
+pub(super) enum Profile {
+    /// Optimized, dead-stripped, symbols removed. Used for distributed releases.
+    Release,
+    /// Unoptimized with full debug symbols, for LLDB source-level debugging.
+    Debug,
+}
+
+impl Profile {
+    const fn cargo_profile_flag(self) -> Option<&'static str> {
+        match self {
+            Self::Release => Some("--release"),
+            Self::Debug => None,
+        }
+    }
+
+    const fn dir_name(self) -> &'static str {
+        match self {
+            Self::Release => "release",
+            Self::Debug => "debug",
+        }
+    }
+
+    const fn rustflags(self) -> &'static str {
+        match self {
+            Self::Release => {
+                "-C link-arg=-Wl,-application_extension \
+                 -C link-arg=-Wl,-dead_strip \
+                 -C link-arg=-Wl,-dead_strip_dylibs \
+                 -C embed-bitcode=no"
+            }
+            Self::Debug => {
+                "-C link-arg=-Wl,-application_extension \
+                 -C embed-bitcode=no"
+            }
+        }
+    }
+}
+
 struct FrameworkSlice<'a> {
     directory: &'a str,
     library: PathBuf,
     platform: &'a str,
 }
 
-pub(super) fn run(sh: &Shell, output_dir: Option<&Path>) -> Result<()> {
+pub(super) fn run(
+    sh: &Shell,
+    output_dir: Option<&Path>,
+    profile: Profile,
+) -> Result<()> {
     ensure_macos()?;
     ensure_ios_sdks(sh)?;
     ensure_nargo(sh)?;
@@ -34,8 +79,9 @@ pub(super) fn run(sh: &Shell, output_dir: Option<&Path>) -> Result<()> {
     let framework_output = output_dir.join(FRAMEWORK_NAME);
 
     println!(
-        "Building {FRAMEWORK_NAME} to {}",
-        framework_output.display()
+        "Building {FRAMEWORK_NAME} to {} ({})",
+        framework_output.display(),
+        profile.dir_name()
     );
 
     sh.remove_path(INTERMEDIATE_DIR)?;
@@ -46,11 +92,11 @@ pub(super) fn run(sh: &Shell, output_dir: Option<&Path>) -> Result<()> {
     ))?;
     sh.create_dir(&sources_dir)?;
 
-    configure_ios_build(sh);
-    build_native_libraries(sh)?;
-    create_universal_simulator_library(sh)?;
-    generate_bindings(sh, &sources_dir)?;
-    create_xcframework(sh, &framework_output)?;
+    configure_ios_build(sh, profile);
+    build_native_libraries(sh, profile)?;
+    create_universal_simulator_library(sh, profile)?;
+    generate_bindings(sh, &sources_dir, profile)?;
+    create_xcframework(sh, &framework_output, profile)?;
 
     sh.remove_path(INTERMEDIATE_DIR)?;
 
@@ -114,7 +160,7 @@ fn resolve_output_dir(output_dir: Option<&Path>) -> PathBuf {
     )
 }
 
-fn configure_ios_build(sh: &Shell) {
+fn configure_ios_build(sh: &Shell, profile: Profile) {
     sh.set_var("IPHONEOS_DEPLOYMENT_TARGET", "13.0");
     // aws-lc-sys references Linux-only entropy definitions while compiling an
     // unreachable iOS code path. Keep this workaround scoped to aws-lc-sys.
@@ -122,25 +168,21 @@ fn configure_ios_build(sh: &Shell) {
         "AWS_LC_SYS_CFLAGS",
         "-DRNDGETENTCNT=2 -Wno-implicit-function-declaration",
     );
-    sh.set_var(
-        "RUSTFLAGS",
-        "-C link-arg=-Wl,-application_extension \
-         -C link-arg=-Wl,-dead_strip \
-         -C link-arg=-Wl,-dead_strip_dylibs \
-         -C embed-bitcode=no",
-    );
+    sh.set_var("RUSTFLAGS", profile.rustflags());
 }
 
-fn build_native_libraries(sh: &Shell) -> Result<()> {
+fn build_native_libraries(sh: &Shell, profile: Profile) -> Result<()> {
     let features = cargo_features(sh);
+    let release_flag = profile.cargo_profile_flag();
     println!("Building WalletKit for iOS targets...");
 
     for target in IOS_TARGETS {
         println!("Building {target}...");
         cmd!(
             sh,
-            "cargo build --package {PACKAGE_NAME} --target {target} --release --locked --target-dir {TARGET_DIR} --features {features}"
+            "cargo build --package {PACKAGE_NAME} --target {target} --locked --target-dir {TARGET_DIR} --features {features}"
         )
+        .args(release_flag)
         .run()
         .wrap_err_with(|| format!("failed to build WalletKit for {target}"))?;
     }
@@ -155,11 +197,17 @@ fn cargo_features(sh: &Shell) -> String {
         .unwrap_or_else(|| DEFAULT_CARGO_FEATURES.to_owned())
 }
 
-fn create_universal_simulator_library(sh: &Shell) -> Result<()> {
-    let arm_library =
-        Path::new(TARGET_DIR).join("aarch64-apple-ios-sim/release/libwalletkit.a");
-    let intel_library =
-        Path::new(TARGET_DIR).join("x86_64-apple-ios/release/libwalletkit.a");
+fn create_universal_simulator_library(sh: &Shell, profile: Profile) -> Result<()> {
+    let arm_library = Path::new(TARGET_DIR)
+        .join("aarch64-apple-ios-sim")
+        .join(profile.dir_name())
+        .join("libwalletkit.a");
+
+    let intel_library = Path::new(TARGET_DIR)
+        .join("x86_64-apple-ios")
+        .join(profile.dir_name())
+        .join("libwalletkit.a");
+
     let output = Path::new(INTERMEDIATE_DIR)
         .join("target/universal-ios-sim/release/libwalletkit.a");
 
@@ -175,9 +223,12 @@ fn create_universal_simulator_library(sh: &Shell) -> Result<()> {
         .wrap_err("failed to inspect universal iOS simulator library")
 }
 
-fn generate_bindings(sh: &Shell, sources_dir: &Path) -> Result<()> {
-    let library =
-        Path::new(TARGET_DIR).join("aarch64-apple-ios-sim/release/libwalletkit.dylib");
+fn generate_bindings(sh: &Shell, sources_dir: &Path, profile: Profile) -> Result<()> {
+    let library = Path::new(TARGET_DIR)
+        .join("aarch64-apple-ios-sim")
+        .join(profile.dir_name())
+        .join("libwalletkit.dylib");
+
     let bindings_dir = Path::new(INTERMEDIATE_DIR).join("bindings");
 
     println!("Generating Swift bindings...");
@@ -239,13 +290,19 @@ fn copy_directory_contents(
     Ok(())
 }
 
-fn create_xcframework(sh: &Shell, framework_output: &Path) -> Result<()> {
+fn create_xcframework(
+    sh: &Shell,
+    framework_output: &Path,
+    profile: Profile,
+) -> Result<()> {
     let bindings_dir = Path::new(INTERMEDIATE_DIR).join("bindings");
     let slices = [
         FrameworkSlice {
             directory: "ios-arm64",
             library: Path::new(TARGET_DIR)
-                .join("aarch64-apple-ios/release/libwalletkit.a"),
+                .join("aarch64-apple-ios")
+                .join(profile.dir_name())
+                .join("libwalletkit.a"),
             platform: "iPhoneOS",
         },
         FrameworkSlice {
