@@ -30,6 +30,12 @@ fn cleanup_lock_file(path: &Path) {
     let _ = fs::remove_file(path);
 }
 
+fn temp_export_path() -> PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!("walletkit-vault-export-{}.bin", Uuid::new_v4()));
+    path
+}
+
 fn sample_blinding_factor() -> Vec<u8> {
     [0x11u8; 32].to_vec()
 }
@@ -514,6 +520,123 @@ fn test_list_credentials_round_trips_genesis_issued_at() {
     let records = db.list_credentials(None, 1000).expect("list credentials");
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].genesis_issued_at, genesis_issued_at);
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+/// Hosts record a checksum of an export, delete the plaintext copy so it does not sit on disk, and
+/// re-derive it later to prove the backup they hold still matches. That only holds if exporting an
+/// unchanged vault is byte-identical.
+#[test]
+fn test_plaintext_export_is_byte_identical_for_an_unchanged_vault() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let key = SecretBox::init_with(|| [0x0Du8; 32]);
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    db.store_credential(
+        10,
+        sample_blinding_factor(),
+        123,
+        2000,
+        b"credential".to_vec(),
+        None,
+        1000,
+    )
+    .expect("store credential");
+
+    let first = temp_export_path();
+    let second = temp_export_path();
+    db.export_plaintext(&first).expect("first export");
+    db.export_plaintext(&second).expect("second export");
+
+    assert_eq!(
+        fs::read(&first).expect("read first export"),
+        fs::read(&second).expect("read second export"),
+        "re-exporting an unchanged vault produced different bytes",
+    );
+
+    let _ = fs::remove_file(&first);
+    let _ = fs::remove_file(&second);
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+/// The re-derived export runs against a vault that was reopened and had its leaf index initialized
+/// again with the current time, unlike the export that produced the recorded checksum. Neither the
+/// reopen nor the re-init may change the exported bytes.
+#[test]
+fn test_plaintext_export_is_unaffected_by_reopening_and_reinitializing_the_leaf_index()
+{
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let key = SecretBox::init_with(|| [0x0Eu8; 32]);
+    let registered = temp_export_path();
+    let regenerated = temp_export_path();
+
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    db.init_leaf_index(7, 1000).expect("init leaf index");
+    db.store_credential(
+        10,
+        sample_blinding_factor(),
+        123,
+        2000,
+        b"credential".to_vec(),
+        None,
+        1000,
+    )
+    .expect("store credential");
+    db.export_plaintext(&registered).expect("registered export");
+    drop(db);
+
+    let db = CredentialVault::new(&path, &key).expect("reopen vault");
+    db.init_leaf_index(7, 9999).expect("re-init leaf index");
+    db.export_plaintext(&regenerated)
+        .expect("regenerated export");
+
+    assert_eq!(
+        fs::read(&registered).expect("read registered export"),
+        fs::read(&regenerated).expect("read regenerated export"),
+        "re-exporting after a reopen and a re-init produced different bytes",
+    );
+
+    let _ = fs::remove_file(&registered);
+    let _ = fs::remove_file(&regenerated);
+    cleanup_vault_files(&path);
+    cleanup_lock_file(&lock_path);
+}
+
+/// Control for the two tests above: the export has to track the vault's contents, otherwise
+/// byte-identical exports would prove nothing.
+#[test]
+fn test_plaintext_export_changes_when_a_credential_is_stored() {
+    let path = temp_vault_path();
+    let lock_path = temp_lock_path();
+    let key = SecretBox::init_with(|| [0x0Fu8; 32]);
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    let before = temp_export_path();
+    let after = temp_export_path();
+
+    db.export_plaintext(&before).expect("export before");
+    db.store_credential(
+        10,
+        sample_blinding_factor(),
+        123,
+        2000,
+        b"credential".to_vec(),
+        None,
+        1000,
+    )
+    .expect("store credential");
+    db.export_plaintext(&after).expect("export after");
+
+    assert_ne!(
+        fs::read(&before).expect("read export before"),
+        fs::read(&after).expect("read export after"),
+        "storing a credential did not change the exported bytes",
+    );
+
+    let _ = fs::remove_file(&before);
+    let _ = fs::remove_file(&after);
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
 }
