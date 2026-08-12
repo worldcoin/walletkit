@@ -1,4 +1,7 @@
-use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
+use base64::{
+    prelude::{BASE64_STANDARD, BASE64_URL_SAFE_NO_PAD},
+    Engine,
+};
 use world_id_core::primitives::OwnershipProof as CoreOwnershipProof;
 
 use crate::{error::WalletKitError, FieldElement};
@@ -35,5 +38,19 @@ impl OwnershipProof {
     #[must_use]
     pub fn merkle_root(&self) -> FieldElement {
         self.0.merkle_root.into()
+    }
+
+    /// The WHIR narg string component, base64-standard-encoded as the verification
+    /// service expects it on the wire.
+    #[must_use]
+    pub fn narg_string_b64(&self) -> String {
+        BASE64_STANDARD.encode(&self.0.proof.narg_string)
+    }
+
+    /// The WHIR hints component, base64-standard-encoded as the verification
+    /// service expects it on the wire.
+    #[must_use]
+    pub fn hints_b64(&self) -> String {
+        BASE64_STANDARD.encode(&self.0.proof.hints)
     }
 }
