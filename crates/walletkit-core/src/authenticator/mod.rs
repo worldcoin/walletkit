@@ -12,8 +12,9 @@ use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestId, GatewayRequestState},
     primitives::{AuthenticatorPublicKeySet, Config},
-    Authenticator as CoreAuthenticator, Credential as CoreCredential, CredentialInput,
-    EdDSAPublicKey, InitializingAuthenticator as CoreInitializingAuthenticator,
+    Authenticator as CoreAuthenticator, AuthenticatorError,
+    Credential as CoreCredential, CredentialInput, EdDSAPublicKey,
+    InitializingAuthenticator as CoreInitializingAuthenticator,
     OnchainKeyRepresentable, Signer,
 };
 
@@ -53,11 +54,12 @@ impl Authenticator {
 }
 
 fn parse_authenticator_pubkey(
+    attribute: &str,
     encoded_pubkey: impl AsRef<str>,
 ) -> Result<EdDSAPublicKey, WalletKitError> {
     let encoded_pubkey = encoded_pubkey.as_ref();
     let invalid_input = |reason: String| WalletKitError::InvalidInput {
-        attribute: "new_authenticator_pubkey".to_string(),
+        attribute: attribute.to_string(),
         reason,
     };
     let hex = encoded_pubkey.strip_prefix("0x").ok_or_else(|| {
@@ -276,8 +278,10 @@ impl Authenticator {
         new_authenticator_pubkey: String,
         new_authenticator_address: String,
     ) -> Result<String, WalletKitError> {
-        let new_authenticator_pubkey =
-            parse_authenticator_pubkey(new_authenticator_pubkey)?;
+        let new_authenticator_pubkey = parse_authenticator_pubkey(
+            "new_authenticator_pubkey",
+            new_authenticator_pubkey,
+        )?;
         let new_authenticator_address = Address::parse_from_ffi(
             &new_authenticator_address,
             "new_authenticator_address",
@@ -304,7 +308,7 @@ impl Authenticator {
         &self,
         authenticator_pubkey: String,
     ) -> Result<(), WalletKitError> {
-        parse_authenticator_pubkey(authenticator_pubkey)?;
+        parse_authenticator_pubkey("authenticator_pubkey", authenticator_pubkey)?;
         Ok(())
     }
 
@@ -325,7 +329,8 @@ impl Authenticator {
         &self,
         authenticator_pubkey: String,
     ) -> Result<bool, WalletKitError> {
-        let authenticator_pubkey = parse_authenticator_pubkey(authenticator_pubkey)?;
+        let authenticator_pubkey =
+            parse_authenticator_pubkey("authenticator_pubkey", authenticator_pubkey)?;
         let pubkeys = self.inner.fetch_authenticator_pubkeys().await?;
         Ok(pubkeys
             .iter()
@@ -333,28 +338,94 @@ impl Authenticator {
             .any(|existing_pubkey| existing_pubkey == &authenticator_pubkey))
     }
 
+    /// Returns the account's authenticator public keys, indexed by key-set slot.
+    ///
+    /// Each entry is the compressed `BabyJubJub` public key at that slot encoded
+    /// as a `0x`-prefixed, zero-padded 32-byte hex string, or `None` for an
+    /// empty slot. A key's position in this list is the `pubkey_id` expected by
+    /// [`Self::remove_authenticator`].
+    ///
+    /// This performs a read-only indexer fetch and does not submit an account
+    /// operation.
+    ///
+    /// # Errors
+    /// - Returns a network error if the indexer request fails.
+    /// - Returns an error if a stored public key cannot be encoded.
+    pub async fn get_authenticator_pubkeys(
+        &self,
+    ) -> Result<Vec<Option<String>>, WalletKitError> {
+        let key_set = self.inner.fetch_authenticator_pubkeys().await?;
+        key_set
+            .iter()
+            .map(|slot| {
+                slot.as_ref()
+                    .map(|pubkey| {
+                        let encoded = pubkey.to_ethereum_representation()?;
+                        Ok(format!("{encoded:#066x}"))
+                    })
+                    .transpose()
+            })
+            .collect()
+    }
+
     /// Removes an authenticator from the holder's World ID account.
     ///
     /// # Arguments
     /// * `authenticator_address` — the Ethereum address associated with the
-    ///   authenticator being removed.
+    ///   authenticator being removed. Callers must pass the zero address for a
+    ///   proving-only authenticator.
     /// * `pubkey_id` — the stable key-set slot of the authenticator being removed.
+    /// * `expected_authenticator_pubkey` — the compressed `BabyJubJub` public key
+    ///   the caller intends to remove, encoded as a `0x`-prefixed, zero-padded
+    ///   32-byte hex string. The removal is refused if `pubkey_id` currently
+    ///   holds a different key, so a caller acting on a stale key-set view (see
+    ///   [`Self::get_authenticator_pubkeys`]) cannot remove the wrong
+    ///   authenticator. The registry's signature-nonce and leaf checks reject
+    ///   the operation if the key set changes after this check.
     ///
     /// # Errors
-    /// - Returns [`WalletKitError::InvalidInput`] if the address is invalid.
+    /// - Returns [`WalletKitError::InvalidInput`] if the address or public key
+    ///   is invalid, if the slot is empty, or if the slot holds a different key.
     /// - Returns a network error if an indexer or gateway request fails.
     pub async fn remove_authenticator(
         &self,
         authenticator_address: String,
         pubkey_id: u32,
+        expected_authenticator_pubkey: String,
     ) -> Result<String, WalletKitError> {
+        let expected_pubkey = parse_authenticator_pubkey(
+            "expected_authenticator_pubkey",
+            expected_authenticator_pubkey,
+        )?;
         let authenticator_address =
             Address::parse_from_ffi(&authenticator_address, "authenticator_address")?;
+
+        let empty_slot = || WalletKitError::InvalidInput {
+            attribute: "pubkey_id".to_string(),
+            reason: format!("no authenticator at key set slot {pubkey_id}"),
+        };
+        let key_set = self.inner.fetch_authenticator_pubkeys().await?;
+        let actual_pubkey = key_set.get(pubkey_id as usize).ok_or_else(empty_slot)?;
+        if actual_pubkey != &expected_pubkey {
+            return Err(WalletKitError::InvalidInput {
+                attribute: "expected_authenticator_pubkey".to_string(),
+                reason: format!(
+                    "key set slot {pubkey_id} holds a different authenticator public key"
+                ),
+            });
+        }
 
         let request_id = self
             .inner
             .remove_authenticator(authenticator_address, pubkey_id)
-            .await?;
+            .await
+            .map_err(|error| match error {
+                // The slot emptied between the check above and the crate's own
+                // signing read; report it as the input problem it is rather
+                // than an authorization failure.
+                AuthenticatorError::PublicKeyNotFound => empty_slot(),
+                other => other.into(),
+            })?;
 
         Ok(request_id.to_string())
     }
@@ -1027,7 +1098,10 @@ mod tests {
                 if attribute == "new_authenticator_pubkey"
         ));
         assert!(matches!(
-            parse_authenticator_pubkey(format!("0x{}", "ff".repeat(32))),
+            parse_authenticator_pubkey(
+                "new_authenticator_pubkey",
+                format!("0x{}", "ff".repeat(32))
+            ),
             Err(WalletKitError::InvalidInput { attribute, .. })
                 if attribute == "new_authenticator_pubkey"
         ));
@@ -1036,7 +1110,7 @@ mod tests {
         assert!(matches!(
             invalid_decoded_pubkey,
             Err(WalletKitError::InvalidInput { attribute, .. })
-                if attribute == "new_authenticator_pubkey"
+                if attribute == "authenticator_pubkey"
         ));
 
         assert!(authenticator
@@ -1056,12 +1130,29 @@ mod tests {
         ));
 
         let invalid_remove_address = authenticator
-            .remove_authenticator("not-an-address".to_string(), 0)
+            .remove_authenticator(
+                "not-an-address".to_string(),
+                0,
+                encoded_pubkey(&[2u8; 32]),
+            )
             .await;
         assert!(matches!(
             invalid_remove_address,
             Err(WalletKitError::InvalidInput { attribute, .. })
                 if attribute == "authenticator_address"
+        ));
+
+        let invalid_expected_pubkey = authenticator
+            .remove_authenticator(
+                Address::ZERO.to_string(),
+                0,
+                "not-a-public-key".to_string(),
+            )
+            .await;
+        assert!(matches!(
+            invalid_expected_pubkey,
+            Err(WalletKitError::InvalidInput { attribute, .. })
+                if attribute == "expected_authenticator_pubkey"
         ));
 
         drop(server);
@@ -1238,11 +1329,12 @@ mod tests {
             .with_header("content-type", "application/json")
             .with_body(
                 serde_json::json!({
-                    "authenticator_pubkeys": [existing_pubkey, removed_pubkey],
+                    "authenticator_pubkeys": [existing_pubkey, removed_pubkey.clone()],
                     "offchain_signer_commitment": "0x0"
                 })
                 .to_string(),
             )
+            .expect(2)
             .create_async()
             .await;
         let remove_mock = server
@@ -1271,13 +1363,128 @@ mod tests {
             .await;
 
         let request_id = authenticator
-            .remove_authenticator(Address::ZERO.to_string(), 1)
+            .remove_authenticator(Address::ZERO.to_string(), 1, removed_pubkey)
             .await
             .expect("remove should succeed");
         assert_eq!(request_id, "gw_remove_test");
         nonce_mock.assert_async().await;
         pubkeys_mock.assert_async().await;
         remove_mock.assert_async().await;
+
+        drop(server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_remove_authenticator_refuses_unexpected_slot_contents() {
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        let existing_pubkey = encoded_pubkey(&TEST_SEED);
+        let slot_pubkey = encoded_pubkey(&[2u8; 32]);
+
+        let pubkeys_mock = server
+            .mock("POST", "/authenticator-pubkeys")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "authenticator_pubkeys": [existing_pubkey, slot_pubkey],
+                    "offchain_signer_commitment": "0x0"
+                })
+                .to_string(),
+            )
+            .expect(2)
+            .create_async()
+            .await;
+        let nonce_mock = server
+            .mock("POST", "/signature-nonce")
+            .expect(0)
+            .create_async()
+            .await;
+        let remove_mock = server
+            .mock("POST", "/remove-authenticator")
+            .expect(0)
+            .create_async()
+            .await;
+
+        let mismatched = authenticator
+            .remove_authenticator(
+                Address::ZERO.to_string(),
+                1,
+                encoded_pubkey(&[3u8; 32]),
+            )
+            .await;
+        assert!(matches!(
+            mismatched,
+            Err(WalletKitError::InvalidInput { attribute, .. })
+                if attribute == "expected_authenticator_pubkey"
+        ));
+
+        let empty_slot = authenticator
+            .remove_authenticator(
+                Address::ZERO.to_string(),
+                7,
+                encoded_pubkey(&[3u8; 32]),
+            )
+            .await;
+        assert!(matches!(
+            empty_slot,
+            Err(WalletKitError::InvalidInput { attribute, .. })
+                if attribute == "pubkey_id"
+        ));
+
+        pubkeys_mock.assert_async().await;
+        nonce_mock.assert_async().await;
+        remove_mock.assert_async().await;
+
+        drop(server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_get_authenticator_pubkeys_returns_slot_indexed_keys() {
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        let existing_pubkey = encoded_pubkey(&TEST_SEED);
+        let other_pubkey = encoded_pubkey(&[2u8; 32]);
+
+        let pubkeys_mock = server
+            .mock("POST", "/authenticator-pubkeys")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "authenticator_pubkeys": [
+                        existing_pubkey.clone(),
+                        null,
+                        other_pubkey.clone()
+                    ],
+                    "offchain_signer_commitment": "0x0"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let pubkeys = authenticator
+            .get_authenticator_pubkeys()
+            .await
+            .expect("key set read should succeed");
+        assert_eq!(
+            pubkeys,
+            vec![Some(existing_pubkey), None, Some(other_pubkey)]
+        );
+        pubkeys_mock.assert_async().await;
 
         drop(server);
         cleanup_test_storage(&root);
