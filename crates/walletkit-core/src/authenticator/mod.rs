@@ -10,10 +10,10 @@ use ruint::aliases::U256;
 use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
-    api_types::{GatewayErrorCode, GatewayRequestState},
+    api_types::{GatewayErrorCode, GatewayRequestId, GatewayRequestState},
     primitives::{AuthenticatorPublicKeySet, Config},
     Authenticator as CoreAuthenticator, Credential as CoreCredential, CredentialInput,
-    InitializingAuthenticator as CoreInitializingAuthenticator,
+    EdDSAPublicKey, InitializingAuthenticator as CoreInitializingAuthenticator,
     OnchainKeyRepresentable, Signer,
 };
 
@@ -50,6 +50,29 @@ impl Authenticator {
             store,
         })
     }
+}
+
+fn parse_authenticator_pubkey(
+    encoded_pubkey: &str,
+) -> Result<EdDSAPublicKey, WalletKitError> {
+    let invalid_input = |reason: String| WalletKitError::InvalidInput {
+        attribute: "new_authenticator_pubkey".to_string(),
+        reason,
+    };
+    let hex = encoded_pubkey.strip_prefix("0x").ok_or_else(|| {
+        invalid_input("Public key must be a 0x-prefixed 32-byte hex string".to_string())
+    })?;
+
+    if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(invalid_input(
+            "Public key must be a 0x-prefixed 32-byte hex string".to_string(),
+        ));
+    }
+
+    let encoded = U256::from_str_radix(hex, 16)
+        .map_err(|error| invalid_input(error.to_string()))?;
+    EdDSAPublicKey::from_compressed_bytes(encoded.to_le_bytes())
+        .map_err(|error| invalid_input(error.to_string()))
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -232,6 +255,80 @@ impl Authenticator {
         let request_id = self.inner.revert_recovery_agent_update().await?;
 
         Ok(request_id.to_string())
+    }
+
+    /// Inserts an authenticator into the holder's World ID account.
+    ///
+    /// # Arguments
+    /// * `new_authenticator_pubkey` — a compressed `BabyJubJub` public key encoded
+    ///   as a `0x`-prefixed, zero-padded 32-byte hex string.
+    /// * `new_authenticator_address` — the Ethereum address associated with the
+    ///   new authenticator. Callers may pass the zero address for a proving-only
+    ///   authenticator.
+    ///
+    /// # Errors
+    /// - Returns [`WalletKitError::InvalidInput`] if the public key or address is
+    ///   invalid.
+    /// - Returns a network error if an indexer or gateway request fails.
+    pub async fn insert_authenticator(
+        &self,
+        new_authenticator_pubkey: String,
+        new_authenticator_address: String,
+    ) -> Result<String, WalletKitError> {
+        let new_authenticator_pubkey =
+            parse_authenticator_pubkey(&new_authenticator_pubkey)?;
+        let new_authenticator_address = Address::parse_from_ffi(
+            &new_authenticator_address,
+            "new_authenticator_address",
+        )?;
+
+        let request_id = self
+            .inner
+            .insert_authenticator(new_authenticator_pubkey, new_authenticator_address)
+            .await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Removes an authenticator from the holder's World ID account.
+    ///
+    /// # Arguments
+    /// * `authenticator_address` — the Ethereum address associated with the
+    ///   authenticator being removed.
+    /// * `pubkey_id` — the stable key-set slot of the authenticator being removed.
+    ///
+    /// # Errors
+    /// - Returns [`WalletKitError::InvalidInput`] if the address is invalid.
+    /// - Returns a network error if an indexer or gateway request fails.
+    pub async fn remove_authenticator(
+        &self,
+        authenticator_address: String,
+        pubkey_id: u32,
+    ) -> Result<String, WalletKitError> {
+        let authenticator_address =
+            Address::parse_from_ffi(&authenticator_address, "authenticator_address")?;
+
+        let request_id = self
+            .inner
+            .remove_authenticator(authenticator_address, pubkey_id)
+            .await?;
+
+        Ok(request_id.to_string())
+    }
+
+    /// Polls the gateway once for the status of an account operation.
+    ///
+    /// # Errors
+    /// Returns a network error if the gateway request fails.
+    pub async fn poll_status(
+        &self,
+        request_id: String,
+    ) -> Result<GatewayRequestStatus, WalletKitError> {
+        let request_id = GatewayRequestId::new(
+            request_id.strip_prefix("gw_").unwrap_or(&request_id),
+        );
+        let status = self.inner.poll_status(&request_id).await?;
+        Ok(status.into())
     }
 }
 
@@ -510,6 +607,47 @@ pub enum RegistrationStatus {
     },
 }
 
+/// Status of an account operation submitted through the gateway.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum GatewayRequestStatus {
+    /// Request queued but not yet batched.
+    Queued,
+    /// Request currently being batched.
+    Batching,
+    /// Request submitted on-chain.
+    Submitted {
+        /// Transaction hash emitted when the request was submitted.
+        tx_hash: String,
+    },
+    /// Request finalized on-chain.
+    Finalized {
+        /// Transaction hash emitted when the request was finalized.
+        tx_hash: String,
+    },
+    /// Request failed during processing.
+    Failed {
+        /// Error message returned by the gateway.
+        error: String,
+        /// Specific error code, if available.
+        error_code: Option<String>,
+    },
+}
+
+impl From<GatewayRequestState> for GatewayRequestStatus {
+    fn from(state: GatewayRequestState) -> Self {
+        match state {
+            GatewayRequestState::Queued => Self::Queued,
+            GatewayRequestState::Batching => Self::Batching,
+            GatewayRequestState::Submitted { tx_hash } => Self::Submitted { tx_hash },
+            GatewayRequestState::Finalized { tx_hash } => Self::Finalized { tx_hash },
+            GatewayRequestState::Failed { error, error_code } => Self::Failed {
+                error,
+                error_code: error_code.map(|code| code.to_string()),
+            },
+        }
+    }
+}
+
 impl From<GatewayRequestState> for RegistrationStatus {
     fn from(state: GatewayRequestState) -> Self {
         match state {
@@ -720,6 +858,59 @@ pub fn recovery_data_from_seed(seed: &[u8]) -> Result<RecoveryData, WalletKitErr
 mod tests {
     use super::*;
 
+    const TEST_SEED: [u8; 32] = [1u8; 32];
+
+    async fn test_authenticator(
+        server: &mut mockito::Server,
+    ) -> (Authenticator, std::path::PathBuf) {
+        use crate::storage::tests_utils::{temp_root_path, InMemoryStorageProvider};
+        use alloy::primitives::address;
+        use world_id_core::primitives::ServiceEndpoint;
+        use world_id_proof::artifacts::dummy::DummyZkArtifactSource;
+
+        let packed_account_mock = server
+            .mock("POST", "/packed-account")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::json!({ "packed_account_data": "0x2a" }).to_string())
+            .create_async()
+            .await;
+        let config = Config::new(
+            None,
+            480,
+            address!("0x969947cFED008bFb5e3F32a25A1A2CDdf64d46fe"),
+            ServiceEndpoint::direct(server.url()),
+            ServiceEndpoint::direct(server.url()),
+            vec![],
+            2,
+        )
+        .expect("valid config");
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store =
+            CredentialStore::from_provider(&provider).expect("credential store");
+        let authenticator = Authenticator::init_with_config(
+            &TEST_SEED,
+            config,
+            Arc::new(DummyZkArtifactSource),
+            Arc::new(store),
+        )
+        .await
+        .expect("authenticator should initialize");
+        packed_account_mock.assert_async().await;
+
+        (authenticator, root)
+    }
+
+    fn encoded_pubkey(seed: &[u8; 32]) -> String {
+        let pubkey = Signer::from_seed_bytes(seed)
+            .expect("valid seed")
+            .offchain_signer_pubkey()
+            .to_ethereum_representation()
+            .expect("public key should encode");
+        format!("{pubkey:#066x}")
+    }
+
     #[test]
     fn test_recovery_data_from_seed() {
         let seed = [1u8; 32];
@@ -740,6 +931,256 @@ mod tests {
     fn test_recovery_data_rejects_invalid_seed() {
         assert!(RecoveryData::from_seed(&[0u8; 16]).is_err());
         assert!(RecoveryData::from_seed(&[]).is_err());
+    }
+
+    #[test]
+    fn test_gateway_request_status_preserves_payloads() {
+        assert_eq!(
+            GatewayRequestStatus::from(GatewayRequestState::Submitted {
+                tx_hash: "0xsubmitted".to_string(),
+            }),
+            GatewayRequestStatus::Submitted {
+                tx_hash: "0xsubmitted".to_string(),
+            }
+        );
+        assert_eq!(
+            GatewayRequestStatus::from(GatewayRequestState::Finalized {
+                tx_hash: "0xfinalized".to_string(),
+            }),
+            GatewayRequestStatus::Finalized {
+                tx_hash: "0xfinalized".to_string(),
+            }
+        );
+        assert_eq!(
+            GatewayRequestStatus::from(GatewayRequestState::Failed {
+                error: "request failed".to_string(),
+                error_code: Some(GatewayErrorCode::BadRequest),
+            }),
+            GatewayRequestStatus::Failed {
+                error: "request failed".to_string(),
+                error_code: Some("bad_request".to_string()),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_authenticator_account_ops_reject_invalid_ffi_inputs() {
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+
+        let invalid_pubkey = authenticator
+            .insert_authenticator(
+                "not-a-public-key".to_string(),
+                Address::ZERO.to_string(),
+            )
+            .await;
+        assert!(matches!(
+            invalid_pubkey,
+            Err(WalletKitError::InvalidInput { attribute, .. })
+                if attribute == "new_authenticator_pubkey"
+        ));
+        assert!(matches!(
+            parse_authenticator_pubkey(&format!("0x{}", "ff".repeat(32))),
+            Err(WalletKitError::InvalidInput { attribute, .. })
+                if attribute == "new_authenticator_pubkey"
+        ));
+
+        let invalid_insert_address = authenticator
+            .insert_authenticator(
+                encoded_pubkey(&[2u8; 32]),
+                "not-an-address".to_string(),
+            )
+            .await;
+        assert!(matches!(
+            invalid_insert_address,
+            Err(WalletKitError::InvalidInput { attribute, .. })
+                if attribute == "new_authenticator_address"
+        ));
+
+        let invalid_remove_address = authenticator
+            .remove_authenticator("not-an-address".to_string(), 0)
+            .await;
+        assert!(matches!(
+            invalid_remove_address,
+            Err(WalletKitError::InvalidInput { attribute, .. })
+                if attribute == "authenticator_address"
+        ));
+
+        drop(server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_insert_authenticator_constructs_request_and_polls_status() {
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        let existing_pubkey = encoded_pubkey(&TEST_SEED);
+        let new_pubkey = encoded_pubkey(&[2u8; 32]);
+        let new_pubkey_u256 = U256::from_str_radix(
+            new_pubkey.strip_prefix("0x").expect("0x-prefixed"),
+            16,
+        )
+        .expect("valid U256");
+
+        let nonce_mock = server
+            .mock("POST", "/signature-nonce")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::json!({ "signature_nonce": "0x0" }).to_string())
+            .create_async()
+            .await;
+        let pubkeys_mock = server
+            .mock("POST", "/authenticator-pubkeys")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "authenticator_pubkeys": [existing_pubkey],
+                    "offchain_signer_commitment": "0x0"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let insert_mock = server
+            .mock("POST", "/insert-authenticator")
+            .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+                "leaf_index": "0x2a",
+                "new_authenticator_address": Address::ZERO.to_string(),
+                "pubkey_id": "0x1",
+                "new_authenticator_pubkey": format!("{new_pubkey_u256:#x}")
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "request_id": "gw_insert_test",
+                    "kind": "insert_authenticator",
+                    "status": { "state": "queued" }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let request_id = authenticator
+            .insert_authenticator(new_pubkey, Address::ZERO.to_string())
+            .await
+            .expect("insert should succeed");
+        assert_eq!(request_id, "gw_insert_test");
+        nonce_mock.assert_async().await;
+        pubkeys_mock.assert_async().await;
+        insert_mock.assert_async().await;
+
+        let status_mock = server
+            .mock("GET", "/status/gw_insert_test")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "request_id": "gw_insert_test",
+                    "kind": "insert_authenticator",
+                    "status": {
+                        "state": "finalized",
+                        "tx_hash": "0x1234"
+                    }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let status = authenticator
+            .poll_status(request_id)
+            .await
+            .expect("status poll should succeed");
+        assert_eq!(
+            status,
+            GatewayRequestStatus::Finalized {
+                tx_hash: "0x1234".to_string()
+            }
+        );
+        status_mock.assert_async().await;
+
+        drop(server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_remove_authenticator_constructs_request() {
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        let existing_pubkey = encoded_pubkey(&TEST_SEED);
+        let removed_pubkey = encoded_pubkey(&[2u8; 32]);
+        let removed_pubkey_u256 = U256::from_str_radix(
+            removed_pubkey.strip_prefix("0x").expect("0x-prefixed"),
+            16,
+        )
+        .expect("valid U256");
+
+        let nonce_mock = server
+            .mock("POST", "/signature-nonce")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(serde_json::json!({ "signature_nonce": "0x1" }).to_string())
+            .create_async()
+            .await;
+        let pubkeys_mock = server
+            .mock("POST", "/authenticator-pubkeys")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "authenticator_pubkeys": [existing_pubkey, removed_pubkey],
+                    "offchain_signer_commitment": "0x0"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let remove_mock = server
+            .mock("POST", "/remove-authenticator")
+            .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+                "leaf_index": "0x2a",
+                "authenticator_address": Address::ZERO.to_string(),
+                "pubkey_id": "0x1",
+                "authenticator_pubkey": format!("{removed_pubkey_u256:#x}")
+            })))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "request_id": "gw_remove_test",
+                    "kind": "remove_authenticator",
+                    "status": { "state": "queued" }
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+
+        let request_id = authenticator
+            .remove_authenticator(Address::ZERO.to_string(), 1)
+            .await
+            .expect("remove should succeed");
+        assert_eq!(request_id, "gw_remove_test");
+        nonce_mock.assert_async().await;
+        pubkeys_mock.assert_async().await;
+        remove_mock.assert_async().await;
+
+        drop(server);
+        cleanup_test_storage(&root);
     }
 
     #[cfg(feature = "embed-zkeys")]
