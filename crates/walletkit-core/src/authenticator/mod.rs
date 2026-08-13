@@ -53,31 +53,6 @@ impl Authenticator {
     }
 }
 
-fn parse_authenticator_pubkey(
-    attribute: &str,
-    encoded_pubkey: impl AsRef<str>,
-) -> Result<EdDSAPublicKey, WalletKitError> {
-    let encoded_pubkey = encoded_pubkey.as_ref();
-    let invalid_input = |reason: String| WalletKitError::InvalidInput {
-        attribute: attribute.to_string(),
-        reason,
-    };
-    let hex = encoded_pubkey.strip_prefix("0x").ok_or_else(|| {
-        invalid_input("Public key must be a 0x-prefixed 32-byte hex string".to_string())
-    })?;
-
-    if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(invalid_input(
-            "Public key must be a 0x-prefixed 32-byte hex string".to_string(),
-        ));
-    }
-
-    let encoded = U256::from_str_radix(hex, 16)
-        .map_err(|error| invalid_input(error.to_string()))?;
-    EdDSAPublicKey::from_compressed_bytes(encoded.to_le_bytes())
-        .map_err(|error| invalid_input(error.to_string()))
-}
-
 #[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
@@ -278,9 +253,9 @@ impl Authenticator {
         new_authenticator_pubkey: String,
         new_authenticator_address: String,
     ) -> Result<String, WalletKitError> {
-        let new_authenticator_pubkey = parse_authenticator_pubkey(
+        let new_authenticator_pubkey = EdDSAPublicKey::parse_from_ffi(
+            &new_authenticator_pubkey,
             "new_authenticator_pubkey",
-            new_authenticator_pubkey,
         )?;
         let new_authenticator_address = Address::parse_from_ffi(
             &new_authenticator_address,
@@ -306,9 +281,9 @@ impl Authenticator {
     /// Returns [`WalletKitError::InvalidInput`] if the public key is invalid.
     pub fn validate_authenticator_pubkey(
         &self,
-        authenticator_pubkey: String,
+        authenticator_pubkey: &str,
     ) -> Result<(), WalletKitError> {
-        parse_authenticator_pubkey("authenticator_pubkey", authenticator_pubkey)?;
+        EdDSAPublicKey::parse_from_ffi(authenticator_pubkey, "authenticator_pubkey")?;
         Ok(())
     }
 
@@ -329,8 +304,10 @@ impl Authenticator {
         &self,
         authenticator_pubkey: String,
     ) -> Result<bool, WalletKitError> {
-        let authenticator_pubkey =
-            parse_authenticator_pubkey("authenticator_pubkey", authenticator_pubkey)?;
+        let authenticator_pubkey = EdDSAPublicKey::parse_from_ffi(
+            &authenticator_pubkey,
+            "authenticator_pubkey",
+        )?;
         let pubkeys = self.inner.fetch_authenticator_pubkeys().await?;
         Ok(pubkeys
             .iter()
@@ -393,9 +370,9 @@ impl Authenticator {
         pubkey_id: u32,
         expected_authenticator_pubkey: String,
     ) -> Result<String, WalletKitError> {
-        let expected_pubkey = parse_authenticator_pubkey(
+        let expected_pubkey = EdDSAPublicKey::parse_from_ffi(
+            &expected_authenticator_pubkey,
             "expected_authenticator_pubkey",
-            expected_authenticator_pubkey,
         )?;
         let authenticator_address =
             Address::parse_from_ffi(&authenticator_address, "authenticator_address")?;
@@ -1098,15 +1075,15 @@ mod tests {
                 if attribute == "new_authenticator_pubkey"
         ));
         assert!(matches!(
-            parse_authenticator_pubkey(
-                "new_authenticator_pubkey",
-                format!("0x{}", "ff".repeat(32))
+            EdDSAPublicKey::parse_from_ffi(
+                &format!("0x{}", "ff".repeat(32)),
+                "new_authenticator_pubkey"
             ),
             Err(WalletKitError::InvalidInput { attribute, .. })
                 if attribute == "new_authenticator_pubkey"
         ));
         let invalid_decoded_pubkey = authenticator
-            .validate_authenticator_pubkey(format!("0x{}", "ff".repeat(32)));
+            .validate_authenticator_pubkey(&format!("0x{}", "ff".repeat(32)));
         assert!(matches!(
             invalid_decoded_pubkey,
             Err(WalletKitError::InvalidInput { attribute, .. })
@@ -1114,7 +1091,7 @@ mod tests {
         ));
 
         assert!(authenticator
-            .validate_authenticator_pubkey(encoded_pubkey(&[2u8; 32]))
+            .validate_authenticator_pubkey(&encoded_pubkey(&[2u8; 32]))
             .is_ok());
 
         let invalid_insert_address = authenticator
