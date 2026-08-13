@@ -868,6 +868,8 @@ mod tests {
         use world_id_core::primitives::ServiceEndpoint;
         use world_id_proof::artifacts::dummy::DummyZkArtifactSource;
 
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let packed_account_mock = server
             .mock("POST", "/packed-account")
             .with_status(200)
@@ -1020,11 +1022,6 @@ mod tests {
         let (authenticator, root) = test_authenticator(&mut server).await;
         let existing_pubkey = encoded_pubkey(&TEST_SEED);
         let new_pubkey = encoded_pubkey(&[2u8; 32]);
-        let new_pubkey_u256 = U256::from_str_radix(
-            new_pubkey.strip_prefix("0x").expect("0x-prefixed"),
-            16,
-        )
-        .expect("valid U256");
 
         let nonce_mock = server
             .mock("POST", "/signature-nonce")
@@ -1054,12 +1051,16 @@ mod tests {
             .await;
         let insert_mock = server
             .mock("POST", "/insert-authenticator")
-            .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+            .match_body(mockito::Matcher::JsonString(serde_json::json!({
                 "leaf_index": "0x2a",
-                "new_authenticator_address": Address::ZERO.to_string(),
+                "new_authenticator_address": "0x0000000000000000000000000000000000000000",
+                "old_offchain_signer_commitment": "0x25621ac3b8119fa030714e263a607e3ce2c1a9c28e1fcd2109b976b64c4c5758",
+                "new_offchain_signer_commitment": "0x14e70bb77e346fedbd4ab09b2dba10265794ed0e8b4cf1f378a3a8668489acf1",
+                "signature": "0x414f2149d1729181056d61f518e5d3eee9a56b57daf8f909f95b639b852cd6ae50a5298a21d1d48920c903bbd8b21cdbd7be17a4d07a33c4c35946ecba8c19d01b",
+                "nonce": "0x0",
                 "pubkey_id": "0x1",
-                "new_authenticator_pubkey": format!("{new_pubkey_u256:#x}")
-            })))
+                "new_authenticator_pubkey": "0x9ffe38af11bfff8fb9fa44121b6f2ed5572917df56634c785911dd8ac991f65e"
+            }).to_string()))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -1123,14 +1124,12 @@ mod tests {
         let (authenticator, root) = test_authenticator(&mut server).await;
         let existing_pubkey = encoded_pubkey(&TEST_SEED);
         let removed_pubkey = encoded_pubkey(&[2u8; 32]);
-        let removed_pubkey_u256 = U256::from_str_radix(
-            removed_pubkey.strip_prefix("0x").expect("0x-prefixed"),
-            16,
-        )
-        .expect("valid U256");
 
         let nonce_mock = server
             .mock("POST", "/signature-nonce")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(serde_json::json!({ "signature_nonce": "0x1" }).to_string())
@@ -1138,6 +1137,9 @@ mod tests {
             .await;
         let pubkeys_mock = server
             .mock("POST", "/authenticator-pubkeys")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
+            ))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -1151,12 +1153,16 @@ mod tests {
             .await;
         let remove_mock = server
             .mock("POST", "/remove-authenticator")
-            .match_body(mockito::Matcher::PartialJson(serde_json::json!({
+            .match_body(mockito::Matcher::JsonString(serde_json::json!({
                 "leaf_index": "0x2a",
-                "authenticator_address": Address::ZERO.to_string(),
+                "authenticator_address": "0x0000000000000000000000000000000000000000",
+                "old_offchain_signer_commitment": "0x14e70bb77e346fedbd4ab09b2dba10265794ed0e8b4cf1f378a3a8668489acf1",
+                "new_offchain_signer_commitment": "0x25621ac3b8119fa030714e263a607e3ce2c1a9c28e1fcd2109b976b64c4c5758",
+                "signature": "0x1abd59abf790df476662f6bbde31e7bd75c90d53ff69e6f2d69eb76acec98d1f0abe1df0e170528f015be0422bdda8db98cc6466e1f67f53c12d373edc0515e31c",
+                "nonce": "0x1",
                 "pubkey_id": "0x1",
-                "authenticator_pubkey": format!("{removed_pubkey_u256:#x}")
-            })))
+                "authenticator_pubkey": "0x9ffe38af11bfff8fb9fa44121b6f2ed5572917df56634c785911dd8ac991f65e"
+            }).to_string()))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
