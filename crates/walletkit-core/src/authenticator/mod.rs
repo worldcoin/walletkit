@@ -308,6 +308,31 @@ impl Authenticator {
         Ok(())
     }
 
+    /// Returns whether the holder's account already contains an authenticator
+    /// public key.
+    ///
+    /// This performs a read-only indexer fetch and does not submit an account
+    /// operation.
+    ///
+    /// # Arguments
+    /// * `authenticator_pubkey` — a compressed `BabyJubJub` public key encoded
+    ///   as a `0x`-prefixed, zero-padded 32-byte hex string.
+    ///
+    /// # Errors
+    /// - Returns [`WalletKitError::InvalidInput`] if the public key is invalid.
+    /// - Returns a network error if the indexer request fails.
+    pub async fn has_authenticator_pubkey(
+        &self,
+        authenticator_pubkey: String,
+    ) -> Result<bool, WalletKitError> {
+        let authenticator_pubkey = parse_authenticator_pubkey(authenticator_pubkey)?;
+        let pubkeys = self.inner.fetch_authenticator_pubkeys().await?;
+        Ok(pubkeys
+            .iter()
+            .flatten()
+            .any(|existing_pubkey| existing_pubkey == &authenticator_pubkey))
+    }
+
     /// Removes an authenticator from the holder's World ID account.
     ///
     /// # Arguments
@@ -1140,6 +1165,46 @@ mod tests {
             }
         );
         status_mock.assert_async().await;
+
+        drop(server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_has_authenticator_pubkey_reads_indexer_without_writing() {
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        let existing_pubkey = encoded_pubkey(&TEST_SEED);
+
+        let pubkeys_mock = server
+            .mock("POST", "/authenticator-pubkeys")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "authenticator_pubkeys": [existing_pubkey.clone()],
+                    "offchain_signer_commitment": "0x0"
+                })
+                .to_string(),
+            )
+            .expect(2)
+            .create_async()
+            .await;
+
+        assert!(authenticator
+            .has_authenticator_pubkey(existing_pubkey)
+            .await
+            .expect("keyset read should succeed"));
+        assert!(!authenticator
+            .has_authenticator_pubkey(encoded_pubkey(&[2u8; 32]))
+            .await
+            .expect("absent key check should succeed"));
+        pubkeys_mock.assert_async().await;
 
         drop(server);
         cleanup_test_storage(&root);
