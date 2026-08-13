@@ -53,8 +53,9 @@ impl Authenticator {
 }
 
 fn parse_authenticator_pubkey(
-    encoded_pubkey: &str,
+    encoded_pubkey: impl AsRef<str>,
 ) -> Result<EdDSAPublicKey, WalletKitError> {
+    let encoded_pubkey = encoded_pubkey.as_ref();
     let invalid_input = |reason: String| WalletKitError::InvalidInput {
         attribute: "new_authenticator_pubkey".to_string(),
         reason,
@@ -276,7 +277,7 @@ impl Authenticator {
         new_authenticator_address: String,
     ) -> Result<String, WalletKitError> {
         let new_authenticator_pubkey =
-            parse_authenticator_pubkey(&new_authenticator_pubkey)?;
+            parse_authenticator_pubkey(new_authenticator_pubkey)?;
         let new_authenticator_address = Address::parse_from_ffi(
             &new_authenticator_address,
             "new_authenticator_address",
@@ -288,6 +289,23 @@ impl Authenticator {
             .await?;
 
         Ok(request_id.to_string())
+    }
+
+    /// Validates an authenticator public key without submitting an account
+    /// operation.
+    ///
+    /// # Arguments
+    /// * `authenticator_pubkey` — a compressed `BabyJubJub` public key encoded
+    ///   as a `0x`-prefixed, zero-padded 32-byte hex string.
+    ///
+    /// # Errors
+    /// Returns [`WalletKitError::InvalidInput`] if the public key is invalid.
+    pub fn validate_authenticator_pubkey(
+        &self,
+        authenticator_pubkey: String,
+    ) -> Result<(), WalletKitError> {
+        parse_authenticator_pubkey(authenticator_pubkey)?;
+        Ok(())
     }
 
     /// Removes an authenticator from the holder's World ID account.
@@ -984,10 +1002,21 @@ mod tests {
                 if attribute == "new_authenticator_pubkey"
         ));
         assert!(matches!(
-            parse_authenticator_pubkey(&format!("0x{}", "ff".repeat(32))),
+            parse_authenticator_pubkey(format!("0x{}", "ff".repeat(32))),
             Err(WalletKitError::InvalidInput { attribute, .. })
                 if attribute == "new_authenticator_pubkey"
         ));
+        let invalid_decoded_pubkey = authenticator
+            .validate_authenticator_pubkey(format!("0x{}", "ff".repeat(32)));
+        assert!(matches!(
+            invalid_decoded_pubkey,
+            Err(WalletKitError::InvalidInput { attribute, .. })
+                if attribute == "new_authenticator_pubkey"
+        ));
+
+        assert!(authenticator
+            .validate_authenticator_pubkey(encoded_pubkey(&[2u8; 32]))
+            .is_ok());
 
         let invalid_insert_address = authenticator
             .insert_authenticator(
