@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.1](https://github.com/worldcoin/walletkit/compare/v0.21.0...v0.21.1) - 2026-08-14
+
+### Added
+
+- WIP-104 Expose authenticator account operations over the UniFFI surface ([#473](https://github.com/worldcoin/walletkit/pull/473))
+
+### Other
+
+- Pin the byte-stability of plaintext vault exports ([#471](https://github.com/worldcoin/walletkit/pull/471))
+
 ## [0.21.0](https://github.com/worldcoin/walletkit/compare/v0.20.4...v0.21.0) - 2026-08-07
 
 ### Added
