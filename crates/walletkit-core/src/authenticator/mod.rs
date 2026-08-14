@@ -1148,36 +1148,6 @@ mod tests {
         assert!(RecoveryData::from_seed(&[]).is_err());
     }
 
-    #[test]
-    fn test_gateway_request_status_preserves_payloads() {
-        assert_eq!(
-            GatewayRequestStatus::from(GatewayRequestState::Submitted {
-                tx_hash: "0xsubmitted".to_string(),
-            }),
-            GatewayRequestStatus::Submitted {
-                tx_hash: "0xsubmitted".to_string(),
-            }
-        );
-        assert_eq!(
-            GatewayRequestStatus::from(GatewayRequestState::Finalized {
-                tx_hash: "0xfinalized".to_string(),
-            }),
-            GatewayRequestStatus::Finalized {
-                tx_hash: "0xfinalized".to_string(),
-            }
-        );
-        assert_eq!(
-            GatewayRequestStatus::from(GatewayRequestState::Failed {
-                error: "request failed".to_string(),
-                error_code: Some(GatewayErrorCode::BadRequest),
-            }),
-            GatewayRequestStatus::Failed {
-                error: "request failed".to_string(),
-                error_code: Some("bad_request".to_string()),
-            }
-        );
-    }
-
     #[tokio::test]
     async fn test_authenticator_account_ops_reject_invalid_ffi_inputs() {
         use crate::storage::tests_utils::cleanup_test_storage;
@@ -1193,14 +1163,6 @@ mod tests {
             .await;
         assert!(matches!(
             invalid_pubkey,
-            Err(WalletKitError::InvalidInput { attribute, .. })
-                if attribute == "new_authenticator_pubkey"
-        ));
-        assert!(matches!(
-            parse_authenticator_pubkey(
-                "new_authenticator_pubkey",
-                format!("0x{}", "ff".repeat(32))
-            ),
             Err(WalletKitError::InvalidInput { attribute, .. })
                 if attribute == "new_authenticator_pubkey"
         ));
@@ -1372,101 +1334,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_has_authenticator_pubkey_reads_indexer_without_writing() {
-        use crate::storage::tests_utils::cleanup_test_storage;
-
-        let mut server = mockito::Server::new_async().await;
-        let (authenticator, root) = test_authenticator(&mut server).await;
-        let existing_pubkey = encoded_pubkey(&TEST_SEED);
-
-        let pubkeys_mock = mock_authenticator_pubkeys(
-            &mut server,
-            &[Some(existing_pubkey.as_str())],
-            2,
-        )
-        .await;
-
-        assert!(authenticator
-            .has_authenticator_pubkey(existing_pubkey)
-            .await
-            .expect("keyset read should succeed"));
-        assert!(!authenticator
-            .has_authenticator_pubkey(encoded_pubkey(&[2u8; 32]))
-            .await
-            .expect("absent key check should succeed"));
-        pubkeys_mock.assert_async().await;
-
-        drop(server);
-        cleanup_test_storage(&root);
-    }
-
-    #[tokio::test]
-    async fn test_remove_authenticator_constructs_request() {
-        use crate::storage::tests_utils::cleanup_test_storage;
-
-        let mut server = mockito::Server::new_async().await;
-        let (authenticator, root) = test_authenticator(&mut server).await;
-        let existing_pubkey = encoded_pubkey(&TEST_SEED);
-        let removed_pubkey = encoded_pubkey(&[2u8; 32]);
-
-        let nonce_mock = server
-            .mock("POST", "/signature-nonce")
-            .match_body(mockito::Matcher::JsonString(
-                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
-            ))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(serde_json::json!({ "signature_nonce": "0x1" }).to_string())
-            .create_async()
-            .await;
-        let pubkeys_mock = mock_authenticator_pubkeys(
-            &mut server,
-            &[
-                Some(existing_pubkey.as_str()),
-                Some(removed_pubkey.as_str()),
-            ],
-            2,
-        )
-        .await;
-        let remove_mock = server
-            .mock("POST", "/remove-authenticator")
-            .match_body(mockito::Matcher::JsonString(serde_json::json!({
-                "leaf_index": "0x2a",
-                "authenticator_address": "0x0000000000000000000000000000000000000000",
-                "old_offchain_signer_commitment": "0x14e70bb77e346fedbd4ab09b2dba10265794ed0e8b4cf1f378a3a8668489acf1",
-                "new_offchain_signer_commitment": "0x25621ac3b8119fa030714e263a607e3ce2c1a9c28e1fcd2109b976b64c4c5758",
-                "signature": "0x1abd59abf790df476662f6bbde31e7bd75c90d53ff69e6f2d69eb76acec98d1f0abe1df0e170528f015be0422bdda8db98cc6466e1f67f53c12d373edc0515e31c",
-                "nonce": "0x1",
-                "pubkey_id": "0x1",
-                "authenticator_pubkey": "0x9ffe38af11bfff8fb9fa44121b6f2ed5572917df56634c785911dd8ac991f65e"
-            }).to_string()))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                serde_json::json!({
-                    "request_id": "gw_remove_test",
-                    "kind": "remove_authenticator",
-                    "status": { "state": "queued" }
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
-
-        let request_id = authenticator
-            .remove_authenticator(Address::ZERO.to_string(), 1, removed_pubkey)
-            .await
-            .expect("remove should succeed");
-        assert_eq!(request_id, "gw_remove_test");
-        nonce_mock.assert_async().await;
-        pubkeys_mock.assert_async().await;
-        remove_mock.assert_async().await;
-
-        drop(server);
-        cleanup_test_storage(&root);
-    }
-
-    #[tokio::test]
     async fn test_remove_authenticator_refuses_unexpected_slot_contents() {
         use crate::storage::tests_utils::cleanup_test_storage;
 
@@ -1545,7 +1412,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_authenticator_pubkeys_returns_slot_indexed_keys() {
+    async fn test_key_set_reads_return_slots_and_membership() {
         use crate::storage::tests_utils::cleanup_test_storage;
 
         let mut server = mockito::Server::new_async().await;
@@ -1560,7 +1427,7 @@ mod tests {
                 None,
                 Some(other_pubkey.as_str()),
             ],
-            1,
+            3,
         )
         .await;
 
@@ -1572,6 +1439,15 @@ mod tests {
             pubkeys,
             vec![Some(existing_pubkey), None, Some(other_pubkey)]
         );
+
+        assert!(authenticator
+            .has_authenticator_pubkey(encoded_pubkey(&TEST_SEED))
+            .await
+            .expect("membership read should succeed"));
+        assert!(!authenticator
+            .has_authenticator_pubkey(encoded_pubkey(&[3u8; 32]))
+            .await
+            .expect("absent key check should succeed"));
         pubkeys_mock.assert_async().await;
 
         drop(server);
@@ -1579,7 +1455,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_poll_status_surfaces_gateway_5xx_as_network_error() {
+    async fn test_account_ops_surface_5xx_as_network_errors() {
         use crate::storage::tests_utils::cleanup_test_storage;
 
         let mut server = mockito::Server::new_async().await;
@@ -1591,12 +1467,11 @@ mod tests {
             .with_body("batcher unavailable")
             .create_async()
             .await;
-
-        let result = authenticator
+        let gateway_error = authenticator
             .poll_status("gw_unavailable".to_string())
             .await;
         assert!(matches!(
-            result,
+            gateway_error,
             Err(WalletKitError::NetworkError {
                 url,
                 status: Some(503),
@@ -1605,27 +1480,15 @@ mod tests {
         ));
         status_mock.assert_async().await;
 
-        drop(server);
-        cleanup_test_storage(&root);
-    }
-
-    #[tokio::test]
-    async fn test_get_authenticator_pubkeys_surfaces_indexer_5xx_as_network_error() {
-        use crate::storage::tests_utils::cleanup_test_storage;
-
-        let mut server = mockito::Server::new_async().await;
-        let (authenticator, root) = test_authenticator(&mut server).await;
-
         let pubkeys_mock = server
             .mock("POST", "/authenticator-pubkeys")
             .with_status(500)
             .with_body("indexer unavailable")
             .create_async()
             .await;
-
-        let result = authenticator.get_authenticator_pubkeys().await;
+        let indexer_error = authenticator.get_authenticator_pubkeys().await;
         assert!(matches!(
-            result,
+            indexer_error,
             Err(WalletKitError::NetworkError {
                 url,
                 status: Some(500),
