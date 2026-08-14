@@ -1099,6 +1099,33 @@ mod tests {
         format!("{pubkey:#066x}")
     }
 
+    /// Mocks the indexer's `/authenticator-pubkeys` endpoint with a fixed
+    /// key-set response (`None` entries are empty slots), asserting the
+    /// request body and the expected number of hits.
+    async fn mock_authenticator_pubkeys(
+        server: &mut mockito::Server,
+        pubkeys: &[Option<&str>],
+        expected_hits: usize,
+    ) -> mockito::Mock {
+        server
+            .mock("POST", "/authenticator-pubkeys")
+            .match_body(mockito::Matcher::JsonString(
+                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
+            ))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "authenticator_pubkeys": pubkeys,
+                    "offchain_signer_commitment": "0x0"
+                })
+                .to_string(),
+            )
+            .expect(expected_hits)
+            .create_async()
+            .await
+    }
+
     #[test]
     fn test_recovery_data_from_seed() {
         let seed = [1u8; 32];
@@ -1271,22 +1298,12 @@ mod tests {
             .with_body(serde_json::json!({ "signature_nonce": "0x0" }).to_string())
             .create_async()
             .await;
-        let pubkeys_mock = server
-            .mock("POST", "/authenticator-pubkeys")
-            .match_body(mockito::Matcher::JsonString(
-                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
-            ))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                serde_json::json!({
-                    "authenticator_pubkeys": [existing_pubkey],
-                    "offchain_signer_commitment": "0x0"
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
+        let pubkeys_mock = mock_authenticator_pubkeys(
+            &mut server,
+            &[Some(existing_pubkey.as_str())],
+            1,
+        )
+        .await;
         let insert_mock = server
             .mock("POST", "/insert-authenticator")
             .match_body(mockito::Matcher::JsonString(serde_json::json!({
@@ -1362,23 +1379,12 @@ mod tests {
         let (authenticator, root) = test_authenticator(&mut server).await;
         let existing_pubkey = encoded_pubkey(&TEST_SEED);
 
-        let pubkeys_mock = server
-            .mock("POST", "/authenticator-pubkeys")
-            .match_body(mockito::Matcher::JsonString(
-                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
-            ))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                serde_json::json!({
-                    "authenticator_pubkeys": [existing_pubkey.clone()],
-                    "offchain_signer_commitment": "0x0"
-                })
-                .to_string(),
-            )
-            .expect(2)
-            .create_async()
-            .await;
+        let pubkeys_mock = mock_authenticator_pubkeys(
+            &mut server,
+            &[Some(existing_pubkey.as_str())],
+            2,
+        )
+        .await;
 
         assert!(authenticator
             .has_authenticator_pubkey(existing_pubkey)
@@ -1413,23 +1419,15 @@ mod tests {
             .with_body(serde_json::json!({ "signature_nonce": "0x1" }).to_string())
             .create_async()
             .await;
-        let pubkeys_mock = server
-            .mock("POST", "/authenticator-pubkeys")
-            .match_body(mockito::Matcher::JsonString(
-                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
-            ))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                serde_json::json!({
-                    "authenticator_pubkeys": [existing_pubkey, removed_pubkey.clone()],
-                    "offchain_signer_commitment": "0x0"
-                })
-                .to_string(),
-            )
-            .expect(2)
-            .create_async()
-            .await;
+        let pubkeys_mock = mock_authenticator_pubkeys(
+            &mut server,
+            &[
+                Some(existing_pubkey.as_str()),
+                Some(removed_pubkey.as_str()),
+            ],
+            2,
+        )
+        .await;
         let remove_mock = server
             .mock("POST", "/remove-authenticator")
             .match_body(mockito::Matcher::JsonString(serde_json::json!({
@@ -1477,23 +1475,16 @@ mod tests {
         let existing_pubkey = encoded_pubkey(&TEST_SEED);
         let slot_pubkey = encoded_pubkey(&[2u8; 32]);
 
-        let pubkeys_mock = server
-            .mock("POST", "/authenticator-pubkeys")
-            .match_body(mockito::Matcher::JsonString(
-                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
-            ))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                serde_json::json!({
-                    "authenticator_pubkeys": [existing_pubkey, null, slot_pubkey],
-                    "offchain_signer_commitment": "0x0"
-                })
-                .to_string(),
-            )
-            .expect(2)
-            .create_async()
-            .await;
+        let pubkeys_mock = mock_authenticator_pubkeys(
+            &mut server,
+            &[
+                Some(existing_pubkey.as_str()),
+                None,
+                Some(slot_pubkey.as_str()),
+            ],
+            2,
+        )
+        .await;
         let nonce_mock = server
             .mock("POST", "/signature-nonce")
             .expect(0)
@@ -1562,26 +1553,16 @@ mod tests {
         let existing_pubkey = encoded_pubkey(&TEST_SEED);
         let other_pubkey = encoded_pubkey(&[2u8; 32]);
 
-        let pubkeys_mock = server
-            .mock("POST", "/authenticator-pubkeys")
-            .match_body(mockito::Matcher::JsonString(
-                serde_json::json!({ "leaf_index": "0x2a" }).to_string(),
-            ))
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(
-                serde_json::json!({
-                    "authenticator_pubkeys": [
-                        existing_pubkey.clone(),
-                        null,
-                        other_pubkey.clone()
-                    ],
-                    "offchain_signer_commitment": "0x0"
-                })
-                .to_string(),
-            )
-            .create_async()
-            .await;
+        let pubkeys_mock = mock_authenticator_pubkeys(
+            &mut server,
+            &[
+                Some(existing_pubkey.as_str()),
+                None,
+                Some(other_pubkey.as_str()),
+            ],
+            1,
+        )
+        .await;
 
         let pubkeys = authenticator
             .get_authenticator_pubkeys()
