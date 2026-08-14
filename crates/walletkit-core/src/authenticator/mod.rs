@@ -63,12 +63,13 @@ fn parse_authenticator_pubkey(
         reason,
     };
     let hex = encoded_pubkey.strip_prefix("0x").ok_or_else(|| {
-        invalid_input("Public key must be a 0x-prefixed 32-byte hex string".to_string())
+        invalid_input("Public key must start with a 0x prefix".to_string())
     })?;
 
     if hex.len() != 64 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(invalid_input(
-            "Public key must be a 0x-prefixed 32-byte hex string".to_string(),
+            "Public key must be exactly 32 bytes (64 hex characters) after the 0x prefix"
+                .to_string(),
         ));
     }
 
