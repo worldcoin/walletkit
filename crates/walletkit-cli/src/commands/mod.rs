@@ -318,7 +318,7 @@ pub async fn init_authenticator(
     let artifacts = Arc::new(CachingZkArtifacts::new(Arc::new(paths)));
 
     let authenticator = if let Some(ref config) = config_json {
-        Authenticator::init(&seed, config, artifacts.clone(), store.clone())
+        Authenticator::init(seed.to_vec(), config, artifacts.clone(), store.clone())
             .await
             .wrap_err("authenticator init failed")?
     } else {

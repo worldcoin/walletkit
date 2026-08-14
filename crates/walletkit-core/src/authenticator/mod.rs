@@ -502,7 +502,7 @@ impl Authenticator {
     #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init_with_defaults(
-        seed: &[u8],
+        seed: Vec<u8>,
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
@@ -510,7 +510,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = defaults::default_config(environment, rpc_url, region)?;
-        Self::init_with_config(seed, config, artifacts, store).await
+        Self::init_with_config(&seed, config, artifacts, store).await
     }
 
     /// Initializes a new Authenticator from a seed using SDK defaults routed
@@ -525,7 +525,7 @@ impl Authenticator {
     #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init_with_ohttp_defaults(
-        seed: &[u8],
+        seed: Vec<u8>,
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
@@ -533,7 +533,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
-        Self::init_with_config(seed, config, artifacts, store).await
+        Self::init_with_config(&seed, config, artifacts, store).await
     }
 
     /// Initializes a new Authenticator from a seed and config.
@@ -546,7 +546,7 @@ impl Authenticator {
     #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init(
-        seed: &[u8],
+        seed: Vec<u8>,
         config: &str,
         artifacts: Arc<dyn WalletKitZkArtifactSource>,
         store: Arc<CredentialStore>,
@@ -556,7 +556,7 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        Self::init_with_config(seed, config, artifacts, store).await
+        Self::init_with_config(&seed, config, artifacts, store).await
     }
 
     /// Generates a proof for the given proof request.
@@ -844,7 +844,7 @@ impl InitializingAuthenticator {
         skip_all
     )]
     pub async fn register_with_defaults(
-        seed: &[u8],
+        seed: Vec<u8>,
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
@@ -856,7 +856,7 @@ impl InitializingAuthenticator {
         let config = defaults::default_config(environment, rpc_url, region)?;
 
         let initializing_authenticator =
-            CoreAuthenticator::register(seed, config, recovery_address).await?;
+            CoreAuthenticator::register(&seed, config, recovery_address).await?;
 
         Ok(Self(initializing_authenticator))
     }
@@ -877,7 +877,7 @@ impl InitializingAuthenticator {
         skip_all
     )]
     pub async fn register_with_ohttp_defaults(
-        seed: &[u8],
+        seed: Vec<u8>,
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
@@ -889,7 +889,7 @@ impl InitializingAuthenticator {
         let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
 
         let initializing_authenticator =
-            CoreAuthenticator::register(seed, config, recovery_address).await?;
+            CoreAuthenticator::register(&seed, config, recovery_address).await?;
 
         Ok(Self(initializing_authenticator))
     }
@@ -908,7 +908,7 @@ impl InitializingAuthenticator {
         skip_all
     )]
     pub async fn register(
-        seed: &[u8],
+        seed: Vec<u8>,
         config: &str,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
@@ -922,7 +922,7 @@ impl InitializingAuthenticator {
             })?;
 
         let initializing_authenticator =
-            CoreAuthenticator::register(seed, config, recovery_address).await?;
+            CoreAuthenticator::register(&seed, config, recovery_address).await?;
 
         Ok(Self(initializing_authenticator))
     }
