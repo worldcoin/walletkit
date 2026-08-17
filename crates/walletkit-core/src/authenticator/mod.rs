@@ -1482,10 +1482,14 @@ mod tests {
         let artifacts =
             Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
 
-        let _authenticator =
-            Authenticator::init([2u8; 32].to_vec(), &config, artifacts, Arc::new(store))
-                .await
-                .unwrap();
+        let _authenticator = Authenticator::init(
+            [2u8; 32].to_vec(),
+            &config,
+            artifacts,
+            Arc::new(store),
+        )
+        .await
+        .unwrap();
         drop(mock_server);
 
         cleanup_test_storage(&root);
