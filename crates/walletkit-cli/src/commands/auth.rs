@@ -122,7 +122,7 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
 
     let result = if let Some(ref config) = config_json {
         InitializingAuthenticator::register(
-            seed.to_vec(),
+            seed.clone(),
             config,
             recovery_address.map(String::from),
         )
@@ -132,7 +132,7 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
         let region = resolve_region(cli)?;
         if cli.ohttp_defaults {
             InitializingAuthenticator::register_with_ohttp_defaults(
-                seed.to_vec(),
+                seed.clone(),
                 cli.rpc_url.clone(),
                 &env,
                 region,
@@ -141,7 +141,7 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
             .await
         } else {
             InitializingAuthenticator::register_with_defaults(
-                seed.to_vec(),
+                seed.clone(),
                 cli.rpc_url.clone(),
                 &env,
                 region,

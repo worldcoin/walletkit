@@ -187,11 +187,15 @@ impl Authenticator {
     ///
     /// # Errors
     /// May error if very unexpectedly the signing process fails. Not expected.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "seed is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
+    )]
     pub fn danger_sign_challenge(
         &self,
-        challenge: &[u8],
+        challenge: Vec<u8>,
     ) -> Result<Vec<u8>, WalletKitError> {
-        let signature = self.inner.danger_sign_challenge(challenge)?;
+        let signature = self.inner.danger_sign_challenge(&challenge)?;
         Ok(signature.as_bytes().to_vec())
     }
 
@@ -1037,8 +1041,12 @@ pub fn validate_authenticator_pubkey(
 /// # Errors
 /// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
 #[uniffi::export]
-pub fn recovery_data_from_seed(seed: &[u8]) -> Result<RecoveryData, WalletKitError> {
-    RecoveryData::from_seed(seed)
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "seed is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
+)]
+pub fn recovery_data_from_seed(seed: Vec<u8>) -> Result<RecoveryData, WalletKitError> {
+    RecoveryData::from_seed(&seed)
 }
 
 #[cfg(test)]
@@ -1475,7 +1483,7 @@ mod tests {
             Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
 
         let _authenticator =
-            Authenticator::init(&[2u8; 32], &config, artifacts, Arc::new(store))
+            Authenticator::init([2u8; 32].to_vec(), &config, artifacts, Arc::new(store))
                 .await
                 .unwrap();
         drop(mock_server);

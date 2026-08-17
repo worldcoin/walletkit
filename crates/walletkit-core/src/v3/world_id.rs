@@ -29,9 +29,13 @@ impl WorldId {
     /// Initializes a new `Identity` from a World ID secret. The identity is initialized for a specific environment.
     #[must_use]
     #[uniffi::constructor]
-    pub fn new(secret: &[u8], environment: &Environment) -> Self {
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "secret is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
+    )]
+    pub fn new(secret: Vec<u8>, environment: &Environment) -> Self {
         let hashed_secret_hex: SecretBox<[u8; 64]> =
-            SecretBox::init_with(|| seed_hex(secret));
+            SecretBox::init_with(|| seed_hex(&secret));
         // NOTE: `init_with_mut` cannot be used here because [u8; 64] does not implement Default.
 
         Self {
@@ -79,7 +83,7 @@ impl WorldId {
     /// use std::sync::Arc;
     ///
     /// # tokio_test::block_on(async {
-    ///     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+    ///     let world_id = WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
     ///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Device);
     ///     let proof = world_id.generate_proof(&context).await.unwrap();
     ///     assert_eq!(proof.nullifier_hash.to_padded_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
@@ -163,7 +167,8 @@ mod tests {
     /// Additionally it tests computing the `nullifier_hash` correctly.
     #[tokio::test]
     async fn test_proof_generation() {
-        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id =
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
         let context = ProofContext::new("app_id", None, None, CredentialType::Orb);
         let nullifier_hash = world_id.generate_nullifier_hash(&context);
         assert_eq!(
@@ -205,7 +210,8 @@ mod tests {
     /// This test also covers using the alternative `CredentialType::Device`.
     #[tokio::test]
     async fn test_proof_generation_with_device_credential_and_string_signal() {
-        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id =
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
         let context = ProofContext::new(
             "app_id",
             None,
@@ -250,7 +256,7 @@ mod tests {
     #[test]
     fn test_secret_hex_generation() {
         let world_id: WorldId =
-            WorldId::new(b"not_a_real_secret", &Environment::Staging);
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
 
         // this is the expected SHA-256 of the secret (computed externally)
         let expected_hash: Uint256 = uint!(88026203285206540949013074047154212280150971633012190779810764227609557184952_U256).into();
@@ -266,10 +272,14 @@ mod tests {
     #[test]
     fn test_partial_eq_constant_time() {
         // Test that WorldId equality works correctly
-        let world_id1 = WorldId::new(b"not_a_real_secret", &Environment::Staging);
-        let world_id2 = WorldId::new(b"not_a_real_secret", &Environment::Staging);
-        let world_id3 = WorldId::new(b"different_secret", &Environment::Staging);
-        let world_id4 = WorldId::new(b"not_a_real_secret", &Environment::Production);
+        let world_id1 =
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
+        let world_id2 =
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
+        let world_id3 =
+            WorldId::new(b"different_secret".to_vec(), &Environment::Staging);
+        let world_id4 =
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Production);
 
         // Same secret, same environment
         assert_eq!(world_id1, world_id2);
@@ -280,7 +290,8 @@ mod tests {
 
     #[test]
     fn test_identity_commitment_generation() {
-        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id =
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
         let commitment = world_id.get_identity_commitment(&CredentialType::Orb);
 
         assert_eq!(

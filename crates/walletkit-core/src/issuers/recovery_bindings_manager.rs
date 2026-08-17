@@ -210,7 +210,7 @@ impl RecoveryBindingManager {
             Self::create_bytes_to_sign(challenge, request.leaf_index, &request.sub)?;
         let commitment = keccak256(&message_bytes);
         let signature: Vec<u8> =
-            authenticator.danger_sign_challenge(commitment.as_slice())?;
+            authenticator.danger_sign_challenge(commitment.to_vec())?;
         Ok(format!("0x{}", hex::encode(signature)))
     }
 
@@ -382,7 +382,7 @@ mod tests {
             Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
 
         let authenticator = Authenticator::init_with_defaults(
-            seed,
+            seed.to_vec(),
             Some(rpc_url.clone()),
             &Environment::Staging,
             None,
