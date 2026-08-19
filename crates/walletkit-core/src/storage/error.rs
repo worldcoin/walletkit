@@ -91,6 +91,14 @@ pub enum StorageError {
         key_prefix: u8,
     },
 
+    /// Errors coming from the activity database.
+    #[error("activity db error: {0}")]
+    ActivityDb(String),
+
+    /// An `ActivityEntry` violated the `failure_reason`/`outcome` invariant.
+    #[error("invalid activity record: {0}")]
+    ActivityInvalidRecord(String),
+
     /// Unexpected `UniFFI` callback error.
     #[error("unexpected uniffi callback error: {0}")]
     UnexpectedUniFFICallbackError(String),

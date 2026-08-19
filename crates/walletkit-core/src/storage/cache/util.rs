@@ -230,3 +230,9 @@ pub(super) fn to_i64(value: u64, label: &str) -> StorageResult<i64> {
         StorageError::CacheDb(format!("{label} out of range for i64: {value}"))
     })
 }
+
+pub(super) fn to_u64(value: i64, label: &str) -> StorageResult<u64> {
+    u64::try_from(value).map_err(|_| {
+        StorageError::CacheDb(format!("{label} out of range for u64: {value}"))
+    })
+}

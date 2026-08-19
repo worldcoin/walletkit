@@ -115,3 +115,28 @@ pub trait VaultChangedListener: Send + Sync {
     /// Called after a credential is added or removed.
     fn on_vault_changed(&self);
 }
+
+/// Listener notified when credential-activity history changes.
+///
+/// Register via [`super::CredentialStore::set_activity_changed_listener`]. The
+/// callback is delivered on a dedicated background thread to avoid re-entering
+/// the `UniFFI` call stack (see `logger.rs` for rationale).
+///
+/// This is only called when an activity entry is recorded.
+///
+/// # Expected usage
+///
+/// The host app should treat this as a trigger to refresh from the store. It
+/// is a signal only and is not intended to carry the changed data with it.
+///
+/// # Safety
+///
+/// **Warning:** implementors **must not** call back into
+/// [`super::CredentialStore`] from
+/// [`on_activity_changed`](ActivityChangedListener::on_activity_changed) —
+/// doing so will deadlock.
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+pub trait ActivityChangedListener: Send + Sync {
+    /// Called after an activity entry is recorded, finalized, or reconciled.
+    fn on_activity_changed(&self);
+}
