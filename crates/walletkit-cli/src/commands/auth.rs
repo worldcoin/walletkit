@@ -29,7 +29,7 @@ pub async fn register_and_poll(
 
     let result = if let Some(ref config) = config_json {
         InitializingAuthenticator::register(
-            seed,
+            seed.to_vec(),
             config,
             recovery_address.map(String::from),
         )
@@ -39,7 +39,7 @@ pub async fn register_and_poll(
         let region = resolve_region(cli)?;
         if cli.ohttp_defaults {
             InitializingAuthenticator::register_with_ohttp_defaults(
-                seed,
+                seed.to_vec(),
                 cli.rpc_url.clone(),
                 &env,
                 region,
@@ -48,7 +48,7 @@ pub async fn register_and_poll(
             .await
         } else {
             InitializingAuthenticator::register_with_defaults(
-                seed,
+                seed.to_vec(),
                 cli.rpc_url.clone(),
                 &env,
                 region,
@@ -122,7 +122,7 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
 
     let result = if let Some(ref config) = config_json {
         InitializingAuthenticator::register(
-            &seed,
+            seed.clone(),
             config,
             recovery_address.map(String::from),
         )
@@ -132,7 +132,7 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
         let region = resolve_region(cli)?;
         if cli.ohttp_defaults {
             InitializingAuthenticator::register_with_ohttp_defaults(
-                &seed,
+                seed.clone(),
                 cli.rpc_url.clone(),
                 &env,
                 region,
@@ -141,7 +141,7 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
             .await
         } else {
             InitializingAuthenticator::register_with_defaults(
-                &seed,
+                seed.clone(),
                 cli.rpc_url.clone(),
                 &env,
                 region,

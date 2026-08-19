@@ -144,7 +144,8 @@ mod tests {
             .create_async()
             .await;
 
-        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id =
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
 
         let merkle_proof = MerkleTreeProof::from_identity_commitment(
             &world_id.get_identity_commitment(&CredentialType::Device),
@@ -180,7 +181,8 @@ mod tests {
             .create_async()
             .await;
 
-        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id =
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
 
         let url = mock_server.url();
 
@@ -217,7 +219,8 @@ mod tests {
             .create_async()
             .await;
 
-        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id =
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
 
         let url = mock_server.url();
 
@@ -253,7 +256,8 @@ mod tests {
             .create_async()
             .await;
 
-        let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+        let world_id =
+            WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
 
         let result = MerkleTreeProof::from_identity_commitment(
             &world_id.get_identity_commitment(&CredentialType::Device),

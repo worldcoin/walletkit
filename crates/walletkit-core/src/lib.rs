@@ -20,7 +20,7 @@
 //!     // Initialize an authenticator for an already-registered World ID.
 //!     let seed = b"my_secret_seed_at_length_32_bytes!";
 //!     let authenticator = Authenticator::init_with_defaults(
-//!         seed,
+//!         seed.to_vec(),
 //!         None, // uses default RPC URL
 //!         &Environment::Staging,
 //!         None, // uses default region
@@ -150,7 +150,7 @@ pub mod issuers;
 /// use walletkit_core::v3::{proof::ProofContext, CredentialType, world_id::WorldId};
 /// use walletkit_core::Environment;
 /// async fn example() {
-///     let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+///     let world_id = WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
 ///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Orb);
 ///     let proof = world_id.generate_proof(&context).await.unwrap();
 ///     println!("{}", proof.to_json().unwrap()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification

@@ -187,11 +187,15 @@ impl Authenticator {
     ///
     /// # Errors
     /// May error if very unexpectedly the signing process fails. Not expected.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "seed is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
+    )]
     pub fn danger_sign_challenge(
         &self,
-        challenge: &[u8],
+        challenge: Vec<u8>,
     ) -> Result<Vec<u8>, WalletKitError> {
-        let signature = self.inner.danger_sign_challenge(challenge)?;
+        let signature = self.inner.danger_sign_challenge(&challenge)?;
         Ok(signature.as_bytes().to_vec())
     }
 
@@ -502,7 +506,7 @@ impl Authenticator {
     #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init_with_defaults(
-        seed: &[u8],
+        seed: Vec<u8>,
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
@@ -510,7 +514,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = defaults::default_config(environment, rpc_url, region)?;
-        Self::init_with_config(seed, config, artifacts, store).await
+        Self::init_with_config(&seed, config, artifacts, store).await
     }
 
     /// Initializes a new Authenticator from a seed using SDK defaults routed
@@ -525,7 +529,7 @@ impl Authenticator {
     #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init_with_ohttp_defaults(
-        seed: &[u8],
+        seed: Vec<u8>,
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
@@ -533,7 +537,7 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
-        Self::init_with_config(seed, config, artifacts, store).await
+        Self::init_with_config(&seed, config, artifacts, store).await
     }
 
     /// Initializes a new Authenticator from a seed and config.
@@ -546,7 +550,7 @@ impl Authenticator {
     #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init(
-        seed: &[u8],
+        seed: Vec<u8>,
         config: &str,
         artifacts: Arc<dyn WalletKitZkArtifactSource>,
         store: Arc<CredentialStore>,
@@ -556,7 +560,7 @@ impl Authenticator {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        Self::init_with_config(seed, config, artifacts, store).await
+        Self::init_with_config(&seed, config, artifacts, store).await
     }
 
     /// Generates a proof for the given proof request.
@@ -844,7 +848,7 @@ impl InitializingAuthenticator {
         skip_all
     )]
     pub async fn register_with_defaults(
-        seed: &[u8],
+        seed: Vec<u8>,
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
@@ -856,7 +860,7 @@ impl InitializingAuthenticator {
         let config = defaults::default_config(environment, rpc_url, region)?;
 
         let initializing_authenticator =
-            CoreAuthenticator::register(seed, config, recovery_address).await?;
+            CoreAuthenticator::register(&seed, config, recovery_address).await?;
 
         Ok(Self(initializing_authenticator))
     }
@@ -877,7 +881,7 @@ impl InitializingAuthenticator {
         skip_all
     )]
     pub async fn register_with_ohttp_defaults(
-        seed: &[u8],
+        seed: Vec<u8>,
         rpc_url: Option<String>,
         environment: &Environment,
         region: Option<Region>,
@@ -889,7 +893,7 @@ impl InitializingAuthenticator {
         let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
 
         let initializing_authenticator =
-            CoreAuthenticator::register(seed, config, recovery_address).await?;
+            CoreAuthenticator::register(&seed, config, recovery_address).await?;
 
         Ok(Self(initializing_authenticator))
     }
@@ -908,7 +912,7 @@ impl InitializingAuthenticator {
         skip_all
     )]
     pub async fn register(
-        seed: &[u8],
+        seed: Vec<u8>,
         config: &str,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
@@ -922,7 +926,7 @@ impl InitializingAuthenticator {
             })?;
 
         let initializing_authenticator =
-            CoreAuthenticator::register(seed, config, recovery_address).await?;
+            CoreAuthenticator::register(&seed, config, recovery_address).await?;
 
         Ok(Self(initializing_authenticator))
     }
@@ -1037,8 +1041,12 @@ pub fn validate_authenticator_pubkey(
 /// # Errors
 /// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
 #[uniffi::export]
-pub fn recovery_data_from_seed(seed: &[u8]) -> Result<RecoveryData, WalletKitError> {
-    RecoveryData::from_seed(seed)
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "seed is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
+)]
+pub fn recovery_data_from_seed(seed: Vec<u8>) -> Result<RecoveryData, WalletKitError> {
+    RecoveryData::from_seed(&seed)
 }
 
 #[cfg(test)]
@@ -1474,10 +1482,14 @@ mod tests {
         let artifacts =
             Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
 
-        let _authenticator =
-            Authenticator::init(&[2u8; 32], &config, artifacts, Arc::new(store))
-                .await
-                .unwrap();
+        let _authenticator = Authenticator::init(
+            [2u8; 32].to_vec(),
+            &config,
+            artifacts,
+            Arc::new(store),
+        )
+        .await
+        .unwrap();
         drop(mock_server);
 
         cleanup_test_storage(&root);

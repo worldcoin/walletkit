@@ -46,4 +46,7 @@ ignore = [
   "RUSTSEC-2025-0141", # Unmaintained `bincode`, feature complete for now (2026-01-15)
   "RUSTSEC-2025-0057", # Unmaintained `fxhash` (2025-09-05)
   "RUSTSEC-2026-0173", # Unmaintained `proc-macro-error2` (transitive via `alloy-sol-macro`) (2026-06-09)
+  "RUSTSEC-2026-0247", # Unmaintained `bitmaps` (transitive via `im` / `provekit` / `world-id-proof`)
+  "RUSTSEC-2026-0248", # Unmaintained `im` (transitive via `provekit` / `world-id-proof`)
+  "RUSTSEC-2026-0251", # Unmaintained `sized-chunks` (transitive via `im` / `provekit` / `world-id-proof`)
 ]

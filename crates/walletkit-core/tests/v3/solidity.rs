@@ -110,7 +110,7 @@ async fn test_address_book_proof_verification_on_chain() {
     let address_book = IAddressBook::new(contract_address, &provider);
 
     // initialize a World ID and generate the relevant proof context
-    let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+    let world_id = WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
     let address_to_verify = Address::random();
     let proof_time: u64 = chrono::Utc::now().timestamp() as u64;
 
@@ -198,7 +198,7 @@ async fn test_verify_simple_world_id_proof_on_chain() {
     let world_id_contract = IWorldIDRouter::new(contract_address, &provider);
 
     // initialize a World ID and generate the relevant proof context
-    let world_id = WorldId::new(b"not_a_real_secret", &Environment::Staging);
+    let world_id = WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
 
     let proof_context = ProofContext::new(
         "app_staging_509648994ab005fe79c4ddd0449606ca",
