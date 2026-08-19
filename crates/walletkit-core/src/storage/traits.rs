@@ -115,3 +115,50 @@ pub trait VaultChangedListener: Send + Sync {
     /// Called after a credential is added or removed.
     fn on_vault_changed(&self);
 }
+
+/// Listener notified when credential activity history changes (a start,
+/// finalize, or reconciliation was recorded).
+///
+/// Register via
+/// [`super::CredentialActivityStore::set_activity_changed_listener`]. The
+/// callback is delivered on a dedicated background thread to avoid
+/// re-entering the `UniFFI` call stack (see `logger.rs` for rationale).
+///
+/// # Expected usage
+///
+/// The host app should treat this as a signal to re-query
+/// [`super::CredentialActivityStore::list_activities`]. It should contain
+/// synchronous, fast actions only.
+///
+/// # Safety
+///
+/// **Warning:** implementors **must not** call back into
+/// [`super::CredentialActivityStore`] from
+/// [`on_activity_changed`](CredentialActivityChangedListener::on_activity_changed)
+/// — doing so will deadlock.
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+pub trait CredentialActivityChangedListener: Send + Sync {
+    /// Called after an activity entry is recorded, finalized, or reconciled.
+    fn on_activity_changed(&self);
+}
+
+/// Listener notified once, informationally, when opening the credential
+/// activity store applied one or more pending schema migrations.
+///
+/// Register via
+/// [`super::CredentialActivityStore::set_activity_schema_migrated_listener`]
+/// before [`super::CredentialStore::init`] is called — migrations run during
+/// `init`, so a listener registered afterward will miss the notification for
+/// that session.
+///
+/// # Safety
+///
+/// **Warning:** implementors **must not** call back into
+/// [`super::CredentialActivityStore`] from
+/// [`on_activity_schema_migrated`](CredentialActivitySchemaMigratedListener::on_activity_schema_migrated)
+/// — doing so will deadlock.
+#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+pub trait CredentialActivitySchemaMigratedListener: Send + Sync {
+    /// Called once after migrations run, reporting the version range applied.
+    fn on_activity_schema_migrated(&self, from_version: u32, to_version: u32);
+}

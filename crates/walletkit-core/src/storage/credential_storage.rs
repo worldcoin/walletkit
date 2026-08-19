@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex};
 use world_id_core::FieldElement as CoreFieldElement;
 
 use super::error::{StorageError, StorageResult};
-use super::keys::StorageKeys;
+use super::keys::{IntermediateKeyHandle, StorageKeys};
 use super::paths::StoragePaths;
+#[cfg(not(target_arch = "wasm32"))]
+use super::remove_db_files;
 use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
 use super::traits::VaultChangedListener;
@@ -46,20 +48,6 @@ impl Drop for CleanupFile {
     }
 }
 
-/// Removes a `SQLite` database file and its WAL/SHM sidecar files.
-/// Best-effort: missing files are silently ignored, other errors are logged.
-#[cfg(not(target_arch = "wasm32"))]
-fn remove_db_files(db_path: &std::path::Path) {
-    for ext in &["sqlite", "sqlite-wal", "sqlite-shm"] {
-        let path = db_path.with_extension(ext);
-        if let Err(e) = std::fs::remove_file(&path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::error!("Failed to delete {}: {e}", path.display());
-            }
-        }
-    }
-}
-
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[derive(uniffi::Object)]
 pub struct CredentialStore {
@@ -85,7 +73,6 @@ struct CredentialStoreInner {
 }
 
 struct StorageState {
-    #[allow(dead_code)]
     keys: StorageKeys,
     vault: CredentialVault,
     cache: CacheDb,
@@ -195,8 +182,20 @@ impl CredentialStore {
     ///
     /// Returns an error if initialization fails or the leaf index mismatches.
     pub fn init(&self, leaf_index: u64, now: u64) -> StorageResult<()> {
-        let mut inner = self.lock_inner()?;
-        inner.init(leaf_index, now)
+        self.lock_inner()?.init(leaf_index, now)
+    }
+
+    /// Returns an opaque handle to the account's derived `K_intermediate`,
+    /// for opening a sibling storage object (e.g. `CredentialActivityStore`)
+    /// keyed by the same account key. Available only after [`init`](Self::init).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized.
+    pub fn intermediate_key(&self) -> StorageResult<Arc<IntermediateKeyHandle>> {
+        Ok(Arc::new(IntermediateKeyHandle::from_shared(
+            self.lock_inner()?.state()?.keys.intermediate_key_shared(),
+        )))
     }
 
     /// Lists credential metadata, optionally filtered by issuer schema ID.
@@ -284,6 +283,12 @@ impl CredentialStore {
     /// cache database. After this call the store is left in an uninitialized
     /// state — any subsequent operation (other than re-initialization) will
     /// return [`StorageError::NotInitialized`].
+    ///
+    /// Does **not** remove credential-activity history: `CredentialActivityStore`
+    /// is constructed and owned separately by the host app, not by this store.
+    /// Call `CredentialActivityStore::destroy_storage` too if the account's
+    /// activity history should also be wiped (e.g. on logout or account
+    /// deletion) — see its docs for why that's a separate call.
     ///
     /// Intended for use when the user logs out or deletes their account.
     ///
@@ -507,6 +512,7 @@ impl CredentialStore {
 }
 
 impl CredentialStoreInner {
+    /// Initializes storage, opening the vault and cache databases on first call.
     fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
         if let Some(state) = &mut self.state {
             state.vault.init_leaf_index(leaf_index, now)?;
@@ -520,17 +526,28 @@ impl CredentialStoreInner {
             &self.lock,
             now,
         )?;
-        let k_intermediate = keys.intermediate_key();
-        let vault = CredentialVault::new(&self.paths.vault_db_path(), k_intermediate)?;
-        let cache = CacheDb::new(&self.paths.cache_db_path(), k_intermediate)?;
+
+        let k_intermediate = keys.intermediate_key()?;
+        let vault = CredentialVault::new(
+            &self.paths.vault_db_path(),
+            k_intermediate.as_secret()?,
+        )?;
+
+        let cache =
+            CacheDb::new(&self.paths.cache_db_path(), k_intermediate.as_secret()?)?;
+
+        drop(k_intermediate);
+
         let state = StorageState {
             keys,
             vault,
             cache,
             leaf_index,
         };
+
         state.vault.init_leaf_index(leaf_index, now)?;
         self.state = Some(state);
+
         Ok(())
     }
 
@@ -798,8 +815,16 @@ impl CredentialStoreInner {
     /// Permanently destroys all storage data: encryption keys, vault, and cache.
     fn destroy_storage(&mut self) -> StorageResult<()> {
         let _guard = self.guard()?;
-        // Drop in-memory state: zeroizes keys, closes database connections.
-        self.state = None;
+        if let Some(state) = self.state.take() {
+            // Eagerly zeroize the intermediate key even if an
+            // `IntermediateKeyHandle` clone is still held elsewhere (e.g. by
+            // a separately-owned `CredentialActivityStore`) — otherwise the
+            // key would only zeroize once that clone's last `Arc` reference
+            // drops, which a lingering host-held handle could delay
+            // indefinitely past this call.
+            state.keys.destroy();
+            // `state` (and its open vault/cache connections) drops here.
+        }
         // Delete the encryption key envelope. Without this key the database
         // files are unreadable even if file deletion below fails.
         self.blob_store.delete(ACCOUNT_KEYS_FILENAME.to_string())?;

@@ -37,6 +37,7 @@ pub fn cleanup_test_storage(root: &Path) {
     let paths = StoragePaths::new(root);
     let vault = paths.vault_db_path();
     let cache = paths.cache_db_path();
+    let activity = paths.credential_activity_db_path();
     let lock = paths.lock_path();
     let _ = fs::remove_file(&vault);
     let _ = fs::remove_file(vault.with_extension("sqlite-wal"));
@@ -44,6 +45,9 @@ pub fn cleanup_test_storage(root: &Path) {
     let _ = fs::remove_file(&cache);
     let _ = fs::remove_file(cache.with_extension("sqlite-wal"));
     let _ = fs::remove_file(cache.with_extension("sqlite-shm"));
+    let _ = fs::remove_file(&activity);
+    let _ = fs::remove_file(activity.with_extension("sqlite-wal"));
+    let _ = fs::remove_file(activity.with_extension("sqlite-shm"));
     let _ = fs::remove_file(lock);
     let _ = fs::remove_dir_all(paths.worldid_dir());
     let _ = fs::remove_dir_all(paths.root());

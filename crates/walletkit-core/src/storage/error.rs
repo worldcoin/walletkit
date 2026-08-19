@@ -83,6 +83,36 @@ pub enum StorageError {
         key_prefix: u8,
     },
 
+    /// Errors coming from the credential-activity database.
+    #[error("activity db error: {0}")]
+    CredentialActivityDb(String),
+
+    /// No open activity entry matched the given client ID when finalizing.
+    #[error("no open activity entry for client id: {client_id}")]
+    CredentialActivityEntryNotFound {
+        /// Client ID provided by the caller.
+        client_id: String,
+    },
+
+    /// `CredentialActivityStore::open` was called while already open at a
+    /// different path, e.g. after switching accounts without first calling
+    /// `destroy_storage`.
+    #[error(
+        "credential-activity store already open at {open_path}, refusing to reopen at {requested_path}"
+    )]
+    CredentialActivityAlreadyOpen {
+        /// Path the store is currently open at.
+        open_path: String,
+        /// Path the caller just requested.
+        requested_path: String,
+    },
+
+    /// A [`crate::storage::types::CredentialActivityFinalization`] violated
+    /// the invariant that `failure_reason` is present if and only if
+    /// `outcome` is `Failed`.
+    #[error("invalid credential-activity finalization: {0}")]
+    CredentialActivityInvalidFinalization(String),
+
     /// Unexpected `UniFFI` callback error.
     #[error("unexpected uniffi callback error: {0}")]
     UnexpectedUniFFICallbackError(String),

@@ -44,6 +44,7 @@
 //! the `walletkit-db` README.
 
 pub mod cache;
+pub mod credential_activity;
 pub mod credential_storage;
 pub mod credential_vault;
 pub mod error;
@@ -53,22 +54,44 @@ pub mod traits;
 pub mod types;
 
 pub use cache::CacheDb;
+pub use credential_activity::CredentialActivityStore;
 pub use credential_storage::CredentialStore;
 pub use credential_vault::CredentialVault;
 pub use error::{StorageError, StorageResult};
-pub use keys::StorageKeys;
+pub use keys::{IntermediateKeyHandle, StorageKeys};
 pub use paths::StoragePaths;
 pub use traits::{
-    AtomicBlobStore, DeviceKeystore, StorageProvider, VaultChangedListener,
+    AtomicBlobStore, CredentialActivityChangedListener,
+    CredentialActivitySchemaMigratedListener, DeviceKeystore, StorageProvider,
+    VaultChangedListener,
 };
 pub use types::{
-    BlobKind, ContentId, CredentialRecord, Nullifier, ReplayGuardKind,
-    ReplayGuardResult, RequestId,
+    BlobKind, ContentId, CredentialActivityCredential,
+    CredentialActivityCredentialSource, CredentialActivityCredentialType,
+    CredentialActivityEntry, CredentialActivityFailureReason,
+    CredentialActivityFinalization, CredentialActivityMetadata,
+    CredentialActivityOutcome, CredentialActivityProofKind, CredentialActivityProtocol,
+    CredentialActivityQuery, CredentialRecord, NewCredentialActivityEntry, Nullifier,
+    ReplayGuardKind, ReplayGuardResult, RequestId,
 };
 pub use walletkit_db::{Lock as StorageLock, LockGuard as StorageLockGuard};
 
 pub(crate) const ACCOUNT_KEYS_FILENAME: &str = "account_keys.bin";
 pub(crate) const ACCOUNT_KEY_ENVELOPE_AD: &[u8] = b"worldid:account-key-envelope";
+
+/// Removes a `SQLite` database file and its WAL/SHM sidecar files.
+/// Best-effort: missing files are silently ignored, other errors are logged.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn remove_db_files(db_path: &std::path::Path) {
+    for ext in &["sqlite", "sqlite-wal", "sqlite-shm"] {
+        let path = db_path.with_extension(ext);
+        if let Err(e) = std::fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::error!("Failed to delete {}: {e}", path.display());
+            }
+        }
+    }
+}
 
 #[cfg(test)]
 pub(crate) mod tests_utils;

@@ -6,23 +6,34 @@
 //! `K_intermediate` hierarchy, envelope sealing, and encryption are described in the
 //! `walletkit-db` README.
 
+use std::sync::{Arc, Mutex, MutexGuard};
+
 use secrecy::SecretBox;
-use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use super::{
-    error::StorageResult,
+    error::{StorageError, StorageResult},
     traits::{AtomicBlobStore, DeviceKeystore},
     ACCOUNT_KEYS_FILENAME, ACCOUNT_KEY_ENVELOPE_AD,
 };
 use walletkit_db::Lock;
 
+/// The intermediate key, shared (via `Arc`) between [`StorageKeys`] and any
+/// [`IntermediateKeyHandle`]s handed out from it. Wrapped in a `Mutex` rather
+/// than exposed as a bare `Arc<SecretBox<_>>` so [`StorageKeys::destroy`] can
+/// eagerly zeroize the key in place — setting the slot to `None` drops (and
+/// so zeroizes, via `SecretBox`'s `ZeroizeOnDrop`) the key immediately, even
+/// while other `Arc` clones (e.g. a `IntermediateKeyHandle` a host app kept
+/// past logout) are still alive. Without this, zeroization would only occur
+/// once the *last* `Arc` clone dropped, which a lingering host-held handle
+/// could delay indefinitely.
+type SharedIntermediateKey = Arc<Mutex<Option<SecretBox<[u8; 32]>>>>;
+
 /// In-memory account keys derived from the account key envelope.
 ///
 /// Keys are held in memory for the lifetime of the storage handle.
-#[derive(Zeroize, ZeroizeOnDrop)]
 #[allow(clippy::struct_field_names)]
 pub struct StorageKeys {
-    intermediate_key: SecretBox<[u8; 32]>,
+    intermediate_key: SharedIntermediateKey,
 }
 
 impl StorageKeys {
@@ -46,13 +57,99 @@ impl StorageKeys {
             ACCOUNT_KEY_ENVELOPE_AD,
             now,
         )?;
-        Ok(Self { intermediate_key })
+
+        Ok(Self {
+            intermediate_key: Arc::new(Mutex::new(Some(intermediate_key))),
+        })
     }
 
-    /// Returns a reference to the intermediate key's [`SecretBox`].
+    /// Locks and returns a guard exposing the intermediate key's [`SecretBox`]
+    /// via [`KeyGuard::as_secret`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Lock`] if the mutex is poisoned.
+    pub fn intermediate_key(&self) -> StorageResult<KeyGuard<'_>> {
+        KeyGuard::lock(&self.intermediate_key)
+    }
+
+    /// Returns a cheaply-cloned, reference-counted pointer to the same shared
+    /// key cell [`intermediate_key`](Self::intermediate_key) reads from — for
+    /// constructing an [`IntermediateKeyHandle`] without copying the key
+    /// bytes into a second `SecretBox`.
     #[must_use]
-    pub const fn intermediate_key(&self) -> &SecretBox<[u8; 32]> {
-        &self.intermediate_key
+    pub fn intermediate_key_shared(&self) -> SharedIntermediateKey {
+        Arc::clone(&self.intermediate_key)
+    }
+
+    /// Eagerly zeroizes the intermediate key, regardless of whether any
+    /// [`IntermediateKeyHandle`] clones of it are still alive elsewhere.
+    /// Subsequent [`intermediate_key`](Self::intermediate_key) or
+    /// `IntermediateKeyHandle::with_exposed` calls return
+    /// [`StorageError::NotInitialized`].
+    ///
+    /// Best-effort on a poisoned mutex: the key is likely unreachable in that
+    /// case too (a panic while held means no live `MutexGuard` could still
+    /// be exposing it), but zeroization can't be guaranteed to have run.
+    pub fn destroy(&self) {
+        if let Ok(mut guard) = self.intermediate_key.lock() {
+            *guard = None;
+        }
+    }
+}
+
+/// Guard returned by [`StorageKeys::intermediate_key`], exposing the locked
+/// [`SecretBox`] for as long as the guard is alive.
+pub struct KeyGuard<'a>(MutexGuard<'a, Option<SecretBox<[u8; 32]>>>);
+
+impl KeyGuard<'_> {
+    fn lock(cell: &SharedIntermediateKey) -> StorageResult<KeyGuard<'_>> {
+        cell.lock().map(KeyGuard).map_err(|_| {
+            StorageError::Lock("intermediate key mutex poisoned".to_string())
+        })
+    }
+
+    /// Returns a reference to the locked [`SecretBox`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::NotInitialized`] if the key has already been
+    /// destroyed via [`StorageKeys::destroy`].
+    pub fn as_secret(&self) -> StorageResult<&SecretBox<[u8; 32]>> {
+        self.0.as_ref().ok_or(StorageError::NotInitialized)
+    }
+}
+
+/// Opaque handle to the account's derived `K_intermediate`.
+///
+/// For opening a sibling storage object (e.g. `CredentialActivityStore`)
+/// keyed by the same account key without exposing the raw bytes over the
+/// FFI boundary. Shares the same underlying key cell as [`StorageKeys`] via
+/// `Arc` rather than holding an independent copy of the key bytes — see
+/// `SharedIntermediateKey` for why that cell is a `Mutex`, not a bare
+/// `SecretBox`.
+#[derive(uniffi::Object)]
+pub struct IntermediateKeyHandle(SharedIntermediateKey);
+
+impl IntermediateKeyHandle {
+    pub(crate) const fn from_shared(key: SharedIntermediateKey) -> Self {
+        Self(key)
+    }
+
+    /// Calls `f` with the locked intermediate key.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Lock`] if the mutex is poisoned,
+    /// [`StorageError::NotInitialized`] if the underlying
+    /// [`StorageKeys`](super::StorageKeys) has since been destroyed (e.g. the
+    /// host app called `CredentialStore::destroy_storage` while still
+    /// holding this handle), or whatever error `f` itself returns.
+    pub(crate) fn with_exposed<T>(
+        &self,
+        f: impl FnOnce(&SecretBox<[u8; 32]>) -> StorageResult<T>,
+    ) -> StorageResult<T> {
+        f(KeyGuard::lock(&self.0)?.as_secret()?)
     }
 }
 
@@ -134,9 +231,49 @@ mod tests {
             StorageKeys::init(&keystore, &blob_store, &lock, 200).expect("init");
 
         assert_eq!(
-            keys_first.intermediate_key.expose_secret(),
-            keys_second.intermediate_key.expose_secret()
+            keys_first
+                .intermediate_key()
+                .unwrap()
+                .as_secret()
+                .unwrap()
+                .expose_secret(),
+            keys_second
+                .intermediate_key()
+                .unwrap()
+                .as_secret()
+                .unwrap()
+                .expose_secret()
         );
+
+        let _ = std::fs::remove_file(lock_path);
+    }
+
+    #[test]
+    fn test_destroy_zeroizes_key_even_with_outstanding_handle() {
+        let keystore = InMemoryKeystore::new();
+        let blob_store = InMemoryBlobStore::new();
+        let lock_path = temp_lock_path();
+        let lock = Lock::open(&lock_path).expect("open lock");
+        let keys = StorageKeys::init(&keystore, &blob_store, &lock, 100).expect("init");
+
+        // Simulate a host app that opened a sibling `CredentialActivityStore`
+        // and is still holding the handle past logout.
+        let handle = IntermediateKeyHandle::from_shared(keys.intermediate_key_shared());
+
+        keys.destroy();
+
+        assert!(matches!(
+            keys.intermediate_key()
+                .expect("lock still acquirable after destroy")
+                .as_secret(),
+            Err(StorageError::NotInitialized)
+        ));
+
+        assert!(matches!(
+            handle.with_exposed(|_| Ok(())),
+            Err(StorageError::NotInitialized)
+        ));
+
         let _ = std::fs::remove_file(lock_path);
     }
 

@@ -5,6 +5,7 @@
 //! ```text
 //! account.cache.sqlite        # sqlite3mc-encrypted cache DB (keyed by K_intermediate)
 //! account.vault.sqlite        # sqlite3mc-encrypted vault DB (keyed by K_intermediate)
+//! account.activity.sqlite     # sqlite3mc-encrypted credential-activity DB (keyed by K_intermediate)
 //! lock                        # account-scoped lock
 //! groth16/                    # cached Groth16 proving material
 //! ```
@@ -22,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 const VAULT_FILENAME: &str = "account.vault.sqlite";
 const CACHE_FILENAME: &str = "account.cache.sqlite";
+const ACTIVITY_FILENAME: &str = "account.activity.sqlite";
 const LOCK_FILENAME: &str = "lock";
 const GROTH16_DIRNAME: &str = "groth16";
 const QUERY_ZKEY_FILENAME: &str = "OPRFQuery.arks.zkey";
@@ -67,6 +69,12 @@ impl StoragePaths {
     #[must_use]
     pub fn cache_db_path(&self) -> PathBuf {
         self.worldid_dir.join(CACHE_FILENAME)
+    }
+
+    /// Returns the path to the credential-activity database.
+    #[must_use]
+    pub fn credential_activity_db_path(&self) -> PathBuf {
+        self.worldid_dir.join(ACTIVITY_FILENAME)
     }
 
     /// Returns the path to the lock file.
@@ -137,6 +145,14 @@ impl StoragePaths {
     #[must_use]
     pub fn cache_db_path_string(&self) -> String {
         self.cache_db_path().to_string_lossy().to_string()
+    }
+
+    /// Returns the path to the credential-activity database as a string.
+    #[must_use]
+    pub fn credential_activity_db_path_string(&self) -> String {
+        self.credential_activity_db_path()
+            .to_string_lossy()
+            .to_string()
     }
 
     /// Returns the path to the lock file as a string.

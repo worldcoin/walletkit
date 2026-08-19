@@ -26,6 +26,10 @@ impl Authenticator {
     /// After this call the authenticator can no longer generate proofs or
     /// access stored credentials. Intended for logout or account deletion.
     ///
+    /// Does **not** remove credential-activity history — `CredentialActivityStore`
+    /// is constructed and owned separately by the host app. Call its
+    /// `destroy_storage` too if activity history should also be wiped.
+    ///
     /// # Errors
     ///
     /// Returns an error if the storage destruction fails.
