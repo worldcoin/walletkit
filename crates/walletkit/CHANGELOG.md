@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.2](https://github.com/worldcoin/walletkit/compare/v0.21.1...v0.21.2) - 2026-08-19
+
+### Other
+
+- update Cargo.toml dependencies
+- bump uniffi to 0.32.0 ([#475](https://github.com/worldcoin/walletkit/pull/475))
+
 ## [0.21.1](https://github.com/worldcoin/walletkit/compare/v0.21.0...v0.21.1) - 2026-08-14
 
 ### Added
