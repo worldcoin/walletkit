@@ -1,5 +1,7 @@
 //! Public types for credential storage.
 
+use strum::{Display, EnumString};
+
 use super::error::{StorageError, StorageResult};
 
 /// Kind of blob stored in the vault.
@@ -78,3 +80,95 @@ pub struct ReplayGuardResult {
     /// Stored proof package bytes.
     pub bytes: Vec<u8>,
 }
+
+/// Which World ID protocol handled a proof-share request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[repr(u8)]
+pub enum ProtocolVersion {
+    /// Legacy Semaphore-based protocol.
+    V3 = 3,
+    /// Current. Reference: <https://github.com/worldcoin/world-id-protocol/tree/main/docs/world-id-4-specs>
+    V4 = 4,
+}
+
+impl ProtocolVersion {
+    pub(crate) const fn as_i64(self) -> i64 {
+        self as i64
+    }
+}
+
+impl TryFrom<i64> for ProtocolVersion {
+    type Error = StorageError;
+
+    fn try_from(value: i64) -> StorageResult<Self> {
+        match value {
+            3 => Ok(Self::V3),
+            4 => Ok(Self::V4),
+            _ => Err(StorageError::ActivityDb(format!(
+                "invalid protocol version {value}"
+            ))),
+        }
+    }
+}
+
+/// Terminal outcome of a proof-share request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Display, uniffi::Enum)]
+#[strum(serialize_all = "lowercase")]
+pub enum ActivityOutcome {
+    /// Proof request was completed successfully.
+    Completed,
+    /// The user declined the request.
+    Declined,
+    /// The user cancelled or dismissed the request without an explicit decline.
+    Cancelled,
+    /// The request failed (see [`ActivityFailureReason`]).
+    Failed,
+    Incomplete,
+}
+
+/// Reasons a proof fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum ActivityFailureReason {
+    /// A network request failed.
+    NetworkError,
+    /// The request timed out.
+    Timeout,
+    /// Device authentication (e.g. Face ID/passcode) failed.
+    DeviceAuthenticationFailed,
+    /// Proof generation itself failed.
+    ProofGenerationFailed,
+    /// The relying party rejected the proof.
+    RelyingPartyRejected,
+}
+
+/// A single row of credential activity history.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct ActivityEntry {
+    /// Unique identifier for this entry.
+    pub id: Option<u64>,
+    /// The relying party identifier.
+    pub rp_id: u64,
+    /// Host-app-defined identifier correlating this entry with its request.
+    pub client_id: String,
+    /// Protocol used for this request.
+    pub protocol: ProtocolVersion,
+    /// Activity time.
+    pub timestamp: Option<u64>,
+    /// The result of the activity.
+    pub outcome: ActivityOutcome,
+    /// The credentials which produced an output proof for the request.
+    pub issuer_schema_ids: Vec<u64>,
+    /// Present only when `outcome` is `Failed`.
+    pub failure_reason: Option<ActivityFailureReason>,
+}
+
+/// Aggregate counts over credential activity history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct ActivityMetadata {
+    /// Total number of recorded entries.
+    pub total_count: u64,
+}
+
+/// Filtering/sorting options for [`super::CredentialStore::list_activities`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, uniffi::Record)]
+pub struct ActivityQuery {}

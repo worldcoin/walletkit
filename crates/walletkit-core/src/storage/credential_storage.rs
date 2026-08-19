@@ -11,9 +11,9 @@ use super::keys::StorageKeys;
 use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
-use super::traits::VaultChangedListener;
+use super::traits::{ActivityChangedListener, VaultChangedListener};
 use super::traits::{AtomicBlobStore, DeviceKeystore};
-use super::types::CredentialRecord;
+use super::types::{ActivityEntry, ActivityMetadata, ActivityQuery, CredentialRecord};
 use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, CredentialVault};
 use super::{StorageLock, StorageLockGuard};
@@ -54,6 +54,8 @@ pub struct CredentialStore {
     /// Kept outside `inner` so we can notify after releasing the storage mutex.
     #[cfg(not(target_arch = "wasm32"))]
     vault_changed_tx: Mutex<Option<mpsc::SyncSender<()>>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    activity_changed_tx: Mutex<Option<mpsc::SyncSender<()>>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -145,6 +147,8 @@ impl CredentialStore {
             inner: Mutex::new(inner),
             #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
+            activity_changed_tx: Mutex::new(None),
         })
     }
 
@@ -163,6 +167,8 @@ impl CredentialStore {
             inner: Mutex::new(inner),
             #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
+            activity_changed_tx: Mutex::new(None),
         })
     }
 
@@ -281,6 +287,58 @@ impl CredentialStore {
     pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
         self.lock_inner()?.danger_delete_all_credentials()
     }
+
+    /// Records a new activity entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the query fails.
+    pub fn record_activity(
+        &self,
+        entry: &ActivityEntry,
+        now: u64,
+    ) -> StorageResult<u64> {
+        let result = self.lock_inner()?.record_activity(entry, now);
+
+        if result.is_ok() {
+            self.notify_activity_changed();
+        }
+
+        result
+    }
+
+    /// Lists activity entries, most recent first.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the query fails.
+    pub fn list_activities(
+        &self,
+        query: ActivityQuery,
+        limit: u32,
+        offset: u32,
+    ) -> StorageResult<Vec<ActivityEntry>> {
+        self.lock_inner()?.list_activities(query, limit, offset)
+    }
+
+    /// Returns aggregate credential-activity metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the query fails.
+    pub fn activity_metadata(&self) -> StorageResult<ActivityMetadata> {
+        self.lock_inner()?.activity_metadata()
+    }
+
+    pub fn clear_activities(&self) -> StorageResult<u64> {
+        let result = self.lock_inner()?.clear_activities();
+
+        if result.is_ok() {
+            self.notify_activity_changed();
+        }
+
+        result
+    }
 }
 
 #[uniffi::export]
@@ -380,6 +438,35 @@ impl CredentialStore {
             }
         }
     }
+
+    /// Registers a listener that is called after activity history changes.
+    /// Listeners must not call back into the store or a deadlock will occur.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_activity_changed_listener(
+        &self,
+        listener: Arc<dyn ActivityChangedListener>,
+    ) {
+        let (tx, rx) = mpsc::sync_channel(1);
+
+        let spawn_result = std::thread::Builder::new()
+            .name("walletkit-activity-notify".into())
+            .spawn(move || {
+                for () in rx {
+                    listener.on_activity_changed();
+                }
+            });
+
+        match spawn_result {
+            Ok(_) => {
+                if let Ok(mut guard) = self.activity_changed_tx.lock() {
+                    *guard = Some(tx);
+                }
+            }
+            Err(e) => {
+                tracing::error!("failed to spawn activity notification thread: {e}");
+            }
+        }
+    }
 }
 
 /// Implementation not exposed to foreign bindings
@@ -455,6 +542,28 @@ impl CredentialStore {
                         tracing::warn!("vault-changed listener disconnected");
                     }
                 }
+            }
+        }
+    }
+
+    /// Notify to the registered activity-changed listener there has been changes.
+    fn notify_activity_changed(&self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        match self.activity_changed_tx.lock() {
+            Ok(guard) => {
+                if let Some(tx) = guard.as_ref() {
+                    match tx.try_send(()) {
+                        Ok(()) | Err(mpsc::TrySendError::Full(())) => {}
+                        Err(mpsc::TrySendError::Disconnected(())) => {
+                            tracing::warn!("activity-changed listener disconnected");
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                tracing::warn!(
+                    "activity-changed-tx mutex poisoned; dropping notification"
+                );
             }
         }
     }
@@ -613,6 +722,35 @@ impl CredentialStoreInner {
             associated_data,
             now,
         )
+    }
+
+    fn record_activity(
+        &mut self,
+        entry: &ActivityEntry,
+        now: u64,
+    ) -> StorageResult<u64> {
+        let state = self.state_mut()?;
+        state.cache.record_activity(entry, now)
+    }
+
+    fn list_activities(
+        &self,
+        query: ActivityQuery,
+        limit: u32,
+        offset: u32,
+    ) -> StorageResult<Vec<ActivityEntry>> {
+        let state = self.state()?;
+        state.cache.list_activities(query, limit, offset)
+    }
+
+    fn activity_metadata(&self) -> StorageResult<ActivityMetadata> {
+        let state = self.state()?;
+        state.cache.activity_metadata()
+    }
+
+    fn clear_activities(&mut self) -> StorageResult<u64> {
+        let state = self.state_mut()?;
+        state.cache.clear_activities()
     }
 
     fn store_session_seed(
@@ -805,7 +943,6 @@ impl CredentialStoreInner {
     /// Permanently destroys all storage data: encryption keys, vault, and cache.
     fn destroy_storage(&mut self) -> StorageResult<()> {
         let _guard = self.guard()?;
-        // Drop in-memory state: zeroizes keys, closes database connections.
         self.state = None;
         // Delete the encryption key envelope. Without this key the database
         // files are unreadable even if file deletion below fails.
@@ -832,6 +969,8 @@ impl CredentialStore {
             inner: Mutex::new(inner),
             #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
+            activity_changed_tx: Mutex::new(None),
         })
     }
 
@@ -850,6 +989,8 @@ impl CredentialStore {
             inner: Mutex::new(inner),
             #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
+            activity_changed_tx: Mutex::new(None),
         })
     }
 
@@ -869,6 +1010,7 @@ mod tests {
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
+    use crate::storage::types::{ActivityOutcome, ProtocolVersion};
 
     use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -877,6 +1019,27 @@ mod tests {
     impl VaultChangedListener for TestVaultListener {
         fn on_vault_changed(&self) {
             self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct TestActivityListener(Arc<AtomicU32>);
+
+    impl ActivityChangedListener for TestActivityListener {
+        fn on_activity_changed(&self) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn sample_new_activity_entry() -> ActivityEntry {
+        ActivityEntry {
+            id: None,
+            rp_id: 1,
+            client_id: "bridge-request-1".to_string(),
+            protocol: ProtocolVersion::V3,
+            timestamp: None,
+            issuer_schema_ids: vec![],
+            outcome: ActivityOutcome::Completed,
+            failure_reason: None,
         }
     }
 
@@ -1741,6 +1904,59 @@ mod tests {
             count.load(Ordering::SeqCst),
             0,
             "listener should not be notified on failure"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_activity_changed_listener_notified_on_record() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let count = Arc::new(AtomicU32::new(0));
+        store.set_activity_changed_listener(Arc::new(TestActivityListener(
+            Arc::clone(&count),
+        )));
+
+        store
+            .record_activity(&sample_new_activity_entry(), 1000)
+            .expect("record activity");
+
+        wait_for_listener_count(&count, 1);
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_activity_changed_listener_not_notified_on_failure() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let count = Arc::new(AtomicU32::new(0));
+        store.set_activity_changed_listener(Arc::new(TestActivityListener(
+            Arc::clone(&count),
+        )));
+
+        let invalid_entry = ActivityEntry {
+            outcome: ActivityOutcome::Failed,
+            failure_reason: None,
+            ..sample_new_activity_entry()
+        };
+
+        let result = store.record_activity(&invalid_entry, 1000);
+        assert!(result.is_err());
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            0,
+            "listener should not be notified when record_activity fails"
         );
 
         cleanup_test_storage(&root);
