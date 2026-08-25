@@ -15,7 +15,7 @@ ordinary `cargo build` invocations run inside a shell.
 |---|---|---|
 | `default` | Host builds, uniffi-bindgen, nargo | all |
 | `android` | Cross-compile the 4 Android targets (NDK, linkers, API 23) | linux/darwin x86_64, darwin aarch64 |
-| `wasm` | `wasm32-unknown-unknown` builds and headless browser tests | all |
+| `wasm` | `wasm32-unknown-unknown` builds and headless browser tests with Node and Binaryen | all |
 
 ```bash
 nix develop .#android   # enter a shell
