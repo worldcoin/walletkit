@@ -9,6 +9,45 @@ const DEFAULT_CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3";
 const JNI_LIBS_DIR: &str = "kotlin/walletkit/src/main/jniLibs";
 const KOTLIN_SOURCE_DIR: &str = "kotlin/walletkit/src/main/java";
 
+/// Build profile for the native libraries backing the Android AAR. Both profiles
+/// build the same Android targets; only optimization level, symbols, and output
+/// directory differ. Unlike Swift's `Profile`, no RUSTFLAGS distinguish the two —
+/// Android has no `-application_extension`/dead-strip/bitcode equivalent, and the
+/// root `Cargo.toml`'s explicit `[profile.release] debug = false` already gives
+/// cargo's default `dev` profile full debug symbols for free.
+#[derive(Clone, Copy)]
+pub(super) enum Profile {
+    /// Optimized. Used for distributed releases.
+    Release,
+    /// Unoptimized with full debug symbols, for native (LLDB-via-NDK)
+    /// source-level debugging.
+    Debug,
+}
+
+impl Profile {
+    pub(super) const fn from_debug_flag(debug: bool) -> Self {
+        if debug {
+            Self::Debug
+        } else {
+            Self::Release
+        }
+    }
+
+    const fn cargo_profile_flag(self) -> Option<&'static str> {
+        match self {
+            Self::Release => Some("--release"),
+            Self::Debug => None,
+        }
+    }
+
+    const fn dir_name(self) -> &'static str {
+        match self {
+            Self::Release => "release",
+            Self::Debug => "debug",
+        }
+    }
+}
+
 struct AndroidTarget {
     rust_name: &'static str,
     abi_name: &'static str,
@@ -33,13 +72,17 @@ const ANDROID_TARGETS: [AndroidTarget; 4] = [
     },
 ];
 
-pub(super) fn run(sh: &Shell, artifacts_dir: Option<&Path>) -> Result<()> {
+pub(super) fn run(
+    sh: &Shell,
+    artifacts_dir: Option<&Path>,
+    profile: Profile,
+) -> Result<()> {
     if artifacts_dir.is_none() {
         ensure_android_toolchain(sh)?;
-        build_native_libraries(sh)?;
+        build_native_libraries(sh, profile)?;
     }
 
-    copy_native_libraries(sh, artifacts_dir)?;
+    copy_native_libraries(sh, artifacts_dir, profile)?;
     generate_bindings(sh)?;
 
     println!("Kotlin/Android build complete.");
@@ -72,17 +115,19 @@ fn ensure_android_toolchain(sh: &Shell) -> Result<()> {
     Ok(())
 }
 
-fn build_native_libraries(sh: &Shell) -> Result<()> {
+fn build_native_libraries(sh: &Shell, profile: Profile) -> Result<()> {
     let features = cargo_features(sh);
-    println!("Building WalletKit for Android...");
+    let release_flag = profile.cargo_profile_flag();
+    println!("Building WalletKit for Android ({})...", profile.dir_name());
 
     for target in &ANDROID_TARGETS {
         let rust_target = target.rust_name;
         println!("Building {rust_target}...");
         cmd!(
             sh,
-            "cargo build -p walletkit --release --locked --target {rust_target} --features {features}"
+            "cargo build -p walletkit --locked --target {rust_target} --features {features}"
         )
+        .args(release_flag)
         .run()
         .wrap_err_with(|| format!("failed to build WalletKit for {rust_target}"))?;
     }
@@ -97,11 +142,15 @@ fn cargo_features(sh: &Shell) -> String {
         .unwrap_or_else(|| DEFAULT_CARGO_FEATURES.to_owned())
 }
 
-fn copy_native_libraries(sh: &Shell, artifacts_dir: Option<&Path>) -> Result<()> {
+fn copy_native_libraries(
+    sh: &Shell,
+    artifacts_dir: Option<&Path>,
+    profile: Profile,
+) -> Result<()> {
     println!("Copying Android native libraries...");
 
     for target in &ANDROID_TARGETS {
-        let source = native_library_source(target, artifacts_dir);
+        let source = native_library_source(target, artifacts_dir, profile);
         let destination_dir = Path::new(JNI_LIBS_DIR).join(target.abi_name);
         let destination = destination_dir.join("libwalletkit.so");
 
@@ -118,15 +167,20 @@ fn copy_native_libraries(sh: &Shell, artifacts_dir: Option<&Path>) -> Result<()>
     Ok(())
 }
 
+/// Resolves the source `.so` path for `target`. When `artifacts_dir` is set, the
+/// prebuilt CI artifact layout is used unconditionally and `profile` has no
+/// effect — the CI build matrix always produces release artifacts.
 fn native_library_source(
     target: &AndroidTarget,
     artifacts_dir: Option<&Path>,
+    profile: Profile,
 ) -> PathBuf {
     artifacts_dir.map_or_else(
         || {
             Path::new("target")
                 .join(target.rust_name)
-                .join("release/libwalletkit.so")
+                .join(profile.dir_name())
+                .join("libwalletkit.so")
         },
         |directory| {
             directory

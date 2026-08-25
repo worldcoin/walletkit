@@ -32,6 +32,12 @@ pub struct BuildOptions {
     /// `android-<target>/libwalletkit.so`.
     #[arg(long, value_name = "DIR")]
     artifacts_dir: Option<PathBuf>,
+
+    /// Build an unoptimized binary with full debug symbols, for native
+    /// (LLDB-via-NDK) source-level debugging of Rust code. Not suitable for
+    /// distribution. Ignored when `--artifacts-dir` is set.
+    #[arg(long)]
+    debug: bool,
 }
 
 /// Options for publishing the Kotlin/Android library locally.
@@ -40,13 +46,23 @@ pub struct LocalOptions {
     /// Version under which to publish the library.
     #[arg(value_name = "VERSION")]
     version: String,
+
+    /// Build an unoptimized binary with full debug symbols, for native
+    /// (LLDB-via-NDK) source-level debugging of Rust code. Not suitable for
+    /// distribution.
+    #[arg(long)]
+    debug: bool,
 }
 
 /// Runs a Kotlin/Android task.
 pub fn run(sh: &Shell, command: &Command) -> Result<()> {
     match command {
-        Command::Build(options) => build::run(sh, options.artifacts_dir.as_deref()),
+        Command::Build(options) => build::run(
+            sh,
+            options.artifacts_dir.as_deref(),
+            build::Profile::from_debug_flag(options.debug),
+        ),
         Command::Test => test::run(sh),
-        Command::Local(options) => local::run(sh, &options.version),
+        Command::Local(options) => local::run(sh, &options.version, options.debug),
     }
 }
