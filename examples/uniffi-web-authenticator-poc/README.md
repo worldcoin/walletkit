@@ -6,15 +6,17 @@ This example asks one question: can WalletKit's existing UniFFI authenticator
 surface be generated, loaded, and called from a Next.js App Router application
 through `uniffi-bindgen-react-native`'s WASM player?
 
-Run it with:
+Run it from the repository root with the pinned WASM toolchain:
 
 ```sh
-npm install
-npm run dev
+nix develop .#wasm --command npm --prefix examples/uniffi-web-authenticator-poc install
+nix develop .#wasm --command npm --prefix examples/uniffi-web-authenticator-poc run dev
 ```
 
 `npm run dev` regenerates the bindings before starting Next.js. Use
-`npm run build` to prove the production bundle as well.
+`npm run build` to prove the production bundle as well. These scripts expect to
+run inside `nix develop .#wasm`, which supplies Node, Binaryen, and the
+WASM-targeted Clang and LLVM tools.
 
 The Rust wrapper is deliberately local to this example so the WASM player's
 runtime dependency does not leak into WalletKit's production crate graph.
@@ -48,6 +50,7 @@ generator's WASM player; native builds keep their existing Tokio behavior.
 The generated bindings are imported dynamically from a Client Component. This
 keeps the WASM player and browser-only APIs out of Next.js server rendering.
 
-The generated WASM is around 6 MB in release mode before HTTP compression. No
-attempt has been made to productionize storage, artifact loading, worker
-placement, bundle splitting, or key persistence.
+The generated WASM is optimized with Binaryen's `wasm-opt -Oz --converge`
+before it is copied into the Next.js public assets. No attempt has been made to
+productionize storage, artifact loading, worker placement, bundle splitting,
+or key persistence.
