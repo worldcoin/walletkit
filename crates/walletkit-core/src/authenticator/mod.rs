@@ -100,7 +100,8 @@ fn parse_authenticator_pubkey(
     Ok(pubkey)
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg_attr(feature = "uniffi-wasm", uniffi::export)]
+#[cfg_attr(not(feature = "uniffi-wasm"), uniffi::export(async_runtime = "tokio"))]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
     ///
@@ -494,7 +495,8 @@ impl Authenticator {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg_attr(feature = "uniffi-wasm", uniffi::export)]
+#[cfg_attr(not(feature = "uniffi-wasm"), uniffi::export(async_runtime = "tokio"))]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -837,7 +839,8 @@ impl From<GatewayRequestState> for RegistrationStatus {
 #[derive(uniffi::Object)]
 pub struct InitializingAuthenticator(CoreInitializingAuthenticator);
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg_attr(feature = "uniffi-wasm", uniffi::export)]
+#[cfg_attr(not(feature = "uniffi-wasm"), uniffi::export(async_runtime = "tokio"))]
 impl InitializingAuthenticator {
     /// Registers a new World ID with SDK defaults.
     ///

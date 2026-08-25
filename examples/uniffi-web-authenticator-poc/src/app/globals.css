@@ -1,0 +1,106 @@
+:root {
+  color: #15261f;
+  background: #eaf1ec;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+}
+
+main {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.card {
+  width: min(42rem, 100%);
+  padding: 2rem;
+  border: 1px solid #bdcbc3;
+  border-radius: 1rem;
+  background: #f9fbf9;
+  box-shadow: 0 1rem 3rem rgb(24 54 42 / 10%);
+}
+
+.eyebrow {
+  color: #167552;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0.5rem 0 1rem;
+}
+
+pre {
+  overflow: auto;
+  margin: 1.5rem 0 0;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  color: #d9f7e8;
+  background: #10231b;
+  white-space: pre-wrap;
+}
+
+dl {
+  display: grid;
+  gap: 0.75rem;
+  margin: 1.5rem 0;
+}
+
+dl div {
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #dce5df;
+}
+
+dt {
+  margin-bottom: 0.25rem;
+  color: #567064;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+button {
+  margin: 0.5rem 0.5rem 0.5rem 0;
+  padding: 0.7rem 1rem;
+  border: 0;
+  border-radius: 0.5rem;
+  color: white;
+  background: #167552;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+details {
+  margin-top: 1.25rem;
+  padding: 1rem;
+  border: 1px solid #d1ddd5;
+  border-radius: 0.5rem;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: 700;
+}

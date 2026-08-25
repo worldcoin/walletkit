@@ -1,0 +1,33 @@
+{
+  "name": "walletkit-uniffi-web-authenticator-poc",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/worldcoin/walletkit"
+  },
+  "scripts": {
+    "postinstall": "node scripts/patch-ubrn-wasm-bindgen.mjs",
+    "bindings": "CC_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/clang ubrn build wasm2 --config ubrn.config.yaml --release && node scripts/patch-generated-index.mjs",
+    "predev": "npm run bindings",
+    "dev": "next dev",
+    "build": "npm run bindings && next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@ubjs/core": "0.31.0-5",
+    "@ubjs/wasm": "0.31.0-5",
+    "next": "16.3.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "25.0.3",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2",
+    "uniffi-bindgen-react-native": "0.31.0-5"
+  }
+}
