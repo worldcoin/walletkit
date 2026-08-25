@@ -5,6 +5,10 @@
 //! [`walletkit_core`].
 
 extern crate walletkit_core;
+
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+extern crate uniffi_runtime_wasm as _;
+
 walletkit_core::uniffi_reexport_scaffolding!();
 
 pub use walletkit_core::*;

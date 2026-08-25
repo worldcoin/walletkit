@@ -2,7 +2,7 @@
 // while ubrn 0.31.0-5 pins its post-processor to 0.2.100. Both sides must use
 // the exact same schema, so align the installed generator with WalletKit.
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const root = new URL(
   "../node_modules/uniffi-bindgen-react-native/",
@@ -18,8 +18,12 @@ if (source.includes(oldDependency)) {
   writeFileSync(manifest, source.replace(oldDependency, newDependency));
 }
 
-const lock = readFileSync(lockfile, "utf8");
-if (/name = "wasm-bindgen-cli-support"\nversion = "0\.2\.100"/.test(lock)) {
+if (
+  existsSync(lockfile) &&
+  /name = "wasm-bindgen-cli-support"\nversion = "0\.2\.100"/.test(
+    readFileSync(lockfile, "utf8"),
+  )
+) {
   execFileSync(
     "cargo",
     [
