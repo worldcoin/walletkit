@@ -9,7 +9,7 @@
   },
   "scripts": {
     "postinstall": "node scripts/patch-ubrn-wasm-bindgen.mjs",
-    "bindings": "CC_wasm32_unknown_unknown=/opt/homebrew/opt/llvm/bin/clang ubrn build wasm2 --config ubrn.config.yaml --release && node scripts/patch-generated-index.mjs",
+    "bindings": "ubrn build wasm2 --config ubrn.config.yaml --release && node scripts/optimize-wasm.mjs && node scripts/patch-generated-index.mjs",
     "predev": "npm run bindings",
     "dev": "next dev",
     "build": "npm run bindings && next build",
