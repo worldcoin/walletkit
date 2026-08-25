@@ -1,0 +1,6 @@
+.next/
+dist/
+node_modules/
+public/wasm/
+rust/Cargo.lock
+src/generated/

@@ -1,0 +1,6 @@
+rust:
+  directory: ./rust
+  manifestPath: Cargo.toml
+
+wasm2:
+  ts: src/generated
