@@ -1,6 +1,7 @@
 rust:
-  directory: ./rust
+  directory: ../../crates/walletkit
   manifestPath: Cargo.toml
 
 wasm2:
+  defaultFeatures: false
   ts: src/generated

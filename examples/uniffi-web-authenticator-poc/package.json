@@ -8,16 +8,14 @@
     "url": "https://github.com/worldcoin/walletkit"
   },
   "scripts": {
-    "postinstall": "node scripts/patch-ubrn-wasm-bindgen.mjs",
-    "bindings": "ubrn build wasm2 --config ubrn.config.yaml --release && node scripts/optimize-wasm.mjs && node scripts/patch-generated-index.mjs",
-    "predev": "npm run bindings",
+    "predev": "npm --prefix ../../web/walletkit run build",
     "dev": "next dev",
-    "build": "npm run bindings && next build",
+    "prebuild": "npm --prefix ../../web/walletkit run build",
+    "build": "next build",
     "start": "next start"
   },
   "dependencies": {
-    "@ubjs/core": "0.31.0-5",
-    "@ubjs/wasm": "0.31.0-5",
+    "@worldcoin/walletkit-web": "file:../../web/walletkit",
     "next": "16.3.2",
     "react": "19.2.8",
     "react-dom": "19.2.8"
@@ -27,7 +25,6 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "prettier": "3.6.2",
-    "typescript": "5.9.2",
-    "uniffi-bindgen-react-native": "0.31.0-5"
+    "typescript": "5.9.2"
   }
 }

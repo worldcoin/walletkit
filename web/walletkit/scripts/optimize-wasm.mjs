@@ -1,14 +1,11 @@
-// Optimize the generated module before it is copied into Next.js public assets.
+// Optimize the generated module before it is included in the npm package.
 // Binaryen is supplied by the repository's `nix develop .#wasm` shell.
 import { execFileSync } from "node:child_process";
 import { renameSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const wasm = fileURLToPath(
-  new URL(
-    "../src/generated/walletkit_web_authenticator_poc.wasm",
-    import.meta.url,
-  ),
+  new URL("../src/generated/walletkit.wasm", import.meta.url),
 );
 const optimized = `${wasm}.optimized`;
 

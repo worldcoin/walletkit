@@ -51,6 +51,20 @@ binding tests with `cargo xtask swift test`.
 
 See [`swift/README.md`](swift/README.md) for package integration details.
 
+## Local development (browser/WASM)
+
+The experimental `@worldcoin/walletkit-web` package builds directly from the
+`walletkit` crate and contains the generated bindings, wasm-bindgen glue, and
+optimized WASM module. Build it with the pinned WASM toolchain:
+
+```bash
+nix develop .#wasm --command npm --prefix web/walletkit install
+nix develop .#wasm --command npm --prefix web/walletkit run build
+```
+
+The Next.js integration probe under `examples/uniffi-web-authenticator-poc`
+consumes the package through its public `initializeWalletKit()` interface.
+
 ## Local development (Android/Kotlin)
 
 ### Prerequisites

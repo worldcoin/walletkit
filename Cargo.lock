@@ -9266,6 +9266,7 @@ name = "walletkit"
 version = "0.26.0"
 dependencies = [
  "uniffi",
+ "uniffi-runtime-wasm",
  "walletkit-core",
 ]
 
@@ -9400,15 +9401,6 @@ dependencies = [
  "uuid",
  "walletkit-core",
  "world-id-core",
-]
-
-[[package]]
-name = "walletkit-web-authenticator-poc"
-version = "0.0.0"
-dependencies = [
- "uniffi",
- "uniffi-runtime-wasm",
- "walletkit-core",
 ]
 
 [[package]]

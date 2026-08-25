@@ -1,0 +1,42 @@
+{
+  "name": "@worldcoin/walletkit-web",
+  "version": "0.21.2",
+  "private": true,
+  "description": "Browser WebAssembly bindings for WalletKit.",
+  "type": "module",
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "patch:generator": "node scripts/patch-ubrn-wasm-bindgen.mjs",
+    "generate": "npm run patch:generator && ubrn build wasm2 --config ubrn.config.yaml --release && node scripts/optimize-wasm.mjs && node scripts/patch-generated-index.mjs",
+    "build": "npm run clean && npm run generate && tsc -p tsconfig.build.json && esbuild src/index.ts --bundle --format=esm --platform=browser --target=es2022 --outfile=dist/index.js --external:@ubjs/core --external:@ubjs/wasm && node scripts/copy-wasm.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "@ubjs/core": "0.31.0-5",
+    "@ubjs/wasm": "0.31.0-5"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.9",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2",
+    "uniffi-bindgen-react-native": "0.31.0-5"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/worldcoin/walletkit",
+    "directory": "web/walletkit"
+  }
+}
