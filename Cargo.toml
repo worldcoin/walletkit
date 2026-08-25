@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "crates/uniffi-bindgen",
   "crates/walletkit-core",
   "crates/walletkit",
   "crates/walletkit-db",
@@ -31,6 +30,7 @@ alloy-core = { version = "1", default-features = false, features = [
 ] }
 backon = "1.6"
 base64 = "0.22"
+boltffi = "0.30.1"
 cc = "1"
 chacha20poly1305 = "0.10"
 chrono = "0.4.41"
@@ -49,7 +49,6 @@ rand = "0.8.6"
 regex = "1.11"
 reqwest = { version = "0.12", default-features = false }
 ruint = { version = "1.17", default-features = false }
-ruint-uniffi = "0.1"
 rustls = "0.23"
 secrecy = "0.10"
 semaphore-rs = "0.5.1"
@@ -68,10 +67,6 @@ tokio-test = "0.4"
 tracing = "0.1"
 tracing-log = "0.2"
 tracing-subscriber = "0.3"
-uniffi = { version = "0.32.0", features = [
-  "tokio",
-  "wasm-unstable-single-threaded",
-] }
 uuid = "1.10"
 xshell = "0.2.7"
 zeroize = "1"

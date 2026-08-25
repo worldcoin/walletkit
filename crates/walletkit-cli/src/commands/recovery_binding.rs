@@ -37,7 +37,7 @@ pub async fn run(
             .unwrap();
             recovery_binding_manager
                 .bind_recovery_agent(
-                    &authenticator,
+                    authenticator,
                     sub.clone(),
                     recovery_agent_address.clone(),
                 )
@@ -50,7 +50,7 @@ pub async fn run(
             )
             .unwrap();
             recovery_binding_manager
-                .unbind_recovery_agent(&authenticator, sub.clone())
+                .unbind_recovery_agent(authenticator, sub.clone())
                 .await?;
         }
         RecoveryBindingCommand::GetBinding => {

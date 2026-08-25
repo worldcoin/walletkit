@@ -32,6 +32,13 @@ const VAULT_BACKUP_TEMP_PREFIX: &str = "vault_backup_plaintext_";
 /// RAII guard that deletes a sensitive plaintext file on drop — regardless
 /// of whether we exit normally, return early, or panic.
 #[cfg(not(target_arch = "wasm32"))]
+#[cfg_attr(
+    all(feature = "boltffi-wasm", not(target_arch = "wasm32")),
+    expect(
+        dead_code,
+        reason = "native backup bindings are excluded from the synchronous WASM surface"
+    )
+)]
 struct CleanupFile(String);
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -61,13 +68,13 @@ fn remove_db_files(db_path: &std::path::Path) {
 }
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
-#[derive(uniffi::Object)]
+#[derive(Clone)]
 pub struct CredentialStore {
-    inner: Mutex<CredentialStoreInner>,
+    inner: Arc<Mutex<CredentialStoreInner>>,
     /// Channel sender for the vault-changed notification thread.
     /// Kept outside `inner` so we can notify after releasing the storage mutex.
     #[cfg(not(target_arch = "wasm32"))]
-    vault_changed_tx: Mutex<Option<mpsc::SyncSender<()>>>,
+    vault_changed_tx: Arc<Mutex<Option<mpsc::SyncSender<()>>>>,
 }
 
 impl std::fmt::Debug for CredentialStore {
@@ -140,25 +147,23 @@ impl CredentialStoreInner {
     }
 }
 
-#[uniffi::export]
+#[boltffi::export]
 impl CredentialStore {
     /// Creates a new storage handle from explicit components.
     ///
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[uniffi::constructor]
     pub fn new_with_components(
-        paths: Arc<StoragePaths>,
+        paths: &StoragePaths,
         keystore: Arc<dyn DeviceKeystore>,
         blob_store: Arc<dyn AtomicBlobStore>,
-    ) -> StorageResult<Self> {
-        let paths = Arc::try_unwrap(paths).unwrap_or_else(|arc| (*arc).clone());
-        let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
+    ) -> Result<Self, StorageError> {
+        let inner = CredentialStoreInner::new(paths.clone(), keystore, blob_store)?;
         Ok(Self {
-            inner: Mutex::new(inner),
+            inner: Arc::new(Mutex::new(inner)),
             #[cfg(not(target_arch = "wasm32"))]
-            vault_changed_tx: Mutex::new(None),
+            vault_changed_tx: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -167,16 +172,16 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[uniffi::constructor]
     #[allow(clippy::needless_pass_by_value)]
+    #[boltffi::skip]
     pub fn from_provider_arc(
         provider: Arc<dyn StorageProvider>,
-    ) -> StorageResult<Self> {
+    ) -> Result<Self, StorageError> {
         let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
         Ok(Self {
-            inner: Mutex::new(inner),
+            inner: Arc::new(Mutex::new(inner)),
             #[cfg(not(target_arch = "wasm32"))]
-            vault_changed_tx: Mutex::new(None),
+            vault_changed_tx: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -185,7 +190,7 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the storage mutex is poisoned.
-    pub fn storage_paths(&self) -> StorageResult<StoragePaths> {
+    pub fn storage_paths(&self) -> Result<StoragePaths, StorageError> {
         self.lock_inner().map(|inner| inner.paths.clone())
     }
 
@@ -194,7 +199,7 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if initialization fails or the leaf index mismatches.
-    pub fn init(&self, leaf_index: u64, now: u64) -> StorageResult<()> {
+    pub fn init(&self, leaf_index: u64, now: u64) -> Result<(), StorageError> {
         let mut inner = self.lock_inner()?;
         inner.init(leaf_index, now)
     }
@@ -211,7 +216,7 @@ impl CredentialStore {
         &self,
         issuer_schema_id: Option<u64>,
         now: u64,
-    ) -> StorageResult<Vec<CredentialRecord>> {
+    ) -> Result<Vec<CredentialRecord>, StorageError> {
         self.lock_inner()?.list_credentials(issuer_schema_id, now)
     }
 
@@ -221,7 +226,7 @@ impl CredentialStore {
     ///
     /// Returns an error if the delete operation fails or the credential ID does
     /// not exist.
-    pub fn delete_credential(&self, credential_id: u64) -> StorageResult<()> {
+    pub fn delete_credential(&self, credential_id: u64) -> Result<(), StorageError> {
         let result = self.lock_inner()?.delete_credential(credential_id);
         if result.is_ok() {
             self.notify_vault_changed();
@@ -241,7 +246,7 @@ impl CredentialStore {
         expires_at: u64,
         associated_data: Option<Vec<u8>>,
         now: u64,
-    ) -> StorageResult<u64> {
+    ) -> Result<u64, StorageError> {
         let result = self.lock_inner()?.store_credential(
             credential,
             blinding_factor,
@@ -271,12 +276,12 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the delete operation fails.
-    pub fn danger_delete_all_credentials(&self) -> StorageResult<u64> {
+    pub fn danger_delete_all_credentials(&self) -> Result<u64, StorageError> {
         self.lock_inner()?.danger_delete_all_credentials()
     }
 }
 
-#[uniffi::export]
+#[boltffi::export]
 impl CredentialStore {
     /// Permanently destroys all credential storage data.
     ///
@@ -291,13 +296,13 @@ impl CredentialStore {
     ///
     /// Returns an error if the storage lock cannot be acquired or the key
     /// envelope cannot be deleted from the blob store.
-    pub fn destroy_storage(&self) -> StorageResult<()> {
+    pub fn destroy_storage(&self) -> Result<(), StorageError> {
         self.lock_inner()?.destroy_storage()
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-#[uniffi::export]
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "boltffi-wasm")))]
+#[boltffi::export]
 impl CredentialStore {
     /// Exports the current vault as an in-memory plaintext (unencrypted)
     /// `SQLite` database for backup.
@@ -312,7 +317,7 @@ impl CredentialStore {
         clippy::significant_drop_tightening,
         reason = "lock held intentionally for the full operation to prevent concurrent cleanup from deleting in-use temp files"
     )]
-    pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
+    pub fn export_vault_for_backup(&self) -> Result<Vec<u8>, StorageError> {
         let inner = self.lock_inner()?;
         inner.cleanup_stale_backup_files();
         let path = inner.export_vault_for_backup_to_file()?;
@@ -331,7 +336,10 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the import fails.
-    pub fn import_vault_from_backup(&self, backup_bytes: &[u8]) -> StorageResult<()> {
+    pub fn import_vault_from_backup(
+        &self,
+        backup_bytes: &[u8],
+    ) -> Result<(), StorageError> {
         let inner = self.lock_inner()?;
         inner.cleanup_stale_backup_files();
         let path = inner.write_temp_backup_file(backup_bytes)?;
@@ -348,7 +356,7 @@ impl CredentialStore {
     /// automatically when the old sender is dropped.
     ///
     /// Delivery happens on a dedicated background thread to avoid re-entering
-    /// the `UniFFI` call stack (see `logger.rs` for rationale).
+    /// the foreign-binding call stack (see `logger.rs` for rationale).
     ///
     /// **Warning:** the listener **must not** call back into this
     /// `CredentialStore` — doing so will deadlock.
@@ -506,6 +514,13 @@ impl CredentialStore {
     }
 }
 
+#[cfg_attr(
+    all(feature = "boltffi-wasm", not(target_arch = "wasm32")),
+    expect(
+        dead_code,
+        reason = "native backup helpers are excluded from the synchronous WASM surface"
+    )
+)]
 impl CredentialStoreInner {
     fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
         if let Some(state) = &mut self.state {
@@ -822,9 +837,9 @@ impl CredentialStore {
     pub fn from_provider(provider: &dyn StorageProvider) -> StorageResult<Self> {
         let inner = CredentialStoreInner::from_provider(provider)?;
         Ok(Self {
-            inner: Mutex::new(inner),
+            inner: Arc::new(Mutex::new(inner)),
             #[cfg(not(target_arch = "wasm32"))]
-            vault_changed_tx: Mutex::new(None),
+            vault_changed_tx: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -840,9 +855,9 @@ impl CredentialStore {
     ) -> StorageResult<Self> {
         let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
         Ok(Self {
-            inner: Mutex::new(inner),
+            inner: Arc::new(Mutex::new(inner)),
             #[cfg(not(target_arch = "wasm32"))]
-            vault_changed_tx: Mutex::new(None),
+            vault_changed_tx: Arc::new(Mutex::new(None)),
         })
     }
 

@@ -6,7 +6,8 @@ use super::error::{StorageError, StorageResult};
 ///
 /// Blob records (stored in the `blob_objects` table) carry a kind tag that
 /// distinguishes credential payloads from associated data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[boltffi::data]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum BlobKind {
     /// Credential blob payload.
@@ -45,7 +46,8 @@ pub type Nullifier = [u8; 32];
 ///
 /// This is intentionally small and excludes blobs; full credential payloads can
 /// be fetched separately to avoid heavy list queries.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[boltffi::data]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredentialRecord {
     /// Credential identifier.
     pub credential_id: u64,
@@ -62,7 +64,8 @@ pub struct CredentialRecord {
 }
 
 /// FFI-friendly replay guard result kind.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+#[boltffi::data]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReplayGuardKind {
     /// Stored bytes for the first disclosure of a request.
     Fresh,
@@ -71,7 +74,8 @@ pub enum ReplayGuardKind {
 }
 
 /// Replay guard result.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[boltffi::data]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplayGuardResult {
     /// Result kind.
     pub kind: ReplayGuardKind,

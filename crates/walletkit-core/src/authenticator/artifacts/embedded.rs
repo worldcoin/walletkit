@@ -10,12 +10,12 @@ use world_id_proof::{
     CircomGroth16Material,
 };
 
-use super::WalletKitZkArtifactSource;
+use super::WalletKitZkArtifacts;
 
 /// A wrapper around `world_id_proof::artifacts::EmbeddedZkArtifacts`
 ///
 /// that can be constructed by crate consumers
-#[derive(uniffi::Object)]
+#[derive(Clone)]
 pub struct EmbeddedZkArtifacts(CachedZkArtifactSource);
 
 impl Default for EmbeddedZkArtifacts {
@@ -24,10 +24,9 @@ impl Default for EmbeddedZkArtifacts {
     }
 }
 
-#[uniffi::export]
+#[boltffi::export]
 impl EmbeddedZkArtifacts {
     /// Constructs a new [`EmbeddedZkArtifacts`]
-    #[uniffi::constructor]
     #[must_use]
     pub fn new() -> Self {
         Self(CachedZkArtifactSource::new(CoreEmbeddedZkArtifacts))
@@ -38,10 +37,8 @@ impl EmbeddedZkArtifacts {
     /// This explicit conversion is required by foreign-language bindings, which do not preserve
     /// Rust blanket trait implementations as class inheritance.
     #[must_use]
-    pub fn as_zk_artifact_source(
-        self: Arc<Self>,
-    ) -> Arc<dyn WalletKitZkArtifactSource> {
-        self
+    pub fn as_zk_artifact_source(&self) -> WalletKitZkArtifacts {
+        WalletKitZkArtifacts::new(Arc::new(self.clone()))
     }
 }
 

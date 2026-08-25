@@ -6,7 +6,7 @@ const WORLD_ID_ANDROID_CLIENT_NAME: &str = "android-id";
 const WORLD_ID_IOS_CLIENT_NAME: &str = "ios-id";
 
 /// Represents a User-Agent string.
-#[derive(Debug, Clone, uniffi::Object)]
+#[derive(Debug, Clone)]
 pub struct UserAgent(pub String);
 
 /// Converts the [`UserAgent`] to a [`String`].
@@ -17,7 +17,7 @@ impl std::fmt::Display for UserAgent {
     }
 }
 
-#[uniffi::export]
+#[boltffi::export]
 impl UserAgent {
     /// Returns the header value for FFI consumers.
     #[must_use]
@@ -31,15 +31,14 @@ impl UserAgent {
 /// Starts empty; call [`Self::with_segment`] for arbitrary `name/version` tokens and
 /// [`Self::with_walletkit_segment`] for the library token (in whatever order fits the host — e.g.
 /// native app vs web authenticator may omit an app-like segment entirely).
-#[derive(Debug, Clone, uniffi::Object)]
+#[derive(Debug, Clone)]
 pub struct UserAgentBuilder {
     segments: Vec<String>,
 }
 
-#[uniffi::export]
+#[boltffi::export]
 impl UserAgentBuilder {
     /// Empty builder — add segments with [`Self::with_segment`] and/or [`Self::with_walletkit_segment`].
-    #[uniffi::constructor]
     #[must_use]
     pub const fn new() -> Self {
         Self {

@@ -43,16 +43,14 @@ impl NfcRefreshResultRaw {
 }
 
 /// TFH NFC credential issuer API client
-#[derive(uniffi::Object)]
 pub struct TfhNfcIssuer {
     base_url: String,
     request: Request,
 }
 
-#[uniffi::export]
+#[boltffi::export]
 impl TfhNfcIssuer {
     /// Create a new TFH NFC issuer for the specified environment
-    #[uniffi::constructor]
     #[must_use]
     pub fn new(environment: &Environment, user_agent: String) -> Self {
         let base_url = match environment {
@@ -67,7 +65,7 @@ impl TfhNfcIssuer {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[boltffi::export]
 impl TfhNfcIssuer {
     /// Refresh an NFC credential (migrate PCP to v4).
     ///
@@ -76,9 +74,10 @@ impl TfhNfcIssuer {
     /// # Errors
     ///
     /// Returns error on network failure or invalid response.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn refresh_nfc_credential(
         &self,
-        request_body: &str,
+        request_body: String,
         headers: HashMap<String, String>,
     ) -> Result<Credential, WalletKitError> {
         let url = format!("{}/v2/migrate", self.base_url);
@@ -87,7 +86,7 @@ impl TfhNfcIssuer {
             .request
             .post(&url)
             .header("Content-Type", "application/json")
-            .body(request_body.to_string());
+            .body(request_body);
         for (name, value) in &headers {
             request_builder = request_builder.header(name, value);
         }

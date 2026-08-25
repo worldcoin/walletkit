@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use ruint_uniffi::Uint256;
+use crate::Uint256;
 use semaphore_rs::poseidon_tree::Proof;
 use serde::{Deserialize, Serialize};
 
@@ -23,7 +23,7 @@ struct InclusionProofResponse {
 const CREDENTIAL_NOT_ISSUED_RESPONSE: &str = "provided identity commitment not found";
 const MINED_STATUS: &str = "mined"; // https://github.com/worldcoin/signup-sequencer/blob/f6050fbb3131ee6a61b2f44db3813f9150a045f5/schemas/openapi.yaml#L163
 
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
 pub struct MerkleTreeProof {
     poseidon_proof: Proof,
@@ -38,17 +38,17 @@ impl MerkleTreeProof {
     }
 }
 
-#[uniffi::export]
+#[boltffi::export]
 impl MerkleTreeProof {
     /// Retrieves a Merkle inclusion proof from the sign up sequencer for a given identity commitment.
     /// Each credential/environment pair uses a different sign up sequencer.
     ///
     /// # Errors
     /// Will throw an error if the request fails or parsing the response fails.
-    #[uniffi::constructor]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn from_identity_commitment(
-        identity_commitment: &Uint256,
-        sequencer_host: &str,
+        identity_commitment: Uint256,
+        sequencer_host: String,
         require_mined_proof: bool,
     ) -> Result<Self, WalletKitError> {
         let url = format!("{sequencer_host}/inclusionProof");
@@ -98,8 +98,6 @@ impl MerkleTreeProof {
             }
         }
     }
-
-    #[uniffi::constructor]
     pub fn from_json_proof(
         json_proof: &str,
         merkle_root: &str,
@@ -148,8 +146,8 @@ mod tests {
             WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
 
         let merkle_proof = MerkleTreeProof::from_identity_commitment(
-            &world_id.get_identity_commitment(&CredentialType::Device),
-            &mock_server.url(),
+            world_id.get_identity_commitment(&CredentialType::Device),
+            mock_server.url(),
             false,
         )
         .await
@@ -187,8 +185,8 @@ mod tests {
         let url = mock_server.url();
 
         let result = MerkleTreeProof::from_identity_commitment(
-            &world_id.get_identity_commitment(&CredentialType::Device),
-            &url,
+            world_id.get_identity_commitment(&CredentialType::Device),
+            url,
             false,
         )
         .await;
@@ -225,8 +223,8 @@ mod tests {
         let url = mock_server.url();
 
         let result = MerkleTreeProof::from_identity_commitment(
-            &world_id.get_identity_commitment(&CredentialType::Device),
-            &url,
+            world_id.get_identity_commitment(&CredentialType::Device),
+            url,
             false,
         )
         .await;
@@ -260,8 +258,8 @@ mod tests {
             WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
 
         let result = MerkleTreeProof::from_identity_commitment(
-            &world_id.get_identity_commitment(&CredentialType::Device),
-            &mock_server.url(),
+            world_id.get_identity_commitment(&CredentialType::Device),
+            mock_server.url(),
             true,
         )
         .await

@@ -16,7 +16,7 @@ use world_id_proof::{
 
 use crate::{error::WalletKitError, storage::StoragePaths};
 
-use super::WalletKitZkArtifactSource;
+use super::WalletKitZkArtifacts;
 
 /// A crate specific source for ZK Artifacts
 ///
@@ -24,16 +24,16 @@ use super::WalletKitZkArtifactSource;
 /// Nullifier proofs) on the filesystem.
 ///
 /// Primary reason for caching is amortization of decompression costs.
-#[derive(uniffi::Object)]
+#[derive(Clone)]
 pub struct CachingZkArtifacts(CachedZkArtifactSource);
 
-#[uniffi::export]
+#[boltffi::export]
 impl CachingZkArtifacts {
     /// Constructs a new [`CachingZkArtifacts`]
-    #[uniffi::constructor]
     #[must_use]
-    pub fn new(storage_paths: Arc<StoragePaths>) -> Self {
-        let inner = CachingZkArtifactsInner::new(storage_paths).cached();
+    pub fn new(storage_paths: &StoragePaths) -> Self {
+        let inner =
+            CachingZkArtifactsInner::new(Arc::new(storage_paths.clone())).cached();
         Self(inner)
     }
 
@@ -42,10 +42,8 @@ impl CachingZkArtifacts {
     /// This explicit conversion is required by foreign-language bindings, which do not preserve
     /// Rust blanket trait implementations as class inheritance.
     #[must_use]
-    pub fn as_zk_artifact_source(
-        self: Arc<Self>,
-    ) -> Arc<dyn WalletKitZkArtifactSource> {
-        self
+    pub fn as_zk_artifact_source(&self) -> WalletKitZkArtifacts {
+        WalletKitZkArtifacts::new(Arc::new(self.clone()))
     }
 
     /// Preloads the nullifier & query materials and caches them to the filesystem.
@@ -96,7 +94,7 @@ impl ZkArtifactSource for CachingZkArtifacts {
 ///
 /// It implements the caching logic & exists to be wrapped by the `CachedZkArtifactSource` which
 /// provides in-memory caching of the artifacts.
-#[derive(Clone, uniffi::Object)]
+#[derive(Clone)]
 struct CachingZkArtifactsInner {
     storage_paths: Arc<StoragePaths>,
     inner: Arc<dyn ZkArtifactSource>,

@@ -38,16 +38,16 @@ async fn test_authenticator_integration() {
     let authenticator_seeder = PrivateKeySigner::random();
     let store = common::create_test_credential_store();
 
-    let artifacts = Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
+    let artifacts = Arc::new(CachingZkArtifacts::new(&store.paths().unwrap()));
 
     // When account doesn't exist, this should fail
     let authenticator = Authenticator::init_with_defaults(
         authenticator_seeder.to_bytes().to_vec(),
         Some(anvil.endpoint()),
-        &Environment::Staging,
+        Environment::Staging,
         None,
-        artifacts.clone(),
-        store.clone(),
+        artifacts.as_zk_artifact_source(),
+        (*store).clone(),
     )
     .await
     .unwrap_err();
@@ -80,10 +80,10 @@ async fn test_authenticator_integration() {
     let authenticator = Authenticator::init_with_defaults(
         authenticator_seeder.to_bytes().to_vec(),
         Some(anvil.endpoint()),
-        &Environment::Staging,
+        Environment::Staging,
         None,
-        artifacts.clone(),
-        store,
+        artifacts.as_zk_artifact_source(),
+        (*store).clone(),
     )
     .await
     .unwrap();

@@ -4,10 +4,10 @@ use world_id_core::primitives::OwnershipProof as CoreOwnershipProof;
 use crate::{error::WalletKitError, FieldElement};
 
 /// A WIP-103 Ownership Proof available to foreign bindings
-#[derive(Debug, Clone, uniffi::Object)]
+#[derive(Debug, Clone)]
 pub struct OwnershipProof(pub(crate) CoreOwnershipProof);
 
-#[uniffi::export]
+#[boltffi::export]
 impl OwnershipProof {
     /// Encodes the proof as raw bytes.
     ///

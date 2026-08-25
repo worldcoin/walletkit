@@ -30,7 +30,7 @@ const QUERY_GRAPH_FILENAME: &str = "OPRFQueryGraph.bin";
 const NULLIFIER_GRAPH_FILENAME: &str = "OPRFNullifierGraph.bin";
 
 /// Paths for credential storage artifacts under `<root>/worldid`.
-#[derive(Debug, Clone, uniffi::Object)]
+#[derive(Debug, Clone)]
 pub struct StoragePaths {
     root: PathBuf,
     worldid_dir: PathBuf,
@@ -106,10 +106,9 @@ impl StoragePaths {
     }
 }
 
-#[uniffi::export]
+#[boltffi::export]
 impl StoragePaths {
     /// Builds storage paths rooted at `root`.
-    #[uniffi::constructor]
     #[must_use]
     pub fn from_root(root: String) -> Self {
         Self::new(PathBuf::from(root))

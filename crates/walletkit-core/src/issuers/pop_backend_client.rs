@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 /// Request payload for registering or unregistering a recovery binding.
 ///
 /// Serialized as JSON with `leafIndex` (camelCase) to match the `PoP` backend API.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, uniffi::Record)]
+#[boltffi::data]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct ManageRecoveryBindingRequest {
     /// Hex-encoded subject identifier of the recovery binding.
     pub sub: String,
@@ -33,7 +34,8 @@ struct RecoveryBindingErrorResponse {
     error: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, uniffi::Record)]
+#[boltffi::data]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct RecoveryBindingResponse {
     #[serde(rename = "recoveryAgent")]
     pub recovery_agent: Option<String>,
@@ -77,6 +79,7 @@ impl PopBackendClient {
     /// * [`WalletKitError::NetworkError`] — any other non-success status; the response body is in
     ///   `error` and the HTTP status in `status`. This includes conflicts (e.g. HTTP 409) and
     ///   server errors.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn bind_recovery_agent(
         &self,
         request: ManageRecoveryBindingRequest,
@@ -120,6 +123,7 @@ impl PopBackendClient {
     ///
     /// * [`WalletKitError::AccountDoesNotExist`] — HTTP 404 (no binding found).
     /// * [`WalletKitError::NetworkError`] — any other non-success status.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn unbind_recovery_agent(
         &self,
         request: ManageRecoveryBindingRequest,
@@ -164,6 +168,7 @@ impl PopBackendClient {
     ///
     /// * [`WalletKitError::NetworkError`] — non-success HTTP status.
     /// * [`WalletKitError::SerializationError`] — response body is not valid JSON.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn get_challenge(&self) -> Result<String, WalletKitError> {
         let url = format!("{}/api/v1/challenge", self.base_url);
         let response = self.request.get(url.as_str()).send().await?;
@@ -199,6 +204,7 @@ impl PopBackendClient {
     /// * [`WalletKitError::NetworkError`] — non-success HTTP status.
     /// * [`WalletKitError::SerializationError`] — response body is not valid JSON.
     /// * [`WalletKitError::RecoveryBindingDoesNotExist`] — HTTP 404 (no binding found).
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn get_recovery_binding(
         &self,
         leaf_index: u64,

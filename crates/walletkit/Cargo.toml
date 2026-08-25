@@ -21,7 +21,6 @@ name = "walletkit"
 
 [dependencies]
 walletkit-core = { workspace = true }
-uniffi = { workspace = true }
 
 [features]
 default = ["issuers"]

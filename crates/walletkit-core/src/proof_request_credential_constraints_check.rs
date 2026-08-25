@@ -76,7 +76,8 @@ use crate::requests::ProofRequest;
 use crate::storage::{CredentialRecord, CredentialStore, StorageError};
 
 /// Error returned by [`check_credentials_against_proof_request`].
-#[derive(Debug, thiserror::Error, uniffi::Error)]
+#[boltffi::error]
+#[derive(Debug, thiserror::Error)]
 pub enum CredentialConstraintsCheckError {
     /// Credential store query failed.
     #[error(transparent)]
@@ -90,7 +91,8 @@ pub enum CredentialConstraintsCheckError {
 }
 
 /// Check result for a single request item.
-#[derive(Debug, Clone, uniffi::Record)]
+#[boltffi::data]
+#[derive(Debug, Clone)]
 pub struct CredentialConstraintsCheckItem {
     /// The RP-defined identifier for this request item (e.g. `"orb"`, `"document"`).
     pub identifier: String,
@@ -102,7 +104,8 @@ pub struct CredentialConstraintsCheckItem {
 }
 
 /// Result of [`check_credentials_against_proof_request`].
-#[derive(Debug, Clone, uniffi::Record)]
+#[boltffi::data]
+#[derive(Debug, Clone)]
 pub struct CredentialConstraintsCheckResult {
     /// `true` when the constraint tree (or all items, if no constraints) is satisfied.
     pub is_satisfied: bool,
@@ -124,7 +127,7 @@ pub struct CredentialConstraintsCheckResult {
 /// - [`CredentialConstraintsCheckError::Storage`] if the credential store query fails.
 /// - [`CredentialConstraintsCheckError::ConstraintTooDeep`] if the constraint tree exceeds depth 2.
 /// - [`CredentialConstraintsCheckError::ConstraintTooLarge`] if the constraint tree exceeds the node limit.
-#[uniffi::export]
+#[boltffi::export]
 pub fn check_credentials_against_proof_request(
     request: &ProofRequest,
     store: &CredentialStore,

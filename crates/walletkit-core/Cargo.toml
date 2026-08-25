@@ -24,6 +24,7 @@ name = "walletkit_core"
 alloy-core = { workspace = true }
 backon = { workspace = true }
 base64 = { workspace = true }
+boltffi = { workspace = true }
 ciborium = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
@@ -31,7 +32,6 @@ log = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 ruint = { workspace = true, features = ["alloc"] }
-ruint-uniffi = { workspace = true, features = ["serde"] }
 secrecy = { workspace = true }
 semaphore-rs = { workspace = true, optional = true }
 serde = { workspace = true }
@@ -44,7 +44,6 @@ tokio = { workspace = true, features = ["sync"] }
 tracing = { workspace = true }
 tracing-log = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-uniffi = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 walletkit-db = { workspace = true }
 world-id-core = { workspace = true, features = ["authenticator"] }
@@ -100,6 +99,11 @@ default = [
   # we can make this feature non-default
   "embed-zkeys",
 ]
+
+# Generates the currently supported synchronous WASM surface. BoltFFI 0.30.1
+# requires exported futures to be Send, while browser networking futures are
+# necessarily single-threaded and !Send.
+boltffi-wasm = []
 
 # Enables point-compression on all verifying keys. This results in ~2x smaller bundle size, but decompression is very expensive,
 # using it requires proper handling to ensure decompression is done once and cached. By default walletkit-swift and walletkit-android

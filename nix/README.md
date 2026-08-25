@@ -13,13 +13,14 @@ ordinary `cargo build` invocations run inside a shell.
 
 | Shell | Purpose | Systems |
 |---|---|---|
-| `default` | Host builds, uniffi-bindgen, nargo | all |
+| `default` | Host Rust builds and nargo | all |
 | `android` | Cross-compile the 4 Android targets (NDK, linkers, API 23) | linux/darwin x86_64, darwin aarch64 |
-| `wasm` | `wasm32-unknown-unknown` with a wasm-safe clang | all |
+| `wasm` | BoltFFI, TypeScript, Binaryen, and a wasm-safe clang | all |
 
 ```bash
 nix develop .#android   # enter a shell
 nix develop .#android --command cargo build ...   # or run one command
+nix develop .#wasm --command boltffi --version
 ```
 
 Convenience wrappers (they enter the right shell for you):

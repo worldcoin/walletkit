@@ -30,7 +30,7 @@ pub async fn register_and_poll(
     let result = if let Some(ref config) = config_json {
         InitializingAuthenticator::register(
             seed.to_vec(),
-            config,
+            config.clone(),
             recovery_address.map(String::from),
         )
         .await
@@ -41,7 +41,7 @@ pub async fn register_and_poll(
             InitializingAuthenticator::register_with_ohttp_defaults(
                 seed.to_vec(),
                 cli.rpc_url.clone(),
-                &env,
+                env,
                 region,
                 recovery_address.map(String::from),
             )
@@ -50,7 +50,7 @@ pub async fn register_and_poll(
             InitializingAuthenticator::register_with_defaults(
                 seed.to_vec(),
                 cli.rpc_url.clone(),
-                &env,
+                env,
                 region,
                 recovery_address.map(String::from),
             )
@@ -123,7 +123,7 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
     let result = if let Some(ref config) = config_json {
         InitializingAuthenticator::register(
             seed.clone(),
-            config,
+            config.clone(),
             recovery_address.map(String::from),
         )
         .await
@@ -134,7 +134,7 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
             InitializingAuthenticator::register_with_ohttp_defaults(
                 seed.clone(),
                 cli.rpc_url.clone(),
-                &env,
+                env,
                 region,
                 recovery_address.map(String::from),
             )
@@ -143,7 +143,7 @@ async fn run_register(cli: &Cli, recovery_address: Option<&str>) -> eyre::Result
             InitializingAuthenticator::register_with_defaults(
                 seed.clone(),
                 cli.rpc_url.clone(),
-                &env,
+                env,
                 region,
                 recovery_address.map(String::from),
             )

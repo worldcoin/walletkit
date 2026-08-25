@@ -1,32 +1,42 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
+#[cfg(not(feature = "boltffi-wasm"))]
 use crate::{
-    authenticator::artifacts::WalletKitZkArtifactSource, defaults,
-    error::WalletKitError, primitives::ParseFromForeignBinding, Environment,
-    FieldElement, Region,
+    authenticator::artifacts::WalletKitZkArtifacts, defaults,
+    primitives::ParseFromForeignBinding, Environment, Region,
 };
+use crate::{error::WalletKitError, FieldElement};
+#[cfg(not(feature = "boltffi-wasm"))]
 use alloy_core::primitives::Address;
 use ruint::aliases::U256;
-use ruint_uniffi::Uint256;
 use std::sync::Arc;
+#[cfg(not(feature = "boltffi-wasm"))]
+use world_id_core::InitializingAuthenticator as CoreInitializingAuthenticator;
+#[cfg(not(feature = "boltffi-wasm"))]
 use world_id_core::{
-    api_types::{GatewayErrorCode, GatewayRequestId, GatewayRequestState},
-    primitives::{AuthenticatorPublicKeySet, Config, MAX_AUTHENTICATOR_KEYS},
-    Authenticator as CoreAuthenticator, AuthenticatorError,
-    Credential as CoreCredential, CredentialInput, EdDSAPublicKey,
-    InitializingAuthenticator as CoreInitializingAuthenticator,
+    api_types::GatewayRequestId,
+    artifacts::ZkArtifactSource,
+    primitives::{Config, MAX_AUTHENTICATOR_KEYS},
+    AuthenticatorError, CredentialInput,
+};
+use world_id_core::{
+    api_types::{GatewayErrorCode, GatewayRequestState},
+    primitives::AuthenticatorPublicKeySet,
+    Authenticator as CoreAuthenticator, Credential as CoreCredential, EdDSAPublicKey,
     OnchainKeyRepresentable, Signer,
 };
 
+#[cfg(not(feature = "boltffi-wasm"))]
 use crate::requests::{ProofRequest, ProofResponse};
 use crate::storage::CredentialStore;
+#[cfg(not(feature = "boltffi-wasm"))]
 use crate::OwnershipProof;
 
 pub mod artifacts;
 mod with_storage;
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
 pub struct Authenticator {
     inner: CoreAuthenticator,
     store: Arc<CredentialStore>,
@@ -38,10 +48,11 @@ impl Authenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn init_with_config(
         seed: &[u8],
         config: Config,
-        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        artifacts: Arc<dyn ZkArtifactSource>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let authenticator = CoreAuthenticator::init(seed, config, artifacts).await?;
@@ -100,15 +111,15 @@ fn parse_authenticator_pubkey(
     Ok(pubkey)
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[boltffi::export]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
     ///
     /// The packed account data is a 256 bit integer which includes the user's leaf index, their recovery counter,
     /// and their pubkey id/commitment.
     #[must_use]
-    pub fn packed_account_data(&self) -> Uint256 {
-        self.inner.packed_account_data.into()
+    pub fn packed_account_data(&self) -> String {
+        crate::Uint256::from(self.inner.packed_account_data).to_padded_hex_string()
     }
 
     /// Returns the leaf index for the holder's World ID.
@@ -137,11 +148,12 @@ impl Authenticator {
         name = "rpc_account_data",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn get_packed_account_data_remote(
         &self,
-    ) -> Result<Uint256, WalletKitError> {
+    ) -> Result<String, WalletKitError> {
         let packed_account_data = self.inner.fetch_packed_account_data().await?;
-        Ok(packed_account_data.into())
+        Ok(crate::Uint256::from(packed_account_data).to_padded_hex_string())
     }
 
     /// Generates a blinding factor for a Credential sub (through OPRF Nodes).
@@ -157,6 +169,7 @@ impl Authenticator {
         name = "oprf_blinding_factor",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn generate_credential_blinding_factor_remote(
         &self,
         issuer_schema_id: u64,
@@ -187,9 +200,9 @@ impl Authenticator {
     ///
     /// # Errors
     /// May error if very unexpectedly the signing process fails. Not expected.
-    #[allow(
+    #[expect(
         clippy::needless_pass_by_value,
-        reason = "seed is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
+        reason = "foreign bindings expose byte buffers by value"
     )]
     pub fn danger_sign_challenge(
         &self,
@@ -222,6 +235,7 @@ impl Authenticator {
     /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
     ///   a valid address.
     /// - Returns an error if the nonce fetch or signing step fails.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn danger_sign_initiate_recovery_agent_update(
         &self,
         new_recovery_agent: String,
@@ -234,7 +248,7 @@ impl Authenticator {
             .await?;
         Ok(RecoveryUpdateSignature {
             signature: sig.as_bytes().to_vec(),
-            nonce: nonce.into(),
+            nonce: crate::Uint256::from(nonce).to_padded_hex_string(),
         })
     }
 
@@ -255,6 +269,7 @@ impl Authenticator {
     /// - Returns [`WalletKitError::InvalidInput`] if `new_recovery_agent` is not
     ///   a valid address.
     /// - Returns a network error if the gateway request fails.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn update_recovery_agent(
         &self,
         new_recovery_agent: String,
@@ -280,6 +295,7 @@ impl Authenticator {
     ///
     /// # Errors
     /// Returns a network error if the gateway request fails.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn revert_recovery_agent_update(&self) -> Result<String, WalletKitError> {
         let request_id = self.inner.revert_recovery_agent_update().await?;
 
@@ -304,6 +320,7 @@ impl Authenticator {
         name = "gateway_insert_authenticator",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn insert_authenticator(
         &self,
         new_authenticator_pubkey: String,
@@ -344,6 +361,7 @@ impl Authenticator {
         name = "indexer_authenticator_pubkeys",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn has_authenticator_pubkey(
         &self,
         authenticator_pubkey: String,
@@ -375,6 +393,7 @@ impl Authenticator {
         name = "indexer_authenticator_pubkeys",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn get_authenticator_pubkeys(
         &self,
     ) -> Result<Vec<Option<String>>, WalletKitError> {
@@ -420,6 +439,7 @@ impl Authenticator {
         name = "gateway_remove_authenticator",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn remove_authenticator(
         &self,
         authenticator_address: String,
@@ -482,6 +502,7 @@ impl Authenticator {
         name = "gateway_poll",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn poll_status(
         &self,
         request_id: String,
@@ -494,7 +515,7 @@ impl Authenticator {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[boltffi::export]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -503,18 +524,19 @@ impl Authenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
-    #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn init_with_defaults(
         seed: Vec<u8>,
         rpc_url: Option<String>,
-        environment: &Environment,
+        environment: Environment,
         region: Option<Region>,
-        artifacts: Arc<dyn WalletKitZkArtifactSource>,
-        store: Arc<CredentialStore>,
+        artifacts: WalletKitZkArtifacts,
+        store: CredentialStore,
     ) -> Result<Self, WalletKitError> {
-        let config = defaults::default_config(environment, rpc_url, region)?;
-        Self::init_with_config(&seed, config, artifacts, store).await
+        let config = defaults::default_config(&environment, rpc_url, region)?;
+        Self::init_with_config(&seed, config, Arc::new(artifacts), Arc::new(store))
+            .await
     }
 
     /// Initializes a new Authenticator from a seed using SDK defaults routed
@@ -526,18 +548,20 @@ impl Authenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
-    #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn init_with_ohttp_defaults(
         seed: Vec<u8>,
         rpc_url: Option<String>,
-        environment: &Environment,
+        environment: Environment,
         region: Option<Region>,
-        artifacts: Arc<dyn WalletKitZkArtifactSource>,
-        store: Arc<CredentialStore>,
+        artifacts: WalletKitZkArtifacts,
+        store: CredentialStore,
     ) -> Result<Self, WalletKitError> {
-        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
-        Self::init_with_config(&seed, config, artifacts, store).await
+        let config =
+            defaults::default_config_with_ohttp(&environment, rpc_url, region)?;
+        Self::init_with_config(&seed, config, Arc::new(artifacts), Arc::new(store))
+            .await
     }
 
     /// Initializes a new Authenticator from a seed and config.
@@ -547,29 +571,31 @@ impl Authenticator {
     ///
     /// # Errors
     /// Will error if the provided seed is not valid or if the config is not valid.
-    #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn init(
         seed: Vec<u8>,
-        config: &str,
-        artifacts: Arc<dyn WalletKitZkArtifactSource>,
-        store: Arc<CredentialStore>,
+        config: String,
+        artifacts: WalletKitZkArtifacts,
+        store: CredentialStore,
     ) -> Result<Self, WalletKitError> {
         let config =
-            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+            Config::from_json(&config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
-        Self::init_with_config(&seed, config, artifacts, store).await
+        Self::init_with_config(&seed, config, Arc::new(artifacts), Arc::new(store))
+            .await
     }
 
     /// Generates a proof for the given proof request.
     ///
     /// # Errors
     /// Returns an error if proof generation fails.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn generate_proof(
         &self,
-        proof_request: &ProofRequest,
+        proof_request: ProofRequest,
         now: Option<u64>,
     ) -> Result<ProofResponse, WalletKitError> {
         let now = if let Some(n) = now {
@@ -709,11 +735,12 @@ impl Authenticator {
     /// - Returns a network error if the Merkle inclusion proof cannot be
     ///   fetched from the indexer.
     /// - Returns [`WalletKitError::ProofGeneration`] if the ZK proof fails.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn prove_credential_sub(
         &self,
-        nonce: &FieldElement,
-        blinding_factor: &FieldElement,
-        sub: &FieldElement,
+        nonce: FieldElement,
+        blinding_factor: FieldElement,
+        sub: FieldElement,
     ) -> Result<OwnershipProof, WalletKitError> {
         #[cfg(target_arch = "wasm32")]
         {
@@ -750,7 +777,8 @@ impl Authenticator {
 }
 
 /// Registration status for a World ID being created through the gateway.
-#[derive(Debug, Clone, uniffi::Enum)]
+#[boltffi::data]
+#[derive(Debug, Clone)]
 pub enum RegistrationStatus {
     /// Request queued but not yet batched.
     Queued,
@@ -770,7 +798,8 @@ pub enum RegistrationStatus {
 }
 
 /// Status of an account operation submitted through the gateway.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+#[boltffi::data]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GatewayRequestStatus {
     /// Request queued but not yet batched.
     Queued,
@@ -829,10 +858,11 @@ impl From<GatewayRequestState> for RegistrationStatus {
 ///
 /// The account is not yet registered in the `WorldIDRegistry` contract.
 /// Use this for non-blocking registration flows where you want to poll the status yourself.
-#[derive(uniffi::Object)]
+#[cfg(not(feature = "boltffi-wasm"))]
 pub struct InitializingAuthenticator(CoreInitializingAuthenticator);
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg(not(feature = "boltffi-wasm"))]
+#[boltffi::export]
 impl InitializingAuthenticator {
     /// Registers a new World ID with SDK defaults.
     ///
@@ -841,23 +871,23 @@ impl InitializingAuthenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
-    #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "gateway_register",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn register_with_defaults(
         seed: Vec<u8>,
         rpc_url: Option<String>,
-        environment: &Environment,
+        environment: Environment,
         region: Option<Region>,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = defaults::default_config(environment, rpc_url, region)?;
+        let config = defaults::default_config(&environment, rpc_url, region)?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(&seed, config, recovery_address).await?;
@@ -874,23 +904,24 @@ impl InitializingAuthenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
-    #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "gateway_register",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn register_with_ohttp_defaults(
         seed: Vec<u8>,
         rpc_url: Option<String>,
-        environment: &Environment,
+        environment: Environment,
         region: Option<Region>,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
-        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
+        let config =
+            defaults::default_config_with_ohttp(&environment, rpc_url, region)?;
 
         let initializing_authenticator =
             CoreAuthenticator::register(&seed, config, recovery_address).await?;
@@ -905,22 +936,22 @@ impl InitializingAuthenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
-    #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "gateway_register",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn register(
         seed: Vec<u8>,
-        config: &str,
+        config: String,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
         let config =
-            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+            Config::from_json(&config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
@@ -940,6 +971,7 @@ impl InitializingAuthenticator {
         name = "gateway_poll",
         skip_all
     )]
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn poll_status(&self) -> Result<RegistrationStatus, WalletKitError> {
         let status = self.0.poll_status().await?;
         Ok(status.into())
@@ -949,16 +981,16 @@ impl InitializingAuthenticator {
 /// The signature and signing nonce returned by
 /// [`Authenticator::danger_sign_initiate_recovery_agent_update`].
 ///
-/// `UniFFI` does not support returning bare tuples across the FFI boundary, so
-/// the two values are bundled in this record type.
-#[derive(Debug, Clone, uniffi::Record)]
+/// The two values are bundled in this record type for binding consumers.
+#[boltffi::data]
+#[derive(Debug, Clone)]
 pub struct RecoveryUpdateSignature {
     /// Raw bytes of the secp256k1 ECDSA signature over the EIP-712
     /// `InitiateRecoveryAgentUpdate` payload.
     pub signature: Vec<u8>,
     /// The EIP-712 signing nonce that was used; must be included in the
     /// gateway request alongside the signature.
-    pub nonce: Uint256,
+    pub nonce: String,
 }
 
 /// Identity material derived from a seed for use during account recovery.
@@ -968,7 +1000,8 @@ pub struct RecoveryUpdateSignature {
 /// submitted on-chain during the recovery transaction.
 ///
 /// All fields are hex-encoded strings suitable for direct use in API requests.
-#[derive(Debug, Clone, uniffi::Record)]
+#[boltffi::data]
+#[derive(Debug, Clone)]
 pub struct RecoveryData {
     /// Checksummed hex Ethereum address of the on-chain signer.
     pub authenticator_address: String,
@@ -1024,7 +1057,7 @@ impl RecoveryData {
 /// # Errors
 /// Returns [`WalletKitError::InvalidInput`] if the public key is invalid,
 /// is not in canonical form, or is the `BabyJubJub` identity point.
-#[uniffi::export]
+#[boltffi::export]
 pub fn validate_authenticator_pubkey(
     authenticator_pubkey: &str,
 ) -> Result<String, WalletKitError> {
@@ -1040,10 +1073,10 @@ pub fn validate_authenticator_pubkey(
 ///
 /// # Errors
 /// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
-#[uniffi::export]
-#[allow(
+#[boltffi::export]
+#[expect(
     clippy::needless_pass_by_value,
-    reason = "seed is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
+    reason = "foreign bindings expose byte buffers by value"
 )]
 pub fn recovery_data_from_seed(seed: Vec<u8>) -> Result<RecoveryData, WalletKitError> {
     RecoveryData::from_seed(&seed)
@@ -1479,14 +1512,13 @@ mod tests {
         let store = CredentialStore::from_provider(&provider).expect("store");
         store.init(42, 100).expect("init storage");
 
-        let artifacts =
-            Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
+        let artifacts = Arc::new(CachingZkArtifacts::new(&store.paths().unwrap()));
 
         let _authenticator = Authenticator::init(
             [2u8; 32].to_vec(),
-            &config,
-            artifacts,
-            Arc::new(store),
+            config,
+            artifacts.as_zk_artifact_source(),
+            store,
         )
         .await
         .unwrap();

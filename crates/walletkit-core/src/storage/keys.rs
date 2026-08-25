@@ -56,15 +56,15 @@ impl StorageKeys {
     }
 }
 
-// Trait-object bridge from walletkit-core's uniffi-annotated traits onto
+// Trait-object bridge from walletkit-core's binding-facing traits onto
 // walletkit-db's plain-Rust trait surface. Required because Rust's orphan
 // rule prevents a blanket impl across crates. `Keystore::seal` borrows its
 // plaintext (see walletkit-db/src/traits.rs); `Ks::seal` is the single
 // point where the secret is copied into an owned `Vec<u8>`, because
-// `DeviceKeystore` is a uniffi callback interface and those only support
+// `DeviceKeystore` is a foreign callback interface and those only support
 // pass-by-value parameters (no `&[u8]`). That copy — and any further copy
 // the foreign (Swift/Kotlin/etc.) implementation makes on its own side — is
-// outside Rust's control; this is an accepted uniffi limitation, not a bug.
+// outside Rust's control; this is an accepted binding limitation, not a bug.
 
 struct Ks<'a>(&'a dyn DeviceKeystore);
 impl walletkit_db::Keystore for Ks<'_> {

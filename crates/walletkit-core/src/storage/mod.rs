@@ -9,7 +9,7 @@
 //!
 //! ## Components
 //!
-//! [`crate::storage::CredentialStore`] is the facade exposed to hosts (via `UniFFI`).
+//! [`crate::storage::CredentialStore`] is the facade exposed to hosts.
 //! It owns the account key envelope and two databases:
 //!
 //! 1. **Vault database (`account.vault.sqlite`)** — authoritative storage for

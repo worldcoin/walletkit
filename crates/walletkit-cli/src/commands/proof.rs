@@ -152,7 +152,7 @@ async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Resul
         ProofRequest::from_json(&json_str).wrap_err("invalid proof request")?;
 
     let response = authenticator
-        .generate_proof(&proof_request, Some(ts))
+        .generate_proof(proof_request, Some(ts))
         .await
         .wrap_err("proof generation failed")?;
 
@@ -316,7 +316,7 @@ async fn run_test(
         ProofRequest::from_json(&serde_json::to_string(&proof_request)?)
             .wrap_err("invalid proof request")?;
     let proof_response = authenticator
-        .generate_proof(&walletkit_request, Some(ts))
+        .generate_proof(walletkit_request, Some(ts))
         .await
         .wrap_err("proof generation failed")?;
 

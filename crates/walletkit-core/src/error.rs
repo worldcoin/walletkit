@@ -8,7 +8,8 @@ use world_id_proof::ProofError;
 use crate::storage::StorageError;
 
 /// Error outputs from `WalletKit`
-#[derive(Debug, Error, uniffi::Error)]
+#[boltffi::error]
+#[derive(Debug, Error)]
 pub enum WalletKitError {
     /// Invalid input provided (e.g., incorrect length, format, etc.)
     #[error("invalid_input_{attribute}")]

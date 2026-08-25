@@ -9,6 +9,7 @@ use crate::Environment;
 /// valid Orb-verified credential.
 ///
 /// More details in `https://docs.world.org/world-id/concepts#proof-of-personhood`
+#[boltffi::data]
 #[derive(
     Debug,
     Clone,
@@ -20,7 +21,7 @@ use crate::Environment;
     Display,
     Serialize,
     Deserialize,
-    uniffi::Enum,
+    ,
 )]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]

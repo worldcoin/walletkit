@@ -118,7 +118,7 @@ async fn test_address_book_proof_verification_on_chain() {
         .generate_proof_context(address_to_verify.to_string().as_str(), proof_time)
         .unwrap();
 
-    let proof = world_id.generate_proof(&proof_context).await.unwrap();
+    let proof = world_id.generate_proof(proof_context).await.unwrap();
 
     let result = address_book
         .verify(
@@ -207,7 +207,7 @@ async fn test_verify_simple_world_id_proof_on_chain() {
         CredentialType::Orb,
     );
 
-    let proof = world_id.generate_proof(&proof_context).await.unwrap();
+    let proof = world_id.generate_proof(proof_context.clone()).await.unwrap();
 
     world_id_contract
         .verifyProof(

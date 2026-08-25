@@ -1,6 +1,6 @@
 use crate::{error::WalletKitError, Environment};
 
-use ruint_uniffi::Uint256;
+use crate::Uint256;
 use secrecy::{ExposeSecret, SecretBox};
 use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
 use subtle::ConstantTimeEq;
@@ -15,7 +15,7 @@ use super::{
 /// A base World ID identity which can be used to generate World ID Proofs for different credentials.
 ///
 /// Most essential primitive for World ID.
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
 pub struct WorldId {
     /// The hashed hex-encoded World ID secret (32 byte secret -> 64 byte hex-encoded)
     /// Note: we need to store this hex-encoded because `semaphore-rs` performs operations on it hex-encoded. Can be improved in the future.
@@ -24,14 +24,13 @@ pub struct WorldId {
     environment: Environment,
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[boltffi::export]
 impl WorldId {
     /// Initializes a new `Identity` from a World ID secret. The identity is initialized for a specific environment.
     #[must_use]
-    #[uniffi::constructor]
-    #[allow(
+    #[expect(
         clippy::needless_pass_by_value,
-        reason = "secret is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
+        reason = "foreign bindings expose byte buffers by value"
     )]
     pub fn new(secret: Vec<u8>, environment: &Environment) -> Self {
         let hashed_secret_hex: SecretBox<[u8; 64]> =
@@ -85,14 +84,15 @@ impl WorldId {
     /// # tokio_test::block_on(async {
     ///     let world_id = WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
     ///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Device);
-    ///     let proof = world_id.generate_proof(&context).await.unwrap();
+    ///     let proof = world_id.generate_proof(context).await.unwrap();
     ///     assert_eq!(proof.nullifier_hash.to_padded_hex_string(), "0x302e253346d2b41a0fd71562ffc6e5ddcbab6d8ea3dd6d68e6a695b5639b1c37")
     /// # })
     /// ```
     /// note: running the doctest example above requires an HTTP connection to the sequencer.
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn generate_proof(
         &self,
-        context: &ProofContext,
+        context: ProofContext,
     ) -> Result<ProofOutput, WalletKitError> {
         let identity = self.semaphore_identity_for_credential(&context.credential_type);
         // fetch directly instead of `get_identity_commitment` to avoid duplicate computations
@@ -103,13 +103,13 @@ impl WorldId {
             .get_sign_up_sequencer_host(&self.environment);
 
         let merkle_tree_proof = MerkleTreeProof::from_identity_commitment(
-            &identity_commitment,
-            sequencer_host,
+            identity_commitment,
+            sequencer_host.to_string(),
             context.require_mined_proof,
         )
         .await?;
 
-        generate_proof_with_semaphore_identity(&identity, &merkle_tree_proof, context)
+        generate_proof_with_semaphore_identity(&identity, &merkle_tree_proof, &context)
     }
 
     /// Compares two `WorldId`s for equality.
@@ -188,7 +188,7 @@ mod tests {
             "0x00c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a4"
         );
 
-        let proof = world_id.generate_proof(&context).await.unwrap();
+        let proof = world_id.generate_proof(context.clone()).await.unwrap();
         assert_eq!(
             proof.nullifier_hash.to_padded_hex_string(),
             "0x1359a81e3a42dc1c34786cbefbcc672a3d730510dba7a3be9941b207b0cf52fa"
@@ -233,7 +233,7 @@ mod tests {
             "0x00109ceebc907a38c59ec1c982a480d7d2373fc7c58b604a5430988fc08e346e"
         );
 
-        let proof = world_id.generate_proof(&context).await.unwrap();
+        let proof = world_id.generate_proof(context.clone()).await.unwrap();
         assert_eq!(
             proof.nullifier_hash.to_padded_hex_string(),
             // nullifier hash is the same as the `Orb` credential to maintain a single representation of the user

@@ -22,10 +22,10 @@
 //!     let authenticator = Authenticator::init_with_defaults(
 //!         seed.to_vec(),
 //!         None, // uses default RPC URL
-//!         &Environment::Staging,
+//!         Environment::Staging,
 //!         None, // uses default region
-//!         artifacts,
-//!         store,
+//!         artifacts.as_zk_artifact_source(),
+//!         (*store).clone(),
 //!     )
 //!     .await?;
 //!
@@ -34,13 +34,16 @@
 //!     let request = ProofRequest::from_json(json)?;
 //!
 //!     // Generate a zero-knowledge proof and serialise the response.
-//!     let response = authenticator.generate_proof(&request, None).await?;
+//!     let response = authenticator.generate_proof(request, None).await?;
 //!     println!("{}", response.to_json()?);
 //!     Ok(())
 //! }
 //! ```
 
 use strum::{Display, EnumString};
+
+pub mod uint256;
+pub use uint256::Uint256;
 
 /// Library initialization function called automatically on load.
 ///
@@ -62,7 +65,8 @@ fn init() {
 /// Each environment uses different sources of truth for the World ID credentials.
 ///
 /// More information on testing for the World ID Protocol can be found in: `https://docs.world.org/world-id/quick-start/testing`
-#[derive(Debug, Clone, PartialEq, Eq, EnumString, uniffi::Enum)]
+#[boltffi::data]
+#[derive(Debug, Clone, PartialEq, Eq, EnumString)]
 #[strum(serialize_all = "lowercase")]
 pub enum Environment {
     /// For testing purposes ONLY.
@@ -71,8 +75,8 @@ pub enum Environment {
     Production,
 }
 
-/// Methods exported to Swift/Kotlin via `UniFFI`.
-#[uniffi::export]
+/// Convenience methods exported through BoltFFI.
+#[boltffi::data(impl)]
 impl Environment {
     /// Returns the `PoH` Recovery Agent contract address for this environment.
     #[must_use]
@@ -88,9 +92,8 @@ impl Environment {
 }
 
 /// Region for node selection.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, Display, uniffi::Enum,
-)]
+#[boltffi::data]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum Region {
     /// United States
@@ -118,9 +121,11 @@ pub use credential::Credential;
 pub mod storage;
 
 pub mod authenticator;
+#[cfg(not(feature = "boltffi-wasm"))]
+pub use authenticator::InitializingAuthenticator;
 pub use authenticator::{
-    Authenticator, GatewayRequestStatus, InitializingAuthenticator, RecoveryData,
-    RecoveryUpdateSignature, RegistrationStatus,
+    Authenticator, GatewayRequestStatus, RecoveryData, RecoveryUpdateSignature,
+    RegistrationStatus,
 };
 
 /// Default configuration values for each [`Environment`].
@@ -152,7 +157,7 @@ pub mod issuers;
 /// async fn example() {
 ///     let world_id = WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
 ///     let context = ProofContext::new("app_ce4cb73cb75fc3b73b71ffb4de178410", Some("my_action".to_string()), None, CredentialType::Orb);
-///     let proof = world_id.generate_proof(&context).await.unwrap();
+///     let proof = world_id.generate_proof(context).await.unwrap();
 ///     println!("{}", proof.to_json().unwrap()); // the JSON output can be passed to the Developer Portal, World ID contracts, etc. for verification
 /// }
 #[cfg(feature = "v3")]
@@ -165,7 +170,3 @@ pub mod v3;
 #[cfg(any(feature = "issuers", feature = "v3"))]
 mod http_request;
 pub(crate) mod primitives;
-
-uniffi::setup_scaffolding!("walletkit_core");
-
-ruint_uniffi::register_types!(Uint256);

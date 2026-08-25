@@ -29,6 +29,20 @@
         };
 
         rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+
+        boltffi = pkgs.rustPlatform.buildRustPackage (finalAttrs: {
+          pname = "boltffi_cli";
+          version = "0.30.1";
+
+          src = pkgs.fetchCrate {
+            inherit (finalAttrs) pname version;
+            hash = "sha256-FtD5ZPq0tY+c30VE8H0Qx+VpB/RbdfVUPBUWwTHfgIQ=";
+          };
+
+          cargoHash = "sha256-DdfG8Z1joV1ftyIw9UIF0GVYalxMC1gYZtxIWeF8O/E=";
+
+          doCheck = false;
+        });
       in
       {
         devShells = {
@@ -41,7 +55,7 @@
             ];
           };
 
-          wasm = import ./nix/wasm.nix { inherit pkgs; };
+          wasm = import ./nix/wasm.nix { inherit pkgs boltffi; };
         } // pkgs.lib.optionalAttrs (!(pkgs.stdenv.isLinux && pkgs.stdenv.isAarch64)) {
           # The Android NDK has no aarch64-linux prebuilt toolchain
           # (on aarch64 Docker hosts, run the container as linux/amd64).

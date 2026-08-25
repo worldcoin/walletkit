@@ -1,0 +1,21 @@
+# EXPERIMENTAL: BoltFFI-only WalletKit bindings.
+[package]
+name = "walletkit-wasm"
+crate = "walletkit_core"
+
+[targets.wasm]
+output = "target/boltffi"
+profile = "release"
+
+[targets.wasm.typescript]
+module_name = "walletkit_wasm"
+output = "target/boltffi/pkg"
+
+[targets.wasm.npm]
+package_name = "@worldcoin/walletkit-wasm"
+targets = ["bundler", "web", "nodejs"]
+generate_package_json = true
+generate_readme = true
+
+[targets.wasm.optimize]
+enabled = false

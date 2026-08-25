@@ -307,7 +307,7 @@ fn resolve_test_rpc_url(cli: &Cli, config: &Config) -> String {
 /// Initializes an authenticator and credential store from CLI args.
 pub async fn init_authenticator(
     cli: &Cli,
-) -> eyre::Result<(Arc<Authenticator>, Arc<CredentialStore>)> {
+) -> eyre::Result<(Authenticator, Arc<CredentialStore>)> {
     let root = resolve_root(cli)?;
     let seed = resolve_seed(cli)?;
     let config_json = resolve_config(cli)?;
@@ -315,12 +315,17 @@ pub async fn init_authenticator(
     let store = create_fs_credential_store(&root)?;
     let paths = store.storage_paths()?;
 
-    let artifacts = Arc::new(CachingZkArtifacts::new(Arc::new(paths)));
+    let artifacts = Arc::new(CachingZkArtifacts::new(&paths));
 
     let authenticator = if let Some(ref config) = config_json {
-        Authenticator::init(seed.clone(), config, artifacts.clone(), store.clone())
-            .await
-            .wrap_err("authenticator init failed")?
+        Authenticator::init(
+            seed.clone(),
+            config.clone(),
+            artifacts.as_zk_artifact_source(),
+            (*store).clone(),
+        )
+        .await
+        .wrap_err("authenticator init failed")?
     } else {
         let config = resolve_built_config(cli)?;
         Authenticator::init_with_config(&seed, config, artifacts.clone(), store.clone())
@@ -333,7 +338,7 @@ pub async fn init_authenticator(
         .init_storage(now)
         .wrap_err("storage init failed")?;
 
-    Ok((Arc::new(authenticator), store))
+    Ok((authenticator, store))
 }
 
 /// Top-level command dispatch.

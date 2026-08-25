@@ -23,7 +23,8 @@ use alloy_core::primitives::keccak256;
 use alloy_core::primitives::Address;
 use std::string::String;
 /// Represents a recovery binding.
-#[derive(Debug, PartialEq, Eq, uniffi::Record)]
+#[boltffi::data]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RecoveryBinding {
     /// The hex address of the recovery agent (e.g. `"0x1234…"`).
     pub recovery_agent: Option<String>,
@@ -47,19 +48,17 @@ impl From<RecoveryBindingResponse> for RecoveryBinding {
 ///
 /// Each instance is bound to a specific [`Environment`] (staging or production),
 /// which determines the backend URL used for all requests.
-#[derive(uniffi::Object)]
 pub struct RecoveryBindingManager {
     pop_backend_client: PopBackendClient,
 }
 
-#[uniffi::export]
+#[boltffi::export]
 impl RecoveryBindingManager {
     /// Creates a new `RecoveryBindingManager` for the specified environment.
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be built.
-    #[uniffi::constructor]
     pub fn new(
         environment: &Environment,
         user_agent_builder: &UserAgentBuilder,
@@ -77,7 +76,6 @@ impl RecoveryBindingManager {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be built.
-    #[uniffi::constructor]
     pub fn new_with_base_url(
         base_url: &str,
         user_agent_builder: &UserAgentBuilder,
@@ -89,7 +87,7 @@ impl RecoveryBindingManager {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[boltffi::export]
 impl RecoveryBindingManager {
     /// Registers a recovery agent for the given authenticator.
     ///
@@ -106,9 +104,10 @@ impl RecoveryBindingManager {
     /// or if the user fails the eligibility check ([`WalletKitError::IdentityNotFound`],
     /// [`WalletKitError::NoSuccessfulCaptureFound`], [`WalletKitError::DebugReportNotFound`]).
     /// or if any other unexpected error occurs ([`WalletKitError::NetworkError`]).
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn bind_recovery_agent(
         &self,
-        authenticator: &Authenticator,
+        authenticator: Authenticator,
         sub: String,
         recovery_agent_address: String,
     ) -> Result<(), WalletKitError> {
@@ -125,7 +124,7 @@ impl RecoveryBindingManager {
             recovery_agent: recovery_agent_address.clone(),
         };
         let security_token = Self::generate_recovery_agent_security_token(
-            authenticator,
+            &authenticator,
             &request,
             &challenge,
         )?;
@@ -147,9 +146,10 @@ impl RecoveryBindingManager {
     ///
     /// Returns an error if the challenge fetch, signing, or backend request fails,
     /// or if the account does not exist ([`WalletKitError::AccountDoesNotExist`]).
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn unbind_recovery_agent(
         &self,
-        authenticator: &Authenticator,
+        authenticator: Authenticator,
         sub: String,
     ) -> Result<(), WalletKitError> {
         let leaf_index = authenticator.leaf_index();
@@ -166,7 +166,7 @@ impl RecoveryBindingManager {
         };
         let challenge = self.pop_backend_client.get_challenge().await?;
         let security_token = Self::generate_recovery_agent_security_token(
-            authenticator,
+            &authenticator,
             &request,
             &challenge,
         )?;
@@ -186,6 +186,7 @@ impl RecoveryBindingManager {
     /// * [`WalletKitError::NetworkError`] — non-success HTTP status.
     /// * [`WalletKitError::SerializationError`] — response body is not valid JSON.
     /// * [`WalletKitError::RecoveryBindingDoesNotExist`] — HTTP 404 (no binding found).
+    #[cfg(not(feature = "boltffi-wasm"))]
     pub async fn get_recovery_binding(
         &self,
         leaf_index: u64,
@@ -312,7 +313,7 @@ mod tests {
         .unwrap();
 
         let result = recovery_binding_manager
-            .bind_recovery_agent(&authenticator, sub.clone(), recovery_agent.clone())
+            .bind_recovery_agent(authenticator, sub.clone(), recovery_agent.clone())
             .await;
         assert!(
             result.is_ok(),
@@ -378,16 +379,15 @@ mod tests {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let store = create_test_credential_store();
 
-        let artifacts =
-            Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
+        let artifacts = Arc::new(CachingZkArtifacts::new(&store.paths().unwrap()));
 
         let authenticator = Authenticator::init_with_defaults(
             seed.to_vec(),
             Some(rpc_url.clone()),
-            &Environment::Staging,
+            Environment::Staging,
             None,
-            artifacts,
-            store.clone(),
+            artifacts.as_zk_artifact_source(),
+            (*store).clone(),
         )
         .await
         .unwrap();

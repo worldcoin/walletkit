@@ -199,7 +199,7 @@ pub async fn generate_and_verify_test_proof(
     let walletkit_request: walletkit_core::requests::ProofRequest =
         core_request.clone().into();
     let proof_response = authenticator
-        .generate_proof(&walletkit_request, Some(now_secs()))
+        .generate_proof(walletkit_request, Some(now_secs()))
         .await
         .wrap_err("proof generation failed")?;
     let response = proof_response.into_inner();

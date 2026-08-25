@@ -127,7 +127,7 @@ async fn e2e_session_proof() -> Result<()> {
     )
     .wrap_err("failed to build create-session request")?;
     let create_response = authenticator
-        .generate_proof(&create_request.clone().into(), Some(now_secs()))
+        .generate_proof(create_request.clone().into(), Some(now_secs()))
         .await
         .wrap_err("generate_proof (create session) failed")?
         .into_inner();
@@ -168,7 +168,7 @@ async fn e2e_session_proof() -> Result<()> {
     )
     .wrap_err("failed to build session request")?;
     let session_response = authenticator
-        .generate_proof(&session_request.clone().into(), Some(now_secs()))
+        .generate_proof(session_request.clone().into(), Some(now_secs()))
         .await
         .wrap_err("generate_proof (session) failed")?
         .into_inner();
@@ -198,7 +198,7 @@ async fn e2e_session_proof() -> Result<()> {
     let sub = credential.sub();
     let nonce = FieldElement::random(&mut OsRng).into();
     let ownership_proof = authenticator
-        .prove_credential_sub(&nonce, &blinding_factor, &sub)
+        .prove_credential_sub(nonce, blinding_factor, sub)
         .await
         .wrap_err("ownership proof generation failed")?;
     assert_eq!(

@@ -17,11 +17,11 @@
 
 use std::sync::Arc;
 
-use super::error::StorageResult;
+use super::error::StorageError;
 use super::paths::StoragePaths;
 
 /// Device keystore interface used to seal and open account keys.
-#[uniffi::export(with_foreign)]
+#[boltffi::export]
 pub trait DeviceKeystore: Send + Sync {
     /// Seals plaintext under the device-bound key, authenticating `associated_data`.
     ///
@@ -35,7 +35,7 @@ pub trait DeviceKeystore: Send + Sync {
         &self,
         associated_data: Vec<u8>,
         plaintext: Vec<u8>,
-    ) -> StorageResult<Vec<u8>>;
+    ) -> Result<Vec<u8>, StorageError>;
 
     /// Opens ciphertext under the device-bound key, verifying `associated_data`.
     ///
@@ -49,36 +49,35 @@ pub trait DeviceKeystore: Send + Sync {
         &self,
         associated_data: Vec<u8>,
         ciphertext: Vec<u8>,
-    ) -> StorageResult<Vec<u8>>;
+    ) -> Result<Vec<u8>, StorageError>;
 }
 
 /// Atomic blob store for small binary files (e.g., `account_keys.bin`).
-#[uniffi::export(with_foreign)]
+#[boltffi::export]
 pub trait AtomicBlobStore: Send + Sync {
     /// Reads the blob at `path`, if present.
     ///
     /// # Errors
     ///
     /// Returns an error if the read fails.
-    fn read(&self, path: String) -> StorageResult<Option<Vec<u8>>>;
+    fn read(&self, path: String) -> Result<Option<Vec<u8>>, StorageError>;
 
     /// Writes bytes atomically to `path`.
     ///
     /// # Errors
     ///
     /// Returns an error if the write fails.
-    fn write_atomic(&self, path: String, bytes: Vec<u8>) -> StorageResult<()>;
+    fn write_atomic(&self, path: String, bytes: Vec<u8>) -> Result<(), StorageError>;
 
     /// Deletes the blob at `path`.
     ///
     /// # Errors
     ///
     /// Returns an error if the delete fails.
-    fn delete(&self, path: String) -> StorageResult<()>;
+    fn delete(&self, path: String) -> Result<(), StorageError>;
 }
 
 /// Provider responsible for platform-specific storage components and paths.
-#[uniffi::export(with_foreign)]
 pub trait StorageProvider: Send + Sync {
     /// Returns the device keystore implementation.
     fn keystore(&self) -> Arc<dyn DeviceKeystore>;
@@ -95,7 +94,7 @@ pub trait StorageProvider: Send + Sync {
 ///
 /// Register via [`super::CredentialStore::set_vault_changed_listener`]. The
 /// callback is delivered on a dedicated background thread to avoid re-entering
-/// the `UniFFI` call stack (see `logger.rs` for rationale).
+/// the foreign-binding call stack (see `logger.rs` for rationale).
 ///
 /// This is only called when individual credentials are added or removed.
 ///
@@ -110,7 +109,7 @@ pub trait StorageProvider: Send + Sync {
 /// [`super::CredentialStore`] from
 /// [`on_vault_changed`](VaultChangedListener::on_vault_changed) — doing so
 /// will deadlock.
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
+#[boltffi::export]
 pub trait VaultChangedListener: Send + Sync {
     /// Called after a credential is added or removed.
     fn on_vault_changed(&self);

@@ -152,10 +152,10 @@ pub fn create_fs_credential_store(
     Ok(Arc::new(CredentialStore::from_provider(&provider)?))
 }
 
-/// Creates a `WalletKitZkArtifactSource` backed by the filesystem at `root`.
+/// Creates a WalletKit ZK artifact source backed by the filesystem at `root`.
 #[must_use]
 pub fn create_artifact_source(root: &Path) -> Arc<CachingZkArtifacts> {
     let provider = FsStorageProvider::open(root);
 
-    Arc::new(CachingZkArtifacts::new(provider.paths()))
+    Arc::new(CachingZkArtifacts::new(provider.paths().as_ref()))
 }

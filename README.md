@@ -2,7 +2,12 @@ WalletKit enables mobile applications to use [World ID](https://world.org/world-
 
 Part of the [World ID SDK](https://docs.world.org/world-id).
 
-WalletKit can be used as a Rust crate, or directly as a Swift or Android package. WalletKit includes foreign bindings for direct usage in Swift/Kotlin through [UniFFI](https://github.com/mozilla/uniffi-rs).
+WalletKit can be used as a Rust crate, or directly as a Swift or Android package.
+
+> **Experimental branch:** foreign annotations in this branch have been
+> migrated directly to BoltFFI. The synchronous WASM package builds and loads,
+> but the complete async WASM API is blocked by BoltFFI's `Send` requirement.
+> See [the BoltFFI experiment report](docs/boltffi-only-experiment.md).
 
 ## Installation
 
@@ -38,6 +43,10 @@ Replace `VERSION` with the desired WalletKit version.
 
 ## Local development (iOS/Swift)
 
+> The native iOS packaging task has not yet been migrated to BoltFFI on this
+> experimental branch. Direct Swift source generation succeeds, but the
+> XCFramework task below is not part of the completed POC.
+
 On macOS with Xcode and the iOS Rust targets installed, build a local Swift
 package with:
 
@@ -53,6 +62,10 @@ See [`swift/README.md`](swift/README.md) for package integration details.
 
 ## Local development (Android/Kotlin)
 
+> The native Android packaging task has not yet been migrated to BoltFFI on
+> this experimental branch. Direct Kotlin/JNI source generation succeeds, but
+> the Gradle/JNI task below is not part of the completed POC.
+
 ### Prerequisites
 
 1. **Nix**: The Android cross-compilation toolchain (Rust, NDK, linkers) is provided
@@ -65,7 +78,7 @@ See [`swift/README.md`](swift/README.md) for package integration details.
 
 ### Building and publishing
 
-To test local changes before publishing a release, use the Kotlin xtask to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
+To test local changes before publishing a release, use the Kotlin xtask to compile the Rust library, generate bindings, and publish a SNAPSHOT to Maven Local:
 
 ```bash
 nix develop .#android --command cargo xtask kotlin local 0.3.1
@@ -80,7 +93,7 @@ RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo cargo xtask kotlin local 0.1.0-SNAPSHO
 
 This will:
 1. Build the Rust library for all Android architectures (arm64-v8a, armeabi-v7a, x86_64, x86)
-2. Generate Kotlin UniFFI bindings
+2. Generate Kotlin bindings
 3. Publish to `~/.m2/repository/org/world/walletkit/`
 
 In your consuming project, ensure `mavenLocal()` is included in your repositories and update your dependency version to the SNAPSHOT version (e.g., `0.3.1`).

@@ -15,7 +15,6 @@ use {
 ///
 /// The contract of the address book can be found at: `0x57b930d551e677cc36e2fa036ae2fe8fdae0330d`
 #[cfg(feature = "legacy-nullifiers")]
-#[derive(uniffi::Object)]
 pub struct AddressBook {}
 
 /// The external nullifier used in the `WorldIDAddressBook` contract.
@@ -35,10 +34,9 @@ impl Default for AddressBook {
 }
 
 #[cfg(feature = "legacy-nullifiers")]
-#[uniffi::export]
+#[boltffi::export]
 impl AddressBook {
     /// Initializes a new `AddressBook` instance.
-    #[uniffi::constructor]
     #[must_use]
     pub const fn new() -> Self {
         Self {}
@@ -49,7 +47,10 @@ impl AddressBook {
     /// # Errors
     /// - Returns an error if the address is not a valid EVM address.
     /// - Returns an error if the timestamp is not a valid numeric timestamp.
-    #[allow(clippy::unused_self)] // associated functions are not supported with Uniffi exports
+    #[expect(
+        clippy::unused_self,
+        reason = "binding generators expose methods more consistently than associated functions"
+    )]
     pub fn generate_proof_context(
         &self,
         address_to_verify: &str,
