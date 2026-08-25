@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { InitializingAuthenticatorLike, RecoveryData } from "../generated";
-
-type WalletKitBindings = typeof import("../generated");
-
-const WASM_URL = "/wasm/walletkit_web_authenticator_poc.wasm";
+import type {
+  InitializingAuthenticatorLike,
+  RecoveryData,
+  WalletKit,
+} from "@worldcoin/walletkit-web";
 
 function printableState(state: string) {
   return JSON.stringify(
@@ -22,7 +22,7 @@ function printableState(state: string) {
 }
 
 export default function Home() {
-  const bindings = useRef<WalletKitBindings>(null);
+  const bindings = useRef<WalletKit>(null);
   const seed = useRef(new Uint8Array(32));
   const registration = useRef<InitializingAuthenticatorLike>(undefined);
   const initialized = useRef(false);
@@ -51,9 +51,11 @@ export default function Home() {
 
     void (async () => {
       try {
-        const module = await import("../generated");
+        const { initializeWalletKit } = await import(
+          "@worldcoin/walletkit-web"
+        );
+        const module = await initializeWalletKit();
         bindings.current = module;
-        await module.uniffiInitAsync(WASM_URL);
         setRuntime("Ready");
         deriveAuthenticator(module);
 
@@ -115,12 +117,11 @@ export default function Home() {
   return (
     <main>
       <section className="card">
-        <p className="eyebrow">Throwaway Next.js feasibility probe</p>
+        <p className="eyebrow">WalletKit web package integration probe</p>
         <h1>WalletKit authenticator in browser WASM</h1>
         <p>
-          This Client Component loads WalletKit&apos;s real UniFFI surface
-          through the generator&apos;s WASM player and derives fresh
-          authenticator material entirely inside the browser.
+          This Client Component initializes the WalletKit web package and
+          derives fresh authenticator material entirely inside the browser.
         </p>
         <dl>
           <div>
