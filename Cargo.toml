@@ -7,7 +7,6 @@ members = [
   "crates/walletkit-sqlite",
   "crates/walletkit-cli",
   "crates/walletkit-testkit",
-  "examples/uniffi-web-authenticator-poc/rust",
   "xtask",
 ]
 resolver = "2"
