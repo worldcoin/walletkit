@@ -21,9 +21,11 @@ pkgs.mkShell {
     llvm.clang-unwrapped
     llvm.bintools-unwrapped
     wasmBindgenCli
+    pkgs.binaryen
     pkgs.curl
     pkgs.git
     pkgs.nargo
+    pkgs.nodejs
   ]
   ++ pkgs.lib.optionals firefoxAvailable [
     pkgs.firefox
