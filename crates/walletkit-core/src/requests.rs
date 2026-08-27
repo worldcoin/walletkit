@@ -113,7 +113,7 @@ mod tests {
     use serde_json::Value;
     use taceo_oprf::types::OprfKeyId;
     use world_id_core::{
-        primitives::{rp::RpId, FieldElement},
+        primitives::{rp::RpId, FieldElement, SessionRef},
         requests::{ProofType, RequestItem, RequestVersion},
     };
 
@@ -136,7 +136,7 @@ mod tests {
             expires_at: 1_700_000_300,
             rp_id: RpId::new(1),
             oprf_key_id: OprfKeyId::new(U160::from(1)),
-            session_id: None,
+            session_id: SessionRef::None,
             action: Some(FieldElement::from(1u64)),
             signature: test_signature(),
             nonce: FieldElement::from(2u64),
@@ -191,5 +191,76 @@ mod tests {
             }
             other => panic!("expected invalid input error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn from_json_accepts_canonical_session_creation() {
+        let mut request = base_core_request(ProofType::Session);
+        request.action = None;
+        request.session_id = SessionRef::Create;
+
+        let json = serde_json::to_string(&request).expect("request should serialize");
+        let request = ProofRequest::from_json(&json).expect("request should parse");
+
+        assert_eq!(request.0.proof_type, ProofType::Session);
+        assert_eq!(request.0.session_id, SessionRef::Create);
+    }
+
+    #[test]
+    fn from_json_rejects_legacy_create_session_proof_type() {
+        let mut value = serde_json::to_value(base_core_request(ProofType::Session))
+            .expect("request should serialize");
+        let object = value.as_object_mut().expect("request should be an object");
+        object.insert(
+            "proof_type".to_string(),
+            Value::String("create_session".to_string()),
+        );
+        object.remove("session_id");
+        object.remove("action");
+
+        let json =
+            serde_json::to_string(&value).expect("request json should serialize");
+        let error = ProofRequest::from_json(&json)
+            .expect_err("legacy create_session proof type should be rejected");
+
+        assert!(matches!(error, WalletKitError::InvalidInput { .. }));
+    }
+
+    #[test]
+    fn from_json_ignores_unknown_forward_compatible_fields() {
+        let mut value = serde_json::to_value(base_core_request(ProofType::Uniqueness))
+            .expect("request should serialize");
+        let object = value.as_object_mut().expect("request should be an object");
+        object.insert("future_top_level_field".to_string(), Value::Bool(true));
+        object
+            .get_mut("proof_requests")
+            .and_then(Value::as_array_mut)
+            .and_then(|items| items.first_mut())
+            .and_then(Value::as_object_mut)
+            .expect("request item should be an object")
+            .insert("future_request_field".to_string(), Value::Bool(true));
+
+        let json =
+            serde_json::to_string(&value).expect("request json should serialize");
+        let request = ProofRequest::from_json(&json).expect("request should parse");
+
+        assert_eq!(request.0.proof_type, ProofType::Uniqueness);
+    }
+
+    #[test]
+    fn from_json_rejects_unsupported_request_version() {
+        let mut value = serde_json::to_value(base_core_request(ProofType::Uniqueness))
+            .expect("request should serialize");
+        value
+            .as_object_mut()
+            .expect("request should be an object")
+            .insert("version".to_string(), Value::from(2));
+
+        let json =
+            serde_json::to_string(&value).expect("request json should serialize");
+        let error = ProofRequest::from_json(&json)
+            .expect_err("unsupported request version should be rejected");
+
+        assert!(matches!(error, WalletKitError::InvalidInput { .. }));
     }
 }

@@ -226,6 +226,7 @@ impl From<PrimitiveError> for WalletKitError {
                 attribute: "index".to_string(),
                 reason: "Provided index is out of bounds".to_string(),
             },
+            PrimitiveError::SessionIdCommitmentMismatch => Self::SessionIdMismatch,
         }
     }
 }
@@ -237,8 +238,8 @@ impl From<WorldIdRequestAuthError> for WalletKitError {
             WorldIdRequestAuthError::DuplicateNonce => Self::DuplicateNonce,
             WorldIdRequestAuthError::UnknownRp => Self::UnknownRp,
             WorldIdRequestAuthError::InactiveRp => Self::InactiveRp,
-            WorldIdRequestAuthError::TimestampTooOld => Self::TimestampTooOld,
-            WorldIdRequestAuthError::TimestampTooFarInFuture => {
+            WorldIdRequestAuthError::CreatedAtTooOld => Self::TimestampTooOld,
+            WorldIdRequestAuthError::CreatedAtTooFarInFuture => {
                 Self::TimestampTooFarInFuture
             }
             WorldIdRequestAuthError::InvalidTimestamp => Self::InvalidTimestamp,
@@ -311,8 +312,6 @@ impl From<AuthenticatorError> for WalletKitError {
             AuthenticatorError::ResponseValidationError(err) => {
                 Self::ResponseValidation(err.to_string())
             }
-            AuthenticatorError::SessionIdMismatch => Self::SessionIdMismatch,
-
             AuthenticatorError::OhttpEncapsulationError(_)
             | AuthenticatorError::BhttpError(_)
             | AuthenticatorError::OhttpRelayError { .. }
@@ -365,11 +364,11 @@ mod tests {
             (WorldIdRequestAuthError::UnknownRp, "unknown_rp"),
             (WorldIdRequestAuthError::InactiveRp, "inactive_rp"),
             (
-                WorldIdRequestAuthError::TimestampTooOld,
+                WorldIdRequestAuthError::CreatedAtTooOld,
                 "timestamp_too_old",
             ),
             (
-                WorldIdRequestAuthError::TimestampTooFarInFuture,
+                WorldIdRequestAuthError::CreatedAtTooFarInFuture,
                 "timestamp_too_far_in_future",
             ),
             (
@@ -406,5 +405,12 @@ mod tests {
             }
             other => panic!("expected proof generation error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn maps_session_commitment_mismatch_to_public_session_error() {
+        let error = WalletKitError::from(PrimitiveError::SessionIdCommitmentMismatch);
+
+        assert!(matches!(error, WalletKitError::SessionIdMismatch));
     }
 }

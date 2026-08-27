@@ -107,8 +107,8 @@ pub struct TestProofOutcome {
     pub verification: VerifyItemResult,
     /// Session ID from the proof response (`None` for uniqueness proofs).
     ///
-    /// For `ProofType::CreateSession` this is the newly created session, which
-    /// can be passed to a follow-up `ProofType::Session` request.
+    /// For a `ProofType::Session` request without an existing session ID, this
+    /// is the newly created session that can be passed to a follow-up request.
     pub session_id: Option<SessionId>,
 }
 
@@ -156,9 +156,8 @@ pub async fn issue_credential(
 /// Registers an account, issues a credential of this type, generates a proof
 /// of `proof_type` for `signal`, and verifies it on-chain.
 ///
-/// For `ProofType::Session`, pass the `session_id` of an existing session
-/// (e.g. from a prior `ProofType::CreateSession` outcome); otherwise pass
-/// `None`.
+/// For `ProofType::Session`, pass an existing `session_id` to reuse a session,
+/// or `None` to create one.
 ///
 /// # Errors
 ///

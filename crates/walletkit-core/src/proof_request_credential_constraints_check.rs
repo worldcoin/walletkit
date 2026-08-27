@@ -188,7 +188,7 @@ mod tests {
     use alloy_core::primitives::{Signature, U160};
     use taceo_oprf::types::OprfKeyId;
     use world_id_core::{
-        primitives::rp::RpId,
+        primitives::{rp::RpId, SessionRef},
         requests::{
             ConstraintExpr, ConstraintNode, ProofRequest as CoreProofRequest,
             ProofType, RequestItem, RequestVersion,
@@ -216,7 +216,7 @@ mod tests {
             expires_at: u64::MAX,
             rp_id: RpId::new(1),
             oprf_key_id: OprfKeyId::new(U160::from(1u64)),
-            session_id: None,
+            session_id: SessionRef::None,
             action: None,
             signature: Signature::test_signature(),
             nonce: CoreFieldElement::ZERO,

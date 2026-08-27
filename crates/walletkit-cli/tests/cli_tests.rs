@@ -318,7 +318,7 @@ fn proof_generate_test_request_defaults_to_uniqueness() {
 }
 
 #[test]
-fn proof_generate_test_request_supports_create_session() {
+fn proof_generate_test_request_supports_canonical_session_creation() {
     let output = Command::new(walletkit_bin())
         .args([
             "--json",
@@ -327,7 +327,7 @@ fn proof_generate_test_request_supports_create_session() {
             "--issuer-schema-id",
             "47",
             "--proof-type",
-            "create-session",
+            "session",
         ])
         .output()
         .expect("failed to run");
@@ -341,9 +341,9 @@ fn proof_generate_test_request_supports_create_session() {
     let parsed: serde_json::Value =
         serde_json::from_str(&stdout).expect("invalid json");
     let data = &parsed["data"];
-    assert_eq!(data["proof_type"], "create_session");
+    assert_eq!(data["proof_type"], "session");
     assert!(data["action"].is_null());
-    assert!(data["session_id"].is_null());
+    assert_eq!(data["session_id"], "create");
 }
 
 #[test]
@@ -383,7 +383,12 @@ fn proof_generate_test_request_supports_session() {
 }
 
 #[test]
-fn proof_generate_test_request_requires_session_id_for_session() {
+fn proof_generate_test_request_rejects_session_id_for_uniqueness() {
+    let session_id = serde_json::to_value(SessionId::default())
+        .expect("session id should serialize")
+        .as_str()
+        .expect("session id should serialize as string")
+        .to_string();
     let output = Command::new(walletkit_bin())
         .args([
             "--json",
@@ -391,8 +396,8 @@ fn proof_generate_test_request_requires_session_id_for_session() {
             "generate-test-request",
             "--issuer-schema-id",
             "47",
-            "--proof-type",
-            "session",
+            "--session-id",
+            &session_id,
         ])
         .output()
         .expect("failed to run");
@@ -405,8 +410,8 @@ fn proof_generate_test_request_requires_session_id_for_session() {
         parsed["error"]["message"]
             .as_str()
             .unwrap()
-            .contains("--session-id is required"),
-        "expected missing session id error, got: {stderr}"
+            .contains("--session-id is only valid"),
+        "expected uniqueness session id error, got: {stderr}"
     );
 }
 

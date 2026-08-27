@@ -104,6 +104,9 @@ pub enum ProofCommand {
         /// Nonce used when generating the proof, as a 32-byte hex field element (with optional `0x` prefix).
         #[arg(long)]
         nonce: String,
+        /// Context that binds the proof to the issuer operation, as a 32-byte hex field element.
+        #[arg(long)]
+        context: String,
         /// Credential `sub` (commitment) the proof claims ownership of, as a 32-byte hex field element.
         #[arg(long)]
         sub: String,
@@ -131,9 +134,8 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<String> {
 fn parse_proof_type_arg(value: &str) -> Result<ProofType, String> {
     match value.trim().to_ascii_lowercase().as_str() {
         "uniqueness" => Ok(ProofType::Uniqueness),
-        "create-session" | "create_session" => Ok(ProofType::CreateSession),
         "session" => Ok(ProofType::Session),
-        _ => Err("expected one of: uniqueness, create-session, session".to_string()),
+        _ => Err("expected one of: uniqueness, session".to_string()),
     }
 }
 
@@ -252,11 +254,8 @@ fn run_generate_test_request(
     session_id: Option<SessionId>,
 ) -> eyre::Result<()> {
     let session_id = match (proof_type, session_id) {
-        (ProofType::Uniqueness | ProofType::CreateSession, Some(_)) => {
+        (ProofType::Uniqueness, Some(_)) => {
             eyre::bail!("--session-id is only valid with --proof-type session");
-        }
-        (ProofType::Session, None) => {
-            eyre::bail!("--session-id is required with --proof-type session");
         }
         (ProofType::Session, Some(session_id)) => Some(session_id),
         (_, None) => None,
@@ -360,6 +359,7 @@ fn run_verify_ownership(
     cli: &Cli,
     proof_path: &str,
     nonce: &str,
+    context: &str,
     sub: &str,
 ) -> eyre::Result<()> {
     let b64 = read_file_or_stdin(proof_path)?;
@@ -370,12 +370,19 @@ fn run_verify_ownership(
         .wrap_err("failed to decode ownership proof CBOR")?;
 
     let nonce_fe = parse_field_element(nonce, "--nonce")?;
+    let context_fe = parse_field_element(context, "--context")?;
     let sub_fe = parse_field_element(sub, "--sub")?;
 
     let root = resolve_root(cli)?;
     let artifacts = create_artifact_source(&root);
 
-    let result = verify_ownership_proof(&proof, nonce_fe, sub_fe, artifacts.as_ref());
+    let result = verify_ownership_proof(
+        &proof,
+        nonce_fe,
+        sub_fe,
+        context_fe,
+        artifacts.as_ref(),
+    );
     let merkle_root = proof.merkle_root.to_string();
 
     if cli.json {
@@ -432,8 +439,11 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             signal,
             verifier_address,
         } => run_test(cli, signal, verifier_address.as_deref()).await,
-        ProofCommand::VerifyOwnership { proof, nonce, sub } => {
-            run_verify_ownership(cli, proof, nonce, sub)
-        }
+        ProofCommand::VerifyOwnership {
+            proof,
+            nonce,
+            context,
+            sub,
+        } => run_verify_ownership(cli, proof, nonce, context, sub),
     }
 }

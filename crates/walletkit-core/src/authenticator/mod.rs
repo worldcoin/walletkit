@@ -646,6 +646,7 @@ impl Authenticator {
             proof_request
                 .0
                 .session_id
+                .existing()
                 .and_then(|session_id| {
                     match self.store.get_session_seed(session_id.oprf_seed, now) {
                         Ok(seed) => seed,
@@ -666,8 +667,8 @@ impl Authenticator {
         ))
         .await?;
 
-        // Cache session seed if returned. Create-session requests do not carry a
-        // session_id, so use the session_id generated in the proof response.
+        // Cache a newly created session seed using the session ID returned in the
+        // proof response.
         if let Some(seed) = result.session_id_r_seed {
             if let Some(session_id) = result.proof_response.session_id {
                 if let Err(err) =
@@ -698,6 +699,8 @@ impl Authenticator {
     ///
     /// # Arguments
     /// * `nonce` - A field element provided by the Issuer to prevent replay.
+    /// * `context` - A field element provided by the Issuer that binds the proof
+    ///   to the specific operation being performed.
     /// * `blinding_factor` - The credential blinding factor previously used to
     ///   derive the credential `sub`.
     /// * `sub` - The credential `sub` (commitment) to prove ownership of.
@@ -712,12 +715,13 @@ impl Authenticator {
     pub async fn prove_credential_sub(
         &self,
         nonce: &FieldElement,
+        context: &FieldElement,
         blinding_factor: &FieldElement,
         sub: &FieldElement,
     ) -> Result<OwnershipProof, WalletKitError> {
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = (nonce, blinding_factor, sub);
+            let _ = (nonce, context, blinding_factor, sub);
             return Err(WalletKitError::Generic {
                 error: "credential ownership proofs are not supported on wasm32"
                     .to_string(),
@@ -738,6 +742,7 @@ impl Authenticator {
                 .inner
                 .prove_credential_sub(
                     nonce.0,
+                    context.0,
                     blinding_factor.0,
                     sub.0,
                     Some(inclusion_proof),
