@@ -27,7 +27,6 @@ export default function Home() {
   const registration = useRef<InitializingAuthenticatorLike>(undefined);
   const initialized = useRef(false);
   const [runtime, setRuntime] = useState("Loading…");
-  const [asyncBridge, setAsyncBridge] = useState("Pending…");
   const [recovery, setRecovery] = useState<RecoveryData>();
   const [confirmed, setConfirmed] = useState(false);
   const [registering, setRegistering] = useState(false);
@@ -58,17 +57,6 @@ export default function Home() {
         bindings.current = module;
         setRuntime("Ready");
         deriveAuthenticator(module);
-
-        try {
-          await module.InitializingAuthenticator.register(
-            new Uint8Array(seed.current).buffer,
-            "invalid config used only to exercise async error lifting",
-            undefined,
-          );
-          setAsyncBridge("Unexpected success");
-        } catch {
-          setAsyncBridge("Ready (Rust rejected the invalid config)");
-        }
       } catch (error) {
         setRuntime("Failed");
         setStatus(String(error));
@@ -127,10 +115,6 @@ export default function Home() {
           <div>
             <dt>WASM runtime</dt>
             <dd>{runtime}</dd>
-          </div>
-          <div>
-            <dt>Async UniFFI bridge</dt>
-            <dd>{asyncBridge}</dd>
           </div>
           <div>
             <dt>Authenticator address</dt>
