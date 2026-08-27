@@ -30,10 +30,13 @@ Clang and LLVM tools.
   derive authenticator recovery material from secure browser randomness.
 - Next.js can bundle the package's generated JavaScript glue and emit its WASM
   asset from a Client Component.
-- An async authenticator constructor crosses the generated future/error bridge;
-  the smoke call uses invalid configuration and stops before any network request.
-- The UI wires the generated async `InitializingAuthenticator` registration and
-  polling methods. Registration is an explicit, opt-in staging mutation.
+- The UI drives a real opt-in staging flow: account registration, ephemeral
+  credential-store initialization, faux credential issuance, and uniqueness
+  proof generation.
+- A staging RP proof request is signed in the browser with the intentionally
+  public test key used by `walletkit-testkit`.
+- A same-origin Next.js route forwards the issuance request because the hosted
+  staging faux issuer does not allow browser CORS preflights.
 
 ## Experimental compatibility pins
 
@@ -53,6 +56,8 @@ The package is imported dynamically from a Client Component. This keeps the
 WASM player and browser-only APIs out of Next.js server rendering.
 
 The package's WASM is optimized with Binaryen's `wasm-opt -Oz --converge` and
-resolved from the package with `new URL(..., import.meta.url)`. No attempt has
-been made to productionize storage, worker placement, bundle splitting, or key
-persistence.
+resolved from the package with `new URL(..., import.meta.url)`. Proof generation
+currently embeds the proving artifacts, making the optimized WASM roughly 40 MB.
+The example uses a WASM-only ephemeral store whose data and key envelope are
+discarded on refresh. No attempt has been made to productionize persistent
+storage, worker placement, artifact delivery, or bundle splitting.
