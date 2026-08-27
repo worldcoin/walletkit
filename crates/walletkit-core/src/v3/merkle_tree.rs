@@ -25,8 +25,10 @@ const MINED_STATUS: &str = "mined"; // https://github.com/worldcoin/signup-seque
 
 #[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
+/// A Merkle inclusion proof and the root against which it was produced.
 pub struct MerkleTreeProof {
     poseidon_proof: Proof,
+    /// The Merkle root returned by the sign-up sequencer.
     pub merkle_root: Uint256,
 }
 
@@ -98,6 +100,10 @@ impl MerkleTreeProof {
             }
         }
     }
+    /// Parses a serialized Poseidon proof and its Merkle root.
+    ///
+    /// # Errors
+    /// Returns an error when either value cannot be parsed.
     pub fn from_json_proof(
         json_proof: &str,
         merkle_root: &str,
@@ -186,7 +192,7 @@ mod tests {
 
         let result = MerkleTreeProof::from_identity_commitment(
             world_id.get_identity_commitment(&CredentialType::Device),
-            url,
+            url.clone(),
             false,
         )
         .await;

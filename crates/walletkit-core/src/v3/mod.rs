@@ -15,3 +15,4 @@ pub use credential_type::CredentialType;
 ////////////////////////////////////////////////////////////////////////////////
 
 mod merkle_tree;
+pub use merkle_tree::MerkleTreeProof;

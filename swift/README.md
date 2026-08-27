@@ -6,7 +6,7 @@ This folder contains Swift support files for WalletKit:
 2. Foreign tests (XCTest suite) under `tests/`.
 
 Swift automation is implemented by the workspace xtask and requires macOS with
-Xcode, the iOS Rust targets, and `nargo` v1.0.0-beta.11 installed.
+Xcode, the iOS Rust targets, `nargo` v1.0.0-beta.11, and BoltFFI 0.30.1 installed.
 
 ## Building the Swift bindings
 
@@ -16,7 +16,7 @@ Run from anywhere in the workspace:
 cargo xtask swift build
 ```
 
-This cross-compiles WalletKit, generates the UniFFI Swift bindings, and creates
+This cross-compiles WalletKit, generates the BoltFFI Swift bindings, and creates
 `swift/WalletKit.xcframework`.
 
 ## Testing WalletKit locally

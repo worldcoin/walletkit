@@ -25,7 +25,7 @@ use super::WalletKitZkArtifacts;
 ///
 /// Primary reason for caching is amortization of decompression costs.
 #[derive(Clone)]
-pub struct CachingZkArtifacts(CachedZkArtifactSource);
+pub struct CachingZkArtifacts(Arc<CachedZkArtifactSource>);
 
 #[boltffi::export]
 impl CachingZkArtifacts {
@@ -34,7 +34,7 @@ impl CachingZkArtifacts {
     pub fn new(storage_paths: &StoragePaths) -> Self {
         let inner =
             CachingZkArtifactsInner::new(Arc::new(storage_paths.clone())).cached();
-        Self(inner)
+        Self(Arc::new(inner))
     }
 
     /// Returns this caching implementation as a `WalletKit` ZK artifact source.

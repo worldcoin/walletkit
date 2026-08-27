@@ -55,9 +55,10 @@ jobs:
           # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
           toolchain: v1.0.0-beta.11
 
-      # Includes temporary downstream UniFFI callback vtable patch:
-      # https://github.com/mozilla/uniffi-rs/pull/2821
-      - name: Build the project (iOS, with temporary UniFFI ASan workaround)
+      - name: Install BoltFFI
+        run: cargo install --locked boltffi_cli --version 0.30.1
+
+      - name: Build the project (iOS)
         run: cargo xtask swift build
 
       - name: Compress XCFramework binary
@@ -181,7 +182,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: android-${{ matrix.settings.target }}
-          path: ./target/${{ matrix.settings.target }}/release/libwalletkit.so
+          path: ./target/${{ matrix.settings.target }}/release/libwalletkit_core.a
           if-no-files-found: error
 
   publish-kotlin:

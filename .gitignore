@@ -20,7 +20,8 @@ swift/tests/Sources/
 swift/tests/.build/
 # Kotlin bindings and native libs
 kotlin/libs/
-kotlin/walletkit/src/main/java/uniffi/
+kotlin/walletkit/src/main/java/org/world/walletkit/
+kotlin/walletkit/src/main/jniLibs/
 kotlin/walletkit-tests/build/
 .build/
 **/tests/Package.resolved

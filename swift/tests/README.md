@@ -13,7 +13,7 @@ cargo xtask swift test
 This command will automatically:
 
 1. Build the Rust library for iOS targets
-2. Generate Swift bindings via UniFFI
+2. Generate Swift bindings via BoltFFI
 3. Copy bindings to the test package
 4. Run the tests on iOS Simulator
 

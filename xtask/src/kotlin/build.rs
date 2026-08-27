@@ -1,13 +1,12 @@
 //! Android library and Kotlin binding generation.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use eyre::{bail, Result, WrapErr as _};
 use xshell::{cmd, Shell};
 
 const DEFAULT_CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3";
-const JNI_LIBS_DIR: &str = "kotlin/walletkit/src/main/jniLibs";
-const KOTLIN_SOURCE_DIR: &str = "kotlin/walletkit/src/main/java";
+const TARGET_DIR: &str = "target";
 
 /// Build profile for the native libraries backing the Android AAR. Both profiles
 /// build the same Android targets; only optimization level, symbols, and output
@@ -50,25 +49,20 @@ impl Profile {
 
 struct AndroidTarget {
     rust_name: &'static str,
-    abi_name: &'static str,
 }
 
 const ANDROID_TARGETS: [AndroidTarget; 4] = [
     AndroidTarget {
         rust_name: "aarch64-linux-android",
-        abi_name: "arm64-v8a",
     },
     AndroidTarget {
         rust_name: "armv7-linux-androideabi",
-        abi_name: "armeabi-v7a",
     },
     AndroidTarget {
         rust_name: "x86_64-linux-android",
-        abi_name: "x86_64",
     },
     AndroidTarget {
         rust_name: "i686-linux-android",
-        abi_name: "x86",
     },
 ];
 
@@ -79,11 +73,11 @@ pub(super) fn run(
 ) -> Result<()> {
     if artifacts_dir.is_none() {
         ensure_android_toolchain(sh)?;
-        build_native_libraries(sh, profile)?;
+    } else {
+        stage_native_libraries(sh, artifacts_dir.expect("checked above"), profile)?;
     }
 
-    copy_native_libraries(sh, artifacts_dir, profile)?;
-    generate_bindings(sh)?;
+    pack_bindings(sh, profile, artifacts_dir.is_some())?;
 
     println!("Kotlin/Android build complete.");
     Ok(())
@@ -115,24 +109,18 @@ fn ensure_android_toolchain(sh: &Shell) -> Result<()> {
     Ok(())
 }
 
-fn build_native_libraries(sh: &Shell, profile: Profile) -> Result<()> {
+fn pack_bindings(sh: &Shell, profile: Profile, no_build: bool) -> Result<()> {
     let features = cargo_features(sh);
     let release_flag = profile.cargo_profile_flag();
-    println!("Building WalletKit for Android ({})...", profile.dir_name());
-
-    for target in &ANDROID_TARGETS {
-        let rust_target = target.rust_name;
-        println!("Building {rust_target}...");
-        cmd!(
-            sh,
-            "cargo build -p walletkit --locked --target {rust_target} --features {features}"
-        )
+    let no_build_flag = no_build.then_some("--no-build");
+    println!("Building and packaging BoltFFI Android bindings...");
+    cmd!(sh, "boltffi pack android --deny-skipped")
         .args(release_flag)
+        .args(no_build_flag)
+        .args(["--cargo-arg=--locked", "--cargo-arg=--no-default-features"])
+        .arg(format!("--cargo-arg=--features={features}"))
         .run()
-        .wrap_err_with(|| format!("failed to build WalletKit for {rust_target}"))?;
-    }
-
-    Ok(())
+        .wrap_err("failed to package BoltFFI Android bindings")
 }
 
 fn cargo_features(sh: &Shell) -> String {
@@ -142,17 +130,20 @@ fn cargo_features(sh: &Shell) -> String {
         .unwrap_or_else(|| DEFAULT_CARGO_FEATURES.to_owned())
 }
 
-fn copy_native_libraries(
+fn stage_native_libraries(
     sh: &Shell,
-    artifacts_dir: Option<&Path>,
+    artifacts_dir: &Path,
     profile: Profile,
 ) -> Result<()> {
-    println!("Copying Android native libraries...");
-
+    println!("Staging Android static libraries for BoltFFI packaging...");
     for target in &ANDROID_TARGETS {
-        let source = native_library_source(target, artifacts_dir, profile);
-        let destination_dir = Path::new(JNI_LIBS_DIR).join(target.abi_name);
-        let destination = destination_dir.join("libwalletkit.so");
+        let source = artifacts_dir
+            .join(format!("android-{}", target.rust_name))
+            .join("libwalletkit_core.a");
+        let destination_dir = Path::new(TARGET_DIR)
+            .join(target.rust_name)
+            .join(profile.dir_name());
+        let destination = destination_dir.join("libwalletkit_core.a");
 
         sh.create_dir(&destination_dir)?;
         sh.copy_file(&source, &destination).wrap_err_with(|| {
@@ -165,43 +156,6 @@ fn copy_native_libraries(
     }
 
     Ok(())
-}
-
-/// Resolves the source `.so` path for `target`. When `artifacts_dir` is set, the
-/// prebuilt CI artifact layout is used unconditionally and `profile` has no
-/// effect — the CI build matrix always produces release artifacts.
-fn native_library_source(
-    target: &AndroidTarget,
-    artifacts_dir: Option<&Path>,
-    profile: Profile,
-) -> PathBuf {
-    artifacts_dir.map_or_else(
-        || {
-            Path::new("target")
-                .join(target.rust_name)
-                .join(profile.dir_name())
-                .join("libwalletkit.so")
-        },
-        |directory| {
-            directory
-                .join(format!("android-{}", target.rust_name))
-                .join("libwalletkit.so")
-        },
-    )
-}
-
-fn generate_bindings(sh: &Shell) -> Result<()> {
-    let library = Path::new(JNI_LIBS_DIR)
-        .join("arm64-v8a")
-        .join("libwalletkit.so");
-
-    println!("Generating Kotlin bindings...");
-    cmd!(
-        sh,
-        "cargo run -p uniffi-bindgen --locked -- generate {library} --library --language kotlin --no-format --out-dir {KOTLIN_SOURCE_DIR}"
-    )
-    .run()
-    .wrap_err("failed to generate Kotlin bindings")
 }
 
 #[cfg(test)]

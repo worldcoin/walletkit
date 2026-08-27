@@ -67,7 +67,7 @@ fi
 
 # Defaults to the release feature set; CI overrides via WALLETKIT_CARGO_FEATURES.
 exec nix develop .#android --command cargo build \
-  -p walletkit \
+  -p walletkit-core \
   --release \
   --locked \
   --target "${TARGET}" \

@@ -35,5 +35,5 @@ nix develop .#android --command cargo xtask kotlin local 0.3.1
 
 The Kotlin project has two members:
 
-- `walletkit`: The main WalletKit library with UniFFI bindings for Kotlin.
+- `walletkit`: The main WalletKit library with BoltFFI bindings for Kotlin.
 - `walletkit-tests`: Unit tests to assert the Kotlin bindings behave as intended (foreign tests).

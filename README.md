@@ -4,10 +4,9 @@ Part of the [World ID SDK](https://docs.world.org/world-id).
 
 WalletKit can be used as a Rust crate, or directly as a Swift or Android package.
 
-> **Experimental branch:** foreign annotations in this branch have been
-> migrated directly to BoltFFI. The synchronous WASM package builds and loads,
-> but the complete async WASM API is blocked by BoltFFI's `Send` requirement.
-> See [the BoltFFI experiment report](docs/boltffi-only-experiment.md).
+The native binding surface is generated with BoltFFI. See the
+[migration investigation](docs/boltffi-migration-investigation.md) for the
+generated API changes, validation status, and remaining WASM limitations.
 
 ## Installation
 
@@ -43,10 +42,6 @@ Replace `VERSION` with the desired WalletKit version.
 
 ## Local development (iOS/Swift)
 
-> The native iOS packaging task has not yet been migrated to BoltFFI on this
-> experimental branch. Direct Swift source generation succeeds, but the
-> XCFramework task below is not part of the completed POC.
-
 On macOS with Xcode and the iOS Rust targets installed, build a local Swift
 package with:
 
@@ -61,10 +56,6 @@ binding tests with `cargo xtask swift test`.
 See [`swift/README.md`](swift/README.md) for package integration details.
 
 ## Local development (Android/Kotlin)
-
-> The native Android packaging task has not yet been migrated to BoltFFI on
-> this experimental branch. Direct Kotlin/JNI source generation succeeds, but
-> the Gradle/JNI task below is not part of the completed POC.
 
 ### Prerequisites
 

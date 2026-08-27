@@ -16,7 +16,7 @@ use super::WalletKitZkArtifacts;
 ///
 /// that can be constructed by crate consumers
 #[derive(Clone)]
-pub struct EmbeddedZkArtifacts(CachedZkArtifactSource);
+pub struct EmbeddedZkArtifacts(Arc<CachedZkArtifactSource>);
 
 impl Default for EmbeddedZkArtifacts {
     fn default() -> Self {
@@ -29,7 +29,9 @@ impl EmbeddedZkArtifacts {
     /// Constructs a new [`EmbeddedZkArtifacts`]
     #[must_use]
     pub fn new() -> Self {
-        Self(CachedZkArtifactSource::new(CoreEmbeddedZkArtifacts))
+        Self(Arc::new(CachedZkArtifactSource::new(
+            CoreEmbeddedZkArtifacts,
+        )))
     }
 
     /// Returns this caching implementation as a `WalletKit` ZK artifact source.

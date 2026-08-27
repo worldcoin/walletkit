@@ -1,11 +1,13 @@
-{ pkgs }:
+{ pkgs, boltffi }:
 let
   androidApiLevel = "23";
   androidPackages = pkgs.androidenv.composeAndroidPackages {
-    platformVersions = [ androidApiLevel ];
+    platformVersions = [ androidApiLevel "33" ];
+    buildToolsVersions = [ "34.0.0" ];
     includeNDK = true;
     ndkVersion = "27.2.12479018";
   };
+  androidSdkHome = "${androidPackages.androidsdk}/libexec/android-sdk";
   androidNdkPackage = androidPackages.ndk-bundle;
   # These paths reach into the internal layout of the nixpkgs androidenv derivation
   # (there is no stable API for them). Pinned via flake.lock, but expect them to be
@@ -33,9 +35,12 @@ pkgs.mkShell {
     pkgs.git
     pkgs.jdk17
     pkgs.nargo
+    boltffi
   ];
 
   ANDROID_API_LEVEL = androidApiLevel;
+  ANDROID_HOME = androidSdkHome;
+  ANDROID_SDK_ROOT = androidSdkHome;
   ANDROID_NDK_HOME = androidNdkHome;
   ANDROID_NDK_ROOT = androidNdkHome;
   NDK_HOME = androidNdkHome;

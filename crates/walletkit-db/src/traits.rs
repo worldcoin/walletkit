@@ -1,12 +1,12 @@
 //! Interfaces for consumer-supplied platform integrations.
 //!
 //! Argument shapes (`Vec<u8>`, owned `String`) mostly mirror `WalletKit`'s
-//! existing uniffi-annotated traits so consumers can bridge with a thin
+//! existing foreign-binding traits so consumers can bridge with a thin
 //! newtype that just delegates and maps errors. (A blanket impl across
 //! crates is blocked by Rust's orphan rule, so consumers do need a small
 //! wrapper.) `Keystore::seal` is the one exception: it borrows its
 //! plaintext so the secret is never owned by this crate longer than
-//! necessary; a bridge to an owned-only interface (e.g. a uniffi callback)
+//! necessary; a bridge to an owned-only foreign callback interface
 //! still needs one copy at that boundary.
 
 use crate::error::StoreResult;

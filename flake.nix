@@ -52,6 +52,7 @@
               pkgs.curl
               pkgs.git
               pkgs.nargo
+              boltffi
             ];
           };
 
@@ -59,7 +60,7 @@
         } // pkgs.lib.optionalAttrs (!(pkgs.stdenv.isLinux && pkgs.stdenv.isAarch64)) {
           # The Android NDK has no aarch64-linux prebuilt toolchain
           # (on aarch64 Docker hosts, run the container as linux/amd64).
-          android = import ./nix/android.nix { inherit pkgs; };
+          android = import ./nix/android.nix { inherit pkgs boltffi; };
         };
       });
 }

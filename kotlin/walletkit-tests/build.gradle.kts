@@ -10,7 +10,6 @@ repositories {
 }
 
 dependencies {
-    implementation("net.java.dev.jna:jna:5.13.0")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
@@ -19,13 +18,13 @@ dependencies {
 sourceSets {
     test {
         kotlin.srcDirs(
-            "$rootDir/walletkit/src/main/java/uniffi/walletkit_core"
+            "$rootDir/walletkit/src/main/java/org/world/walletkit"
         )
     }
 }
 
 tasks.test {
     useJUnit()
-    systemProperty("jna.library.path", "${rootDir}/libs")
+    systemProperty("java.library.path", "${rootDir}/libs")
     reports.html.required.set(false)
 }

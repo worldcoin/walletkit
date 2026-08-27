@@ -11,17 +11,7 @@ use crate::Environment;
 /// More details in `https://docs.world.org/world-id/concepts#proof-of-personhood`
 #[boltffi::data]
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    EnumString,
-    Hash,
-    Display,
-    Serialize,
-    Deserialize,
-    ,
+    Debug, Clone, Copy, PartialEq, Eq, EnumString, Hash, Display, Serialize, Deserialize,
 )]
 #[strum(serialize_all = "snake_case")]
 #[serde(rename_all = "snake_case")]

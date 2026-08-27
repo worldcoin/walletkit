@@ -1,7 +1,35 @@
-# EXPERIMENTAL: BoltFFI-only WalletKit bindings.
 [package]
-name = "walletkit-wasm"
+name = "walletkit-core"
 crate = "walletkit_core"
+
+[targets.apple]
+enabled = true
+deployment_target = "13.0"
+
+[targets.apple.swift]
+module_name = "WalletKit"
+ffi_module_name = "walletkit_coreFFI"
+error_style = "throwing"
+
+[targets.android]
+enabled = true
+min_sdk = 23
+architectures = ["arm64", "armv7", "x86_64", "x86"]
+
+[targets.android.kotlin]
+package = "org.world.walletkit"
+module_name = "WalletKit"
+library_name = "walletkit"
+output = "kotlin/walletkit/src/main/java"
+api_style = "top_level"
+factory_style = "companion_methods"
+error_style = "throwing"
+
+[targets.android.header]
+output = "target/boltffi/android/include"
+
+[targets.android.pack]
+output = "kotlin/walletkit/src/main/jniLibs"
 
 [targets.wasm]
 output = "target/boltffi"

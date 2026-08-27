@@ -27,7 +27,6 @@ jobs:
 
       - uses: worldcoin/bedrock/.github/actions/version-alignment@857c252013ac52cea24f5d7add3475a909d663f2 # main
         with:
-          uniffi_version: ${{ vars.UNIFFI_VERSION }}
           rust_toolchain_channel: ${{ vars.RUST_TOOLCHAIN_CHANNEL }}
 
   lint:
@@ -130,9 +129,10 @@ jobs:
           # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
           toolchain: v1.0.0-beta.11
 
-      # Includes temporary downstream UniFFI callback vtable patch:
-      # https://github.com/mozilla/uniffi-rs/pull/2821
-      - name: Build the Swift project (with temporary UniFFI ASan workaround)
+      - name: Install BoltFFI
+        run: cargo install --locked boltffi_cli --version 0.30.1
+
+      - name: Build the Swift project
         run: cargo xtask swift build
 
       - name: Upload Swift build artifacts
@@ -222,6 +222,9 @@ jobs:
         with:
           # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
           toolchain: v1.0.0-beta.11
+
+      - name: Install BoltFFI
+        run: cargo install --locked boltffi_cli --version 0.30.1
 
       - name: Build and test Kotlin bindings
         run: cargo xtask kotlin test

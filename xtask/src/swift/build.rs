@@ -223,23 +223,20 @@ fn create_universal_simulator_library(sh: &Shell, profile: Profile) -> Result<()
         .wrap_err("failed to inspect universal iOS simulator library")
 }
 
-fn generate_bindings(sh: &Shell, sources_dir: &Path, profile: Profile) -> Result<()> {
-    let library = Path::new(TARGET_DIR)
-        .join("aarch64-apple-ios-sim")
-        .join(profile.dir_name())
-        .join("libwalletkit.dylib");
-
+fn generate_bindings(sh: &Shell, sources_dir: &Path, _profile: Profile) -> Result<()> {
     let bindings_dir = Path::new(INTERMEDIATE_DIR).join("bindings");
+    let features = cargo_features(sh);
 
     println!("Generating Swift bindings...");
     cmd!(
         sh,
-        "cargo run -p uniffi-bindgen --locked --target-dir {TARGET_DIR} -- generate {library} --library --crate walletkit_core --language swift --no-format --out-dir {bindings_dir}"
+        "boltffi generate swift --deny-skipped --output {bindings_dir} --cargo-arg=--no-default-features"
     )
+    .arg(format!("--cargo-arg=--features={features}"))
     .run()
     .wrap_err("failed to generate Swift bindings")?;
 
-    let generated_source = bindings_dir.join("walletkit_core.swift");
+    let generated_source = bindings_dir.join("WalletkitCoreBoltFFI.swift");
     let destination = sources_dir.join("walletkit.swift");
     sh.copy_file(&generated_source, &destination)
         .wrap_err_with(|| {
@@ -250,6 +247,13 @@ fn generate_bindings(sh: &Shell, sources_dir: &Path, profile: Profile) -> Result
             )
         })?;
     sh.remove_path(&generated_source)?;
+
+    let generated_header = bindings_dir.join("boltffi.h");
+    sh.copy_file(&generated_header, bindings_dir.join("walletkit_coreFFI.h"))?;
+    sh.write_file(
+        bindings_dir.join("walletkit_coreFFI.modulemap"),
+        "module walletkit_coreFFI {\n  header \"walletkit_coreFFI.h\"\n  export *\n}\n",
+    )?;
 
     if sh.path_exists(SUPPORT_SOURCES_DIR) {
         copy_directory_contents(sh, Path::new(SUPPORT_SOURCES_DIR), sources_dir)?;

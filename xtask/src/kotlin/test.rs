@@ -42,8 +42,9 @@ fn build_host_bindings(sh: &Shell) -> Result<()> {
     println!("Generating Kotlin test bindings...");
     cmd!(
         sh,
-        "cargo run -p uniffi-bindgen --locked -- generate {library} --language kotlin --library --crate walletkit_core --out-dir {JAVA_SOURCE_DIR}"
+        "boltffi generate kotlin --deny-skipped --output {JAVA_SOURCE_DIR} --cargo-arg=--no-default-features"
     )
+    .arg(format!("--cargo-arg=--features={CARGO_FEATURES}"))
     .run()
     .wrap_err("failed to generate Kotlin test bindings")
 }

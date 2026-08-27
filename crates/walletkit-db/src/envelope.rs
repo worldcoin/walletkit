@@ -109,10 +109,10 @@ pub fn init_or_open_envelope_key(
             .map_err(|err| StoreError::Crypto(format!("rng failure: {err}")))?;
         // `keystore.seal` borrows the plaintext, so `k_intermediate` is
         // never copied into an un-zeroized `Vec<u8>` at this layer. A
-        // `Keystore` bridging to an owned-only interface (e.g. a uniffi
+        // `Keystore` bridging to an owned-only foreign callback interface
         // callback like walletkit-core's `DeviceKeystore`) still needs one
         // owned copy to cross that boundary; that is an accepted,
-        // uniffi-imposed limitation (callback interfaces only support
+        // foreign-binding limitation (callback interfaces only support
         // pass-by-value), not something fixable from this layer.
         let wrapped = keystore.seal(ad, k_intermediate.as_slice())?;
         let envelope = KeyEnvelope::new(wrapped, now);

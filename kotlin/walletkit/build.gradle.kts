@@ -75,8 +75,6 @@ afterEvaluate {
 }
 
 dependencies {
-    // UniFFI requires JNA for native calls (AAR to avoid jar+aar duplicates)
-    implementation("net.java.dev.jna:jna:5.13.0@aar")
     implementation("androidx.core:core-ktx:1.8.0")
     implementation("androidx.appcompat:appcompat:1.4.1")
     implementation("com.google.android.material:material:1.5.0")

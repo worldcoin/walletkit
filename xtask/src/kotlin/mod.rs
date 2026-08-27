@@ -29,7 +29,7 @@ pub struct BuildOptions {
     /// Use prebuilt Android libraries instead of building them.
     ///
     /// The directory must use the layout produced by the CI build matrix:
-    /// `android-<target>/libwalletkit.so`.
+    /// `android-<target>/libwalletkit_core.a`.
     #[arg(long, value_name = "DIR")]
     artifacts_dir: Option<PathBuf>,
 
