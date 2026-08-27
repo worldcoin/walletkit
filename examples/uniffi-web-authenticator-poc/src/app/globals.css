@@ -21,7 +21,7 @@ main {
 }
 
 .card {
-  width: min(42rem, 100%);
+  width: min(48rem, 100%);
   padding: 2rem;
   border: 1px solid #bdcbc3;
   border-radius: 1rem;
@@ -103,4 +103,8 @@ details {
 summary {
   cursor: pointer;
   font-weight: 700;
+}
+
+ol {
+  padding-left: 1.5rem;
 }

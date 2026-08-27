@@ -46,6 +46,8 @@
 pub mod cache;
 pub mod credential_storage;
 pub mod credential_vault;
+#[cfg(any(test, all(target_arch = "wasm32", feature = "uniffi-wasm")))]
+mod ephemeral;
 pub mod error;
 pub mod keys;
 pub mod paths;
