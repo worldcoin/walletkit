@@ -59,15 +59,9 @@ export async function issueFauxCredential(
     );
   }
 
-  const body = (await response.json()) as { credential?: unknown };
-  if (body.credential === undefined) {
-    throw new Error("Faux issuer response did not contain a credential");
-  }
-
-  const credentialBytes = new TextEncoder().encode(
-    JSON.stringify(body.credential),
+  const credential = module.Credential.fromIssuanceResponseBytes(
+    await response.arrayBuffer(),
   );
-  const credential = module.Credential.fromBytes(credentialBytes.buffer);
   const now = BigInt(Math.floor(Date.now() / 1000));
   const credentialId = store.storeCredential(
     credential,
