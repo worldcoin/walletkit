@@ -17,12 +17,20 @@ function printableState(state: string, details = {}) {
     {
       state,
       environment: "staging",
-      region: "eu",
+      region: "us",
       ...details,
     },
     (_, value) => (typeof value === "bigint" ? value.toString() : value),
     2,
   );
+}
+
+function printableError(error: unknown) {
+  if (error instanceof Error && "inner" in error) {
+    return `${error.message}: ${JSON.stringify(error.inner)}`;
+  }
+
+  return String(error);
 }
 
 export default function Home() {
@@ -77,7 +85,7 @@ export default function Home() {
         deriveAuthenticator(module);
       } catch (error) {
         setRuntime("Failed");
-        setStatus(String(error));
+        setStatus(printableError(error));
       }
     })();
   }, []);
@@ -93,13 +101,13 @@ export default function Home() {
           new Uint8Array(seed.current).buffer,
           undefined,
           module.Environment.Staging,
-          module.Region.Eu,
+          module.Region.Us,
           undefined,
         );
       setCanPoll(true);
       setStatus(printableState("registration-requested"));
     } catch (error) {
-      setStatus(String(error));
+      setStatus(printableError(error));
     } finally {
       setBusy(false);
     }
@@ -121,7 +129,7 @@ export default function Home() {
         ),
       );
     } catch (error) {
-      setStatus(String(error));
+      setStatus(printableError(error));
     } finally {
       setBusy(false);
     }
@@ -140,7 +148,7 @@ export default function Home() {
           new Uint8Array(seed.current).buffer,
           undefined,
           module.Environment.Staging,
-          module.Region.Eu,
+          module.Region.Us,
           artifacts,
           ephemeralStore,
         );
@@ -152,7 +160,7 @@ export default function Home() {
       setAuthenticatorReady(true);
       setStatus(printableState("authenticator-initialized"));
     } catch (error) {
-      setStatus(String(error));
+      setStatus(printableError(error));
     } finally {
       setBusy(false);
     }
@@ -172,7 +180,7 @@ export default function Home() {
       setCredentialIssued(true);
       setStatus(printableState("credential-issued", issued));
     } catch (error) {
-      setStatus(String(error));
+      setStatus(printableError(error));
     } finally {
       setBusy(false);
     }
@@ -194,7 +202,7 @@ export default function Home() {
       );
       setStatus(response.toJson());
     } catch (error) {
-      setStatus(String(error));
+      setStatus(printableError(error));
     } finally {
       setBusy(false);
     }
