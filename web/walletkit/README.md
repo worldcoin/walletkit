@@ -22,5 +22,7 @@ nix develop .#wasm --command npm --prefix web/walletkit run build
 ```
 
 The release build uses `crates/walletkit` directly, disables its default
-features, and optimizes the generated module with
-`wasm-opt -Oz --converge`.
+features except for `embed-zkeys`, and optimizes the generated module with
+`wasm-opt -Oz --converge`. Embedding the proving artifacts currently makes the
+optimized WASM roughly 40 MB; lazy artifact delivery and worker placement are
+still future production work.
