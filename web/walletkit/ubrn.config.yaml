@@ -4,4 +4,6 @@ rust:
 
 wasm2:
   defaultFeatures: false
+  features:
+    - embed-zkeys
   ts: src/generated
