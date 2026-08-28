@@ -59,7 +59,8 @@ sha2 = "0.10"
 sqlite-wasm-rs = "0.5"
 strum = "0.27"
 subtle = "2"
-taceo-oprf = { version = "0.17", default-features = false }
+# world-id-proof 0.14 uses Arkworks 0.5; taceo-oprf 0.18.2 moved to Arkworks 0.6.
+taceo-oprf = { version = "=0.18.1", default-features = false }
 tempfile = "3"
 test-case = "3.3"
 thiserror = "2"
