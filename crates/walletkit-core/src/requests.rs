@@ -111,9 +111,8 @@ mod tests {
     use alloy::signers::{local::PrivateKeySigner, SignerSync};
     use alloy_core::primitives::U160;
     use serde_json::Value;
-    use taceo_oprf::types::OprfKeyId;
     use world_id_core::{
-        primitives::{rp::RpId, FieldElement},
+        primitives::{rp::RpId, FieldElement, OprfKeyId, SessionRef},
         requests::{ProofType, RequestItem, RequestVersion},
     };
 
@@ -136,7 +135,7 @@ mod tests {
             expires_at: 1_700_000_300,
             rp_id: RpId::new(1),
             oprf_key_id: OprfKeyId::new(U160::from(1)),
-            session_id: None,
+            session_id: SessionRef::None,
             action: Some(FieldElement::from(1u64)),
             signature: test_signature(),
             nonce: FieldElement::from(2u64),

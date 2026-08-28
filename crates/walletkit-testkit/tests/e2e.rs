@@ -114,7 +114,7 @@ async fn e2e_session_proof() {
         &SESSION_TEST_SEED,
         root.path(),
         SIGNAL,
-        ProofType::CreateSession,
+        ProofType::Session,
         None,
     )
     .await

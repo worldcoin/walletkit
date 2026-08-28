@@ -13,7 +13,7 @@ use walletkit_testkit::proof::{
 };
 use walletkit_testkit::storage::create_artifact_source;
 use walletkit_testkit::utils::now_secs;
-use world_id_core::primitives::{FieldElement, OwnershipProof, SessionId};
+use world_id_core::primitives::{FieldElement, OwnershipProof, SessionId, SessionRef};
 use world_id_core::requests::{
     ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse, ProofType,
 };
@@ -69,7 +69,7 @@ pub enum ProofCommand {
         /// Proof type to generate.
         #[arg(long, value_parser = parse_proof_type_arg, default_value = "uniqueness")]
         proof_type: ProofType,
-        /// Existing session ID for `--proof-type session`.
+        /// Existing session ID for `--proof-type session`; omit to create a session.
         #[arg(long, value_parser = parse_session_id_arg)]
         session_id: Option<SessionId>,
     },
@@ -107,6 +107,9 @@ pub enum ProofCommand {
         /// Credential `sub` (commitment) the proof claims ownership of, as a 32-byte hex field element.
         #[arg(long)]
         sub: String,
+        /// Context bound to the ownership proof, as a 32-byte hex field element.
+        #[arg(long)]
+        context: String,
     },
 }
 
@@ -131,9 +134,8 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<String> {
 fn parse_proof_type_arg(value: &str) -> Result<ProofType, String> {
     match value.trim().to_ascii_lowercase().as_str() {
         "uniqueness" => Ok(ProofType::Uniqueness),
-        "create-session" | "create_session" => Ok(ProofType::CreateSession),
         "session" => Ok(ProofType::Session),
-        _ => Err("expected one of: uniqueness, create-session, session".to_string()),
+        _ => Err("expected one of: uniqueness, session".to_string()),
     }
 }
 
@@ -251,15 +253,15 @@ fn run_generate_test_request(
     proof_type: ProofType,
     session_id: Option<SessionId>,
 ) -> eyre::Result<()> {
-    let session_id = match (proof_type, session_id) {
-        (ProofType::Uniqueness | ProofType::CreateSession, Some(_)) => {
+    let (proof_type, session_ref) = match (proof_type, session_id) {
+        (ProofType::Uniqueness, Some(_)) => {
             eyre::bail!("--session-id is only valid with --proof-type session");
         }
-        (ProofType::Session, None) => {
-            eyre::bail!("--session-id is required with --proof-type session");
+        (ProofType::Uniqueness, None) => (ProofType::Uniqueness, SessionRef::None),
+        (ProofType::Session, None) => (ProofType::Session, SessionRef::Create),
+        (ProofType::Session, Some(session_id)) => {
+            (ProofType::Session, SessionRef::Existing(session_id))
         }
-        (ProofType::Session, Some(session_id)) => Some(session_id),
-        (_, None) => None,
     };
     let request = build_test_request(
         &TestEnv::default_staging(),
@@ -267,7 +269,7 @@ fn run_generate_test_request(
         signal,
         expires_in,
         proof_type,
-        session_id,
+        session_ref,
     )?;
     let json = serde_json::to_string_pretty(&request)?;
 
@@ -305,7 +307,7 @@ async fn run_test(
         signal,
         300,
         ProofType::Uniqueness,
-        None,
+        SessionRef::None,
     )?;
 
     if !cli.json {
@@ -361,6 +363,7 @@ fn run_verify_ownership(
     proof_path: &str,
     nonce: &str,
     sub: &str,
+    context: &str,
 ) -> eyre::Result<()> {
     let b64 = read_file_or_stdin(proof_path)?;
     let bytes = BASE64_URL_SAFE_NO_PAD
@@ -371,11 +374,18 @@ fn run_verify_ownership(
 
     let nonce_fe = parse_field_element(nonce, "--nonce")?;
     let sub_fe = parse_field_element(sub, "--sub")?;
+    let context_fe = parse_field_element(context, "--context")?;
 
     let root = resolve_root(cli)?;
     let artifacts = create_artifact_source(&root);
 
-    let result = verify_ownership_proof(&proof, nonce_fe, sub_fe, artifacts.as_ref());
+    let result = verify_ownership_proof(
+        &proof,
+        nonce_fe,
+        sub_fe,
+        context_fe,
+        artifacts.as_ref(),
+    );
     let merkle_root = proof.merkle_root.to_string();
 
     if cli.json {
@@ -432,8 +442,11 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             signal,
             verifier_address,
         } => run_test(cli, signal, verifier_address.as_deref()).await,
-        ProofCommand::VerifyOwnership { proof, nonce, sub } => {
-            run_verify_ownership(cli, proof, nonce, sub)
-        }
+        ProofCommand::VerifyOwnership {
+            proof,
+            nonce,
+            sub,
+            context,
+        } => run_verify_ownership(cli, proof, nonce, sub, context),
     }
 }
