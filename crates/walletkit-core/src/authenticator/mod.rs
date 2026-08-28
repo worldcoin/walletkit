@@ -630,6 +630,7 @@ impl Authenticator {
         // Box::pin to heap-allocate the large upstream futures and keep this future below clippy::large_futures threshold
         let nullifier = Box::pin(self.inner.generate_nullifier(
             &proof_request.0,
+            now,
             Some(account_inclusion_proof.clone()),
         ))
         .await?;

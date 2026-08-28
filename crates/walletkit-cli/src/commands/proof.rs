@@ -68,8 +68,8 @@ pub enum ProofCommand {
         expires_in: u64,
         /// Proof type to generate.
         #[arg(long, value_parser = parse_proof_type_arg, default_value = "uniqueness")]
-        proof_type: TestProofType,
-        /// Existing session ID for `--proof-type session`.
+        proof_type: ProofType,
+        /// Existing session ID for `--proof-type session`; omit to create a session.
         #[arg(long, value_parser = parse_session_id_arg)]
         session_id: Option<SessionId>,
     },
@@ -131,19 +131,11 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<String> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum TestProofType {
-    Uniqueness,
-    CreateSession,
-    Session,
-}
-
-fn parse_proof_type_arg(value: &str) -> Result<TestProofType, String> {
+fn parse_proof_type_arg(value: &str) -> Result<ProofType, String> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "uniqueness" => Ok(TestProofType::Uniqueness),
-        "create-session" | "create_session" => Ok(TestProofType::CreateSession),
-        "session" => Ok(TestProofType::Session),
-        _ => Err("expected one of: uniqueness, create-session, session".to_string()),
+        "uniqueness" => Ok(ProofType::Uniqueness),
+        "session" => Ok(ProofType::Session),
+        _ => Err("expected one of: uniqueness, session".to_string()),
     }
 }
 
@@ -258,21 +250,16 @@ fn run_generate_test_request(
     issuer_schema_id: u64,
     signal: &str,
     expires_in: u64,
-    proof_type: TestProofType,
+    proof_type: ProofType,
     session_id: Option<SessionId>,
 ) -> eyre::Result<()> {
     let (proof_type, session_ref) = match (proof_type, session_id) {
-        (TestProofType::Uniqueness | TestProofType::CreateSession, Some(_)) => {
+        (ProofType::Uniqueness, Some(_)) => {
             eyre::bail!("--session-id is only valid with --proof-type session");
         }
-        (TestProofType::Session, None) => {
-            eyre::bail!("--session-id is required with --proof-type session");
-        }
-        (TestProofType::Uniqueness, None) => (ProofType::Uniqueness, SessionRef::None),
-        (TestProofType::CreateSession, None) => {
-            (ProofType::Session, SessionRef::Create)
-        }
-        (TestProofType::Session, Some(session_id)) => {
+        (ProofType::Uniqueness, None) => (ProofType::Uniqueness, SessionRef::None),
+        (ProofType::Session, None) => (ProofType::Session, SessionRef::Create),
+        (ProofType::Session, Some(session_id)) => {
             (ProofType::Session, SessionRef::Existing(session_id))
         }
     };

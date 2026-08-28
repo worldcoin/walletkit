@@ -318,7 +318,7 @@ fn proof_generate_test_request_defaults_to_uniqueness() {
 }
 
 #[test]
-fn proof_generate_test_request_supports_create_session() {
+fn proof_generate_test_request_creates_session_without_id() {
     let output = Command::new(walletkit_bin())
         .args([
             "--json",
@@ -327,7 +327,7 @@ fn proof_generate_test_request_supports_create_session() {
             "--issuer-schema-id",
             "47",
             "--proof-type",
-            "create-session",
+            "session",
         ])
         .output()
         .expect("failed to run");
@@ -341,9 +341,9 @@ fn proof_generate_test_request_supports_create_session() {
     let parsed: serde_json::Value =
         serde_json::from_str(&stdout).expect("invalid json");
     let data = &parsed["data"];
-    assert_eq!(data["proof_type"], "create_session");
+    assert_eq!(data["proof_type"], "session");
     assert!(data["action"].is_null());
-    assert!(data["session_id"].is_null());
+    assert_eq!(data["session_id"], "create");
 }
 
 #[test]
@@ -383,7 +383,7 @@ fn proof_generate_test_request_supports_session() {
 }
 
 #[test]
-fn proof_generate_test_request_requires_session_id_for_session() {
+fn proof_generate_test_request_rejects_legacy_create_session_type() {
     let output = Command::new(walletkit_bin())
         .args([
             "--json",
@@ -392,21 +392,16 @@ fn proof_generate_test_request_requires_session_id_for_session() {
             "--issuer-schema-id",
             "47",
             "--proof-type",
-            "session",
+            "create-session",
         ])
         .output()
         .expect("failed to run");
     assert!(!output.status.success());
 
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stderr).expect("invalid json");
     assert!(
-        parsed["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("--session-id is required"),
-        "expected missing session id error, got: {stderr}"
+        stderr.contains("expected one of: uniqueness, session"),
+        "expected invalid proof type error, got: {stderr}"
     );
 }
 
