@@ -646,6 +646,7 @@ impl Authenticator {
             proof_request
                 .0
                 .session_id
+                .existing()
                 .and_then(|session_id| {
                     match self.store.get_session_seed(session_id.oprf_seed, now) {
                         Ok(seed) => seed,
@@ -698,6 +699,7 @@ impl Authenticator {
     ///
     /// # Arguments
     /// * `nonce` - A field element provided by the Issuer to prevent replay.
+    /// * `context` - A field element identifying the issuer operation being authorized.
     /// * `blinding_factor` - The credential blinding factor previously used to
     ///   derive the credential `sub`.
     /// * `sub` - The credential `sub` (commitment) to prove ownership of.
@@ -712,12 +714,13 @@ impl Authenticator {
     pub async fn prove_credential_sub(
         &self,
         nonce: &FieldElement,
+        context: &FieldElement,
         blinding_factor: &FieldElement,
         sub: &FieldElement,
     ) -> Result<OwnershipProof, WalletKitError> {
         #[cfg(target_arch = "wasm32")]
         {
-            let _ = (nonce, blinding_factor, sub);
+            let _ = (nonce, context, blinding_factor, sub);
             return Err(WalletKitError::Generic {
                 error: "credential ownership proofs are not supported on wasm32"
                     .to_string(),
@@ -738,6 +741,7 @@ impl Authenticator {
                 .inner
                 .prove_credential_sub(
                     nonce.0,
+                    context.0,
                     blinding_factor.0,
                     sub.0,
                     Some(inclusion_proof),

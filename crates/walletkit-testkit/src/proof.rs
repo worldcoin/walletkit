@@ -7,7 +7,7 @@ use alloy_core::primitives::U160;
 use eyre::WrapErr as _;
 use rand::rngs::OsRng;
 use uuid::Uuid;
-use world_id_core::primitives::{rp::RpId, FieldElement, OprfKeyId, SessionId};
+use world_id_core::primitives::{rp::RpId, FieldElement, OprfKeyId, SessionRef};
 use world_id_core::requests::{
     ProofRequest, ProofResponse, ProofType, RequestItem, RequestVersion,
 };
@@ -48,20 +48,20 @@ sol!(
 /// Builds a proof [`ProofRequest`] signed by the RP key configured in `env`.
 ///
 /// The request expires at `created_at + expires_in`. For uniqueness proofs an `action` of `1` is set and
-/// included in the RP signature. Pass an existing `session_id` for `ProofType::Session` proofs.
+/// included in the RP signature. Use [`SessionRef::Create`] to create a session
+/// or [`SessionRef::Existing`] to prove an existing session.
 ///
 /// # Errors
 ///
 /// Returns an error if the RP signer cannot be constructed from the configured
-/// key, if signing the RP message fails, or if `proof_type` and `session_id`
-/// are inconsistent (e.g. `ProofType::Session` without a `session_id`).
+/// key or if signing the RP message fails.
 pub fn build_test_request(
     env: &TestEnv,
     issuer_schema_id: u64,
     signal: &str,
     expires_in: u64,
     proof_type: ProofType,
-    session_id: Option<SessionId>,
+    session_ref: SessionRef,
 ) -> eyre::Result<ProofRequest> {
     let nonce = FieldElement::random(&mut OsRng);
     let created_at = now_secs();
@@ -100,7 +100,7 @@ pub fn build_test_request(
         expires_at,
         rp_id: RpId::new(env.rp_id),
         oprf_key_id: OprfKeyId::new(U160::from(env.rp_id)),
-        session_id,
+        session_id: session_ref,
         action,
         signature,
         nonce,
@@ -193,7 +193,7 @@ pub async fn verify_proof_onchain(
                     .await
                     .map(|_| ())
             }
-            ProofType::CreateSession | ProofType::Session => {
+            ProofType::Session => {
                 let session_nullifier =
                     response_item.session_nullifier.ok_or_else(|| {
                         eyre::eyre!("response item missing session_nullifier")

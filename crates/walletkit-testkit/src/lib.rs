@@ -21,7 +21,7 @@ use eyre::Context;
 use walletkit_core::{
     storage::CredentialStore, Authenticator, Credential, FieldElement,
 };
-pub use world_id_core::primitives::SessionId;
+pub use world_id_core::primitives::{SessionId, SessionRef};
 pub use world_id_core::requests::ProofType;
 
 use crate::{
@@ -107,8 +107,8 @@ pub struct TestProofOutcome {
     pub verification: VerifyItemResult,
     /// Session ID from the proof response (`None` for uniqueness proofs).
     ///
-    /// For `ProofType::CreateSession` this is the newly created session, which
-    /// can be passed to a follow-up `ProofType::Session` request.
+    /// For a `ProofType::Session` request without an existing session ID, this
+    /// is the newly created session and can be passed to a follow-up request.
     pub session_id: Option<SessionId>,
 }
 
@@ -156,9 +156,8 @@ pub async fn issue_credential(
 /// Registers an account, issues a credential of this type, generates a proof
 /// of `proof_type` for `signal`, and verifies it on-chain.
 ///
-/// For `ProofType::Session`, pass the `session_id` of an existing session
-/// (e.g. from a prior `ProofType::CreateSession` outcome); otherwise pass
-/// `None`.
+/// For `ProofType::Session`, pass an existing `session_id` to prove that
+/// session, or `None` to create a new session.
 ///
 /// # Errors
 ///
@@ -192,7 +191,11 @@ pub async fn generate_and_verify_test_proof(
         signal,
         REQUEST_TTL_SECS,
         proof_type,
-        session_id,
+        match (proof_type, session_id) {
+            (ProofType::Session, Some(session_id)) => SessionRef::Existing(session_id),
+            (ProofType::Session, None) => SessionRef::Create,
+            (ProofType::Uniqueness, _) => SessionRef::None,
+        },
     )
     .wrap_err("failed to build proof request")?;
 

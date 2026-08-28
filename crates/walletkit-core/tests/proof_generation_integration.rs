@@ -122,8 +122,8 @@ async fn e2e_session_proof() -> Result<()> {
         schema_id,
         SIGNAL,
         REQUEST_TTL_SECS,
-        ProofType::CreateSession,
-        None,
+        ProofType::Session,
+        world_id_core::primitives::SessionRef::Create,
     )
     .wrap_err("failed to build create-session request")?;
     let create_response = authenticator
@@ -164,7 +164,7 @@ async fn e2e_session_proof() -> Result<()> {
         SIGNAL,
         REQUEST_TTL_SECS,
         ProofType::Session,
-        Some(session_id),
+        world_id_core::primitives::SessionRef::Existing(session_id),
     )
     .wrap_err("failed to build session request")?;
     let session_response = authenticator
@@ -197,8 +197,9 @@ async fn e2e_session_proof() -> Result<()> {
         .ok_or_else(|| eyre::eyre!("issued credential missing from store"))?;
     let sub = credential.sub();
     let nonce = FieldElement::random(&mut OsRng).into();
+    let context = FieldElement::random(&mut OsRng).into();
     let ownership_proof = authenticator
-        .prove_credential_sub(&nonce, &blinding_factor, &sub)
+        .prove_credential_sub(&nonce, &context, &blinding_factor, &sub)
         .await
         .wrap_err("ownership proof generation failed")?;
     assert_eq!(
