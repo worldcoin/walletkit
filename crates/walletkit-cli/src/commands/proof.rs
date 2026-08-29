@@ -325,7 +325,8 @@ async fn run_test(
     if !cli.json {
         eprintln!("Verifying proof on-chain...");
     }
-    let results = verify_proof_onchain(&env, &proof_request, &proof_response.0).await?;
+    let results =
+        verify_proof_onchain(&env, &proof_request, proof_response.inner()).await?;
     let all_passed = results.iter().all(|r| r.result.is_ok());
 
     if cli.json {

@@ -494,106 +494,17 @@ impl Authenticator {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
-    /// Initializes a new Authenticator from a seed and with SDK defaults.
-    ///
-    /// The user's World ID must already be registered in the `WorldIDRegistry`,
-    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
-    ///
-    /// # Errors
-    /// See `CoreAuthenticator::init` for potential errors.
-    #[uniffi::constructor]
-    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
-    pub async fn init_with_defaults(
-        seed: Vec<u8>,
-        rpc_url: Option<String>,
-        environment: &Environment,
-        region: Option<Region>,
-        artifacts: Arc<dyn WalletKitZkArtifactSource>,
-        store: Arc<CredentialStore>,
-    ) -> Result<Self, WalletKitError> {
-        let config = defaults::default_config(environment, rpc_url, region)?;
-        Self::init_with_config(&seed, config, artifacts, store).await
-    }
-
-    /// Initializes a new Authenticator from a seed using SDK defaults routed
-    /// through the OHTTP relay. Opt-in alternative to
-    /// [`Authenticator::init_with_defaults`].
-    ///
-    /// The user's World ID must already be registered in the `WorldIDRegistry`,
-    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
-    ///
-    /// # Errors
-    /// See `CoreAuthenticator::init` for potential errors.
-    #[uniffi::constructor]
-    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
-    pub async fn init_with_ohttp_defaults(
-        seed: Vec<u8>,
-        rpc_url: Option<String>,
-        environment: &Environment,
-        region: Option<Region>,
-        artifacts: Arc<dyn WalletKitZkArtifactSource>,
-        store: Arc<CredentialStore>,
-    ) -> Result<Self, WalletKitError> {
-        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
-        Self::init_with_config(&seed, config, artifacts, store).await
-    }
-
-    /// Initializes a new Authenticator from a seed and config.
-    ///
-    /// The user's World ID must already be registered in the `WorldIDRegistry`,
-    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
-    ///
-    /// # Errors
-    /// Will error if the provided seed is not valid or if the config is not valid.
-    #[uniffi::constructor]
-    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
-    pub async fn init(
-        seed: Vec<u8>,
-        config: &str,
-        artifacts: Arc<dyn WalletKitZkArtifactSource>,
-        store: Arc<CredentialStore>,
-    ) -> Result<Self, WalletKitError> {
-        let config =
-            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
-                attribute: "config".to_string(),
-                reason: "Invalid config".to_string(),
-            })?;
-        Self::init_with_config(&seed, config, artifacts, store).await
-    }
-
-    /// Generates a proof for the given proof request.
-    ///
-    /// # Errors
-    /// Returns an error if proof generation fails.
-    pub async fn generate_proof(
+    /// Shared implementation of proof generation. When `disclose_claims` is
+    /// set, the claims of every credential used are attached to the returned
+    /// response, keyed by issuer schema id.
+    async fn generate_proof_impl(
         &self,
         proof_request: &ProofRequest,
         now: Option<u64>,
+        disclose_claims: bool,
     ) -> Result<ProofResponse, WalletKitError> {
-        let now = if let Some(n) = now {
-            n
-        } else {
-            #[cfg(target_arch = "wasm32")]
-            {
-                return Err(WalletKitError::InvalidInput {
-                    attribute: "now".to_string(),
-                    reason: "`now` must be provided on wasm32 targets".to_string(),
-                });
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                let start = std::time::SystemTime::now();
-                start
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_err(|e| WalletKitError::Generic {
-                        error: format!("Critical. Unable to determine SystemTime: {e}"),
-                    })?
-                    .as_secs()
-            }
-        };
+        let now = resolve_now(now)?;
 
         // Build CredentialInput list from storage
         // Note: We simply load all non-expired credentials. Filtering for the requested schema IDs is done in `generate_proof`.
@@ -684,7 +595,186 @@ impl Authenticator {
         self.store
             .replay_guard_set(nullifier.verifiable_oprf_output.output.into(), now)?;
 
-        Ok(result.proof_response.into())
+        let claims_by_schema = if disclose_claims {
+            claims_by_issuer_schema(&credentials, &result.proof_response)
+        } else {
+            std::collections::HashMap::new()
+        };
+
+        Ok(ProofResponse::with_disclosed_claims(
+            result.proof_response,
+            claims_by_schema,
+        ))
+    }
+}
+
+/// Resolves the effective `now` timestamp, falling back to system time where
+/// the platform provides one.
+///
+/// # Errors
+/// Errors on wasm32 when `now` is not provided, and when system time cannot
+/// be determined.
+fn resolve_now(now: Option<u64>) -> Result<u64, WalletKitError> {
+    if let Some(n) = now {
+        return Ok(n);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        Err(WalletKitError::InvalidInput {
+            attribute: "now".to_string(),
+            reason: "`now` must be provided on wasm32 targets".to_string(),
+        })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let start = std::time::SystemTime::now();
+        Ok(start
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| WalletKitError::Generic {
+                error: format!("Critical. Unable to determine SystemTime: {e}"),
+            })?
+            .as_secs())
+    }
+}
+
+/// Hex-encoded claims of every credential used in the response, keyed by
+/// issuer schema id.
+///
+/// `credentials` holds at most one credential per issuer schema id (see the
+/// store load in `generate_proof_impl`), so matching a response item by
+/// schema id yields exactly the credential its proof was generated against.
+fn claims_by_issuer_schema(
+    credentials: &[CredentialInput],
+    proof_response: &world_id_core::requests::ProofResponse,
+) -> std::collections::HashMap<u64, Vec<String>> {
+    proof_response
+        .responses
+        .iter()
+        .filter_map(|item| {
+            credentials
+                .iter()
+                .find(|input| {
+                    input.credential.issuer_schema_id == item.issuer_schema_id
+                })
+                .map(|input| {
+                    (
+                        item.issuer_schema_id,
+                        input
+                            .credential
+                            .claims
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect(),
+                    )
+                })
+        })
+        .collect()
+}
+
+#[uniffi::export(async_runtime = "tokio")]
+impl Authenticator {
+    /// Initializes a new Authenticator from a seed and with SDK defaults.
+    ///
+    /// The user's World ID must already be registered in the `WorldIDRegistry`,
+    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::init` for potential errors.
+    #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    pub async fn init_with_defaults(
+        seed: Vec<u8>,
+        rpc_url: Option<String>,
+        environment: &Environment,
+        region: Option<Region>,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let config = defaults::default_config(environment, rpc_url, region)?;
+        Self::init_with_config(&seed, config, artifacts, store).await
+    }
+
+    /// Initializes a new Authenticator from a seed using SDK defaults routed
+    /// through the OHTTP relay. Opt-in alternative to
+    /// [`Authenticator::init_with_defaults`].
+    ///
+    /// The user's World ID must already be registered in the `WorldIDRegistry`,
+    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::init` for potential errors.
+    #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    pub async fn init_with_ohttp_defaults(
+        seed: Vec<u8>,
+        rpc_url: Option<String>,
+        environment: &Environment,
+        region: Option<Region>,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
+        Self::init_with_config(&seed, config, artifacts, store).await
+    }
+
+    /// Initializes a new Authenticator from a seed and config.
+    ///
+    /// The user's World ID must already be registered in the `WorldIDRegistry`,
+    /// otherwise a [`WalletKitError::AccountDoesNotExist`] error will be returned.
+    ///
+    /// # Errors
+    /// Will error if the provided seed is not valid or if the config is not valid.
+    #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    pub async fn init(
+        seed: Vec<u8>,
+        config: &str,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+                attribute: "config".to_string(),
+                reason: "Invalid config".to_string(),
+            })?;
+        Self::init_with_config(&seed, config, artifacts, store).await
+    }
+
+    /// Generates a proof for the given proof request.
+    ///
+    /// # Errors
+    /// Returns an error if proof generation fails.
+    pub async fn generate_proof(
+        &self,
+        proof_request: &ProofRequest,
+        now: Option<u64>,
+    ) -> Result<ProofResponse, WalletKitError> {
+        self.generate_proof_impl(proof_request, now, false).await
+    }
+
+    /// Generates a proof for the given proof request, additionally disclosing
+    /// the raw claims of every credential used.
+    ///
+    /// The returned response serializes with a `claims` array (hex-encoded
+    /// field elements, schema order) on each response item, sourced from the
+    /// same stored credentials the proofs were generated against. The
+    /// protocol's `ProofResponse` type is untouched — the field is injected
+    /// into the serialized JSON only.
+    ///
+    /// Disclosed claims are NOT authenticated by the ZK proof; callers must
+    /// pair them with transport-level authentication (e.g. app integrity
+    /// attestation) and only use this for flows where the relying party is
+    /// entitled to the claim values.
+    ///
+    /// # Errors
+    /// Returns an error if proof generation fails.
+    pub async fn generate_proof_disclosing_claims(
+        &self,
+        proof_request: &ProofRequest,
+        now: Option<u64>,
+    ) -> Result<ProofResponse, WalletKitError> {
+        self.generate_proof_impl(proof_request, now, true).await
     }
 
     /// Generates a WIP-103 Ownership Proof for Issuers.
