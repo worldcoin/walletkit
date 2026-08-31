@@ -1,28 +1,25 @@
 # WalletKit web package Next.js example
 
-> PROTOTYPE: integration probe for the private `@worldcoin/walletkit-web`
-> package, not production packaging.
+> PROTOTYPE: integration probe for the published `walletkit-web` package.
 
 This example verifies that a Next.js App Router application can consume
 WalletKit as an ordinary package without owning its Rust wrapper, UniFFI
 generation, WASM optimization, or asset staging.
 
-Run it from the repository root with the pinned WASM toolchain:
+Run it from the repository root:
 
 ```sh
-nix develop .#wasm --command npm --prefix web/walletkit install
-nix develop .#wasm --command npm --prefix examples/uniffi-web-authenticator-poc install
-nix develop .#wasm --command npm --prefix examples/uniffi-web-authenticator-poc run dev
+npm --prefix examples/uniffi-web-authenticator-poc install
+npm --prefix examples/uniffi-web-authenticator-poc run dev
 ```
 
-`npm run dev` builds `@worldcoin/walletkit-web` before starting Next.js. Use
-`npm run build` to prove the production bundle as well. The package build runs
-inside `nix develop .#wasm`, which supplies Node, Binaryen, and the WASM-targeted
-Clang and LLVM tools.
+The example installs `walletkit-web` from npm and does not build the package's
+Rust, generated bindings, or WASM locally. Use `npm run build` to prove the
+production bundle as well.
 
 ## What the POC proves
 
-- `@worldcoin/walletkit-web` hides generation and WASM loading behind
+- `walletkit-web` hides generation and WASM loading behind
   `initializeWalletKit()`.
 - The package exposes WalletKit records, errors, objects, callbacks, and async
   authenticator methods.
@@ -40,10 +37,11 @@ Clang and LLVM tools.
 
 ## Experimental compatibility pins
 
-The released generator (`0.31.0-5`) cannot parse UniFFI 0.32 metadata, so this
-POC pins the worktree to UniFFI 0.31.2. Its internal wasm-bindgen processor is
-also pinned to 0.2.100, while `sqlite-wasm-rs` requires a newer schema; the
-package build aligns the generator to WalletKit's 0.2.126 schema.
+The published `walletkit-web` 0.21.3 package was generated with UniFFI 0.31.2
+because the released generator (`0.31.0-5`) cannot parse UniFFI 0.32 metadata.
+Its internal wasm-bindgen processor is pinned to 0.2.100, while
+`sqlite-wasm-rs` requires a newer schema; the package build aligns the
+generator to WalletKit's 0.2.126 schema.
 
 WalletKit's native bindings ask UniFFI to adapt exported futures to Tokio. That
 adapter creates a fallback thread when it is polled without a Tokio runtime,

@@ -4,7 +4,7 @@ import type {
   AuthenticatorLike,
   CredentialStoreLike,
   WalletKit,
-} from "@worldcoin/walletkit-web";
+} from "walletkit-web";
 
 const FAUX_ISSUER_SCHEMA_ID = 128n;
 const STAGING_RP_ID = 46n;

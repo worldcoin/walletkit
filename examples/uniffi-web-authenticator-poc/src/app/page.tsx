@@ -8,7 +8,7 @@ import type {
   InitializingAuthenticatorLike,
   RecoveryData,
   WalletKit,
-} from "@worldcoin/walletkit-web";
+} from "walletkit-web";
 
 import { createStagingProofRequest, issueFauxCredential } from "./staging";
 
@@ -76,9 +76,7 @@ export default function Home() {
 
     void (async () => {
       try {
-        const { initializeWalletKit } = await import(
-          "@worldcoin/walletkit-web"
-        );
+        const { initializeWalletKit } = await import("walletkit-web");
         const module = await initializeWalletKit();
         bindings.current = module;
         setRuntime("Ready");
