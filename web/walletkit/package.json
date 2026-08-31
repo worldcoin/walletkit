@@ -1,7 +1,6 @@
 {
-  "name": "@worldcoin/walletkit-web",
-  "version": "0.21.2",
-  "private": true,
+  "name": "walletkit-web",
+  "version": "0.21.3",
   "description": "Browser WebAssembly bindings for WalletKit.",
   "type": "module",
   "files": [
