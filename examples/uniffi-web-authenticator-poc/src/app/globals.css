@@ -15,15 +15,19 @@ body {
 
 main {
   min-height: 100vh;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  place-items: center;
   padding: 1.5rem;
 }
 
-.card {
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
   width: 100%;
-  max-width: 48rem;
+  max-width: 90rem;
+  margin: 0 auto;
+}
+
+.card {
   min-width: 0;
   padding: 2rem;
   border: 1px solid #bdcbc3;
@@ -44,15 +48,27 @@ h1 {
   margin: 0.5rem 0 1rem;
 }
 
+h2 {
+  margin-top: 0;
+}
+
+h3 {
+  margin: 1.5rem 0 0;
+}
+
 pre {
   overflow: auto;
   overflow-wrap: anywhere;
-  margin: 1.5rem 0 0;
+  margin: 0.75rem 0 0;
   padding: 1rem;
   border-radius: 0.5rem;
   color: #d9f7e8;
   background: #10231b;
   white-space: pre-wrap;
+}
+
+.action-output {
+  height: 16rem;
 }
 
 dl {
@@ -97,18 +113,57 @@ button:disabled {
   opacity: 0.45;
 }
 
-details {
-  margin-top: 1.25rem;
-  padding: 1rem;
-  border: 1px solid #d1ddd5;
-  border-radius: 0.5rem;
+.actions-card ol {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1.5rem 0 0;
+  padding-left: 1.75rem;
 }
 
-summary {
-  cursor: pointer;
-  font-weight: 700;
+.progress-track {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  max-width: 90rem;
+  height: 0.5rem;
+  margin: 1.5rem auto 0;
+  border-radius: 999px;
+  background: #d1ddd5;
 }
 
-ol {
-  padding-left: 1.5rem;
+.progress-track span {
+  position: absolute;
+  width: 35%;
+  height: 100%;
+  border-radius: inherit;
+  background: #167552;
+  opacity: 0;
+}
+
+.progress-track.is-active span {
+  opacity: 1;
+  animation: progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes progress-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(386%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-track.is-active span {
+    width: 100%;
+    animation: none;
+  }
+}
+
+@media (max-width: 60rem) {
+  .card-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
