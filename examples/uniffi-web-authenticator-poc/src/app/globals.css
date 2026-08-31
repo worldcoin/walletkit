@@ -16,12 +16,15 @@ body {
 main {
   min-height: 100vh;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 1.5rem;
 }
 
 .card {
-  width: min(48rem, 100%);
+  width: 100%;
+  max-width: 48rem;
+  min-width: 0;
   padding: 2rem;
   border: 1px solid #bdcbc3;
   border-radius: 1rem;
@@ -43,6 +46,7 @@ h1 {
 
 pre {
   overflow: auto;
+  overflow-wrap: anywhere;
   margin: 1.5rem 0 0;
   padding: 1rem;
   border-radius: 0.5rem;
