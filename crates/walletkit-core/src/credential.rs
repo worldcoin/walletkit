@@ -7,11 +7,6 @@ use world_id_core::Credential as CoreCredential;
 use crate::error::WalletKitError;
 use crate::FieldElement;
 
-#[derive(serde::Deserialize)]
-struct IssuanceResponse {
-    credential: CoreCredential,
-}
-
 /// A wrapper around [`CoreCredential`] to enable FFI interoperability.
 ///
 /// Encapsulates the credential and exposes accessors for fields that FFI
@@ -37,33 +32,6 @@ impl Credential {
                 }
             })?;
         Ok(Self(credential))
-    }
-
-    /// Deserializes a `Credential` from an issuer response shaped as
-    /// `{ "credential": ... }`.
-    ///
-    /// Accepting the complete response lets JavaScript callers pass its raw
-    /// bytes to Rust without parsing signed `u64` fields as lossy JS numbers.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the response or its credential cannot be deserialized.
-    #[uniffi::constructor]
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "UniFFI constructors take owned byte buffers"
-    )]
-    pub fn from_issuance_response_bytes(
-        bytes: Vec<u8>,
-    ) -> Result<Self, WalletKitError> {
-        let response: IssuanceResponse =
-            serde_json::from_slice(&bytes).map_err(|e| {
-                WalletKitError::InvalidInput {
-                    attribute: "issuance_response_bytes".to_string(),
-                    reason: format!("Failed to deserialize issuance response: {e}"),
-                }
-            })?;
-        Ok(Self(response.credential))
     }
 
     /// Returns the credential's `sub` field element.
@@ -157,7 +125,6 @@ impl Deref for Credential {
         &self.0
     }
 }
-
 #[cfg(test)]
 mod tests {
     use ruint::aliases::U256;
@@ -207,15 +174,4 @@ mod tests {
             == "0x0000000000000000000000000000000000000000000000000000000000000000"));
     }
 
-    #[test]
-    fn issuance_response_preserves_u64_fields_above_javascript_safe_integer() {
-        let credential_id = 9_007_199_254_740_993;
-        let credential = CoreCredential::new().id(credential_id);
-        let response = serde_json::json!({ "credential": credential });
-        let bytes = serde_json::to_vec(&response).unwrap();
-
-        let parsed = Credential::from_issuance_response_bytes(bytes).unwrap();
-
-        assert_eq!(parsed.0.id, credential_id);
-    }
 }
