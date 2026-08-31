@@ -32,6 +32,10 @@ pub enum StorageError {
     #[error("invalid envelope: {0}")]
     InvalidEnvelope(String),
 
+    /// Invalid input supplied to a storage operation.
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
+
     /// Unsupported envelope version.
     #[error("unsupported envelope version: {0}")]
     UnsupportedEnvelopeVersion(u32),
@@ -110,6 +114,7 @@ impl From<walletkit_db::StoreError> for StorageError {
             walletkit_db::StoreError::Serialization(s) => Self::Serialization(s),
             walletkit_db::StoreError::Crypto(s) => Self::Crypto(s),
             walletkit_db::StoreError::InvalidEnvelope(s) => Self::InvalidEnvelope(s),
+            walletkit_db::StoreError::InvalidInput(s) => Self::InvalidInput(s),
             walletkit_db::StoreError::UnsupportedEnvelopeVersion(v) => {
                 Self::UnsupportedEnvelopeVersion(v)
             }

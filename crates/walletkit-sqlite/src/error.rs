@@ -23,11 +23,7 @@ pub struct Error {
 
 impl Error {
     /// Creates a new database error.
-    ///
-    /// This is public so schema and row-mapping layers can report validation
-    /// failures through [`DbResult`] without depending on the raw FFI module.
-    #[must_use]
-    pub fn new(code: i32, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: i32, message: impl Into<String>) -> Self {
         Self {
             code: ErrorCode(code),
             message: message.into(),

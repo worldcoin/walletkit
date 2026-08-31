@@ -20,7 +20,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::error::{StoreError, StoreResult};
-use walletkit_sqlite::{params, Connection, DbResult, Error as DbError};
+use walletkit_sqlite::{params, Connection, DbResult};
 
 const CONTENT_ID_PREFIX: &[u8] = b"worldid:blob";
 
@@ -79,7 +79,7 @@ pub fn put(
     now: u64,
 ) -> StoreResult<ContentId> {
     let now_i64 = i64::try_from(now).map_err(|_| {
-        StoreError::Db(DbError::new(-1, format!("now out of range for i64: {now}")))
+        StoreError::InvalidInput(format!("now out of range for i64: {now}"))
     })?;
     let cid = compute_content_id(kind, bytes);
     conn.execute(
@@ -132,9 +132,9 @@ fn check_cid_len(cid: &[u8]) -> StoreResult<()> {
     if cid.len() == 32 {
         Ok(())
     } else {
-        Err(StoreError::Db(DbError::new(
-            -1,
-            format!("content_id must be 32 bytes, got {}", cid.len()),
+        Err(StoreError::InvalidInput(format!(
+            "content_id must be 32 bytes, got {}",
+            cid.len()
         )))
     }
 }
@@ -142,7 +142,7 @@ fn check_cid_len(cid: &[u8]) -> StoreResult<()> {
 #[cfg(test)]
 mod tests {
     use super::{compute_content_id, delete, ensure_schema, get, put};
-    use crate::test_utils::init_sqlite;
+    use crate::{test_utils::init_sqlite, StoreError};
     use walletkit_sqlite::{params, Connection};
 
     #[test]
@@ -193,5 +193,25 @@ mod tests {
 
         delete(&conn, &cid).expect("delete");
         assert!(get(&conn, &cid).expect("get after delete").is_none());
+    }
+
+    #[test]
+    fn test_invalid_inputs_are_not_database_errors() {
+        init_sqlite();
+
+        let conn = Connection::open(std::path::Path::new(":memory:"), false)
+            .expect("open in-memory db");
+        ensure_schema(&conn).expect("ensure schema");
+
+        assert!(matches!(
+            put(&conn, 7, b"payload", u64::MAX),
+            Err(StoreError::InvalidInput(message))
+                if message == "now out of range for i64: 18446744073709551615"
+        ));
+        assert!(matches!(
+            get(&conn, &[0; 31]),
+            Err(StoreError::InvalidInput(message))
+                if message == "content_id must be 32 bytes, got 31"
+        ));
     }
 }
