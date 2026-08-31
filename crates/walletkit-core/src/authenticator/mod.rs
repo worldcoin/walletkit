@@ -8,10 +8,11 @@ use crate::{
 use alloy_core::primitives::Address;
 use ruint::aliases::U256;
 use ruint_uniffi::Uint256;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestId, GatewayRequestState},
     primitives::{AuthenticatorPublicKeySet, Config, MAX_AUTHENTICATOR_KEYS},
+    requests::ProofResponse as CoreProofResponse,
     Authenticator as CoreAuthenticator, AuthenticatorError,
     Credential as CoreCredential, CredentialInput, EdDSAPublicKey,
     InitializingAuthenticator as CoreInitializingAuthenticator,
@@ -598,7 +599,7 @@ impl Authenticator {
         let claims_by_schema = if disclose_claims {
             claims_by_issuer_schema(&credentials, &result.proof_response)
         } else {
-            std::collections::HashMap::new()
+            HashMap::new()
         };
 
         Ok(ProofResponse::with_disclosed_claims(
@@ -646,28 +647,24 @@ fn resolve_now(now: Option<u64>) -> Result<u64, WalletKitError> {
 /// schema id yields exactly the credential its proof was generated against.
 fn claims_by_issuer_schema(
     credentials: &[CredentialInput],
-    proof_response: &world_id_core::requests::ProofResponse,
-) -> std::collections::HashMap<u64, Vec<String>> {
+    proof_response: &CoreProofResponse,
+) -> HashMap<u64, Vec<String>> {
     proof_response
         .responses
         .iter()
         .filter_map(|item| {
-            credentials
+            let input = credentials.iter().find(|input| {
+                input.credential.issuer_schema_id == item.issuer_schema_id
+            })?;
+
+            let claims = input
+                .credential
+                .claims
                 .iter()
-                .find(|input| {
-                    input.credential.issuer_schema_id == item.issuer_schema_id
-                })
-                .map(|input| {
-                    (
-                        item.issuer_schema_id,
-                        input
-                            .credential
-                            .claims
-                            .iter()
-                            .map(ToString::to_string)
-                            .collect(),
-                    )
-                })
+                .map(ToString::to_string)
+                .collect();
+
+            Some((item.issuer_schema_id, claims))
         })
         .collect()
 }
@@ -1149,6 +1146,87 @@ mod tests {
     use super::*;
 
     const TEST_SEED: [u8; 32] = [1u8; 32];
+
+    fn credential_input(
+        issuer_schema_id: u64,
+        claim_hashes: &[u64],
+    ) -> CredentialInput {
+        let credential = claim_hashes.iter().enumerate().fold(
+            CoreCredential::new().issuer_schema_id(issuer_schema_id),
+            |credential, (index, claim_hash)| {
+                credential
+                    .claim_hash(index, U256::from(*claim_hash))
+                    .expect("claim index should be valid")
+            },
+        );
+
+        CredentialInput {
+            credential,
+            blinding_factor: 1u64.into(),
+        }
+    }
+
+    fn proof_response_with_schemas(issuer_schema_ids: &[u64]) -> CoreProofResponse {
+        let responses = issuer_schema_ids
+            .iter()
+            .enumerate()
+            .map(|(index, issuer_schema_id)| {
+                serde_json::json!({
+                    "identifier": format!("credential-{index}"),
+                    "issuer_schema_id": issuer_schema_id,
+                    "proof": "00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000",
+                    "nullifier": format!("nil_{:064x}", index + 1),
+                    "expires_at_min": 1_700_000_000,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        serde_json::from_value(serde_json::json!({
+            "id": "test_response",
+            "version": 1,
+            "responses": responses,
+        }))
+        .expect("response fixture should parse")
+    }
+
+    #[test]
+    fn claims_by_issuer_schema_returns_claims_for_each_proven_credential() {
+        let credentials = vec![
+            credential_input(100, &[1, 2]),
+            credential_input(200, &[3, 4]),
+        ];
+        let response = proof_response_with_schemas(&[200, 100]);
+
+        let claims = claims_by_issuer_schema(&credentials, &response);
+
+        assert_eq!(claims.len(), 2);
+        assert_eq!(
+            &claims[&100][..2],
+            [
+                "0x0000000000000000000000000000000000000000000000000000000000000001",
+                "0x0000000000000000000000000000000000000000000000000000000000000002",
+            ]
+        );
+        assert_eq!(
+            &claims[&200][..2],
+            [
+                "0x0000000000000000000000000000000000000000000000000000000000000003",
+                "0x0000000000000000000000000000000000000000000000000000000000000004",
+            ]
+        );
+    }
+
+    #[test]
+    fn claims_by_issuer_schema_omits_response_items_without_a_credential() {
+        let credentials = vec![credential_input(100, &[1])];
+        let response = proof_response_with_schemas(&[100, 999]);
+
+        let claims = claims_by_issuer_schema(&credentials, &response);
+
+        assert_eq!(claims.len(), 1);
+        assert!(claims.contains_key(&100));
+        assert!(!claims.contains_key(&999));
+    }
 
     async fn test_authenticator(
         server: &mut mockito::Server,

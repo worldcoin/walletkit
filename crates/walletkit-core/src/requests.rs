@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use world_id_core::requests::{
     ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse,
 };
@@ -58,7 +60,7 @@ pub struct ProofResponse {
     /// Claims of the credential used for each response item, keyed by issuer
     /// schema id and hex-encoded. Populated only by
     /// `Authenticator::generate_proof_disclosing_claims`; empty otherwise.
-    disclosed_claims: std::collections::HashMap<u64, Vec<String>>,
+    disclosed_claims: HashMap<u64, Vec<String>>,
 }
 
 #[uniffi::export]
@@ -74,16 +76,11 @@ impl ProofResponse {
     /// # Errors
     /// Returns an error if serialization fails.
     pub fn to_json(&self) -> Result<String, WalletKitError> {
-        let serialization_error = |e: serde_json::Error| WalletKitError::Generic {
-            error: format!("critical unexpected error serializing to json: {e}"),
-        };
-        if self.disclosed_claims.is_empty() {
-            return serde_json::to_string(&self.inner).map_err(serialization_error);
-        }
-        let mut value =
-            serde_json::to_value(&self.inner).map_err(serialization_error)?;
-        inject_claims(&mut value, &self.disclosed_claims);
-        serde_json::to_string(&value).map_err(serialization_error)
+        self.to_json_value()
+            .and_then(|v| serde_json::to_string(&v))
+            .map_err(|e| WalletKitError::Generic {
+                error: format!("critical unexpected error serializing to json: {e}"),
+            })
     }
 
     /// Returns the unique identifier for this response.
@@ -111,7 +108,7 @@ impl ProofResponse {
     #[must_use]
     pub(crate) const fn with_disclosed_claims(
         inner: CoreProofResponse,
-        disclosed_claims: std::collections::HashMap<u64, Vec<String>>,
+        disclosed_claims: HashMap<u64, Vec<String>>,
     ) -> Self {
         Self {
             inner,
@@ -130,13 +127,25 @@ impl ProofResponse {
     pub fn into_inner(self) -> CoreProofResponse {
         self.inner
     }
+
+    fn to_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
+        if self.disclosed_claims.is_empty() {
+            serde_json::to_value(&self.inner)
+        } else {
+            // TODO: Temporary workaround while we're figuring out the exact mechanism for claim
+            //       disclosure/use
+            let mut value = serde_json::to_value(&self.inner)?;
+            inject_claims(&mut value, &self.disclosed_claims);
+            Ok(value)
+        }
+    }
 }
 
 /// Inserts a `claims` array into every serialized response item whose
 /// `issuer_schema_id` has disclosed claims.
 fn inject_claims(
     value: &mut serde_json::Value,
-    disclosed_claims: &std::collections::HashMap<u64, Vec<String>>,
+    disclosed_claims: &HashMap<u64, Vec<String>>,
 ) {
     let Some(items) = value
         .get_mut("responses")
@@ -152,6 +161,7 @@ fn inject_claims(
         else {
             continue;
         };
+
         if let Some(item) = item.as_object_mut() {
             item.insert(
                 "claims".to_string(),
@@ -174,7 +184,7 @@ impl From<CoreProofRequest> for ProofRequest {
 
 impl From<CoreProofResponse> for ProofResponse {
     fn from(core_response: CoreProofResponse) -> Self {
-        Self::with_disclosed_claims(core_response, std::collections::HashMap::new())
+        Self::with_disclosed_claims(core_response, HashMap::new())
     }
 }
 
@@ -182,10 +192,14 @@ impl From<CoreProofResponse> for ProofResponse {
 mod tests {
     use alloy::signers::{local::PrivateKeySigner, SignerSync};
     use alloy_core::primitives::U160;
+    use pretty_assertions::assert_eq;
     use serde_json::Value;
     use world_id_core::{
-        primitives::{rp::RpId, FieldElement, OprfKeyId, SessionRef},
-        requests::{ProofType, RequestItem, RequestVersion},
+        primitives::{
+            rp::RpId, FieldElement, Nullifier, OprfKeyId, SessionRef,
+            ZeroKnowledgeProof,
+        },
+        requests::{ProofType, RequestItem, RequestVersion, ResponseItem},
     };
 
     use super::*;
@@ -223,75 +237,105 @@ mod tests {
     }
 
     fn base_core_response() -> CoreProofResponse {
-        let json = r#"{
-  "id": "test_response",
-  "version": 1,
-  "responses": [
-    {
-      "identifier": "orb",
-      "issuer_schema_id": 100,
-      "proof": "00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000",
-      "nullifier": "nil_00000000000000000000000000000000000000000000000000000000000003e9",
-      "expires_at_min": 1700000000
-    },
-    {
-      "identifier": "face",
-      "issuer_schema_id": 200,
-      "proof": "00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000",
-      "nullifier": "nil_00000000000000000000000000000000000000000000000000000000000003ea",
-      "expires_at_min": 1700000000
-    }
-  ]
-}"#;
-        serde_json::from_str(json).expect("response fixture should parse")
+        CoreProofResponse {
+            id: "test_response".to_string(),
+            version: RequestVersion::V1,
+            session_id: None,
+            error: None,
+            responses: vec![
+                ResponseItem::new_uniqueness(
+                    "orb".to_string(),
+                    100,
+                    ZeroKnowledgeProof::default(),
+                    Nullifier::new(FieldElement::from(1_001u64)),
+                    1_700_000_000,
+                ),
+                ResponseItem::new_uniqueness(
+                    "face".to_string(),
+                    200,
+                    ZeroKnowledgeProof::default(),
+                    Nullifier::new(FieldElement::from(1_002u64)),
+                    1_700_000_000,
+                ),
+            ],
+        }
     }
 
     #[test]
     fn to_json_without_disclosure_matches_core_serialization() {
         let core = base_core_response();
-        let expected =
-            serde_json::to_string(&core).expect("core response should serialize");
+        let expected = serde_json::json!({
+            "id": "test_response",
+            "version": 1,
+            "responses": [
+                {
+                    "identifier": "orb",
+                    "issuer_schema_id": 100,
+                    "proof": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                    "nullifier": "nil_00000000000000000000000000000000000000000000000000000000000003e9",
+                    "expires_at_min": 1_700_000_000,
+                },
+                {
+                    "identifier": "face",
+                    "issuer_schema_id": 200,
+                    "proof": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                    "nullifier": "nil_00000000000000000000000000000000000000000000000000000000000003ea",
+                    "expires_at_min": 1_700_000_000,
+                },
+            ],
+        });
 
         let wrapped: ProofResponse = core.into();
         let json = wrapped.to_json().expect("wrapper should serialize");
+        let actual: Value =
+            serde_json::from_str(&json).expect("wrapper output should be valid json");
 
-        assert_eq!(json, expected);
+        assert_eq!(actual, expected);
         assert!(!json.contains("claims"));
     }
 
     #[test]
     fn to_json_injects_disclosed_claims_on_matching_items_only() {
-        let claims = std::collections::HashMap::from([(
-            200u64,
-            vec![
+        let claims = maplit::hashmap! {
+            200 => vec![
                 "0x0000000000000000000000000000000000000000000000000000000000000001"
                     .to_string(),
                 "0x0000000000000000000000000000000000000000000000000000000000000002"
                     .to_string(),
             ],
-        )]);
+        };
         let wrapped =
             ProofResponse::with_disclosed_claims(base_core_response(), claims);
 
-        let value: Value =
+        let expected = serde_json::json!({
+            "id": "test_response",
+            "version": 1,
+            "responses": [
+                {
+                    "identifier": "orb",
+                    "issuer_schema_id": 100,
+                    "proof": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                    "nullifier": "nil_00000000000000000000000000000000000000000000000000000000000003e9",
+                    "expires_at_min": 1_700_000_000,
+                },
+                {
+                    "identifier": "face",
+                    "issuer_schema_id": 200,
+                    "proof": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+                    "nullifier": "nil_00000000000000000000000000000000000000000000000000000000000003ea",
+                    "expires_at_min": 1_700_000_000,
+                    "claims": [
+                        "0x0000000000000000000000000000000000000000000000000000000000000001",
+                        "0x0000000000000000000000000000000000000000000000000000000000000002",
+                    ],
+                },
+            ],
+        });
+        let actual: Value =
             serde_json::from_str(&wrapped.to_json().expect("wrapper should serialize"))
                 .expect("output should be valid json");
 
-        let items = value["responses"].as_array().expect("responses array");
-        assert!(
-            items[0].get("claims").is_none(),
-            "item without disclosed claims must stay untouched"
-        );
-        let disclosed = items[1]["claims"].as_array().expect("claims array");
-        assert_eq!(disclosed.len(), 2);
-        assert_eq!(
-            disclosed[0],
-            "0x0000000000000000000000000000000000000000000000000000000000000001"
-        );
-        assert_eq!(
-            disclosed[1],
-            "0x0000000000000000000000000000000000000000000000000000000000000002"
-        );
+        assert_eq!(actual, expected);
     }
 
     #[test]
