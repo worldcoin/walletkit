@@ -8,18 +8,16 @@
     "url": "https://github.com/worldcoin/walletkit"
   },
   "scripts": {
-    "predev": "npm --prefix ../../web/walletkit run build",
     "dev": "next dev",
-    "prebuild": "npm --prefix ../../web/walletkit run build",
     "build": "next build",
     "start": "next start"
   },
   "dependencies": {
-    "@worldcoin/walletkit-web": "file:../../web/walletkit",
     "next": "16.3.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "viem": "^2.56.0"
+    "viem": "^2.56.0",
+    "walletkit-web": "0.21.3"
   },
   "devDependencies": {
     "@types/node": "25.0.3",

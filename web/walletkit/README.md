@@ -1,16 +1,16 @@
-# `@worldcoin/walletkit-web`
+# `walletkit-web`
 
 Browser WebAssembly bindings for WalletKit.
 
-> PROTOTYPE: this package is private while its generation and publication
-> workflow is being validated.
+> PROTOTYPE: the package is published while its generation and release workflow
+> is being validated.
 
 The package owns the compiled WalletKit module, generated TypeScript bindings,
 UniFFI player setup, and WASM asset resolution. Browser applications initialize
 it through one interface:
 
 ```ts
-const { initializeWalletKit } = await import("@worldcoin/walletkit-web");
+const { initializeWalletKit } = await import("walletkit-web");
 const walletKit = await initializeWalletKit();
 ```
 
