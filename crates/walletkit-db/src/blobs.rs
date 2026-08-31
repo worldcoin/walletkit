@@ -142,7 +142,8 @@ fn check_cid_len(cid: &[u8]) -> StoreResult<()> {
 #[cfg(test)]
 mod tests {
     use super::{compute_content_id, delete, ensure_schema, get, put};
-    use crate::{test_utils::init_sqlite, StoreError};
+    use crate::StoreError;
+    use walletkit_sqlite::test_utils::init_sqlite;
     use walletkit_sqlite::{params, Connection};
 
     #[test]

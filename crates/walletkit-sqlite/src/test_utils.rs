@@ -1,5 +1,4 @@
-//! Shared test helpers. `#[cfg(test)]` only — never compiled into the
-//! production binary.
+//! Shared test helpers for crates built on `walletkit-sqlite`.
 
 use std::sync::OnceLock;
 
@@ -17,9 +16,16 @@ use crate::Connection;
 /// Calling this at the start of every test ensures exactly one thread
 /// performs the first open (all others block on the `OnceLock`) so that
 /// by the time any test-specific code runs, sqlite3mc is fully initialized.
+///
+/// # Panics
+///
+/// Panics if sqlite3mc cannot open an in-memory database.
 pub fn init_sqlite() {
     static INIT: OnceLock<()> = OnceLock::new();
     INIT.get_or_init(|| {
-        drop(Connection::open_in_memory().expect("sqlite3mc pre-init"));
+        drop(
+            Connection::open(std::path::Path::new(":memory:"), false)
+                .expect("sqlite3mc pre-init"),
+        );
     });
 }

@@ -15,6 +15,7 @@ mod ffi;
 
 pub mod cipher;
 pub mod error;
+pub mod test_utils;
 
 mod connection;
 mod statement;
@@ -26,6 +27,3 @@ pub use error::{DbResult, Error};
 pub use statement::{Row, Statement, StepResult};
 pub use transaction::Transaction;
 pub use value::Value;
-
-#[cfg(test)]
-mod test_utils;

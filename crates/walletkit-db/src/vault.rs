@@ -66,8 +66,8 @@ mod tests {
     use super::Vault;
     use crate::blobs;
     use crate::error::StoreError;
-    use crate::test_utils::init_sqlite;
     use secrecy::SecretBox;
+    use walletkit_sqlite::test_utils::init_sqlite;
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]

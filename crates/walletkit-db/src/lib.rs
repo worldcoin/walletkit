@@ -32,6 +32,3 @@ pub use error::{StoreError, StoreResult};
 pub use lock::{Lock, LockGuard};
 pub use traits::{AtomicBlobStore, Keystore};
 pub use vault::Vault;
-
-#[cfg(test)]
-mod test_utils;
