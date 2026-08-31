@@ -2,273 +2,116 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type {
-  AuthenticatorLike,
-  CredentialStoreLike,
-  InitializingAuthenticatorLike,
-  RecoveryData,
-  WalletKit,
-} from "walletkit-web";
+import type { RecoveryData } from "walletkit-web";
 
-import { createStagingProofRequest, issueFauxCredential } from "./staging";
+type Action = "derive" | "register" | "initialize" | "issue" | "prove";
 
-function printableState(state: string, details = {}) {
-  return JSON.stringify(
-    {
-      state,
-      environment: "staging",
-      region: "us",
-      ...details,
-    },
-    (_, value) => (typeof value === "bigint" ? value.toString() : value),
-    2,
-  );
-}
-
-function printableError(error: unknown) {
-  if (error instanceof Error && "inner" in error) {
-    return `${error.message}: ${JSON.stringify(error.inner)}`;
-  }
-
-  return String(error);
-}
+type WorkerState = {
+  runtime?: string;
+  recovery?: RecoveryData;
+  registered?: boolean;
+  authenticatorReady?: boolean;
+  credentialIssued?: boolean;
+  busy?: boolean;
+  status?: string;
+};
 
 export default function Home() {
-  const bindings = useRef<WalletKit>(null);
-  const seed = useRef(new Uint8Array(32));
-  const registration = useRef<InitializingAuthenticatorLike>(undefined);
-  const authenticator = useRef<AuthenticatorLike>(undefined);
-  const store = useRef<CredentialStoreLike>(undefined);
-  const initialized = useRef(false);
+  const worker = useRef<Worker>(null);
   const [runtime, setRuntime] = useState("Loading…");
   const [recovery, setRecovery] = useState<RecoveryData>();
-  const [confirmed, setConfirmed] = useState(false);
   const [registered, setRegistered] = useState(false);
   const [authenticatorReady, setAuthenticatorReady] = useState(false);
   const [credentialIssued, setCredentialIssued] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [canPoll, setCanPoll] = useState(false);
   const [status, setStatus] = useState("Initializing generated bindings…");
 
-  function deriveAuthenticator(module = bindings.current) {
-    if (!module) return;
-    seed.current = crypto.getRandomValues(new Uint8Array(32));
-    setRecovery(
-      module.recoveryDataFromSeed(new Uint8Array(seed.current).buffer),
-    );
-    registration.current = undefined;
-    authenticator.current = undefined;
-    store.current = undefined;
-    setCanPoll(false);
-    setRegistered(false);
-    setAuthenticatorReady(false);
-    setCredentialIssued(false);
-    setStatus(
-      printableState("authenticator-derived", {
-        seed: "32 random bytes held only in memory",
-      }),
-    );
-  }
-
   useEffect(() => {
-    if (initialized.current) return;
-    initialized.current = true;
-
-    void (async () => {
-      try {
-        const { initializeWalletKit } = await import("walletkit-web");
-        const module = await initializeWalletKit();
-        bindings.current = module;
-        setRuntime("Ready");
-        deriveAuthenticator(module);
-      } catch (error) {
-        setRuntime("Failed");
-        setStatus(printableError(error));
+    const walletKitWorker = new Worker(
+      new URL("./walletkit.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    worker.current = walletKitWorker;
+    walletKitWorker.onmessage = (event: MessageEvent<WorkerState>) => {
+      const state = event.data;
+      if (state.runtime !== undefined) setRuntime(state.runtime);
+      if (state.recovery !== undefined) setRecovery(state.recovery);
+      if (state.registered !== undefined) setRegistered(state.registered);
+      if (state.authenticatorReady !== undefined) {
+        setAuthenticatorReady(state.authenticatorReady);
       }
-    })();
+      if (state.credentialIssued !== undefined) {
+        setCredentialIssued(state.credentialIssued);
+      }
+      if (state.busy !== undefined) setBusy(state.busy);
+      if (state.status !== undefined) setStatus(state.status);
+    };
+
+    return () => {
+      worker.current = null;
+      walletKitWorker.terminate();
+    };
   }, []);
 
-  async function registerAuthenticator() {
-    const module = bindings.current;
-    if (!module) return;
-    setBusy(true);
-    setStatus("Sending registration request to the staging gateway…");
-    try {
-      registration.current =
-        await module.InitializingAuthenticator.registerWithDefaults(
-          new Uint8Array(seed.current).buffer,
-          undefined,
-          module.Environment.Staging,
-          module.Region.Us,
-          undefined,
-        );
-      setCanPoll(true);
-      setStatus(printableState("registration-requested"));
-    } catch (error) {
-      setStatus(printableError(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function pollRegistration() {
-    const module = bindings.current;
-    if (!module || !registration.current) return;
-    setBusy(true);
-    try {
-      const result = await registration.current.pollStatus();
-      const finalized = module.RegistrationStatus.Finalized.instanceOf(result);
-      setRegistered(finalized);
-      setCanPoll(!finalized);
-      setStatus(
-        printableState(
-          finalized ? "registration-finalized" : "registration-pending",
-          { status: result.constructor.name },
-        ),
-      );
-    } catch (error) {
-      setStatus(printableError(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function initializeRegisteredAuthenticator() {
-    const module = bindings.current;
-    if (!module) return;
-    setBusy(true);
-    setStatus("Initializing the registered authenticator and ephemeral store…");
-    try {
-      const ephemeralStore = module.CredentialStore.newEphemeral();
-      const artifacts = new module.EmbeddedZkArtifacts().asZkArtifactSource();
-      const initializedAuthenticator =
-        await module.Authenticator.initWithDefaults(
-          new Uint8Array(seed.current).buffer,
-          undefined,
-          module.Environment.Staging,
-          module.Region.Us,
-          artifacts,
-          ephemeralStore,
-        );
-      initializedAuthenticator.initStorage(
-        BigInt(Math.floor(Date.now() / 1000)),
-      );
-      store.current = ephemeralStore;
-      authenticator.current = initializedAuthenticator;
-      setAuthenticatorReady(true);
-      setStatus(printableState("authenticator-initialized"));
-    } catch (error) {
-      setStatus(printableError(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function issueCredential() {
-    const module = bindings.current;
-    if (!module || !authenticator.current || !store.current) return;
-    setBusy(true);
-    setStatus("Requesting a credential from the staging faux issuer…");
-    try {
-      const issued = await issueFauxCredential(
-        module,
-        authenticator.current,
-        store.current,
-      );
-      setCredentialIssued(true);
-      setStatus(printableState("credential-issued", issued));
-    } catch (error) {
-      setStatus(printableError(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function generateProof() {
-    const module = bindings.current;
-    if (!module || !authenticator.current) return;
-    setBusy(true);
-    setStatus("Generating a uniqueness proof in browser WASM…");
-    try {
-      const request = await createStagingProofRequest(
-        module,
-        "walletkit-web-example",
-      );
-      const response = await authenticator.current.generateProof(
-        request,
-        BigInt(Math.floor(Date.now() / 1000)),
-      );
-      setStatus(response.toJson());
-    } catch (error) {
-      setStatus(printableError(error));
-    } finally {
-      setBusy(false);
-    }
+  function perform(action: Action) {
+    worker.current?.postMessage(action);
   }
 
   return (
     <main>
-      <section className="card">
-        <p className="eyebrow">WalletKit web package integration probe</p>
-        <h1>WalletKit credential proof in browser WASM</h1>
-        <p>
-          Derive and register a temporary staging authenticator, issue a faux
-          credential, then generate a proof for it entirely in the browser.
-        </p>
-        <dl>
-          <div>
-            <dt>WASM runtime</dt>
-            <dd>{runtime}</dd>
-          </div>
-          <div>
-            <dt>Authenticator address</dt>
-            <dd>{recovery?.authenticatorAddress ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Authenticator public key</dt>
-            <dd>{recovery?.authenticatorPubkey ?? "—"}</dd>
-          </div>
-          <div>
-            <dt>Signer commitment</dt>
-            <dd>{recovery?.offchainSignerCommitment ?? "—"}</dd>
-          </div>
-        </dl>
-        <button
-          disabled={runtime !== "Ready" || busy}
-          onClick={() => deriveAuthenticator()}
-        >
-          Derive another authenticator
-        </button>
-        <details open>
-          <summary>Staging credential proof</summary>
+      <div className="card-grid">
+        <section className="card">
+          <p className="eyebrow">WalletKit web package integration probe</p>
+          <h1>WalletKit credential proof in browser WASM</h1>
+          <p>
+            Derive and register a temporary staging authenticator, issue a faux
+            credential, then generate a proof for it entirely in the browser.
+          </p>
+          <dl>
+            <div>
+              <dt>WASM runtime</dt>
+              <dd>{runtime}</dd>
+            </div>
+            <div>
+              <dt>Authenticator address</dt>
+              <dd>{recovery?.authenticatorAddress ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>Authenticator public key</dt>
+              <dd>{recovery?.authenticatorPubkey ?? "—"}</dd>
+            </div>
+            <div>
+              <dt>Signer commitment</dt>
+              <dd>{recovery?.offchainSignerCommitment ?? "—"}</dd>
+            </div>
+          </dl>
+          <button
+            disabled={runtime !== "Ready" || busy}
+            onClick={() => perform("derive")}
+          >
+            Derive another authenticator
+          </button>
+        </section>
+
+        <section className="card actions-card">
+          <h2>Staging credential proof</h2>
           <p>
             This creates a real temporary account and credential in staging. The
             seed and credential store are discarded when this tab reloads.
           </p>
-          <label>
-            <input
-              type="checkbox"
-              checked={confirmed}
-              onChange={(event) => setConfirmed(event.target.checked)}
-            />{" "}
-            I understand this mutates staging state.
-          </label>
           <ol>
             <li>
               <button
-                disabled={!confirmed || busy || canPoll || registered}
-                onClick={registerAuthenticator}
+                disabled={busy || registered}
+                onClick={() => perform("register")}
               >
                 Register authenticator
-              </button>
-              <button disabled={!canPoll || busy} onClick={pollRegistration}>
-                Poll registration
               </button>
             </li>
             <li>
               <button
                 disabled={!registered || busy || authenticatorReady}
-                onClick={initializeRegisteredAuthenticator}
+                onClick={() => perform("initialize")}
               >
                 Initialize authenticator
               </button>
@@ -276,7 +119,7 @@ export default function Home() {
             <li>
               <button
                 disabled={!authenticatorReady || busy || credentialIssued}
-                onClick={issueCredential}
+                onClick={() => perform("issue")}
               >
                 Issue faux credential
               </button>
@@ -284,15 +127,24 @@ export default function Home() {
             <li>
               <button
                 disabled={!credentialIssued || busy}
-                onClick={generateProof}
+                onClick={() => perform("prove")}
               >
                 Generate proof
               </button>
             </li>
           </ol>
-        </details>
-        <pre>{status}</pre>
-      </section>
+          <h3>Action output</h3>
+          <pre className="action-output">{status}</pre>
+        </section>
+      </div>
+      <div
+        className={`progress-track${busy ? " is-active" : ""}`}
+        role="progressbar"
+        aria-label="WalletKit action progress"
+        aria-busy={busy}
+      >
+        <span />
+      </div>
     </main>
   );
 }
