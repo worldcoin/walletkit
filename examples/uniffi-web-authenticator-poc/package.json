@@ -10,9 +10,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "walletkit:local": "npm --prefix ../../web/walletkit run build && npm install --no-save ../../web/walletkit",
+    "walletkit:published": "npm ci"
   },
   "dependencies": {
+    "lossless-json": "^4.3.1",
     "next": "16.3.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
