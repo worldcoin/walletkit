@@ -215,6 +215,27 @@ impl CredentialStore {
         self.lock_inner()?.list_credentials(issuer_schema_id, now)
     }
 
+    /// Retrieves the most recent non-expired credential matching the issuer
+    /// schema ID, or `None` when the store holds no usable match.
+    ///
+    /// This is the same selection `generate_proof` uses when building its
+    /// credential inputs, so fields read from the returned credential (e.g.
+    /// [`Credential::claims_hex`]) describe the credential a proof for that
+    /// schema is generated against.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the credential query fails.
+    pub fn fetch_credential(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<std::sync::Arc<Credential>>> {
+        Ok(self
+            .get_credential(issuer_schema_id, now)?
+            .map(|(credential, _blinding_factor)| std::sync::Arc::new(credential)))
+    }
+
     /// Deletes a credential by ID.
     ///
     /// # Errors
@@ -1050,6 +1071,46 @@ mod tests {
         );
 
         cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn fetch_credential_returns_stored_credential_with_claims() {
+        use ruint::aliases::U256;
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let blinding_factor = FieldElement::from(7u64);
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100u64)
+            .genesis_issued_at(1000)
+            .claim_hash(0, U256::from(11u64))
+            .expect("claim 0 in bounds")
+            .into();
+        store
+            .store_credential(&cred, &blinding_factor, 9999, None, 1000)
+            .expect("store credential");
+
+        let fetched = store
+            .fetch_credential(100, 1000)
+            .expect("fetch should succeed")
+            .expect("credential should exist");
+        assert_eq!(fetched.issuer_schema_id(), 100);
+        assert_eq!(
+            fetched.claims_hex()[0],
+            "0x000000000000000000000000000000000000000000000000000000000000000b"
+        );
+
+        assert!(
+            store
+                .fetch_credential(200, 1000)
+                .expect("fetch should succeed")
+                .is_none(),
+            "unknown schema id should fetch no credential"
+        );
     }
 
     #[test]
