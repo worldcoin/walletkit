@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.4](https://github.com/worldcoin/walletkit/compare/v0.21.3...v0.21.4) - 2026-08-31
+
+### Added
+
+- expose credential claims accessors and a stored-credential fetch ([#490](https://github.com/worldcoin/walletkit/pull/490))
+
 ## [0.21.3](https://github.com/worldcoin/walletkit/compare/v0.21.2...v0.21.3) - 2026-08-28
 
 ### Other
