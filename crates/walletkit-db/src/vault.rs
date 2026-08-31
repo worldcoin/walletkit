@@ -15,7 +15,7 @@ use std::path::Path;
 use secrecy::SecretBox;
 
 use crate::error::{StoreError, StoreResult};
-use crate::sqlite::{cipher, Connection, DbResult};
+use walletkit_sqlite::{cipher, Connection, DbResult};
 
 /// Open encrypted database wrapper.
 ///

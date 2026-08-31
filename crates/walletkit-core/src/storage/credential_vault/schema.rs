@@ -4,7 +4,7 @@
 //! [`walletkit_db::Blobs::ensure_schema`]; this module owns only the
 //! credential-specific tables.
 
-use walletkit_db::{Connection, DbResult};
+use walletkit_sqlite::{Connection, DbResult};
 
 pub(super) const VAULT_SCHEMA_VERSION: i64 = 1;
 

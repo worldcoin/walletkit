@@ -15,7 +15,8 @@ use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{BlobKind, CredentialRecord};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
-use walletkit_db::{blobs, cipher, params, DbError, Row, StepResult, Value, Vault};
+use walletkit_db::{blobs, Vault};
+use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value};
 
 /// Tables included in plaintext vault backups, in order.
 ///

@@ -1,6 +1,6 @@
 //! Error types for the storage primitives layer.
 
-use crate::sqlite::Error as DbError;
+use walletkit_sqlite::Error as DbError;
 
 /// Result alias for [`StoreError`].
 pub type StoreResult<T> = Result<T, StoreError>;

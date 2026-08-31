@@ -8520,6 +8520,7 @@ dependencies = [
  "uniffi",
  "uuid",
  "walletkit-db",
+ "walletkit-sqlite",
  "walletkit-testkit",
  "world-id-core",
  "world-id-proof",
@@ -8530,16 +8531,28 @@ dependencies = [
 name = "walletkit-db"
 version = "0.21.4"
 dependencies = [
- "cc",
  "ciborium",
  "getrandom 0.3.4",
  "hex",
  "secrecy",
  "serde",
  "sha2 0.10.9",
- "sqlite-wasm-rs",
  "tempfile",
  "thiserror 2.0.18",
+ "walletkit-sqlite",
+ "zeroize",
+]
+
+[[package]]
+name = "walletkit-sqlite"
+version = "0.21.4"
+dependencies = [
+ "cc",
+ "hex",
+ "secrecy",
+ "sha2 0.10.9",
+ "sqlite-wasm-rs",
+ "tempfile",
  "zeroize",
  "zip",
 ]

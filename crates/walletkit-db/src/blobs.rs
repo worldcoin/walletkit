@@ -20,8 +20,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::error::{StoreError, StoreResult};
-use crate::params;
-use crate::sqlite::{Connection, DbResult, Error as DbError};
+use walletkit_sqlite::{params, Connection, DbResult, Error as DbError};
 
 const CONTENT_ID_PREFIX: &[u8] = b"worldid:blob";
 
@@ -143,9 +142,8 @@ fn check_cid_len(cid: &[u8]) -> StoreResult<()> {
 #[cfg(test)]
 mod tests {
     use super::{compute_content_id, delete, ensure_schema, get, put};
-    use crate::params;
     use crate::test_utils::init_sqlite;
-    use crate::Connection;
+    use walletkit_sqlite::{params, Connection};
 
     #[test]
     fn test_compute_content_id_byte_stable() {
@@ -168,7 +166,8 @@ mod tests {
     fn test_put_get_delete_round_trip() {
         init_sqlite();
 
-        let conn = Connection::open_in_memory().expect("open in-memory db");
+        let conn = Connection::open(std::path::Path::new(":memory:"), false)
+            .expect("open in-memory db");
         ensure_schema(&conn).expect("ensure schema");
 
         let cid = put(&conn, 7, b"payload", 1000).expect("put");

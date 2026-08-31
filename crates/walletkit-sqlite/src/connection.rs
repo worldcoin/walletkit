@@ -185,8 +185,8 @@ impl Connection {
 mod tests {
     use super::Connection;
     use crate::params;
-    use crate::sqlite::Value;
     use crate::test_utils::init_sqlite;
+    use crate::Value;
 
     #[test]
     fn test_open_in_memory() {

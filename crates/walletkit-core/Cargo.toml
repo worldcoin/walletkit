@@ -47,6 +47,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 uniffi = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 walletkit-db = { workspace = true }
+walletkit-sqlite = { workspace = true }
 world-id-core = { workspace = true, features = ["authenticator"] }
 world-id-proof = { workspace = true }
 zeroize = { workspace = true }

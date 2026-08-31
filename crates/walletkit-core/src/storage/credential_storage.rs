@@ -1356,7 +1356,7 @@ mod tests {
     #[test]
     fn test_import_vault_backup_transaction_atomicity() {
         use crate::storage::credential_vault::BACKUP_TABLES;
-        use walletkit_db::Connection;
+        use walletkit_sqlite::Connection;
         use world_id_core::Credential as CoreCredential;
 
         let src_root = temp_root_path();
