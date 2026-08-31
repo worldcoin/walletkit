@@ -1,3 +1,4 @@
+import { parse, stringify } from "lossless-json";
 import { privateKeyToAccount } from "viem/accounts";
 
 import type {
@@ -59,9 +60,17 @@ export async function issueFauxCredential(
     );
   }
 
-  const credential = module.Credential.fromIssuanceResponseBytes(
-    await response.arrayBuffer(),
-  );
+  const body = parse(await response.text()) as { credential?: unknown };
+  if (body.credential === undefined) {
+    throw new Error("Faux issuer response did not contain a credential");
+  }
+
+  const serializedCredential = stringify(body.credential);
+  if (serializedCredential === undefined) {
+    throw new Error("Faux issuer response contained an invalid credential");
+  }
+  const credentialBytes = new TextEncoder().encode(serializedCredential);
+  const credential = module.Credential.fromBytes(credentialBytes.buffer);
   const now = BigInt(Math.floor(Date.now() / 1000));
   const credentialId = store.storeCredential(
     credential,
