@@ -78,6 +78,8 @@ chrono = { workspace = true }
 dotenvy = { workspace = true }
 eyre = { workspace = true }
 mockito = { workspace = true }
+maplit = { workspace = true }
+pretty_assertions = { workspace = true }
 regex = { workspace = true }
 taceo-oprf = { workspace = true, features = [
   "types",
