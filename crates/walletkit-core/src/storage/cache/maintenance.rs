@@ -3,11 +3,12 @@
 use std::path::Path;
 
 use secrecy::SecretBox;
-
-use crate::storage::error::StorageResult;
 use walletkit_db::Vault;
 
 use super::schema;
+
+use crate::storage::error::StorageResult;
+use crate::storage::StorageError;
 
 /// Opens the cache DB through `Vault`, rebuilding on any open / key /
 /// integrity failure.
@@ -34,9 +35,8 @@ pub(super) fn open_or_rebuild(
 fn delete_cache_files(path: &Path) -> StorageResult<()> {
     #[cfg(target_arch = "wasm32")]
     {
-        return walletkit_sqlite::opfs::delete_database_files(path).map_err(|err| {
-            crate::storage::error::StorageError::CacheDb(err.to_string())
-        });
+        return walletkit_sqlite::opfs::delete_database_files(path)
+            .map_err(|err| StorageError::CacheDb(err.to_string()));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
