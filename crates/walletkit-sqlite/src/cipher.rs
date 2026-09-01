@@ -43,10 +43,6 @@ use super::connection::Connection;
 use super::error::{DbResult, Error};
 
 const CIPHER_CHACHA20: &str = "chacha20";
-#[cfg(not(target_arch = "wasm32"))]
-const JOURNAL_MODE_WAL: &str = "WAL";
-#[cfg(target_arch = "wasm32")]
-const JOURNAL_MODE_DELETE: &str = "DELETE";
 const FOREIGN_KEYS_ON: i64 = 1;
 const SYNCHRONOUS_FULL: i64 = 2;
 const SECURE_DELETE_ON: i64 = 1;
@@ -161,13 +157,13 @@ fn configure_connection(
     apply_key(conn, k_intermediate)?;
 
     #[cfg(not(target_arch = "wasm32"))]
-    ensure_journal_mode(conn, JOURNAL_MODE_WAL)?;
+    ensure_journal_mode(conn, "WAL")?;
     // SAH-pool does not expose WAL shared-memory methods. WAL would therefore
     // require locking_mode=EXCLUSIVE before the first database access and
     // provide no concurrency benefit, so WASM deliberately uses the rollback
     // journal until benchmarks justify that extra complexity.
     #[cfg(target_arch = "wasm32")]
-    ensure_journal_mode(conn, JOURNAL_MODE_DELETE)?;
+    ensure_journal_mode(conn, "DELETE")?;
 
     ensure_foreign_keys(conn)?;
     ensure_synchronous_full(conn)?;
