@@ -114,7 +114,7 @@ jobs:
       - name: Install WASM browser test runner
         run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
 
-      - name: Test encrypted OPFS persistence
+      - name: Test walletkit-sqlite in a browser runner
         run: |
           CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" \
             cargo test -p walletkit-sqlite --target wasm32-unknown-unknown
