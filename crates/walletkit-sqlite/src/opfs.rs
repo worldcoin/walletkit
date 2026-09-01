@@ -108,23 +108,6 @@ pub fn delete_database_files(path: &Path) -> DbResult<()> {
 }
 
 #[cfg(test)]
-fn export_database(path: &Path) -> DbResult<Vec<u8>> {
-    OPFS_POOL.with(|slot| {
-        let pool = slot.borrow();
-        let pool = pool
-            .as_ref()
-            .ok_or_else(|| Error::new(-1, "OPFS SAH-pool VFS is not installed"))?;
-        let filename = path.to_string_lossy();
-        pool.export_db(&filename).map_err(|err| {
-            Error::new(
-                -1,
-                format!("failed to export OPFS database file {filename}: {err}"),
-            )
-        })
-    })
-}
-
-#[cfg(test)]
 mod tests {
     use std::path::Path;
 
@@ -133,8 +116,25 @@ mod tests {
 
     use super::{delete_database_files, export_database, install, ENCRYPTED_VFS_NAME};
     use crate::cipher::open_encrypted;
+    use crate::{error::DbResult, Error};
 
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_dedicated_worker);
+
+    fn export_database(path: &Path) -> DbResult<Vec<u8>> {
+        super::OPFS_POOL.with(|slot| {
+            let pool = slot.borrow();
+            let pool = pool
+                .as_ref()
+                .ok_or_else(|| Error::new(-1, "OPFS SAH-pool VFS is not installed"))?;
+            let filename = path.to_string_lossy();
+            pool.export_db(&filename).map_err(|err| {
+                Error::new(
+                    -1,
+                    format!("failed to export OPFS database file {filename}: {err}"),
+                )
+            })
+        })
+    }
 
     #[wasm_bindgen_test]
     #[expect(
@@ -160,10 +160,17 @@ mod tests {
         }
 
         let stored = export_database(path).expect("export encrypted bytes");
-        assert!(!stored.starts_with(b"SQLite format 3\0"));
-        assert!(!stored
-            .windows(SECRET.len())
-            .any(|window| window == SECRET.as_bytes()));
+
+        assert!(
+            !stored.starts_with(b"SQLite format 3\0"),
+            "encrypted database should not have the plaintext sqlite magic header"
+        );
+        assert!(
+            !stored
+                .windows(SECRET.len())
+                .any(|window| window == SECRET.as_bytes()),
+            "encrypted database should not contain the plaintext secret anywhere"
+        );
 
         {
             let conn = open_encrypted(path, &key, false).expect("reopen database");
@@ -176,7 +183,10 @@ mod tests {
         }
 
         let wrong_key = SecretBox::init_with(|| [0xCD; 32]);
-        assert!(open_encrypted(path, &wrong_key, false).is_err());
+        assert!(
+            open_encrypted(path, &wrong_key, false).is_err(),
+            "should fail to open database with wrong key"
+        );
 
         delete_database_files(path).expect("delete test database");
     }
