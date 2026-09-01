@@ -66,19 +66,7 @@ pub fn open_encrypted(
     #[cfg(not(target_arch = "wasm32"))]
     let conn = Connection::open(path, read_only)?;
     #[cfg(target_arch = "wasm32")]
-    let conn = {
-        if !crate::opfs::is_installed() {
-            return Err(Error::new(
-                -1,
-                "persistent OPFS storage must be installed before opening a database",
-            ));
-        }
-        Connection::open_with_vfs(
-            path,
-            read_only,
-            Some(crate::opfs::ENCRYPTED_VFS_NAME),
-        )?
-    };
+    let conn = Connection::open_with_opfs_vfs(path, read_only)?;
     configure_connection(&conn, k_intermediate)?;
     Ok(conn)
 }

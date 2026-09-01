@@ -30,8 +30,20 @@ impl Connection {
         Self::open_with_vfs(path, read_only, None)
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn open_with_opfs_vfs(path: &Path, read_only: bool) -> DbResult<Self> {
+        if !crate::opfs::is_installed() {
+            return Err(Error::new(
+                -1,
+                "persistent OPFS storage must be installed before opening a database",
+            ));
+        }
+
+        Self::open_with_vfs(path, read_only, Some(crate::opfs::ENCRYPTED_VFS_NAME))
+    }
+
     /// Opens (or creates) a database using an explicitly selected VFS.
-    pub(crate) fn open_with_vfs(
+    fn open_with_vfs(
         path: &Path,
         read_only: bool,
         vfs: Option<&str>,
