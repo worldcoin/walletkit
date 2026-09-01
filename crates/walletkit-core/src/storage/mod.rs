@@ -67,6 +67,33 @@ pub use types::{
 };
 pub use walletkit_db::{Lock as StorageLock, LockGuard as StorageLockGuard};
 
+/// Deletes a closed `SQLite` database and its journal sidecars.
+pub(crate) fn delete_database_files(path: &std::path::Path) -> Result<(), String> {
+    for path in [
+        path.to_path_buf(),
+        path.with_extension("sqlite-journal"),
+        path.with_extension("sqlite-wal"),
+        path.with_extension("sqlite-shm"),
+    ] {
+        delete_database_file(&path)?;
+    }
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
+    walletkit_sqlite::opfs::delete_file(path).map_err(|err| err.to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
 /// Installs persistent encrypted browser storage in the current Web Worker.
 ///
 /// This must be awaited once before initializing a [`CredentialStore`] on

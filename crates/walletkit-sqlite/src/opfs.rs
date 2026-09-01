@@ -77,32 +77,24 @@ pub fn is_installed() -> bool {
     OPFS_POOL.with(|slot| slot.borrow().is_some())
 }
 
-/// Deletes a closed database and any persistent journal sidecars from OPFS.
+/// Deletes a closed database file from OPFS.
 ///
 /// # Errors
 ///
 /// Returns an error if the VFS has not been installed or OPFS deletion fails.
-pub fn delete_database_files(path: &Path) -> DbResult<()> {
-    let filenames = [
-        path.to_path_buf(),
-        path.with_extension("sqlite-journal"),
-        path.with_extension("sqlite-wal"),
-        path.with_extension("sqlite-shm"),
-    ];
+pub fn delete_file(path: &Path) -> DbResult<()> {
     OPFS_POOL.with(|slot| {
         let pool = slot.borrow();
         let pool = pool
             .as_ref()
             .ok_or_else(|| Error::new(-1, "OPFS SAH-pool VFS is not installed"))?;
-        for filename in filenames {
-            let filename = filename.to_string_lossy();
-            pool.delete_db(&filename).map_err(|err| {
-                Error::new(
-                    -1,
-                    format!("failed to delete OPFS database file {filename}: {err}"),
-                )
-            })?;
-        }
+        let filename = path.to_string_lossy();
+        pool.delete_db(&filename).map_err(|err| {
+            Error::new(
+                -1,
+                format!("failed to delete OPFS database file {filename}: {err}"),
+            )
+        })?;
         Ok(())
     })
 }
@@ -114,26 +106,19 @@ mod tests {
     use secrecy::SecretBox;
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use super::{delete_database_files, install};
+    use super::{delete_file, install};
     use crate::cipher::open_encrypted;
     use crate::{error::DbResult, Error};
 
-    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_dedicated_worker);
-
-    fn export_database(path: &Path) -> DbResult<Vec<u8>> {
-        super::OPFS_POOL.with(|slot| {
-            let pool = slot.borrow();
-            let pool = pool
-                .as_ref()
-                .ok_or_else(|| Error::new(-1, "OPFS SAH-pool VFS is not installed"))?;
-            let filename = path.to_string_lossy();
-            pool.export_db(&filename).map_err(|err| {
-                Error::new(
-                    -1,
-                    format!("failed to export OPFS database file {filename}: {err}"),
-                )
-            })
-        })
+    fn delete_database_files(path: &Path) {
+        for path in [
+            path.to_path_buf(),
+            path.with_extension("sqlite-journal"),
+            path.with_extension("sqlite-wal"),
+            path.with_extension("sqlite-shm"),
+        ] {
+            delete_file(&path).expect("delete database file");
+        }
     }
 
     #[wasm_bindgen_test]
@@ -147,7 +132,7 @@ mod tests {
 
         install().await.expect("install persistent VFS");
         let path = Path::new(DATABASE_PATH);
-        delete_database_files(path).expect("remove stale test database");
+        delete_database_files(path);
 
         let key = SecretBox::init_with(|| [0xAB; 32]);
         {
@@ -188,6 +173,6 @@ mod tests {
             "should fail to open database with wrong key"
         );
 
-        delete_database_files(path).expect("delete test database");
+        delete_database_files(path);
     }
 }
