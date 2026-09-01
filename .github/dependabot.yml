@@ -5,6 +5,7 @@ updates:
     versioning-strategy: "lockfile-only" # this is a library with other dependencies, we want to be explicit when updating base dependencies
     schedule:
       interval: "monthly"
+    cooldown:
+      default-days: 14
     assignees:
-      - "paolodamico"
-      - "aurel-fr"
+      - "Dzejkop"
