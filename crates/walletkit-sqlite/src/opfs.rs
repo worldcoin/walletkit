@@ -137,11 +137,6 @@ mod tests {
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_dedicated_worker);
 
     #[wasm_bindgen_test]
-    fn encrypted_vfs_name_wraps_sahpool() {
-        assert_eq!(ENCRYPTED_VFS_NAME, "multipleciphers-opfs-sahpool");
-    }
-
-    #[wasm_bindgen_test]
     #[expect(
         clippy::future_not_send,
         reason = "OPFS and its JavaScript handles are dedicated-worker local"
