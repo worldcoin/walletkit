@@ -18,6 +18,7 @@ in
 pkgs.mkShell {
   packages = [
     rustToolchain
+    pkgs.bun
     llvm.clang-unwrapped
     llvm.bintools-unwrapped
     wasmBindgenCli
