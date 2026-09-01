@@ -80,6 +80,10 @@ impl RawDb {
         let c_vfs = vfs.map(to_cstring).transpose()?;
         let mut ptr: *mut c_void = std::ptr::null_mut();
 
+        let c_vfs_ptr = c_vfs
+            .as_ref()
+            .map_or(std::ptr::null(), |name| name.as_ptr());
+
         // Safety: c_path and the optional c_vfs are valid null-terminated
         // strings. ptr is a local out-pointer that SQLite writes to.
         let rc = unsafe {
@@ -87,9 +91,7 @@ impl RawDb {
                 c_path.as_ptr(),
                 &raw mut ptr,
                 flags as c_int,
-                c_vfs
-                    .as_ref()
-                    .map_or(std::ptr::null(), |name| name.as_ptr()),
+                c_vfs_ptr,
             )
         };
 
