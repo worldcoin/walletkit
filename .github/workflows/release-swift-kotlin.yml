@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
 
       - name: Get new version
         id: version
@@ -41,9 +43,10 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
+          persist-credentials: false
 
       - name: Set up Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master (2026-08-04)
         with:
           toolchain: 1.92.0
           targets: aarch64-apple-ios-sim,aarch64-apple-ios,x86_64-apple-ios
@@ -153,6 +156,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
+          persist-credentials: false
 
       - name: Install Nix
         uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
@@ -197,6 +201,7 @@ jobs:
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
           ref: ${{ needs.pre-release-checks.outputs.commit_sha }} # to ensure all builds are consistent
+          persist-credentials: false
 
       - name: Install Nix
         uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
