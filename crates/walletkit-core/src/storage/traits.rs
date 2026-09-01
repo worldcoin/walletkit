@@ -13,7 +13,7 @@
 //! - **Node.js:** file-backed [`DeviceKeystore`] (development; production can use an
 //!   OS keystore); [`AtomicBlobStore`] over app internal storage.
 //! - **Browser (WASM):** host-provided [`DeviceKeystore`] and [`AtomicBlobStore`]
-//!   implementations; SQLite persistence itself uses encrypted OPFS storage.
+//!   implementations; sqlite persistence itself uses encrypted OPFS storage.
 
 use std::sync::Arc;
 
