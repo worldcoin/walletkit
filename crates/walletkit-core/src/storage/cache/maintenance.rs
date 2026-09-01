@@ -54,6 +54,6 @@ fn delete_if_exists(path: &Path) -> StorageResult<()> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(StorageError::CacheDb((&err).to_string())),
+        Err(err) => Err(StorageError::CacheDb(err.to_string())),
     }
 }
