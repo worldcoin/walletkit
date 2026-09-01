@@ -1,5 +1,6 @@
 //! Shared helpers for cache database operations.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::io;
 
 use crate::storage::{
@@ -14,6 +15,7 @@ pub(super) fn map_db_err(err: &DbError) -> StorageError {
 }
 
 /// Maps an IO error into a cache storage error.
+#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn map_io_err(err: &io::Error) -> StorageError {
     StorageError::CacheDb(err.to_string())
 }

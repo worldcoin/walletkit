@@ -45,6 +45,7 @@ rustflags = [
 # getrandom 0.3 requires an explicit backend for wasm32-unknown-unknown.
 # WalletKit's wasm build runs in JavaScript hosts, so use the wasm_js backend.
 [target.wasm32-unknown-unknown]
+runner = "wasm-bindgen-test-runner"
 rustflags = [
   "--cfg",
   'getrandom_backend="wasm_js"',

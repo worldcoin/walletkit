@@ -1,7 +1,9 @@
 //! Cache DB maintenance helpers (open with rebuild-on-corruption).
 
-use std::fs;
 use std::path::Path;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs;
 
 use secrecy::SecretBox;
 
@@ -9,6 +11,7 @@ use crate::storage::error::StorageResult;
 use walletkit_db::Vault;
 
 use super::schema;
+#[cfg(not(target_arch = "wasm32"))]
 use super::util::map_io_err;
 
 /// Opens the cache DB through `Vault`, rebuilding on any open / key /
@@ -34,13 +37,24 @@ pub(super) fn open_or_rebuild(
 
 /// Deletes the cache DB and its WAL/SHM sidecar files if present.
 fn delete_cache_files(path: &Path) -> StorageResult<()> {
-    delete_if_exists(path)?;
-    delete_if_exists(&path.with_extension("sqlite-wal"))?;
-    delete_if_exists(&path.with_extension("sqlite-shm"))?;
-    Ok(())
+    #[cfg(target_arch = "wasm32")]
+    {
+        return walletkit_sqlite::opfs::delete_database_files(path).map_err(|err| {
+            crate::storage::error::StorageError::CacheDb(err.to_string())
+        });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        delete_if_exists(path)?;
+        delete_if_exists(&path.with_extension("sqlite-wal"))?;
+        delete_if_exists(&path.with_extension("sqlite-shm"))?;
+        Ok(())
+    }
 }
 
 /// Deletes the file at `path` if it exists.
+#[cfg(not(target_arch = "wasm32"))]
 fn delete_if_exists(path: &Path) -> StorageResult<()> {
     match fs::remove_file(path) {
         Ok(()) => Ok(()),

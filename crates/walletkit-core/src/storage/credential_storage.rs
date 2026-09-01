@@ -830,6 +830,13 @@ impl CredentialStoreInner {
             remove_db_files(&self.paths.vault_db_path());
             remove_db_files(&self.paths.cache_db_path());
         }
+        #[cfg(target_arch = "wasm32")]
+        {
+            walletkit_sqlite::opfs::delete_database_files(&self.paths.vault_db_path())
+                .map_err(|err| StorageError::PersistentStorage(err.to_string()))?;
+            walletkit_sqlite::opfs::delete_database_files(&self.paths.cache_db_path())
+                .map_err(|err| StorageError::PersistentStorage(err.to_string()))?;
+        }
         Ok(())
     }
 }

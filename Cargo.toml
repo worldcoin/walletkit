@@ -57,7 +57,8 @@ semaphore-rs = "0.5.1"
 serde = "1"
 serde_json = "1"
 sha2 = "0.10"
-sqlite-wasm-rs = "0.5"
+sqlite-wasm-rs = "=0.5.5"
+sqlite-wasm-vfs = "=0.2.0"
 strum = "0.27"
 subtle = "2"
 # world-id-proof 0.14 uses Arkworks 0.5; taceo-oprf 0.18.2 moved to Arkworks 0.6.
@@ -75,6 +76,7 @@ uniffi = { version = "0.32.0", features = [
   "wasm-unstable-single-threaded",
 ] }
 uuid = "1.10"
+wasm-bindgen-test = "=0.3.76"
 xshell = "0.2.7"
 zeroize = "1"
 zip = { version = "2", default-features = false }

@@ -27,6 +27,15 @@ impl Connection {
     ///
     /// Returns `Error` if `SQLite` cannot open the file.
     pub fn open(path: &Path, read_only: bool) -> DbResult<Self> {
+        Self::open_with_vfs(path, read_only, None)
+    }
+
+    /// Opens (or creates) a database using an explicitly selected VFS.
+    pub(crate) fn open_with_vfs(
+        path: &Path,
+        read_only: bool,
+        vfs: Option<&str>,
+    ) -> DbResult<Self> {
         let path_str = path.to_string_lossy();
         let flags = if read_only {
             ffi::SQLITE_OPEN_READONLY | ffi::SQLITE_OPEN_FULLMUTEX
@@ -35,7 +44,7 @@ impl Connection {
                 | ffi::SQLITE_OPEN_CREATE
                 | ffi::SQLITE_OPEN_FULLMUTEX
         };
-        let db = RawDb::open(&path_str, flags)?;
+        let db = RawDb::open(&path_str, flags, vfs)?;
         Ok(Self { db })
     }
 

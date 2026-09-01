@@ -54,10 +54,31 @@ pub fn open_encrypted(
     k_intermediate: &SecretBox<[u8; 32]>,
     read_only: bool,
 ) -> DbResult<Connection> {
+    #[cfg(not(target_arch = "wasm32"))]
     let conn = Connection::open(path, read_only)?;
+    #[cfg(target_arch = "wasm32")]
+    let conn = {
+        if !crate::opfs::is_installed() {
+            return Err(Error::new(
+                -1,
+                "persistent OPFS storage must be installed before opening a database",
+            ));
+        }
+        Connection::open_with_vfs(
+            path,
+            read_only,
+            Some(crate::opfs::ENCRYPTED_VFS_NAME),
+        )?
+    };
+    select_cipher(&conn)?;
     apply_key(&conn, k_intermediate)?;
     configure_connection(&conn)?;
     Ok(conn)
+}
+
+/// Selects the on-disk cipher explicitly before the key activates it.
+fn select_cipher(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch("PRAGMA cipher = 'chacha20';")
 }
 
 /// Applies the `sqlite3mc` encryption key to an open connection.
@@ -97,9 +118,11 @@ fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> DbResul
     Ok(())
 }
 
-/// Configures durable WAL settings, foreign keys, and secure deletion.
+/// Configures durable journal settings, foreign keys, and secure deletion.
 ///
-/// - `journal_mode = WAL` -- enables concurrent readers during writes.
+/// - Native uses WAL for concurrent readers during writes.
+/// - WASM uses a rollback journal because SAH-pool has no WAL shared-memory
+///   methods; WAL would require exclusive locking and provide no concurrency.
 /// - `synchronous = FULL` -- maximizes crash consistency (all WAL pages are
 ///   fsynced before the transaction is reported as committed).
 /// - `foreign_keys = ON` -- enforces referential integrity constraints.
@@ -108,10 +131,57 @@ fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> DbResul
 fn configure_connection(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
-         PRAGMA journal_mode = WAL;
          PRAGMA synchronous = FULL;
-         PRAGMA secure_delete = ON;",
-    )
+         PRAGMA secure_delete = ON;
+         PRAGMA temp_store = MEMORY;",
+    )?;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    assert_journal_mode(conn, "WAL")?;
+    #[cfg(target_arch = "wasm32")]
+    assert_journal_mode(conn, "DELETE")?;
+
+    assert_pragma_i64(conn, "foreign_keys", 1)?;
+    assert_pragma_i64(conn, "synchronous", 2)?;
+    assert_pragma_i64(conn, "secure_delete", 1)?;
+    assert_pragma_i64(conn, "temp_store", 2)?;
+    let cipher = conn.query_row("PRAGMA cipher;", &[], |row| Ok(row.column_text(0)))?;
+    if cipher.eq_ignore_ascii_case("chacha20") {
+        Ok(())
+    } else {
+        Err(Error::new(
+            -1,
+            format!("unexpected sqlite3mc cipher: {cipher}"),
+        ))
+    }
+}
+
+fn assert_journal_mode(conn: &Connection, requested: &str) -> DbResult<()> {
+    let actual =
+        conn.query_row(&format!("PRAGMA journal_mode = {requested};"), &[], |row| {
+            Ok(row.column_text(0))
+        })?;
+    if actual.eq_ignore_ascii_case(requested) {
+        Ok(())
+    } else {
+        Err(Error::new(
+            -1,
+            format!("requested journal mode {requested}, SQLite selected {actual}"),
+        ))
+    }
+}
+
+fn assert_pragma_i64(conn: &Connection, name: &str, expected: i64) -> DbResult<()> {
+    let actual =
+        conn.query_row(&format!("PRAGMA {name};"), &[], |row| Ok(row.column_i64(0)))?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(Error::new(
+            -1,
+            format!("unexpected PRAGMA {name}: expected {expected}, got {actual}"),
+        ))
+    }
 }
 
 /// Creates a plaintext (unencrypted) copy of an already-open encrypted database.

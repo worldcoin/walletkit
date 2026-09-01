@@ -67,6 +67,23 @@ pub use types::{
 };
 pub use walletkit_db::{Lock as StorageLock, LockGuard as StorageLockGuard};
 
+/// Installs persistent encrypted browser storage in the current Web Worker.
+///
+/// This must be awaited once before initializing a [`CredentialStore`] on
+/// WASM. The function fails when called outside a supported dedicated worker
+/// or when another browsing context owns the same OPFS SAH pool.
+///
+/// # Errors
+///
+/// Returns [`StorageError::PersistentStorage`] when OPFS setup fails.
+#[cfg(target_arch = "wasm32")]
+#[uniffi::export]
+pub async fn initialize_persistent_storage() -> StorageResult<()> {
+    walletkit_sqlite::opfs::install()
+        .await
+        .map_err(|err| StorageError::PersistentStorage(err.to_string()))
+}
+
 pub(crate) const ACCOUNT_KEYS_FILENAME: &str = "account_keys.bin";
 pub(crate) const ACCOUNT_KEY_ENVELOPE_AD: &[u8] = b"worldid:account-key-envelope";
 
