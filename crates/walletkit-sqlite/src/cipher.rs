@@ -71,6 +71,39 @@ pub fn open_encrypted(
     Ok(conn)
 }
 
+/// Configures durable journal settings, foreign keys, and secure deletion.
+///
+/// - Native uses WAL for concurrent readers during writes.
+/// - WASM uses a rollback journal because SAH-pool has no WAL shared-memory
+///   methods; WAL would require exclusive locking and provide no concurrency.
+/// - `synchronous = FULL` -- maximizes crash consistency by flushing required
+///   journal writes before the transaction is reported as committed.
+/// - `foreign_keys = ON` -- enforces referential integrity constraints.
+/// - `secure_delete = ON` -- overwrites deleted content with zeroes so
+///   sensitive data does not linger in free pages.
+fn configure_connection(
+    conn: &Connection,
+    k_intermediate: &SecretBox<[u8; 32]>,
+) -> DbResult<()> {
+    ensure_cipher(conn)?;
+    apply_key(conn, k_intermediate)?;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    ensure_journal_mode(conn, "WAL")?;
+    // SAH-pool does not expose WAL shared-memory methods. WAL would therefore
+    // require locking_mode=EXCLUSIVE before the first database access and
+    // provide no concurrency benefit, so WASM deliberately uses the rollback
+    // journal until benchmarks justify that extra complexity.
+    #[cfg(target_arch = "wasm32")]
+    ensure_journal_mode(conn, "DELETE")?;
+
+    ensure_foreign_keys(conn)?;
+    ensure_synchronous_full(conn)?;
+    ensure_secure_delete(conn)?;
+    ensure_temp_store_memory(conn)?;
+    Ok(())
+}
+
 /// Selects and verifies the on-disk cipher before the key activates it.
 ///
 /// Pinning the cipher prevents a future compile-time default change from
@@ -124,39 +157,6 @@ fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> DbResul
 
     // k_intermediate, key_hex, and pragma are all Zeroizing — zeroed on drop
     // regardless of which exit path we took.
-    Ok(())
-}
-
-/// Configures durable journal settings, foreign keys, and secure deletion.
-///
-/// - Native uses WAL for concurrent readers during writes.
-/// - WASM uses a rollback journal because SAH-pool has no WAL shared-memory
-///   methods; WAL would require exclusive locking and provide no concurrency.
-/// - `synchronous = FULL` -- maximizes crash consistency by flushing required
-///   journal writes before the transaction is reported as committed.
-/// - `foreign_keys = ON` -- enforces referential integrity constraints.
-/// - `secure_delete = ON` -- overwrites deleted content with zeroes so
-///   sensitive data does not linger in free pages.
-fn configure_connection(
-    conn: &Connection,
-    k_intermediate: &SecretBox<[u8; 32]>,
-) -> DbResult<()> {
-    ensure_cipher(conn)?;
-    apply_key(conn, k_intermediate)?;
-
-    #[cfg(not(target_arch = "wasm32"))]
-    ensure_journal_mode(conn, "WAL")?;
-    // SAH-pool does not expose WAL shared-memory methods. WAL would therefore
-    // require locking_mode=EXCLUSIVE before the first database access and
-    // provide no concurrency benefit, so WASM deliberately uses the rollback
-    // journal until benchmarks justify that extra complexity.
-    #[cfg(target_arch = "wasm32")]
-    ensure_journal_mode(conn, "DELETE")?;
-
-    ensure_foreign_keys(conn)?;
-    ensure_synchronous_full(conn)?;
-    ensure_secure_delete(conn)?;
-    ensure_temp_store_memory(conn)?;
     Ok(())
 }
 
