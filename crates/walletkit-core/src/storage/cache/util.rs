@@ -1,8 +1,5 @@
 //! Shared helpers for cache database operations.
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::io;
-
 use crate::storage::{
     cache::schema::{CACHE_KEY_PREFIX_REPLAY_NULLIFIER, CACHE_KEY_PREFIX_SESSION},
     error::{StorageError, StorageResult},
