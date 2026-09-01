@@ -810,16 +810,12 @@ impl CredentialStoreInner {
         // Delete the encryption key envelope. Without this key the database
         // files are unreadable even if file deletion below fails.
         self.blob_store.delete(ACCOUNT_KEYS_FILENAME.to_string())?;
+
         // Best-effort removal: deleting the key above cryptographically destroys
         // the databases even if their encrypted files cannot be removed.
-        for path in [self.paths.vault_db_path(), self.paths.cache_db_path()] {
-            if let Err(err) = super::delete_database_files(&path) {
-                tracing::error!(
-                    "Failed to delete database files for {}: {err}",
-                    path.display()
-                );
-            }
-        }
+        super::delete_database_files(&self.paths.vault_db_path());
+        super::delete_database_files(&self.paths.cache_db_path());
+
         Ok(())
     }
 }

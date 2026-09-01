@@ -68,16 +68,19 @@ pub use types::{
 pub use walletkit_db::{Lock as StorageLock, LockGuard as StorageLockGuard};
 
 /// Deletes a closed `SQLite` database and its journal sidecars.
-pub(crate) fn delete_database_files(path: &std::path::Path) -> Result<(), String> {
+///
+/// Best effort - logs failed operations but does not return an error.
+pub(crate) fn delete_database_files(path: &std::path::Path) {
     for path in [
         path.to_path_buf(),
         path.with_extension("sqlite-journal"),
         path.with_extension("sqlite-wal"),
         path.with_extension("sqlite-shm"),
     ] {
-        delete_database_file(&path)?;
+        if let Err(err) = delete_database_file(&path) {
+            tracing::error!("Failed to delete database file {}: {err}", path.display());
+        }
     }
-    Ok(())
 }
 
 #[cfg(target_arch = "wasm32")]

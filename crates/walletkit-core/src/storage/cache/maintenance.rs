@@ -7,8 +7,8 @@ use walletkit_db::Vault;
 
 use super::schema;
 
+use crate::storage::delete_database_files;
 use crate::storage::error::StorageResult;
-use crate::storage::{delete_database_files, StorageError};
 
 /// Opens the cache DB through `Vault`, rebuilding on any open / key /
 /// integrity failure.
@@ -27,11 +27,6 @@ pub(super) fn open_or_rebuild(
     if let Ok(vault) = Vault::open(path, k_intermediate, schema::ensure_schema) {
         return Ok(vault);
     }
-    delete_cache_files(path)?;
+    delete_database_files(path);
     Vault::open(path, k_intermediate, schema::ensure_schema).map_err(Into::into)
-}
-
-/// Deletes the cache DB and its journal sidecars if present.
-fn delete_cache_files(path: &Path) -> StorageResult<()> {
-    delete_database_files(path).map_err(StorageError::CacheDb)
 }
