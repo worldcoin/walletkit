@@ -9,13 +9,17 @@ generation, WASM optimization, or asset staging.
 Run it from the repository root:
 
 ```sh
-npm --prefix examples/uniffi-web-authenticator-poc install
-npm --prefix examples/uniffi-web-authenticator-poc run dev
+bun install --cwd examples/uniffi-web-authenticator-poc --frozen-lockfile
+bun run --cwd examples/uniffi-web-authenticator-poc dev
 ```
 
-The example installs `walletkit-web` from npm and does not build the package's
-Rust, generated bindings, or WASM locally. Use `npm run build` to prove the
+The example installs `walletkit-web` from the npm registry and does not build the
+package's Rust, generated bindings, or WASM locally. Use `bun run build` to prove the
 production bundle as well.
+
+To test the package from this checkout instead, run `bun run walletkit:local`
+from the example directory inside the WASM Nix shell. This builds and links the
+local package. Run `bun run walletkit:published` to restore the registry package.
 
 ## What the POC proves
 

@@ -35,6 +35,7 @@
           default = pkgs.mkShell {
             packages = [
               rustToolchain
+              pkgs.bun
               pkgs.curl
               pkgs.git
               pkgs.nargo

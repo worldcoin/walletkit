@@ -58,8 +58,8 @@ The experimental `walletkit-web` package builds directly from the
 optimized WASM module. Build it with the pinned WASM toolchain:
 
 ```bash
-nix develop .#wasm --command npm --prefix web/walletkit install
-nix develop .#wasm --command npm --prefix web/walletkit run build
+nix develop .#wasm --command bun install --cwd web/walletkit --frozen-lockfile
+nix develop .#wasm --command bun run --cwd web/walletkit build
 ```
 
 The Next.js integration probe under `examples/uniffi-web-authenticator-poc`

@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "bun@1.3.11",
   "repository": {
     "type": "git",
     "url": "https://github.com/worldcoin/walletkit"
@@ -11,8 +12,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "walletkit:local": "npm --prefix ../../web/walletkit run build && npm install --no-save ../../web/walletkit",
-    "walletkit:published": "npm ci"
+    "walletkit:local": "bun run --cwd ../../web/walletkit build && bun link --cwd ../../web/walletkit && bun link --no-save walletkit-web",
+    "walletkit:published": "bun install --frozen-lockfile --force"
   },
   "dependencies": {
     "lossless-json": "^4.3.1",

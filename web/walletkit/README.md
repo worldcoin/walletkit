@@ -17,8 +17,8 @@ const walletKit = await initializeWalletKit();
 Build it from the repository root with the pinned toolchain:
 
 ```sh
-nix develop .#wasm --command npm --prefix web/walletkit install
-nix develop .#wasm --command npm --prefix web/walletkit run build
+nix develop .#wasm --command bun install --cwd web/walletkit --frozen-lockfile
+nix develop .#wasm --command bun run --cwd web/walletkit build
 ```
 
 The release build uses `crates/walletkit` directly, disables its default
