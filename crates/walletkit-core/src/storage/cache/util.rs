@@ -14,12 +14,6 @@ pub(super) fn map_db_err(err: &DbError) -> StorageError {
     StorageError::CacheDb(err.to_string())
 }
 
-/// Maps an IO error into a cache storage error.
-#[cfg(not(target_arch = "wasm32"))]
-pub(super) fn map_io_err(err: &io::Error) -> StorageError {
-    StorageError::CacheDb(err.to_string())
-}
-
 /// Parses a fixed-length array from the provided bytes.
 ///
 /// # Errors

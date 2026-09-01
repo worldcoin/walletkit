@@ -2,17 +2,12 @@
 
 use std::path::Path;
 
-#[cfg(not(target_arch = "wasm32"))]
-use std::fs;
-
 use secrecy::SecretBox;
 
 use crate::storage::error::StorageResult;
 use walletkit_db::Vault;
 
 use super::schema;
-#[cfg(not(target_arch = "wasm32"))]
-use super::util::map_io_err;
 
 /// Opens the cache DB through `Vault`, rebuilding on any open / key /
 /// integrity failure.
@@ -56,9 +51,9 @@ fn delete_cache_files(path: &Path) -> StorageResult<()> {
 /// Deletes the file at `path` if it exists.
 #[cfg(not(target_arch = "wasm32"))]
 fn delete_if_exists(path: &Path) -> StorageResult<()> {
-    match fs::remove_file(path) {
+    match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(map_io_err(&err)),
+        Err(err) => Err(StorageError::CacheDb((&err).to_string())),
     }
 }

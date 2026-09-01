@@ -114,7 +114,7 @@ mod tests {
     use secrecy::SecretBox;
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use super::{delete_database_files, export_database, install, ENCRYPTED_VFS_NAME};
+    use super::{delete_database_files, install};
     use crate::cipher::open_encrypted;
     use crate::{error::DbResult, Error};
 
