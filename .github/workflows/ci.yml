@@ -59,6 +59,8 @@ jobs:
           # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
           toolchain: v1.0.0-beta.11
 
+      - uses: ./.github/actions/prefetch-noir-dependencies
+
       - name: Check code formatting
         run: cargo fmt -- --check
 
@@ -148,6 +150,8 @@ jobs:
         with:
           # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
           toolchain: v1.0.0-beta.11
+
+      - uses: ./.github/actions/prefetch-noir-dependencies
 
       # Includes temporary downstream UniFFI callback vtable patch:
       # https://github.com/mozilla/uniffi-rs/pull/2821
@@ -246,6 +250,8 @@ jobs:
           # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
           toolchain: v1.0.0-beta.11
 
+      - uses: ./.github/actions/prefetch-noir-dependencies
+
       - name: Build and test Kotlin bindings
         run: cargo xtask kotlin test
 
@@ -285,6 +291,8 @@ jobs:
         with:
           # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
           toolchain: v1.0.0-beta.11
+
+      - uses: ./.github/actions/prefetch-noir-dependencies
 
       - uses: taiki-e/install-action@67729d5c413db75907f0ad1e39bb04b9c868ff60 # 2.85.7
         with:
