@@ -106,9 +106,27 @@ mod tests {
     use secrecy::SecretBox;
     use wasm_bindgen_test::wasm_bindgen_test;
 
-    use super::{delete_file, install};
+    use super::{delete_file, install, OPFS_POOL};
     use crate::cipher::open_encrypted;
     use crate::{error::DbResult, Error};
+
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_dedicated_worker);
+
+    fn export_database(path: &Path) -> DbResult<Vec<u8>> {
+        OPFS_POOL.with(|slot| {
+            let pool = slot.borrow();
+            let pool = pool
+                .as_ref()
+                .ok_or_else(|| Error::new(-1, "OPFS SAH-pool VFS is not installed"))?;
+            let filename = path.to_string_lossy();
+            pool.export_db(&filename).map_err(|err| {
+                Error::new(
+                    -1,
+                    format!("failed to export OPFS database file {filename}: {err}"),
+                )
+            })
+        })
+    }
 
     fn delete_database_files(path: &Path) {
         for path in [
