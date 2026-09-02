@@ -1,5 +1,5 @@
 name: Prefetch Noir dependencies
-description: Populate Nargo's Git dependency cache without exposing credentials to Cargo build scripts
+description: Load Nargo's Git dependencies without exposing credentials to Cargo build scripts
 
 runs:
   using: composite
@@ -12,7 +12,7 @@ runs:
       with:
         repository: TaceoLabs/oprf-service
         ref: 1ee7e0439c88e6c9c5468017ece602ad7a7ce94e # taceo-oprf-v0.12.0
-        path: .nargo-cache/github.com/TaceoLabs/oprf-service.git/taceo-oprf-v0.12.0
+        path: .noir-dependencies/oprf-service
         persist-credentials: false
         lfs: false
         sparse-checkout: |
@@ -24,36 +24,22 @@ runs:
       with:
         repository: TaceoLabs/noir-poseidon
         ref: 399574197066cdba30da969426b2cf50a232feb2 # v0.5.0-beta.0
-        path: .nargo-cache/github.com/TaceoLabs/noir-poseidon/v0.5.0-beta.0
+        path: .noir-dependencies/noir-poseidon
         persist-credentials: false
         lfs: false
         sparse-checkout: |
           poseidon2
           hash_utils
 
-    - name: Populate Nargo cache
+    - name: Make dependencies available to Nargo
       shell: bash
       run: |
         set -euo pipefail
-        nargo_cache_root="$HOME/nargo/github.com/TaceoLabs"
-        cache_backup="$RUNNER_TEMP/walletkit-stale-nargo-cache"
-        oprf_cache="$nargo_cache_root/oprf-service.git/taceo-oprf-v0.12.0"
-        poseidon_cache="$nargo_cache_root/noir-poseidon/v0.5.0-beta.0"
-
-        mkdir -p "$nargo_cache_root/oprf-service.git" "$nargo_cache_root/noir-poseidon" "$cache_backup"
-
-        # Nargo accepts a partial directory as a cache hit. Move any prior entry
-        # aside before installing the immutable sparse checkout.
-        if [[ -e "$oprf_cache" || -L "$oprf_cache" ]]; then
-          mv "$oprf_cache" "$cache_backup/oprf-service"
-        fi
-        if [[ -e "$poseidon_cache" || -L "$poseidon_cache" ]]; then
-          mv "$poseidon_cache" "$cache_backup/noir-poseidon"
-        fi
-
-        cp -R \
-          "$GITHUB_WORKSPACE/.nargo-cache/github.com/TaceoLabs/oprf-service.git/taceo-oprf-v0.12.0" \
-          "$oprf_cache"
-        cp -R \
-          "$GITHUB_WORKSPACE/.nargo-cache/github.com/TaceoLabs/noir-poseidon/v0.5.0-beta.0" \
-          "$poseidon_cache"
+        nargo_dependency_root="$HOME/nargo/github.com/TaceoLabs"
+        mkdir -p "$nargo_dependency_root/oprf-service.git" "$nargo_dependency_root/noir-poseidon"
+        ln -s \
+          "$GITHUB_WORKSPACE/.noir-dependencies/oprf-service" \
+          "$nargo_dependency_root/oprf-service.git/taceo-oprf-v0.12.0"
+        ln -s \
+          "$GITHUB_WORKSPACE/.noir-dependencies/noir-poseidon" \
+          "$nargo_dependency_root/noir-poseidon/v0.5.0-beta.0"
