@@ -75,18 +75,23 @@ unsafe impl Send for RawDb {}
 
 impl RawDb {
     /// Opens (or creates) a database at the given `path`.
-    pub fn open(path: &str, flags: i32) -> DbResult<Self> {
+    pub fn open(path: &str, flags: i32, vfs: Option<&str>) -> DbResult<Self> {
         let c_path = to_cstring(path)?;
+        let c_vfs = vfs.map(to_cstring).transpose()?;
         let mut ptr: *mut c_void = std::ptr::null_mut();
 
-        // Safety: c_path is a valid null-terminated string. ptr is a local
-        // out-pointer that SQLite writes to. VFS is null (use default).
+        let c_vfs_ptr = c_vfs
+            .as_ref()
+            .map_or(std::ptr::null(), |name| name.as_ptr());
+
+        // Safety: c_path and the optional c_vfs are valid null-terminated
+        // strings. ptr is a local out-pointer that SQLite writes to.
         let rc = unsafe {
             raw::sqlite3_open_v2(
                 c_path.as_ptr(),
                 &raw mut ptr,
                 flags as c_int,
-                std::ptr::null(),
+                c_vfs_ptr,
             )
         };
 

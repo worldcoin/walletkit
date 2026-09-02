@@ -110,6 +110,15 @@ jobs:
       - name: Run WASM compile check
         run: cargo check -p walletkit --features embed-zkeys --target wasm32-unknown-unknown
 
+      # Keep this version aligned with the wasm-bindgen version in Cargo.lock.
+      - name: Install WASM browser test runner
+        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+
+      - name: Test walletkit-sqlite in a browser runner
+        run: |
+          CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" \
+            cargo test -p walletkit-sqlite --target wasm32-unknown-unknown
+
   swift-build:
     name: Build Swift
     runs-on: macos-26

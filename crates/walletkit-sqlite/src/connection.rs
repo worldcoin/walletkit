@@ -27,6 +27,27 @@ impl Connection {
     ///
     /// Returns `Error` if `SQLite` cannot open the file.
     pub fn open(path: &Path, read_only: bool) -> DbResult<Self> {
+        Self::open_with_vfs(path, read_only, None)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn open_with_opfs_vfs(path: &Path, read_only: bool) -> DbResult<Self> {
+        if !crate::opfs::is_installed() {
+            return Err(Error::new(
+                -1,
+                "persistent OPFS storage must be installed before opening a database",
+            ));
+        }
+
+        Self::open_with_vfs(path, read_only, Some(crate::opfs::ENCRYPTED_VFS_NAME))
+    }
+
+    /// Opens (or creates) a database using an explicitly selected VFS.
+    fn open_with_vfs(
+        path: &Path,
+        read_only: bool,
+        vfs: Option<&str>,
+    ) -> DbResult<Self> {
         let path_str = path.to_string_lossy();
         let flags = if read_only {
             ffi::SQLITE_OPEN_READONLY | ffi::SQLITE_OPEN_FULLMUTEX
@@ -35,7 +56,7 @@ impl Connection {
                 | ffi::SQLITE_OPEN_CREATE
                 | ffi::SQLITE_OPEN_FULLMUTEX
         };
-        let db = RawDb::open(&path_str, flags)?;
+        let db = RawDb::open(&path_str, flags, vfs)?;
         Ok(Self { db })
     }
 

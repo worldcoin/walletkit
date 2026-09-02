@@ -67,6 +67,53 @@ pub use types::{
 };
 pub use walletkit_db::{Lock as StorageLock, LockGuard as StorageLockGuard};
 
+/// Deletes a closed `SQLite` database and its journal sidecars.
+///
+/// Best effort - logs failed operations but does not return an error.
+pub(crate) fn delete_database_files(path: &std::path::Path) {
+    for path in [
+        path.to_path_buf(),
+        path.with_extension("sqlite-journal"),
+        path.with_extension("sqlite-wal"),
+        path.with_extension("sqlite-shm"),
+    ] {
+        if let Err(err) = delete_database_file(&path) {
+            tracing::error!("Failed to delete database file {}: {err}", path.display());
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
+    walletkit_sqlite::opfs::delete_file(path).map_err(|err| err.to_string())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
+/// Installs persistent encrypted browser storage in the current Web Worker.
+///
+/// This must be awaited once before initializing a [`CredentialStore`] on
+/// WASM. The function fails when called outside a supported dedicated worker
+/// or when another browsing context owns the same OPFS SAH pool.
+///
+/// # Errors
+///
+/// Returns [`StorageError::PersistentStorage`] when OPFS setup fails.
+#[cfg(target_arch = "wasm32")]
+#[uniffi::export]
+pub async fn initialize_persistent_storage() -> StorageResult<()> {
+    walletkit_sqlite::opfs::install()
+        .await
+        .map_err(|err| StorageError::PersistentStorage(err.to_string()))
+}
+
 pub(crate) const ACCOUNT_KEYS_FILENAME: &str = "account_keys.bin";
 pub(crate) const ACCOUNT_KEY_ENVELOPE_AD: &[u8] = b"worldid:account-key-envelope";
 

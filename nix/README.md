@@ -15,7 +15,7 @@ ordinary `cargo build` invocations run inside a shell.
 |---|---|---|
 | `default` | Host builds, uniffi-bindgen, nargo | all |
 | `android` | Cross-compile the 4 Android targets (NDK, linkers, API 23) | linux/darwin x86_64, darwin aarch64 |
-| `wasm` | `wasm32-unknown-unknown` with a wasm-safe clang | all |
+| `wasm` | `wasm32-unknown-unknown` builds and headless browser tests | all |
 
 ```bash
 nix develop .#android   # enter a shell
@@ -27,6 +27,7 @@ Convenience wrappers (they enter the right shell for you):
 ```bash
 nix/build-android.sh --target aarch64-linux-android
 nix/build-wasm.sh
+nix develop .#wasm --command cargo test -p walletkit-sqlite --target wasm32-unknown-unknown
 nix develop .#android --command cargo xtask kotlin build   # full Android jniLibs + bindings
 nix develop .#android --command cargo xtask kotlin local 0.3.1  # publish to Maven Local
 ```

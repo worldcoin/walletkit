@@ -48,6 +48,10 @@ pub enum StorageError {
     #[error("cache db error: {0}")]
     CacheDb(String),
 
+    /// Errors initializing or administering persistent browser storage.
+    #[error("persistent storage error: {0}")]
+    PersistentStorage(String),
+
     /// Leaf index mismatch during initialization.
     #[error("leaf index mismatch: expected {expected}, got {provided}")]
     InvalidLeafIndex {

@@ -1,7 +1,5 @@
 //! Shared helpers for cache database operations.
 
-use std::io;
-
 use crate::storage::{
     cache::schema::{CACHE_KEY_PREFIX_REPLAY_NULLIFIER, CACHE_KEY_PREFIX_SESSION},
     error::{StorageError, StorageResult},
@@ -10,11 +8,6 @@ use walletkit_sqlite::{params, Connection, Error as DbError, Transaction};
 
 /// Maps a database error into a cache storage error.
 pub(super) fn map_db_err(err: &DbError) -> StorageError {
-    StorageError::CacheDb(err.to_string())
-}
-
-/// Maps an IO error into a cache storage error.
-pub(super) fn map_io_err(err: &io::Error) -> StorageError {
     StorageError::CacheDb(err.to_string())
 }
 

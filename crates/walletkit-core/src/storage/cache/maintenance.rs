@@ -1,15 +1,14 @@
 //! Cache DB maintenance helpers (open with rebuild-on-corruption).
 
-use std::fs;
 use std::path::Path;
 
 use secrecy::SecretBox;
-
-use crate::storage::error::StorageResult;
 use walletkit_db::Vault;
 
 use super::schema;
-use super::util::map_io_err;
+
+use crate::storage::delete_database_files;
+use crate::storage::error::StorageResult;
 
 /// Opens the cache DB through `Vault`, rebuilding on any open / key /
 /// integrity failure.
@@ -28,23 +27,6 @@ pub(super) fn open_or_rebuild(
     if let Ok(vault) = Vault::open(path, k_intermediate, schema::ensure_schema) {
         return Ok(vault);
     }
-    delete_cache_files(path)?;
+    delete_database_files(path);
     Vault::open(path, k_intermediate, schema::ensure_schema).map_err(Into::into)
-}
-
-/// Deletes the cache DB and its WAL/SHM sidecar files if present.
-fn delete_cache_files(path: &Path) -> StorageResult<()> {
-    delete_if_exists(path)?;
-    delete_if_exists(&path.with_extension("sqlite-wal"))?;
-    delete_if_exists(&path.with_extension("sqlite-shm"))?;
-    Ok(())
-}
-
-/// Deletes the file at `path` if it exists.
-fn delete_if_exists(path: &Path) -> StorageResult<()> {
-    match fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(map_io_err(&err)),
-    }
 }

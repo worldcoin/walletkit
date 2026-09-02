@@ -46,20 +46,6 @@ impl Drop for CleanupFile {
     }
 }
 
-/// Removes a `SQLite` database file and its WAL/SHM sidecar files.
-/// Best-effort: missing files are silently ignored, other errors are logged.
-#[cfg(not(target_arch = "wasm32"))]
-fn remove_db_files(db_path: &std::path::Path) {
-    for ext in &["sqlite", "sqlite-wal", "sqlite-shm"] {
-        let path = db_path.with_extension(ext);
-        if let Err(e) = std::fs::remove_file(&path) {
-            if e.kind() != std::io::ErrorKind::NotFound {
-                tracing::error!("Failed to delete {}: {e}", path.display());
-            }
-        }
-    }
-}
-
 /// Concrete storage implementation backed by `SQLCipher` databases.
 #[derive(uniffi::Object)]
 pub struct CredentialStore {
@@ -824,12 +810,12 @@ impl CredentialStoreInner {
         // Delete the encryption key envelope. Without this key the database
         // files are unreadable even if file deletion below fails.
         self.blob_store.delete(ACCOUNT_KEYS_FILENAME.to_string())?;
-        // Best-effort removal of database files and their SQLite sidecar files.
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            remove_db_files(&self.paths.vault_db_path());
-            remove_db_files(&self.paths.cache_db_path());
-        }
+
+        // Best-effort removal: deleting the key above cryptographically destroys
+        // the databases even if their encrypted files cannot be removed.
+        super::delete_database_files(&self.paths.vault_db_path());
+        super::delete_database_files(&self.paths.cache_db_path());
+
         Ok(())
     }
 }
