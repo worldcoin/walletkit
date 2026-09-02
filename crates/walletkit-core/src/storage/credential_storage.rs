@@ -204,11 +204,6 @@ impl CredentialStore {
     /// Retrieves the most recent non-expired credential matching the issuer
     /// schema ID, or `None` when the store holds no usable match.
     ///
-    /// This is the same selection `generate_proof` uses when building its
-    /// credential inputs, so fields read from the returned credential (e.g.
-    /// [`Credential::claims_hex`]) describe the credential a proof for that
-    /// schema is generated against.
-    ///
     /// # Errors
     ///
     /// Returns an error if the credential query fails.
@@ -1086,7 +1081,7 @@ mod tests {
             .expect("credential should exist");
         assert_eq!(fetched.issuer_schema_id(), 100);
         assert_eq!(
-            fetched.claims_hex()[0],
+            fetched.claims()[0].to_hex_string(),
             "0x000000000000000000000000000000000000000000000000000000000000000b"
         );
 

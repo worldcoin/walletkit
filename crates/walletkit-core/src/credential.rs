@@ -61,12 +61,10 @@ impl Credential {
     }
 
     /// Returns the credential's raw claims, in schema order.
-    ///
-    /// Each claim is a field element; interpretation is defined by the issuer
-    /// schema ([`Self::issuer_schema_id`]). Unset slots hold the zero field
-    /// element. This exposes nothing [`Self::to_bytes`] doesn't already
-    /// serialize — it is an accessor, not a disclosure mechanism; whether and
-    /// which claims leave the device is entirely the host app's policy.
+    //
+    // `Arc` is load-bearing: uniffi objects only implement `Lower` behind an
+    // `Arc`, so sequences of objects must be `Vec<Arc<T>>` (bare owned objects
+    // are only accepted as top-level return values).
     #[must_use]
     pub fn claims(&self) -> Vec<std::sync::Arc<FieldElement>> {
         self.0
@@ -74,16 +72,6 @@ impl Credential {
             .iter()
             .map(|claim| std::sync::Arc::new((*claim).into()))
             .collect()
-    }
-
-    /// Returns the credential's raw claims as hex-encoded, padded strings, in
-    /// schema order.
-    ///
-    /// Convenience over [`Self::claims`] using the same encoding claims carry
-    /// in credential JSON.
-    #[must_use]
-    pub fn claims_hex(&self) -> Vec<String> {
-        self.0.claims.iter().map(ToString::to_string).collect()
     }
 }
 
@@ -147,7 +135,6 @@ mod tests {
         let credential = credential_with_claims();
 
         let claims = credential.claims();
-        assert_eq!(claims.len(), credential.claims_hex().len());
         assert_eq!(
             claims[0].to_hex_string(),
             "0x0000000000000000000000000000000000000000000000000000000000000001"
@@ -156,22 +143,9 @@ mod tests {
             claims[1].to_hex_string(),
             "0x0000000000000000000000000000000000000000000000000000000000000002"
         );
-    }
-
-    #[test]
-    fn claims_hex_matches_field_element_encoding() {
-        let credential = credential_with_claims();
-
-        let hex = credential.claims_hex();
-        let from_elements: Vec<String> = credential
-            .claims()
-            .iter()
-            .map(|claim| claim.to_hex_string())
-            .collect();
-        assert_eq!(hex, from_elements);
 
         // Unset slots are the zero field element.
-        assert!(hex[2..].iter().all(|claim| claim
+        assert!(claims[2..].iter().all(|claim| claim.to_hex_string()
             == "0x0000000000000000000000000000000000000000000000000000000000000000"));
     }
 }
