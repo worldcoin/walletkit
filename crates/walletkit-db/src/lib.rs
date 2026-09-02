@@ -11,7 +11,7 @@
 //!   [`AtomicBlobStore`].
 //! - [`Lock`] / [`LockGuard`] — cross-process exclusive lock (`flock` /
 //!   `LockFileEx` native, no-op on WASM).
-//! - [`Keystore`] / [`AtomicBlobStore`] — plain-Rust trait surface for
+//! - [`KeySealer`] / [`AtomicBlobStore`] — plain-Rust trait surface for
 //!   consumer-supplied platform integrations. Consumers that need FFI define
 //!   their own annotated traits and adapt to these.
 //!
@@ -30,5 +30,5 @@ pub use blobs::{compute_content_id, ContentId};
 pub use envelope::init_or_open_envelope_key;
 pub use error::{StoreError, StoreResult};
 pub use lock::{Lock, LockGuard};
-pub use traits::{AtomicBlobStore, Keystore};
+pub use traits::{AtomicBlobStore, KeySealer};
 pub use vault::Vault;

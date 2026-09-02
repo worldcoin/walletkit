@@ -232,7 +232,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, now).expect("init");
+        tokio_test::block_on(store.init(42, now)).expect("init");
 
         for &id in issuer_ids {
             let cred: Credential = CoreCredential::new()
@@ -297,7 +297,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init");
+        tokio_test::block_on(store.init(42, 1000)).expect("init");
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -635,7 +635,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, now).expect("init");
+        tokio_test::block_on(store.init(42, now)).expect("init");
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(issuer_id)
             .genesis_issued_at(genesis_issued_at)

@@ -1,10 +1,10 @@
 //! Sealed key envelope persisted via [`AtomicBlobStore`].
 //!
-//! A 32-byte intermediate key is sealed under a device-bound [`Keystore`] and
+//! A 32-byte intermediate key is sealed by a host-provided [`KeySealer`] and
 //! persisted as a CBOR-serialized [`KeyEnvelope`]. On subsequent runs the
-//! envelope is read, opened, and the unsealed key returned in a [`SecretBox`].
+//! envelope is read, unsealed, and the key returned in a [`SecretBox`].
 //!
-//! Each consumer chooses its own filename and associated-data namespace so
+//! Each consumer chooses its own filename and sealing context so
 //! independent vaults (e.g. credential vault and `OrbPcpStore`) cannot share
 //! intermediate keys.
 
@@ -14,7 +14,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::error::{StoreError, StoreResult};
 use crate::lock::Lock;
-use crate::traits::{AtomicBlobStore, Keystore};
+use crate::traits::{AtomicBlobStore, KeySealer};
 
 const ENVELOPE_VERSION: u32 = 1;
 
@@ -72,34 +72,35 @@ impl KeyEnvelope {
 
 /// Initialize or open the envelope-sealed intermediate key.
 ///
-/// On first run, generates a fresh 32-byte key, seals it under `keystore`
-/// authenticated by `ad`, persists the envelope at `filename` via
+/// On first run, generates a fresh 32-byte key, seals it with `key_sealer`
+/// bound to `context`, persists the envelope at `filename` via
 /// `blob_store`, and returns the unsealed key.
 ///
 /// On subsequent runs, reads the envelope at `filename`, opens it under
-/// `keystore` authenticated by `ad`, and returns the unsealed key.
+/// `key_sealer` bound to `context`, and returns the unsealed key.
 ///
 /// `lock` is acquired internally to serialize the read-open / generate-write
 /// sequence across processes, and released before this returns.
 ///
 /// # Errors
 ///
-/// Propagates errors from the lock, keystore, blob store, CBOR codec, or
+/// Propagates errors from the lock, key sealer, blob store, CBOR codec, or
 /// RNG.
-pub fn init_or_open_envelope_key(
-    keystore: &dyn Keystore,
+pub async fn init_or_open_envelope_key(
+    key_sealer: &dyn KeySealer,
     blob_store: &dyn AtomicBlobStore,
     lock: &Lock,
     filename: &str,
-    ad: &[u8],
+    context: &[u8],
     now: u64,
 ) -> StoreResult<SecretBox<[u8; 32]>> {
     let _guard = lock.lock()?;
-    if let Some(bytes) = blob_store.read(filename.to_string())? {
+    if let Some(bytes) = blob_store.read(filename.to_string()).await? {
         let envelope = KeyEnvelope::deserialize(&bytes)?;
         let k_intermediate_bytes = Zeroizing::new(
-            keystore
-                .open_sealed(ad.to_vec(), envelope.wrapped_k_intermediate.clone())?,
+            key_sealer
+                .unseal(context.to_vec(), envelope.wrapped_k_intermediate.clone())
+                .await?,
         );
         let k_intermediate = parse_key_32(&k_intermediate_bytes, "intermediate key")?;
         Ok(SecretBox::init_with(|| k_intermediate))
@@ -107,17 +108,17 @@ pub fn init_or_open_envelope_key(
         let mut k_intermediate = Zeroizing::new([0u8; 32]);
         getrandom::fill(k_intermediate.as_mut())
             .map_err(|err| StoreError::Crypto(format!("rng failure: {err}")))?;
-        // `keystore.seal` borrows the plaintext, so `k_intermediate` is
+        // `key_sealer.seal` borrows the plaintext, so `k_intermediate` is
         // never copied into an un-zeroized `Vec<u8>` at this layer. A
-        // `Keystore` bridging to an owned-only interface (e.g. a uniffi
-        // callback like walletkit-core's `DeviceKeystore`) still needs one
+        // `KeySealer` bridging to an owned-only interface (e.g. a uniffi
+        // callback like walletkit-core's `KeySealer`) still needs one
         // owned copy to cross that boundary; that is an accepted,
         // uniffi-imposed limitation (callback interfaces only support
         // pass-by-value), not something fixable from this layer.
-        let wrapped = keystore.seal(ad, k_intermediate.as_slice())?;
+        let wrapped = key_sealer.seal(context, k_intermediate.as_slice()).await?;
         let envelope = KeyEnvelope::new(wrapped, now);
         let bytes = envelope.serialize()?;
-        blob_store.write_atomic(filename.to_string(), bytes)?;
+        blob_store.write_atomic(filename.to_string(), bytes).await?;
         let key_copy = *k_intermediate;
         Ok(SecretBox::init_with(move || key_copy))
     }
@@ -138,7 +139,7 @@ fn parse_key_32(bytes: &[u8], label: &str) -> StoreResult<[u8; 32]> {
 #[cfg(test)]
 mod tests {
     use super::{init_or_open_envelope_key, KeyEnvelope};
-    use crate::{AtomicBlobStore, Keystore, Lock, StoreError, StoreResult};
+    use crate::{AtomicBlobStore, KeySealer, Lock, StoreError, StoreResult};
     use secrecy::ExposeSecret;
     use std::sync::Mutex;
 
@@ -185,23 +186,29 @@ mod tests {
         }
     }
 
-    /// Stub `Keystore` that XORs with a fixed pad. Good enough to verify
-    /// the seal → persist → open round-trip on the envelope wiring.
-    struct XorKeystore {
+    /// Stub `KeySealer` that XORs with a fixed pad. Good enough to verify
+    /// the seal -> persist -> unseal round-trip on the envelope wiring.
+    struct XorKeySealer {
         pad: [u8; 32],
     }
 
-    impl Keystore for XorKeystore {
-        fn seal(&self, _ad: &[u8], plaintext: &[u8]) -> StoreResult<Vec<u8>> {
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+    impl KeySealer for XorKeySealer {
+        async fn seal(
+            &self,
+            _context: &[u8],
+            plaintext: &[u8],
+        ) -> StoreResult<Vec<u8>> {
             Ok(plaintext
                 .iter()
                 .enumerate()
                 .map(|(i, b)| b ^ self.pad[i % 32])
                 .collect())
         }
-        fn open_sealed(
+        async fn unseal(
             &self,
-            _ad: Vec<u8>,
+            _context: Vec<u8>,
             ciphertext: Vec<u8>,
         ) -> StoreResult<Vec<u8>> {
             Ok(ciphertext
@@ -222,46 +229,50 @@ mod tests {
             }
         }
     }
+    #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+    #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
     impl AtomicBlobStore for InMemoryBlobs {
-        fn read(&self, path: String) -> StoreResult<Option<Vec<u8>>> {
+        async fn read(&self, path: String) -> StoreResult<Option<Vec<u8>>> {
             Ok(self.inner.lock().unwrap().get(&path).cloned())
         }
-        fn write_atomic(&self, path: String, bytes: Vec<u8>) -> StoreResult<()> {
+        async fn write_atomic(&self, path: String, bytes: Vec<u8>) -> StoreResult<()> {
             self.inner.lock().unwrap().insert(path, bytes);
             Ok(())
         }
-        fn delete(&self, path: String) -> StoreResult<()> {
+        async fn delete(&self, path: String) -> StoreResult<()> {
             self.inner.lock().unwrap().remove(&path);
             Ok(())
         }
     }
 
-    #[test]
+    #[tokio::test]
     #[cfg(not(target_arch = "wasm32"))]
-    fn test_init_or_open_envelope_key_round_trip() {
+    async fn test_init_or_open_envelope_key_round_trip() {
         let dir = tempfile::tempdir().expect("create temp dir");
         let lock_path = dir.path().join("envelope.lock");
         let lock = Lock::open(&lock_path).expect("open lock");
 
-        let keystore = XorKeystore { pad: [0xAA; 32] };
+        let key_sealer = XorKeySealer { pad: [0xAA; 32] };
         let blob_store = InMemoryBlobs::new();
         let key_a = init_or_open_envelope_key(
-            &keystore,
+            &key_sealer,
             &blob_store,
             &lock,
             "k.bin",
             b"test-ad",
             100,
         )
+        .await
         .expect("init");
         let key_b = init_or_open_envelope_key(
-            &keystore,
+            &key_sealer,
             &blob_store,
             &lock,
             "k.bin",
             b"test-ad",
             200,
         )
+        .await
         .expect("re-open");
 
         assert_eq!(key_a.expose_secret(), key_b.expose_secret());

@@ -8732,6 +8732,7 @@ version = "0.21.4"
 dependencies = [
  "alloy",
  "alloy-core",
+ "async-trait",
  "backon",
  "base64 0.22.1",
  "chacha20poly1305",
@@ -8781,6 +8782,7 @@ dependencies = [
 name = "walletkit-db"
 version = "0.21.4"
 dependencies = [
+ "async-trait",
  "ciborium",
  "getrandom 0.3.4",
  "hex",
@@ -8789,6 +8791,7 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.18",
+ "tokio",
  "walletkit-sqlite",
  "zeroize",
 ]
@@ -8815,6 +8818,7 @@ version = "0.21.4"
 dependencies = [
  "alloy",
  "alloy-core",
+ "async-trait",
  "eyre",
  "rand 0.8.6",
  "reqwest 0.12.28",

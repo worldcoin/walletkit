@@ -10,6 +10,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+async-trait = { workspace = true }
 alloy = { workspace = true, features = ["contract", "json", "getrandom", "signer-local"] }
 alloy-core = { workspace = true }
 eyre = { workspace = true }

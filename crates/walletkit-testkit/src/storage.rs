@@ -6,29 +6,30 @@ use std::sync::Arc;
 use uuid::Uuid;
 use walletkit_core::authenticator::artifacts::caching::CachingZkArtifacts;
 use walletkit_core::storage::{
-    AtomicBlobStore, CredentialStore, DeviceKeystore, StorageError, StoragePaths,
+    AtomicBlobStore, CredentialStore, KeySealer, StorageError, StoragePaths,
     StorageProvider,
 };
 
-/// No-op device keystore that passes data through without encryption.
+/// No-op key sealer that passes data through without encryption.
 ///
 /// Suitable only for development and testing. In production the real
-/// `DeviceKeystore` is backed by the platform's secure enclave. Used by
+/// `KeySealer` is backed by platform key protection. Used by
 /// [`FsStorageProvider`].
-pub struct NoopDeviceKeystore;
+pub struct NoopKeySealer;
 
-impl DeviceKeystore for NoopDeviceKeystore {
-    fn seal(
+#[async_trait::async_trait]
+impl KeySealer for NoopKeySealer {
+    async fn seal(
         &self,
-        _associated_data: Vec<u8>,
+        _context: Vec<u8>,
         plaintext: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
         Ok(plaintext)
     }
 
-    fn open_sealed(
+    async fn unseal(
         &self,
-        _associated_data: Vec<u8>,
+        _context: Vec<u8>,
         ciphertext: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
         Ok(ciphertext)
@@ -53,8 +54,9 @@ impl FsAtomicBlobStore {
     }
 }
 
+#[async_trait::async_trait]
 impl AtomicBlobStore for FsAtomicBlobStore {
-    fn read(&self, path: String) -> Result<Option<Vec<u8>>, StorageError> {
+    async fn read(&self, path: String) -> Result<Option<Vec<u8>>, StorageError> {
         let full = self.base.join(&path);
         match std::fs::read(&full) {
             Ok(bytes) => Ok(Some(bytes)),
@@ -66,7 +68,11 @@ impl AtomicBlobStore for FsAtomicBlobStore {
         }
     }
 
-    fn write_atomic(&self, path: String, bytes: Vec<u8>) -> Result<(), StorageError> {
+    async fn write_atomic(
+        &self,
+        path: String,
+        bytes: Vec<u8>,
+    ) -> Result<(), StorageError> {
         let full = self.base.join(&path);
         if let Some(parent) = full.parent() {
             std::fs::create_dir_all(parent).map_err(|e| {
@@ -93,7 +99,7 @@ impl AtomicBlobStore for FsAtomicBlobStore {
         Ok(())
     }
 
-    fn delete(&self, path: String) -> Result<(), StorageError> {
+    async fn delete(&self, path: String) -> Result<(), StorageError> {
         let full = self.base.join(&path);
         match std::fs::remove_file(&full) {
             Ok(()) => Ok(()),
@@ -106,10 +112,10 @@ impl AtomicBlobStore for FsAtomicBlobStore {
     }
 }
 
-/// Filesystem [`StorageProvider`] tying together the no-op keystore, fs blob
+/// Filesystem [`StorageProvider`] tying together the no-op key sealer, fs blob
 /// store, and on-disk paths.
 pub struct FsStorageProvider {
-    keystore: Arc<NoopDeviceKeystore>,
+    key_sealer: Arc<NoopKeySealer>,
     blob_store: Arc<FsAtomicBlobStore>,
     paths: Arc<StoragePaths>,
 }
@@ -119,7 +125,7 @@ impl FsStorageProvider {
     #[must_use]
     pub fn open(root: &Path) -> Self {
         Self {
-            keystore: Arc::new(NoopDeviceKeystore),
+            key_sealer: Arc::new(NoopKeySealer),
             blob_store: Arc::new(FsAtomicBlobStore::new(root)),
             paths: Arc::new(StoragePaths::new(root)),
         }
@@ -127,8 +133,8 @@ impl FsStorageProvider {
 }
 
 impl StorageProvider for FsStorageProvider {
-    fn keystore(&self) -> Arc<dyn DeviceKeystore> {
-        self.keystore.clone()
+    fn key_sealer(&self) -> Arc<dyn KeySealer> {
+        self.key_sealer.clone()
     }
 
     fn blob_store(&self) -> Arc<dyn AtomicBlobStore> {

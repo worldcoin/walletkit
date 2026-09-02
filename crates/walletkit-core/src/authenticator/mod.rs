@@ -1482,7 +1482,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("store");
-        store.init(42, 100).expect("init storage");
+        store.init(42, 100).await.expect("init storage");
 
         let artifacts =
             Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));

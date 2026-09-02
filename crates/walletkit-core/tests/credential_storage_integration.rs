@@ -22,7 +22,7 @@ fn test_storage_flow_end_to_end() {
     let provider = common::InMemoryStorageProvider::new(&root);
     let store = CredentialStore::from_provider(&provider).expect("store");
 
-    store.init(42, 100).expect("init");
+    tokio_test::block_on(store.init(42, 100)).expect("init");
 
     let blinding_factor = CoreFieldElement::random(&mut OsRng);
     let core_cred = CoreCredential::new()

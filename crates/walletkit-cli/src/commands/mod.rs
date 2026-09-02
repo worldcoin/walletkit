@@ -331,6 +331,7 @@ pub async fn init_authenticator(
     let now = now_secs();
     authenticator
         .init_storage(now)
+        .await
         .wrap_err("storage init failed")?;
 
     Ok((Arc::new(authenticator), store))

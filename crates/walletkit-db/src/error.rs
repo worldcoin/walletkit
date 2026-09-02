@@ -12,9 +12,9 @@ pub type StoreResult<T> = Result<T, StoreError>;
 /// their own typed error.
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
-    /// Errors coming from the device keystore.
-    #[error("keystore error: {0}")]
-    Keystore(String),
+    /// Errors coming from the key sealer.
+    #[error("key sealer error: {0}")]
+    Sealer(String),
     /// Errors coming from the blob store.
     #[error("blob store error: {0}")]
     BlobStore(String),

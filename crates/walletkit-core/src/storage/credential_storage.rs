@@ -12,11 +12,13 @@ use super::paths::StoragePaths;
 use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
 use super::traits::VaultChangedListener;
-use super::traits::{AtomicBlobStore, DeviceKeystore};
+use super::traits::{AtomicBlobStore, KeySealer};
 use super::types::CredentialRecord;
+use super::StorageLock;
+#[cfg(not(target_arch = "wasm32"))]
+use super::StorageLockGuard;
 use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, CredentialVault};
-use super::{StorageLock, StorageLockGuard};
 use crate::{Credential, FieldElement};
 use world_id_core::primitives::merkle::AccountInclusionProof;
 use world_id_core::primitives::TREE_DEPTH;
@@ -50,6 +52,9 @@ impl Drop for CleanupFile {
 #[derive(uniffi::Object)]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
+    /// Serializes async storage initialization and destruction without holding
+    /// the synchronous state mutex across a foreign await.
+    lifecycle_lock: tokio::sync::Mutex<()>,
     /// Channel sender for the vault-changed notification thread.
     /// Kept outside `inner` so we can notify after releasing the storage mutex.
     #[cfg(not(target_arch = "wasm32"))]
@@ -64,7 +69,7 @@ impl std::fmt::Debug for CredentialStore {
 
 struct CredentialStoreInner {
     lock: StorageLock,
-    keystore: Arc<dyn DeviceKeystore>,
+    key_sealer: Arc<dyn KeySealer>,
     blob_store: Arc<dyn AtomicBlobStore>,
     paths: StoragePaths,
     state: Option<StorageState>,
@@ -88,7 +93,7 @@ impl CredentialStoreInner {
         let paths = provider.paths();
         Self::new(
             paths.as_ref().clone(),
-            provider.keystore(),
+            provider.key_sealer(),
             provider.blob_store(),
         )
     }
@@ -100,19 +105,20 @@ impl CredentialStoreInner {
     /// Returns an error if the storage lock cannot be opened.
     pub fn new(
         paths: StoragePaths,
-        keystore: Arc<dyn DeviceKeystore>,
+        key_sealer: Arc<dyn KeySealer>,
         blob_store: Arc<dyn AtomicBlobStore>,
     ) -> StorageResult<Self> {
         let lock = StorageLock::open(&paths.lock_path())?;
         Ok(Self {
             lock,
-            keystore,
+            key_sealer,
             blob_store,
             paths,
             state: None,
         })
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn guard(&self) -> StorageResult<StorageLockGuard> {
         self.lock.lock().map_err(Into::into)
     }
@@ -136,13 +142,14 @@ impl CredentialStore {
     #[uniffi::constructor]
     pub fn new_with_components(
         paths: Arc<StoragePaths>,
-        keystore: Arc<dyn DeviceKeystore>,
+        key_sealer: Arc<dyn KeySealer>,
         blob_store: Arc<dyn AtomicBlobStore>,
     ) -> StorageResult<Self> {
         let paths = Arc::try_unwrap(paths).unwrap_or_else(|arc| (*arc).clone());
-        let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
+        let inner = CredentialStoreInner::new(paths, key_sealer, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            lifecycle_lock: tokio::sync::Mutex::new(()),
             #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
         })
@@ -161,6 +168,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
         Ok(Self {
             inner: Mutex::new(inner),
+            lifecycle_lock: tokio::sync::Mutex::new(()),
             #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
         })
@@ -180,9 +188,35 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if initialization fails or the leaf index mismatches.
-    pub fn init(&self, leaf_index: u64, now: u64) -> StorageResult<()> {
-        let mut inner = self.lock_inner()?;
-        inner.init(leaf_index, now)
+    pub async fn init(&self, leaf_index: u64, now: u64) -> StorageResult<()> {
+        let _lifecycle_guard = self.lifecycle_lock.lock().await;
+
+        let (key_sealer, blob_store, lock, paths) = {
+            let mut inner = self.lock_inner()?;
+            if let Some(state) = &mut inner.state {
+                state.vault.init_leaf_index(leaf_index, now)?;
+                state.leaf_index = leaf_index;
+                return Ok(());
+            }
+            (
+                Arc::clone(&inner.key_sealer),
+                Arc::clone(&inner.blob_store),
+                inner.lock.clone(),
+                inner.paths.clone(),
+            )
+        };
+
+        let state = open_storage_state(
+            key_sealer.as_ref(),
+            blob_store.as_ref(),
+            &lock,
+            &paths,
+            leaf_index,
+            now,
+        )
+        .await?;
+        self.lock_inner()?.state = Some(state);
+        Ok(())
     }
 
     /// Lists credential metadata, optionally filtered by issuer schema ID.
@@ -298,8 +332,28 @@ impl CredentialStore {
     ///
     /// Returns an error if the storage lock cannot be acquired or the key
     /// envelope cannot be deleted from the blob store.
-    pub fn destroy_storage(&self) -> StorageResult<()> {
-        self.lock_inner()?.destroy_storage()
+    pub async fn destroy_storage(&self) -> StorageResult<()> {
+        let _lifecycle_guard = self.lifecycle_lock.lock().await;
+        let (blob_store, lock, paths) = {
+            let inner = self.lock_inner()?;
+            (
+                Arc::clone(&inner.blob_store),
+                inner.lock.clone(),
+                inner.paths.clone(),
+            )
+        };
+        let _storage_guard = lock.lock()?;
+
+        // Drop in-memory state first: this zeroizes keys and closes the database
+        // connections before deleting their backing files.
+        self.lock_inner()?.state = None;
+        blob_store.delete(ACCOUNT_KEYS_FILENAME.to_string()).await?;
+
+        // Best-effort removal: deleting the key above cryptographically destroys
+        // the databases even if their encrypted files cannot be removed.
+        super::delete_database_files(&paths.vault_db_path());
+        super::delete_database_files(&paths.cache_db_path());
+        Ok(())
     }
 }
 
@@ -514,30 +568,25 @@ impl CredentialStore {
 }
 
 impl CredentialStoreInner {
-    fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
+    #[cfg(test)]
+    async fn init(&mut self, leaf_index: u64, now: u64) -> StorageResult<()> {
         if let Some(state) = &mut self.state {
             state.vault.init_leaf_index(leaf_index, now)?;
             state.leaf_index = leaf_index;
             return Ok(());
         }
 
-        let keys = StorageKeys::init(
-            self.keystore.as_ref(),
-            self.blob_store.as_ref(),
-            &self.lock,
-            now,
-        )?;
-        let k_intermediate = keys.intermediate_key();
-        let vault = CredentialVault::new(&self.paths.vault_db_path(), k_intermediate)?;
-        let cache = CacheDb::new(&self.paths.cache_db_path(), k_intermediate)?;
-        let state = StorageState {
-            keys,
-            vault,
-            cache,
-            leaf_index,
-        };
-        state.vault.init_leaf_index(leaf_index, now)?;
-        self.state = Some(state);
+        self.state = Some(
+            open_storage_state(
+                self.key_sealer.as_ref(),
+                self.blob_store.as_ref(),
+                &self.lock,
+                &self.paths,
+                leaf_index,
+                now,
+            )
+            .await?,
+        );
         Ok(())
     }
 
@@ -801,23 +850,28 @@ impl CredentialStoreInner {
         let state = self.state_mut()?;
         state.vault.danger_delete_all_credentials()
     }
+}
 
-    /// Permanently destroys all storage data: encryption keys, vault, and cache.
-    fn destroy_storage(&mut self) -> StorageResult<()> {
-        let _guard = self.guard()?;
-        // Drop in-memory state: zeroizes keys, closes database connections.
-        self.state = None;
-        // Delete the encryption key envelope. Without this key the database
-        // files are unreadable even if file deletion below fails.
-        self.blob_store.delete(ACCOUNT_KEYS_FILENAME.to_string())?;
-
-        // Best-effort removal: deleting the key above cryptographically destroys
-        // the databases even if their encrypted files cannot be removed.
-        super::delete_database_files(&self.paths.vault_db_path());
-        super::delete_database_files(&self.paths.cache_db_path());
-
-        Ok(())
-    }
+async fn open_storage_state(
+    key_sealer: &dyn KeySealer,
+    blob_store: &dyn AtomicBlobStore,
+    lock: &StorageLock,
+    paths: &StoragePaths,
+    leaf_index: u64,
+    now: u64,
+) -> StorageResult<StorageState> {
+    let keys = StorageKeys::init(key_sealer, blob_store, lock, now).await?;
+    let k_intermediate = keys.intermediate_key();
+    let vault = CredentialVault::new(&paths.vault_db_path(), k_intermediate)?;
+    let cache = CacheDb::new(&paths.cache_db_path(), k_intermediate)?;
+    let state = StorageState {
+        keys,
+        vault,
+        cache,
+        leaf_index,
+    };
+    state.vault.init_leaf_index(leaf_index, now)?;
+    Ok(state)
 }
 
 impl CredentialStore {
@@ -830,6 +884,7 @@ impl CredentialStore {
         let inner = CredentialStoreInner::from_provider(provider)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            lifecycle_lock: tokio::sync::Mutex::new(()),
             #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
         })
@@ -842,12 +897,13 @@ impl CredentialStore {
     /// Returns an error if the storage lock cannot be opened.
     pub fn new(
         paths: StoragePaths,
-        keystore: Arc<dyn DeviceKeystore>,
+        key_sealer: Arc<dyn KeySealer>,
         blob_store: Arc<dyn AtomicBlobStore>,
     ) -> StorageResult<Self> {
-        let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
+        let inner = CredentialStoreInner::new(paths, key_sealer, blob_store)?;
         Ok(Self {
             inner: Mutex::new(inner),
+            lifecycle_lock: tokio::sync::Mutex::new(()),
             #[cfg(not(target_arch = "wasm32"))]
             vault_changed_tx: Mutex::new(None),
         })
@@ -906,12 +962,12 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
+        let key_sealer = provider.key_sealer();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+        let mut inner = CredentialStoreInner::new(paths, key_sealer, blob_store)
             .expect("create inner");
-        inner.init(42, 1000).expect("init storage");
+        tokio_test::block_on(inner.init(42, 1000)).expect("init storage");
 
         // Create a FieldElement from a known value
         let nullifier = CoreFieldElement::from(123_456_789u64);
@@ -938,12 +994,12 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
+        let key_sealer = provider.key_sealer();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+        let mut inner = CredentialStoreInner::new(paths, key_sealer, blob_store)
             .expect("create inner");
-        inner.init(42, 1000).expect("init storage");
+        tokio_test::block_on(inner.init(42, 1000)).expect("init storage");
 
         let nullifier = CoreFieldElement::from(999u64);
         let set_time = 1000u64;
@@ -981,12 +1037,12 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
+        let key_sealer = provider.key_sealer();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+        let mut inner = CredentialStoreInner::new(paths, key_sealer, blob_store)
             .expect("create inner");
-        inner.init(42, 1000).expect("init storage");
+        tokio_test::block_on(inner.init(42, 1000)).expect("init storage");
 
         let nullifier = CoreFieldElement::from(555u64);
         let set_time = 3000u64;
@@ -1027,11 +1083,12 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
+        let key_sealer = provider.key_sealer();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store).unwrap();
-        inner.init(42, 1000).expect("init storage");
+        let mut inner =
+            CredentialStoreInner::new(paths, key_sealer, blob_store).unwrap();
+        tokio_test::block_on(inner.init(42, 1000)).expect("init storage");
 
         let nullifier = CoreFieldElement::from(12345u64);
         let first_set_time = 1000u64;
@@ -1067,7 +1124,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init storage");
+        tokio_test::block_on(store.init(42, 1000)).expect("init storage");
 
         let blinding_factor = FieldElement::from(7u64);
         let cred: Credential = CoreCredential::new()
@@ -1106,12 +1163,12 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
+        let key_sealer = provider.key_sealer();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+        let mut inner = CredentialStoreInner::new(paths, key_sealer, blob_store)
             .expect("create inner");
-        inner.init(42, 1000).expect("init storage");
+        tokio_test::block_on(inner.init(42, 1000)).expect("init storage");
 
         // Store a test credential
         let issuer_schema_id = 123u64;
@@ -1168,7 +1225,7 @@ mod tests {
         let src_provider = InMemoryStorageProvider::new(&src_root);
         let src_store =
             CredentialStore::from_provider(&src_provider).expect("create src store");
-        src_store.init(42, 1000).expect("init src storage");
+        tokio_test::block_on(src_store.init(42, 1000)).expect("init src storage");
 
         let issuer_schema_id = 100u64;
         let blinding_factor = FieldElement::from(7u64);
@@ -1188,7 +1245,7 @@ mod tests {
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
         let dst_store =
             CredentialStore::from_provider(&dst_provider).expect("create dst store");
-        dst_store.init(42, 1000).expect("init dst storage");
+        tokio_test::block_on(dst_store.init(42, 1000)).expect("init dst storage");
 
         dst_store
             .import_vault_from_backup(&bytes)
@@ -1213,7 +1270,7 @@ mod tests {
         let src_provider = InMemoryStorageProvider::new(&src_root);
         let src_store =
             CredentialStore::from_provider(&src_provider).expect("create src store");
-        src_store.init(42, 1000).expect("init src storage");
+        tokio_test::block_on(src_store.init(42, 1000)).expect("init src storage");
 
         // Store credential A (schema 100) without associated data
         let cred_a: Credential = CoreCredential::new()
@@ -1257,7 +1314,7 @@ mod tests {
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
         let dst_store =
             CredentialStore::from_provider(&dst_provider).expect("create dst store");
-        dst_store.init(42, 1000).expect("init dst storage");
+        tokio_test::block_on(dst_store.init(42, 1000)).expect("init dst storage");
 
         dst_store
             .import_vault_from_backup(&bytes)
@@ -1297,7 +1354,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init storage");
+        tokio_test::block_on(store.init(42, 1000)).expect("init storage");
 
         let blinding_factor = FieldElement::from(7u64);
         let cred: Credential = CoreCredential::new()
@@ -1331,7 +1388,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init storage");
+        tokio_test::block_on(store.init(42, 1000)).expect("init storage");
 
         let result = store.import_vault_from_backup(b"not a sqlite database");
         assert!(result.is_err(), "import from invalid bytes should fail");
@@ -1349,7 +1406,7 @@ mod tests {
         let src_provider = InMemoryStorageProvider::new(&src_root);
         let src_store =
             CredentialStore::from_provider(&src_provider).expect("create src store");
-        src_store.init(42, 1000).expect("init src storage");
+        tokio_test::block_on(src_store.init(42, 1000)).expect("init src storage");
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100u64)
@@ -1388,7 +1445,7 @@ mod tests {
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
         let dst_store =
             CredentialStore::from_provider(&dst_provider).expect("create dst store");
-        dst_store.init(42, 1000).expect("init dst storage");
+        tokio_test::block_on(dst_store.init(42, 1000)).expect("init dst storage");
 
         let result = dst_store.import_vault_from_backup(&corrupt_bytes);
         assert!(result.is_err(), "import with corrupt backup should fail");
@@ -1412,12 +1469,12 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
+        let key_sealer = provider.key_sealer();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+        let mut inner = CredentialStoreInner::new(paths, key_sealer, blob_store)
             .expect("create inner");
-        inner.init(42, 1000).expect("init storage");
+        tokio_test::block_on(inner.init(42, 1000)).expect("init storage");
 
         let blinding_factor = FieldElement::from(42u64);
         for issuer_id in [100u64, 200u64] {
@@ -1444,12 +1501,12 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
+        let key_sealer = provider.key_sealer();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+        let mut inner = CredentialStoreInner::new(paths, key_sealer, blob_store)
             .expect("create inner");
-        inner.init(42, 1000).expect("init storage");
+        tokio_test::block_on(inner.init(42, 1000)).expect("init storage");
 
         let deleted = inner
             .danger_delete_all_credentials()
@@ -1466,12 +1523,12 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let paths = provider.paths().as_ref().clone();
-        let keystore = provider.keystore();
+        let key_sealer = provider.key_sealer();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
+        let mut inner = CredentialStoreInner::new(paths, key_sealer, blob_store)
             .expect("create inner");
-        inner.init(42, 1000).expect("init storage");
+        tokio_test::block_on(inner.init(42, 1000)).expect("init storage");
 
         let blinding_factor = FieldElement::from(42u64);
         let cred: Credential = CoreCredential::new()
@@ -1505,7 +1562,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init store");
+        tokio_test::block_on(store.init(42, 1000)).expect("init store");
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -1539,7 +1596,7 @@ mod tests {
         let src_provider = InMemoryStorageProvider::new(&src_root);
         let src_store =
             CredentialStore::from_provider(&src_provider).expect("create store");
-        src_store.init(42, 1000).expect("init store");
+        tokio_test::block_on(src_store.init(42, 1000)).expect("init store");
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -1557,7 +1614,7 @@ mod tests {
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
         let dst_store =
             CredentialStore::from_provider(&dst_provider).expect("create dst store");
-        dst_store.init(42, 1000).expect("init dst store");
+        tokio_test::block_on(dst_store.init(42, 1000)).expect("init dst store");
 
         dst_store
             .import_vault_from_backup(&bytes)
@@ -1581,7 +1638,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init store");
+        tokio_test::block_on(store.init(42, 1000)).expect("init store");
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -1619,7 +1676,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init store");
+        tokio_test::block_on(store.init(42, 1000)).expect("init store");
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -1669,7 +1726,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init storage");
+        tokio_test::block_on(store.init(42, 1000)).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
         store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
@@ -1696,7 +1753,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init storage");
+        tokio_test::block_on(store.init(42, 1000)).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
         store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
@@ -1724,7 +1781,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init storage");
+        tokio_test::block_on(store.init(42, 1000)).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
         store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
@@ -1753,7 +1810,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init storage");
+        tokio_test::block_on(store.init(42, 1000)).expect("init storage");
 
         // No listener registered — mutations should still work fine.
         let cred: Credential = CoreCredential::new()
@@ -1774,7 +1831,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init storage");
+        tokio_test::block_on(store.init(42, 1000)).expect("init storage");
 
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(100)
@@ -1785,7 +1842,7 @@ mod tests {
             .expect("store credential");
 
         // Destroy should succeed.
-        store.destroy_storage().expect("destroy storage");
+        tokio_test::block_on(store.destroy_storage()).expect("destroy storage");
 
         // Database files should be removed from the storage directory.
         let paths = StoragePaths::new(&root);
@@ -1807,7 +1864,7 @@ mod tests {
         );
 
         // Re-initialization should work.
-        store.init(42, 1000).expect("re-init storage");
+        tokio_test::block_on(store.init(42, 1000)).expect("re-init storage");
         let list = store
             .list_credentials(None, 1000)
             .expect("list after re-init");
@@ -1826,7 +1883,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("create store");
-        store.init(42, 1000).expect("init storage");
+        tokio_test::block_on(store.init(42, 1000)).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
         store.set_vault_changed_listener(Arc::new(TestVaultListener(Arc::clone(
@@ -1842,7 +1899,7 @@ mod tests {
             .expect("store credential");
         wait_for_listener_count(&count, 1);
 
-        store.destroy_storage().expect("destroy storage");
+        tokio_test::block_on(store.destroy_storage()).expect("destroy storage");
 
         std::thread::sleep(std::time::Duration::from_millis(50));
 

@@ -20,15 +20,15 @@ use chacha20poly1305::{
 use rand::{rngs::OsRng, RngCore};
 use uuid::Uuid;
 use walletkit_core::storage::{
-    AtomicBlobStore, CredentialStore, DeviceKeystore, StorageError, StoragePaths,
+    AtomicBlobStore, CredentialStore, KeySealer, StorageError, StoragePaths,
     StorageProvider,
 };
 
-pub struct InMemoryKeystore {
+pub struct InMemoryKeySealer {
     key: [u8; 32],
 }
 
-impl InMemoryKeystore {
+impl InMemoryKeySealer {
     pub fn new() -> Self {
         let mut key = [0u8; 32];
         OsRng.fill_bytes(&mut key);
@@ -36,16 +36,17 @@ impl InMemoryKeystore {
     }
 }
 
-impl Default for InMemoryKeystore {
+impl Default for InMemoryKeySealer {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl DeviceKeystore for InMemoryKeystore {
-    fn seal(
+#[async_trait::async_trait]
+impl KeySealer for InMemoryKeySealer {
+    async fn seal(
         &self,
-        associated_data: Vec<u8>,
+        context: Vec<u8>,
         plaintext: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
         let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.key));
@@ -56,7 +57,7 @@ impl DeviceKeystore for InMemoryKeystore {
                 XNonce::from_slice(&nonce_bytes),
                 Payload {
                     msg: &plaintext,
-                    aad: &associated_data,
+                    aad: &context,
                 },
             )
             .map_err(|err| StorageError::Crypto(err.to_string()))?;
@@ -66,14 +67,14 @@ impl DeviceKeystore for InMemoryKeystore {
         Ok(out)
     }
 
-    fn open_sealed(
+    async fn unseal(
         &self,
-        associated_data: Vec<u8>,
+        context: Vec<u8>,
         ciphertext: Vec<u8>,
     ) -> Result<Vec<u8>, StorageError> {
         if ciphertext.len() < 24 {
             return Err(StorageError::InvalidEnvelope(
-                "keystore ciphertext too short".to_string(),
+                "key sealer ciphertext too short".to_string(),
             ));
         }
         let (nonce_bytes, payload) = ciphertext.split_at(24);
@@ -83,7 +84,7 @@ impl DeviceKeystore for InMemoryKeystore {
                 XNonce::from_slice(nonce_bytes),
                 Payload {
                     msg: payload,
-                    aad: &associated_data,
+                    aad: &context,
                 },
             )
             .map_err(|err| StorageError::Crypto(err.to_string()))
@@ -108,8 +109,9 @@ impl Default for InMemoryBlobStore {
     }
 }
 
+#[async_trait::async_trait]
 impl AtomicBlobStore for InMemoryBlobStore {
-    fn read(&self, path: String) -> Result<Option<Vec<u8>>, StorageError> {
+    async fn read(&self, path: String) -> Result<Option<Vec<u8>>, StorageError> {
         let guard = self
             .blobs
             .lock()
@@ -117,7 +119,11 @@ impl AtomicBlobStore for InMemoryBlobStore {
         Ok(guard.get(&path).cloned())
     }
 
-    fn write_atomic(&self, path: String, bytes: Vec<u8>) -> Result<(), StorageError> {
+    async fn write_atomic(
+        &self,
+        path: String,
+        bytes: Vec<u8>,
+    ) -> Result<(), StorageError> {
         self.blobs
             .lock()
             .map_err(|_| StorageError::BlobStore("mutex poisoned".to_string()))?
@@ -125,7 +131,7 @@ impl AtomicBlobStore for InMemoryBlobStore {
         Ok(())
     }
 
-    fn delete(&self, path: String) -> Result<(), StorageError> {
+    async fn delete(&self, path: String) -> Result<(), StorageError> {
         self.blobs
             .lock()
             .map_err(|_| StorageError::BlobStore("mutex poisoned".to_string()))?
@@ -135,7 +141,7 @@ impl AtomicBlobStore for InMemoryBlobStore {
 }
 
 pub struct InMemoryStorageProvider {
-    keystore: Arc<InMemoryKeystore>,
+    key_sealer: Arc<InMemoryKeySealer>,
     blob_store: Arc<InMemoryBlobStore>,
     paths: Arc<StoragePaths>,
 }
@@ -143,7 +149,7 @@ pub struct InMemoryStorageProvider {
 impl InMemoryStorageProvider {
     pub fn new(root: impl AsRef<Path>) -> Self {
         Self {
-            keystore: Arc::new(InMemoryKeystore::new()),
+            key_sealer: Arc::new(InMemoryKeySealer::new()),
             blob_store: Arc::new(InMemoryBlobStore::new()),
             paths: Arc::new(StoragePaths::new(root)),
         }
@@ -151,8 +157,8 @@ impl InMemoryStorageProvider {
 }
 
 impl StorageProvider for InMemoryStorageProvider {
-    fn keystore(&self) -> Arc<dyn DeviceKeystore> {
-        self.keystore.clone()
+    fn key_sealer(&self) -> Arc<dyn KeySealer> {
+        self.key_sealer.clone()
     }
 
     fn blob_store(&self) -> Arc<dyn AtomicBlobStore> {

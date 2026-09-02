@@ -21,7 +21,7 @@
 //!    correctness loss. See [`crate::storage::CacheDb`].
 //!
 //! The encrypted-storage primitives beneath these — the sealed key envelope, the
-//! `K_device` → `K_intermediate` key hierarchy, sqlite3mc encryption, the
+//! sealing-key to `K_intermediate` hierarchy, sqlite3mc encryption, the
 //! cross-process lock, content-addressed blobs, and the threat model are owned by
 //! the [`walletkit-db`](https://docs.rs/crate/walletkit-db/latest) crate.
 //!
@@ -58,9 +58,7 @@ pub use credential_vault::CredentialVault;
 pub use error::{StorageError, StorageResult};
 pub use keys::StorageKeys;
 pub use paths::StoragePaths;
-pub use traits::{
-    AtomicBlobStore, DeviceKeystore, StorageProvider, VaultChangedListener,
-};
+pub use traits::{AtomicBlobStore, KeySealer, StorageProvider, VaultChangedListener};
 pub use types::{
     BlobKind, ContentId, CredentialRecord, Nullifier, ReplayGuardKind,
     ReplayGuardResult, RequestId,
@@ -115,7 +113,7 @@ pub async fn initialize_persistent_storage() -> StorageResult<()> {
 }
 
 pub(crate) const ACCOUNT_KEYS_FILENAME: &str = "account_keys.bin";
-pub(crate) const ACCOUNT_KEY_ENVELOPE_AD: &[u8] = b"worldid:account-key-envelope";
+pub(crate) const ACCOUNT_KEY_ENVELOPE_CONTEXT: &[u8] = b"worldid:account-key-envelope";
 
 #[cfg(test)]
 pub(crate) mod tests_utils;

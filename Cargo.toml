@@ -30,6 +30,7 @@ alloy = { version = "2", default-features = false }
 alloy-core = { version = "1", default-features = false, features = [
   "sol-types",
 ] }
+async-trait = "0.1"
 backon = "1.6"
 base64 = "0.22"
 cc = "1"

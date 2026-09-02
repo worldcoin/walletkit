@@ -15,8 +15,8 @@ impl Authenticator {
     /// # Errors
     ///
     /// Returns an error if the leaf index is invalid or storage initialization fails.
-    pub fn init_storage(&self, now: u64) -> Result<(), WalletKitError> {
-        self.store.init(self.leaf_index(), now)?;
+    pub async fn init_storage(&self, now: u64) -> Result<(), WalletKitError> {
+        self.store.init(self.leaf_index(), now).await?;
         Ok(())
     }
 
@@ -29,8 +29,8 @@ impl Authenticator {
     /// # Errors
     ///
     /// Returns an error if the storage destruction fails.
-    pub fn destroy_storage(&self) -> Result<(), WalletKitError> {
-        self.store.destroy_storage()?;
+    pub async fn destroy_storage(&self) -> Result<(), WalletKitError> {
+        self.store.destroy_storage().await?;
         Ok(())
     }
 }
@@ -88,7 +88,7 @@ mod tests {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = CredentialStore::from_provider(&provider).expect("store");
-        store.init(42, 100).expect("init storage");
+        tokio_test::block_on(store.init(42, 100)).expect("init storage");
 
         let siblings = [FieldElement::from(0u64); TREE_DEPTH];
         let root_fe = FieldElement::from(123u64);

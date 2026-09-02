@@ -8,9 +8,9 @@ pub type StorageResult<T> = Result<T, StorageError>;
 /// Errors raised by credential storage primitives.
 #[derive(Debug, Error, uniffi::Error)]
 pub enum StorageError {
-    /// Errors coming from the device keystore.
-    #[error("keystore error: {0}")]
-    Keystore(String),
+    /// Errors coming from the key sealer.
+    #[error("key sealer error: {0}")]
+    Sealer(String),
 
     /// Errors coming from the blob store.
     #[error("blob store error: {0}")]
@@ -112,7 +112,7 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for StorageError {
 impl From<walletkit_db::StoreError> for StorageError {
     fn from(err: walletkit_db::StoreError) -> Self {
         match err {
-            walletkit_db::StoreError::Keystore(s) => Self::Keystore(s),
+            walletkit_db::StoreError::Sealer(s) => Self::Sealer(s),
             walletkit_db::StoreError::BlobStore(s) => Self::BlobStore(s),
             walletkit_db::StoreError::Lock(s) => Self::Lock(s),
             walletkit_db::StoreError::Serialization(s) => Self::Serialization(s),

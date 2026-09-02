@@ -47,6 +47,7 @@ pub async fn init_authenticator(
 
     authenticator
         .init_storage(now)
+        .await
         .wrap_err("storage init failed")?;
 
     Ok((authenticator, store))
