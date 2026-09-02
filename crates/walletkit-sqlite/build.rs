@@ -1,4 +1,4 @@
-//! Build script for walletkit-db.
+//! Build script for walletkit-sqlite.
 //!
 //! On non-WASM targets this downloads the sqlite3mc v2.3.2 amalgamation zip,
 //! extracts the pre-built `sqlite3mc_amalgamation.c` / `.h`, and compiles them

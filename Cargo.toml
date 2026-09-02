@@ -4,6 +4,7 @@ members = [
   "crates/walletkit-core",
   "crates/walletkit",
   "crates/walletkit-db",
+  "crates/walletkit-sqlite",
   "crates/walletkit-cli",
   "crates/walletkit-testkit",
   "xtask",
@@ -85,6 +86,7 @@ world-id-proof = { version = "0.14", default-features = false }
 # internal
 walletkit-core = { version = "0.21.4", path = "crates/walletkit-core", default-features = false }
 walletkit-db = { version = "0.21.4", path = "crates/walletkit-db" }
+walletkit-sqlite = { version = "0.21.4", path = "crates/walletkit-sqlite" }
 # Unpublished test helpers
 walletkit-testkit = { path = "crates/walletkit-testkit" }
 

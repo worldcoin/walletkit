@@ -1,6 +1,8 @@
 # walletkit-db
 
-Encrypted on-device storage primitives for WalletKit. SQLCipher (`sqlite3mc`) wrapper, vault opener, content-addressed blobs, sealed key envelope, cross-process lock. Plain Rust, no `uniffi`.
+Encrypted on-device storage abstractions for WalletKit: vault opener,
+content-addressed blobs, sealed key envelope, and cross-process lock. Built on
+`walletkit-sqlite`; plain Rust with no `uniffi`.
 
 Consumed by `walletkit-core::storage` (credential vault) and by sibling SDKs in the WalletKit workspace that need an encrypted on-device store.
 
@@ -27,9 +29,9 @@ flowchart TB
         Blobs["blobs::{ensure_schema, put, get, delete}"]
         Env["init_or_open_envelope_key"]
         Lock["Lock / LockGuard"]
+    end
+    subgraph WKSQL["walletkit-sqlite"]
         Cipher["sqlite3mc"]
-        OV --> Cipher
-        Blobs --> Cipher
     end
     subgraph Consumer["Consumer (e.g. walletkit-core)"]
         Wrapper["Domain wrapper<br/>(e.g. CredentialVault)"]
@@ -39,10 +41,16 @@ flowchart TB
     KS -.bridged via newtype.-> Env
     BS -.bridged via newtype.-> Env
     Wrapper --> WKDB
+    OV --> Cipher
+    Blobs --> Cipher
     style WKDB fill:#e8f4f8
+    style WKSQL fill:#f3f4f6
 ```
 
-Dependency direction is one-way: walletkit-db doesn't know about its consumers, uniffi, or any specific schema. Each consumer brings its own filename, AD namespace, lock file, vault file, and SQL schema.
+Dependency direction is one-way: consumers depend on `walletkit-db`, which
+depends on `walletkit-sqlite`. `walletkit-db` doesn't know about its consumers,
+`uniffi`, or any specific consumer schema. Each consumer brings its own
+filename, AD namespace, lock file, vault file, and SQL schema.
 
 ## Key hierarchy
 
@@ -128,7 +136,10 @@ The consumer brings a `Keystore` impl, an `AtomicBlobStore` impl, a `kind: u8` t
 - `init_or_open_envelope_key(...) -> StoreResult<SecretBox<[u8; 32]>>`.
 - `Lock` / `LockGuard` — native `flock` / `LockFileEx`, no-op on WASM.
 - `Keystore` / `AtomicBlobStore` traits — plain Rust.
-- `Connection`, `Transaction`, `Statement`, `Row`, `StepResult`, `Value`, `cipher::*`, `DbError`, `DbResult`, `StoreError`, `StoreResult`.
+- `StoreError` / `StoreResult`.
+
+Low-level `Connection`, `Transaction`, `Statement`, `Row`, `StepResult`,
+`Value`, `cipher::*`, `Error`, and `DbResult` belong to `walletkit-sqlite`.
 
 ## On-disk format
 

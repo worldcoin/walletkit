@@ -1,4 +1,4 @@
-//! Low-level `SQLCipher` (`sqlite3mc`) wrapper.
+//! Low-level `SQLCipher` (`sqlite3mc`) wrapper for `WalletKit`.
 //!
 //! Safe Rust types over the `SQLite` `C` FFI. Raw symbols are resolved at
 //! compile time:
@@ -15,6 +15,7 @@ mod ffi;
 
 pub mod cipher;
 pub mod error;
+pub mod test_utils;
 
 mod connection;
 mod statement;

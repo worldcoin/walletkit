@@ -1,6 +1,6 @@
 //! Error types for the storage primitives layer.
 
-use crate::sqlite::Error as DbError;
+use walletkit_sqlite::Error as DbError;
 
 /// Result alias for [`StoreError`].
 pub type StoreResult<T> = Result<T, StoreError>;
@@ -30,6 +30,9 @@ pub enum StoreError {
     /// Invalid or malformed key envelope (e.g. wrong length, bad format).
     #[error("invalid envelope: {0}")]
     InvalidEnvelope(String),
+    /// Invalid input supplied to a storage operation.
+    #[error("invalid input: {0}")]
+    InvalidInput(String),
     /// Envelope written by an unsupported version.
     #[error("unsupported envelope version: {0}")]
     UnsupportedEnvelopeVersion(u32),

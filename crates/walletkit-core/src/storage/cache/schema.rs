@@ -13,7 +13,7 @@ pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
 pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
 pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x03;
 
-use walletkit_db::{params, Connection, DbResult};
+use walletkit_sqlite::{params, Connection, DbResult};
 
 const CACHE_SCHEMA_VERSION: i64 = 2;
 

@@ -250,8 +250,8 @@ mod tests {
         export_plaintext_copy, import_plaintext_copy, integrity_check, open_encrypted,
     };
     use crate::params;
-    use crate::sqlite::Connection;
     use crate::test_utils::init_sqlite;
+    use crate::Connection;
     use secrecy::SecretBox;
 
     #[test]

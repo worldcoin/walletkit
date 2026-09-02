@@ -10,7 +10,7 @@ changelog_update = true
 name = "walletkit"
 git_tag_name = "v{{ version }}"
 git_release_name = "v{{ version }}"
-changelog_include = ["walletkit-core", "walletkit-db"]
+changelog_include = ["walletkit-core", "walletkit-db", "walletkit-sqlite"]
 release = true
 publish = true
 
@@ -24,6 +24,14 @@ publish = true
 
 [[package]]
 name = "walletkit-db"
+git_tag_enable = false
+git_release_enable = false
+changelog_update = false
+release = true
+publish = true
+
+[[package]]
+name = "walletkit-sqlite"
 git_tag_enable = false
 git_release_enable = false
 changelog_update = false
