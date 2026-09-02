@@ -1,0 +1,59 @@
+name: Prefetch Noir dependencies
+description: Populate Nargo's Git dependency cache without exposing credentials to Cargo build scripts
+
+runs:
+  using: composite
+  steps:
+    # Nargo 1.0.0-beta.11 shells out to unauthenticated `git clone` when these
+    # directories are absent. Keep authentication inside pinned checkout actions
+    # and do not persist it for the later Cargo build.
+    - name: Fetch oprf-service
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      with:
+        repository: TaceoLabs/oprf-service
+        ref: 1ee7e0439c88e6c9c5468017ece602ad7a7ce94e # taceo-oprf-v0.12.0
+        path: .nargo-cache/github.com/TaceoLabs/oprf-service.git/taceo-oprf-v0.12.0
+        persist-credentials: false
+        lfs: false
+        sparse-checkout: |
+          noir/eddsa_poseidon2
+          noir/babyjubjub
+
+    - name: Fetch noir-poseidon
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      with:
+        repository: TaceoLabs/noir-poseidon
+        ref: 399574197066cdba30da969426b2cf50a232feb2 # v0.5.0-beta.0
+        path: .nargo-cache/github.com/TaceoLabs/noir-poseidon/v0.5.0-beta.0
+        persist-credentials: false
+        lfs: false
+        sparse-checkout: |
+          poseidon2
+          hash_utils
+
+    - name: Populate Nargo cache
+      shell: bash
+      run: |
+        set -euo pipefail
+        nargo_cache_root="$HOME/nargo/github.com/TaceoLabs"
+        cache_backup="$RUNNER_TEMP/walletkit-stale-nargo-cache"
+        oprf_cache="$nargo_cache_root/oprf-service.git/taceo-oprf-v0.12.0"
+        poseidon_cache="$nargo_cache_root/noir-poseidon/v0.5.0-beta.0"
+
+        mkdir -p "$nargo_cache_root/oprf-service.git" "$nargo_cache_root/noir-poseidon" "$cache_backup"
+
+        # Nargo accepts a partial directory as a cache hit. Move any prior entry
+        # aside before installing the immutable sparse checkout.
+        if [[ -e "$oprf_cache" || -L "$oprf_cache" ]]; then
+          mv "$oprf_cache" "$cache_backup/oprf-service"
+        fi
+        if [[ -e "$poseidon_cache" || -L "$poseidon_cache" ]]; then
+          mv "$poseidon_cache" "$cache_backup/noir-poseidon"
+        fi
+
+        cp -R \
+          "$GITHUB_WORKSPACE/.nargo-cache/github.com/TaceoLabs/oprf-service.git/taceo-oprf-v0.12.0" \
+          "$oprf_cache"
+        cp -R \
+          "$GITHUB_WORKSPACE/.nargo-cache/github.com/TaceoLabs/noir-poseidon/v0.5.0-beta.0" \
+          "$poseidon_cache"
