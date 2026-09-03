@@ -42,7 +42,7 @@ pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
             ensure_entries_schema(conn)?;
         }
         Some(_) => {
-            reset_schema(conn)?;
+            reset_cache_schema(conn)?;
         }
         None => {
             ensure_entries_schema(conn)?;
@@ -70,13 +70,14 @@ fn ensure_entries_schema(conn: &Connection) -> DbResult<()> {
     )
 }
 
-fn reset_schema(conn: &Connection) -> DbResult<()> {
+fn reset_cache_schema(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(
         "DROP TABLE IF EXISTS used_nullifiers;
          DROP TABLE IF EXISTS merkle_proof_cache;
          DROP TABLE IF EXISTS session_keys;
          DROP TABLE IF EXISTS cache_entries;",
     )?;
+    // NOTE it currently skips the activity history (not part of the same migration schema)
     ensure_entries_schema(conn)?;
     conn.execute("DELETE FROM cache_meta;", &[])?;
     insert_meta(conn)?;
