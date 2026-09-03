@@ -15,8 +15,7 @@ pub const STAGING_RP_SIGNING_KEY: [u8; 32] =
     hex!("1111111111111111111111111111111111111111111111111111111111111111");
 
 /// Default RPC URL for World Chain Mainnet (chain 480).
-pub const DEFAULT_WORLDCHAIN_RPC_URL: &str =
-    "https://worldchain-mainnet.g.alchemy.com/public";
+pub const DEFAULT_WORLDCHAIN_RPC_URL: &str = "https://rpc.worldchain.worldcoin.org";
 
 /// Hosted faux-issuer endpoint (staging).
 pub const FAUX_ISSUER_URL: &str = "https://faux-issuer.us.id-infra.worldcoin.dev/issue";
