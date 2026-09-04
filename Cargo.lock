@@ -1549,9 +1549,9 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "attested-channel"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc4ff80bd27b9ba7c0a7bc0ce7b7cc199c19445cc6b19a9a628e9fdbff31cb1a"
+checksum = "acd6a0e6e8507e9f3f9f6e18229cae802967caa99a532d833b71ca44074a54ad"
 dependencies = [
  "aes-gcm 0.11.1",
  "aws-nitro-enclaves-nsm-api",
@@ -3206,18 +3206,18 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 
 [[package]]
 name = "flamingo-verifier-api-types"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fbd7b70857bcd594ba7dc3e2e8e9ccfedcc4d3cda34a569797a4a2da9c66e34"
+checksum = "a0af5f5bb0c7431f542d821b9ac65aa1b1a97da440d81c1490146ad8a059cccc"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "flamingo-verifier-client"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be6c11550cf0763066886d9fcf818da3b239d89cc141d5fef63a8600711f25c5"
+checksum = "dd7afb7c9d6facc6d60cca971c19f3dbaaf03a095d835e6213b40857df7b5bd1"
 dependencies = [
  "attested-channel",
  "base64 0.22.1",
@@ -3233,9 +3233,9 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-protocol"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b5111797c3fc3dbc08fbeda86c3d0174ff1b0499127ded390fb113b3e74919f"
+checksum = "d3f61c0d32322c20786c5cd9075224e6663fbc66cf1683db23c92074500b02ee"
 dependencies = [
  "ark-ff 0.5.0",
  "attested-channel",
@@ -9106,15 +9106,18 @@ name = "walletkit-cli"
 version = "0.21.4"
 dependencies = [
  "alloy-core",
+ "attested-channel",
  "base64 0.22.1",
  "ciborium",
  "clap",
  "dirs",
  "eyre",
+ "flamingo-verifier-protocol",
  "hex",
  "rand 0.8.6",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "tokio",
  "tracing",

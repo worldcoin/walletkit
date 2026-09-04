@@ -5,22 +5,27 @@
 //! module owns assignment, attestation verification, sealing, transport, response opening, and
 //! match-token verification.
 
-use std::time::SystemTime;
+use std::{sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
-use attested_channel::channel::CHANNEL_VERSION;
+use attested_channel::{channel::CHANNEL_VERSION, nitro::PcrMeasurement};
 use flamingo_verifier_client::{
     ClientError, Config, FaceVerifierClient, VerifiedAssignment,
 };
 use flamingo_verifier_protocol::messages::{FailureReason, MatchInputs, MatchResult};
 use thiserror::Error;
-use zeroize::Zeroize;
+
+// TODO: Replace all three PCRs with measurements from the approved enclave release.
+// TODO: These should likely originate from one of the flamingo crates
+const EXPECTED_ENCLAVE_PCR0: [u8; 48] = [0x42; 48];
+const EXPECTED_ENCLAVE_PCR1: [u8; 48] = [0x43; 48];
+const EXPECTED_ENCLAVE_PCR2: [u8; 48] = [0x44; 48];
 
 /// Inputs for one attested `Flamingo` match.
 ///
 /// `credential_image` and `hashes_json` must come from the same enrolled Orb PCP. In particular,
 /// `hashes_json` must contain the exact archive bytes, not parsed and reserialized JSON.
-#[derive(Debug)]
+#[derive(Debug, uniffi::Record)]
 pub struct FlamingoMatchRequest {
     /// Raw liveness image bytes captured for this request.
     pub live_image: Vec<u8>,
@@ -45,7 +50,7 @@ impl FlamingoMatchRequest {
         ] {
             if bytes.is_empty() {
                 return Err(FlamingoError::InvalidInput {
-                    attribute,
+                    attribute: attribute.to_string(),
                     reason: "must not be empty".to_string(),
                 });
             }
@@ -53,14 +58,14 @@ impl FlamingoMatchRequest {
 
         if self.challenge_image.is_empty() {
             return Err(FlamingoError::InvalidInput {
-                attribute: "challenge_image",
+                attribute: "challenge_image".to_string(),
                 reason: "must not be empty".to_string(),
             });
         }
 
         if self.light_guard_image.as_ref().is_some_and(Vec::is_empty) {
             return Err(FlamingoError::InvalidInput {
-                attribute: "light_guard_image",
+                attribute: "light_guard_image".to_string(),
                 reason: "must not be empty when provided".to_string(),
             });
         }
@@ -69,7 +74,7 @@ impl FlamingoMatchRequest {
             || !(0.0..=1.0).contains(&self.match_threshold)
         {
             return Err(FlamingoError::InvalidInput {
-                attribute: "match_threshold",
+                attribute: "match_threshold".to_string(),
                 reason: "must be finite and between 0 and 1 inclusive".to_string(),
             });
         }
@@ -77,54 +82,45 @@ impl FlamingoMatchRequest {
         Ok(())
     }
 
-    fn into_sensitive_inputs(mut self) -> SensitiveMatchInputs {
-        SensitiveMatchInputs {
-            inputs: MatchInputs {
-                version: CHANNEL_VERSION,
-                live_image: std::mem::take(&mut self.live_image),
-                credential_image: std::mem::take(&mut self.credential_image),
-                light_guard_image: std::mem::take(&mut self.light_guard_image),
-                hashes_json: std::mem::take(&mut self.hashes_json),
-                challenge_image: std::mem::take(&mut self.challenge_image),
-                match_threshold: self.match_threshold,
-            },
+    fn into_inputs(self) -> MatchInputs {
+        MatchInputs {
+            version: CHANNEL_VERSION,
+            live_image: self.live_image,
+            credential_image: self.credential_image,
+            light_guard_image: self.light_guard_image,
+            hashes_json: self.hashes_json,
+            challenge_image: self.challenge_image,
+            match_threshold: self.match_threshold,
         }
-    }
-}
-
-impl Drop for FlamingoMatchRequest {
-    fn drop(&mut self) {
-        self.live_image.zeroize();
-        self.credential_image.zeroize();
-        self.hashes_json.zeroize();
-        self.light_guard_image.zeroize();
-        self.challenge_image.zeroize();
     }
 }
 
 /// A match token whose sealed response, signing-key attestation, and signature were verified.
 ///
-/// This is the internal handoff to `Flamingo` proof generation. It is intentionally not a
-/// `UniFFI` type: the foreign side should eventually receive only the generated `Flamingo` proof.
-#[derive(Debug)]
-pub struct VerifiedMatchToken(Vec<u8>);
+/// Foreign callers receive an opaque handle. The token and signing-key attestation remain
+/// together in Rust for proof generation and eventual relay of the attestation to the RP.
+#[derive(Debug, uniffi::Object)]
+pub struct VerifiedMatchToken {
+    token: Vec<u8>,
+    signing_key_attestation: Vec<u8>,
+}
 
 impl VerifiedMatchToken {
     /// Borrows the encoded COSE/CBOR token for proof generation.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
-        &self.0
+        &self.token
     }
-}
 
-impl Drop for VerifiedMatchToken {
-    fn drop(&mut self) {
-        self.0.zeroize();
+    /// Borrows the signing-key attestation to relay alongside the generated proof.
+    #[must_use]
+    pub fn signing_key_attestation(&self) -> &[u8] {
+        &self.signing_key_attestation
     }
 }
 
 /// A sealed match rejection returned by the attested enclave.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FlamingoMatchRejection {
     /// The sealed inputs were malformed.
     MalformedInputs,
@@ -154,22 +150,22 @@ impl From<FailureReason> for FlamingoMatchRejection {
 }
 
 /// The verified outcome of the TEE match phase.
-#[derive(Debug)]
+#[derive(Debug, uniffi::Enum)]
 pub enum FlamingoMatchOutcome {
     /// The enclave issued a token and `WalletKit` verified it against an attested signing key.
-    Matched(VerifiedMatchToken),
+    Matched(Arc<VerifiedMatchToken>),
     /// The enclave opened the request but declined to issue a token.
     Rejected(FlamingoMatchRejection),
 }
 
 /// Failures before `WalletKit` obtains an authoritative sealed match outcome.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, uniffi::Error)]
 pub enum FlamingoError {
     /// A caller-supplied value cannot form a valid match request.
     #[error("invalid {attribute}: {reason}")]
     InvalidInput {
         /// Name of the invalid field.
-        attribute: &'static str,
+        attribute: String,
         /// Why the value was rejected.
         reason: String,
     },
@@ -186,27 +182,25 @@ pub enum FlamingoError {
 /// Keep this value alive across requests so the underlying HTTP client can retain transport state.
 /// No WalletKit-owned sealing key is persisted: each verified assignment supplies the enclave's
 /// attested public key, and the client creates fresh HPKE sealing material for the request.
-#[derive(Debug)]
+#[derive(Debug, uniffi::Object)]
 pub struct FlamingoMatcher {
     client: FaceVerifierClient,
 }
 
+#[uniffi::export(async_runtime = "tokio")]
 impl FlamingoMatcher {
-    /// Builds a matcher from the embedding verifier's JSON configuration.
+    /// Builds a matcher for a TEE host using `WalletKit`'s pinned enclave measurements.
     ///
-    /// The configuration pins the accepted Nitro PCR measurement sets and the TEE host URL.
+    /// PCR0, PCR1, and PCR2 are placeholders that must be replaced before real matches can succeed.
+    /// Rust callers can supply custom pins through [`Self::with_measurements`].
     ///
     /// # Errors
     ///
     /// Returns [`FlamingoError::Configuration`] when the configuration is invalid, or
     /// [`FlamingoError::Verifier`] when the HTTP client cannot be constructed.
-    pub fn from_config_json(config_json: &str) -> Result<Self, FlamingoError> {
-        let config = Config::from_json(config_json)
-            .map_err(|error| FlamingoError::Configuration(error.to_string()))?;
-        let client = FaceVerifierClient::new(config)
-            .map_err(|error| FlamingoError::Verifier(error.to_string()))?;
-
-        Ok(Self { client })
+    #[uniffi::constructor]
+    pub fn new(host_url: &str) -> Result<Self, FlamingoError> {
+        Self::with_measurements(host_url, None)
     }
 
     /// Performs the attested TEE match phase.
@@ -226,18 +220,57 @@ impl FlamingoMatcher {
     }
 }
 
-struct SensitiveMatchInputs {
-    inputs: MatchInputs,
+impl FlamingoMatcher {
+    /// Returns the hardcoded PCR0/1/2 measurements used when no override is supplied.
+    #[must_use]
+    pub const fn default_measurements() -> [[u8; 48]; 3] {
+        [
+            EXPECTED_ENCLAVE_PCR0,
+            EXPECTED_ENCLAVE_PCR1,
+            EXPECTED_ENCLAVE_PCR2,
+        ]
+    }
+
+    /// Builds a matcher with custom PCR0/1/2 measurements, or the hardcoded defaults.
+    ///
+    /// Supply measurements from a trusted enclave build. `None` uses the same pins as
+    /// [`Self::new`]. All three measurements must be nonzero; debug enclaves are rejected.
+    ///
+    /// # Errors
+    /// Returns an error if a measurement is zero or the host/client configuration is invalid.
+    pub fn with_measurements(
+        host_url: &str,
+        measurements: Option<[[u8; 48]; 3]>,
+    ) -> Result<Self, FlamingoError> {
+        let config = matcher_config(host_url, measurements)?;
+        let client = FaceVerifierClient::new(config)
+            .map_err(|error| FlamingoError::Verifier(error.to_string()))?;
+        Ok(Self { client })
+    }
 }
 
-impl Drop for SensitiveMatchInputs {
-    fn drop(&mut self) {
-        self.inputs.live_image.zeroize();
-        self.inputs.credential_image.zeroize();
-        self.inputs.light_guard_image.zeroize();
-        self.inputs.hashes_json.zeroize();
-        self.inputs.challenge_image.zeroize();
+fn matcher_config(
+    host_url: &str,
+    measurements: Option<[[u8; 48]; 3]>,
+) -> Result<Config, FlamingoError> {
+    let measurements =
+        measurements.unwrap_or_else(FlamingoMatcher::default_measurements);
+    for (index, measurement) in measurements.iter().enumerate() {
+        if measurement.iter().all(|byte| *byte == 0) {
+            return Err(FlamingoError::Configuration(format!(
+                "PCR{index} must be nonzero; debug enclaves are not accepted"
+            )));
+        }
     }
+    Config::new(
+        host_url,
+        vec![vec![
+            PcrMeasurement::new(0, measurements[0]),
+            PcrMeasurement::new(1, measurements[1]),
+            PcrMeasurement::new(2, measurements[2]),
+        ]],
+    )
+    .map_err(|error| FlamingoError::Configuration(error.to_string()))
 }
 
 #[async_trait]
@@ -284,7 +317,7 @@ async fn perform_match<C: MatchClient, F: Fn() -> SystemTime>(
     now: F,
 ) -> Result<FlamingoMatchOutcome, FlamingoError> {
     request.validate()?;
-    let request = request.into_sensitive_inputs();
+    let request = request.into_inputs();
     let mut reassigned = false;
 
     loop {
@@ -293,13 +326,13 @@ async fn perform_match<C: MatchClient, F: Fn() -> SystemTime>(
             .await
             .map_err(|error| verifier_error(&error))?;
 
-        match client
-            .request_match(&assignment, &request.inputs, now())
-            .await
-        {
+        match client.request_match(&assignment, &request, now()).await {
             Ok(MatchResult::Success(statement)) => {
-                return Ok(FlamingoMatchOutcome::Matched(VerifiedMatchToken(
-                    statement.token.into_bytes(),
+                return Ok(FlamingoMatchOutcome::Matched(Arc::new(
+                    VerifiedMatchToken {
+                        token: statement.token.into_bytes(),
+                        signing_key_attestation: statement.signing_key_attestation,
+                    },
                 )));
             }
             Ok(MatchResult::Failed(reason)) => {
@@ -389,11 +422,80 @@ mod tests {
         }
     }
 
+    #[test]
+    fn configuration_pins_the_release_and_disallows_debug_enclaves() {
+        let config =
+            super::matcher_config("https://verifier.example.com", None).unwrap();
+        let json = serde_json::to_value(config).unwrap();
+        assert_eq!(
+            json["allowed_pcr_configs"],
+            serde_json::json!([[{
+                "index": 0,
+                "value": hex::encode(super::EXPECTED_ENCLAVE_PCR0),
+            }, {
+                "index": 1,
+                "value": hex::encode(super::EXPECTED_ENCLAVE_PCR1),
+            }, {
+                "index": 2,
+                "value": hex::encode(super::EXPECTED_ENCLAVE_PCR2),
+            }]])
+        );
+        assert_eq!(json["allow_debug_measurements"], false);
+        for measurement in [
+            super::EXPECTED_ENCLAVE_PCR0,
+            super::EXPECTED_ENCLAVE_PCR1,
+            super::EXPECTED_ENCLAVE_PCR2,
+        ] {
+            assert!(measurement.iter().any(|byte| *byte != 0));
+        }
+    }
+
+    #[test]
+    fn custom_measurements_replace_all_default_pins() {
+        let measurements = [[1; 48], [2; 48], [3; 48]];
+        let config =
+            super::matcher_config("https://verifier.example.com", Some(measurements))
+                .unwrap();
+        let json = serde_json::to_value(config).unwrap();
+        assert_eq!(json["allowed_pcr_configs"].as_array().unwrap().len(), 1);
+        for (index, measurement) in measurements.iter().enumerate() {
+            assert_eq!(json["allowed_pcr_configs"][0][index]["index"], index);
+            assert_eq!(
+                json["allowed_pcr_configs"][0][index]["value"],
+                hex::encode(measurement)
+            );
+        }
+        assert_eq!(json["allow_debug_measurements"], false);
+    }
+
+    #[test]
+    fn rejects_zero_custom_measurements() {
+        for index in 0..3 {
+            let mut measurements = [[1; 48], [2; 48], [3; 48]];
+            measurements[index] = [0; 48];
+            assert!(matches!(
+                super::FlamingoMatcher::with_measurements(
+                    "https://verifier.example.com",
+                    Some(measurements)
+                ),
+                Err(FlamingoError::Configuration(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_an_invalid_host_url() {
+        assert!(matches!(
+            super::FlamingoMatcher::new("not a URL"),
+            Err(FlamingoError::Configuration(_))
+        ));
+    }
+
     #[tokio::test]
     async fn returns_a_verified_token_after_the_client_verifies_success() {
         let client = FakeClient::new([Ok(MatchResult::Success(AttestedStatement {
             token: MatchToken::from_bytes(b"signed-token".to_vec()),
-            signing_key_attestation: Vec::new(),
+            signing_key_attestation: b"signing-key-attestation".to_vec(),
         }))]);
 
         let outcome = perform_match(&client, request(), || SystemTime::UNIX_EPOCH)
@@ -404,6 +506,7 @@ mod tests {
             panic!("expected a matched outcome");
         };
         assert_eq!(token.as_bytes(), b"signed-token");
+        assert_eq!(token.signing_key_attestation(), b"signing-key-attestation");
         assert_eq!(client.assignments.load(Ordering::Relaxed), 1);
     }
 
@@ -473,9 +576,9 @@ mod tests {
         assert!(matches!(
             error,
             FlamingoError::InvalidInput {
-                attribute: "match_threshold",
+                attribute,
                 ..
-            }
+            } if attribute == "match_threshold"
         ));
         assert_eq!(client.assignments.load(Ordering::Relaxed), 0);
     }

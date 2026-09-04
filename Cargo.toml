@@ -30,7 +30,7 @@ alloy = { version = "2", default-features = false }
 alloy-core = { version = "1", default-features = false, features = [
   "sol-types",
 ] }
-attested-channel = "0.1.0"
+attested-channel = "0.2.0"
 async-trait = "0.1"
 backon = "1.6"
 base64 = "0.22"
@@ -42,8 +42,8 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-flamingo-verifier-client = "0.1.0"
-flamingo-verifier-protocol = "0.1.0"
+flamingo-verifier-client = "0.2.0"
+flamingo-verifier-protocol = "0.2.0"
 eyre = "0.6"
 getrandom = "0.3"
 hex = "0.4"
