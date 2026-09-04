@@ -103,7 +103,7 @@ pub(super) fn ensure_activity_schema(conn: &Connection) -> DbResult<()> {
             outcome            TEXT NOT NULL,
             app_identifier     TEXT NOT NULL,
             issuer_schema_ids  BLOB NOT NULL,
-            failure_reason     INTEGER NULL
+            failure_reason     TEXT NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_activity_entries_created_at
