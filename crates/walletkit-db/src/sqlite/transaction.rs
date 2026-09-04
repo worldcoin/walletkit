@@ -81,6 +81,20 @@ impl<'conn> Transaction<'conn> {
         self.conn.query_row(sql, params, mapper)
     }
 
+    /// See [`Connection::query_row_optional`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `Error` if preparation, execution, or the mapper fails.
+    pub fn query_row_optional<T>(
+        &self,
+        sql: &str,
+        params: &[Value],
+        mapper: impl FnOnce(&Row<'_, '_>) -> DbResult<T>,
+    ) -> DbResult<Option<T>> {
+        self.conn.query_row_optional(sql, params, mapper)
+    }
+
     /// See [`Connection::prepare`].
     ///
     /// # Errors
