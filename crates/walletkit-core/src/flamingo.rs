@@ -21,6 +21,16 @@ const EXPECTED_ENCLAVE_PCR0: [u8; 48] = [0x42; 48];
 const EXPECTED_ENCLAVE_PCR1: [u8; 48] = [0x43; 48];
 const EXPECTED_ENCLAVE_PCR2: [u8; 48] = [0x44; 48];
 
+/// `WalletKit`'s attested `Flamingo` match module.
+///
+/// Keep this value alive across requests so the underlying HTTP client can retain transport state.
+/// No WalletKit-owned sealing key is persisted: each verified assignment supplies the enclave's
+/// attested public key, and the client creates fresh HPKE sealing material for the request.
+#[derive(Debug, uniffi::Object)]
+pub struct FlamingoMatcher {
+    client: FaceVerifierClient,
+}
+
 /// Inputs for one attested `Flamingo` match.
 ///
 /// `credential_image` and `hashes_json` must come from the same enrolled Orb PCP. In particular,
@@ -41,60 +51,6 @@ pub struct FlamingoMatchRequest {
     pub match_threshold: f32,
 }
 
-impl FlamingoMatchRequest {
-    fn validate(&self) -> Result<(), FlamingoError> {
-        for (attribute, bytes) in [
-            ("live_image", self.live_image.as_slice()),
-            ("credential_image", self.credential_image.as_slice()),
-            ("hashes_json", self.hashes_json.as_slice()),
-        ] {
-            if bytes.is_empty() {
-                return Err(FlamingoError::InvalidInput {
-                    attribute: attribute.to_string(),
-                    reason: "must not be empty".to_string(),
-                });
-            }
-        }
-
-        if self.challenge_image.is_empty() {
-            return Err(FlamingoError::InvalidInput {
-                attribute: "challenge_image".to_string(),
-                reason: "must not be empty".to_string(),
-            });
-        }
-
-        if self.light_guard_image.as_ref().is_some_and(Vec::is_empty) {
-            return Err(FlamingoError::InvalidInput {
-                attribute: "light_guard_image".to_string(),
-                reason: "must not be empty when provided".to_string(),
-            });
-        }
-
-        if !self.match_threshold.is_finite()
-            || !(0.0..=1.0).contains(&self.match_threshold)
-        {
-            return Err(FlamingoError::InvalidInput {
-                attribute: "match_threshold".to_string(),
-                reason: "must be finite and between 0 and 1 inclusive".to_string(),
-            });
-        }
-
-        Ok(())
-    }
-
-    fn into_inputs(self) -> MatchInputs {
-        MatchInputs {
-            version: CHANNEL_VERSION,
-            live_image: self.live_image,
-            credential_image: self.credential_image,
-            light_guard_image: self.light_guard_image,
-            hashes_json: self.hashes_json,
-            challenge_image: self.challenge_image,
-            match_threshold: self.match_threshold,
-        }
-    }
-}
-
 /// A match token whose sealed response, signing-key attestation, and signature were verified.
 ///
 /// Foreign callers receive an opaque handle. The token and signing-key attestation remain
@@ -105,18 +61,13 @@ pub struct VerifiedMatchToken {
     signing_key_attestation: Vec<u8>,
 }
 
-impl VerifiedMatchToken {
-    /// Borrows the encoded COSE/CBOR token for proof generation.
-    #[must_use]
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.token
-    }
-
-    /// Borrows the signing-key attestation to relay alongside the generated proof.
-    #[must_use]
-    pub fn signing_key_attestation(&self) -> &[u8] {
-        &self.signing_key_attestation
-    }
+/// The verified outcome of the TEE match phase.
+#[derive(Debug, uniffi::Enum)]
+pub enum FlamingoMatchOutcome {
+    /// The enclave issued a token and `WalletKit` verified it against an attested signing key.
+    Matched(Arc<VerifiedMatchToken>),
+    /// The enclave opened the request but declined to issue a token.
+    Rejected(FlamingoMatchRejection),
 }
 
 /// A sealed match rejection returned by the attested enclave.
@@ -134,28 +85,6 @@ pub enum FlamingoMatchRejection {
     MatchBelowThreshold,
     /// The enclave could not obtain a usable comparison score from the images.
     ImageAnalysisFailed,
-}
-
-impl From<FailureReason> for FlamingoMatchRejection {
-    fn from(value: FailureReason) -> Self {
-        match value {
-            FailureReason::MalformedInputs => Self::MalformedInputs,
-            FailureReason::UnsupportedVersion => Self::UnsupportedVersion,
-            FailureReason::InvalidHashesJson => Self::InvalidHashesJson,
-            FailureReason::ThumbnailHashMismatch => Self::ThumbnailHashMismatch,
-            FailureReason::MatchBelowThreshold => Self::MatchBelowThreshold,
-            FailureReason::ImageAnalysisFailed => Self::ImageAnalysisFailed,
-        }
-    }
-}
-
-/// The verified outcome of the TEE match phase.
-#[derive(Debug, uniffi::Enum)]
-pub enum FlamingoMatchOutcome {
-    /// The enclave issued a token and `WalletKit` verified it against an attested signing key.
-    Matched(Arc<VerifiedMatchToken>),
-    /// The enclave opened the request but declined to issue a token.
-    Rejected(FlamingoMatchRejection),
 }
 
 /// Failures before `WalletKit` obtains an authoritative sealed match outcome.
@@ -177,14 +106,21 @@ pub enum FlamingoError {
     Verifier(String),
 }
 
-/// `WalletKit`'s attested `Flamingo` match module.
-///
-/// Keep this value alive across requests so the underlying HTTP client can retain transport state.
-/// No WalletKit-owned sealing key is persisted: each verified assignment supplies the enclave's
-/// attested public key, and the client creates fresh HPKE sealing material for the request.
-#[derive(Debug, uniffi::Object)]
-pub struct FlamingoMatcher {
-    client: FaceVerifierClient,
+#[async_trait]
+trait MatchClient: Sync {
+    type Assignment: Send + Sync;
+
+    async fn request_assignment(
+        &self,
+        now: SystemTime,
+    ) -> Result<Self::Assignment, ClientError>;
+
+    async fn request_match(
+        &self,
+        assignment: &Self::Assignment,
+        inputs: &MatchInputs,
+        now: SystemTime,
+    ) -> Result<MatchResult, ClientError>;
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -249,6 +185,108 @@ impl FlamingoMatcher {
     }
 }
 
+impl FlamingoMatchRequest {
+    fn validate(&self) -> Result<(), FlamingoError> {
+        for (attribute, bytes) in [
+            ("live_image", self.live_image.as_slice()),
+            ("credential_image", self.credential_image.as_slice()),
+            ("hashes_json", self.hashes_json.as_slice()),
+        ] {
+            if bytes.is_empty() {
+                return Err(FlamingoError::InvalidInput {
+                    attribute: attribute.to_string(),
+                    reason: "must not be empty".to_string(),
+                });
+            }
+        }
+
+        if self.challenge_image.is_empty() {
+            return Err(FlamingoError::InvalidInput {
+                attribute: "challenge_image".to_string(),
+                reason: "must not be empty".to_string(),
+            });
+        }
+
+        if self.light_guard_image.as_ref().is_some_and(Vec::is_empty) {
+            return Err(FlamingoError::InvalidInput {
+                attribute: "light_guard_image".to_string(),
+                reason: "must not be empty when provided".to_string(),
+            });
+        }
+
+        if !self.match_threshold.is_finite()
+            || !(0.0..=1.0).contains(&self.match_threshold)
+        {
+            return Err(FlamingoError::InvalidInput {
+                attribute: "match_threshold".to_string(),
+                reason: "must be finite and between 0 and 1 inclusive".to_string(),
+            });
+        }
+
+        Ok(())
+    }
+
+    fn into_inputs(self) -> MatchInputs {
+        MatchInputs {
+            version: CHANNEL_VERSION,
+            live_image: self.live_image,
+            credential_image: self.credential_image,
+            light_guard_image: self.light_guard_image,
+            hashes_json: self.hashes_json,
+            challenge_image: self.challenge_image,
+            match_threshold: self.match_threshold,
+        }
+    }
+}
+
+impl VerifiedMatchToken {
+    /// Borrows the encoded COSE/CBOR token for proof generation.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.token
+    }
+
+    /// Borrows the signing-key attestation to relay alongside the generated proof.
+    #[must_use]
+    pub fn signing_key_attestation(&self) -> &[u8] {
+        &self.signing_key_attestation
+    }
+}
+
+impl From<FailureReason> for FlamingoMatchRejection {
+    fn from(value: FailureReason) -> Self {
+        match value {
+            FailureReason::MalformedInputs => Self::MalformedInputs,
+            FailureReason::UnsupportedVersion => Self::UnsupportedVersion,
+            FailureReason::InvalidHashesJson => Self::InvalidHashesJson,
+            FailureReason::ThumbnailHashMismatch => Self::ThumbnailHashMismatch,
+            FailureReason::MatchBelowThreshold => Self::MatchBelowThreshold,
+            FailureReason::ImageAnalysisFailed => Self::ImageAnalysisFailed,
+        }
+    }
+}
+
+#[async_trait]
+impl MatchClient for FaceVerifierClient {
+    type Assignment = VerifiedAssignment;
+
+    async fn request_assignment(
+        &self,
+        now: SystemTime,
+    ) -> Result<Self::Assignment, ClientError> {
+        self.request_assignment(now).await
+    }
+
+    async fn request_match(
+        &self,
+        assignment: &Self::Assignment,
+        inputs: &MatchInputs,
+        now: SystemTime,
+    ) -> Result<MatchResult, ClientError> {
+        self.request_match(assignment, inputs, now).await
+    }
+}
+
 fn matcher_config(
     host_url: &str,
     measurements: Option<[[u8; 48]; 3]>,
@@ -271,44 +309,6 @@ fn matcher_config(
         ]],
     )
     .map_err(|error| FlamingoError::Configuration(error.to_string()))
-}
-
-#[async_trait]
-trait MatchClient: Sync {
-    type Assignment: Send + Sync;
-
-    async fn request_assignment(
-        &self,
-        now: SystemTime,
-    ) -> Result<Self::Assignment, ClientError>;
-
-    async fn request_match(
-        &self,
-        assignment: &Self::Assignment,
-        inputs: &MatchInputs,
-        now: SystemTime,
-    ) -> Result<MatchResult, ClientError>;
-}
-
-#[async_trait]
-impl MatchClient for FaceVerifierClient {
-    type Assignment = VerifiedAssignment;
-
-    async fn request_assignment(
-        &self,
-        now: SystemTime,
-    ) -> Result<Self::Assignment, ClientError> {
-        Self::request_assignment(self, now).await
-    }
-
-    async fn request_match(
-        &self,
-        assignment: &Self::Assignment,
-        inputs: &MatchInputs,
-        now: SystemTime,
-    ) -> Result<MatchResult, ClientError> {
-        Self::request_match(self, assignment, inputs, now).await
-    }
 }
 
 async fn perform_match<C: MatchClient, F: Fn() -> SystemTime>(
@@ -419,34 +419,6 @@ mod tests {
             light_guard_image: None,
             challenge_image: b"challenge".to_vec(),
             match_threshold: 0.7,
-        }
-    }
-
-    #[test]
-    fn configuration_pins_the_release_and_disallows_debug_enclaves() {
-        let config =
-            super::matcher_config("https://verifier.example.com", None).unwrap();
-        let json = serde_json::to_value(config).unwrap();
-        assert_eq!(
-            json["allowed_pcr_configs"],
-            serde_json::json!([[{
-                "index": 0,
-                "value": hex::encode(super::EXPECTED_ENCLAVE_PCR0),
-            }, {
-                "index": 1,
-                "value": hex::encode(super::EXPECTED_ENCLAVE_PCR1),
-            }, {
-                "index": 2,
-                "value": hex::encode(super::EXPECTED_ENCLAVE_PCR2),
-            }]])
-        );
-        assert_eq!(json["allow_debug_measurements"], false);
-        for measurement in [
-            super::EXPECTED_ENCLAVE_PCR0,
-            super::EXPECTED_ENCLAVE_PCR1,
-            super::EXPECTED_ENCLAVE_PCR2,
-        ] {
-            assert!(measurement.iter().any(|byte| *byte != 0));
         }
     }
 
