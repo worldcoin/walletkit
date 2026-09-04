@@ -49,6 +49,9 @@ pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
             insert_meta(conn)?;
         }
     }
+
+    ensure_activity_schema(conn)?;
+
     Ok(())
 }
 
@@ -87,4 +90,22 @@ fn insert_meta(conn: &Connection) -> DbResult<()> {
         params![CACHE_SCHEMA_VERSION],
     )?;
     Ok(())
+}
+
+pub(super) fn ensure_activity_schema(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS activity_entries (
+            entry_id           INTEGER PRIMARY KEY,
+            client_id          TEXT NOT NULL,
+            protocol           INTEGER NOT NULL,
+            created_at         INTEGER NOT NULL,
+            outcome            TEXT NOT NULL,
+            app_identifier     TEXT NOT NULL,
+            issuer_schema_ids  BLOB NOT NULL,
+            failure_reason     INTEGER NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_activity_entries_created_at
+        ON activity_entries (created_at DESC);",
+    )
 }

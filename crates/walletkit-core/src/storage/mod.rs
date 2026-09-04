@@ -59,11 +59,13 @@ pub use error::{StorageError, StorageResult};
 pub use keys::StorageKeys;
 pub use paths::StoragePaths;
 pub use traits::{
-    AtomicBlobStore, DeviceKeystore, StorageProvider, VaultChangedListener,
+    ActivityChangedListener, AtomicBlobStore, DeviceKeystore, StorageProvider,
+    VaultChangedListener,
 };
 pub use types::{
-    BlobKind, ContentId, CredentialRecord, Nullifier, ReplayGuardKind,
-    ReplayGuardResult, RequestId,
+    ActivityEntry, ActivityFailureReason, ActivityMetadata, ActivityOutcome,
+    ActivityQuery, BlobKind, ContentId, CredentialRecord, Nullifier, ProtocolVersion,
+    ReplayGuardKind, ReplayGuardResult, RequestId,
 };
 pub use walletkit_db::{Lock as StorageLock, LockGuard as StorageLockGuard};
 
