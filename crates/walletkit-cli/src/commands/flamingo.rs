@@ -34,7 +34,7 @@ pub struct MatchArgs {
     /// Forwarded HTTP host URL, e.g. <http://127.0.0.1:8000>.
     #[arg(long, default_value = "http://127.0.0.1:8000")]
     host_url: String,
-    /// Trusted PCR0/1/2 JSON. Omit to use WalletKit's hardcoded measurements.
+    /// Trusted PCR0/1/2 JSON. Omit to use `WalletKit`'s hardcoded measurements.
     #[arg(long)]
     measurements: Option<PathBuf>,
     /// Reference image (the enrolled thumbnail when using a real PCP).
@@ -69,6 +69,7 @@ fn parse_threshold(value: &str) -> Result<f32, String> {
     }
 }
 
+#[expect(clippy::too_many_lines)]
 pub async fn run(cli: &Cli, command: &FlamingoCommand) -> eyre::Result<()> {
     let FlamingoCommand::Match(args) = command;
     let measurements = args
