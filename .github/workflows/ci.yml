@@ -300,8 +300,8 @@ jobs:
 
       - name: Run tests
         env:
-          WORLDCHAIN_SEPOLIA_RPC_URL: ${{ secrets.WORLDCHAIN_SEPOLIA_RPC_URL || 'https://worldchain-sepolia.g.alchemy.com/public' }}
-          WORLDCHAIN_RPC_URL: ${{ secrets.WORLDCHAIN_RPC_URL || 'https://worldchain-mainnet.g.alchemy.com/public' }}
+          WORLDCHAIN_SEPOLIA_RPC_URL: ${{ secrets.WORLDCHAIN_SEPOLIA_RPC_URL || 'https://rpc.worldchain-sepolia.worldcoin.org' }}
+          WORLDCHAIN_RPC_URL: ${{ secrets.WORLDCHAIN_RPC_URL || 'https://rpc.worldchain.worldcoin.org' }}
         run: |
           cargo nextest run --workspace --all-features
 
