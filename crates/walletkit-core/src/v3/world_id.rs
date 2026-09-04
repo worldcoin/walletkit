@@ -320,6 +320,6 @@ mod tests {
         let device_commitment =
             world_id.get_identity_commitment(&CredentialType::Device);
 
-        assert!(device_commitment != commitment);
+        assert_ne!(device_commitment, commitment);
     }
 }
