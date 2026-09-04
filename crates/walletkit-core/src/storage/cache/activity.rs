@@ -1,9 +1,9 @@
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{
-    ActivityEntry, ActivityFailureReason, ActivityMetadata, ActivityOutcome,
-    ActivityQuery, ProtocolVersion,
+    ActivityEntry, ActivityMetadata, ActivityOutcome, ActivityQuery, ProtocolVersion,
 };
-use walletkit_sqlite::{params, Connection, Row, StepResult, Value};
+use crate::storage::ActivityFailureReason;
+use walletkit_sqlite::{params, Connection, Row, StepResult};
 
 use super::util::{map_db_err, to_i64, to_u64};
 
@@ -28,10 +28,6 @@ pub(super) fn record(
 
     let now_i64 = to_i64(now, "now")?;
 
-    let failure_reason_value = entry.failure_reason.map_or(Value::Null, |reason| {
-        Value::Integer(failure_reason_to_i64(reason))
-    });
-
     let entry_id = conn
         .query_row(
             "INSERT INTO activity_entries (
@@ -46,7 +42,10 @@ pub(super) fn record(
                 entry.outcome.to_string(),
                 entry.rp_id.to_string(),
                 encode_issuer_schema_ids(&entry.issuer_schema_ids),
-                failure_reason_value,
+                entry
+                    .failure_reason
+                    .map(|v| v.to_string())
+                    .unwrap_or_default(),
             ],
             |stmt| Ok(stmt.column_i64(0)),
         )
@@ -144,10 +143,19 @@ fn map_entry(row: &Row<'_, '_>) -> StorageResult<ActivityEntry> {
     })?;
     let rp_id = parse_rp_id(&row.column_text(5))?;
     let issuer_schema_ids = decode_issuer_schema_ids(&row.column_blob(6))?;
-    let failure_reason = if row.is_column_null(7) {
+
+    let failure_reason = row.column_text(7);
+
+    let failure_reason = if failure_reason.is_empty() {
         None
     } else {
-        Some(i64_to_failure_reason(row.column_i64(7))?)
+        Some(
+            row.column_text(7)
+                .parse::<ActivityFailureReason>()
+                .map_err(|_| {
+                    StorageError::ActivityDb("invalid failure_reason in db".to_string())
+                })?,
+        )
     };
 
     Ok(ActivityEntry {
@@ -166,29 +174,6 @@ fn parse_rp_id(text: &str) -> StorageResult<u64> {
     text.parse().map_err(|_| {
         StorageError::ActivityDb(format!("invalid app_identifier: {text}"))
     })
-}
-
-const fn failure_reason_to_i64(reason: ActivityFailureReason) -> i64 {
-    match reason {
-        ActivityFailureReason::NetworkError => 1,
-        ActivityFailureReason::Timeout => 2,
-        ActivityFailureReason::DeviceAuthenticationFailed => 3,
-        ActivityFailureReason::ProofGenerationFailed => 4,
-        ActivityFailureReason::RelyingPartyRejected => 5,
-    }
-}
-
-fn i64_to_failure_reason(value: i64) -> StorageResult<ActivityFailureReason> {
-    match value {
-        1 => Ok(ActivityFailureReason::NetworkError),
-        2 => Ok(ActivityFailureReason::Timeout),
-        3 => Ok(ActivityFailureReason::DeviceAuthenticationFailed),
-        4 => Ok(ActivityFailureReason::ProofGenerationFailed),
-        5 => Ok(ActivityFailureReason::RelyingPartyRejected),
-        other => Err(StorageError::ActivityDb(format!(
-            "invalid failure reason: {other}"
-        ))),
-    }
 }
 
 #[cfg(test)]

@@ -336,11 +336,7 @@ mod tests {
             .list_activities(ActivityQuery::default(), 10, 0)
             .expect("list activities after version bump");
 
-        assert_eq!(
-            entries.len(),
-            1,
-            "activity history must survive a disposable-cache schema reset"
-        );
+        assert_eq!(entries.len(), 1);
 
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);

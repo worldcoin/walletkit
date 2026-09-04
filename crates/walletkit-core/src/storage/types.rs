@@ -129,7 +129,8 @@ pub enum ActivityOutcome {
 }
 
 /// Reasons a proof fails.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Display, uniffi::Enum)]
+#[strum(serialize_all = "lowercase")]
 pub enum ActivityFailureReason {
     /// A network request failed.
     NetworkError,
