@@ -8,13 +8,13 @@ use std::{
 };
 
 use attested_channel::nitro::{EnclaveAttestationVerifier, PcrMeasurement};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use clap::{Args, Subcommand};
-use eyre::{WrapErr as _, ensure};
+use eyre::{ensure, WrapErr as _};
 use flamingo_verifier_protocol::match_token::{
     self, EdDSAPublicKey, MatchClaims, MatchToken,
 };
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest as _, Sha256};
 use walletkit_core::flamingo::{
     FlamingoMatchOutcome, FlamingoMatchRequest, FlamingoMatcher,
