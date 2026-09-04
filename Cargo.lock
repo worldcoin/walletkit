@@ -1550,7 +1550,8 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 [[package]]
 name = "attested-channel"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/embedding-verifier?rev=3c130d9d9e3780eeb8b93dda3f482f5a75f95c83#3c130d9d9e3780eeb8b93dda3f482f5a75f95c83"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc4ff80bd27b9ba7c0a7bc0ce7b7cc199c19445cc6b19a9a628e9fdbff31cb1a"
 dependencies = [
  "aes-gcm 0.11.1",
  "aws-nitro-enclaves-nsm-api",
@@ -2312,7 +2313,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2399,6 +2400,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
 dependencies = [
  "unicode-segmentation",
+]
+
+[[package]]
+name = "cookie"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87"
+dependencies = [
+ "percent-encoding",
+ "time",
+ "version_check",
+]
+
+[[package]]
+name = "cookie_store"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15b2c103cf610ec6cae3da84a766285b42fd16aad564758459e6ecf128c75206"
+dependencies = [
+ "cookie",
+ "document-features",
+ "idna",
+ "log",
+ "publicsuffix",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "time",
+ "url",
 ]
 
 [[package]]
@@ -2712,41 +2742,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4ae5f15dda3c708c0ade84bfee31ccab44a3da4f88015ed22f63732abe300c8"
 
 [[package]]
-name = "deepface-client"
-version = "0.1.0"
-source = "git+https://github.com/worldcoin/embedding-verifier?rev=3c130d9d9e3780eeb8b93dda3f482f5a75f95c83#3c130d9d9e3780eeb8b93dda3f482f5a75f95c83"
-dependencies = [
- "attested-channel",
- "base64 0.22.1",
- "deepface-protocol",
- "getrandom 0.4.3",
- "hex",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "url",
-]
-
-[[package]]
-name = "deepface-protocol"
-version = "0.1.0"
-source = "git+https://github.com/worldcoin/embedding-verifier?rev=3c130d9d9e3780eeb8b93dda3f482f5a75f95c83#3c130d9d9e3780eeb8b93dda3f482f5a75f95c83"
-dependencies = [
- "aes-gcm 0.11.1",
- "ark-ff 0.5.0",
- "attested-channel",
- "ciborium",
- "coset",
- "serde",
- "serde_bytes",
- "taceo-ark-babyjubjub",
- "taceo-eddsa-babyjubjub",
- "taceo-poseidon2",
- "zeroize",
-]
-
-[[package]]
 name = "delegate-display"
 version = "3.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2910,7 +2905,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2933,6 +2928,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
+]
+
+[[package]]
+name = "document-features"
+version = "0.2.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
+dependencies = [
+ "litrs",
 ]
 
 [[package]]
@@ -3085,7 +3089,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3199,6 +3203,51 @@ name = "flagset"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
+
+[[package]]
+name = "flamingo-verifier-api-types"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fbd7b70857bcd594ba7dc3e2e8e9ccfedcc4d3cda34a569797a4a2da9c66e34"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "flamingo-verifier-client"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be6c11550cf0763066886d9fcf818da3b239d89cc141d5fef63a8600711f25c5"
+dependencies = [
+ "attested-channel",
+ "base64 0.22.1",
+ "flamingo-verifier-api-types",
+ "flamingo-verifier-protocol",
+ "getrandom 0.4.3",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "url",
+]
+
+[[package]]
+name = "flamingo-verifier-protocol"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b5111797c3fc3dbc08fbeda86c3d0174ff1b0499127ded390fb113b3e74919f"
+dependencies = [
+ "ark-ff 0.5.0",
+ "attested-channel",
+ "ciborium",
+ "coset",
+ "serde",
+ "serde_bytes",
+ "taceo-ark-babyjubjub",
+ "taceo-eddsa-babyjubjub",
+ "taceo-poseidon2",
+ "zeroize",
+]
 
 [[package]]
 name = "flate2"
@@ -4135,7 +4184,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4469,6 +4518,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
+name = "litrs"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4800,7 +4855,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6128,6 +6183,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "psl-types"
+version = "2.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
+
+[[package]]
+name = "publicsuffix"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6f42ea446cab60335f76979ec15e12619a2165b5ae2c12166bef27d283a9fadf"
+dependencies = [
+ "idna",
+ "psl-types",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6187,7 +6258,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6456,6 +6527,8 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
+ "cookie",
+ "cookie_store",
  "futures-channel",
  "futures-core",
  "futures-util",
@@ -6717,7 +6790,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6797,7 +6870,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 1.0.8",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8126,10 +8199,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9058,6 +9131,8 @@ version = "0.21.4"
 dependencies = [
  "alloy",
  "alloy-core",
+ "async-trait",
+ "attested-channel",
  "backon",
  "base64 0.22.1",
  "chacha20poly1305",
@@ -9066,6 +9141,8 @@ dependencies = [
  "ctor",
  "dotenvy",
  "eyre",
+ "flamingo-verifier-client",
+ "flamingo-verifier-protocol",
  "getrandom 0.3.4",
  "hex",
  "hkdf 0.12.4",
@@ -9116,19 +9193,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "walletkit-sqlite",
- "zeroize",
-]
-
-[[package]]
-name = "walletkit-deepface"
-version = "0.21.4"
-dependencies = [
- "async-trait",
- "attested-channel",
- "deepface-client",
- "deepface-protocol",
- "thiserror 2.0.18",
- "tokio",
  "zeroize",
 ]
 
@@ -9415,7 +9479,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

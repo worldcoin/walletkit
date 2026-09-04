@@ -102,6 +102,10 @@ pub enum Region {
     Ap,
 }
 
+/// Attested Flamingo matching in preparation for zero-knowledge proof generation.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod flamingo;
+
 /// Contains error outputs from `WalletKit`
 pub mod error;
 

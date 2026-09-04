@@ -1,7 +1,4 @@
-#![cfg_attr(target_arch = "wasm32", allow(missing_docs))]
-#![cfg(not(target_arch = "wasm32"))]
-
-//! Attested `DeepFace` matching in preparation for zero-knowledge proof generation.
+//! Attested `Flamingo` matching in preparation for zero-knowledge proof generation.
 //!
 //! This module deliberately knows nothing about Orb PCP storage. Its caller supplies the live
 //! image and the credential material obtained through the platform's Oxide/OrbKit adapter. The
@@ -12,59 +9,66 @@ use std::time::SystemTime;
 
 use async_trait::async_trait;
 use attested_channel::channel::CHANNEL_VERSION;
-use deepface_client::{ClientError, Config, FaceVerifierClient, VerifiedAssignment};
-use deepface_protocol::messages::{FailureReason, MatchInputs, MatchResult};
+use flamingo_verifier_client::{
+    ClientError, Config, FaceVerifierClient, VerifiedAssignment,
+};
+use flamingo_verifier_protocol::messages::{FailureReason, MatchInputs, MatchResult};
 use thiserror::Error;
 use zeroize::Zeroize;
 
-/// Inputs for one attested `DeepFace` match.
+/// Inputs for one attested `Flamingo` match.
 ///
 /// `credential_image` and `hashes_json` must come from the same enrolled Orb PCP. In particular,
 /// `hashes_json` must contain the exact archive bytes, not parsed and reserialized JSON.
 #[derive(Debug)]
-pub struct DeepFaceMatchRequest {
+pub struct FlamingoMatchRequest {
     /// Raw liveness image bytes captured for this request.
     pub live_image: Vec<u8>,
     /// Raw `thumbnail.png` bytes decrypted from the enrolled Orb PCP.
     pub credential_image: Vec<u8>,
     /// Exact raw `hashes.json` bytes extracted from the enrolled Orb PCP.
     pub hashes_json: Vec<u8>,
-    /// Opaque identifier used by the TEE host to locate the RP's encrypted challenge image.
-    pub challenge_image_id: String,
-    /// AES-256-GCM key supplied by the RP for the challenge image.
-    pub challenge_image_key: [u8; 32],
-    /// AES-256-GCM nonce supplied by the RP for the challenge image.
-    pub challenge_image_iv: [u8; 12],
+    /// Optional second liveness frame for the `LightGuard` flow.
+    pub light_guard_image: Option<Vec<u8>>,
+    /// Raw challenge image bytes downloaded from the relying party.
+    pub challenge_image: Vec<u8>,
     /// Minimum similarity required by the RP. Must be finite and between zero and one.
     pub match_threshold: f32,
 }
 
-impl DeepFaceMatchRequest {
-    fn validate(&self) -> Result<(), DeepFaceError> {
+impl FlamingoMatchRequest {
+    fn validate(&self) -> Result<(), FlamingoError> {
         for (attribute, bytes) in [
             ("live_image", self.live_image.as_slice()),
             ("credential_image", self.credential_image.as_slice()),
             ("hashes_json", self.hashes_json.as_slice()),
         ] {
             if bytes.is_empty() {
-                return Err(DeepFaceError::InvalidInput {
+                return Err(FlamingoError::InvalidInput {
                     attribute,
                     reason: "must not be empty".to_string(),
                 });
             }
         }
 
-        if self.challenge_image_id.trim().is_empty() {
-            return Err(DeepFaceError::InvalidInput {
-                attribute: "challenge_image_id",
+        if self.challenge_image.is_empty() {
+            return Err(FlamingoError::InvalidInput {
+                attribute: "challenge_image",
                 reason: "must not be empty".to_string(),
+            });
+        }
+
+        if self.light_guard_image.as_ref().is_some_and(Vec::is_empty) {
+            return Err(FlamingoError::InvalidInput {
+                attribute: "light_guard_image",
+                reason: "must not be empty when provided".to_string(),
             });
         }
 
         if !self.match_threshold.is_finite()
             || !(0.0..=1.0).contains(&self.match_threshold)
         {
-            return Err(DeepFaceError::InvalidInput {
+            return Err(FlamingoError::InvalidInput {
                 attribute: "match_threshold",
                 reason: "must be finite and between 0 and 1 inclusive".to_string(),
             });
@@ -75,34 +79,33 @@ impl DeepFaceMatchRequest {
 
     fn into_sensitive_inputs(mut self) -> SensitiveMatchInputs {
         SensitiveMatchInputs {
-            challenge_image_id: std::mem::take(&mut self.challenge_image_id),
             inputs: MatchInputs {
                 version: CHANNEL_VERSION,
                 live_image: std::mem::take(&mut self.live_image),
                 credential_image: std::mem::take(&mut self.credential_image),
+                light_guard_image: std::mem::take(&mut self.light_guard_image),
                 hashes_json: std::mem::take(&mut self.hashes_json),
-                challenge_image_key: std::mem::take(&mut self.challenge_image_key),
-                challenge_image_iv: std::mem::take(&mut self.challenge_image_iv),
+                challenge_image: std::mem::take(&mut self.challenge_image),
                 match_threshold: self.match_threshold,
             },
         }
     }
 }
 
-impl Drop for DeepFaceMatchRequest {
+impl Drop for FlamingoMatchRequest {
     fn drop(&mut self) {
         self.live_image.zeroize();
         self.credential_image.zeroize();
         self.hashes_json.zeroize();
-        self.challenge_image_key.zeroize();
-        self.challenge_image_iv.zeroize();
+        self.light_guard_image.zeroize();
+        self.challenge_image.zeroize();
     }
 }
 
 /// A match token whose sealed response, signing-key attestation, and signature were verified.
 ///
-/// This is the internal handoff to `DeepFace` proof generation. It is intentionally not a
-/// `UniFFI` type: the foreign side should eventually receive only the generated `DeepFace` proof.
+/// This is the internal handoff to `Flamingo` proof generation. It is intentionally not a
+/// `UniFFI` type: the foreign side should eventually receive only the generated `Flamingo` proof.
 #[derive(Debug)]
 pub struct VerifiedMatchToken(Vec<u8>);
 
@@ -122,7 +125,7 @@ impl Drop for VerifiedMatchToken {
 
 /// A sealed match rejection returned by the attested enclave.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeepFaceMatchRejection {
+pub enum FlamingoMatchRejection {
     /// The sealed inputs were malformed.
     MalformedInputs,
     /// The channel version was not supported by the enclave.
@@ -135,11 +138,9 @@ pub enum DeepFaceMatchRejection {
     MatchBelowThreshold,
     /// The enclave could not obtain a usable comparison score from the images.
     ImageAnalysisFailed,
-    /// The RP's challenge image could not be authenticated with the supplied key and nonce.
-    ChallengeDecryptFailed,
 }
 
-impl From<FailureReason> for DeepFaceMatchRejection {
+impl From<FailureReason> for FlamingoMatchRejection {
     fn from(value: FailureReason) -> Self {
         match value {
             FailureReason::MalformedInputs => Self::MalformedInputs,
@@ -148,23 +149,22 @@ impl From<FailureReason> for DeepFaceMatchRejection {
             FailureReason::ThumbnailHashMismatch => Self::ThumbnailHashMismatch,
             FailureReason::MatchBelowThreshold => Self::MatchBelowThreshold,
             FailureReason::ImageAnalysisFailed => Self::ImageAnalysisFailed,
-            FailureReason::ChallengeDecryptFailed => Self::ChallengeDecryptFailed,
         }
     }
 }
 
 /// The verified outcome of the TEE match phase.
 #[derive(Debug)]
-pub enum DeepFaceMatchOutcome {
+pub enum FlamingoMatchOutcome {
     /// The enclave issued a token and `WalletKit` verified it against an attested signing key.
     Matched(VerifiedMatchToken),
     /// The enclave opened the request but declined to issue a token.
-    Rejected(DeepFaceMatchRejection),
+    Rejected(FlamingoMatchRejection),
 }
 
 /// Failures before `WalletKit` obtains an authoritative sealed match outcome.
 #[derive(Debug, Error)]
-pub enum DeepFaceError {
+pub enum FlamingoError {
     /// A caller-supplied value cannot form a valid match request.
     #[error("invalid {attribute}: {reason}")]
     InvalidInput {
@@ -174,37 +174,37 @@ pub enum DeepFaceError {
         reason: String,
     },
     /// The verifier configuration was not valid.
-    #[error("invalid DeepFace verifier configuration: {0}")]
+    #[error("invalid Flamingo verifier configuration: {0}")]
     Configuration(String),
     /// Assignment, attestation, transport, channel opening, or token verification failed.
-    #[error("DeepFace verifier request failed: {0}")]
+    #[error("Flamingo verifier request failed: {0}")]
     Verifier(String),
 }
 
-/// `WalletKit`'s attested `DeepFace` match module.
+/// `WalletKit`'s attested `Flamingo` match module.
 ///
 /// Keep this value alive across requests so the underlying HTTP client can retain transport state.
 /// No WalletKit-owned sealing key is persisted: each verified assignment supplies the enclave's
 /// attested public key, and the client creates fresh HPKE sealing material for the request.
 #[derive(Debug)]
-pub struct DeepFaceMatcher {
+pub struct FlamingoMatcher {
     client: FaceVerifierClient,
 }
 
-impl DeepFaceMatcher {
+impl FlamingoMatcher {
     /// Builds a matcher from the embedding verifier's JSON configuration.
     ///
     /// The configuration pins the accepted Nitro PCR measurement sets and the TEE host URL.
     ///
     /// # Errors
     ///
-    /// Returns [`DeepFaceError::Configuration`] when the configuration is invalid, or
-    /// [`DeepFaceError::Verifier`] when the HTTP client cannot be constructed.
-    pub fn from_config_json(config_json: &str) -> Result<Self, DeepFaceError> {
+    /// Returns [`FlamingoError::Configuration`] when the configuration is invalid, or
+    /// [`FlamingoError::Verifier`] when the HTTP client cannot be constructed.
+    pub fn from_config_json(config_json: &str) -> Result<Self, FlamingoError> {
         let config = Config::from_json(config_json)
-            .map_err(|error| DeepFaceError::Configuration(error.to_string()))?;
+            .map_err(|error| FlamingoError::Configuration(error.to_string()))?;
         let client = FaceVerifierClient::new(config)
-            .map_err(|error| DeepFaceError::Verifier(error.to_string()))?;
+            .map_err(|error| FlamingoError::Verifier(error.to_string()))?;
 
         Ok(Self { client })
     }
@@ -216,20 +216,17 @@ impl DeepFaceMatcher {
     ///
     /// # Errors
     ///
-    /// Returns [`DeepFaceError::InvalidInput`] before making a network request when a caller value
-    /// is unusable. Other failures are returned as [`DeepFaceError::Verifier`].
+    /// Returns [`FlamingoError::InvalidInput`] before making a network request when a caller value
+    /// is unusable. Other failures are returned as [`FlamingoError::Verifier`].
     pub async fn perform_match(
         &self,
-        request: DeepFaceMatchRequest,
-    ) -> Result<DeepFaceMatchOutcome, DeepFaceError> {
-        // TODO(DEEPFACE): consume `VerifiedMatchToken` in the DeepFace proof generator and expose
-        // only the generated proof across the foreign-language seam.
+        request: FlamingoMatchRequest,
+    ) -> Result<FlamingoMatchOutcome, FlamingoError> {
         perform_match(&self.client, request, SystemTime::now).await
     }
 }
 
 struct SensitiveMatchInputs {
-    challenge_image_id: String,
     inputs: MatchInputs,
 }
 
@@ -237,9 +234,9 @@ impl Drop for SensitiveMatchInputs {
     fn drop(&mut self) {
         self.inputs.live_image.zeroize();
         self.inputs.credential_image.zeroize();
+        self.inputs.light_guard_image.zeroize();
         self.inputs.hashes_json.zeroize();
-        self.inputs.challenge_image_key.zeroize();
-        self.inputs.challenge_image_iv.zeroize();
+        self.inputs.challenge_image.zeroize();
     }
 }
 
@@ -256,7 +253,6 @@ trait MatchClient: Sync {
         &self,
         assignment: &Self::Assignment,
         inputs: &MatchInputs,
-        challenge_image_id: &str,
         now: SystemTime,
     ) -> Result<MatchResult, ClientError>;
 }
@@ -276,18 +272,17 @@ impl MatchClient for FaceVerifierClient {
         &self,
         assignment: &Self::Assignment,
         inputs: &MatchInputs,
-        challenge_image_id: &str,
         now: SystemTime,
     ) -> Result<MatchResult, ClientError> {
-        Self::request_match(self, assignment, inputs, challenge_image_id, now).await
+        Self::request_match(self, assignment, inputs, now).await
     }
 }
 
 async fn perform_match<C: MatchClient, F: Fn() -> SystemTime>(
     client: &C,
-    request: DeepFaceMatchRequest,
+    request: FlamingoMatchRequest,
     now: F,
-) -> Result<DeepFaceMatchOutcome, DeepFaceError> {
+) -> Result<FlamingoMatchOutcome, FlamingoError> {
     request.validate()?;
     let request = request.into_sensitive_inputs();
     let mut reassigned = false;
@@ -299,21 +294,16 @@ async fn perform_match<C: MatchClient, F: Fn() -> SystemTime>(
             .map_err(|error| verifier_error(&error))?;
 
         match client
-            .request_match(
-                &assignment,
-                &request.inputs,
-                &request.challenge_image_id,
-                now(),
-            )
+            .request_match(&assignment, &request.inputs, now())
             .await
         {
-            Ok(MatchResult::Success(token)) => {
-                return Ok(DeepFaceMatchOutcome::Matched(VerifiedMatchToken(
-                    token.into_bytes(),
+            Ok(MatchResult::Success(statement)) => {
+                return Ok(FlamingoMatchOutcome::Matched(VerifiedMatchToken(
+                    statement.token.into_bytes(),
                 )));
             }
             Ok(MatchResult::Failed(reason)) => {
-                return Ok(DeepFaceMatchOutcome::Rejected(reason.into()));
+                return Ok(FlamingoMatchOutcome::Rejected(reason.into()));
             }
             Err(ClientError::ReassignRequired) if !reassigned => reassigned = true,
             Err(error) => return Err(verifier_error(&error)),
@@ -321,8 +311,8 @@ async fn perform_match<C: MatchClient, F: Fn() -> SystemTime>(
     }
 }
 
-fn verifier_error(error: &ClientError) -> DeepFaceError {
-    DeepFaceError::Verifier(error.to_string())
+fn verifier_error(error: &ClientError) -> FlamingoError {
+    FlamingoError::Verifier(error.to_string())
 }
 
 #[cfg(test)]
@@ -336,15 +326,15 @@ mod tests {
         time::SystemTime,
     };
 
-    use deepface_client::ClientError;
-    use deepface_protocol::{
+    use flamingo_verifier_client::ClientError;
+    use flamingo_verifier_protocol::{
         match_token::MatchToken,
-        messages::{FailureReason, MatchInputs, MatchResult},
+        messages::{AttestedStatement, FailureReason, MatchInputs, MatchResult},
     };
 
     use super::{
-        perform_match, DeepFaceError, DeepFaceMatchOutcome, DeepFaceMatchRejection,
-        DeepFaceMatchRequest, MatchClient,
+        perform_match, FlamingoError, FlamingoMatchOutcome, FlamingoMatchRejection,
+        FlamingoMatchRequest, MatchClient,
     };
 
     struct FakeClient {
@@ -378,7 +368,6 @@ mod tests {
             &self,
             _assignment: &Self::Assignment,
             _inputs: &MatchInputs,
-            _challenge_image_id: &str,
             _now: SystemTime,
         ) -> Result<MatchResult, ClientError> {
             self.results
@@ -389,29 +378,29 @@ mod tests {
         }
     }
 
-    fn request() -> DeepFaceMatchRequest {
-        DeepFaceMatchRequest {
+    fn request() -> FlamingoMatchRequest {
+        FlamingoMatchRequest {
             live_image: b"live".to_vec(),
             credential_image: b"credential".to_vec(),
             hashes_json: br#"{"thumbnail.png":"00"}"#.to_vec(),
-            challenge_image_id: "challenge-id".to_string(),
-            challenge_image_key: [7; 32],
-            challenge_image_iv: [9; 12],
+            light_guard_image: None,
+            challenge_image: b"challenge".to_vec(),
             match_threshold: 0.7,
         }
     }
 
     #[tokio::test]
     async fn returns_a_verified_token_after_the_client_verifies_success() {
-        let client = FakeClient::new([Ok(MatchResult::Success(
-            MatchToken::from_bytes(b"signed-token".to_vec()),
-        ))]);
+        let client = FakeClient::new([Ok(MatchResult::Success(AttestedStatement {
+            token: MatchToken::from_bytes(b"signed-token".to_vec()),
+            signing_key_attestation: Vec::new(),
+        }))]);
 
         let outcome = perform_match(&client, request(), || SystemTime::UNIX_EPOCH)
             .await
             .expect("match should succeed");
 
-        let DeepFaceMatchOutcome::Matched(token) = outcome else {
+        let FlamingoMatchOutcome::Matched(token) = outcome else {
             panic!("expected a matched outcome");
         };
         assert_eq!(token.as_bytes(), b"signed-token");
@@ -430,8 +419,8 @@ mod tests {
 
         assert!(matches!(
             outcome,
-            DeepFaceMatchOutcome::Rejected(
-                DeepFaceMatchRejection::ThumbnailHashMismatch
+            FlamingoMatchOutcome::Rejected(
+                FlamingoMatchRejection::ThumbnailHashMismatch
             )
         ));
     }
@@ -449,7 +438,7 @@ mod tests {
 
         assert!(matches!(
             outcome,
-            DeepFaceMatchOutcome::Rejected(DeepFaceMatchRejection::MatchBelowThreshold)
+            FlamingoMatchOutcome::Rejected(FlamingoMatchRejection::MatchBelowThreshold)
         ));
         assert_eq!(client.assignments.load(Ordering::Relaxed), 2);
     }
@@ -465,7 +454,7 @@ mod tests {
             .await
             .expect_err("a second stale assignment should be surfaced");
 
-        assert!(matches!(error, DeepFaceError::Verifier(_)));
+        assert!(matches!(error, FlamingoError::Verifier(_)));
         assert_eq!(client.assignments.load(Ordering::Relaxed), 2);
     }
 
@@ -483,7 +472,7 @@ mod tests {
 
         assert!(matches!(
             error,
-            DeepFaceError::InvalidInput {
+            FlamingoError::InvalidInput {
                 attribute: "match_threshold",
                 ..
             }
