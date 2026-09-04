@@ -346,6 +346,26 @@ impl CredentialStore {
     }
 }
 
+#[cfg(all(target_arch = "wasm32", feature = "uniffi-wasm"))]
+#[uniffi::export]
+impl CredentialStore {
+    /// Creates process-local credential storage for browser demos and tests.
+    ///
+    /// The store is discarded when the page is refreshed. Its key envelope is
+    /// kept in memory without device-bound encryption, so callers must not use
+    /// this constructor for production credentials.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the in-memory storage handle cannot be created.
+    #[uniffi::constructor]
+    pub fn new_ephemeral() -> StorageResult<Self> {
+        Self::from_provider_arc(Arc::new(
+            super::ephemeral::EphemeralStorageProvider::new(),
+        ))
+    }
+}
+
 #[uniffi::export]
 impl CredentialStore {
     /// Permanently destroys all credential storage data.

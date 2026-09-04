@@ -112,6 +112,10 @@ compress-zkeys = [
 
 issuers = []
 
+# Exports authenticator futures without UniFFI's Tokio compatibility adapter.
+# Browser WASM has no thread on which async-compat can host its fallback runtime.
+uniffi-wasm = []
+
 # Embeds compiled zkeys into the binary at compile time for `EmbeddedZkArtifacts`.
 # On native targets, `CachingZkArtifacts` can cache the embedded material on disk.
 # Disable this feature for environments where binary size matters (e.g. WASM).

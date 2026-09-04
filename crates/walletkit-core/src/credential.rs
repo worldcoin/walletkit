@@ -125,7 +125,6 @@ impl Deref for Credential {
         &self.0
     }
 }
-
 #[cfg(test)]
 mod tests {
     use ruint::aliases::U256;
