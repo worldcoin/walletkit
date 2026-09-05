@@ -30,7 +30,6 @@ alloy = { version = "2", default-features = false }
 alloy-core = { version = "1", default-features = false, features = [
   "sol-types",
 ] }
-attested-channel = "0.2.0"
 async-trait = "0.1"
 backon = "1.6"
 base64 = "0.22"
@@ -42,8 +41,10 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-flamingo-verifier-client = "0.2.0"
-flamingo-verifier-protocol = "0.2.0"
+# TODO: Replace these pins with a Flamingo release containing PR #97.
+flamingo-verifier-client = { git = "https://github.com/worldcoin/flamingo", rev = "f0f1814e58c83f772a6fc8f8e76476e1060f8f64" }
+flamingo-verifier-protocol = { git = "https://github.com/worldcoin/flamingo", rev = "f0f1814e58c83f772a6fc8f8e76476e1060f8f64" }
+flamingo-verifier-sealed-types = { git = "https://github.com/worldcoin/flamingo", rev = "f0f1814e58c83f772a6fc8f8e76476e1060f8f64" }
 eyre = "0.6"
 getrandom = "0.3"
 hex = "0.4"

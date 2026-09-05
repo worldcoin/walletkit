@@ -5,14 +5,16 @@
 //! module owns assignment, attestation verification, sealing, transport, response opening, and
 //! match-token verification.
 
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use attested_channel::{channel::CHANNEL_VERSION, nitro::PcrMeasurement};
 use flamingo_verifier_client::{
-    ClientError, Config, FaceVerifierClient, VerifiedAssignment,
+    Config, Error as ClientError, FaceVerifierClient, PcrMeasurement,
+    VerifiedAssignment,
 };
-use flamingo_verifier_protocol::messages::{FailureReason, MatchInputs, MatchResult};
+use flamingo_verifier_sealed_types::{
+    FailureReason, MatchInputs, MatchResult, MATCH_PROTOCOL_VERSION,
+};
 use thiserror::Error;
 
 // TODO: Replace all three PCRs with measurements from the approved enclave release.
@@ -51,7 +53,7 @@ pub struct FlamingoMatchRequest {
     pub match_threshold: f32,
 }
 
-/// A match token whose sealed response, signing-key attestation, and signature were verified.
+/// A match token whose signing-key attestation and signature were verified.
 ///
 /// Foreign callers receive an opaque handle. The token and signing-key attestation remain
 /// together in Rust for proof generation and eventual relay of the attestation to the RP.
@@ -61,16 +63,18 @@ pub struct VerifiedMatchToken {
     signing_key_attestation: Vec<u8>,
 }
 
-/// The verified outcome of the TEE match phase.
+/// The outcome of the TEE match phase.
 #[derive(Debug, uniffi::Enum)]
 pub enum FlamingoMatchOutcome {
     /// The enclave issued a token and `WalletKit` verified it against an attested signing key.
     Matched(Arc<VerifiedMatchToken>),
-    /// The enclave opened the request but declined to issue a token.
+    /// The response reported a rejection. An unsigned rejection does not authenticate its sender.
     Rejected(FlamingoMatchRejection),
 }
 
-/// A sealed match rejection returned by the attested enclave.
+/// A rejection reason reported in an encrypted match response.
+///
+/// The reason is unsigned; it is not proof that the attested enclave issued it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FlamingoMatchRejection {
     /// The sealed inputs were malformed.
@@ -87,7 +91,7 @@ pub enum FlamingoMatchRejection {
     ImageAnalysisFailed,
 }
 
-/// Failures before `WalletKit` obtains an authoritative sealed match outcome.
+/// Failures while configuring or performing a match request.
 #[derive(Debug, Error, uniffi::Error)]
 pub enum FlamingoError {
     /// A caller-supplied value cannot form a valid match request.
@@ -110,16 +114,12 @@ pub enum FlamingoError {
 trait MatchClient: Sync {
     type Assignment: Send + Sync;
 
-    async fn request_assignment(
-        &self,
-        now: SystemTime,
-    ) -> Result<Self::Assignment, ClientError>;
+    async fn request_assignment(&self) -> Result<Self::Assignment, ClientError>;
 
     async fn request_match(
         &self,
         assignment: &Self::Assignment,
         inputs: &MatchInputs,
-        now: SystemTime,
     ) -> Result<MatchResult, ClientError>;
 }
 
@@ -142,7 +142,8 @@ impl FlamingoMatcher {
     /// Performs the attested TEE match phase.
     ///
     /// A stale assignment is retried exactly once with a fresh assignment and freshly sealed
-    /// ciphertext. A sealed rejection is an authoritative outcome, not a transport failure.
+    /// ciphertext. A reported rejection is returned without a retry. Only a successful match
+    /// carries a token verified against an attested signing key.
     ///
     /// # Errors
     ///
@@ -152,7 +153,7 @@ impl FlamingoMatcher {
         &self,
         request: FlamingoMatchRequest,
     ) -> Result<FlamingoMatchOutcome, FlamingoError> {
-        perform_match(&self.client, request, SystemTime::now).await
+        perform_match(&self.client, request).await
     }
 }
 
@@ -228,7 +229,7 @@ impl FlamingoMatchRequest {
 
     fn into_inputs(self) -> MatchInputs {
         MatchInputs {
-            version: CHANNEL_VERSION,
+            version: MATCH_PROTOCOL_VERSION,
             live_image: self.live_image,
             credential_image: self.credential_image,
             light_guard_image: self.light_guard_image,
@@ -270,20 +271,16 @@ impl From<FailureReason> for FlamingoMatchRejection {
 impl MatchClient for FaceVerifierClient {
     type Assignment = VerifiedAssignment;
 
-    async fn request_assignment(
-        &self,
-        now: SystemTime,
-    ) -> Result<Self::Assignment, ClientError> {
-        self.request_assignment(now).await
+    async fn request_assignment(&self) -> Result<Self::Assignment, ClientError> {
+        self.request_assignment().await
     }
 
     async fn request_match(
         &self,
         assignment: &Self::Assignment,
         inputs: &MatchInputs,
-        now: SystemTime,
     ) -> Result<MatchResult, ClientError> {
-        self.request_match(assignment, inputs, now).await
+        self.request_match(assignment, inputs).await
     }
 }
 
@@ -311,10 +308,9 @@ fn matcher_config(
     .map_err(|error| FlamingoError::Configuration(error.to_string()))
 }
 
-async fn perform_match<C: MatchClient, F: Fn() -> SystemTime>(
+async fn perform_match<C: MatchClient>(
     client: &C,
     request: FlamingoMatchRequest,
-    now: F,
 ) -> Result<FlamingoMatchOutcome, FlamingoError> {
     request.validate()?;
     let request = request.into_inputs();
@@ -322,11 +318,11 @@ async fn perform_match<C: MatchClient, F: Fn() -> SystemTime>(
 
     loop {
         let assignment = client
-            .request_assignment(now())
+            .request_assignment()
             .await
             .map_err(|error| verifier_error(&error))?;
 
-        match client.request_match(&assignment, &request, now()).await {
+        match client.request_match(&assignment, &request).await {
             Ok(MatchResult::Success(statement)) => {
                 return Ok(FlamingoMatchOutcome::Matched(Arc::new(
                     VerifiedMatchToken {
@@ -356,13 +352,12 @@ mod tests {
             atomic::{AtomicUsize, Ordering},
             Mutex,
         },
-        time::SystemTime,
     };
 
-    use flamingo_verifier_client::ClientError;
-    use flamingo_verifier_protocol::{
-        match_token::MatchToken,
-        messages::{AttestedStatement, FailureReason, MatchInputs, MatchResult},
+    use flamingo_verifier_client::Error as ClientError;
+    use flamingo_verifier_protocol::match_token::MatchToken;
+    use flamingo_verifier_sealed_types::{
+        AttestedStatement, FailureReason, MatchInputs, MatchResult,
     };
 
     use super::{
@@ -390,10 +385,7 @@ mod tests {
     impl MatchClient for FakeClient {
         type Assignment = usize;
 
-        async fn request_assignment(
-            &self,
-            _now: SystemTime,
-        ) -> Result<Self::Assignment, ClientError> {
+        async fn request_assignment(&self) -> Result<Self::Assignment, ClientError> {
             Ok(self.assignments.fetch_add(1, Ordering::Relaxed))
         }
 
@@ -401,7 +393,6 @@ mod tests {
             &self,
             _assignment: &Self::Assignment,
             _inputs: &MatchInputs,
-            _now: SystemTime,
         ) -> Result<MatchResult, ClientError> {
             self.results
                 .lock()
@@ -437,7 +428,6 @@ mod tests {
                 hex::encode(measurement)
             );
         }
-        assert_eq!(json["allow_debug_measurements"], false);
     }
 
     #[test]
@@ -464,13 +454,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejects_a_legacy_assignment_before_sending_images() {
+        let mut server = mockito::Server::new_async().await;
+        let assignment = server
+            .mock("POST", "/v1/enclave-assignment")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"attestation":"YXR0ZXN0YXRpb24="}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let image_upload = server
+            .mock("POST", "/v1/matches")
+            .expect(0)
+            .create_async()
+            .await;
+        let matcher = super::FlamingoMatcher::with_measurements(
+            &server.url(),
+            Some([[1; 48], [2; 48], [3; 48]]),
+        )
+        .unwrap();
+
+        let error = matcher.perform_match(request()).await.unwrap_err();
+
+        assert!(matches!(error, FlamingoError::Verifier(_)));
+        assignment.assert_async().await;
+        image_upload.assert_async().await;
+        drop(server);
+    }
+
+    #[tokio::test]
     async fn returns_a_verified_token_after_the_client_verifies_success() {
         let client = FakeClient::new([Ok(MatchResult::Success(AttestedStatement {
             token: MatchToken::from_bytes(b"signed-token".to_vec()),
             signing_key_attestation: b"signing-key-attestation".to_vec(),
         }))]);
 
-        let outcome = perform_match(&client, request(), || SystemTime::UNIX_EPOCH)
+        let outcome = perform_match(&client, request())
             .await
             .expect("match should succeed");
 
@@ -488,7 +508,7 @@ mod tests {
             FailureReason::ThumbnailHashMismatch,
         ))]);
 
-        let outcome = perform_match(&client, request(), || SystemTime::UNIX_EPOCH)
+        let outcome = perform_match(&client, request())
             .await
             .expect("a sealed rejection is an outcome");
 
@@ -507,7 +527,7 @@ mod tests {
             Ok(MatchResult::Failed(FailureReason::MatchBelowThreshold)),
         ]);
 
-        let outcome = perform_match(&client, request(), || SystemTime::UNIX_EPOCH)
+        let outcome = perform_match(&client, request())
             .await
             .expect("fresh assignment should recover the match request");
 
@@ -525,7 +545,7 @@ mod tests {
             Err(ClientError::ReassignRequired),
         ]);
 
-        let error = perform_match(&client, request(), || SystemTime::UNIX_EPOCH)
+        let error = perform_match(&client, request())
             .await
             .expect_err("a second stale assignment should be surfaced");
 
@@ -539,11 +559,9 @@ mod tests {
         let mut request = request();
         request.match_threshold = f32::NAN;
 
-        let error = perform_match(&client, request, || SystemTime::UNIX_EPOCH)
-            .await
-            .expect_err(
-                "NaN would bypass enclave comparisons and must be rejected locally",
-            );
+        let error = perform_match(&client, request).await.expect_err(
+            "NaN would bypass enclave comparisons and must be rejected locally",
+        );
 
         assert!(matches!(
             error,

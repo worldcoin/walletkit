@@ -14,10 +14,7 @@ path = "src/main.rs"
 
 [dependencies]
 alloy-core = { workspace = true }
-attested-channel = { workspace = true, features = ["attestation"] }
 base64 = { workspace = true }
-flamingo-verifier-protocol = { workspace = true }
-sha2 = { workspace = true }
 ciborium = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 dirs = { workspace = true }
