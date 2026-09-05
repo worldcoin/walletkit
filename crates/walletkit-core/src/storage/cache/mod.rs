@@ -3,9 +3,11 @@
 use std::path::Path;
 
 use crate::storage::error::StorageResult;
+use crate::storage::types::{ActivityEntry, ActivityMetadata, ActivityQuery};
 use secrecy::SecretBox;
 use walletkit_db::Vault;
 
+mod activity;
 mod maintenance;
 mod merkle;
 mod nullifiers;
@@ -133,15 +135,74 @@ impl CacheDb {
     pub fn replay_guard_set(&self, nullifier: [u8; 32], now: u64) -> StorageResult<()> {
         nullifiers::replay_guard_set(self.vault.connection(), nullifier, now)
     }
+
+    /// Records an activity entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the entry is misconfigured or the insert fails.
+    pub fn record_activity(
+        &self,
+        entry: &ActivityEntry,
+        now: u64,
+    ) -> StorageResult<u64> {
+        activity::record(self.vault.connection(), entry, now)
+    }
+
+    /// Lists activity entries, most recent first.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn list_activities(
+        &self,
+        query: ActivityQuery,
+        limit: u32,
+        offset: u32,
+    ) -> StorageResult<Vec<ActivityEntry>> {
+        activity::list(self.vault.connection(), query, limit, offset)
+    }
+
+    /// Returns aggregate activity metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn activity_metadata(&self) -> StorageResult<ActivityMetadata> {
+        activity::metadata(self.vault.connection())
+    }
+
+    /// Deletes all activity entries. Returns the number of entries deleted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete fails.
+    pub fn clear_activities(&self) -> StorageResult<u64> {
+        activity::clear(self.vault.connection())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::storage::types::{ActivityOutcome, ProtocolVersion};
     use secrecy::SecretBox;
     use std::fs;
     use std::path::PathBuf;
     use uuid::Uuid;
+
+    fn sample_new_activity_entry() -> ActivityEntry {
+        ActivityEntry {
+            id: None,
+            rp_id: 1,
+            client_id: "req-1".to_string(),
+            protocol: ProtocolVersion::V3,
+            timestamp: None,
+            issuer_schema_ids: vec![],
+            outcome: ActivityOutcome::Completed,
+            failure_reason: None,
+        }
+    }
 
     fn temp_cache_path() -> PathBuf {
         let mut path = std::env::temp_dir();
@@ -232,6 +293,111 @@ mod tests {
         assert_eq!(hit, Some(r_seed));
         let miss = db.session_seed_get(oprf_seed, now + 11).expect("get");
         assert!(miss.is_none());
+        cleanup_cache_files(&path);
+        cleanup_lock_file(&lock_path);
+    }
+
+    #[test]
+    fn test_activity_survives_disposable_cache_reset() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x77u8; 32]);
+        let lock_path = temp_lock_path();
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        db.record_activity(&sample_new_activity_entry(), 1000)
+            .expect("record activity");
+
+        db.session_seed_put([0x01u8; 32], [0x02u8; 32], 1000, 1000)
+            .expect("put session seed");
+
+        drop(db);
+
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key, false)
+            .expect("open raw connection");
+        conn.execute(
+            "UPDATE cache_meta SET schema_version = schema_version + 1",
+            &[],
+        )
+        .expect("bump schema version");
+        drop(conn);
+
+        let db = CacheDb::new(&path, &key).expect("reopen cache after version bump");
+
+        let seed = db
+            .session_seed_get([0x01u8; 32], 1000)
+            .expect("get session seed");
+
+        assert!(
+            seed.is_none(),
+            "disposable cache_entries should be wiped on a schema version mismatch"
+        );
+
+        let entries = db
+            .list_activities(ActivityQuery::default(), 10, 0)
+            .expect("list activities after version bump");
+
+        assert_eq!(entries.len(), 1);
+
+        cleanup_cache_files(&path);
+        cleanup_lock_file(&lock_path);
+    }
+
+    #[test]
+    fn test_activity_migration_applies_to_preexisting_cache_file() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x88u8; 32]);
+        let lock_path = temp_lock_path();
+
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key, false)
+            .expect("create raw connection");
+        conn.execute_batch(
+            "CREATE TABLE cache_meta (
+                schema_version INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE cache_entries (
+                key_bytes BLOB NOT NULL,
+                value_bytes BLOB NOT NULL,
+                inserted_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
+                PRIMARY KEY (key_bytes)
+            );
+            INSERT INTO cache_meta (schema_version, created_at, updated_at)
+            VALUES (2, 1000, 1000);
+            INSERT INTO cache_entries (key_bytes, value_bytes, inserted_at, expires_at)
+            VALUES (X'AA', X'BB', 1000, 999999999);",
+        )
+        .expect("seed legacy cache schema");
+        drop(conn);
+
+        let db = CacheDb::new(&path, &key).expect("open legacy cache file");
+
+        db.record_activity(&sample_new_activity_entry(), 1000)
+            .expect("record activity after migration");
+
+        let entries = db
+            .list_activities(ActivityQuery::default(), 10, 0)
+            .expect("list activities");
+
+        assert_eq!(entries.len(), 1, "migration should add activity_entries");
+
+        drop(db);
+
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key, false)
+            .expect("reopen raw connection");
+
+        let count = conn
+            .query_row("SELECT COUNT(*) FROM cache_entries", &[], |stmt| {
+                Ok(stmt.column_i64(0))
+            })
+            .expect("count cache_entries");
+
+        assert_eq!(
+            count, 1,
+            "pre-existing cache_entries row must survive the activity migration"
+        );
+
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
     }
