@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0](https://github.com/worldcoin/walletkit/compare/v0.21.4...v0.22.0) - 2026-09-04
+
+### Added
+
+- minor improvements to activity history ([#506](https://github.com/worldcoin/walletkit/pull/506))
+- persist encrypted WASM SQLite in OPFS ([#493](https://github.com/worldcoin/walletkit/pull/493))
+
+### Other
+
+- split walletkit-sqlite from walletkit-db ([#489](https://github.com/worldcoin/walletkit/pull/489))
+- Introduce Credential Activity History Store ([#481](https://github.com/worldcoin/walletkit/pull/481))
+- Update worldchain URLs to the ones in worldchain domain. ([#505](https://github.com/worldcoin/walletkit/pull/505))
+
 ## [0.21.4](https://github.com/worldcoin/walletkit/compare/v0.21.3...v0.21.4) - 2026-08-31
 
 ### Added
