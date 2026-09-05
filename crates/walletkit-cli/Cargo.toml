@@ -15,11 +15,14 @@ path = "src/main.rs"
 [dependencies]
 alloy-core = { workspace = true }
 base64 = { workspace = true }
+flamingo-verifier-protocol = { workspace = true }
+sha2 = { workspace = true }
 ciborium = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 dirs = { workspace = true }
 eyre = { workspace = true }
 hex = { workspace = true }
+pontifex = { workspace = true, features = ["attestation"] }
 rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
