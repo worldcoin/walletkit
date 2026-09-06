@@ -150,7 +150,7 @@ async fn e2e_session_proof() -> Result<()> {
         .session_id
         .expect("create-session response should include session_id");
     let cached_seed = store
-        .get_session_seed(session_id.oprf_seed, now)
+        .get_session_seed(create_request.rp_id.into_inner(), session_id.oprf_seed, now)
         .wrap_err("get_session_seed failed")?;
     assert!(
         cached_seed.is_some(),

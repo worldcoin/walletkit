@@ -206,8 +206,10 @@ fn cache_key_with_prefix(prefix: u8, payload: &[u8]) -> Vec<u8> {
 }
 
 /// Builds the cache key for a session key entry.
-pub(super) fn session_cache_key(rp_id: [u8; 32]) -> Vec<u8> {
-    cache_key_with_prefix(CACHE_KEY_PREFIX_SESSION, rp_id.as_ref())
+pub(super) fn session_cache_key(rp_id: u64, oprf_seed: [u8; 32]) -> Vec<u8> {
+    let mut key = cache_key_with_prefix(CACHE_KEY_PREFIX_SESSION, &rp_id.to_be_bytes());
+    key.extend_from_slice(&oprf_seed);
+    key
 }
 
 /// Builds the cache key for a replay-guard nullifier entry.
@@ -235,4 +237,20 @@ pub(super) fn to_u64(value: i64, label: &str) -> StorageResult<u64> {
     u64::try_from(value).map_err(|_| {
         StorageError::CacheDb(format!("{label} out of range for u64: {value}"))
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::storage::cache::util::session_cache_key;
+
+    #[test]
+    fn session_cache_key_bytes() {
+        assert_eq!(
+            hex::encode(session_cache_key(0x0102_0304_0506_0708, [0x22; 32])),
+            concat!(
+                "020102030405060708",
+                "2222222222222222222222222222222222222222222222222222222222222222"
+            )
+        );
+    }
 }
