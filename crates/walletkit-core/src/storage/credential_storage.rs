@@ -483,25 +483,27 @@ impl CredentialStore {
     /// Returns an error if the store is not initialized or the insert fails.
     pub fn store_session_seed(
         &self,
+        rp_id: u64,
         oprf_seed: CoreFieldElement,
         session_id_r_seed: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
         self.lock_inner()?
-            .store_session_seed(oprf_seed, session_id_r_seed, now)
+            .store_session_seed(rp_id, oprf_seed, session_id_r_seed, now)
     }
 
-    /// Retrieves the `session_id_r_seed` for a given `oprf_seed`, if not expired.
+    /// Retrieves the `session_id_r_seed` for a given RP and `oprf_seed`, if not expired.
     ///
     /// # Errors
     ///
     /// Returns an error if the store is not initialized or the query fails.
     pub fn get_session_seed(
         &self,
+        rp_id: u64,
         oprf_seed: CoreFieldElement,
         now: u64,
     ) -> StorageResult<Option<CoreFieldElement>> {
-        self.lock_inner()?.get_session_seed(oprf_seed, now)
+        self.lock_inner()?.get_session_seed(rp_id, oprf_seed, now)
     }
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
@@ -760,12 +762,14 @@ impl CredentialStoreInner {
 
     fn store_session_seed(
         &mut self,
+        rp_id: u64,
         oprf_seed: CoreFieldElement,
         session_id_r_seed: CoreFieldElement,
         now: u64,
     ) -> StorageResult<()> {
         let state = self.state_mut()?;
         state.cache.session_seed_put(
+            rp_id,
             oprf_seed.to_be_bytes(),
             session_id_r_seed.to_be_bytes(),
             now,
@@ -775,11 +779,15 @@ impl CredentialStoreInner {
 
     fn get_session_seed(
         &self,
+        rp_id: u64,
         oprf_seed: CoreFieldElement,
         now: u64,
     ) -> StorageResult<Option<CoreFieldElement>> {
         let state = self.state()?;
-        let Some(bytes) = state.cache.session_seed_get(oprf_seed.to_be_bytes(), now)?
+        let Some(bytes) =
+            state
+                .cache
+                .session_seed_get(rp_id, oprf_seed.to_be_bytes(), now)?
         else {
             return Ok(None);
         };
