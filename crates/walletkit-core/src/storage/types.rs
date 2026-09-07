@@ -4,6 +4,18 @@ use strum::{Display, EnumString};
 
 use super::error::{StorageError, StorageResult};
 
+/// One atomic snapshot of the selected credential and its issuer-defined data.
+/// Biometric payloads may be present; intentionally does not implement Debug.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CredentialData {
+    /// Vault record ID, used for conditional associated-data repair.
+    pub credential_id: u64,
+    /// The exact serialized credential stored in the vault.
+    pub credential_bytes: Vec<u8>,
+    /// Optional issuer-defined payload; consumers must verify its commitment.
+    pub associated_data: Option<Vec<u8>>,
+}
+
 /// Kind of blob stored in the vault.
 ///
 /// Blob records (stored in the `blob_objects` table) carry a kind tag that
