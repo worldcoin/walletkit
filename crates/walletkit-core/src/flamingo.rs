@@ -12,9 +12,7 @@ use flamingo_verifier_client::{
     Config, Error as ClientError, FaceVerifierClient, PcrMeasurement,
     VerifiedAssignment,
 };
-use flamingo_verifier_sealed_types::{
-    FailureReason, MatchInputs, MatchResult, MATCH_PROTOCOL_VERSION,
-};
+use flamingo_verifier_sealed_types::{FailureReason, MatchInputs, MatchResult};
 use thiserror::Error;
 
 // TODO: Replace all three PCRs with measurements from the approved enclave release.
@@ -79,8 +77,6 @@ pub enum FlamingoMatchOutcome {
 pub enum FlamingoMatchRejection {
     /// The sealed inputs were malformed.
     MalformedInputs,
-    /// The channel version was not supported by the enclave.
-    UnsupportedVersion,
     /// The PCP hashes file was invalid or did not contain the thumbnail commitment.
     InvalidHashesJson,
     /// The credential image did not match the PCP thumbnail commitment.
@@ -229,7 +225,6 @@ impl FlamingoMatchRequest {
 
     fn into_inputs(self) -> MatchInputs {
         MatchInputs {
-            version: MATCH_PROTOCOL_VERSION,
             live_image: self.live_image,
             credential_image: self.credential_image,
             light_guard_image: self.light_guard_image,
@@ -258,7 +253,6 @@ impl From<FailureReason> for FlamingoMatchRejection {
     fn from(value: FailureReason) -> Self {
         match value {
             FailureReason::MalformedInputs => Self::MalformedInputs,
-            FailureReason::UnsupportedVersion => Self::UnsupportedVersion,
             FailureReason::InvalidHashesJson => Self::InvalidHashesJson,
             FailureReason::ThumbnailHashMismatch => Self::ThumbnailHashMismatch,
             FailureReason::MatchBelowThreshold => Self::MatchBelowThreshold,

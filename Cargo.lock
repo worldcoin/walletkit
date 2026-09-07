@@ -3152,16 +3152,18 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 
 [[package]]
 name = "flamingo-verifier-api-types"
-version = "0.2.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=f0f1814e58c83f772a6fc8f8e76476e1060f8f64#f0f1814e58c83f772a6fc8f8e76476e1060f8f64"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3be4c38f50098fe48bc0d1d96c61101ab30683e501e2e6cde16601a01e1952ca"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "flamingo-verifier-client"
-version = "0.2.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=f0f1814e58c83f772a6fc8f8e76476e1060f8f64#f0f1814e58c83f772a6fc8f8e76476e1060f8f64"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "601c9f6a62cdb5cbfed55f73e1fa7d8ef145f9b542482dffcf8c7f679f38c7b8"
 dependencies = [
  "base64 0.22.1",
  "flamingo-verifier-api-types",
@@ -3178,8 +3180,9 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-protocol"
-version = "0.2.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=f0f1814e58c83f772a6fc8f8e76476e1060f8f64#f0f1814e58c83f772a6fc8f8e76476e1060f8f64"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6585b6649275493e253a2b46135fa35db0a8a5edc8a7530772a1836bf9ffbd71"
 dependencies = [
  "ark-ff 0.5.0",
  "coset",
@@ -3192,8 +3195,9 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-sealed-types"
-version = "0.2.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=f0f1814e58c83f772a6fc8f8e76476e1060f8f64#f0f1814e58c83f772a6fc8f8e76476e1060f8f64"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "380428eb9e375edf2fc2d460ee4e4153e190f2c4b4311a2cbefa5ecababc1420"
 dependencies = [
  "ciborium",
  "flamingo-verifier-protocol",
@@ -8235,7 +8239,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
