@@ -5,9 +5,9 @@
 //!
 //! The keys adhere to the following schema:
 //!
-//! - `0x01` — Merkle inclusion proof; at most one entry; value is the proof bytes.
-//! - `0x02 || oprf_seed` — session seed; value is the `session_id_r_seed`.
-//! - `0x03 || nullifier` — replay guard; value is a presence marker.
+//! - Merkle Inclusion Proof: `0x01`; at most one entry; value is the proof bytes.
+//! - Session Seeds: `0x02 || rp_id (8-byte big-endian) || oprf_seed`; value is the `session_id_r_seed`.
+//! - Nullifier Replay Guards: `0x03 || nullifier`; value is a presence marker.
 
 pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
 pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;

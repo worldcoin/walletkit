@@ -72,7 +72,7 @@ impl CacheDb {
         merkle::put(self.vault.connection(), proof_bytes, now, ttl_seconds)
     }
 
-    /// Fetches a cached `session_id_r_seed` for the given `oprf_seed`.
+    /// Fetches a cached `session_id_r_seed` for the given RP and `oprf_seed`.
     ///
     /// Returns `None` when missing or expired.
     ///
@@ -81,27 +81,31 @@ impl CacheDb {
     /// Returns an error if the query fails.
     pub fn session_seed_get(
         &self,
+        rp_id: u64,
         oprf_seed: [u8; 32],
         now: u64,
     ) -> StorageResult<Option<[u8; 32]>> {
-        session::get(self.vault.connection(), oprf_seed, now)
+        let key = util::session_cache_key(rp_id, oprf_seed);
+        session::get(self.vault.connection(), &key, now)
     }
 
-    /// Stores a `session_id_r_seed` keyed by `oprf_seed` with a TTL.
+    /// Stores a `session_id_r_seed` keyed by RP and `oprf_seed` with a TTL.
     ///
     /// # Errors
     ///
     /// Returns an error if the insert fails.
     pub fn session_seed_put(
         &self,
+        rp_id: u64,
         oprf_seed: [u8; 32],
         session_id_r_seed: [u8; 32],
         now: u64,
         ttl_seconds: u64,
     ) -> StorageResult<()> {
+        let key = util::session_cache_key(rp_id, oprf_seed);
         session::put(
             self.vault.connection(),
-            oprf_seed,
+            &key,
             session_id_r_seed,
             now,
             ttl_seconds,
@@ -247,7 +251,7 @@ mod tests {
         let oprf_seed = [0x01u8; 32];
         let r_seed = [0x02u8; 32];
         let now = 1_000;
-        db.session_seed_put(oprf_seed, r_seed, now, 1000)
+        db.session_seed_put(1, oprf_seed, r_seed, now, 1000)
             .expect("put session seed");
         drop(db);
 
@@ -255,7 +259,7 @@ mod tests {
 
         let db = CacheDb::new(&path, &key).expect("rebuild cache");
         let value = db
-            .session_seed_get(oprf_seed, now)
+            .session_seed_get(1, oprf_seed, now)
             .expect("get session seed");
         assert!(value.is_none());
         cleanup_cache_files(&path);
@@ -287,11 +291,11 @@ mod tests {
         let oprf_seed = [0x55u8; 32];
         let r_seed = [0x66u8; 32];
         let now = 100;
-        db.session_seed_put(oprf_seed, r_seed, now, 10)
+        db.session_seed_put(1, oprf_seed, r_seed, now, 10)
             .expect("put session seed");
-        let hit = db.session_seed_get(oprf_seed, now).expect("get");
+        let hit = db.session_seed_get(1, oprf_seed, now).expect("get");
         assert_eq!(hit, Some(r_seed));
-        let miss = db.session_seed_get(oprf_seed, now + 11).expect("get");
+        let miss = db.session_seed_get(1, oprf_seed, now + 11).expect("get");
         assert!(miss.is_none());
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
@@ -307,7 +311,7 @@ mod tests {
         db.record_activity(&sample_new_activity_entry(), 1000)
             .expect("record activity");
 
-        db.session_seed_put([0x01u8; 32], [0x02u8; 32], 1000, 1000)
+        db.session_seed_put(1, [0x01u8; 32], [0x02u8; 32], 1000, 1000)
             .expect("put session seed");
 
         drop(db);
@@ -324,7 +328,7 @@ mod tests {
         let db = CacheDb::new(&path, &key).expect("reopen cache after version bump");
 
         let seed = db
-            .session_seed_get([0x01u8; 32], 1000)
+            .session_seed_get(1, [0x01u8; 32], 1000)
             .expect("get session seed");
 
         assert!(

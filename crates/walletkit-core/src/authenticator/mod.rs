@@ -643,18 +643,21 @@ impl Authenticator {
         }
 
         // Get cached `session_id_r_seed` if session ID is provided in the proof request
+        let rp_id = proof_request.0.rp_id.into_inner();
         let session_id_r_seed =
             proof_request
                 .0
                 .session_id
                 .existing()
-                .and_then(|session_id| {
-                    match self.store.get_session_seed(session_id.oprf_seed, now) {
-                        Ok(seed) => seed,
-                        Err(err) => {
-                            tracing::warn!(error = %err, "failed to load cached session seed, continuing without");
-                            None
-                        }
+                .and_then(|session_id| match self.store.get_session_seed(
+                    rp_id,
+                    session_id.oprf_seed,
+                    now,
+                ) {
+                    Ok(seed) => seed,
+                    Err(err) => {
+                        tracing::warn!(error = %err, "failed to load cached session seed, continuing without");
+                        None
                     }
                 });
 
@@ -672,10 +675,12 @@ impl Authenticator {
         // session_id, so use the session_id generated in the proof response.
         if let Some(seed) = result.session_id_r_seed {
             if let Some(session_id) = result.proof_response.session_id {
-                if let Err(err) =
-                    self.store
-                        .store_session_seed(session_id.oprf_seed, seed, now)
-                {
+                if let Err(err) = self.store.store_session_seed(
+                    rp_id,
+                    session_id.oprf_seed,
+                    seed,
+                    now,
+                ) {
                     tracing::error!("error caching session_id_r_seed: {}", err);
                 }
             }
