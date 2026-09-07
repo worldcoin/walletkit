@@ -228,6 +228,26 @@ impl CredentialStore {
             .map(|(credential, _blinding_factor)| std::sync::Arc::new(credential)))
     }
 
+    /// Retrieves associated data from the most recent non-expired credential.
+    ///
+    /// Returns `None` if that credential has no associated data or no usable
+    /// credential exists. Never falls back to an older credential's data.
+    /// Consumers must validate the issuer-defined data format and commitment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is uninitialized or the query fails.
+    pub fn fetch_credential_associated_data(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .fetch_credential_associated_data(issuer_schema_id, now)
+    }
+
     /// Deletes a credential by ID.
     ///
     /// # Errors

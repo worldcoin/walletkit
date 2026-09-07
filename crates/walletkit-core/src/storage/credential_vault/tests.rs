@@ -149,6 +149,71 @@ fn test_store_credential_with_associated_data() {
 }
 
 #[test]
+fn associated_data_follows_selected_credential_without_stale_fallback() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let key = SecretBox::init_with(|| [0x42; 32]);
+    let vault = CredentialVault::new(&directory.path().join("vault.sqlite"), &key)
+        .expect("open vault");
+    let insert = |issuer, expiry, bytes, data, now| {
+        vault
+            .store_credential(
+                issuer,
+                sample_blinding_factor(),
+                1,
+                expiry,
+                bytes,
+                data,
+                now,
+            )
+            .expect("store")
+    };
+    insert(1, 500, vec![1], Some(vec![11]), 100);
+    insert(2, 500, vec![2], Some(vec![22]), 101);
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 102).unwrap(),
+        Some(vec![11])
+    );
+    assert_eq!(
+        vault.fetch_credential_associated_data(3, 102).unwrap(),
+        None
+    );
+    // Same-second inserts select the newer row for both proof and data.
+    let newer = insert(1, 400, vec![3], None, 100);
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 102).unwrap(),
+        None
+    );
+    assert_eq!(
+        vault
+            .fetch_credential_and_blinding_factor(1, 102)
+            .unwrap()
+            .unwrap()
+            .0,
+        vec![3]
+    );
+    vault.delete_credential(newer).expect("delete newer");
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 102).unwrap(),
+        Some(vec![11])
+    );
+    // An empty blob is present data, not SQL NULL.
+    insert(1, 300, vec![4], Some(vec![]), 103);
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 104).unwrap(),
+        Some(vec![])
+    );
+    // Expiration uses the same exclusive upper bound as proof generation.
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 300).unwrap(),
+        Some(vec![11])
+    );
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 500).unwrap(),
+        None
+    );
+}
+
+#[test]
 fn test_content_id_deduplication() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();

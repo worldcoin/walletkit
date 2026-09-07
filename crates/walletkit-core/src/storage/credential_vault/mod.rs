@@ -298,7 +298,7 @@ impl CredentialVault {
              FROM credential_records cr
              INNER JOIN blob_objects blob ON cr.credential_blob_cid = blob.content_id
              WHERE cr.expires_at > ?1 AND cr.issuer_schema_id = ?2
-             ORDER BY cr.updated_at DESC
+             ORDER BY cr.updated_at DESC, cr.credential_id DESC
              LIMIT 1";
 
         let mut stmt = self
@@ -315,6 +315,45 @@ impl CredentialVault {
                 Ok(Some((credential_blob, blinding_factor)))
             }
             StepResult::Done => Ok(None),
+        }
+    }
+
+    /// Retrieves the associated data of the credential selected for proof generation.
+    ///
+    /// Missing data on the selected credential returns `None`; an older credential's
+    /// data must never be substituted. The issuer defines the format and commitment
+    /// scheme, which the consumer must validate before using these bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn fetch_credential_associated_data(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        let mut stmt = self
+            .vault
+            .connection()
+            .prepare(
+                "SELECT data.bytes
+                 FROM credential_records cr
+                 LEFT JOIN blob_objects data ON cr.associated_data_cid = data.content_id
+                 WHERE cr.expires_at > ?1 AND cr.issuer_schema_id = ?2
+                 ORDER BY cr.updated_at DESC, cr.credential_id DESC
+                 LIMIT 1",
+            )
+            .map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![
+            to_i64(now, "now")?,
+            to_i64(issuer_schema_id, "issuer_schema_id")?
+        ])
+        .map_err(|err| map_db_err(&err))?;
+        match stmt.step().map_err(|err| map_db_err(&err))? {
+            StepResult::Row(row) if !row.is_column_null(0) => {
+                Ok(Some(row.column_blob(0)))
+            }
+            StepResult::Row(_) | StepResult::Done => Ok(None),
         }
     }
 
