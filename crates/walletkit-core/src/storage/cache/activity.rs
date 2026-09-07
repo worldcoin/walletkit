@@ -123,12 +123,10 @@ fn decode_issuer_schema_ids(bytes: &[u8]) -> StorageResult<Vec<u64>> {
     }
 
     Ok(bytes
-        .chunks_exact(8)
-        .map(|chunk| {
-            let mut buf = [0u8; 8];
-            buf.copy_from_slice(chunk);
-            u64::from_be_bytes(buf)
-        })
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|chunk| u64::from_be_bytes(*chunk))
         .collect())
 }
 
