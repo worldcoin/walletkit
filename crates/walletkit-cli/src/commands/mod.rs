@@ -2,6 +2,7 @@
 
 mod auth;
 mod credential;
+mod flamingo;
 mod proof;
 mod recovery_agent;
 mod recovery_binding;
@@ -99,6 +100,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Attested Flamingo face matching against a forwarded enclave host.
+    Flamingo {
+        #[command(subcommand)]
+        action: flamingo::FlamingoCommand,
+    },
     /// Local wallet setup and inspection.
     Wallet {
         #[command(subcommand)]
@@ -339,6 +345,7 @@ pub async fn init_authenticator(
 /// Top-level command dispatch.
 pub async fn run(cli: Cli) -> eyre::Result<()> {
     match &cli.command {
+        Command::Flamingo { action } => flamingo::run(&cli, action).await,
         Command::Wallet { action } => wallet::run(&cli, action).await,
         Command::Auth { action } => auth::run(&cli, action).await,
         Command::Credential { action } => credential::run(&cli, action).await,
