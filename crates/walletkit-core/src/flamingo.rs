@@ -489,30 +489,31 @@ mod tests {
         }
     }
 
-    #[test]
-    fn rejects_invalid_or_duplicate_headers() {
-        for headers in [
-            std::collections::HashMap::from([(
-                "bad name".to_string(),
-                "secret".to_string(),
-            )]),
-            std::collections::HashMap::from([(
-                "x-test".to_string(),
-                "secret\r\nx-injected: yes".to_string(),
-            )]),
-            std::collections::HashMap::from([
-                ("X-Test".to_string(), "secret".to_string()),
-                ("x-test".to_string(), "another-secret".to_string()),
-            ]),
-        ] {
-            let error = super::FlamingoMatcher::new_with_headers(
-                "https://verifier.example.com",
-                headers,
-            )
-            .unwrap_err();
-            assert!(matches!(error, FlamingoError::Configuration(_)));
-            assert!(!error.to_string().contains("secret"));
-        }
+    #[test_case::test_case(
+        maplit::hashmap! { "bad name".to_string() => "secret".to_string() };
+        "invalid name"
+    )]
+    #[test_case::test_case(
+        maplit::hashmap! { "x-test".to_string() => "secret\r\nx-injected: yes".to_string() };
+        "invalid value"
+    )]
+    #[test_case::test_case(
+        maplit::hashmap! {
+            "X-Test".to_string() => "secret".to_string(),
+            "x-test".to_string() => "another-secret".to_string(),
+        };
+        "case insensitive duplicate"
+    )]
+    fn rejects_invalid_or_duplicate_headers(
+        headers: std::collections::HashMap<String, String>,
+    ) {
+        let error = super::FlamingoMatcher::new_with_headers(
+            "https://verifier.example.com",
+            headers,
+        )
+        .unwrap_err();
+        assert!(matches!(error, FlamingoError::Configuration(_)));
+        assert!(!error.to_string().contains("secret"));
     }
 
     #[tokio::test]
@@ -535,16 +536,13 @@ mod tests {
             .await;
         let matcher = super::FlamingoMatcher::new_with_headers(
             &server.url(),
-            std::collections::HashMap::from([
-                ("X-Client".to_string(), "native".to_string()),
-                (
-                    "User-Agent".to_string(),
-                    crate::UserAgentBuilder::new()
-                        .with_segment("WorldApp", "1.0")
-                        .build()
-                        .header_value(),
-                ),
-            ]),
+            maplit::hashmap! {
+                "X-Client".to_string() => "native".to_string(),
+                "User-Agent".to_string() => crate::UserAgentBuilder::new()
+                    .with_segment("WorldApp", "1.0")
+                    .build()
+                    .header_value(),
+            },
         )
         .unwrap();
         assert!(matches!(

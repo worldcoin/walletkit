@@ -82,6 +82,7 @@ chacha20poly1305 = { workspace = true }
 chrono = { workspace = true }
 dotenvy = { workspace = true }
 eyre = { workspace = true }
+maplit = { workspace = true }
 mockito = { workspace = true }
 regex = { workspace = true }
 taceo-oprf = { workspace = true, features = [
