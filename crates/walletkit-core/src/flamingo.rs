@@ -4,8 +4,13 @@
 //! image and the credential material obtained through the platform's Oxide/OrbKit adapter. The
 //! module owns assignment, attestation verification, sealing, transport, response opening, and
 //! match-token verification.
+//!
+//! Native callers can configure default HTTP headers with
+//! [`FlamingoMatcher::new_with_headers`] (`newWithHeaders` in Swift/Kotlin).
+//! The string map applies only to this matcher's assignment and match requests.
+//! The original constructor remains available for callers that need no custom headers.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use flamingo_verifier_client::{
@@ -13,6 +18,7 @@ use flamingo_verifier_client::{
     VerifiedAssignment,
 };
 use flamingo_verifier_sealed_types::{FailureReason, MatchInputs, MatchResult};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use thiserror::Error;
 
 // TODO: Replace all three PCRs with measurements from the approved enclave release.
@@ -135,6 +141,25 @@ impl FlamingoMatcher {
         Self::with_measurements(host_url, None)
     }
 
+    /// Builds a matcher with custom default headers on Flamingo HTTP requests.
+    ///
+    /// Headers are sent on assignment and sealed match requests, including reassignment.
+    /// Names are case-insensitive. Do not provide the same name with different casing.
+    /// Request-specific headers, such as the match request's JSON content type, take precedence.
+    /// The client retains Flamingo's affinity cookies and configured timeouts.
+    /// Use `UserAgent::header_value` to supply a value for the `User-Agent` header.
+    ///
+    /// # Errors
+    /// Returns [`FlamingoError::Configuration`] for invalid configuration or headers, or
+    /// [`FlamingoError::Verifier`] if the HTTP client cannot be constructed.
+    #[uniffi::constructor]
+    pub fn new_with_headers(
+        host_url: &str,
+        headers: HashMap<String, String>,
+    ) -> Result<Self, FlamingoError> {
+        Self::with_config(matcher_config(host_url, None)?, headers)
+    }
+
     /// Performs the attested TEE match phase.
     ///
     /// A stale assignment is retried exactly once with a fresh assignment and freshly sealed
@@ -175,8 +200,15 @@ impl FlamingoMatcher {
         host_url: &str,
         measurements: Option<[[u8; 48]; 3]>,
     ) -> Result<Self, FlamingoError> {
-        let config = matcher_config(host_url, measurements)?;
-        let client = FaceVerifierClient::new(config)
+        Self::with_config(matcher_config(host_url, measurements)?, HashMap::new())
+    }
+
+    fn with_config(
+        config: Config,
+        headers: HashMap<String, String>,
+    ) -> Result<Self, FlamingoError> {
+        let http = reqwest::Client::builder().default_headers(parse_headers(headers)?);
+        let client = FaceVerifierClient::with_http_client_builder(config, http)
             .map_err(|error| FlamingoError::Verifier(error.to_string()))?;
         Ok(Self { client })
     }
@@ -276,6 +308,24 @@ impl MatchClient for FaceVerifierClient {
     ) -> Result<MatchResult, ClientError> {
         self.request_match(assignment, inputs).await
     }
+}
+
+fn parse_headers(headers: HashMap<String, String>) -> Result<HeaderMap, FlamingoError> {
+    let mut parsed = HeaderMap::new();
+    for (name, value) in headers {
+        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| {
+            FlamingoError::Configuration("invalid HTTP header name".to_string())
+        })?;
+        let value = HeaderValue::from_str(&value).map_err(|_| {
+            FlamingoError::Configuration("invalid HTTP header value".to_string())
+        })?;
+        if parsed.insert(name, value).is_some() {
+            return Err(FlamingoError::Configuration(
+                "duplicate HTTP header name (names are case-insensitive)".to_string(),
+            ));
+        }
+    }
+    Ok(parsed)
 }
 
 fn matcher_config(
@@ -437,6 +487,73 @@ mod tests {
                 Err(FlamingoError::Configuration(_))
             ));
         }
+    }
+
+    #[test]
+    fn rejects_invalid_or_duplicate_headers() {
+        for headers in [
+            std::collections::HashMap::from([(
+                "bad name".to_string(),
+                "secret".to_string(),
+            )]),
+            std::collections::HashMap::from([(
+                "x-test".to_string(),
+                "secret\r\nx-injected: yes".to_string(),
+            )]),
+            std::collections::HashMap::from([
+                ("X-Test".to_string(), "secret".to_string()),
+                ("x-test".to_string(), "another-secret".to_string()),
+            ]),
+        ] {
+            let error = super::FlamingoMatcher::new_with_headers(
+                "https://verifier.example.com",
+                headers,
+            )
+            .unwrap_err();
+            assert!(matches!(error, FlamingoError::Configuration(_)));
+            assert!(!error.to_string().contains("secret"));
+        }
+    }
+
+    #[tokio::test]
+    async fn custom_headers_are_sent_without_bypassing_attestation() {
+        let mut server = mockito::Server::new_async().await;
+        let assignment = server
+            .mock("POST", "/v1/enclave-assignment")
+            .match_header("x-client", "native")
+            .match_header("user-agent", "WorldApp/1.0")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"attestation":"YXR0ZXN0YXRpb24="}"#)
+            .expect(1)
+            .create_async()
+            .await;
+        let image_upload = server
+            .mock("POST", "/v1/matches")
+            .expect(0)
+            .create_async()
+            .await;
+        let matcher = super::FlamingoMatcher::new_with_headers(
+            &server.url(),
+            std::collections::HashMap::from([
+                ("X-Client".to_string(), "native".to_string()),
+                (
+                    "User-Agent".to_string(),
+                    crate::UserAgentBuilder::new()
+                        .with_segment("WorldApp", "1.0")
+                        .build()
+                        .header_value(),
+                ),
+            ]),
+        )
+        .unwrap();
+        assert!(matches!(
+            matcher.perform_match(request()).await,
+            Err(FlamingoError::Verifier(_))
+        ));
+        assignment.assert_async().await;
+        image_upload.assert_async().await;
+        drop(server);
     }
 
     #[test]
