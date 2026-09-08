@@ -22,6 +22,7 @@ swift/tests/.build/
 kotlin/libs/
 kotlin/walletkit/src/main/java/uniffi/
 kotlin/walletkit-tests/build/
+kotlin/walletkit-tests/bin/
 .build/
 **/tests/Package.resolved
 
