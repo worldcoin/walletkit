@@ -28,8 +28,8 @@ use tokio::sync::OnceCell;
 ///
 /// ```no_run
 /// use std::collections::HashMap;
-/// use walletkit_core::flamingo::{FlamingoError, FlamingoMatcher, FlamingoMeasurements};
-/// # fn example(host_url: &str, measurements: FlamingoMeasurements, headers: HashMap<String, String>) -> Result<FlamingoMatcher, FlamingoError> {
+/// use walletkit_core::flamingo::{FlamingoError, FlamingoMatcher};
+/// # fn example(host_url: &str, measurements: HashMap<u32, Vec<u8>>, headers: HashMap<String, String>) -> Result<FlamingoMatcher, FlamingoError> {
 /// let matcher = FlamingoMatcher::new(host_url)?
 ///     .with_measurements(measurements)?
 ///     .with_headers(headers)?;
@@ -42,17 +42,6 @@ pub struct FlamingoMatcher {
     config: Option<Config>,
     headers: HeaderMap,
     client: OnceCell<FaceVerifierClient>,
-}
-
-/// Trusted PCR0/1/2 measurements from an approved enclave build.
-#[derive(Debug, Clone, uniffi::Record)]
-pub struct FlamingoMeasurements {
-    /// Nonzero 48-byte measurement of the enclave image.
-    pub pcr0: Vec<u8>,
-    /// Nonzero 48-byte measurement of the enclave kernel and bootstrap.
-    pub pcr1: Vec<u8>,
-    /// Nonzero 48-byte measurement of the enclave application.
-    pub pcr2: Vec<u8>,
 }
 
 /// Inputs for one attested `Flamingo` match.
@@ -172,16 +161,19 @@ impl FlamingoMatcher {
         })
     }
 
-    /// Returns a new matcher with the supplied trusted PCR0/1/2 measurements.
+    /// Returns a new matcher with trusted measurements keyed by PCR index.
     ///
+    /// PCR0, PCR1, and PCR2 must be supplied from an approved enclave build. Additional entries
+    /// are also pinned. Each value must contain the raw 48 measurement bytes.
     /// Retains configured headers. The original matcher and its in-flight requests are unchanged.
     /// The returned matcher creates its own HTTP client on its first match.
     ///
     /// # Errors
-    /// Returns [`FlamingoError::Configuration`] if a measurement is not 48 bytes or is all zero.
+    /// Returns [`FlamingoError::Configuration`] if PCR0/1/2 is missing, or any measurement
+    /// is not 48 bytes or is all zero.
     pub fn with_measurements(
         &self,
-        measurements: FlamingoMeasurements,
+        measurements: HashMap<u32, Vec<u8>>,
     ) -> Result<Self, FlamingoError> {
         Ok(Self {
             host_url: self.host_url.clone(),
@@ -372,10 +364,17 @@ fn parse_headers(headers: HashMap<String, String>) -> Result<HeaderMap, Flamingo
 
 fn matcher_config(
     host_url: &str,
-    measurements: FlamingoMeasurements,
+    measurements: HashMap<u32, Vec<u8>>,
 ) -> Result<Config, FlamingoError> {
-    let measurements = [measurements.pcr0, measurements.pcr1, measurements.pcr2];
-    for (index, measurement) in measurements.iter().enumerate() {
+    for index in 0..=2 {
+        if !measurements.contains_key(&index) {
+            return Err(FlamingoError::Configuration(format!(
+                "PCR{index} must be supplied"
+            )));
+        }
+    }
+    let mut pcrs = Vec::with_capacity(measurements.len());
+    for (index, measurement) in measurements {
         if measurement.len() != 48 {
             return Err(FlamingoError::Configuration(format!(
                 "PCR{index} must be exactly 48 bytes"
@@ -386,16 +385,11 @@ fn matcher_config(
                 "PCR{index} must be nonzero; debug enclaves are not accepted"
             )));
         }
+        pcrs.push(PcrMeasurement::new(index, measurement));
     }
-    Config::new(
-        host_url,
-        vec![vec![
-            PcrMeasurement::new(0, measurements[0].clone()),
-            PcrMeasurement::new(1, measurements[1].clone()),
-            PcrMeasurement::new(2, measurements[2].clone()),
-        ]],
-    )
-    .map_err(|error| FlamingoError::Configuration(error.to_string()))
+    pcrs.sort_unstable_by_key(|pcr| pcr.index);
+    Config::new(host_url, vec![pcrs])
+        .map_err(|error| FlamingoError::Configuration(error.to_string()))
 }
 
 async fn perform_match<C: MatchClient>(
@@ -452,7 +446,7 @@ mod tests {
 
     use super::{
         perform_match, FlamingoError, FlamingoMatchOutcome, FlamingoMatchRejection,
-        FlamingoMatchRequest, FlamingoMatcher, FlamingoMeasurements, MatchClient,
+        FlamingoMatchRequest, FlamingoMatcher, MatchClient,
     };
 
     struct FakeClient {
@@ -503,12 +497,8 @@ mod tests {
         }
     }
 
-    fn measurements() -> FlamingoMeasurements {
-        FlamingoMeasurements {
-            pcr0: vec![1; 48],
-            pcr1: vec![2; 48],
-            pcr2: vec![3; 48],
-        }
+    fn measurements() -> HashMap<u32, Vec<u8>> {
+        HashMap::from([(0, vec![1; 48]), (1, vec![2; 48]), (2, vec![3; 48])])
     }
 
     fn headers() -> HashMap<String, String> {
@@ -519,16 +509,22 @@ mod tests {
     }
 
     #[test]
-    fn custom_measurements_pin_all_three_pcrs() {
+    fn custom_measurements_preserve_required_and_additional_pcrs() {
+        let mut pins = measurements();
+        pins.insert(8, vec![4; 48]);
         let config =
-            super::matcher_config("https://verifier.example.com", measurements())
-                .unwrap();
+            super::matcher_config("https://verifier.example.com", pins).unwrap();
         let json = serde_json::to_value(config).unwrap();
         assert_eq!(json["allowed_pcr_configs"].as_array().unwrap().len(), 1);
-        for (index, measurement) in [[1; 48], [2; 48], [3; 48]].iter().enumerate() {
-            assert_eq!(json["allowed_pcr_configs"][0][index]["index"], index);
+        assert_eq!(json["allowed_pcr_configs"][0].as_array().unwrap().len(), 4);
+        for (position, (index, measurement)) in
+            [(0, [1; 48]), (1, [2; 48]), (2, [3; 48]), (8, [4; 48])]
+                .into_iter()
+                .enumerate()
+        {
+            assert_eq!(json["allowed_pcr_configs"][0][position]["index"], index);
             assert_eq!(
-                json["allowed_pcr_configs"][0][index]["value"],
+                json["allowed_pcr_configs"][0][position]["value"],
                 hex::encode(measurement)
             );
         }
@@ -537,15 +533,31 @@ mod tests {
     #[test]
     fn rejects_zero_or_malformed_measurements() {
         let matcher = FlamingoMatcher::new("https://verifier.example.com").unwrap();
-        for index in 0..3 {
+        for index in [0, 1, 2, 8] {
             for invalid in [vec![0; 48], vec![], vec![1; 47], vec![1; 49]] {
                 let mut pins = measurements();
-                *[&mut pins.pcr0, &mut pins.pcr1, &mut pins.pcr2][index] = invalid;
+                pins.insert(index, invalid);
                 assert!(matches!(
                     matcher.with_measurements(pins),
                     Err(FlamingoError::Configuration(_))
                 ));
             }
+        }
+    }
+
+    #[test]
+    fn rejects_missing_required_measurements() {
+        let matcher = FlamingoMatcher::new("https://verifier.example.com").unwrap();
+        assert!(matches!(
+            matcher.with_measurements(HashMap::new()),
+            Err(FlamingoError::Configuration(_))
+        ));
+        for index in 0..3 {
+            let mut pins = measurements();
+            pins.remove(&index);
+            let error = matcher.with_measurements(pins).unwrap_err();
+            assert!(matches!(error, FlamingoError::Configuration(_)));
+            assert!(error.to_string().contains(&format!("PCR{index}")));
         }
     }
 
