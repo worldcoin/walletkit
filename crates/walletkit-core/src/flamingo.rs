@@ -9,7 +9,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use flamingo_verifier_client::{
-    Config, Error as ClientError, FaceVerifierClient, PcrMeasurement,
+    Config, Error as ClientError, FlamingoVerifierClient, PcrMeasurement,
     VerifiedAssignment,
 };
 use flamingo_verifier_sealed_types::{FailureReason, MatchInputs, MatchResult};
@@ -20,31 +20,16 @@ use reqwest::{
 use thiserror::Error;
 use tokio::sync::OnceCell;
 
-/// `WalletKit`'s attested `Flamingo` match module.
-///
-/// Keep this value alive across requests so the underlying HTTP client can retain transport state.
-/// No WalletKit-owned sealing key is persisted: each verified assignment supplies the enclave's
-/// attested public key, and the client creates fresh HPKE sealing material for the request.
-///
-/// ```no_run
-/// use std::collections::HashMap;
-/// use walletkit_core::flamingo::{FlamingoError, FlamingoMatcher};
-/// # fn example(host_url: &str, measurements: HashMap<u32, Vec<u8>>, headers: HashMap<String, String>) -> Result<FlamingoMatcher, FlamingoError> {
-/// let matcher = FlamingoMatcher::new(host_url)?
-///     .with_measurements(measurements)?
-///     .with_headers(headers)?;
-/// # Ok(matcher)
-/// # }
-/// ```
+/// A simple wrapper around of `FlamingoVerifierClient`. Flamingo Verifier is a cloud TEE service for attested embedding generation and comparison.
 #[derive(Debug, uniffi::Object)]
 pub struct FlamingoMatcher {
     host_url: Url,
     config: Option<Config>,
     headers: HeaderMap,
-    client: OnceCell<FaceVerifierClient>,
+    client: OnceCell<FlamingoVerifierClient>,
 }
 
-/// Inputs for one attested `Flamingo` match.
+/// Inputs for one attested `Flamingo` 3-way match.
 ///
 /// `credential_image` and `hashes_json` must come from the same enrolled Orb PCP. In particular,
 /// `hashes_json` must contain the exact archive bytes, not parsed and reserialized JSON.
@@ -134,14 +119,11 @@ trait MatchClient: Sync {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl FlamingoMatcher {
-    /// Creates a matcher for a verifier base URL without opening an HTTP client.
-    ///
-    /// Supply trusted measurements through [`Self::with_measurements`] before matching.
-    /// For the app gateway, the base URL includes the `/v1/flamingo` prefix.
+    /// Creates an instance with default values, use `with_measurements` and `with_headers` for customization.
     ///
     /// # Errors
     ///
-    /// Returns [`FlamingoError::Configuration`] if the URL is not an absolute HTTP(S) URL.
+    /// Returns [`FlamingoError::Configuration`] if the URL is not a valid HTTP(S) URL.
     #[uniffi::constructor]
     pub fn new(host_url: &str) -> Result<Self, FlamingoError> {
         let host_url = Url::parse(host_url)
@@ -161,16 +143,13 @@ impl FlamingoMatcher {
         })
     }
 
-    /// Returns a new matcher with trusted measurements keyed by PCR index.
+    /// Returns a new instance with trusted measurements keyed by PCR index.
     ///
     /// PCR0, PCR1, and PCR2 must be supplied from an approved enclave build. Additional entries
-    /// are also pinned. Each value must contain the raw 48 measurement bytes.
-    /// Retains configured headers. The original matcher and its in-flight requests are unchanged.
-    /// The returned matcher creates its own HTTP client on its first match.
+    /// are also pinned. It's the user's responsibility to ensure the measurements are from a trusted enclave and match the verifier's expectations.
     ///
     /// # Errors
-    /// Returns [`FlamingoError::Configuration`] if PCR0/1/2 is missing, or any measurement
-    /// is not 48 bytes or is all zero.
+    /// Returns [`FlamingoError::Configuration`] if no measurement is set.
     pub fn with_measurements(
         &self,
         measurements: HashMap<u32, Vec<u8>>,
@@ -183,11 +162,9 @@ impl FlamingoMatcher {
         })
     }
 
-    /// Returns a new matcher with these default headers, replacing any previously configured set.
+    /// Returns a new instance with these default headers, replacing any previously configured set.
     ///
-    /// Headers apply to assignment, match, and reassignment requests. Measurements are retained.
-    /// Use this method again when a bearer token changes, and retain the returned matcher.
-    /// Request-specific headers, such as JSON content type, take precedence over defaults.
+    /// Use this to set authorization, client name, or other headers. The `Cookie` header is not allowed; the client manages affinity cookies automatically.
     ///
     /// # Errors
     /// Returns [`FlamingoError::Configuration`] for invalid names/values, case-insensitive duplicate
@@ -204,12 +181,11 @@ impl FlamingoMatcher {
         })
     }
 
-    /// Performs the attested TEE match phase.
+    /// Performs an attested 3-way embedding match.
     ///
-    /// A stale assignment is retried exactly once with a fresh assignment and freshly sealed
-    /// ciphertext. A reported rejection is returned without a retry. Only a successful match
-    /// carries a token verified against an attested signing key.
-    /// The first call creates the HTTP client; later calls reuse its connection pool and cookies.
+    /// - Fetches the enclave assignment and verifies its attestation against the trusted PCRs.
+    /// - Encrypts and sends the match inputs using the enclave's attested public key.
+    /// - Decrypts the result and, on success, verifies the token's signature and signing-key attestation.
     ///
     /// # Errors
     ///
@@ -225,7 +201,7 @@ impl FlamingoMatcher {
 }
 
 impl FlamingoMatcher {
-    async fn client(&self) -> Result<&FaceVerifierClient, FlamingoError> {
+    async fn client(&self) -> Result<&FlamingoVerifierClient, FlamingoError> {
         self.client
             .get_or_try_init(|| async {
                 let config = self.config.clone().ok_or_else(|| {
@@ -235,7 +211,7 @@ impl FlamingoMatcher {
                     )
                 })?;
                 let http = reqwest::Client::builder().default_headers(self.headers.clone());
-                FaceVerifierClient::with_http_client_builder(config, http)
+                FlamingoVerifierClient::with_http_client_builder(config, http)
                     .map_err(|error| FlamingoError::Verifier(error.to_string()))
             })
             .await
@@ -322,7 +298,7 @@ impl From<FailureReason> for FlamingoMatchRejection {
 }
 
 #[async_trait]
-impl MatchClient for FaceVerifierClient {
+impl MatchClient for FlamingoVerifierClient {
     type Assignment = VerifiedAssignment;
 
     async fn request_assignment(&self) -> Result<Self::Assignment, ClientError> {
