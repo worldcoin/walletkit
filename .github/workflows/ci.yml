@@ -264,6 +264,7 @@ jobs:
     runs-on: arc-public-2xlarge-arm64-runner
 
     strategy:
+      fail-fast: false
       matrix:
         rust:
           - stable
