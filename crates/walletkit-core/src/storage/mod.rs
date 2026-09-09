@@ -45,6 +45,7 @@
 //! Encryption, the sealed-envelope threat model, and integrity checks are covered by
 //! the `walletkit-db` README.
 
+mod browser;
 pub mod cache;
 pub mod credential_storage;
 pub mod credential_vault;
@@ -57,6 +58,7 @@ pub mod paths;
 pub mod traits;
 pub mod types;
 
+pub use browser::{SecretDeviceKeystore, SqliteAtomicBlobStore};
 pub use cache::CacheDb;
 pub use credential_storage::CredentialStore;
 pub use credential_vault::CredentialVault;

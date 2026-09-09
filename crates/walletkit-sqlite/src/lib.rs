@@ -14,9 +14,11 @@
 mod ffi;
 
 pub mod cipher;
+mod config;
 pub mod error;
 #[cfg(target_arch = "wasm32")]
 pub mod opfs;
+pub mod plaintext;
 pub mod test_utils;
 
 mod connection;

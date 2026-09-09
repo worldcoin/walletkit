@@ -148,3 +148,15 @@ Schemas, CBOR envelope layout, content_id derivation, and the `account_keys.bin`
 ## Platforms
 
 Native (macOS, Linux, Windows): static `sqlite3mc` from the build script. `wasm32-unknown-unknown`: `sqlite-wasm-rs` with the `sqlite3mc` feature; `Lock` collapses to a no-op.
+
+### Synchronous browser components
+
+`SecretKeystore` uses a host-supplied 32-byte key and XChaCha20-Poly1305 with
+fresh random nonces and authenticated associated data. Its versioned sealed
+payload has a frozen-byte test. Existing envelope CBOR and content IDs are unchanged.
+
+`SqliteBlobStore` stores opaque, already-sealed values in a separate database.
+It retains only a path, opening and closing a connection for each operation.
+A write/delete is a single SQLite transaction; no filesystem lock is layered on
+ordinary writes. Browser initialization must first install the OPFS SAH pool.
+The pool keeps its access handles even while no SQLite connection is open.

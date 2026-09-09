@@ -23,6 +23,8 @@ pub mod blobs;
 mod envelope;
 mod error;
 mod lock;
+mod secret_keystore;
+mod sqlite_blob_store;
 mod traits;
 mod vault;
 
@@ -30,5 +32,7 @@ pub use blobs::{compute_content_id, ContentId};
 pub use envelope::init_or_open_envelope_key;
 pub use error::{StoreError, StoreResult};
 pub use lock::{Lock, LockGuard};
+pub use secret_keystore::SecretKeystore;
+pub use sqlite_blob_store::SqliteBlobStore;
 pub use traits::{AtomicBlobStore, Keystore};
 pub use vault::Vault;

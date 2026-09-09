@@ -13,9 +13,10 @@ use sqlite_wasm_vfs::sahpool::{
 
 use crate::{error::DbResult, Error};
 
-const OPFS_VFS_NAME: &str = "opfs-sahpool";
+pub(crate) const OPFS_VFS_NAME: &str = "opfs-sahpool";
 const OPFS_DIRECTORY: &str = ".walletkit-opfs-sahpool";
-const OPFS_MINIMUM_CAPACITY: u32 = 6;
+// Vault, cache and envelope DBs, their rollback journals, plus two spare slots.
+const OPFS_MINIMUM_CAPACITY: u32 = 8;
 
 /// `SQLite3MC`'s encrypted wrapper around the SAH-pool VFS.
 pub(crate) const ENCRYPTED_VFS_NAME: &str = "multipleciphers-opfs-sahpool";

@@ -31,7 +31,11 @@ impl Connection {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub(crate) fn open_with_opfs_vfs(path: &Path, read_only: bool) -> DbResult<Self> {
+    pub(crate) fn open_with_opfs_vfs(
+        path: &Path,
+        read_only: bool,
+        vfs: &str,
+    ) -> DbResult<Self> {
         if !crate::opfs::is_installed() {
             return Err(Error::new(
                 -1,
@@ -39,7 +43,7 @@ impl Connection {
             ));
         }
 
-        Self::open_with_vfs(path, read_only, Some(crate::opfs::ENCRYPTED_VFS_NAME))
+        Self::open_with_vfs(path, read_only, Some(vfs))
     }
 
     /// Opens (or creates) a database using an explicitly selected VFS.

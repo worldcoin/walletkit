@@ -13,3 +13,9 @@ Browser hosts must run WalletKit in a dedicated worker and await
 the credential store. The page key remains in Rust memory for the unlocked
 store lifetime; persistent connections fail closed until the encrypted OPFS
 VFS is installed.
+
+`cipher::open_encrypted` and `plaintext::open_plaintext` share verified connection
+settings for journaling, durability, foreign keys, secure deletion and in-memory
+temporary storage. The plaintext path selects the unencrypted OPFS VFS on WASM
+and is used for already-sealed envelope blobs. Encryption key setup stays in
+`cipher`; `Connection` provides the underlying opening and SQL operations.
