@@ -937,7 +937,8 @@ impl CredentialStore {
 #[cfg(test)]
 mod tests {
     use super::super::{
-        AtomicBlobStore, DeviceKeystore, StorageProvider, ACCOUNT_KEYS_FILENAME,
+        key_envelope::ACCOUNT_KEYS_FILENAME, open_or_create_storage_keys,
+        AtomicBlobStore, DeviceKeystore, StorageProvider,
     };
     use super::*;
 
@@ -946,13 +947,13 @@ mod tests {
         keystore: Arc<dyn DeviceKeystore>,
         blob_store: Arc<dyn AtomicBlobStore>,
     ) -> StorageResult<CredentialStoreInner> {
-        let keys = StorageKeys::from_envelope(
+        let keys = open_or_create_storage_keys(
             Arc::new(paths.clone()),
             keystore,
             blob_store,
             1000,
         )?;
-        CredentialStoreInner::new(paths, Arc::new(keys))
+        CredentialStoreInner::new(paths, keys)
     }
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,

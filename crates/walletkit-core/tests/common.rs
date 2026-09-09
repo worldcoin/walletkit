@@ -147,8 +147,13 @@ impl InMemoryStorageProvider {
         walletkit_core::storage::CredentialStore,
         walletkit_core::storage::StorageError,
     > {
-        let keys = walletkit_core::storage::StorageKeys::from_provider(self, 1000)?;
-        walletkit_core::storage::CredentialStore::new(self.paths(), Arc::new(keys))
+        let keys = walletkit_core::storage::open_or_create_storage_keys(
+            self.paths(),
+            self.keystore(),
+            self.blob_store(),
+            1000,
+        )?;
+        walletkit_core::storage::CredentialStore::new(self.paths(), keys)
     }
 
     pub fn new(root: impl AsRef<Path>) -> Self {

@@ -1,8 +1,8 @@
 //! Platform interfaces for credential storage.
 //!
 //! These traits support host-owned key envelopes. Hosts resolve [`super::StorageKeys`]
-//! using them before constructing credential storage. Direct-key hosts only supply
-//! the resolved keys and [`StoragePaths`].
+//! using [`super::open_or_create_storage_keys`] before constructing credential storage.
+//! Direct-key hosts only supply the resolved keys and [`StoragePaths`].
 //!
 //! # Expected platform components
 //!
