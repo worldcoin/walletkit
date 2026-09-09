@@ -300,14 +300,15 @@ impl CredentialStore {
 
 #[uniffi::export]
 impl CredentialStore {
-    /// Closes the databases, releases this store's key reference, and deletes its files.
+    /// Closes the databases, releases this store's key reference, and attempts file cleanup.
     ///
     /// The host owns envelope deletion via `delete_storage_key_envelope`. This
     /// store cannot be reinitialized after destruction; construct a new store
     /// with resolved keys. Other key owners are unaffected.
+    /// Database file deletion is best effort: failures are logged, not returned.
     ///
     /// # Errors
-    /// Returns an error if locking or database file deletion fails.
+    /// Returns an error if locking fails.
     pub fn destroy_storage(&self) -> StorageResult<()> {
         self.lock_inner()?.destroy_storage()
     }
@@ -899,27 +900,9 @@ impl CredentialStoreInner {
         let _guard = self.guard()?;
         self.state = None;
         self.keys = None;
-        // Keys may remain recoverable through a passkey or host envelope, so
-        // deletion failures must be reported rather than treated as crypto-erasure.
-        let mut first_error = None;
-        for path in [self.paths.vault_db_path(), self.paths.cache_db_path()] {
-            for file in [
-                path.clone(),
-                path.with_extension("sqlite-journal"),
-                path.with_extension("sqlite-wal"),
-                path.with_extension("sqlite-shm"),
-            ] {
-                if let Err(error) = super::delete_database_file(&file) {
-                    first_error.get_or_insert_with(|| {
-                        StorageError::VaultDb(format!(
-                            "delete {}: {error}",
-                            file.display()
-                        ))
-                    });
-                }
-            }
-        }
-        first_error.map_or(Ok(()), Err)
+        super::delete_database_files(&self.paths.vault_db_path());
+        super::delete_database_files(&self.paths.cache_db_path());
+        Ok(())
     }
 }
 
@@ -1075,19 +1058,23 @@ mod tests {
     }
 
     #[test]
-    fn destruction_reports_failed_file_deletion_and_can_retry() {
+    fn destruction_continues_after_failed_file_deletion() {
         let root = temp_root_path();
         let paths = Arc::new(StoragePaths::new(&root));
         let keys = Arc::new(StorageKeys::from_bytes(vec![0x41; 32]).expect("key"));
         let store = CredentialStore::new(Arc::clone(&paths), keys).expect("store");
+        let blocked_path = paths.vault_db_path();
         // A directory at the DB path cannot be removed with remove_file, even as root.
-        std::fs::create_dir_all(paths.vault_db_path()).expect("block path");
-        assert!(store.destroy_storage().is_err());
+        std::fs::create_dir_all(&blocked_path).expect("block path");
+        std::fs::write(paths.cache_db_path(), b"cache").expect("create cache file");
+        store.destroy_storage().expect("best-effort cleanup");
+        assert!(blocked_path.exists());
+        assert!(!paths.cache_db_path().exists());
         assert!(matches!(
             store.init(42, 1000),
             Err(StorageError::NotInitialized)
         ));
-        std::fs::remove_dir(paths.vault_db_path()).expect("remove obstruction");
+        std::fs::remove_dir(blocked_path).expect("remove obstruction");
         store.destroy_storage().expect("retry cleanup");
         cleanup_test_storage(&root);
     }

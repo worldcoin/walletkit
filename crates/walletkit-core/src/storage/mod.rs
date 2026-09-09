@@ -92,12 +92,12 @@ pub(crate) fn delete_database_files(path: &std::path::Path) {
 }
 
 #[cfg(target_arch = "wasm32")]
-pub(super) fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
+fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
     walletkit_sqlite::opfs::delete_file(path).map_err(|err| err.to_string())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub(super) fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
+fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
