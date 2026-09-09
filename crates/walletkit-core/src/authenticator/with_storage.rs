@@ -20,9 +20,10 @@ impl Authenticator {
         Ok(())
     }
 
-    /// Permanently destroys all credential storage data.
+    /// Closes credential storage and attempts to delete its database files.
     ///
-    /// Releases the store's key reference and removes the vault and cache databases.
+    /// Releases the store's key reference and removes the vault and cache databases
+    /// on a best-effort basis. File deletion failures are logged, not returned.
     /// The host must separately delete any key envelope it owns.
     /// After this call the authenticator can no longer generate proofs or
     /// access stored credentials. Intended for logout or account deletion.
