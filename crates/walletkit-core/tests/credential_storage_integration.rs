@@ -6,7 +6,6 @@
 mod common;
 
 use rand::rngs::OsRng;
-use walletkit_core::storage::CredentialStore;
 use walletkit_core::Credential;
 use world_id_core::api_types::AccountInclusionProof;
 use world_id_core::primitives::AuthenticatorPublicKeySet;
@@ -20,7 +19,7 @@ use world_id_core::{
 fn test_storage_flow_end_to_end() {
     let root = common::temp_root();
     let provider = common::InMemoryStorageProvider::new(&root);
-    let store = CredentialStore::from_provider(&provider).expect("store");
+    let store = provider.open_store().expect("store");
 
     store.init(42, 100).expect("init");
 
