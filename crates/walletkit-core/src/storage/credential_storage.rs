@@ -1932,7 +1932,7 @@ mod tests {
     fn test_activity_changed_listener_notified_on_record() {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
@@ -1953,7 +1953,7 @@ mod tests {
     fn test_activity_changed_listener_not_notified_on_failure() {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
