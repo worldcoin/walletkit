@@ -160,42 +160,45 @@ impl ProofRequest {
     ) -> Result<CredentialConstraintsCheckResult, CredentialConstraintsCheckError> {
         self.0.validate_constraints()?;
         let records = store.list_credentials(None, now)?;
-    
+
         let mut by_schema: HashMap<u64, Vec<&CredentialRecord>> = HashMap::new();
         for r in records.iter().filter(|r| !r.is_expired) {
             by_schema.entry(r.issuer_schema_id).or_default().push(r);
         }
-    
-        let mut check_results: Vec<CredentialConstraintsCheckItem> = Vec::new();
-        for item in &self.0.requests {
-            let expires_min = item.expires_at_min.unwrap_or(self.0.created_at);
-            let genesis_min = item.genesis_issued_at_min.unwrap_or(0);
-    
-            let has_credential =
-                by_schema.get(&item.issuer_schema_id).is_some_and(|creds| {
-                    creds.iter().any(|r| {
-                        r.expires_at > expires_min && r.genesis_issued_at >= genesis_min
-                    })
-                });
-    
-            check_results.push(CredentialConstraintsCheckItem {
-                identifier: item.identifier.clone(),
-                issuer_schema_id: item.issuer_schema_id,
-                has_credential,
-            });
-        }
-    
-        let is_satisfied = match &self.0.constraints {
-            None => check_results.iter().all(|i| i.has_credential),
-            Some(expr) => {
+
+        let check_results: Vec<_> = self
+            .0
+            .requests
+            .iter()
+            .map(|item| {
+                let expires_min = item.expires_at_min.unwrap_or(self.0.created_at);
+                let genesis_min = item.genesis_issued_at_min.unwrap_or(0);
+                let has_credential =
+                    by_schema.get(&item.issuer_schema_id).is_some_and(|creds| {
+                        creds.iter().any(|record| {
+                            record.expires_at > expires_min
+                                && record.genesis_issued_at >= genesis_min
+                        })
+                    });
+                CredentialConstraintsCheckItem {
+                    identifier: item.identifier.clone(),
+                    issuer_schema_id: item.issuer_schema_id,
+                    has_credential,
+                }
+            })
+            .collect();
+
+        let is_satisfied = self.0.constraints.as_ref().map_or_else(
+            || check_results.iter().all(|item| item.has_credential),
+            |expr| {
                 expr.evaluate(&|id: &str| {
                     check_results
                         .iter()
-                        .any(|i| i.identifier == id && i.has_credential)
+                        .any(|item| item.identifier == id && item.has_credential)
                 })
-            }
-        };
-    
+            },
+        );
+
         Ok(CredentialConstraintsCheckResult {
             is_satisfied,
             check_results,
@@ -273,6 +276,29 @@ mod tests {
                 .expect("store credential");
         }
         (store, root)
+    }
+
+    #[test]
+    fn method_and_legacy_api_agree() {
+        let now = 1000;
+        let (store, root) = store_with_credentials(&[100], now);
+        let request = dummy_request(
+            vec![
+                RequestItem::new("present".into(), 100, None, None, None),
+                RequestItem::new("missing".into(), 200, None, None, None),
+            ],
+            None,
+        );
+        let direct = request.check_credentials(&store, now).unwrap();
+        let legacy = crate::proof_request_credential_constraints_check::check_credentials_against_proof_request(&request, &store, now).unwrap();
+        assert_eq!(direct.is_satisfied, legacy.is_satisfied);
+        assert_eq!(direct.check_results.len(), legacy.check_results.len());
+        for (a, b) in direct.check_results.iter().zip(&legacy.check_results) {
+            assert_eq!(a.identifier, b.identifier);
+            assert_eq!(a.issuer_schema_id, b.issuer_schema_id);
+            assert_eq!(a.has_credential, b.has_credential);
+        }
+        cleanup_test_storage(&root);
     }
 
     #[test]
@@ -628,7 +654,6 @@ mod tests {
 
     #[test]
     fn constraint_too_large_returns_error() {
-        use world_id_core::requests::ValidationError;
         let now = 1000;
         let (store, root) = store_with_credentials(&[], now);
         // Build a flat Any with MAX_CONSTRAINT_NODES + 1 leaves to exceed the limit.
