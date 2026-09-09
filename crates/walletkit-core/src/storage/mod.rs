@@ -29,7 +29,7 @@
 //!
 //! Both databases use the resolved `K_intermediate` supplied through [`crate::storage::StorageKeys`].
 //! Hosts obtain it directly (for example from a passkey PRF) or resolve a sealed
-//! envelope with [`open_or_create_storage_keys`] before constructing [`crate::storage::CredentialStore`].
+//! envelope with [`crate::storage::open_or_create_storage_keys`] before constructing [`crate::storage::CredentialStore`].
 //!
 //! ## On-disk layout
 //!
