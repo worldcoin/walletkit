@@ -182,7 +182,7 @@ dependencies = [
  "either",
  "k256",
  "once_cell",
- "rand 0.8.6",
+ "rand 0.8.8",
  "secp256k1 0.30.0",
  "serde",
  "serde_json",
@@ -451,7 +451,7 @@ dependencies = [
  "alloy-signer-local",
  "k256",
  "libc",
- "rand 0.8.6",
+ "rand 0.8.8",
  "serde_json",
  "tempfile",
  "thiserror 2.0.18",
@@ -660,7 +660,7 @@ dependencies = [
  "alloy-signer",
  "async-trait",
  "k256",
- "rand 0.8.6",
+ "rand 0.8.8",
  "thiserror 2.0.18",
 ]
 
@@ -1426,7 +1426,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1df2c09229cbc5a028b1d70e00fdb2acee28b1055dfb5ca73eea49c5a25c4e7c"
 dependencies = [
  "num-traits",
- "rand 0.8.6",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -1436,7 +1436,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
  "num-traits",
- "rand 0.8.6",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -1446,7 +1446,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "246a225cc6131e9ee4f24619af0f19d67761fff15d7ccc22e42b80846e69449a"
 dependencies = [
  "num-traits",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rayon",
 ]
 
@@ -1457,7 +1457,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "367c9c827ed431bff6868b7aa926e05b16eb46603cc8b6e768e4a5553fa1d155"
 dependencies = [
  "num-traits",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rayon",
 ]
 
@@ -2103,9 +2103,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.66"
+version = "1.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5d6cac793997bd970000024b2934968efe83b382de4fdcf4fcb46b6ee4ad996"
+checksum = "005ec2760ca554fae18df7a11195552ec576cd665632a881bc011d5bb2fd4d80"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -2258,7 +2258,7 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "postcard",
- "rand 0.8.6",
+ "rand 0.8.8",
  "ruint",
  "serde",
  "serde_json",
@@ -3256,9 +3256,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.9"
+version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+checksum = "3e0f1c7c3a72c66fd80abe965175f7523475c0489a87d3ff9d6e8c87d87a9d2d"
 
 [[package]]
 name = "fixed-hash"
@@ -3267,7 +3267,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "835c052cb0c08c1acf6ffd71c022172e18723949c8282f2b9f27efbc51e64534"
 dependencies = [
  "byteorder",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rustc-hex",
  "static_assertions",
 ]
@@ -4985,7 +4985,7 @@ checksum = "c89e69e7e0f03bea5ef08013795c25018e101932225a656383bd384495ecc367"
 dependencies = [
  "num-integer",
  "num-traits",
- "rand 0.8.6",
+ "rand 0.8.8",
 ]
 
 [[package]]
@@ -5133,7 +5133,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b7d950ca161dc355eaf28f82b11345ed76c6e1f6eb1f4f4479e0323b9e2fbd0e"
 dependencies = [
  "num-traits",
- "rand 0.8.6",
+ "rand 0.8.8",
  "serde",
 ]
 
@@ -5893,7 +5893,7 @@ dependencies = [
  "digest 0.10.7",
  "keccak 0.1.6",
  "p3-koala-bear",
- "rand 0.8.6",
+ "rand 0.8.8",
  "sha2 0.10.9",
  "sha3 0.10.9",
  "zeroize",
@@ -5909,7 +5909,7 @@ dependencies = [
  "bytemuck",
  "keccak 0.1.6",
  "provekit-spongefish",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rayon",
 ]
 
@@ -6083,7 +6083,7 @@ dependencies = [
  "provekit_noirc_errors",
  "provekit_noirc_frontend",
  "provekit_noirc_printable_type",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rayon",
  "serde",
  "serde_json",
@@ -6134,7 +6134,7 @@ dependencies = [
  "provekit_fm",
  "provekit_noirc_abi",
  "provekit_noirc_artifacts",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rand_xorshift 0.3.0",
  "rayon",
  "sha256",
@@ -6444,9 +6444,9 @@ checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
 
 [[package]]
 name = "rand"
-version = "0.8.6"
+version = "0.8.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
+checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
@@ -6838,7 +6838,7 @@ dependencies = [
  "parity-scale-codec",
  "primitive-types",
  "proptest",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rand 0.9.4",
  "rlp",
  "ruint-macro",
@@ -7234,7 +7234,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b50c5943d326858130af85e049f2661ba3c78b26589b8ab98e65e80ae44a1252"
 dependencies = [
  "bitcoin_hashes",
- "rand 0.8.6",
+ "rand 0.8.8",
  "secp256k1-sys 0.10.1",
  "serde",
 ]
@@ -7320,7 +7320,7 @@ dependencies = [
  "lazy_static",
  "num-bigint",
  "once_cell",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rayon",
  "ruint",
  "semaphore-rs-ark-circom",
@@ -7520,7 +7520,7 @@ dependencies = [
  "cxx-build",
  "hex",
  "postcard",
- "rand 0.8.6",
+ "rand 0.8.8",
  "ruint",
  "serde",
  "serde_json",
@@ -7605,9 +7605,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.150"
+version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8014e44b4736ed0538adeecded0fce2a272f22dc9578a7eb6b2d9993c74cfb9"
+checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
  "itoa",
  "memchr",
@@ -8195,7 +8195,7 @@ dependencies = [
  "blake3",
  "eyre",
  "num-bigint",
- "rand 0.8.6",
+ "rand 0.8.8",
  "serde",
  "taceo-ark-babyjubjub",
  "taceo-ark-serde-compat",
@@ -8233,7 +8233,7 @@ dependencies = [
  "eyre",
  "hex",
  "postcard",
- "rand 0.8.6",
+ "rand 0.8.8",
  "ruint",
  "sha2 0.11.0",
  "taceo-circom-types",
@@ -8306,7 +8306,7 @@ dependencies = [
  "blake3",
  "itertools 0.15.0",
  "num-bigint",
- "rand 0.8.6",
+ "rand 0.8.8",
  "serde",
  "subtle",
  "taceo-ark-babyjubjub",
@@ -9296,7 +9296,7 @@ dependencies = [
  "dirs",
  "eyre",
  "hex",
- "rand 0.8.6",
+ "rand 0.8.8",
  "serde",
  "serde_json",
  "tempfile",
@@ -9332,7 +9332,7 @@ dependencies = [
  "hkdf 0.12.4",
  "log",
  "mockito",
- "rand 0.8.6",
+ "rand 0.8.8",
  "regex",
  "reqwest 0.12.28",
  "ruint",
@@ -9403,7 +9403,7 @@ dependencies = [
  "alloy",
  "alloy-core",
  "eyre",
- "rand 0.8.6",
+ "rand 0.8.8",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
@@ -10001,7 +10001,7 @@ dependencies = [
  "getrandom 0.3.4",
  "hex",
  "ohttp",
- "rand 0.8.6",
+ "rand 0.8.8",
  "reqwest 0.12.28",
  "ruint",
  "rustls",
@@ -10049,7 +10049,7 @@ dependencies = [
  "getrandom 0.3.4",
  "hex",
  "provekit-common",
- "rand 0.8.6",
+ "rand 0.8.8",
  "ruint",
  "secrecy",
  "serde",
@@ -10087,7 +10087,7 @@ dependencies = [
  "provekit-prover",
  "provekit-r1cs-compiler",
  "provekit-verifier",
- "rand 0.8.6",
+ "rand 0.8.8",
  "rayon",
  "reqwest 0.12.28",
  "ruint",
