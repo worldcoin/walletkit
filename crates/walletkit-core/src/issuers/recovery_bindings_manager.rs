@@ -282,7 +282,7 @@ mod tests {
         let private_key =
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
         let private_key_bytes = hex::decode(private_key).unwrap();
-        let (mock_eth_server, eth_mock) = create_mock_eth_server().await;
+        let (mock_eth_server, eth_mock, recovery_mock) = create_mock_eth_server().await;
         let rpc_url = mock_eth_server.url();
         let authenticator =
             create_test_authenticator(&private_key_bytes, rpc_url).await;
@@ -322,6 +322,7 @@ mod tests {
 
         mock.assert_async().await;
         eth_mock.assert_async().await;
+        recovery_mock.assert_async().await;
         drop(pop_api_server);
         drop(mock_eth_server);
     }
@@ -336,7 +337,7 @@ mod tests {
         let private_key =
             "d1995ace62b15d907bfb351ffe3cac57a8a84089a1b034101d2d7c78da415d58";
         let private_key_bytes = hex::decode(private_key).unwrap();
-        let (mock_eth_server, eth_mock) = create_mock_eth_server().await;
+        let (mock_eth_server, eth_mock, recovery_mock) = create_mock_eth_server().await;
         let rpc_url = mock_eth_server.url();
         let authenticator =
             create_test_authenticator(&private_key_bytes, rpc_url).await;
@@ -371,6 +372,7 @@ mod tests {
         let expect_signature = "0x72ec312737276c94e3ac32ab1c393a63b9474480d3a9eb434b8bf6927b7222ef7eb1fea0812ff62a7fb144db9631751e505969162a9c590cabb27bf0bd5005581c";
         assert_eq!(security_token, expect_signature);
         eth_mock.assert_async().await;
+        recovery_mock.assert_async().await;
         drop(mock_eth_server);
     }
 
@@ -403,10 +405,16 @@ mod tests {
         )
     }
 
-    async fn create_mock_eth_server() -> (ServerGuard, mockito::Mock) {
+    async fn create_mock_eth_server() -> (ServerGuard, mockito::Mock, mockito::Mock) {
+        use alloy::primitives::keccak256;
         let mut mock_eth_server = mockito::Server::new_async().await;
         let mock = mock_eth_server
             .mock("POST", "/")
+            .match_body(mockito::Matcher::Regex(format!(
+                "0x({}|{})",
+                hex::encode(&keccak256("getPackedAccountData(address)")[..4]),
+                hex::encode(&keccak256("getSignatureNonce(uint64)")[..4]),
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -421,6 +429,25 @@ mod tests {
             .expect_at_most(2)
             .create_async()
             .await;
-        (mock_eth_server, mock)
+        let recovery = mock_eth_server
+            .mock("POST", "/")
+            .match_body(mockito::Matcher::Regex(format!(
+                "0x{}{:064x}",
+                hex::encode(&keccak256("getRecoveryCounter(uint64)")[..4]),
+                42,
+            )))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": format!("0x{:064x}", 0),
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        (mock_eth_server, mock, recovery)
     }
 }

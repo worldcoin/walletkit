@@ -13,7 +13,9 @@ use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
 use super::traits::{ActivityChangedListener, VaultChangedListener};
 use super::traits::{AtomicBlobStore, DeviceKeystore};
-use super::types::{ActivityEntry, ActivityMetadata, ActivityQuery, CredentialRecord};
+use super::types::{
+    ActivityEntry, ActivityMetadata, ActivityQuery, CredentialData, CredentialRecord,
+};
 use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, CredentialVault};
 use super::{StorageLock, StorageLockGuard};
@@ -226,6 +228,73 @@ impl CredentialStore {
         Ok(self
             .get_credential(issuer_schema_id, now)?
             .map(|(credential, _blinding_factor)| std::sync::Arc::new(credential)))
+    }
+
+    /// Retrieves associated data from the most recent non-expired credential.
+    ///
+    /// Returns `None` if that credential has no associated data or no usable
+    /// credential exists. Never falls back to an older credential's data.
+    /// Consumers must validate the issuer-defined data format and commitment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is uninitialized or the query fails.
+    pub fn fetch_credential_associated_data(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .fetch_credential_associated_data(issuer_schema_id, now)
+    }
+
+    /// Reads the selected unexpired credential and associated data in one query.
+    ///
+    /// # Errors
+    /// Returns an error if the store is unavailable or the query fails.
+    pub fn fetch_credential_data(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<CredentialData>> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .fetch_credential_data(issuer_schema_id, now)
+    }
+
+    /// Repairs issuer-defined data while guarding against a deleted/replaced credential.
+    /// Callers must validate the data's commitment before storing it.
+    ///
+    /// # Errors
+    /// Returns an error if the store is unavailable or the transaction fails.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI accepts owned byte buffers"
+    )]
+    pub fn set_credential_associated_data(
+        &self,
+        credential_id: u64,
+        expected_credential_bytes: Vec<u8>,
+        associated_data: Vec<u8>,
+        now: u64,
+    ) -> StorageResult<bool> {
+        let result = self
+            .lock_inner()?
+            .state()?
+            .vault
+            .set_credential_associated_data(
+                credential_id,
+                &expected_credential_bytes,
+                &associated_data,
+                now,
+            );
+        if matches!(result, Ok(true)) {
+            self.notify_vault_changed();
+        }
+        result
     }
 
     /// Deletes a credential by ID.

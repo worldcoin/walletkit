@@ -162,6 +162,10 @@ fn resolve_output_dir(output_dir: Option<&Path>) -> PathBuf {
 
 fn configure_ios_build(sh: &Shell, profile: Profile) {
     sh.set_var("IPHONEOS_DEPLOYMENT_TARGET", "13.0");
+    // Cargo also compiles host build dependencies. Without a separate host compiler,
+    // Clang inherits the iOS deployment target and emits iOS executables for native
+    // dependency probes (including aws-lc-sys's mandatory memcmp check).
+    sh.set_var("HOST_CC", sh.current_dir().join("swift/host-cc.sh"));
     // aws-lc-sys references Linux-only entropy definitions while compiling an
     // unreachable iOS code path. Keep this workaround scoped to aws-lc-sys.
     sh.set_var(
@@ -418,6 +422,32 @@ fn framework_info_plist(platform: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn host_compiler_ignores_ios_deployment_environment() -> Result<()> {
+        let sh = Shell::new()?;
+        let directory = sh.create_temp_dir()?;
+        let source = directory.path().join("host-check.c");
+        let executable = directory.path().join("host-check");
+        sh.write_file(
+            &source,
+            "#include <TargetConditionals.h>\n\
+             #if !TARGET_OS_OSX\n\
+             #error Host probes must target macOS\n\
+             #endif\n\
+             int main(void) { return 0; }\n",
+        )?;
+        let sdk = cmd!(sh, "xcrun --sdk iphoneos --show-sdk-path").read()?;
+        let compiler =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../swift/host-cc.sh");
+        cmd!(sh, "{compiler} -O3 {source} -o {executable}")
+            .env("IPHONEOS_DEPLOYMENT_TARGET", "13.0")
+            .env("SDKROOT", sdk)
+            .run()?;
+        cmd!(sh, "{executable}").run()?;
+        Ok(())
+    }
 
     #[test]
     fn relative_output_directories_are_resolved_under_swift() {

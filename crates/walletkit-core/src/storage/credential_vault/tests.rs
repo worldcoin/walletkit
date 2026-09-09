@@ -149,6 +149,71 @@ fn test_store_credential_with_associated_data() {
 }
 
 #[test]
+fn associated_data_follows_selected_credential_without_stale_fallback() {
+    let directory = tempfile::tempdir().expect("temporary directory");
+    let key = SecretBox::init_with(|| [0x42; 32]);
+    let vault = CredentialVault::new(&directory.path().join("vault.sqlite"), &key)
+        .expect("open vault");
+    let insert = |issuer, expiry, bytes, data, now| {
+        vault
+            .store_credential(
+                issuer,
+                sample_blinding_factor(),
+                1,
+                expiry,
+                bytes,
+                data,
+                now,
+            )
+            .expect("store")
+    };
+    insert(1, 500, vec![1], Some(vec![11]), 100);
+    insert(2, 500, vec![2], Some(vec![22]), 101);
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 102).unwrap(),
+        Some(vec![11])
+    );
+    assert_eq!(
+        vault.fetch_credential_associated_data(3, 102).unwrap(),
+        None
+    );
+    // Same-second inserts select the newer row for both proof and data.
+    let newer = insert(1, 400, vec![3], None, 100);
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 102).unwrap(),
+        None
+    );
+    assert_eq!(
+        vault
+            .fetch_credential_and_blinding_factor(1, 102)
+            .unwrap()
+            .unwrap()
+            .0,
+        vec![3]
+    );
+    vault.delete_credential(newer).expect("delete newer");
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 102).unwrap(),
+        Some(vec![11])
+    );
+    // An empty blob is present data, not SQL NULL.
+    insert(1, 300, vec![4], Some(vec![]), 103);
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 104).unwrap(),
+        Some(vec![])
+    );
+    // Expiration uses the same exclusive upper bound as proof generation.
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 300).unwrap(),
+        Some(vec![11])
+    );
+    assert_eq!(
+        vault.fetch_credential_associated_data(1, 500).unwrap(),
+        None
+    );
+}
+
+#[test]
 fn test_content_id_deduplication() {
     let path = temp_vault_path();
     let lock_path = temp_lock_path();
@@ -655,4 +720,98 @@ fn test_vault_corruption_handling() {
     }
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
+}
+
+#[test]
+fn credential_data_snapshot_and_conditional_repair_preserve_selection() {
+    let path = temp_vault_path();
+    let key = SecretBox::init_with(|| [0x42; 32]);
+    let vault = CredentialVault::new(&path, &key).unwrap();
+    let first = vault
+        .store_credential(
+            1,
+            sample_blinding_factor(),
+            1,
+            500,
+            vec![1],
+            Some(vec![10]),
+            100,
+        )
+        .unwrap();
+    let second = vault
+        .store_credential(1, sample_blinding_factor(), 1, 500, vec![2], None, 100)
+        .unwrap();
+    let snapshot = vault.fetch_credential_data(1, 101).unwrap().unwrap();
+    assert_eq!(snapshot.credential_id, second);
+    assert_eq!(snapshot.credential_bytes, vec![2]);
+    assert!(snapshot.associated_data.is_none());
+    assert!(!vault
+        .set_credential_associated_data(second, &[1], &[99], 102)
+        .unwrap());
+    assert!(vault
+        .set_credential_associated_data(first, &[1], &[11], 103)
+        .unwrap());
+    // Repairing an older record must not move it ahead of the selected one.
+    assert_eq!(
+        vault
+            .fetch_credential_data(1, 104)
+            .unwrap()
+            .unwrap()
+            .credential_id,
+        second
+    );
+    assert!(vault
+        .set_credential_associated_data(second, &[2], &[22], 105)
+        .unwrap());
+    assert_eq!(
+        vault
+            .fetch_credential_data(1, 106)
+            .unwrap()
+            .unwrap()
+            .associated_data,
+        Some(vec![22])
+    );
+    assert_eq!(
+        vault
+            .fetch_credential_and_blinding_factor(1, 106)
+            .unwrap()
+            .unwrap()
+            .1,
+        sample_blinding_factor()
+    );
+    drop(vault);
+    let reopened = CredentialVault::new(&path, &key).unwrap();
+    assert_eq!(
+        reopened
+            .fetch_credential_data(1, 107)
+            .unwrap()
+            .unwrap()
+            .associated_data,
+        Some(vec![22])
+    );
+    drop(reopened);
+    cleanup_vault_files(&path);
+}
+
+#[test]
+fn associated_data_repair_rejects_deleted_and_expired_records() {
+    let path = temp_vault_path();
+    let key = SecretBox::init_with(|| [0x42; 32]);
+    let vault = CredentialVault::new(&path, &key).unwrap();
+    let expired = vault
+        .store_credential(1, sample_blinding_factor(), 1, 101, vec![1], None, 100)
+        .unwrap();
+    assert!(!vault
+        .set_credential_associated_data(expired, &[1], &[10], 101)
+        .unwrap());
+    let deleted = vault
+        .store_credential(1, sample_blinding_factor(), 1, 500, vec![2], None, 100)
+        .unwrap();
+    vault.delete_credential(deleted).unwrap();
+    assert!(!vault
+        .set_credential_associated_data(deleted, &[2], &[20], 102)
+        .unwrap());
+    assert!(vault.fetch_credential_data(1, 102).unwrap().is_none());
+    drop(vault);
+    cleanup_vault_files(&path);
 }

@@ -1439,22 +1439,28 @@ mod tests {
     }
 
     #[cfg(feature = "embed-zkeys")]
+    #[test_case::test_case(0, false; "active authenticator")]
+    #[test_case::test_case(1, true; "revoked authenticator")]
     #[tokio::test]
-    async fn test_init_with_config_and_materials() {
+    async fn test_init_with_config_and_materials(recovery_counter: u64, revoked: bool) {
         use crate::{
             authenticator::artifacts::caching::CachingZkArtifacts,
             storage::tests_utils::{
                 cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
             },
         };
-        use alloy::primitives::address;
+        use alloy::primitives::{address, keccak256};
         use world_id_core::primitives::{Config, ServiceEndpoint};
 
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         let mut mock_server = mockito::Server::new_async().await;
-        mock_server
+        let account = mock_server
             .mock("POST", "/")
+            .match_body(mockito::Matcher::Regex(format!(
+                "0x{}",
+                hex::encode(&keccak256("getPackedAccountData(address)")[..4])
+            )))
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(
@@ -1462,6 +1468,25 @@ mod tests {
                     "jsonrpc": "2.0",
                     "id": 1,
                     "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let recovery = mock_server
+            .mock("POST", "/")
+            .match_body(mockito::Matcher::Regex(format!(
+                "0x{}{:064x}",
+                hex::encode(&keccak256("getRecoveryCounter(uint64)")[..4]),
+                1,
+            )))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": format!("0x{recovery_counter:064x}"),
                 })
                 .to_string(),
             )
@@ -1492,14 +1517,23 @@ mod tests {
         let artifacts =
             Arc::new(CachingZkArtifacts::new(Arc::new(store.paths().unwrap())));
 
-        let _authenticator = Authenticator::init(
+        let result = Authenticator::init(
             [2u8; 32].to_vec(),
             &config,
             artifacts,
             Arc::new(store),
         )
-        .await
-        .unwrap();
+        .await;
+        if revoked {
+            assert!(matches!(
+                result,
+                Err(WalletKitError::UnauthorizedAuthenticator)
+            ));
+        } else {
+            assert!(result.is_ok(), "active authenticator must initialize");
+        }
+        account.assert_async().await;
+        recovery.assert_async().await;
         drop(mock_server);
 
         cleanup_test_storage(&root);

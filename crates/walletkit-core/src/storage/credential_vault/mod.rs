@@ -12,7 +12,7 @@ mod tests;
 use std::path::Path;
 
 use crate::storage::error::{StorageError, StorageResult};
-use crate::storage::types::{BlobKind, CredentialRecord};
+use crate::storage::types::{BlobKind, CredentialData, CredentialRecord};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
 use walletkit_db::{blobs, Vault};
@@ -221,6 +221,82 @@ impl CredentialVault {
         Ok(records)
     }
 
+    /// Atomically reads the selected credential and its associated data.
+    ///
+    /// # Errors
+    /// Returns an error if the query fails.
+    pub fn fetch_credential_data(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<CredentialData>> {
+        let mut stmt = self.vault.connection().prepare(
+            "SELECT cr.credential_id, credential.bytes, data.bytes
+             FROM credential_records cr
+             JOIN blob_objects credential ON cr.credential_blob_cid = credential.content_id
+             LEFT JOIN blob_objects data ON cr.associated_data_cid = data.content_id
+             WHERE cr.expires_at > ?1 AND cr.issuer_schema_id = ?2
+             ORDER BY cr.updated_at DESC, cr.credential_id DESC LIMIT 1"
+        ).map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![
+            to_i64(now, "now")?,
+            to_i64(issuer_schema_id, "issuer_schema_id")?
+        ])
+        .map_err(|err| map_db_err(&err))?;
+        match stmt.step().map_err(|err| map_db_err(&err))? {
+            StepResult::Row(row) => Ok(Some(CredentialData {
+                credential_id: to_u64(row.column_i64(0), "credential_id")?,
+                credential_bytes: row.column_blob(1),
+                associated_data: if row.is_column_null(2) {
+                    None
+                } else {
+                    Some(row.column_blob(2))
+                },
+            })),
+            StepResult::Done => Ok(None),
+        }
+    }
+
+    /// Repairs associated data only if this ID still contains the expected unexpired credential.
+    /// Does not change credential selection order or the blinding factor.
+    ///
+    /// # Errors
+    /// Returns an error if the transaction fails.
+    pub fn set_credential_associated_data(
+        &self,
+        credential_id: u64,
+        expected_credential_bytes: &[u8],
+        associated_data: &[u8],
+        now: u64,
+    ) -> StorageResult<bool> {
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
+        let matches: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM credential_records cr
+             JOIN blob_objects credential ON cr.credential_blob_cid = credential.content_id
+             WHERE cr.credential_id = ?1 AND credential.bytes = ?2 AND cr.expires_at > ?3",
+            params![to_i64(credential_id, "credential_id")?, expected_credential_bytes, to_i64(now, "now")?],
+            |row| Ok(row.column_i64(0))
+        ).map_err(|err| map_db_err(&err))?;
+        if matches != 1 {
+            return Ok(false);
+        }
+        let cid =
+            blobs::put(conn, BlobKind::AssociatedData as u8, associated_data, now)?;
+        tx.execute(
+            "UPDATE credential_records SET associated_data_cid = ?1 WHERE credential_id = ?2",
+            params![cid.as_slice(), to_i64(credential_id, "credential_id")?]
+        ).map_err(|err| map_db_err(&err))?;
+        tx.execute(
+            "DELETE FROM blob_objects WHERE blob_kind = ?1 AND NOT EXISTS (
+                SELECT 1 FROM credential_records cr WHERE cr.associated_data_cid = blob_objects.content_id
+             )",
+            params![BlobKind::AssociatedData.as_i64()]
+        ).map_err(|err| map_db_err(&err))?;
+        tx.commit().map_err(|err| map_db_err(&err))?;
+        Ok(true)
+    }
+
     /// Deletes a credential record by ID.
     ///
     /// Deleting a credential also removes orphaned `credential_blob_cid` and
@@ -298,7 +374,7 @@ impl CredentialVault {
              FROM credential_records cr
              INNER JOIN blob_objects blob ON cr.credential_blob_cid = blob.content_id
              WHERE cr.expires_at > ?1 AND cr.issuer_schema_id = ?2
-             ORDER BY cr.updated_at DESC
+             ORDER BY cr.updated_at DESC, cr.credential_id DESC
              LIMIT 1";
 
         let mut stmt = self
@@ -315,6 +391,45 @@ impl CredentialVault {
                 Ok(Some((credential_blob, blinding_factor)))
             }
             StepResult::Done => Ok(None),
+        }
+    }
+
+    /// Retrieves the associated data of the credential selected for proof generation.
+    ///
+    /// Missing data on the selected credential returns `None`; an older credential's
+    /// data must never be substituted. The issuer defines the format and commitment
+    /// scheme, which the consumer must validate before using these bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn fetch_credential_associated_data(
+        &self,
+        issuer_schema_id: u64,
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        let mut stmt = self
+            .vault
+            .connection()
+            .prepare(
+                "SELECT data.bytes
+                 FROM credential_records cr
+                 LEFT JOIN blob_objects data ON cr.associated_data_cid = data.content_id
+                 WHERE cr.expires_at > ?1 AND cr.issuer_schema_id = ?2
+                 ORDER BY cr.updated_at DESC, cr.credential_id DESC
+                 LIMIT 1",
+            )
+            .map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![
+            to_i64(now, "now")?,
+            to_i64(issuer_schema_id, "issuer_schema_id")?
+        ])
+        .map_err(|err| map_db_err(&err))?;
+        match stmt.step().map_err(|err| map_db_err(&err))? {
+            StepResult::Row(row) if !row.is_column_null(0) => {
+                Ok(Some(row.column_blob(0)))
+            }
+            StepResult::Row(_) | StepResult::Done => Ok(None),
         }
     }
 
