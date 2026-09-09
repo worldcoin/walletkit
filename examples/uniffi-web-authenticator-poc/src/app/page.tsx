@@ -3,6 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { RecoveryData, WalletKit } from "walletkit-web";
+import {
+  loadDemoProfile,
+  saveDemoProfile,
+  type DemoProfile,
+} from "./demo-profile";
 import { createStagingProofRequest, issueFauxCredential } from "./staging";
 
 type Action = "derive" | "register" | "initialize" | "issue" | "prove";
@@ -10,6 +15,7 @@ type Action = "derive" | "register" | "initialize" | "issue" | "prove";
 export default function Home() {
   const wallet = useRef<WalletKit | null>(null);
   const seed = useRef(new Uint8Array(32));
+  const profile = useRef<DemoProfile | null>(null);
   const acting = useRef(false);
   const [runtime, setRuntime] = useState("Loading…");
   const [recovery, setRecovery] = useState<RecoveryData>();
@@ -21,14 +27,21 @@ export default function Home() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const databaseKey = crypto.getRandomValues(new Uint8Array(32));
-    seed.current = crypto.getRandomValues(new Uint8Array(32));
+    let databaseKey: Uint8Array | undefined;
+    let client: WalletKit | undefined;
+    const currentSeed = new Uint8Array(32);
     void (async () => {
       try {
+        const saved = loadDemoProfile();
+        profile.current = saved;
+        databaseKey = new Uint8Array(saved.databaseKey);
+        currentSeed.set(saved.seed);
+        seed.current = currentSeed;
         const { initializeWalletKit } = await import("walletkit-web");
-        const client = await initializeWalletKit({
+        if (controller.signal.aborted) return;
+        client = await initializeWalletKit({
           databaseKey,
-          storageId: `demo-${crypto.randomUUID()}`,
+          storageId: saved.storageId,
           environment: "staging",
           region: "us",
           signal: controller.signal,
@@ -37,39 +50,58 @@ export default function Home() {
           client.terminate();
           return;
         }
+        const recovery = await client.recoveryDataFromSeed(currentSeed);
+        if (controller.signal.aborted) return;
         wallet.current = client;
-        setRecovery(await client.recoveryDataFromSeed(seed.current));
+        setRecovery(recovery);
+        setRegistered(saved.registered);
+        setCredentialIssued(saved.credentialIssued);
         setRuntime("Ready");
-        setStatus("Ready. This demo keeps its database key only in memory.");
+        setStatus(
+          saved.registered
+            ? "Saved account loaded. Initialize the authenticator to reopen its stored credentials."
+            : "Ready. This demo saves its account and database key in this browser.",
+        );
       } catch (error) {
+        client?.terminate();
         if (!controller.signal.aborted) {
           setRuntime("Failed");
           setStatus(String(error));
         }
       } finally {
-        databaseKey.fill(0);
+        databaseKey?.fill(0);
       }
     })();
     return () => {
       controller.abort();
-      wallet.current?.terminate();
-      wallet.current = null;
-      seed.current.fill(0);
+      client?.terminate();
+      if (wallet.current === client) wallet.current = null;
+      currentSeed.fill(0);
     };
   }, []);
 
   async function perform(action: Action) {
     const client = wallet.current;
-    if (!client || acting.current) return;
+    const saved = profile.current;
+    if (!client || !saved || acting.current) return;
     acting.current = true;
     setBusy(true);
     try {
       switch (action) {
-        case "derive":
-          seed.current.fill(0);
-          seed.current = crypto.getRandomValues(new Uint8Array(32));
-          setRecovery(await client.recoveryDataFromSeed(seed.current));
+        case "derive": {
+          const nextSeed = crypto.getRandomValues(new Uint8Array(32));
+          try {
+            const nextRecovery = await client.recoveryDataFromSeed(nextSeed);
+            const nextProfile = { ...saved, seed: Array.from(nextSeed) };
+            saveDemoProfile(nextProfile);
+            profile.current = nextProfile;
+            seed.current.set(nextSeed);
+            setRecovery(nextRecovery);
+          } finally {
+            nextSeed.fill(0);
+          }
           break;
+        }
         case "register": {
           await client.register(seed.current);
           for (;;) {
@@ -79,6 +111,8 @@ export default function Home() {
             if (status.state === "finalized") break;
             await new Promise((resolve) => setTimeout(resolve, 500));
           }
+          saved.registered = true;
+          saveDemoProfile(saved);
           setRegistered(true);
           break;
         }
@@ -99,6 +133,8 @@ export default function Home() {
               2,
             ),
           );
+          saved.credentialIssued = true;
+          saveDemoProfile(saved);
           setCredentialIssued(true);
           break;
         }
@@ -125,7 +161,7 @@ export default function Home() {
           <p className="eyebrow">WalletKit web package integration probe</p>
           <h1>WalletKit credential proof in browser WASM</h1>
           <p>
-            Derive and register a temporary staging authenticator, issue a faux
+            Derive and register a staging authenticator, issue a faux
             credential, then generate a proof for it entirely in the browser.
           </p>
           <dl>
@@ -157,10 +193,12 @@ export default function Home() {
         <section className="card actions-card">
           <h2>Staging credential proof</h2>
           <p>
-            This creates a real temporary account and credential in staging. The
-            seed and database key are discarded when this tab reloads. Encrypted
-            data remains in browser storage; this demo cannot reopen it after
-            reload.
+            This creates a real account and credential in staging. The demo
+            saves its seed and database key in this browser and reopens the same
+            encrypted database after reload. These demo keys are readable by
+            scripts on this site; production apps should use a protected key
+            source such as a passkey. Use one tab at a time. Clearing site data
+            removes the saved account.
           </p>
           <ol>
             <li>
@@ -189,7 +227,7 @@ export default function Home() {
             </li>
             <li>
               <button
-                disabled={!credentialIssued || busy}
+                disabled={!authenticatorReady || !credentialIssued || busy}
                 onClick={() => perform("prove")}
               >
                 Generate proof
