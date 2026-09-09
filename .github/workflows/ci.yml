@@ -261,10 +261,7 @@ jobs:
 
   test:
     name: Tests
-    runs-on: arc-public-2xlarge-arm64-runner
-    env:
-      # Limit parallel linking on runners with a 32 GiB memory cap.
-      CARGO_BUILD_JOBS: "2"
+    runs-on: arc-public-8xlarge-arm64-runner
 
     strategy:
       fail-fast: false
