@@ -9,12 +9,9 @@ use world_id_core::FieldElement as CoreFieldElement;
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::paths::StoragePaths;
-use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
 use super::traits::{ActivityChangedListener, VaultChangedListener};
-use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{ActivityEntry, ActivityMetadata, ActivityQuery, CredentialRecord};
-use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, CredentialVault};
 use super::{StorageLock, StorageLockGuard};
 use crate::{Credential, FieldElement};
@@ -66,50 +63,23 @@ impl std::fmt::Debug for CredentialStore {
 
 struct CredentialStoreInner {
     lock: StorageLock,
-    keystore: Arc<dyn DeviceKeystore>,
-    blob_store: Arc<dyn AtomicBlobStore>,
+    keys: Option<Arc<StorageKeys>>,
     paths: StoragePaths,
     state: Option<StorageState>,
 }
 
 struct StorageState {
-    #[allow(dead_code)]
-    keys: StorageKeys,
     vault: CredentialVault,
     cache: CacheDb,
     leaf_index: u64,
 }
 
 impl CredentialStoreInner {
-    /// Creates a new storage handle from a platform provider.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the storage lock cannot be opened.
-    pub fn from_provider(provider: &dyn StorageProvider) -> StorageResult<Self> {
-        let paths = provider.paths();
-        Self::new(
-            paths.as_ref().clone(),
-            provider.keystore(),
-            provider.blob_store(),
-        )
-    }
-
-    /// Creates a new storage handle from explicit components.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the storage lock cannot be opened.
-    pub fn new(
-        paths: StoragePaths,
-        keystore: Arc<dyn DeviceKeystore>,
-        blob_store: Arc<dyn AtomicBlobStore>,
-    ) -> StorageResult<Self> {
+    fn new(paths: StoragePaths, keys: Arc<StorageKeys>) -> StorageResult<Self> {
         let lock = StorageLock::open(&paths.lock_path())?;
         Ok(Self {
             lock,
-            keystore,
-            blob_store,
+            keys: Some(keys),
             paths,
             state: None,
         })
@@ -130,39 +100,21 @@ impl CredentialStoreInner {
 
 #[uniffi::export]
 impl CredentialStore {
-    /// Creates a new storage handle from explicit components.
+    /// Creates storage from paths and an already-resolved database key.
+    ///
+    /// The store retains the keys through initialization retries and releases
+    /// its reference on destruction. Callers should release their own key handles
+    /// once construction succeeds.
     ///
     /// # Errors
-    ///
     /// Returns an error if the storage lock cannot be opened.
     #[uniffi::constructor]
-    pub fn new_with_components(
+    pub fn new(
         paths: Arc<StoragePaths>,
-        keystore: Arc<dyn DeviceKeystore>,
-        blob_store: Arc<dyn AtomicBlobStore>,
+        keys: Arc<StorageKeys>,
     ) -> StorageResult<Self> {
         let paths = Arc::try_unwrap(paths).unwrap_or_else(|arc| (*arc).clone());
-        let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
-        Ok(Self {
-            inner: Mutex::new(inner),
-            #[cfg(not(target_arch = "wasm32"))]
-            vault_changed_tx: Mutex::new(None),
-            #[cfg(not(target_arch = "wasm32"))]
-            activity_changed_tx: Mutex::new(None),
-        })
-    }
-
-    /// Creates a new storage handle from a platform provider.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the storage lock cannot be opened.
-    #[uniffi::constructor]
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn from_provider_arc(
-        provider: Arc<dyn StorageProvider>,
-    ) -> StorageResult<Self> {
-        let inner = CredentialStoreInner::from_provider(provider.as_ref())?;
+        let inner = CredentialStoreInner::new(paths, keys)?;
         Ok(Self {
             inner: Mutex::new(inner),
             #[cfg(not(target_arch = "wasm32"))]
@@ -346,41 +298,16 @@ impl CredentialStore {
     }
 }
 
-#[cfg(all(target_arch = "wasm32", feature = "uniffi-wasm"))]
 #[uniffi::export]
 impl CredentialStore {
-    /// Creates process-local credential storage for browser demos and tests.
+    /// Closes the databases, releases this store's key reference, and deletes its files.
     ///
-    /// The store is discarded when the page is refreshed. Its key envelope is
-    /// kept in memory without device-bound encryption, so callers must not use
-    /// this constructor for production credentials.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the in-memory storage handle cannot be created.
-    #[uniffi::constructor]
-    pub fn new_ephemeral() -> StorageResult<Self> {
-        Self::from_provider_arc(Arc::new(
-            super::ephemeral::EphemeralStorageProvider::new(),
-        ))
-    }
-}
-
-#[uniffi::export]
-impl CredentialStore {
-    /// Permanently destroys all credential storage data.
-    ///
-    /// This removes the encryption key envelope, the vault database, and the
-    /// cache database. After this call the store is left in an uninitialized
-    /// state — any subsequent operation (other than re-initialization) will
-    /// return [`StorageError::NotInitialized`].
-    ///
-    /// Intended for use when the user logs out or deletes their account.
+    /// The host owns envelope deletion via `delete_storage_key_envelope`. This
+    /// store cannot be reinitialized after destruction; construct a new store
+    /// with resolved keys. Other key owners are unaffected.
     ///
     /// # Errors
-    ///
-    /// Returns an error if the storage lock cannot be acquired or the key
-    /// envelope cannot be deleted from the blob store.
+    /// Returns an error if locking or database file deletion fails.
     pub fn destroy_storage(&self) -> StorageResult<()> {
         self.lock_inner()?.destroy_storage()
     }
@@ -657,17 +584,11 @@ impl CredentialStoreInner {
             return Ok(());
         }
 
-        let keys = StorageKeys::init(
-            self.keystore.as_ref(),
-            self.blob_store.as_ref(),
-            &self.lock,
-            now,
-        )?;
+        let keys = self.keys.as_ref().ok_or(StorageError::NotInitialized)?;
         let k_intermediate = keys.intermediate_key();
         let vault = CredentialVault::new(&self.paths.vault_db_path(), k_intermediate)?;
         let cache = CacheDb::new(&self.paths.cache_db_path(), k_intermediate)?;
         let state = StorageState {
-            keys,
             vault,
             cache,
             leaf_index,
@@ -973,60 +894,36 @@ impl CredentialStoreInner {
         state.vault.danger_delete_all_credentials()
     }
 
-    /// Permanently destroys all storage data: encryption keys, vault, and cache.
+    /// Deletes database files and releases the store's resolved keys.
     fn destroy_storage(&mut self) -> StorageResult<()> {
         let _guard = self.guard()?;
         self.state = None;
-        // Delete the encryption key envelope. Without this key the database
-        // files are unreadable even if file deletion below fails.
-        self.blob_store.delete(ACCOUNT_KEYS_FILENAME.to_string())?;
-
-        // Best-effort removal: deleting the key above cryptographically destroys
-        // the databases even if their encrypted files cannot be removed.
-        super::delete_database_files(&self.paths.vault_db_path());
-        super::delete_database_files(&self.paths.cache_db_path());
-
-        Ok(())
+        self.keys = None;
+        // Keys may remain recoverable through a passkey or host envelope, so
+        // deletion failures must be reported rather than treated as crypto-erasure.
+        let mut first_error = None;
+        for path in [self.paths.vault_db_path(), self.paths.cache_db_path()] {
+            for file in [
+                path.clone(),
+                path.with_extension("sqlite-journal"),
+                path.with_extension("sqlite-wal"),
+                path.with_extension("sqlite-shm"),
+            ] {
+                if let Err(error) = super::delete_database_file(&file) {
+                    first_error.get_or_insert_with(|| {
+                        StorageError::VaultDb(format!(
+                            "delete {}: {error}",
+                            file.display()
+                        ))
+                    });
+                }
+            }
+        }
+        first_error.map_or(Ok(()), Err)
     }
 }
 
 impl CredentialStore {
-    /// Creates a new storage handle from a platform provider.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the storage lock cannot be opened.
-    pub fn from_provider(provider: &dyn StorageProvider) -> StorageResult<Self> {
-        let inner = CredentialStoreInner::from_provider(provider)?;
-        Ok(Self {
-            inner: Mutex::new(inner),
-            #[cfg(not(target_arch = "wasm32"))]
-            vault_changed_tx: Mutex::new(None),
-            #[cfg(not(target_arch = "wasm32"))]
-            activity_changed_tx: Mutex::new(None),
-        })
-    }
-
-    /// Creates a new storage handle from explicit components.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the storage lock cannot be opened.
-    pub fn new(
-        paths: StoragePaths,
-        keystore: Arc<dyn DeviceKeystore>,
-        blob_store: Arc<dyn AtomicBlobStore>,
-    ) -> StorageResult<Self> {
-        let inner = CredentialStoreInner::new(paths, keystore, blob_store)?;
-        Ok(Self {
-            inner: Mutex::new(inner),
-            #[cfg(not(target_arch = "wasm32"))]
-            vault_changed_tx: Mutex::new(None),
-            #[cfg(not(target_arch = "wasm32"))]
-            activity_changed_tx: Mutex::new(None),
-        })
-    }
-
     /// Returns the storage paths used by this handle.
     ///
     /// # Errors
@@ -1039,7 +936,24 @@ impl CredentialStore {
 
 #[cfg(test)]
 mod tests {
+    use super::super::{
+        AtomicBlobStore, DeviceKeystore, StorageProvider, ACCOUNT_KEYS_FILENAME,
+    };
     use super::*;
+
+    fn inner_with_components(
+        paths: StoragePaths,
+        keystore: Arc<dyn DeviceKeystore>,
+        blob_store: Arc<dyn AtomicBlobStore>,
+    ) -> StorageResult<CredentialStoreInner> {
+        let keys = StorageKeys::from_envelope(
+            Arc::new(paths.clone()),
+            keystore,
+            blob_store,
+            1000,
+        )?;
+        CredentialStoreInner::new(paths, Arc::new(keys))
+    }
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
@@ -1098,6 +1012,86 @@ mod tests {
     }
 
     #[test]
+    fn direct_keys_reopen_retry_and_release_on_destroy() {
+        let root = temp_root_path();
+        let paths = Arc::new(StoragePaths::new(&root));
+        let keys = Arc::new(StorageKeys::from_bytes(vec![0x31; 32]).expect("key"));
+        let weak_keys = Arc::downgrade(&keys);
+        {
+            let store = CredentialStore::new(Arc::clone(&paths), Arc::clone(&keys))
+                .expect("store");
+            store.init(42, 1000).expect("initialize");
+            let credential: Credential = world_id_core::Credential::new()
+                .issuer_schema_id(100)
+                .genesis_issued_at(1000)
+                .into();
+            store
+                .store_credential(
+                    &credential,
+                    &FieldElement::from(7u64),
+                    9999,
+                    None,
+                    1000,
+                )
+                .expect("write credential");
+        }
+        let wrong_keys =
+            Arc::new(StorageKeys::from_bytes(vec![0x32; 32]).expect("wrong key"));
+        let wrong =
+            CredentialStore::new(Arc::clone(&paths), wrong_keys).expect("store");
+        assert!(
+            wrong.init(42, 1000).is_err(),
+            "wrong key must not open existing DBs"
+        );
+        drop(wrong);
+
+        let store = CredentialStore::new(Arc::clone(&paths), keys).expect("reopen");
+        assert!(matches!(
+            store.init(43, 1000),
+            Err(StorageError::InvalidLeafIndex { .. })
+        ));
+        store.init(42, 1000).expect("retry with correct account");
+        assert_eq!(
+            store
+                .list_credentials(None, 1000)
+                .expect("read persisted credential")
+                .len(),
+            1
+        );
+        assert!(weak_keys.upgrade().is_some());
+        store.destroy_storage().expect("destroy");
+        assert!(
+            weak_keys.upgrade().is_none(),
+            "store released its last key reference"
+        );
+        assert!(matches!(
+            store.init(42, 1000),
+            Err(StorageError::NotInitialized)
+        ));
+        assert!(!paths.vault_db_path().exists());
+        assert!(!paths.cache_db_path().exists());
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn destruction_reports_failed_file_deletion_and_can_retry() {
+        let root = temp_root_path();
+        let paths = Arc::new(StoragePaths::new(&root));
+        let keys = Arc::new(StorageKeys::from_bytes(vec![0x41; 32]).expect("key"));
+        let store = CredentialStore::new(Arc::clone(&paths), keys).expect("store");
+        // A directory at the DB path cannot be removed with remove_file, even as root.
+        std::fs::create_dir_all(paths.vault_db_path()).expect("block path");
+        assert!(store.destroy_storage().is_err());
+        assert!(matches!(
+            store.init(42, 1000),
+            Err(StorageError::NotInitialized)
+        ));
+        std::fs::remove_dir(paths.vault_db_path()).expect("remove obstruction");
+        store.destroy_storage().expect("retry cleanup");
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
     fn test_replay_guard_field_element_serialization() {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
@@ -1105,8 +1099,8 @@ mod tests {
         let keystore = provider.keystore();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
-            .expect("create inner");
+        let mut inner =
+            inner_with_components(paths, keystore, blob_store).expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
         // Create a FieldElement from a known value
@@ -1137,8 +1131,8 @@ mod tests {
         let keystore = provider.keystore();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
-            .expect("create inner");
+        let mut inner =
+            inner_with_components(paths, keystore, blob_store).expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
         let nullifier = CoreFieldElement::from(999u64);
@@ -1180,8 +1174,8 @@ mod tests {
         let keystore = provider.keystore();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
-            .expect("create inner");
+        let mut inner =
+            inner_with_components(paths, keystore, blob_store).expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
         let nullifier = CoreFieldElement::from(555u64);
@@ -1226,7 +1220,7 @@ mod tests {
         let keystore = provider.keystore();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store).unwrap();
+        let mut inner = inner_with_components(paths, keystore, blob_store).unwrap();
         inner.init(42, 1000).expect("init storage");
 
         let nullifier = CoreFieldElement::from(12345u64);
@@ -1262,7 +1256,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let blinding_factor = FieldElement::from(7u64);
@@ -1305,8 +1299,8 @@ mod tests {
         let keystore = provider.keystore();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
-            .expect("create inner");
+        let mut inner =
+            inner_with_components(paths, keystore, blob_store).expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
         // Store a test credential
@@ -1362,8 +1356,7 @@ mod tests {
 
         let src_root = temp_root_path();
         let src_provider = InMemoryStorageProvider::new(&src_root);
-        let src_store =
-            CredentialStore::from_provider(&src_provider).expect("create src store");
+        let src_store = src_provider.open_store().expect("create src store");
         src_store.init(42, 1000).expect("init src storage");
 
         let issuer_schema_id = 100u64;
@@ -1382,8 +1375,7 @@ mod tests {
 
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
-        let dst_store =
-            CredentialStore::from_provider(&dst_provider).expect("create dst store");
+        let dst_store = dst_provider.open_store().expect("create dst store");
         dst_store.init(42, 1000).expect("init dst storage");
 
         dst_store
@@ -1407,8 +1399,7 @@ mod tests {
 
         let src_root = temp_root_path();
         let src_provider = InMemoryStorageProvider::new(&src_root);
-        let src_store =
-            CredentialStore::from_provider(&src_provider).expect("create src store");
+        let src_store = src_provider.open_store().expect("create src store");
         src_store.init(42, 1000).expect("init src storage");
 
         // Store credential A (schema 100) without associated data
@@ -1451,8 +1442,7 @@ mod tests {
 
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
-        let dst_store =
-            CredentialStore::from_provider(&dst_provider).expect("create dst store");
+        let dst_store = dst_provider.open_store().expect("create dst store");
         dst_store.init(42, 1000).expect("init dst storage");
 
         dst_store
@@ -1492,7 +1482,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let blinding_factor = FieldElement::from(7u64);
@@ -1526,7 +1516,7 @@ mod tests {
     fn test_import_vault_backup_invalid_bytes_fails() {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let result = store.import_vault_from_backup(b"not a sqlite database");
@@ -1543,8 +1533,7 @@ mod tests {
 
         let src_root = temp_root_path();
         let src_provider = InMemoryStorageProvider::new(&src_root);
-        let src_store =
-            CredentialStore::from_provider(&src_provider).expect("create src store");
+        let src_store = src_provider.open_store().expect("create src store");
         src_store.init(42, 1000).expect("init src storage");
 
         let cred: Credential = CoreCredential::new()
@@ -1582,8 +1571,7 @@ mod tests {
 
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
-        let dst_store =
-            CredentialStore::from_provider(&dst_provider).expect("create dst store");
+        let dst_store = dst_provider.open_store().expect("create dst store");
         dst_store.init(42, 1000).expect("init dst storage");
 
         let result = dst_store.import_vault_from_backup(&corrupt_bytes);
@@ -1611,8 +1599,8 @@ mod tests {
         let keystore = provider.keystore();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
-            .expect("create inner");
+        let mut inner =
+            inner_with_components(paths, keystore, blob_store).expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
         let blinding_factor = FieldElement::from(42u64);
@@ -1643,8 +1631,8 @@ mod tests {
         let keystore = provider.keystore();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
-            .expect("create inner");
+        let mut inner =
+            inner_with_components(paths, keystore, blob_store).expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
         let deleted = inner
@@ -1665,8 +1653,8 @@ mod tests {
         let keystore = provider.keystore();
         let blob_store = provider.blob_store();
 
-        let mut inner = CredentialStoreInner::new(paths, keystore, blob_store)
-            .expect("create inner");
+        let mut inner =
+            inner_with_components(paths, keystore, blob_store).expect("create inner");
         inner.init(42, 1000).expect("init storage");
 
         let blinding_factor = FieldElement::from(42u64);
@@ -1700,7 +1688,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init store");
 
         let cred: Credential = CoreCredential::new()
@@ -1733,8 +1721,7 @@ mod tests {
 
         let src_root = temp_root_path();
         let src_provider = InMemoryStorageProvider::new(&src_root);
-        let src_store =
-            CredentialStore::from_provider(&src_provider).expect("create store");
+        let src_store = src_provider.open_store().expect("create store");
         src_store.init(42, 1000).expect("init store");
 
         let cred: Credential = CoreCredential::new()
@@ -1751,8 +1738,7 @@ mod tests {
         // Import the raw bytes into a fresh store via the public API.
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
-        let dst_store =
-            CredentialStore::from_provider(&dst_provider).expect("create dst store");
+        let dst_store = dst_provider.open_store().expect("create dst store");
         dst_store.init(42, 1000).expect("init dst store");
 
         dst_store
@@ -1776,7 +1762,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init store");
 
         let cred: Credential = CoreCredential::new()
@@ -1814,7 +1800,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init store");
 
         let cred: Credential = CoreCredential::new()
@@ -1864,7 +1850,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
@@ -1891,7 +1877,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
@@ -1919,7 +1905,7 @@ mod tests {
     fn test_vault_changed_listener_not_notified_on_failure() {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
@@ -2001,7 +1987,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         // No listener registered — mutations should still work fine.
@@ -2022,7 +2008,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let cred: Credential = CoreCredential::new()
@@ -2055,7 +2041,28 @@ mod tests {
             "expected NotInitialized, got: {err:?}"
         );
 
-        // Re-initialization should work.
+        // Destroy releases the key; the old store cannot silently reopen.
+        assert!(matches!(
+            store.init(42, 1000),
+            Err(StorageError::NotInitialized)
+        ));
+        // Envelope lifecycle belongs to the host and is unchanged by destruction.
+        assert!(provider
+            .blob_store()
+            .read(ACCOUNT_KEYS_FILENAME.to_string())
+            .unwrap()
+            .is_some());
+        super::super::delete_storage_key_envelope(
+            provider.paths(),
+            provider.blob_store(),
+        )
+        .expect("delete host envelope");
+        assert!(provider
+            .blob_store()
+            .read(ACCOUNT_KEYS_FILENAME.to_string())
+            .unwrap()
+            .is_none());
+        let store = provider.open_store().expect("construct new store");
         store.init(42, 1000).expect("re-init storage");
         let list = store
             .list_credentials(None, 1000)
@@ -2074,7 +2081,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init storage");
 
         let count = Arc::new(AtomicU32::new(0));
