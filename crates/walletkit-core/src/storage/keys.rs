@@ -1,31 +1,107 @@
-//! Key management for credential storage.
+//! Resolved database keys and explicit envelope lifecycle helpers.
 //!
-//! [`StorageKeys`] opens (or creates on first use) the account key envelope via
-//! `walletkit-db` and holds the resulting `K_intermediate` in memory for the lifetime
-//! of the storage handle; both databases are opened with it. The `K_device` →
-//! `K_intermediate` hierarchy, envelope sealing, and encryption are described in the
-//! `walletkit-db` README.
+//! `StorageKeys` holds `K_intermediate` regardless of its source. Hosts resolve
+//! it from a sealed envelope or supply it directly before constructing storage.
 
 use secrecy::SecretBox;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use std::sync::Arc;
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use super::{
-    error::StorageResult,
+    error::{StorageError, StorageResult},
     traits::{AtomicBlobStore, DeviceKeystore},
-    ACCOUNT_KEYS_FILENAME, ACCOUNT_KEY_ENVELOPE_AD,
+    StoragePaths, StorageProvider, ACCOUNT_KEYS_FILENAME, ACCOUNT_KEY_ENVELOPE_AD,
 };
 use walletkit_db::Lock;
 
-/// In-memory account keys derived from the account key envelope.
+/// Resolved in-memory database keys, independent of their source.
 ///
-/// Keys are held in memory for the lifetime of the storage handle.
-#[derive(Zeroize, ZeroizeOnDrop)]
+/// Keys are zeroized when the last owner drops this object.
+#[derive(Zeroize, ZeroizeOnDrop, uniffi::Object)]
 #[allow(clippy::struct_field_names)]
 pub struct StorageKeys {
     intermediate_key: SecretBox<[u8; 32]>,
 }
 
+#[uniffi::export]
 impl StorageKeys {
+    /// Takes a resolved 32-byte database key, for example derived from a passkey PRF.
+    ///
+    /// # Errors
+    /// Returns an error if the key is not exactly 32 bytes.
+    #[uniffi::constructor]
+    pub fn from_bytes(database_key: Vec<u8>) -> StorageResult<Self> {
+        let database_key = Zeroizing::new(database_key);
+        if database_key.len() != 32 {
+            return Err(StorageError::InvalidInput(
+                "expected a 32-byte database key".into(),
+            ));
+        }
+        let intermediate_key = SecretBox::init_with(|| {
+            let mut key = [0; 32];
+            key.copy_from_slice(&database_key);
+            key
+        });
+        Ok(Self { intermediate_key })
+    }
+
+    /// Resolves the database key from a device-sealed envelope, creating it if absent.
+    /// The platform integrations are used only during this call and are not retained.
+    ///
+    /// # Errors
+    /// Returns an error if locking, envelope access, or key unsealing fails.
+    #[uniffi::constructor]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI parameters require owned Arc handles"
+    )]
+    pub fn from_envelope(
+        paths: Arc<StoragePaths>,
+        keystore: Arc<dyn DeviceKeystore>,
+        blob_store: Arc<dyn AtomicBlobStore>,
+        now: u64,
+    ) -> StorageResult<Self> {
+        let lock = Lock::open(&paths.lock_path())?;
+        Self::init(keystore.as_ref(), blob_store.as_ref(), &lock, now)
+    }
+}
+
+/// Deletes the host-owned key envelope after closing/destroying its credential store.
+/// This does not invalidate keys already held in memory by other owners.
+///
+/// # Errors
+/// Returns an error if locking or envelope deletion fails.
+#[uniffi::export]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "UniFFI parameters require owned Arc handles"
+)]
+pub fn delete_storage_key_envelope(
+    paths: Arc<StoragePaths>,
+    blob_store: Arc<dyn AtomicBlobStore>,
+) -> StorageResult<()> {
+    let lock = Lock::open(&paths.lock_path())?;
+    let _guard = lock.lock()?;
+    blob_store.delete(ACCOUNT_KEYS_FILENAME.to_string())
+}
+
+impl StorageKeys {
+    /// Resolves an envelope key using a native host's platform provider.
+    ///
+    /// # Errors
+    /// Returns an error if the envelope cannot be opened or created.
+    pub fn from_provider(
+        provider: &dyn StorageProvider,
+        now: u64,
+    ) -> StorageResult<Self> {
+        Self::from_envelope(
+            provider.paths(),
+            provider.keystore(),
+            provider.blob_store(),
+            now,
+        )
+    }
+
     /// Initializes storage keys by opening or creating the account key envelope.
     ///
     /// # Errors
@@ -120,6 +196,32 @@ mod tests {
         let mut path = std::env::temp_dir();
         path.push(format!("walletkit-keys-lock-{}.lock", Uuid::new_v4()));
         path
+    }
+
+    #[test]
+    fn direct_key_requires_exactly_32_bytes() {
+        for length in [0, 31, 33] {
+            assert!(matches!(
+                StorageKeys::from_bytes(vec![7; length]),
+                Err(StorageError::InvalidInput(_))
+            ));
+        }
+        let keys = StorageKeys::from_bytes(vec![7; 32]).expect("direct key");
+        assert_eq!(keys.intermediate_key().expose_secret(), &[7; 32]);
+    }
+
+    #[test]
+    fn envelope_resolution_does_not_retain_platform_components() {
+        let root = tempfile::tempdir().expect("temp dir");
+        let paths = Arc::new(StoragePaths::new(root.path()));
+        let keystore = Arc::new(InMemoryKeystore::new());
+        let blobs = Arc::new(InMemoryBlobStore::new());
+        let weak_keystore = Arc::downgrade(&keystore);
+        let weak_blobs = Arc::downgrade(&blobs);
+        let _keys = StorageKeys::from_envelope(paths, keystore, blobs, 1000)
+            .expect("resolve envelope");
+        assert!(weak_keystore.upgrade().is_none());
+        assert!(weak_blobs.upgrade().is_none());
     }
 
     #[test]
