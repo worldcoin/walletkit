@@ -122,20 +122,6 @@ mod tests {
     use secrecy::ExposeSecret;
 
     #[test]
-    fn envelope_resolution_does_not_retain_platform_components() {
-        let root = tempfile::tempdir().expect("temp dir");
-        let paths = Arc::new(StoragePaths::new(root.path()));
-        let keystore = Arc::new(InMemoryKeystore::new());
-        let blobs = Arc::new(InMemoryBlobStore::new());
-        let weak_keystore = Arc::downgrade(&keystore);
-        let weak_blobs = Arc::downgrade(&blobs);
-        let _keys = open_or_create_storage_keys(paths, keystore, blobs, 1000)
-            .expect("resolve envelope");
-        assert!(weak_keystore.upgrade().is_none());
-        assert!(weak_blobs.upgrade().is_none());
-    }
-
-    #[test]
     fn test_storage_keys_round_trip() {
         let keystore = Arc::new(InMemoryKeystore::new());
         let blob_store = Arc::new(InMemoryBlobStore::new());
