@@ -49,7 +49,7 @@ self.onmessage = async ({ data }) => {
         break;
       case "init-envelope": {
         const paths = b.StoragePaths.fromRoot("/test-envelope-account");
-        const keys = b.StorageKeys.fromEnvelope(paths, ks, blobs, 1000n);
+        const keys = b.openOrCreateStorageKeys(paths, ks, blobs, 1000n);
         const store = new b.CredentialStore(paths, keys);
         (keys as unknown as { uniffiDestroy(): void }).uniffiDestroy();
         (paths as unknown as { uniffiDestroy(): void }).uniffiDestroy();
