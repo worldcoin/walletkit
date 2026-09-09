@@ -29,7 +29,9 @@ jobs:
 
       - uses: worldcoin/bedrock/.github/actions/version-alignment@857c252013ac52cea24f5d7add3475a909d663f2 # main
         with:
-          uniffi_version: ${{ vars.UNIFFI_VERSION }}
+          # Match the temporary generator compatibility pin in Cargo.toml.
+          # Restore vars.UNIFFI_VERSION when the web generator supports 0.32.
+          uniffi_version: "0.31.2"
           rust_toolchain_channel: ${{ vars.RUST_TOOLCHAIN_CHANNEL }}
 
   lint:
