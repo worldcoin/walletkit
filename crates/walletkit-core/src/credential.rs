@@ -61,10 +61,6 @@ impl Credential {
     }
 
     /// Returns the credential's raw claims, in schema order.
-    //
-    // `Arc` is load-bearing: uniffi objects only implement `Lower` behind an
-    // `Arc`, so sequences of objects must be `Vec<Arc<T>>` (bare owned objects
-    // are only accepted as top-level return values).
     #[must_use]
     pub fn claims(&self) -> Vec<std::sync::Arc<FieldElement>> {
         self.0
