@@ -31,7 +31,7 @@ database key are separate inputs. The package does not persist the database key;
 initialization copies it and the caller owns clearing its own copy. Rust keeps the
 resolved key in zeroizing memory until its last owner releases it.
 
-Mobile hosts can instead resolve `StorageKeys.fromEnvelope(paths, keystore,
+Mobile hosts can instead resolve `openOrCreateStorageKeys(paths, keystore,
 blobStore, now)` before constructing the same `CredentialStore(paths, keys)`.
 The store retains no keystore or blob-store references. It releases its key
 reference on destruction and requires a new instance to reopen. The host separately
