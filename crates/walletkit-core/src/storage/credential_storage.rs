@@ -29,7 +29,7 @@ const SESSION_SEED_TTL_SECONDS: u64 = 182 * 86_400;
 #[cfg(not(target_arch = "wasm32"))]
 const VAULT_BACKUP_TEMP_PREFIX: &str = "vault_backup_plaintext_";
 
-/// Reserves a unique, owner-only scratch file before SQLite opens it.
+/// Reserves a unique, owner-only scratch file before `SQLite` opens it.
 #[cfg(not(target_arch = "wasm32"))]
 fn backup_temp_file(
     directory: &std::path::Path,
@@ -485,7 +485,9 @@ impl CredentialStore {
         file.write_all(backup_bytes).map_err(|err| {
             StorageError::VaultDb(format!("failed to write backup scratch file: {err}"))
         })?;
-        state.vault.import_plaintext(file.path())
+        let result = state.vault.import_plaintext(file.path());
+        drop(inner);
+        result
     }
 
     /// Registers a listener that is called after every successful vault
