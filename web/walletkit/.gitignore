@@ -1,3 +1,5 @@
-dist/
 node_modules/
+dist/
 src/generated/
+test-results/
+playwright-report/
