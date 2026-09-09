@@ -29,7 +29,7 @@
 //!
 //! Both databases use the resolved `K_intermediate` supplied through [`crate::storage::StorageKeys`].
 //! Hosts obtain it directly (for example from a passkey PRF) or resolve a sealed
-//! envelope before constructing [`crate::storage::CredentialStore`].
+//! envelope with [`open_or_create_storage_keys`] before constructing [`crate::storage::CredentialStore`].
 //!
 //! ## On-disk layout
 //!
@@ -51,6 +51,7 @@ pub mod credential_vault;
 #[cfg(test)]
 mod ephemeral;
 pub mod error;
+mod key_envelope;
 pub mod keys;
 pub mod paths;
 pub mod traits;
@@ -60,7 +61,8 @@ pub use cache::CacheDb;
 pub use credential_storage::CredentialStore;
 pub use credential_vault::CredentialVault;
 pub use error::{StorageError, StorageResult};
-pub use keys::{delete_storage_key_envelope, StorageKeys};
+pub use key_envelope::{delete_storage_key_envelope, open_or_create_storage_keys};
+pub use keys::StorageKeys;
 pub use paths::StoragePaths;
 pub use traits::{
     ActivityChangedListener, AtomicBlobStore, DeviceKeystore, StorageProvider,
@@ -119,9 +121,6 @@ pub async fn initialize_persistent_storage() -> StorageResult<()> {
         .await
         .map_err(|err| StorageError::PersistentStorage(err.to_string()))
 }
-
-pub(crate) const ACCOUNT_KEYS_FILENAME: &str = "account_keys.bin";
-pub(crate) const ACCOUNT_KEY_ENVELOPE_AD: &[u8] = b"worldid:account-key-envelope";
 
 #[cfg(test)]
 pub(crate) mod tests_utils;
