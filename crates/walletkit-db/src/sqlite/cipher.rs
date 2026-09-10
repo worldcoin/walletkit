@@ -12,19 +12,22 @@
 //! 1. **Open** -- `sqlite3_open_v2` creates or opens the database file.
 //!    At this point the file is opaque (encrypted) and no data can be read.
 //!
-//! 2. **Key** -- `PRAGMA key = "x'<hex>'"` passes the 32-byte
+//! 2. **Cipher** -- select and verify the `ChaCha20` cipher before applying a
+//!    key. A host-provided `SQLite` engine without encryption must fail closed.
+//!
+//! 3. **Key** -- `PRAGMA key = "x'<hex>'"` passes the 32-byte
 //!    `K_intermediate` (hex-encoded) to `sqlite3mc` as a raw key. The `x'...'`
 //!    syntax tells `sqlite3mc` to use the bytes directly as the page-encryption
 //!    key, bypassing the passphrase KDF (PBKDF2-SHA256) that a plain-string
 //!    key would otherwise be run through. After this point, every page read
 //!    from disk is decrypted and every page written to disk is encrypted.
 //!
-//! 3. **Verify** -- We immediately read from `sqlite_master` to confirm
+//! 4. **Verify** -- We immediately read from `sqlite_master` to confirm
 //!    the key is correct. If the key is wrong, `sqlite3mc` returns
 //!    `SQLITE_NOTADB` because the decrypted page header won't match the
 //!    expected `SQLite` magic bytes. We surface this as a clear error.
 //!
-//! 4. **Configure** -- WAL journal mode and `synchronous=FULL` are set for
+//! 5. **Configure** -- WAL journal mode and `synchronous=FULL` are set for
 //!    crash consistency. Foreign keys are enabled.
 //!
 //! The default cipher is **ChaCha20-Poly1305** (authenticated encryption).
@@ -41,8 +44,8 @@ use super::error::{DbResult, Error};
 
 /// Opens a database, applies the encryption key, and configures the connection.
 ///
-/// This is the standard open sequence for encrypted databases: open -> key ->
-/// verify -> configure (WAL + foreign keys).
+/// This is the standard open sequence for encrypted databases: open -> cipher ->
+/// key -> verify -> configure (WAL + foreign keys).
 ///
 /// See the [module-level documentation](self) for the full encryption flow.
 ///
@@ -55,6 +58,20 @@ pub fn open_encrypted(
     read_only: bool,
 ) -> DbResult<Connection> {
     let conn = Connection::open(path, read_only)?;
+    // A host application can link another SQLite implementation. Fail before
+    // applying a key or writing a schema if the encrypted engine is unavailable.
+    conn.execute_batch("PRAGMA cipher = 'chacha20';")?;
+    let cipher =
+        conn.query_row_optional("PRAGMA cipher;", &[], |row| Ok(row.column_text(0)))?;
+    if !cipher
+        .as_deref()
+        .is_some_and(|name| name.eq_ignore_ascii_case("chacha20"))
+    {
+        return Err(Error::new(
+            -1,
+            "required sqlite3mc chacha20 cipher is unavailable; verify WalletKit SQLite symbol isolation",
+        ));
+    }
     apply_key(&conn, k_intermediate)?;
     configure_connection(&conn)?;
     Ok(conn)
