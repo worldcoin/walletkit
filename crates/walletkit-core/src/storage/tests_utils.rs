@@ -162,6 +162,18 @@ pub struct InMemoryStorageProvider {
 }
 
 impl InMemoryStorageProvider {
+    pub fn open_store(
+        &self,
+    ) -> Result<crate::storage::CredentialStore, crate::storage::StorageError> {
+        let keys = crate::storage::open_or_create_storage_keys(
+            self.paths(),
+            self.keystore(),
+            self.blob_store(),
+            1000,
+        )?;
+        crate::storage::CredentialStore::new(self.paths(), keys)
+    }
+
     pub fn new(root: impl AsRef<Path>) -> Self {
         Self {
             keystore: Arc::new(InMemoryKeystore::new()),

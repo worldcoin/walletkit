@@ -20,9 +20,11 @@ impl Authenticator {
         Ok(())
     }
 
-    /// Permanently destroys all credential storage data.
+    /// Closes credential storage and attempts to delete its database files.
     ///
-    /// Removes the encryption keys, vault database, and cache database.
+    /// Releases the store's key reference and removes the vault and cache databases
+    /// on a best-effort basis. File deletion failures are logged, not returned.
+    /// The host must separately delete any key envelope it owns.
     /// After this call the authenticator can no longer generate proofs or
     /// access stored credentials. Intended for logout or account deletion.
     ///
@@ -78,7 +80,6 @@ mod tests {
     use crate::storage::tests_utils::{
         cleanup_test_storage, temp_root_path, InMemoryStorageProvider,
     };
-    use crate::storage::CredentialStore;
     use world_id_core::primitives::merkle::MerkleInclusionProof;
     use world_id_core::primitives::AuthenticatorPublicKeySet;
     use world_id_core::FieldElement;
@@ -87,7 +88,7 @@ mod tests {
     fn test_cached_inclusion_round_trip() {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("store");
+        let store = provider.open_store().expect("store");
         store.init(42, 100).expect("init storage");
 
         let siblings = [FieldElement::from(0u64); TREE_DEPTH];

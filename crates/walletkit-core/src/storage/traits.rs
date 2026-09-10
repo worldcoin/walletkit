@@ -1,8 +1,8 @@
 //! Platform interfaces for credential storage.
 //!
-//! These traits are the platform integration boundary. The host selects the storage
-//! root and provides a [`DeviceKeystore`] and [`AtomicBlobStore`]; core storage code
-//! is root-agnostic and consumes a provider-supplied [`StoragePaths`].
+//! These traits support host-owned key envelopes. Hosts resolve [`super::StorageKeys`]
+//! using [`super::open_or_create_storage_keys`] before constructing credential storage.
+//! Direct-key hosts only supply the resolved keys and [`StoragePaths`].
 //!
 //! # Expected platform components
 //!
@@ -12,8 +12,8 @@
 //!   [`AtomicBlobStore`] over app internal storage (atomic replace).
 //! - **Node.js:** file-backed [`DeviceKeystore`] (development; production can use an
 //!   OS keystore); [`AtomicBlobStore`] over app internal storage.
-//! - **Browser (WASM):** host-provided [`DeviceKeystore`] and [`AtomicBlobStore`]
-//!   implementations; sqlite persistence itself uses encrypted OPFS storage.
+//! - **Browser (WASM):** supplies resolved database keys directly; database
+//!   persistence uses encrypted OPFS storage without a keystore or envelope.
 
 use std::sync::Arc;
 
