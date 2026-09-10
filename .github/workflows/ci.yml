@@ -153,6 +153,11 @@ jobs:
 
       - uses: ./.github/actions/prefetch-noir-dependencies
 
+      - name: Test native SQLite link isolation
+        run: |
+          bash crates/walletkit-sqlite/examples/test_native_linking.sh
+          bash crates/walletkit-sqlite/examples/test_native_linking.sh release
+
       # Includes temporary downstream UniFFI callback vtable patch:
       # https://github.com/mozilla/uniffi-rs/pull/2821
       - name: Build the Swift project (with temporary UniFFI ASan workaround)

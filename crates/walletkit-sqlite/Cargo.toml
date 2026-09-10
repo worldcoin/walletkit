@@ -36,3 +36,7 @@ tempfile = { workspace = true }
 
 [lints]
 workspace = true
+
+[[example]]
+name = "native_link_probe"
+crate-type = ["staticlib"]

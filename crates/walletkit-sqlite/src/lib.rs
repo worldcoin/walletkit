@@ -4,12 +4,13 @@
 //! compile time:
 //!
 //! - **Native** (`not(wasm32)`): linked against the `sqlite3mc` static library
-//!   compiled from the downloaded amalgamation by `build.rs`.
+//!   compiled from the downloaded amalgamation by `build.rs`, with its C API
+//!   kept private behind WalletKit-prefixed wrappers.
 //! - **WASM** (`wasm32`): delegated to `sqlite-wasm-rs` (with the
 //!   `sqlite3mc` feature) which ships its own `WASM`-compiled `sqlite3mc`.
 //!
-//! The internal `ffi` module is the only file in this crate that contains
-//! `unsafe` code or `C` types.
+//! The internal `ffi` module owns the Rust `unsafe` boundary. Native builds
+//! use `native_sqlite.c` to isolate the bundled `SQLite` implementation.
 
 mod ffi;
 
