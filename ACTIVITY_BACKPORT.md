@@ -82,6 +82,9 @@ Local results on 2026-09-10:
 
 This validates compilation and native database linkage, not an end-to-end
 IDKit verification on a real account. No device account data was accessed.
+The successful app build also emitted nonfatal `DecodingError.dataCorrupted`
+diagnostics during SDUI compilation; those diagnostics were not investigated
+as part of this SDK change.
 
 Build the local Swift package with `cargo xtask swift local`. Its output is
 `swift/local_build/walletkit-swift`; the iOS dependency can point to that

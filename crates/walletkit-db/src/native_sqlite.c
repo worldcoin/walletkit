@@ -94,4 +94,3 @@ int walletkit_sqlite3_changes(sqlite3 *db) {
 sqlite3_int64 walletkit_sqlite3_last_insert_rowid(sqlite3 *db) {
     return sqlite3_last_insert_rowid(db);
 }
-
