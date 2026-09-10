@@ -29,6 +29,29 @@ const SESSION_SEED_TTL_SECONDS: u64 = 182 * 86_400;
 #[cfg(not(target_arch = "wasm32"))]
 const VAULT_BACKUP_TEMP_PREFIX: &str = "vault_backup_plaintext_";
 
+/// Reserves a unique, owner-only scratch file before `SQLite` opens it.
+#[cfg(not(target_arch = "wasm32"))]
+fn backup_temp_file(
+    directory: &std::path::Path,
+) -> StorageResult<tempfile::NamedTempFile> {
+    if !directory.is_absolute() {
+        return Err(StorageError::VaultDb(
+            "backup scratch directory must be absolute".into(),
+        ));
+    }
+    tempfile::Builder::new()
+        // Separate from the legacy prefix: legacy cleanup must not remove an
+        // active file even if a caller explicitly chooses the worldid directory.
+        .prefix("walletkit_backup_")
+        .suffix(".sqlite")
+        .tempfile_in(directory)
+        .map_err(|err| {
+            StorageError::VaultDb(format!(
+                "failed to create backup scratch file: {err}"
+            ))
+        })
+}
+
 /// RAII guard that deletes a sensitive plaintext file on drop — regardless
 /// of whether we exit normally, return early, or panic.
 #[cfg(not(target_arch = "wasm32"))]
@@ -373,7 +396,8 @@ impl CredentialStore {
     /// `SQLite` database for backup.
     ///
     /// The host app is responsible for persisting or uploading the returned
-    /// bytes
+    /// bytes. To choose the scratch directory, use
+    /// `export_vault_for_backup_in_directory` on native targets.
     ///
     /// # Errors
     ///
@@ -408,6 +432,62 @@ impl CredentialStore {
         let _cleanup = CleanupFile(path.clone());
 
         inner.import_vault_from_file(&path)
+    }
+
+    /// Exports plaintext backup bytes using a scratch file in `temp_dir`.
+    ///
+    /// The host supplies an existing private temporary/cache directory as an absolute
+    /// path. The file
+    /// is removed on return, including errors. Abrupt process termination may
+    /// leave a file for the host or OS to clean up. Other files in the directory
+    /// are never swept, so different stores can safely share it.
+    ///
+    /// # Errors
+    /// Returns an error if the store is not initialized, the directory is missing
+    /// or unwritable, or the export fails. Never falls back to persistent storage.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn export_vault_for_backup_in_directory(
+        &self,
+        temp_dir: String,
+    ) -> StorageResult<Vec<u8>> {
+        let inner = self.lock_inner()?;
+        let state = inner.state()?;
+        let temp_dir = std::path::PathBuf::from(temp_dir);
+        let file = backup_temp_file(&temp_dir)?;
+        state.vault.export_plaintext(file.path())?;
+        drop(inner);
+        std::fs::read(file.path()).map_err(|err| {
+            StorageError::VaultDb(format!("failed to read exported vault: {err}"))
+        })
+    }
+
+    /// Imports plaintext backup bytes using a scratch file in `temp_dir`.
+    ///
+    /// Uses the same directory and cleanup contract as
+    /// [`Self::export_vault_for_backup_in_directory`]. The store must be
+    /// initialized and its vault empty before import.
+    ///
+    /// # Errors
+    /// Returns an error if the directory is missing or unwritable, writing the
+    /// scratch file fails, or the backup cannot be imported.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn import_vault_from_backup_in_directory(
+        &self,
+        backup_bytes: &[u8],
+        temp_dir: String,
+    ) -> StorageResult<()> {
+        use std::io::Write;
+
+        let inner = self.lock_inner()?;
+        let state = inner.state()?;
+        let temp_dir = std::path::PathBuf::from(temp_dir);
+        let mut file = backup_temp_file(&temp_dir)?;
+        file.write_all(backup_bytes).map_err(|err| {
+            StorageError::VaultDb(format!("failed to write backup scratch file: {err}"))
+        })?;
+        let result = state.vault.import_plaintext(file.path());
+        drop(inner);
+        result
     }
 
     /// Registers a listener that is called after every successful vault
@@ -1748,6 +1828,108 @@ mod tests {
 
         cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);
+    }
+
+    #[test]
+    fn backup_custom_directory_roundtrip_and_cleanup() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).unwrap();
+        store.init(42, 1000).unwrap();
+        let credential: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        store
+            .store_credential(&credential, &FieldElement::from(7u64), 9999, None, 1000)
+            .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let directory = temp.path().to_str().unwrap().to_owned();
+        // Another store's active file must survive both operations.
+        let active = backup_temp_file(temp.path()).unwrap();
+        let sentinel = temp.path().join("keep.txt");
+        std::fs::write(&sentinel, b"keep").unwrap();
+        let bytes = store
+            .export_vault_for_backup_in_directory(directory.clone())
+            .unwrap();
+        assert!(bytes.starts_with(b"SQLite format 3"));
+        assert_eq!(bytes, store.export_vault_for_backup().unwrap());
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 2);
+
+        let dst_root = temp_root_path();
+        let dst_provider = InMemoryStorageProvider::new(&dst_root);
+        let dst = CredentialStore::from_provider(&dst_provider).unwrap();
+        dst.init(42, 1000).unwrap();
+        dst.import_vault_from_backup_in_directory(&bytes, directory.clone())
+            .unwrap();
+        assert!(dst.get_credential(100, 1000).unwrap().is_some());
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 2);
+        // Failed import also drops its own scratch file.
+        assert!(dst
+            .import_vault_from_backup_in_directory(b"invalid sqlite", directory)
+            .is_err());
+        assert!(active.path().exists());
+        assert_eq!(std::fs::read(&sentinel).unwrap(), b"keep");
+        assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 2);
+        cleanup_test_storage(&root);
+        cleanup_test_storage(&dst_root);
+    }
+
+    #[test]
+    fn backup_custom_directory_errors_do_not_fall_back() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).unwrap();
+        store.init(42, 1000).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let missing = temp.path().join("missing");
+        let regular_file = temp.path().join("file");
+        std::fs::write(&regular_file, b"keep").unwrap();
+        for path in [
+            missing.as_path(),
+            regular_file.as_path(),
+            std::path::Path::new(""),
+            std::path::Path::new("relative"),
+        ] {
+            let directory = path.to_str().unwrap().to_owned();
+            assert!(store
+                .export_vault_for_backup_in_directory(directory.clone())
+                .is_err());
+            assert!(store
+                .import_vault_from_backup_in_directory(b"invalid", directory)
+                .is_err());
+        }
+        assert!(!missing.exists());
+        assert_eq!(std::fs::read(&regular_file).unwrap(), b"keep");
+        let worldid = store.storage_paths().unwrap().worldid_dir().to_owned();
+        assert!(!std::fs::read_dir(worldid).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("backup")
+        }));
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn backup_scratch_file_uses_requested_directory() {
+        let temp = tempfile::tempdir().unwrap();
+        let file = backup_temp_file(temp.path()).unwrap();
+        assert_eq!(file.path().parent(), Some(temp.path()));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                file.as_file().metadata().unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        let path = file.path().to_owned();
+        drop(file);
+        assert!(!path.exists());
     }
 
     #[test]
