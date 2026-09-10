@@ -4,9 +4,11 @@ export interface RecoveryData {
   authenticatorPubkey: string;
   offchainSignerCommitment: string;
 }
+
 export type RegistrationStatus =
   | { state: "queued" | "batching" | "submitted" | "finalized" }
   | { state: "failed"; error: string; errorCode?: string };
+
 export interface InitializeOptions {
   /** 32-byte database encryption key. Supply the same databaseKey when reopening storage. */
   databaseKey: Uint8Array;
@@ -20,6 +22,7 @@ export interface InitializeOptions {
   /** Abort initialization and release the worker (for example on unmount). */
   signal?: AbortSignal;
 }
+
 export type WorkerOptions = Required<
   Pick<InitializeOptions, "storageId" | "environment" | "region">
 > &
@@ -27,6 +30,7 @@ export type WorkerOptions = Required<
     databaseKey: Uint8Array;
     wasmUrl: string;
   };
+
 export interface Operations {
   initialize: { args: [WorkerOptions]; result: void };
   recoveryDataFromSeed: { args: [Uint8Array]; result: RecoveryData };
@@ -44,10 +48,13 @@ export interface Operations {
   generateProof: { args: [string, bigint]; result: string };
   close: { args: []; result: void };
 }
+
 export type Method = keyof Operations;
+
 export type Request = {
   [M in Method]: { id: number; method: M; args: Operations[M]["args"] };
 }[Method];
+
 export type Response = { id: number } & (
   | { ok: true; result: unknown }
   | { ok: false; error: { name: string; message: string } }
