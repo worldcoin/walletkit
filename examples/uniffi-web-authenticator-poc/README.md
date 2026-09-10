@@ -25,13 +25,12 @@ local package. Run `bun run walletkit:published` to restore the registry package
 
 - `walletkit-web` hides generation and WASM loading behind
   `initializeWalletKit()`.
-- The package exposes WalletKit records, errors, objects, callbacks, and async
-  authenticator methods.
+- The package exposes an async facade and owns the worker running WalletKit.
 - The generated WASM loads in a browser and calls WalletKit synchronously to
   derive authenticator recovery material from secure browser randomness.
 - Next.js can bundle the package's generated JavaScript glue and emit its WASM
   asset from a Client Component.
-- The UI drives a real opt-in staging flow: account registration, ephemeral
+- The UI drives a real opt-in staging flow: account registration, persistent
   credential-store initialization, faux credential issuance, and uniqueness
   proof generation.
 - A staging RP proof request is signed in the browser with the intentionally
@@ -60,6 +59,17 @@ WASM player and browser-only APIs out of Next.js server rendering.
 The package's WASM is optimized with Binaryen's `wasm-opt -Oz --converge` and
 resolved from the package with `new URL(..., import.meta.url)`. Proof generation
 currently embeds the proving artifacts, making the optimized WASM roughly 40 MB.
-The example uses a WASM-only ephemeral store whose data and key envelope are
-discarded on refresh. No attempt has been made to productionize persistent
-storage, worker placement, artifact delivery, or bundle splitting.
+The example reuses a saved storage ID and database key to reopen its encrypted
+OPFS SQLite databases. Its seed and registration/issuance progress are also saved,
+so after reload you can initialize the existing authenticator and use its stored
+credentials without registering again. Initialization remains an explicit action
+because it contacts staging services.
+
+The versioned demo profile is stored in localStorage, including the seed and raw
+database key. This is staging-only key retention, not passkey protection: scripts
+on the origin can read both keys. Production hosts should supply a protected key
+source, such as passkey PRF. Corrupt profiles fail rather than silently replacing
+keys. Use one tab per origin; clearing site data removes both the profile and OPFS
+databases. A browser can also evict site data, so this is not a backup.
+
+Use the local package workflow above for this unreleased worker API.
