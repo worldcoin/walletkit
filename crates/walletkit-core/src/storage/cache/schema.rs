@@ -42,13 +42,16 @@ pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
             ensure_entries_schema(conn)?;
         }
         Some(_) => {
-            reset_schema(conn)?;
+            reset_cache_schema(conn)?;
         }
         None => {
             ensure_entries_schema(conn)?;
             insert_meta(conn)?;
         }
     }
+
+    ensure_activity_schema(conn)?;
+
     Ok(())
 }
 
@@ -67,13 +70,14 @@ fn ensure_entries_schema(conn: &Connection) -> DbResult<()> {
     )
 }
 
-fn reset_schema(conn: &Connection) -> DbResult<()> {
+fn reset_cache_schema(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(
         "DROP TABLE IF EXISTS used_nullifiers;
          DROP TABLE IF EXISTS merkle_proof_cache;
          DROP TABLE IF EXISTS session_keys;
          DROP TABLE IF EXISTS cache_entries;",
     )?;
+    // NOTE it currently skips the activity history (not part of the same migration schema)
     ensure_entries_schema(conn)?;
     conn.execute("DELETE FROM cache_meta;", &[])?;
     insert_meta(conn)?;
@@ -87,4 +91,22 @@ fn insert_meta(conn: &Connection) -> DbResult<()> {
         params![CACHE_SCHEMA_VERSION],
     )?;
     Ok(())
+}
+
+pub(super) fn ensure_activity_schema(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS activity_entries (
+            entry_id           INTEGER PRIMARY KEY,
+            client_id          TEXT NOT NULL,
+            protocol           INTEGER NOT NULL,
+            created_at         INTEGER NOT NULL,
+            outcome            TEXT NOT NULL,
+            app_identifier     TEXT NOT NULL,
+            issuer_schema_ids  BLOB NOT NULL,
+            failure_reason     TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_activity_entries_created_at
+        ON activity_entries (created_at DESC);",
+    )
 }
