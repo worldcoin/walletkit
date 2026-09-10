@@ -1,6 +1,4 @@
-# WalletKit web package Next.js example
-
-> PROTOTYPE: integration probe for the published `walletkit-web` package.
+# WalletKit web Next.js example
 
 This example verifies that a Next.js App Router application can consume
 WalletKit as an ordinary package without owning its Rust wrapper, UniFFI
@@ -9,8 +7,8 @@ generation, WASM optimization, or asset staging.
 Run it from the repository root:
 
 ```sh
-bun install --cwd examples/uniffi-web-authenticator-poc --frozen-lockfile
-bun run --cwd examples/uniffi-web-authenticator-poc dev
+bun install --cwd examples/web-nextjs --frozen-lockfile
+bun run --cwd examples/web-nextjs dev
 ```
 
 The example installs `walletkit-web` from the npm registry and does not build the
@@ -21,7 +19,7 @@ To test the package from this checkout instead, run `bun run walletkit:local`
 from the example directory inside the WASM Nix shell. This builds and links the
 local package. Run `bun run walletkit:published` to restore the registry package.
 
-## What the POC proves
+## What the example proves
 
 - `walletkit-web` hides generation and WASM loading behind
   `initializeWalletKit()`.

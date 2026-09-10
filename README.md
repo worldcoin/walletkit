@@ -62,9 +62,10 @@ nix develop .#wasm --command bun install --cwd web/walletkit --frozen-lockfile
 nix develop .#wasm --command bun run --cwd web/walletkit build
 ```
 
-The Next.js integration probe under `examples/uniffi-web-authenticator-poc`
-installs the published package and consumes its public `initializeWalletKit()`
-interface.
+The examples under `examples/web-nextjs` and `examples/web-vite` install the
+published package and consume its public `initializeWalletKit()` interface.
+The Next.js example covers a complete staging credential flow, while the
+framework-free Vite example is a minimal browser integration.
 
 ## Local development (Android/Kotlin)
 

@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "walletkit-uniffi-web-authenticator-poc",
+      "name": "walletkit-web-nextjs-example",
       "dependencies": {
         "lossless-json": "^4.3.1",
         "next": "16.3.2",

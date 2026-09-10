@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Minimal WalletKit browser integration built with Vite"
+    />
+    <title>WalletKit + Vite</title>
+  </head>
+  <body>
+    <main>
+      <section class="card">
+        <p class="eyebrow">Vanilla TypeScript + Vite</p>
+        <h1>WalletKit in browser WASM</h1>
+        <p class="intro">
+          This small example loads <code>walletkit-web</code>, starts its Web
+          Worker, and derives recovery data from secure browser randomness.
+        </p>
+
+        <dl>
+          <div>
+            <dt>Runtime</dt>
+            <dd id="runtime">Loading…</dd>
+          </div>
+          <div>
+            <dt>Authenticator address</dt>
+            <dd id="address">—</dd>
+          </div>
+          <div>
+            <dt>Authenticator public key</dt>
+            <dd id="public-key">—</dd>
+          </div>
+          <div>
+            <dt>Signer commitment</dt>
+            <dd id="commitment">—</dd>
+          </div>
+        </dl>
+
+        <button id="derive" type="button" disabled>
+          Derive authenticator data
+        </button>
+        <p id="status" class="status" role="status">
+          Initializing generated bindings…
+        </p>
+      </section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
