@@ -86,8 +86,6 @@ permitted same-origin location and the WASM file as `application/wasm`.
 Initialization acquires the OPFS sync-access-handle pool asynchronously. SQLite
 operations are synchronous afterward. The browser's direct-key path needs no envelope database. The encrypted credential
 vault/cache retain their existing format and use rollback journals on WASM.
-The optional `SqliteBlobStore` primitive still opens/closes a connection per
-operation for hosts that need to persist sealed blobs.
 
 Closing a SQLite connection does not release the pool's OPFS handles: the pool
 remains alive until worker termination. Currently one worker owns the WalletKit
@@ -110,7 +108,7 @@ nix develop .#wasm --command bun run --cwd web/walletkit test:browser
 
 Browser tests use installed Google Chrome and a production Vite fixture. They
 cover worker startup and lifecycle, URL overrides, exclusive pool ownership,
-Rust blob persistence, wrong-key rejection, and reopening both direct-key and envelope-backed storage.
+wrong-key rejection, and reopening storage with directly supplied keys.
 `bun run bundle` reuses generated bindings for TypeScript-only development.
 
 The example uses a new namespace and memory-only database keys on each load. Its encrypted
