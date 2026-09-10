@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.6](https://github.com/worldcoin/walletkit/compare/v0.21.5...v0.21.6) - 2026-09-10
+
+### Other
+
+- Backport credential activity history to v0.21.4 ([#533](https://github.com/worldcoin/walletkit/pull/533))
+
 ## [0.21.4](https://github.com/worldcoin/walletkit/compare/v0.21.3...v0.21.4) - 2026-08-31
 
 ### Added
