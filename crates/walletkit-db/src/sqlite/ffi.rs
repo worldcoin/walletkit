@@ -436,16 +436,13 @@ mod raw {
     type sqlite3_stmt = c_void;
 
     extern "C" {
-        #[link_name = "walletkit_sqlite3_open_v2"]
         pub fn sqlite3_open_v2(
             filename: *const c_char,
             pp_db: *mut *mut sqlite3,
             flags: c_int,
             z_vfs: *const c_char,
         ) -> c_int;
-        #[link_name = "walletkit_sqlite3_close_v2"]
         pub fn sqlite3_close_v2(db: *mut sqlite3) -> c_int;
-        #[link_name = "walletkit_sqlite3_exec"]
         pub fn sqlite3_exec(
             db: *mut sqlite3,
             sql: *const c_char,
@@ -453,9 +450,7 @@ mod raw {
             arg: *mut c_void,
             errmsg: *mut *mut c_char,
         ) -> c_int;
-        #[link_name = "walletkit_sqlite3_free"]
         pub fn sqlite3_free(ptr: *mut c_void);
-        #[link_name = "walletkit_sqlite3_prepare_v2"]
         pub fn sqlite3_prepare_v2(
             db: *mut sqlite3,
             z_sql: *const c_char,
@@ -463,19 +458,14 @@ mod raw {
             pp_stmt: *mut *mut sqlite3_stmt,
             pz_tail: *mut *const c_char,
         ) -> c_int;
-        #[link_name = "walletkit_sqlite3_step"]
         pub fn sqlite3_step(stmt: *mut sqlite3_stmt) -> c_int;
-        #[link_name = "walletkit_sqlite3_reset"]
         pub fn sqlite3_reset(stmt: *mut sqlite3_stmt) -> c_int;
-        #[link_name = "walletkit_sqlite3_finalize"]
         pub fn sqlite3_finalize(stmt: *mut sqlite3_stmt) -> c_int;
-        #[link_name = "walletkit_sqlite3_bind_int64"]
         pub fn sqlite3_bind_int64(
             stmt: *mut sqlite3_stmt,
             index: c_int,
             value: i64,
         ) -> c_int;
-        #[link_name = "walletkit_sqlite3_bind_blob"]
         pub fn sqlite3_bind_blob(
             stmt: *mut sqlite3_stmt,
             index: c_int,
@@ -483,7 +473,6 @@ mod raw {
             n: c_int,
             destructor: isize,
         ) -> c_int;
-        #[link_name = "walletkit_sqlite3_bind_text"]
         pub fn sqlite3_bind_text(
             stmt: *mut sqlite3_stmt,
             index: c_int,
@@ -491,31 +480,21 @@ mod raw {
             n: c_int,
             destructor: isize,
         ) -> c_int;
-        #[link_name = "walletkit_sqlite3_bind_null"]
         pub fn sqlite3_bind_null(stmt: *mut sqlite3_stmt, index: c_int) -> c_int;
-        #[link_name = "walletkit_sqlite3_column_int64"]
         pub fn sqlite3_column_int64(stmt: *mut sqlite3_stmt, i_col: c_int) -> i64;
-        #[link_name = "walletkit_sqlite3_column_blob"]
         pub fn sqlite3_column_blob(
             stmt: *mut sqlite3_stmt,
             i_col: c_int,
         ) -> *const c_void;
-        #[link_name = "walletkit_sqlite3_column_bytes"]
         pub fn sqlite3_column_bytes(stmt: *mut sqlite3_stmt, i_col: c_int) -> c_int;
-        #[link_name = "walletkit_sqlite3_column_text"]
         pub fn sqlite3_column_text(
             stmt: *mut sqlite3_stmt,
             i_col: c_int,
         ) -> *const c_char;
-        #[link_name = "walletkit_sqlite3_column_type"]
         pub fn sqlite3_column_type(stmt: *mut sqlite3_stmt, i_col: c_int) -> c_int;
-        #[link_name = "walletkit_sqlite3_column_count"]
         pub fn sqlite3_column_count(stmt: *mut sqlite3_stmt) -> c_int;
-        #[link_name = "walletkit_sqlite3_errmsg"]
         pub fn sqlite3_errmsg(db: *mut sqlite3) -> *const c_char;
-        #[link_name = "walletkit_sqlite3_changes"]
         pub fn sqlite3_changes(db: *mut sqlite3) -> c_int;
-        #[link_name = "walletkit_sqlite3_last_insert_rowid"]
         pub fn sqlite3_last_insert_rowid(db: *mut sqlite3) -> i64;
     }
 }

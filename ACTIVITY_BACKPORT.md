@@ -1,113 +1,38 @@
-# Activity-only WalletKit candidate
+# Credential activity backport to v0.21.4
 
-This backport candidate starts at `v0.21.4` (`f0e3795`) and backports only the
-credential-activity changes from #481 (`555497e`) and #506 (`f7c15ee`), plus the
-native SQLite isolation fix and its regression tests. Imports are adapted to
-the original `walletkit-db` crate; the SQLite crate split is not required.
+This candidate starts at `v0.21.4` (`f0e3795`) and backports the credential
+activity changes from #481 and #506. PR #533 targets
+`codex/backport-base-v0.21.4`, which is pinned to that release commit.
 
-The Flamingo changes, WASM OPFS persistence, session-seed cache changes,
-World Chain endpoint changes, and dependency updates in 0.22.0 are excluded.
-`Cargo.lock` remains the 0.21.4 lockfile. This is a development candidate,
-not the published 0.21.4 artifact: assign a distinct reviewed version before
-publishing any package or binary.
+The backport includes recording activity, paginated history, aggregate
+metadata, clearing history, change listeners, and their schema and tests.
+Imports use the original `walletkit-db` crate. The small
+`Transaction::query_row_optional` helper is required by the activity code.
 
-## Reproduced failure
-
-The unchanged 0.22.0 SQLite crate passes its ten unit tests in isolation. A
-small native host linked with Apple's `-lsqlite3` before the WalletKit static
-archive reproduces the reported error exactly:
-
-```text
-WalletKit SQLite version: 3.51.0; cipher: None
-vault db error: sqlite error 101: query returned no rows
-```
-
-WalletKit's unprefixed `sqlite3_*` references resolve to the host's SQLite.
-The cipher validation introduced by #493 discovers that `PRAGMA cipher`
-returns no row. This happens before vault schema/leaf-index initialization.
-The vault schema itself did not change between 0.21.4 and 0.22.0.
-
-Removing that check in the same disposable reproducer makes initialization
-succeed, but creates a plaintext SQLite database and accepts the wrong key.
-Therefore removing the check, or backporting activity alone, is insufficient.
-These experiments use synthetic keys and records only; no real wallet stores
-were inspected or modified.
-
-## Fix
-
-Compile the original, checksum-verified sqlite3mc amalgamation inside
-`crates/walletkit-db/src/native_sqlite.c`, with its SQLite API given internal
-C linkage. Expose only the 21 WalletKit-prefixed wrappers needed by Rust's
-native FFI. Both allocations and operations on every SQLite handle remain
-within the same engine, independent of the app's link order.
-
-The original SQLite version, compile settings, ChaCha20 cipher, key encoding,
-vault/envelope formats, and content IDs are preserved. A cipher check fails
-closed with a diagnostic if the required engine is unavailable. The activity
-table and behavior are those of the two backported upstream PRs.
+The SQLite engine, linkage, encryption open sequence, dependency lockfile,
+workspace manifest, and toolchain pins remain those of v0.21.4. Other 0.22.0
+changes are excluded. The native SQLite isolation fix is developed separately
+on `codex/sqlite-isolation-v0.21.4` and is not part of this PR.
 
 ## Validation
 
-Run with the Rust and Nargo versions pinned by the repository:
+Run the storage suite with the repository's pinned toolchain:
 
 ```sh
 cargo test -p walletkit-core --lib storage:: --locked
-cargo test -p walletkit-db --locked
-cargo clippy -p walletkit-db --all-targets --locked -- -D warnings
-bash crates/walletkit-db/examples/test_native_linking.sh
-bash crates/walletkit-db/examples/test_native_linking.sh release
+cargo fmt --all -- --check
+git diff --check
 ```
 
-The native host tests both library orders with dead stripping enabled. They
-check that the host retains its own SQLite engine, encrypted records survive
-reopening, wrong keys fail, failed opens preserve existing file bytes, and
-plaintext stores are not silently accepted. The archive is also checked for
-unprefixed SQLite API symbols. Run both profiles manually for now: GitHub
-rejected the workflow update because the push credential lacks `workflow`
-scope. CI wiring is not included in this backport PR. A maintainer with
-workflow-write access should add both commands above to the existing macOS
-Swift job, with a bounded step timeout, before release.
+Build and test results recorded for the earlier combined activity/SQLite
+candidate do not establish validation of this activity-only revision.
+The PR description records the checks performed after splitting the changes.
 
-Local results on 2026-09-10:
+## Release scope
 
-- All 64 core storage tests and all 20 database tests pass.
-- Clippy, Rust formatting, and ShellCheck pass.
-- Native debug and optimized release regressions pass in both link orders.
-- The optimized Swift package builds for iOS device, ARM simulator, and Intel
-  simulator with the normal `compress-zkeys,embed-zkeys,v3` features.
-- A native host using the actual ARM simulator release archive passes the
-  cipher-isolation check in both link orders on the iPhone 17 / iOS 26.5
-  simulator. This probe uses only in-memory databases.
-- `timeout 600 make build-id` succeeds in `world-app-ios` with the local
-  package temporarily selected. Required SwiftLint autofix/check passes with
-  zero violations. The published dependency pin and lockfile are restored
-  afterward.
+Activity history adds its own cache table; the credential vault and envelope
+formats remain unchanged. The activity schema and behavior follow #481/#506.
+Validate activity persistence and host-app integration before distribution.
 
-This validates compilation and native database linkage, not an end-to-end
-IDKit verification on a real account. No device account data was accessed.
-The successful app build also emitted nonfatal `DecodingError.dataCorrupted`
-diagnostics during SDUI compilation; those diagnostics were not investigated
-as part of this SDK change.
-
-Build the local Swift package with `cargo xtask swift local`. Its output is
-`swift/local_build/walletkit-swift`; the iOS dependency can point to that
-package for testing without publishing a release.
-
-## Review and rollout constraints
-
-GUARD-01, GUARD-02, and GUARD-06 require explicit human review of this
-cryptographic storage/dependency change before release. No cipher check is
-disabled, and no vault deletion, identity reset, or automatic storage migration
-is introduced.
-
-An existing database previously written through the wrong SQLite engine may
-be plaintext. This candidate preserves that file and rejects it; it does not
-invent a recovery or migration policy. Assess affected existing accounts and
-any required data-preserving migration before distribution. Validate real
-IDKit initialization/proof flows and credential activity in both app targets,
-including existing encrypted stores, before a narrow internal rollout.
-
-The SDK binary is shared: an activity/UI feature flag does not undo this
-dependency change. Keep the prior SDK artifact available for rollback, and
-confirm old/new versions retain data on upgrade and downgrade. Publishing,
-tagging, and shipping this candidate are outside this backport PR.
+The source retains v0.21.4 version numbers. Assign a distinct reviewed
+backport version before publishing any package or binary.

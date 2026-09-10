@@ -24,7 +24,6 @@ const EXPECTED_SHA256: &str =
 
 fn main() {
     println!("cargo:rerun-if-env-changed=DOCS_RS");
-    println!("cargo:rerun-if-changed=src/native_sqlite.c");
 
     if std::env::var_os("DOCS_RS").is_some() {
         return;
@@ -60,7 +59,7 @@ fn build_sqlite3mc() {
         );
     }
 
-    compile(&source_dir);
+    compile(&amalgamation_c, &source_dir);
 }
 
 fn download(dest: &Path) {
@@ -105,12 +104,12 @@ fn extract(zip_path: &Path, dest_dir: &Path) {
     }
 }
 
-fn compile(include_dir: &Path) {
+fn compile(amalgamation_c: &Path, include_dir: &Path) {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
     let mut build = cc::Build::new();
     build
-        .file("src/native_sqlite.c")
+        .file(amalgamation_c)
         .include(include_dir)
         // Core SQLite configuration
         .define("SQLITE_CORE", None)
