@@ -35,7 +35,8 @@ nix develop .#android --command cargo xtask kotlin local 0.3.1  # publish to Mav
 ## No Nix installed? Use Docker
 
 `nix/docker.sh` proxies Nix commands into a `nixos/nix` container — the only
-host dependency is Docker. Its arguments intentionally match the native Nix CLI:
+host dependency is Docker (plus Git when using a worktree). Its arguments
+intentionally match the native Nix CLI:
 
 ```bash
 nix/docker.sh develop .#android --command cargo xtask kotlin build
@@ -51,6 +52,9 @@ Silicon and is slower than `nix develop` directly.
 
 Notes:
 
+- Checkouts are mounted at their original host paths. For Git worktrees, the
+  wrapper also mounts the shared Git metadata directory so Nix can resolve the
+  flake's Git source. These paths must be accessible to Docker's file sharing.
 - The Nix store is kept in the `walletkit-nix-store-amd64` Docker volume, so
   toolchains download only on the first run. Remove it with `docker volume rm
   walletkit-nix-store-amd64` to reclaim the space. Cargo uses the corresponding

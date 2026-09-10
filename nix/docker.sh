@@ -13,7 +13,16 @@ set -euo pipefail
 # Swift builds are not provided by the flake because they depend on macOS and
 # the host Xcode configuration; use `cargo xtask swift` on macOS instead.
 
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+CDPATH= cd -P "$(dirname "${BASH_SOURCE[0]}")/.."
+
+# Keep host paths intact: a linked worktree's .git file points outside the
+# checkout, and Git's metadata points back to the checkout at its host path.
+VOLUME_FLAGS=(--volume "$PWD:$PWD")
+if [[ -f .git ]]; then
+  GIT_COMMON_DIR="$(git rev-parse --git-common-dir)"
+  GIT_COMMON_DIR="$(CDPATH= cd -P "$GIT_COMMON_DIR" && pwd)"
+  VOLUME_FLAGS+=(--volume "$GIT_COMMON_DIR:$GIT_COMMON_DIR")
+fi
 
 TTY_FLAGS=(-i)
 if [[ -t 0 && -t 1 ]]; then
@@ -29,10 +38,10 @@ fi
 # Note: the container runs as root, so on Linux hosts files created in target/
 # will be root-owned.
 exec docker run --rm "${TTY_FLAGS[@]}" --platform linux/amd64 \
-  --volume "$PWD:/src" \
+  "${VOLUME_FLAGS[@]}" \
   --volume walletkit-nix-store-amd64:/nix \
   --volume walletkit-cargo-home-amd64:/root/.cargo \
-  --workdir /src \
+  --workdir "$PWD" \
   nixos/nix:2.34.8 \
   nix --extra-experimental-features 'nix-command flakes' \
   --option filter-syscalls false \
