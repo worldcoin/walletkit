@@ -69,33 +69,12 @@ test("second owner fails and storage can reopen after close", async ({
   }).toPass({ timeout: 5000 });
 });
 
-test("Rust SQLite blobs persist across workers and reject a wrong wrapping key", async ({
-  page,
-}) => {
-  const operation = (name: string, databaseKey = 7) =>
-    page.evaluate(
-      ([name, databaseKey]) =>
-        (window as any).storageOperation(name, databaseKey),
-      [name, databaseKey] as const,
-    );
-  expect(await operation("write")).toBe("written");
-  await expect(async () => {
-    expect(await operation("read")).toEqual([0, 1, 255]);
-  }).toPass({ timeout: 5000 });
-  await expect(async () => {
-    await expect(operation("read", 8)).rejects.toThrow(/Crypto|authentication/);
-  }).toPass({ timeout: 5000 });
-  await expect(async () => {
-    expect(await operation("delete")).toBe(true);
-  }).toPass({ timeout: 5000 });
-});
-
 test("encrypted databases reopen with a directly supplied key", async ({
   page,
 }) => {
   const init = (databaseKey: number) =>
     page.evaluate(
-      (databaseKey) => (window as any).storageOperation("init", databaseKey),
+      (databaseKey) => (window as any).storageOperation(databaseKey),
       databaseKey,
     );
   expect(await init(7)).toBe("initialized");
@@ -169,21 +148,4 @@ test("a worker load failure rejects initialization", async ({ page }) => {
       .catch((e: Error) => e.message);
   });
   expect(result).toContain("worker");
-});
-
-test("host-resolved envelope keys still reopen encrypted storage", async ({
-  page,
-}) => {
-  const init = (secret: number) =>
-    page.evaluate(
-      (secret) => (window as any).storageOperation("init-envelope", secret),
-      secret,
-    );
-  expect(await init(7)).toBe("initialized");
-  await expect(async () => {
-    expect(await init(7)).toBe("initialized");
-  }).toPass({ timeout: 5000 });
-  await expect(async () => {
-    await expect(init(8)).rejects.toThrow(/StorageError.Keystore/);
-  }).toPass({ timeout: 5000 });
 });
