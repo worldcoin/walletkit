@@ -55,6 +55,20 @@ pub fn open_encrypted(
     read_only: bool,
 ) -> DbResult<Connection> {
     let conn = Connection::open(path, read_only)?;
+    // A host application can link another SQLite implementation. Fail before
+    // applying a key or writing a schema if the encrypted engine is unavailable.
+    conn.execute_batch("PRAGMA cipher = 'chacha20';")?;
+    let cipher =
+        conn.query_row_optional("PRAGMA cipher;", &[], |row| Ok(row.column_text(0)))?;
+    if !cipher
+        .as_deref()
+        .is_some_and(|name| name.eq_ignore_ascii_case("chacha20"))
+    {
+        return Err(Error::new(
+            -1,
+            "required sqlite3mc chacha20 cipher is unavailable; verify WalletKit SQLite symbol isolation",
+        ));
+    }
     apply_key(&conn, k_intermediate)?;
     configure_connection(&conn)?;
     Ok(conn)

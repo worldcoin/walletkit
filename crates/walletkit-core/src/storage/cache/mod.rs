@@ -312,7 +312,7 @@ mod tests {
 
         drop(db);
 
-        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key, false)
+        let conn = walletkit_db::cipher::open_encrypted(&path, &key, false)
             .expect("open raw connection");
         conn.execute(
             "UPDATE cache_meta SET schema_version = schema_version + 1",
@@ -348,7 +348,7 @@ mod tests {
         let key = SecretBox::init_with(|| [0x88u8; 32]);
         let lock_path = temp_lock_path();
 
-        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key, false)
+        let conn = walletkit_db::cipher::open_encrypted(&path, &key, false)
             .expect("create raw connection");
         conn.execute_batch(
             "CREATE TABLE cache_meta (
@@ -384,7 +384,7 @@ mod tests {
 
         drop(db);
 
-        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key, false)
+        let conn = walletkit_db::cipher::open_encrypted(&path, &key, false)
             .expect("reopen raw connection");
 
         let count = conn

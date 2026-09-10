@@ -132,6 +132,11 @@ jobs:
           # See https://github.com/worldfnd/provekit, a specific nargo toolchain version is required
           toolchain: v1.0.0-beta.11
 
+      - name: Test native SQLite link isolation
+        run: |
+          bash crates/walletkit-db/examples/test_native_linking.sh
+          bash crates/walletkit-db/examples/test_native_linking.sh release
+
       # Includes temporary downstream UniFFI callback vtable patch:
       # https://github.com/mozilla/uniffi-rs/pull/2821
       - name: Build the Swift project (with temporary UniFFI ASan workaround)

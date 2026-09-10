@@ -3,7 +3,7 @@ use crate::storage::types::{
     ActivityEntry, ActivityMetadata, ActivityOutcome, ActivityQuery, ProtocolVersion,
 };
 use crate::storage::ActivityFailureReason;
-use walletkit_sqlite::{params, Connection, Row, StepResult};
+use walletkit_db::{params, Connection, Row, StepResult};
 
 use super::util::{map_db_err, to_i64, to_u64};
 
