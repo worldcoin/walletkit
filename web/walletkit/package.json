@@ -1,6 +1,6 @@
 {
   "name": "walletkit-web",
-  "version": "0.21.3",
+  "version": "0.22.0",
   "description": "WalletKit enables users to hold credentials and prove their humanity with World ID .",
   "type": "module",
   "packageManager": "bun@1.3.11",
