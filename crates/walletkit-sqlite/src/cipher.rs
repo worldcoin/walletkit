@@ -104,13 +104,21 @@ fn configure_connection(
     Ok(())
 }
 
-/// Selects and verifies the on-disk cipher before the key activates it.
+/// Selects the on-disk cipher and verifies it whenever `SQLite` reports one.
 ///
 /// Pinning the cipher prevents a future compile-time default change from
 /// silently creating or interpreting databases with a different format.
+///
+/// Where sqlite3mc's pragmas are not registered, `PRAGMA cipher` is an
+/// unrecognized pragma and yields no row. That is accepted rather than
+/// failing the open, matching the behaviour of releases before 0.22.0.
 fn ensure_cipher(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(&format!("PRAGMA cipher = '{CIPHER_CHACHA20}';"))?;
-    let actual = conn.query_row("PRAGMA cipher;", &[], |row| Ok(row.column_text(0)))?;
+    let Some(actual) =
+        conn.query_row_optional("PRAGMA cipher;", &[], |row| Ok(row.column_text(0)))?
+    else {
+        return Ok(());
+    };
     if actual.eq_ignore_ascii_case(CIPHER_CHACHA20) {
         Ok(())
     } else {
@@ -400,6 +408,21 @@ mod tests {
     use crate::test_utils::init_sqlite;
     use crate::Connection;
     use secrecy::SecretBox;
+
+    #[test]
+    fn unrecognized_pragma_yields_no_row() {
+        init_sqlite();
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        let result = conn
+            .query_row_optional("PRAGMA walletkit_not_a_real_pragma;", &[], |row| {
+                Ok(row.column_text(0))
+            })
+            .expect("query");
+        assert!(
+            result.is_none(),
+            "an unrecognized pragma must yield no row; ensure_cipher relies on this"
+        );
+    }
 
     #[test]
     fn test_cipher_encrypted_round_trip() {
