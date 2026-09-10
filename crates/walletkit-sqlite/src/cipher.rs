@@ -110,7 +110,14 @@ fn configure_connection(
 /// silently creating or interpreting databases with a different format.
 fn ensure_cipher(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(&format!("PRAGMA cipher = '{CIPHER_CHACHA20}';"))?;
-    let actual = conn.query_row("PRAGMA cipher;", &[], |row| Ok(row.column_text(0)))?;
+    let actual = conn
+        .query_row_optional("PRAGMA cipher;", &[], |row| Ok(row.column_text(0)))?
+        .ok_or_else(|| {
+            Error::new(
+                -1,
+                "required sqlite3mc cipher is unavailable; verify WalletKit SQLite symbol isolation",
+            )
+        })?;
     if actual.eq_ignore_ascii_case(CIPHER_CHACHA20) {
         Ok(())
     } else {
@@ -436,6 +443,37 @@ mod tests {
             let result = open_encrypted(&path, &wrong_key, false);
             assert!(result.is_err(), "wrong key should fail");
         }
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_open_frozen_vault_from_before_symbol_isolation() {
+        init_sqlite();
+        // Frozen encrypted bytes produced by the original 0.22.0 sqlite3mc
+        // build (3.51.3 / 2.3.2), default page size, WAL, and the same raw-key
+        // PRAGMA as apply_key. Synthetic key [0xAB; 32], no user data.
+        let bytes = hex::decode(include_str!("fixtures/legacy-chacha20.hex").trim())
+            .expect("decode frozen encrypted database");
+        assert!(!bytes.starts_with(b"SQLite format 3\0"));
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("legacy.sqlite");
+        std::fs::write(&path, &bytes).expect("write frozen database");
+
+        let wrong_key = SecretBox::init_with(|| [0xCD; 32]);
+        assert!(open_encrypted(&path, &wrong_key, false).is_err());
+        assert_eq!(std::fs::read(&path).expect("read after failed open"), bytes);
+
+        let key = SecretBox::init_with(|| [0xAB; 32]);
+        let conn = open_encrypted(&path, &key, false).expect("open legacy database");
+        let (leaf_index, payload) = conn
+            .query_row(
+                "SELECT leaf_index, payload FROM legacy_record",
+                &[],
+                |row| Ok((row.column_i64(0), row.column_blob(1))),
+            )
+            .expect("read legacy record");
+        assert_eq!(leaf_index, 42);
+        assert_eq!(payload, [0, 1, 2, 3, 254, 255]);
     }
 
     #[test]
