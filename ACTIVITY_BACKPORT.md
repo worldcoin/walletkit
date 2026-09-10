@@ -65,11 +65,23 @@ plaintext stores are not silently accepted. The archive is also checked for
 unprefixed SQLite API symbols. Both profiles are wired into the existing
 macOS Swift CI job.
 
-Local results: all 64 core storage tests and all 20 database tests pass. Clippy,
-Rust formatting, and ShellCheck pass. The native debug and optimized release
-regressions pass in both link orders. Swift-package and full iOS application
-validation are tracked separately; native test success is not a claim of a
-working device verification flow.
+Local results on 2026-09-10:
+
+- All 64 core storage tests and all 20 database tests pass.
+- Clippy, Rust formatting, and ShellCheck pass.
+- Native debug and optimized release regressions pass in both link orders.
+- The optimized Swift package builds for iOS device, ARM simulator, and Intel
+  simulator with the normal `compress-zkeys,embed-zkeys,v3` features.
+- A native host using the actual ARM simulator release archive passes the
+  cipher-isolation check in both link orders on the iPhone 17 / iOS 26.5
+  simulator. This probe uses only in-memory databases.
+- `timeout 600 make build-id` succeeds in `world-app-ios` with the local
+  package temporarily selected. Required SwiftLint autofix/check passes with
+  zero violations. The published dependency pin and lockfile are restored
+  afterward.
+
+This validates compilation and native database linkage, not an end-to-end
+IDKit verification on a real account. No device account data was accessed.
 
 Build the local Swift package with `cargo xtask swift local`. Its output is
 `swift/local_build/walletkit-swift`; the iOS dependency can point to that
