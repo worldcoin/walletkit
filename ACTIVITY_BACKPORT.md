@@ -1,13 +1,13 @@
 # Activity-only WalletKit candidate
 
-This local candidate starts at `v0.21.4` (`f0e3795`) and backports only the
+This backport candidate starts at `v0.21.4` (`f0e3795`) and backports only the
 credential-activity changes from #481 (`555497e`) and #506 (`f7c15ee`), plus the
 native SQLite isolation fix and its regression tests. Imports are adapted to
 the original `walletkit-db` crate; the SQLite crate split is not required.
 
 The Flamingo changes, WASM OPFS persistence, session-seed cache changes,
 World Chain endpoint changes, and dependency updates in 0.22.0 are excluded.
-`Cargo.lock` remains the 0.21.4 lockfile. This is a local development candidate,
+`Cargo.lock` remains the 0.21.4 lockfile. This is a development candidate,
 not the published 0.21.4 artifact: assign a distinct reviewed version before
 publishing any package or binary.
 
@@ -62,8 +62,11 @@ The native host tests both library orders with dead stripping enabled. They
 check that the host retains its own SQLite engine, encrypted records survive
 reopening, wrong keys fail, failed opens preserve existing file bytes, and
 plaintext stores are not silently accepted. The archive is also checked for
-unprefixed SQLite API symbols. Both profiles are wired into the existing
-macOS Swift CI job.
+unprefixed SQLite API symbols. Run both profiles manually for now: GitHub
+rejected the workflow update because the push credential lacks `workflow`
+scope. CI wiring is not included in this backport PR. A maintainer with
+workflow-write access should add both commands above to the existing macOS
+Swift job, with a bounded step timeout, before release.
 
 Local results on 2026-09-10:
 
@@ -107,4 +110,4 @@ including existing encrypted stores, before a narrow internal rollout.
 The SDK binary is shared: an activity/UI feature flag does not undo this
 dependency change. Keep the prior SDK artifact available for rollback, and
 confirm old/new versions retain data on upgrade and downgrade. Publishing,
-tagging, and shipping this candidate are outside the local experiment.
+tagging, and shipping this candidate are outside this backport PR.
