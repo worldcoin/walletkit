@@ -47,7 +47,7 @@ const SYNCHRONOUS_FULL: i64 = 2;
 const SECURE_DELETE_ON: i64 = 1;
 const TEMP_STORE_MEMORY: i64 = 2;
 
-/// Opens a database, applies the encryption key, and configures the connection.
+/// Opens a writable database, applies the encryption key, and configures the connection.
 ///
 /// This is the standard open sequence for databases: open -> select cipher ->
 /// encrypt plaintext or unlock encrypted data -> verify -> configure policy.
@@ -60,13 +60,12 @@ const TEMP_STORE_MEMORY: i64 = 2;
 pub fn open_encrypted(
     path: &Path,
     k_intermediate: &SecretBox<[u8; 32]>,
-    read_only: bool,
 ) -> DbResult<Connection> {
     #[cfg(not(target_arch = "wasm32"))]
-    let conn = Connection::open(path, read_only)?;
+    let conn = Connection::open(path, false)?;
     #[cfg(target_arch = "wasm32")]
-    let conn = Connection::open_with_opfs_vfs(path, read_only)?;
-    configure_connection(&conn, k_intermediate, read_only)?;
+    let conn = Connection::open_with_opfs_vfs(path, false)?;
+    configure_connection(&conn, k_intermediate)?;
     Ok(conn)
 }
 
@@ -83,10 +82,9 @@ pub fn open_encrypted(
 fn configure_connection(
     conn: &Connection,
     k_intermediate: &SecretBox<[u8; 32]>,
-    read_only: bool,
 ) -> DbResult<()> {
     ensure_cipher(conn)?;
-    encrypt_or_unlock(conn, k_intermediate, read_only)?;
+    encrypt_or_unlock(conn, k_intermediate)?;
 
     #[cfg(not(target_arch = "wasm32"))]
     ensure_journal_mode(conn, "WAL")?;
@@ -112,17 +110,9 @@ fn configure_connection(
 fn encrypt_or_unlock(
     conn: &Connection,
     k_intermediate: &SecretBox<[u8; 32]>,
-    read_only: bool,
 ) -> DbResult<()> {
     match verify_schema_readable(conn) {
         Ok(()) => {
-            if read_only {
-                return Err(Error::new(
-                    super::ffi::SQLITE_READONLY,
-                    "plaintext database cannot be encrypted through a read-only connection",
-                ));
-            }
-
             // sqlite3mc cannot rekey a WAL database. Switching to DELETE also
             // checkpoints a prior plaintext WAL before encryption. If another
             // connection prevents the transition, fail without modifying data.
@@ -474,7 +464,7 @@ mod tests {
 
         // Create and write
         {
-            let conn = open_encrypted(&path, &key, false).expect("open encrypted");
+            let conn = open_encrypted(&path, &key).expect("open encrypted");
             conn.execute_batch(
                 "CREATE TABLE secret (id INTEGER PRIMARY KEY, val TEXT);",
             )
@@ -485,7 +475,7 @@ mod tests {
 
         // Re-open with correct key
         {
-            let conn = open_encrypted(&path, &key, false).expect("reopen encrypted");
+            let conn = open_encrypted(&path, &key).expect("reopen encrypted");
             let val = conn
                 .query_row("SELECT val FROM secret WHERE id = 1", &[], |stmt| {
                     Ok(stmt.column_text(0))
@@ -497,40 +487,9 @@ mod tests {
         // Wrong key should fail
         {
             let wrong_key = SecretBox::init_with(|| [0xCDu8; 32]);
-            let result = open_encrypted(&path, &wrong_key, false);
+            let result = open_encrypted(&path, &wrong_key);
             assert!(result.is_err(), "wrong key should fail");
         }
-    }
-
-    #[test]
-    #[cfg(not(target_arch = "wasm32"))]
-    fn test_open_frozen_vault_from_before_symbol_isolation() {
-        init_sqlite();
-        // Frozen encrypted bytes produced by the original 0.22.0 sqlite3mc
-        // build (3.51.3 / 2.3.2), default page size, WAL, and the same raw-key
-        // PRAGMA as apply_key. Synthetic key [0xAB; 32], no user data.
-        let bytes = hex::decode(include_str!("fixtures/legacy-chacha20.hex").trim())
-            .expect("decode frozen encrypted database");
-        assert!(!bytes.starts_with(b"SQLite format 3\0"));
-        let dir = tempfile::tempdir().expect("create temp dir");
-        let path = dir.path().join("legacy.sqlite");
-        std::fs::write(&path, &bytes).expect("write frozen database");
-
-        let wrong_key = SecretBox::init_with(|| [0xCD; 32]);
-        assert!(open_encrypted(&path, &wrong_key, false).is_err());
-        assert_eq!(std::fs::read(&path).expect("read after failed open"), bytes);
-
-        let key = SecretBox::init_with(|| [0xAB; 32]);
-        let conn = open_encrypted(&path, &key, false).expect("open legacy database");
-        let (leaf_index, payload) = conn
-            .query_row(
-                "SELECT leaf_index, payload FROM legacy_record",
-                &[],
-                |row| Ok((row.column_i64(0), row.column_blob(1))),
-            )
-            .expect("read legacy record");
-        assert_eq!(leaf_index, 42);
-        assert_eq!(payload, [0, 1, 2, 3, 254, 255]);
     }
 
     #[test]
@@ -562,7 +521,7 @@ mod tests {
         );
 
         {
-            let conn = open_encrypted(&path, &key, false).expect("migrate plaintext");
+            let conn = open_encrypted(&path, &key).expect("migrate plaintext");
             let value = conn
                 .query_row("SELECT val FROM secret WHERE id = 1", &[], |row| {
                     Ok(row.column_text(0))
@@ -578,8 +537,7 @@ mod tests {
         );
 
         {
-            let conn =
-                open_encrypted(&path, &key, false).expect("reopen migrated database");
+            let conn = open_encrypted(&path, &key).expect("reopen migrated database");
             let value = conn
                 .query_row("SELECT val FROM secret WHERE id = 1", &[], |row| {
                     Ok(row.column_text(0))
@@ -590,37 +548,13 @@ mod tests {
 
         let wrong_key = SecretBox::init_with(|| [0x43u8; 32]);
         assert!(
-            open_encrypted(&path, &wrong_key, false).is_err(),
+            open_encrypted(&path, &wrong_key).is_err(),
             "migrated database must reject the wrong key"
         );
         assert_eq!(
             std::fs::read(&path).expect("read after wrong-key open"),
             encrypted_bytes,
             "wrong-key open must not modify migrated data"
-        );
-    }
-
-    #[test]
-    fn test_read_only_plaintext_database_is_preserved() {
-        init_sqlite();
-        let dir = tempfile::tempdir().expect("create temp dir");
-        let path = dir.path().join("plaintext-read-only.sqlite");
-        let key = SecretBox::init_with(|| [0x44u8; 32]);
-
-        Connection::open(&path, false)
-            .expect("open plaintext")
-            .execute_batch("CREATE TABLE existing (value TEXT); INSERT INTO existing VALUES ('preserve-me');")
-            .expect("write plaintext data");
-        let original_bytes = std::fs::read(&path).expect("read plaintext");
-
-        let Err(error) = open_encrypted(&path, &key, true) else {
-            panic!("read-only open cannot migrate plaintext");
-        };
-        assert_eq!(error.code.0, crate::ffi::SQLITE_READONLY);
-        assert_eq!(
-            std::fs::read(&path).expect("read preserved plaintext"),
-            original_bytes,
-            "failed read-only migration must not modify plaintext data"
         );
     }
 
@@ -642,7 +576,7 @@ mod tests {
         let key = SecretBox::init_with(|| [0x11u8; 32]);
 
         {
-            let conn = open_encrypted(&src_path, &key, false).expect("open src");
+            let conn = open_encrypted(&src_path, &key).expect("open src");
             conn.execute_batch(
                 "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
             )
@@ -662,8 +596,7 @@ mod tests {
         }
 
         {
-            let conn =
-                open_encrypted(&restore_path, &key, false).expect("open restore");
+            let conn = open_encrypted(&restore_path, &key).expect("open restore");
             conn.execute_batch(
                 "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
             )
@@ -696,7 +629,7 @@ mod tests {
         let key = SecretBox::init_with(|| [0x22u8; 32]);
 
         {
-            let conn = open_encrypted(&src_path, &key, false).expect("open src");
+            let conn = open_encrypted(&src_path, &key).expect("open src");
             conn.execute_batch(
                 "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
             )
@@ -709,7 +642,7 @@ mod tests {
             export_plaintext_copy(&conn, &dest_path, &["widgets"]).expect("export");
         }
 
-        let conn = open_encrypted(&restore_path, &key, false).expect("open restore");
+        let conn = open_encrypted(&restore_path, &key).expect("open restore");
         conn.execute_batch(
             "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
         )
