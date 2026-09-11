@@ -149,8 +149,10 @@ pub enum ActivityFailureReason {
 pub struct ActivityEntry {
     /// Unique identifier for this entry.
     pub id: Option<u64>,
-    /// The relying party identifier.
+    /// The relying party identifier the request was made against.
     pub rp_id: u64,
+    /// The application that made the request.
+    pub app_identifier: String,
     /// Host-app-defined identifier correlating this entry with its request.
     pub client_id: String,
     /// Protocol used for this request.

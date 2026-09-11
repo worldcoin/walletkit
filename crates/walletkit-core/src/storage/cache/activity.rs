@@ -32,15 +32,16 @@ pub(super) fn record(
         .query_row(
             "INSERT INTO activity_entries (
                 client_id, protocol, created_at,
-                outcome, app_identifier, issuer_schema_ids, failure_reason
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                outcome, rp_id, app_identifier, issuer_schema_ids, failure_reason
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
             RETURNING entry_id",
             params![
                 entry.client_id.as_str(),
                 entry.protocol.as_i64(),
                 now_i64,
                 entry.outcome.to_string(),
-                entry.rp_id.to_string(),
+                to_i64(entry.rp_id, "rp_id")?,
+                entry.app_identifier.as_str(),
                 encode_issuer_schema_ids(&entry.issuer_schema_ids),
                 entry
                     .failure_reason
@@ -66,7 +67,7 @@ pub(super) fn list(
     let offset_i64 = i64::from(offset);
 
     let sql = "SELECT entry_id, client_id, protocol, created_at, outcome,
-                       app_identifier, issuer_schema_ids, failure_reason
+                       rp_id, app_identifier, issuer_schema_ids, failure_reason
                 FROM activity_entries
                 ORDER BY created_at DESC, entry_id DESC
                 LIMIT ?1 OFFSET ?2";
@@ -141,16 +142,17 @@ fn map_entry(row: &Row<'_, '_>) -> StorageResult<ActivityEntry> {
     let outcome: ActivityOutcome = outcome_text.parse().map_err(|_| {
         StorageError::ActivityDb(format!("invalid outcome: {outcome_text}"))
     })?;
-    let rp_id = parse_rp_id(&row.column_text(5))?;
-    let issuer_schema_ids = decode_issuer_schema_ids(&row.column_blob(6))?;
+    let rp_id = to_u64(row.column_i64(5), "rp_id")?;
+    let app_identifier = row.column_text(6);
+    let issuer_schema_ids = decode_issuer_schema_ids(&row.column_blob(7))?;
 
-    let failure_reason = row.column_text(7);
+    let failure_reason = row.column_text(8);
 
     let failure_reason = if failure_reason.is_empty() {
         None
     } else {
         Some(
-            row.column_text(7)
+            row.column_text(8)
                 .parse::<ActivityFailureReason>()
                 .map_err(|_| {
                     StorageError::ActivityDb("invalid failure_reason in db".to_string())
@@ -165,14 +167,9 @@ fn map_entry(row: &Row<'_, '_>) -> StorageResult<ActivityEntry> {
         timestamp: Some(timestamp),
         outcome,
         rp_id,
+        app_identifier,
         issuer_schema_ids,
         failure_reason,
-    })
-}
-
-fn parse_rp_id(text: &str) -> StorageResult<u64> {
-    text.parse().map_err(|_| {
-        StorageError::ActivityDb(format!("invalid app_identifier: {text}"))
     })
 }
 
@@ -204,6 +201,7 @@ mod tests {
         ActivityEntry {
             id: None,
             rp_id: 1,
+            app_identifier: "app_test".to_string(),
             client_id: "request-uuid-1".to_string(),
             protocol: ProtocolVersion::V3,
             timestamp: None,

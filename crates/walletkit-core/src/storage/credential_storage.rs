@@ -1053,6 +1053,7 @@ mod tests {
         ActivityEntry {
             id: None,
             rp_id: 1,
+            app_identifier: "app_test".to_string(),
             client_id: "bridge-request-1".to_string(),
             protocol: ProtocolVersion::V3,
             timestamp: None,

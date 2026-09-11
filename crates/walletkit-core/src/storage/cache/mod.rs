@@ -195,6 +195,7 @@ mod tests {
         ActivityEntry {
             id: None,
             rp_id: 1,
+            app_identifier: "app_test".to_string(),
             client_id: "req-1".to_string(),
             protocol: ProtocolVersion::V3,
             timestamp: None,
@@ -397,6 +398,41 @@ mod tests {
             count, 1,
             "pre-existing cache_entries row must survive the activity migration"
         );
+
+        cleanup_cache_files(&path);
+        cleanup_lock_file(&lock_path);
+    }
+
+    #[test]
+    fn test_activity_schema_version_is_recorded() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x99u8; 32]);
+        let lock_path = temp_lock_path();
+
+        let db = CacheDb::new(&path, &key).expect("create cache");
+        db.record_activity(&sample_new_activity_entry(), 1000)
+            .expect("record activity");
+        drop(db);
+
+        let conn = walletkit_db::cipher::open_encrypted(&path, &key, false)
+            .expect("open raw connection");
+        let version = conn
+            .query_row("SELECT schema_version FROM activity_meta", &[], |stmt| {
+                Ok(stmt.column_i64(0))
+            })
+            .expect("read activity schema version");
+        drop(conn);
+
+        assert_eq!(version, 1, "activity history registers as schema version 1");
+
+        let db = CacheDb::new(&path, &key).expect("reopen cache");
+        let entries = db
+            .list_activities(ActivityQuery::default(), 10, 0)
+            .expect("list activities");
+
+        assert_eq!(entries.len(), 1, "reopening must not restamp or reset");
+        assert_eq!(entries[0].rp_id, 1);
+        assert_eq!(entries[0].app_identifier, "app_test");
 
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
