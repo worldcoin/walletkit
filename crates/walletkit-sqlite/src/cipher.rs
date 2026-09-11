@@ -15,17 +15,16 @@
 //! 2. **Configure cipher** -- `PRAGMA cipher = 'chacha20'` fixes the on-disk
 //!    cipher before the key activates it.
 //!
-//! 3. **Key** -- `PRAGMA key = "x'<hex>'"` passes the 32-byte
-//!    `K_intermediate` (hex-encoded) to `sqlite3mc` as a raw key. The `x'...'`
-//!    syntax tells `sqlite3mc` to use the bytes directly as the page-encryption
-//!    key, bypassing the passphrase KDF (PBKDF2-SHA256) that a plain-string
-//!    key would otherwise be run through. After this point, every page read
-//!    from disk is decrypted and every page written to disk is encrypted.
+//! 3. **Detect and encrypt or unlock** -- A read from `sqlite_master` succeeds
+//!    for a plaintext (or new) database. Such a database is moved out of WAL
+//!    mode and atomically encrypted with `PRAGMA rekey`. If the read returns
+//!    `SQLITE_NOTADB`, the database is treated as encrypted and unlocked with
+//!    `PRAGMA key`. Both PRAGMAs receive the 32-byte `K_intermediate` as a raw
+//!    hex key, bypassing the passphrase KDF.
 //!
-//! 4. **Verify** -- We immediately read from `sqlite_master` to confirm
-//!    the key is correct. If the key is wrong, `sqlite3mc` returns
-//!    `SQLITE_NOTADB` because the decrypted page header won't match the
-//!    expected `SQLite` magic bytes. We surface this as a clear error.
+//! 4. **Verify** -- We read from `sqlite_master` after rekeying or keying. A
+//!    wrong key returns `SQLITE_NOTADB` because the decrypted page header does
+//!    not match the expected `SQLite` magic bytes.
 //!
 //! 5. **Configure connection** -- The target-specific journal mode and every
 //!    connection-level invariant are set and verified.
@@ -50,8 +49,8 @@ const TEMP_STORE_MEMORY: i64 = 2;
 
 /// Opens a database, applies the encryption key, and configures the connection.
 ///
-/// This is the standard open sequence for encrypted databases: open -> select
-/// cipher -> key and verify -> configure connection policy.
+/// This is the standard open sequence for databases: open -> select cipher ->
+/// encrypt plaintext or unlock encrypted data -> verify -> configure policy.
 ///
 /// See the [module-level documentation](self) for the full encryption flow.
 ///
@@ -67,7 +66,7 @@ pub fn open_encrypted(
     let conn = Connection::open(path, read_only)?;
     #[cfg(target_arch = "wasm32")]
     let conn = Connection::open_with_opfs_vfs(path, read_only)?;
-    configure_connection(&conn, k_intermediate)?;
+    configure_connection(&conn, k_intermediate, read_only)?;
     Ok(conn)
 }
 
@@ -84,9 +83,10 @@ pub fn open_encrypted(
 fn configure_connection(
     conn: &Connection,
     k_intermediate: &SecretBox<[u8; 32]>,
+    read_only: bool,
 ) -> DbResult<()> {
     ensure_cipher(conn)?;
-    apply_key(conn, k_intermediate)?;
+    encrypt_or_unlock(conn, k_intermediate, read_only)?;
 
     #[cfg(not(target_arch = "wasm32"))]
     ensure_journal_mode(conn, "WAL")?;
@@ -102,6 +102,47 @@ fn configure_connection(
     ensure_secure_delete(conn)?;
     ensure_temp_store_memory(conn)?;
     Ok(())
+}
+
+/// Encrypts an accessible plaintext database or unlocks an encrypted one.
+///
+/// Only `SQLITE_NOTADB` identifies the expected encrypted-file case. Other
+/// probe failures (I/O errors, corruption, locking failures) are returned
+/// unchanged so they cannot accidentally initiate a migration.
+fn encrypt_or_unlock(
+    conn: &Connection,
+    k_intermediate: &SecretBox<[u8; 32]>,
+    read_only: bool,
+) -> DbResult<()> {
+    match verify_schema_readable(conn) {
+        Ok(()) => {
+            if read_only {
+                return Err(Error::new(
+                    super::ffi::SQLITE_READONLY,
+                    "plaintext database cannot be encrypted through a read-only connection",
+                ));
+            }
+
+            // sqlite3mc cannot rekey a WAL database. Switching to DELETE also
+            // checkpoints a prior plaintext WAL before encryption. If another
+            // connection prevents the transition, fail without modifying data.
+            ensure_journal_mode(conn, "DELETE")?;
+            apply_rekey(conn, k_intermediate)?;
+            verify_schema_readable(conn).map_err(|e| {
+                Error::new(
+                    e.code.0,
+                    format!(
+                        "plaintext database encryption verification failed: {}",
+                        e.message
+                    ),
+                )
+            })
+        }
+        Err(error) if error.code.0 & 0xff == super::ffi::SQLITE_NOTADB => {
+            apply_key(conn, k_intermediate)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 /// Selects and verifies the on-disk cipher before the key activates it.
@@ -134,9 +175,7 @@ fn ensure_cipher(conn: &Connection) -> DbResult<()> {
 /// verifies the key is correct. If it's wrong, `sqlite3mc` fails with
 /// `SQLITE_NOTADB` on the first page read.
 fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> DbResult<()> {
-    // Hex-encode the key and build the PRAGMA. Both are zeroized on drop.
-    let key_hex = Zeroizing::new(hex::encode(k_intermediate.expose_secret()));
-    let pragma = Zeroizing::new(format!("PRAGMA key = \"x'{}'\";", key_hex.as_str()));
+    let pragma = raw_key_pragma("key", k_intermediate);
 
     // execute_batch_zeroized ensures the internal CString copy of the PRAGMA
     // (which contains the hex key) is zeroized after the FFI call returns.
@@ -144,20 +183,45 @@ fn apply_key(conn: &Connection, k_intermediate: &SecretBox<[u8; 32]>) -> DbResul
 
     // Touch a page to verify the key works. On failure this produces a clear
     // error rather than a confusing "not a database" later during schema setup.
-    conn.execute_batch("SELECT count(*) FROM sqlite_master;")
-        .map_err(|e| {
-            Error::new(
-                e.code.0,
-                format!(
-                    "encryption key verification failed (is the key correct?): {}",
-                    e.message
-                ),
-            )
-        })?;
+    verify_schema_readable(conn).map_err(|e| {
+        Error::new(
+            e.code.0,
+            format!(
+                "encryption key verification failed (is the key correct?): {}",
+                e.message
+            ),
+        )
+    })?;
 
-    // k_intermediate, key_hex, and pragma are all Zeroizing — zeroed on drop
-    // regardless of which exit path we took.
+    // k_intermediate and pragma are zeroized on drop regardless of which exit
+    // path we took. raw_key_pragma zeroizes its temporary hex buffer too.
     Ok(())
+}
+
+/// Encrypts a readable plaintext database in place with the supplied raw key.
+fn apply_rekey(
+    conn: &Connection,
+    k_intermediate: &SecretBox<[u8; 32]>,
+) -> DbResult<()> {
+    let pragma = raw_key_pragma("rekey", k_intermediate);
+    conn.execute_batch_zeroized(&pragma).map_err(|e| {
+        Error::new(
+            e.code.0,
+            format!("failed to encrypt plaintext database: {}", e.message),
+        )
+    })
+}
+
+fn raw_key_pragma(
+    operation: &str,
+    k_intermediate: &SecretBox<[u8; 32]>,
+) -> Zeroizing<String> {
+    let key_hex = Zeroizing::new(hex::encode(k_intermediate.expose_secret()));
+    Zeroizing::new(format!("PRAGMA {operation} = \"x'{}'\";", key_hex.as_str()))
+}
+
+fn verify_schema_readable(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch("SELECT count(*) FROM sqlite_master;")
 }
 
 /// Ensures the target-specific journal policy actually took effect.
@@ -436,6 +500,128 @@ mod tests {
             let result = open_encrypted(&path, &wrong_key, false);
             assert!(result.is_err(), "wrong key should fail");
         }
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_open_frozen_vault_from_before_symbol_isolation() {
+        init_sqlite();
+        // Frozen encrypted bytes produced by the original 0.22.0 sqlite3mc
+        // build (3.51.3 / 2.3.2), default page size, WAL, and the same raw-key
+        // PRAGMA as apply_key. Synthetic key [0xAB; 32], no user data.
+        let bytes = hex::decode(include_str!("fixtures/legacy-chacha20.hex").trim())
+            .expect("decode frozen encrypted database");
+        assert!(!bytes.starts_with(b"SQLite format 3\0"));
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("legacy.sqlite");
+        std::fs::write(&path, &bytes).expect("write frozen database");
+
+        let wrong_key = SecretBox::init_with(|| [0xCD; 32]);
+        assert!(open_encrypted(&path, &wrong_key, false).is_err());
+        assert_eq!(std::fs::read(&path).expect("read after failed open"), bytes);
+
+        let key = SecretBox::init_with(|| [0xAB; 32]);
+        let conn = open_encrypted(&path, &key, false).expect("open legacy database");
+        let (leaf_index, payload) = conn
+            .query_row(
+                "SELECT leaf_index, payload FROM legacy_record",
+                &[],
+                |row| Ok((row.column_i64(0), row.column_blob(1))),
+            )
+            .expect("read legacy record");
+        assert_eq!(leaf_index, 42);
+        assert_eq!(payload, [0, 1, 2, 3, 254, 255]);
+    }
+
+    #[test]
+    fn test_plaintext_wal_database_is_rekeyed_in_place() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("plaintext.sqlite");
+        let key = SecretBox::init_with(|| [0x42u8; 32]);
+
+        {
+            let conn = Connection::open(&path, false).expect("open plaintext");
+            let mode = conn
+                .query_row("PRAGMA journal_mode = WAL", &[], |row| {
+                    Ok(row.column_text(0))
+                })
+                .expect("enable plaintext WAL");
+            assert_eq!(mode.to_ascii_lowercase(), "wal");
+            conn.execute_batch(
+                "CREATE TABLE secret (id INTEGER PRIMARY KEY, val TEXT);\
+                 INSERT INTO secret VALUES (1, 'preserve-me');",
+            )
+            .expect("write plaintext data");
+        }
+        assert!(
+            std::fs::read(&path)
+                .expect("read plaintext")
+                .starts_with(b"SQLite format 3\0"),
+            "fixture must start as plaintext SQLite"
+        );
+
+        {
+            let conn = open_encrypted(&path, &key, false).expect("migrate plaintext");
+            let value = conn
+                .query_row("SELECT val FROM secret WHERE id = 1", &[], |row| {
+                    Ok(row.column_text(0))
+                })
+                .expect("read migrated data");
+            assert_eq!(value, "preserve-me");
+        }
+
+        let encrypted_bytes = std::fs::read(&path).expect("read encrypted");
+        assert!(
+            !encrypted_bytes.starts_with(b"SQLite format 3\0"),
+            "rekey must remove the plaintext SQLite header"
+        );
+
+        {
+            let conn =
+                open_encrypted(&path, &key, false).expect("reopen migrated database");
+            let value = conn
+                .query_row("SELECT val FROM secret WHERE id = 1", &[], |row| {
+                    Ok(row.column_text(0))
+                })
+                .expect("read migrated data after reopen");
+            assert_eq!(value, "preserve-me");
+        }
+
+        let wrong_key = SecretBox::init_with(|| [0x43u8; 32]);
+        assert!(
+            open_encrypted(&path, &wrong_key, false).is_err(),
+            "migrated database must reject the wrong key"
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("read after wrong-key open"),
+            encrypted_bytes,
+            "wrong-key open must not modify migrated data"
+        );
+    }
+
+    #[test]
+    fn test_read_only_plaintext_database_is_preserved() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("plaintext-read-only.sqlite");
+        let key = SecretBox::init_with(|| [0x44u8; 32]);
+
+        Connection::open(&path, false)
+            .expect("open plaintext")
+            .execute_batch("CREATE TABLE existing (value TEXT); INSERT INTO existing VALUES ('preserve-me');")
+            .expect("write plaintext data");
+        let original_bytes = std::fs::read(&path).expect("read plaintext");
+
+        let Err(error) = open_encrypted(&path, &key, true) else {
+            panic!("read-only open cannot migrate plaintext");
+        };
+        assert_eq!(error.code.0, crate::ffi::SQLITE_READONLY);
+        assert_eq!(
+            std::fs::read(&path).expect("read preserved plaintext"),
+            original_bytes,
+            "failed read-only migration must not modify plaintext data"
+        );
     }
 
     #[test]

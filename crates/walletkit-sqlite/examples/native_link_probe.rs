@@ -51,19 +51,35 @@ fn probe() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Do not silently reset or reinterpret any pre-existing plaintext store.
+    // Recover databases previously written as plaintext when host SQLite won
+    // symbol resolution. The migration must retain the data and encrypt it
+    // with WalletKit's supplied key.
     let plaintext_path = dir.path().join("plaintext.sqlite");
-    Connection::open(&plaintext_path, false)?
-        .execute_batch("CREATE TABLE existing (value TEXT); INSERT INTO existing VALUES ('preserve-me');")?;
-    let plaintext_bytes = std::fs::read(&plaintext_path)?;
-    if cipher::open_encrypted(&plaintext_path, &key, false).is_ok() {
-        return Err("plaintext store was silently accepted as encrypted".into());
+    {
+        let conn = Connection::open(&plaintext_path, false)?;
+        conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+        conn.execute_batch("CREATE TABLE existing (value TEXT); INSERT INTO existing VALUES ('preserve-me');")?;
     }
-    if std::fs::read(&plaintext_path)? != plaintext_bytes {
-        return Err("failed plaintext-store open modified existing data".into());
+    if !std::fs::read(&plaintext_path)?.starts_with(b"SQLite format 3\0") {
+        return Err("plaintext migration fixture was not plaintext".into());
+    }
+    {
+        let conn = cipher::open_encrypted(&plaintext_path, &key, false)?;
+        let value = conn.query_row("SELECT value FROM existing", &[], |row| {
+            Ok(row.column_text(0))
+        })?;
+        if value != "preserve-me" {
+            return Err("plaintext migration did not preserve the record".into());
+        }
+    }
+    if std::fs::read(&plaintext_path)?.starts_with(b"SQLite format 3\0") {
+        return Err("plaintext migration did not encrypt the database".into());
+    }
+    if cipher::open_encrypted(&plaintext_path, &wrong_key, false).is_ok() {
+        return Err("migrated database accepted the wrong key".into());
     }
     println!(
-        "PASS: encrypted reopen, wrong-key rejection, and existing-data preservation"
+        "PASS: engine isolation, encrypted reopen, plaintext migration, and wrong-key rejection"
     );
     Ok(())
 }

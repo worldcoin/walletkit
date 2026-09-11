@@ -21,6 +21,8 @@ target_dir="${CARGO_TARGET_DIR:-target}"
 output_dir="$target_dir/native-link-probe/$profile_dir"
 archive="$target_dir/$profile_dir/examples/libnative_link_probe.a"
 host_source="crates/walletkit-sqlite/examples/native_link_host.c"
+xcrun_cmd=(env -u DEVELOPER_DIR -u SDKROOT /usr/bin/xcrun --sdk macosx)
+sdk_path="$("${xcrun_cmd[@]}" --show-sdk-path)"
 mkdir -p "$output_dir"
 
 # Static archive visibility matters: a hidden global symbol can still collide
@@ -31,11 +33,13 @@ if grep -E ' [A-Za-z] _sqlite3_' "$output_dir/symbols.txt"; then
   exit 1
 fi
 
-clang "$host_source" -Wl,-dead_strip -lsqlite3 "$archive" \
+"${xcrun_cmd[@]}" clang -isysroot "$sdk_path" "$host_source" \
+  -Wl,-dead_strip -lsqlite3 "$archive" \
   -framework Security -framework CoreFoundation -o "$output_dir/system-first"
 "$output_dir/system-first"
 
-clang "$host_source" -Wl,-dead_strip "$archive" -lsqlite3 \
+"${xcrun_cmd[@]}" clang -isysroot "$sdk_path" "$host_source" \
+  -Wl,-dead_strip "$archive" -lsqlite3 \
   -framework Security -framework CoreFoundation -o "$output_dir/walletkit-first"
 "$output_dir/walletkit-first"
 

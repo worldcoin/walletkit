@@ -31,6 +31,8 @@ use super::error::{DbResult, Error};
 // -- SQLite constants (plain `i32`, no C types leaked to callers) -------------
 
 pub const SQLITE_OK: i32 = 0;
+pub const SQLITE_READONLY: i32 = 8;
+pub const SQLITE_NOTADB: i32 = 26;
 pub const SQLITE_ROW: i32 = 100;
 pub const SQLITE_DONE: i32 = 101;
 

@@ -24,10 +24,13 @@ replacing the host engine with WalletKit's copy. New native FFI functions must
 add a matching prefixed wrapper; visibility attributes alone do not isolate
 symbols when linking static archives.
 
-The amalgamation, cipher configuration, key encoding, and on-disk formats are
-unchanged. Cipher validation remains enabled. A pre-existing plaintext store
-is rejected, not silently accepted, reset, or migrated; any recovery or
-migration policy requires separate data-preservation review.
+The amalgamation, cipher configuration, key encoding, and encrypted on-disk
+format are unchanged. Cipher validation remains enabled. If a host previously
+caused WalletKit to create a plaintext database, opening it read-write now
+preserves its records and encrypts it in place with the supplied WalletKit key.
+The migration checkpoints a plaintext WAL and switches to a rollback journal
+because sqlite3mc cannot rekey in WAL mode; normal WAL policy is restored after
+encryption. A read-only open fails without modifying plaintext data.
 
 On macOS, run the link-order regressions with synthetic disposable data:
 
@@ -39,6 +42,6 @@ bash crates/walletkit-sqlite/examples/test_native_linking.sh release
 Run both profiles when changing native linkage. The tests check the static
 archive for unprefixed SQLite API symbols, link with Apple's SQLite in both library orders
 with dead stripping enabled, and verify that both engines remain independent.
-They also cover encrypted reopening, wrong-key rejection, and preservation of
-existing database bytes after failed opens. These probes do not replace
-upgrade/downgrade and end-to-end account-flow testing before an SDK rollout.
+They also cover encrypted reopening, wrong-key rejection, plaintext-WAL
+migration, and record preservation. These probes do not replace upgrade/
+downgrade and end-to-end account-flow testing before an SDK rollout.
