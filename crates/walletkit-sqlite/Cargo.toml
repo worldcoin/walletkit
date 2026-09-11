@@ -14,10 +14,6 @@ readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 
-[features]
-# Opt-in native static-library regression host; keep it out of browser tests.
-native-link-probe = []
-
 [dependencies]
 hex = { workspace = true }
 secrecy = { workspace = true }
@@ -40,8 +36,3 @@ tempfile = { workspace = true }
 
 [lints]
 workspace = true
-
-[[example]]
-name = "native_link_probe"
-crate-type = ["staticlib"]
-required-features = ["native-link-probe"]

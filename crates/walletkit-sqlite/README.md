@@ -31,17 +31,3 @@ preserves its records and encrypts it in place with the supplied WalletKit key.
 The migration checkpoints a plaintext WAL and switches to a rollback journal
 because sqlite3mc cannot rekey in WAL mode; normal WAL policy is restored after
 encryption. A read-only open fails without modifying plaintext data.
-
-On macOS, run the link-order regressions with synthetic disposable data:
-
-```sh
-bash crates/walletkit-sqlite/examples/test_native_linking.sh
-bash crates/walletkit-sqlite/examples/test_native_linking.sh release
-```
-
-Run both profiles when changing native linkage. The tests check the static
-archive for unprefixed SQLite API symbols, link with Apple's SQLite in both library orders
-with dead stripping enabled, and verify that both engines remain independent.
-They also cover encrypted reopening, wrong-key rejection, plaintext-WAL
-migration, and record preservation. These probes do not replace upgrade/
-downgrade and end-to-end account-flow testing before an SDK rollout.
