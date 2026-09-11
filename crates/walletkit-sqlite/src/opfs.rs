@@ -154,7 +154,7 @@ mod tests {
 
         let key = SecretBox::init_with(|| [0xAB; 32]);
         {
-            let conn = open_encrypted(path, &key, false).expect("create database");
+            let conn = open_encrypted(path, &key).expect("create database");
             conn.execute_batch(
                 "CREATE TABLE secrets (value TEXT NOT NULL);\
                  INSERT INTO secrets (value) VALUES ('walletkit-opfs-secret-marker');",
@@ -176,7 +176,7 @@ mod tests {
         );
 
         {
-            let conn = open_encrypted(path, &key, false).expect("reopen database");
+            let conn = open_encrypted(path, &key).expect("reopen database");
             let value = conn
                 .query_row("SELECT value FROM secrets", &[], |row| {
                     Ok(row.column_text(0))
@@ -187,7 +187,7 @@ mod tests {
 
         let wrong_key = SecretBox::init_with(|| [0xCD; 32]);
         assert!(
-            open_encrypted(path, &wrong_key, false).is_err(),
+            open_encrypted(path, &wrong_key).is_err(),
             "should fail to open database with wrong key"
         );
 
