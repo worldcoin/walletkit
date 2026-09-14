@@ -44,7 +44,7 @@ impl Vault {
     where
         F: FnOnce(&Connection) -> DbResult<()>,
     {
-        let conn = cipher::open_encrypted(db_path, key, false)?;
+        let conn = cipher::open_encrypted(db_path, key)?;
         ensure_schema(&conn)?;
         if !cipher::integrity_check(&conn)? {
             return Err(StoreError::IntegrityCheckFailed(
