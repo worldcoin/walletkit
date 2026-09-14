@@ -23,6 +23,11 @@ name = "walletkit"
 walletkit-core = { workspace = true }
 uniffi = { workspace = true }
 
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+# ubrn's browser player supplies the UniFFI runtime imports for the generated module.
+uniffi-runtime-wasm = "0.31.0-5"
+walletkit-core = { workspace = true, features = ["uniffi-wasm"] }
+
 [features]
 default = ["issuers"]
 semaphore = ["walletkit-core/semaphore"]
