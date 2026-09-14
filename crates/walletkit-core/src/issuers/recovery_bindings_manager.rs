@@ -398,9 +398,7 @@ mod tests {
     fn create_test_credential_store() -> Arc<CredentialStore> {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        Arc::new(
-            CredentialStore::from_provider(&provider).expect("create credential store"),
-        )
+        Arc::new(provider.open_store().expect("create credential store"))
     }
 
     async fn create_mock_eth_server() -> (ServerGuard, mockito::Mock) {

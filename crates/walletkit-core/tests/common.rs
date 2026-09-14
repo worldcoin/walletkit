@@ -141,6 +141,21 @@ pub struct InMemoryStorageProvider {
 }
 
 impl InMemoryStorageProvider {
+    pub fn open_store(
+        &self,
+    ) -> Result<
+        walletkit_core::storage::CredentialStore,
+        walletkit_core::storage::StorageError,
+    > {
+        let keys = walletkit_core::storage::open_or_create_storage_keys(
+            self.paths(),
+            self.keystore(),
+            self.blob_store(),
+            1000,
+        )?;
+        walletkit_core::storage::CredentialStore::new(self.paths(), keys)
+    }
+
     pub fn new(root: impl AsRef<Path>) -> Self {
         Self {
             keystore: Arc::new(InMemoryKeystore::new()),
@@ -174,9 +189,7 @@ pub fn temp_root() -> PathBuf {
 pub fn create_test_credential_store() -> Arc<CredentialStore> {
     let root = temp_root();
     let provider = InMemoryStorageProvider::new(&root);
-    Arc::new(
-        CredentialStore::from_provider(&provider).expect("create credential store"),
-    )
+    Arc::new(provider.open_store().expect("create credential store"))
 }
 
 #[allow(dead_code, reason = "used in tests")]
