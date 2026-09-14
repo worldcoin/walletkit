@@ -34,7 +34,7 @@ dependencies {
 
 Replace `VERSION` with the desired WalletKit version.
 
-2. Sync Gradle.
+1. Sync Gradle.
 
 ## Local development (iOS/Swift)
 
@@ -62,7 +62,7 @@ nix develop .#wasm --command bun install --cwd web/walletkit --frozen-lockfile
 nix develop .#wasm --command bun run --cwd web/walletkit build
 ```
 
-The Next.js integration probe under `examples/uniffi-web-authenticator-poc`
+The Next.js integration probe under `examples/web`
 installs the published package and consumes its public `initializeWalletKit()`
 interface.
 
@@ -87,6 +87,7 @@ nix develop .#android --command cargo xtask kotlin local 0.3.1
 ```
 
 Example with custom Rust locations:
+
 ```bash
 RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo cargo xtask kotlin local 0.1.0-SNAPSHOT
 ```
@@ -94,6 +95,7 @@ RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo cargo xtask kotlin local 0.1.0-SNAPSHO
 > **Note**: The xtask runs from the workspace root, but does not provision or enter the build environment. Run it from the Nix `android` devshell or with the required dependencies configured manually.
 
 This will:
+
 1. Build the Rust library for all Android architectures (arm64-v8a, armeabi-v7a, x86_64, x86)
 2. Generate Kotlin UniFFI bindings
 3. Publish to `~/.m2/repository/org/world/walletkit/`
@@ -292,6 +294,7 @@ sequenceDiagram
 ```
 
 How it works in code:
+
 - **On-chain registration** uses `InitializingAuthenticator::register_with_defaults` / `register` and then `poll_status` until `Finalized`.
 - **Authenticator creation** happens with `Authenticator::init_with_defaults` / `init` after the account exists on-chain; then `init_storage(now)` binds local storage to the authenticator leaf.
 - **Blinding factor generation** is remote (`generate_credential_blinding_factor_remote`) and calls OPRF nodes.
