@@ -9,8 +9,8 @@ generation, WASM optimization, or asset staging.
 Run it from the repository root:
 
 ```sh
-bun install --cwd examples/uniffi-web-authenticator-poc --frozen-lockfile
-bun run --cwd examples/uniffi-web-authenticator-poc dev
+bun install --cwd examples/web --frozen-lockfile
+bun run --cwd examples/web dev
 ```
 
 The example installs `walletkit-web` from the npm registry and does not build the
