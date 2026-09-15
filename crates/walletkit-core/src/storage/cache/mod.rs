@@ -303,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn test_activity_survives_disposable_cache_reset() {
+    fn test_schema_version_mismatch_resets_database() {
         let path = temp_cache_path();
         let key = SecretBox::init_with(|| [0x77u8; 32]);
         let lock_path = temp_lock_path();
@@ -334,14 +334,17 @@ mod tests {
 
         assert!(
             seed.is_none(),
-            "disposable cache_entries should be wiped on a schema version mismatch"
+            "cache_entries should be wiped on a schema version mismatch"
         );
 
         let entries = db
             .list_activities(ActivityQuery::default(), 10, 0)
             .expect("list activities after version bump");
 
-        assert_eq!(entries.len(), 1);
+        assert!(
+            entries.is_empty(),
+            "activity history shares the cache schema, so it is reset too"
+        );
 
         cleanup_cache_files(&path);
         cleanup_lock_file(&lock_path);
@@ -408,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn test_activity_schema_version_is_recorded() {
+    fn test_schema_version_is_recorded() {
         let path = temp_cache_path();
         let key = SecretBox::init_with(|| [0x99u8; 32]);
         let lock_path = temp_lock_path();
@@ -421,13 +424,14 @@ mod tests {
         let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key, false)
             .expect("open raw connection");
         let version = conn
-            .query_row("SELECT schema_version FROM activity_meta", &[], |stmt| {
+            .query_row("SELECT schema_version FROM cache_meta", &[], |stmt| {
                 Ok(stmt.column_i64(0))
             })
-            .expect("read activity schema version");
+            .expect("read cache schema version");
         drop(conn);
 
-        assert_eq!(version, 1, "activity history registers as schema version 1");
+        // Three migrations: cache_entries, activity init, activity rebuild.
+        assert_eq!(version, 3, "the cache schema registers as version 3");
 
         let db = CacheDb::new(&path, &key).expect("reopen cache");
         let entries = db
