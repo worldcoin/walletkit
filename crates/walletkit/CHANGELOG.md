@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0](https://github.com/worldcoin/walletkit/compare/v0.22.0...v0.23.0) - 2026-09-15
+
+### Fixed
+
+- *(sqlite)* isolate native engine and encrypt plaintext stores ([#537](https://github.com/worldcoin/walletkit/pull/537))
+
+### Other
+
+- Adds support for an app_identifier ([#538](https://github.com/worldcoin/walletkit/pull/538))
+
 ## [0.22.0](https://github.com/worldcoin/walletkit/compare/v0.21.4...v0.22.0) - 2026-09-08
 
 ### Added
