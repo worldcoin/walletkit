@@ -1,19 +1,17 @@
 name: Small change gate
 
-# Required check for `main` and `v25`. A pull request needs no review while it
-# stays small; a larger one needs an approving review on the current head.
-# Paths owned in .github/CODEOWNERS always need a review, at any size - GitHub
-# enforces that from CODEOWNERS, not from this workflow.
+# Required check on `main`. A pull request needs no review while it stays small;
+# a larger one, or one from a fork, needs an approval on the current head from
+# someone with write access. Paths owned in .github/CODEOWNERS need a review at
+# any size, which GitHub enforces from CODEOWNERS rather than from this workflow.
 #
-# The job name (`small-change-gate`) is referenced as a required check by the
-# repository ruleset in worldcoin/infrastructure
-# (github/repos/team-app/repo-walletkit.tf). Renaming the job needs a matching
-# ruleset change, otherwise the required check never reports and blocks merges.
+# `main` requires this check by the name `small-change-gate`, so the job name and
+# the context in worldcoin/infrastructure must match.
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # Re-evaluate as soon as an approval arrives or is dismissed.
+  # Re-evaluate when an approval arrives or is dismissed.
   pull_request_review:
     types: [submitted, dismissed]
 
@@ -26,8 +24,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Changed lines (additions plus deletions). Keep in sync with the ruleset in
-  # worldcoin/infrastructure.
+  # Changed lines (additions plus deletions) allowed without a review.
   MAX_CHANGED_LINES: "500"
 
 jobs:
@@ -48,9 +45,7 @@ jobs:
 
             const { owner, repo } = context.repo;
 
-            // Lockfiles and generated output are not hand-written changes; counting
-            // them would gate dependency bumps on lockfile churn instead of on the
-            // change itself.
+            // Lockfiles and generated output are not hand-written changes.
             const uncounted = [
               /(^|\/)Cargo\.lock$/,
               /(^|\/)flake\.lock$/,
@@ -68,9 +63,8 @@ jobs:
             const counted = files.filter((file) => !uncounted.some((pattern) => pattern.test(file.filename)));
             const changedLines = counted.reduce((total, file) => total + file.additions + file.deletions, 0);
 
-            // A fork is untrusted input, so it needs a review whatever its size.
-            // `head.repo` is null when the source repository has been deleted, which
-            // is treated as untrusted as well.
+            // Fork PRs are untrusted whatever their size. `head.repo` is null when
+            // the source repository is gone, which is untrusted too.
             const fromFork = !pr.head.repo || pr.head.repo.fork === true;
 
             const reviews = await github.paginate(github.rest.pulls.listReviews, {
@@ -80,9 +74,9 @@ jobs:
               per_page: 100,
             });
 
-            // Only each reviewer's latest decisive review counts: an approval that a
-            // later change request superseded is not an approval. Reviews dismissed by
-            // a push arrive here as DISMISSED and are dropped.
+            // Only a reviewer's latest decisive review counts, so an approval that a
+            // later change request superseded is not an approval. Dismissed reviews
+            // arrive as DISMISSED and are dropped.
             const latestByReviewer = new Map();
             for (const review of reviews) {
               if (!['APPROVED', 'CHANGES_REQUESTED'].includes(review.state)) continue;
@@ -94,9 +88,8 @@ jobs:
               }
             }
 
-            // Anyone can submit a review on a public repository, and GitHub only
-            // counts approvals and blocking reviews from users with write access.
-            // Check the permission rather than trusting the review state.
+            // Anyone can submit a review on a public repository, but GitHub only
+            // counts writers, so check the permission rather than the review state.
             async function hasWriteAccess(login) {
               try {
                 const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: login });

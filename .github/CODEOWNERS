@@ -1,14 +1,8 @@
-# WalletKit review policy.
+# Review is required for the paths below, and for anything larger than 500 lines
+# via .github/workflows/small-change-gate.yml.
 #
-# `main` and `v25` require zero approving reviews with "require review from code
-# owners" enabled, so a review is only required for the paths below. Everything
-# else relies on `.github/workflows/small-change-gate.yml`, which requires a
-# review once a change exceeds 500 lines.
-#
-# Keep this list narrow, and give every pattern owners: a pattern without owners
-# is not a way to unset ownership, it just owns nothing.
-# A wildcard owner gates every pull request, and bypassing it then becomes the
-# normal way to merge.
+# Keep every pattern narrow and owned: a pattern without owners owns nothing, and
+# a wildcard owner gates every pull request.
 
 # CI, repo configuration and automation
 /.github/          @Dzejkop @kilianglas @paolodamico @Takaros999 @Guardiola31337 @danielle-tfh @philsippl @murph
