@@ -20,6 +20,10 @@ on:
   # Re-evaluate when a review arrives or is dismissed.
   pull_request_review:
     types: [submitted, dismissed]
+  # The reviewer skips some pushes, leaving no review to trigger on; its check run
+  # completing is the other signal.
+  check_run:
+    types: [completed]
 
 permissions:
   checks: read
@@ -27,7 +31,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: risk-gate-${{ github.event.pull_request.number }}
+  group: risk-gate-${{ github.event.pull_request.number || github.event.check_run.pull_requests[0].number }}
   cancel-in-progress: true
 
 env:
@@ -66,13 +70,18 @@ jobs:
               (process.env.REVIEW_CHECKS || '').split(',').map((value) => value.trim()).filter(Boolean)
             );
 
-            if (!context.payload.pull_request) {
-              core.setFailed('No pull request in the event payload; this check only runs on pull_request and pull_request_review.');
+            const { owner, repo } = context.repo;
+            const number =
+              context.payload.pull_request?.number ?? context.payload.check_run?.pull_requests?.[0]?.number;
+
+            if (!number) {
+              if (context.payload.check_run) {
+                core.notice('Check run is not attached to a pull request; nothing to assess.');
+                return;
+              }
+              core.setFailed('No pull request in the event payload.');
               return;
             }
-
-            const { owner, repo } = context.repo;
-            const number = context.payload.pull_request.number;
 
             // Re-read the pull request: on a review event the payload's head can
             // lag a newer push, and this must judge the commit being merged.
