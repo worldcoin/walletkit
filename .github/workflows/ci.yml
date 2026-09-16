@@ -272,7 +272,7 @@ jobs:
           - stable
           - nightly
           - 1.98.1
-          - "1.91" # MSRV (workspace.package.rust-version)
+          - 1.94.1 # MSRV (workspace.package.rust-version)
 
     steps:
       - name: Checkout code
