@@ -94,13 +94,9 @@ jobs:
               }
             }
 
-            const changesRequestedBy = [...latestByReviewer.values()]
-              .filter((review) => review.state === 'CHANGES_REQUESTED')
-              .map((review) => review.user.login);
-
             // Anyone can submit a review on a public repository, and GitHub only
-            // counts approvals from users with write access. Check the permission
-            // rather than trusting the review state.
+            // counts approvals and blocking reviews from users with write access.
+            // Check the permission rather than trusting the review state.
             async function hasWriteAccess(login) {
               try {
                 const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: login });
@@ -108,6 +104,13 @@ jobs:
               } catch (error) {
                 // Bots and non-collaborators have no permission level.
                 return false;
+              }
+            }
+
+            const changesRequestedBy = [];
+            for (const review of latestByReviewer.values()) {
+              if (review.state === 'CHANGES_REQUESTED' && (await hasWriteAccess(review.user.login))) {
+                changesRequestedBy.push(review.user.login);
               }
             }
 
