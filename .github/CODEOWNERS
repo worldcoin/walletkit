@@ -1,2 +1,31 @@
-* @Dzejkop @kilianglas @paolodamico @Takaros999 @Guardiola31337 @danielle-tfh @philsippl @murph
-CODEOWNERS @philsippl @murph @paolodamico @Dzejkop @kilianglas
+# WalletKit review policy.
+#
+# `main` and `v25` require zero approving reviews with "require review from code
+# owners" enabled, so a review is only required for the paths listed below.
+# Everything else is intentionally left unowned: those pull requests can be merged
+# without a review while `.github/workflows/small-change-gate.yml` passes, which
+# asks for a review as soon as the change is larger than 500 lines.
+#
+# Keep this list narrow. A wildcard owner gates every pull request, and bypassing
+# it then becomes the normal way to merge.
+
+# CI, repo configuration and automation
+/.github/                        @Dzejkop @kilianglas @paolodamico @Takaros999 @Guardiola31337 @danielle-tfh @philsippl @murph
+
+# Dependency graph and supply-chain policy
+/Cargo.toml
+/Cargo.lock
+/deny.toml
+
+# Toolchain, binding generation and release automation
+/rust-toolchain.toml
+/rustfmt.toml
+/uniffi.toml
+/release-plz.toml
+
+# Build environment and build/release tooling
+/.cargo/
+/flake.nix
+/flake.lock
+/nix/
+/xtask/

@@ -1,0 +1,114 @@
+name: Small change gate
+
+# Required check for `main` and `v25`. A pull request needs no review while it
+# stays small; a larger one needs an approving review on the current head.
+# Paths owned in .github/CODEOWNERS always need a review, at any size - GitHub
+# enforces that from CODEOWNERS, not from this workflow.
+#
+# The job name (`small-change-gate`) is referenced as a required check by the
+# repository ruleset in worldcoin/infrastructure
+# (github/repos/team-app/repo-walletkit.tf). Renaming the job needs a matching
+# ruleset change, otherwise the required check never reports and blocks merges.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Re-evaluate as soon as an approval arrives or is dismissed.
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: small-change-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Changed lines (additions plus deletions). Keep in sync with the ruleset in
+  # worldcoin/infrastructure.
+  MAX_CHANGED_LINES: "500"
+
+jobs:
+  small-change-gate:
+    name: small-change-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check change size
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const max = Number(process.env.MAX_CHANGED_LINES);
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed('No pull request in the event payload; this check only runs on pull_request and pull_request_review.');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+
+            // Lockfiles and generated output are not hand-written changes; counting
+            // them would gate dependency bumps on lockfile churn instead of on the
+            // change itself.
+            const uncounted = [
+              /(^|\/)Cargo\.lock$/,
+              /(^|\/)flake\.lock$/,
+              /\.lock$/,
+              /(^|\/)target\//,
+            ];
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const counted = files.filter((file) => !uncounted.some((pattern) => pattern.test(file.filename)));
+            const changedLines = counted.reduce((total, file) => total + file.additions + file.deletions, 0);
+
+            // A fork is untrusted input, so it needs a review whatever its size.
+            // `head.repo` is null when the source repository has been deleted, which
+            // is treated as untrusted as well.
+            const fromFork = !pr.head.repo || pr.head.repo.fork === true;
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+            const approvedOnHead = reviews.some(
+              (review) =>
+                review.state === 'APPROVED' &&
+                review.commit_id === pr.head.sha &&
+                review.user?.login !== pr.user.login
+            );
+
+            await core.summary
+              .addHeading('small-change-gate')
+              .addRaw(`Changed lines: ${changedLines} of ${max} allowed\n\n`)
+              .addRaw(`Files not counted (lockfiles/generated): ${files.length - counted.length}\n\n`)
+              .addRaw(`Head: ${pr.head.sha}\n\n`)
+              .addRaw(`From a fork: ${fromFork}\n\n`)
+              .addRaw(`Approved on head by someone other than the author: ${approvedOnHead}\n`)
+              .write();
+
+            if (changedLines <= max && !fromFork) {
+              core.notice(`${changedLines} changed lines is within the ${max} line limit; no review required.`);
+              return;
+            }
+
+            if (approvedOnHead) {
+              core.notice(`${changedLines} changed lines exceeds the ${max} line limit, and ${pr.head.sha.slice(0, 7)} is approved.`);
+              return;
+            }
+
+            core.setFailed(
+              [
+                `${changedLines} changed lines exceeds the limit of ${max}${fromFork ? ', and the pull request comes from a fork' : ''}.`,
+                `Ask a maintainer to approve the current head (${pr.head.sha.slice(0, 7)}), or split the change.`,
+                'The owning team can bypass this check when that is not possible.',
+              ].join('\n')
+            );
