@@ -22,6 +22,7 @@ on:
     types: [submitted, dismissed]
 
 permissions:
+  checks: read
   contents: read
   pull-requests: read
 
@@ -30,9 +31,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # A review of the current head from one of these makes a mechanical change low
-  # risk. Cursor Bugbot is enabled on the repository; Copilot is not.
+  # The automated review of the current head. A review object from one of these
+  # authors, or a completed check run with one of these names, counts; Cursor
+  # Bugbot is enabled on the repository and skips some pushes.
   REVIEW_BOTS: "cursor[bot],copilot-pull-request-reviewer[bot]"
+  REVIEW_CHECKS: "Cursor Bugbot"
 
 jobs:
   risk-gate:
@@ -57,7 +60,10 @@ jobs:
             ];
 
             const reviewerBots = new Set(
-              (process.env.REVIEW_BOTS || '').split(',').map((login) => login.trim()).filter(Boolean)
+              (process.env.REVIEW_BOTS || '').split(',').map((value) => value.trim()).filter(Boolean)
+            );
+            const reviewerChecks = new Set(
+              (process.env.REVIEW_CHECKS || '').split(',').map((value) => value.trim()).filter(Boolean)
             );
 
             if (!context.payload.pull_request) {
@@ -96,9 +102,18 @@ jobs:
               per_page: 100,
             });
 
-            const reviewedHead = reviews.some(
-              (review) => reviewerBots.has(review.user?.login) && review.commit_id === head
-            );
+            // The reviewer skips some pushes, so a finished check run on the head
+            // counts as well: otherwise the gate waits for a review that never
+            // arrives.
+            const checkRuns = await github.paginate(github.rest.checks.listForRef, {
+              owner,
+              repo,
+              ref: head,
+              per_page: 100,
+            });
+            const reviewedHead =
+              reviews.some((review) => reviewerBots.has(review.user?.login) && review.commit_id === head) ||
+              checkRuns.some((run) => reviewerChecks.has(run.name) && run.status === 'completed');
 
             // Owners are read from the base branch, so a pull request cannot widen
             // who is allowed to approve its own gate. Team handles are not resolved.
@@ -155,7 +170,9 @@ jobs:
               .write();
 
             if (!reviewedHead) {
-              core.setFailed(`Waiting for an automated review of ${head.slice(0, 7)} from ${[...reviewerBots].join(' or ')}.`);
+              core.setFailed(
+                `Waiting for an automated review of ${head.slice(0, 7)} from ${[...reviewerBots, ...reviewerChecks].join(' or ')}.`
+              );
               return;
             }
 
