@@ -421,7 +421,7 @@ mod tests {
             .expect("record activity");
         drop(db);
 
-        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key, false)
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key)
             .expect("open raw connection");
         let version = conn
             .query_row("SELECT schema_version FROM cache_meta", &[], |stmt| {
