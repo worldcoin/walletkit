@@ -79,12 +79,51 @@ jobs:
               pull_number: pr.number,
               per_page: 100,
             });
-            const approvedOnHead = reviews.some(
+
+            // Only each reviewer's latest decisive review counts: an approval that a
+            // later change request superseded is not an approval. Reviews dismissed by
+            // a push arrive here as DISMISSED and are dropped.
+            const latestByReviewer = new Map();
+            for (const review of reviews) {
+              if (!['APPROVED', 'CHANGES_REQUESTED'].includes(review.state)) continue;
+              const login = review.user?.login;
+              if (!login) continue;
+              const previous = latestByReviewer.get(login);
+              if (!previous || new Date(review.submitted_at) >= new Date(previous.submitted_at)) {
+                latestByReviewer.set(login, review);
+              }
+            }
+
+            const changesRequestedBy = [...latestByReviewer.values()]
+              .filter((review) => review.state === 'CHANGES_REQUESTED')
+              .map((review) => review.user.login);
+
+            // Anyone can submit a review on a public repository, and GitHub only
+            // counts approvals from users with write access. Check the permission
+            // rather than trusting the review state.
+            async function hasWriteAccess(login) {
+              try {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: login });
+                return ['admin', 'maintain', 'write'].includes(data.permission);
+              } catch (error) {
+                // Bots and non-collaborators have no permission level.
+                return false;
+              }
+            }
+
+            const approvalsOnHead = [...latestByReviewer.values()].filter(
               (review) =>
                 review.state === 'APPROVED' &&
                 review.commit_id === pr.head.sha &&
-                review.user?.login !== pr.user.login
+                review.user.login !== pr.user.login
             );
+            let approvedOnHead = false;
+            for (const review of approvalsOnHead) {
+              if (await hasWriteAccess(review.user.login)) {
+                approvedOnHead = true;
+                break;
+              }
+            }
 
             await core.summary
               .addHeading('small-change-gate')
@@ -92,7 +131,8 @@ jobs:
               .addRaw(`Files not counted (lockfiles/generated): ${files.length - counted.length}\n\n`)
               .addRaw(`Head: ${pr.head.sha}\n\n`)
               .addRaw(`From a fork: ${fromFork}\n\n`)
-              .addRaw(`Approved on head by someone other than the author: ${approvedOnHead}\n`)
+              .addRaw(`Approved on head by a writer other than the author: ${approvedOnHead}\n\n`)
+              .addRaw(`Outstanding change requests: ${changesRequestedBy.join(', ') || 'none'}\n`)
               .write();
 
             if (changedLines <= max && !fromFork) {
@@ -100,7 +140,7 @@ jobs:
               return;
             }
 
-            if (approvedOnHead) {
+            if (approvedOnHead && changesRequestedBy.length === 0) {
               core.notice(`${changedLines} changed lines exceeds the ${max} line limit, and ${pr.head.sha.slice(0, 7)} is approved.`);
               return;
             }
@@ -108,6 +148,9 @@ jobs:
             core.setFailed(
               [
                 `${changedLines} changed lines exceeds the limit of ${max}${fromFork ? ', and the pull request comes from a fork' : ''}.`,
+                changesRequestedBy.length > 0
+                  ? `Waiting on change requests from: ${changesRequestedBy.join(', ')}.`
+                  : 'No approval from a user with write access on the current head.',
                 `Ask a maintainer to approve the current head (${pr.head.sha.slice(0, 7)}), or split the change.`,
                 'The owning team can bypass this check when that is not possible.',
               ].join('\n')
