@@ -7,6 +7,10 @@ name: Risk gate
 # current head. A missing automated review counts as high risk, so this fails
 # closed.
 #
+# A pull request can edit this file, which is why the merge requirements are also
+# enforced in branch protection (worldcoin/infrastructure). See the pull request
+# description for the limits of this check.
+#
 # `main` requires this check by the name `risk-gate`, so the job name and the
 # context in worldcoin/infrastructure must match.
 
@@ -56,35 +60,69 @@ jobs:
               (process.env.REVIEW_BOTS || '').split(',').map((login) => login.trim()).filter(Boolean)
             );
 
-            const pr = context.payload.pull_request;
-            if (!pr) {
+            if (!context.payload.pull_request) {
               core.setFailed('No pull request in the event payload; this check only runs on pull_request and pull_request_review.');
               return;
             }
 
             const { owner, repo } = context.repo;
+            const number = context.payload.pull_request.number;
+
+            // Re-read the pull request: on a review event the payload's head can
+            // lag a newer push, and this must judge the commit being merged.
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
             const head = pr.head.sha;
 
             const files = await github.paginate(github.rest.pulls.listFiles, {
               owner,
               repo,
-              pull_number: pr.number,
+              pull_number: number,
               per_page: 100,
             });
 
-            const risky = files.filter((file) => !mechanical.some((pattern) => pattern.test(file.filename)));
+            // A rename is judged on both sides, so moving a source file into a
+            // mechanical path does not count as mechanical.
+            const risky = files.filter((file) =>
+              [file.filename, file.previous_filename]
+                .filter(Boolean)
+                .some((path) => !mechanical.some((pattern) => pattern.test(path)))
+            );
             const isMechanical = files.length > 0 && risky.length === 0;
 
             const reviews = await github.paginate(github.rest.pulls.listReviews, {
               owner,
               repo,
-              pull_number: pr.number,
+              pull_number: number,
               per_page: 100,
             });
 
             const reviewedHead = reviews.some(
               (review) => reviewerBots.has(review.user?.login) && review.commit_id === head
             );
+
+            // Owners are read from the base branch, so a pull request cannot widen
+            // who is allowed to approve its own gate. Team handles are not resolved.
+            const owners = new Set();
+            try {
+              const { data: codeowners } = await github.rest.repos.getContent({
+                owner,
+                repo,
+                path: '.github/CODEOWNERS',
+                ref: pr.base.sha,
+              });
+              for (const line of Buffer.from(codeowners.content, 'base64').toString('utf8').split('\n')) {
+                const body = line.split('#')[0].trim();
+                if (!body) continue;
+                for (const handle of body.split(/\s+/).slice(1)) {
+                  if (handle.startsWith('@') && !handle.includes('/')) owners.add(handle.slice(1).toLowerCase());
+                }
+              }
+            } catch (error) {
+              // No CODEOWNERS on the base branch: nothing can approve.
+              core.info(`Could not read .github/CODEOWNERS: ${error.message}`);
+            }
+
+            const isOwner = (login) => owners.has(String(login).toLowerCase()) && login !== pr.user.login;
 
             // Only a reviewer's latest decisive review counts, so an approval that a
             // later change request superseded is not an approval.
@@ -99,40 +137,20 @@ jobs:
               }
             }
 
-            // Anyone can submit a review on a public repository, but GitHub only
-            // counts writers, so check the permission rather than the review state.
-            async function hasWriteAccess(login) {
-              try {
-                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: login });
-                return ['admin', 'maintain', 'write'].includes(data.permission);
-              } catch (error) {
-                // Bots and non-collaborators have no permission level.
-                return false;
-              }
-            }
+            const changesRequestedBy = [...latestByReviewer.values()]
+              .filter((review) => review.state === 'CHANGES_REQUESTED' && isOwner(review.user.login))
+              .map((review) => review.user.login);
 
-            const changesRequestedBy = [];
-            for (const review of latestByReviewer.values()) {
-              if (review.state === 'CHANGES_REQUESTED' && (await hasWriteAccess(review.user.login))) {
-                changesRequestedBy.push(review.user.login);
-              }
-            }
-
-            let approved = false;
-            for (const review of latestByReviewer.values()) {
-              if (review.state !== 'APPROVED' || review.commit_id !== head || review.user.login === pr.user.login) continue;
-              if (await hasWriteAccess(review.user.login)) {
-                approved = true;
-                break;
-              }
-            }
+            const approved = [...latestByReviewer.values()].some(
+              (review) => review.state === 'APPROVED' && review.commit_id === head && isOwner(review.user.login)
+            );
 
             await core.summary
               .addHeading('risk-gate')
               .addRaw(`Head: ${head}\n\n`)
               .addRaw(`Mechanical change: ${isMechanical}\n\n`)
               .addRaw(`Automated review on head: ${reviewedHead}\n\n`)
-              .addRaw(`Approved by a writer other than the author: ${approved}\n\n`)
+              .addRaw(`Approved by a code owner other than the author: ${approved}\n\n`)
               .addRaw(`Outstanding change requests: ${changesRequestedBy.join(', ') || 'none'}\n`)
               .write();
 
@@ -147,7 +165,7 @@ jobs:
             }
 
             if (approved && changesRequestedBy.length === 0) {
-              core.notice(`Approved by a writer on ${head.slice(0, 7)}.`);
+              core.notice(`Approved by a code owner on ${head.slice(0, 7)}.`);
               return;
             }
 
@@ -156,6 +174,6 @@ jobs:
                 `${risky.length} file(s) outside the mechanical allow-list: ${risky.slice(0, 5).map((file) => file.filename).join(', ')}${risky.length > 5 ? ', ...' : ''}.`,
                 changesRequestedBy.length > 0
                   ? `Waiting on change requests from: ${changesRequestedBy.join(', ')}.`
-                  : `A code owner approval on ${head.slice(0, 7)} is required.`,
+                  : `An approval on ${head.slice(0, 7)} from a code owner other than the author is required.`,
               ].join('\n')
             );
