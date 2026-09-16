@@ -1,0 +1,161 @@
+name: Risk gate
+
+# Required check on `main`. Decides whether a pull request needs a human review.
+# Mechanical changes (docs, tests, examples) that the automated reviewer has
+# reviewed on the current head pass without one, which is how a code owner merges
+# without an extra review. Everything else fails until a code owner approves the
+# current head. A missing automated review counts as high risk, so this fails
+# closed.
+#
+# `main` requires this check by the name `risk-gate`, so the job name and the
+# context in worldcoin/infrastructure must match.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  # Re-evaluate when a review arrives or is dismissed.
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: risk-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # A review of the current head from one of these makes a mechanical change low
+  # risk. Cursor Bugbot is enabled on the repository; Copilot is not.
+  REVIEW_BOTS: "cursor[bot],copilot-pull-request-reviewer[bot]"
+
+jobs:
+  risk-gate:
+    name: risk-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assess risk
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            // Mechanical changes: a reviewer would approve these without reading
+            // the diff. Anything not listed here is high risk.
+            const mechanical = [
+              /\.md$/i,
+              /^docs\//i,
+              /^examples\//i,
+              /^audits\//i,
+              /^swift\/tests\//i,
+              /^kotlin\/walletkit-tests\//i,
+              /^crates\/[^/]+\/tests\//i,
+              /_test\.rs$/i,
+            ];
+
+            const reviewerBots = new Set(
+              (process.env.REVIEW_BOTS || '').split(',').map((login) => login.trim()).filter(Boolean)
+            );
+
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.setFailed('No pull request in the event payload; this check only runs on pull_request and pull_request_review.');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const head = pr.head.sha;
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const risky = files.filter((file) => !mechanical.some((pattern) => pattern.test(file.filename)));
+            const isMechanical = files.length > 0 && risky.length === 0;
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner,
+              repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const reviewedHead = reviews.some(
+              (review) => reviewerBots.has(review.user?.login) && review.commit_id === head
+            );
+
+            // Only a reviewer's latest decisive review counts, so an approval that a
+            // later change request superseded is not an approval.
+            const latestByReviewer = new Map();
+            for (const review of reviews) {
+              if (!['APPROVED', 'CHANGES_REQUESTED'].includes(review.state)) continue;
+              const login = review.user?.login;
+              if (!login) continue;
+              const previous = latestByReviewer.get(login);
+              if (!previous || new Date(review.submitted_at) >= new Date(previous.submitted_at)) {
+                latestByReviewer.set(login, review);
+              }
+            }
+
+            // Anyone can submit a review on a public repository, but GitHub only
+            // counts writers, so check the permission rather than the review state.
+            async function hasWriteAccess(login) {
+              try {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: login });
+                return ['admin', 'maintain', 'write'].includes(data.permission);
+              } catch (error) {
+                // Bots and non-collaborators have no permission level.
+                return false;
+              }
+            }
+
+            const changesRequestedBy = [];
+            for (const review of latestByReviewer.values()) {
+              if (review.state === 'CHANGES_REQUESTED' && (await hasWriteAccess(review.user.login))) {
+                changesRequestedBy.push(review.user.login);
+              }
+            }
+
+            let approved = false;
+            for (const review of latestByReviewer.values()) {
+              if (review.state !== 'APPROVED' || review.commit_id !== head || review.user.login === pr.user.login) continue;
+              if (await hasWriteAccess(review.user.login)) {
+                approved = true;
+                break;
+              }
+            }
+
+            await core.summary
+              .addHeading('risk-gate')
+              .addRaw(`Head: ${head}\n\n`)
+              .addRaw(`Mechanical change: ${isMechanical}\n\n`)
+              .addRaw(`Automated review on head: ${reviewedHead}\n\n`)
+              .addRaw(`Approved by a writer other than the author: ${approved}\n\n`)
+              .addRaw(`Outstanding change requests: ${changesRequestedBy.join(', ') || 'none'}\n`)
+              .write();
+
+            if (!reviewedHead) {
+              core.setFailed(`Waiting for an automated review of ${head.slice(0, 7)} from ${[...reviewerBots].join(' or ')}.`);
+              return;
+            }
+
+            if (isMechanical) {
+              core.notice(`Mechanical change, reviewed on ${head.slice(0, 7)}; no human review required.`);
+              return;
+            }
+
+            if (approved && changesRequestedBy.length === 0) {
+              core.notice(`Approved by a writer on ${head.slice(0, 7)}.`);
+              return;
+            }
+
+            core.setFailed(
+              [
+                `${risky.length} file(s) outside the mechanical allow-list: ${risky.slice(0, 5).map((file) => file.filename).join(', ')}${risky.length > 5 ? ', ...' : ''}.`,
+                changesRequestedBy.length > 0
+                  ? `Waiting on change requests from: ${changesRequestedBy.join(', ')}.`
+                  : `A code owner approval on ${head.slice(0, 7)} is required.`,
+              ].join('\n')
+            );
