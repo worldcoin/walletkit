@@ -16,7 +16,8 @@ name: Risk gate
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `edited` covers a pull request retargeted at `main`.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   # Re-evaluate when a review arrives or is dismissed.
   pull_request_review:
     types: [submitted, dismissed]
