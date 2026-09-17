@@ -45,7 +45,7 @@ pub enum FlamingoMatchRequest {
         rtms_challenge: Vec<u8>,
         /// Original PCP hashes.json bytes.
         hashes_json: Vec<u8>,
-        /// Minimum raw cosine similarity in [-1, 1].
+        /// Minimum normalized cosine similarity in [0, 1].
         match_threshold: f64,
     },
     /// Live/challenge matching without credential fields.
@@ -54,7 +54,7 @@ pub enum FlamingoMatchRequest {
         live: FlamingoLiveCapture,
         /// Exact encoded RTMS challenge bytes.
         rtms_challenge: Vec<u8>,
-        /// Minimum raw cosine similarity in [-1, 1].
+        /// Minimum normalized cosine similarity in [0, 1].
         match_threshold: f64,
     },
 }
@@ -87,21 +87,21 @@ pub enum FlamingoMatchingFrame {
     Unilluminated,
 }
 
-/// Already verified raw cosine scores. No second signature verification is needed.
+/// Already verified normalized cosine scores. No second signature verification is needed.
 #[derive(Debug, Clone, uniffi::Enum)]
 pub enum FlamingoScores {
     /// Three-way Orb/live/challenge scores.
     DeepFace {
-        /// Orb versus selfie raw cosine.
+        /// Orb versus selfie normalized cosine.
         similarity_orb_selfie: f64,
-        /// Orb versus challenge raw cosine.
+        /// Orb versus challenge normalized cosine.
         similarity_orb_challenge: f64,
-        /// Selfie versus challenge raw cosine.
+        /// Selfie versus challenge normalized cosine.
         similarity_selfie_challenge: f64,
     },
     /// Live/challenge score.
     GrayBadge {
-        /// Selfie versus challenge raw cosine.
+        /// Selfie versus challenge normalized cosine.
         similarity_selfie_challenge: f64,
     },
 }
@@ -135,7 +135,7 @@ pub enum FlamingoMatchRejection {
     InvalidHashesJson,
     /// Orb image did not match its PCP commitment.
     ThumbnailHashMismatch,
-    /// Threshold was not a finite raw cosine value.
+    /// Threshold was not a finite normalized cosine value.
     InvalidThreshold,
     /// An image was empty.
     EmptyImage,
@@ -844,7 +844,7 @@ mod tests {
         let request = FlamingoMatchRequest::GrayBadge {
             live: FlamingoLiveCapture::Vanilla { image },
             rtms_challenge: vec![2; 512],
-            match_threshold: -0.5,
+            match_threshold: 0.5,
         }
         .into_inputs();
         request.validate().unwrap();

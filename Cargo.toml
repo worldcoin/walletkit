@@ -41,9 +41,9 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-flamingo-verifier-client = { git = "https://github.com/worldcoin/flamingo", rev = "1d4307ad9253cec34b00d066df733e02e3c0ce99" }
-flamingo-verifier-protocol = { git = "https://github.com/worldcoin/flamingo", rev = "1d4307ad9253cec34b00d066df733e02e3c0ce99" }
-flamingo-verifier-sealed-types = { git = "https://github.com/worldcoin/flamingo", rev = "1d4307ad9253cec34b00d066df733e02e3c0ce99" }
+flamingo-verifier-client = { git = "https://github.com/worldcoin/flamingo", rev = "2bdd724450e5bdf236bb66703d6a698c502ca950" }
+flamingo-verifier-protocol = { git = "https://github.com/worldcoin/flamingo", rev = "2bdd724450e5bdf236bb66703d6a698c502ca950" }
+flamingo-verifier-sealed-types = { git = "https://github.com/worldcoin/flamingo", rev = "2bdd724450e5bdf236bb66703d6a698c502ca950" }
 eyre = "0.6"
 getrandom = "0.3"
 hex = "0.4"
