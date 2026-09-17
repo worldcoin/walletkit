@@ -202,6 +202,7 @@ pub enum WalletKitError {
 #[uniffi::export]
 impl WalletKitError {
     /// Returns the error message with potential secrets redacted.
+    #[must_use]
     pub fn sanitized_message(&self) -> String {
         crate::logger::sanitize_hex_secrets(self.to_string())
     }
