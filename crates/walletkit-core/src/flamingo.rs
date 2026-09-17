@@ -17,8 +17,8 @@ use flamingo_verifier_sealed_types::{
     DeepFaceInputs, FailureReason, GrayBadgeInputs, LiveCapture, MatchInputs,
 };
 use reqwest::{
+    header::{HeaderMap, HeaderName, HeaderValue, COOKIE},
     Url,
-    header::{COOKIE, HeaderMap, HeaderName, HeaderValue},
 };
 use thiserror::Error;
 use tokio::sync::OnceCell;
@@ -681,8 +681,8 @@ mod tests {
     use std::{
         collections::{HashMap, VecDeque},
         sync::{
-            Mutex,
             atomic::{AtomicUsize, Ordering},
+            Mutex,
         },
     };
 
@@ -695,9 +695,8 @@ mod tests {
     };
 
     use super::{
-        FlamingoError, FlamingoLiveCapture, FlamingoMatchOutcome,
+        perform_match, FlamingoError, FlamingoLiveCapture, FlamingoMatchOutcome,
         FlamingoMatchRejection, FlamingoMatchRequest, FlamingoMatcher, MatchClient,
-        perform_match,
     };
 
     struct FakeClient {
