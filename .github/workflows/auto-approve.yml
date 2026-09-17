@@ -106,11 +106,13 @@ jobs:
               return;
             }
 
-            // Only `main`, only non-drafts, and never its own pull requests: GitHub
-            // does not allow an author to approve their own.
+            // Only `main`, only branches of this repository, only non-drafts, and
+            // never its own pull requests: GitHub does not allow an author to
+            // approve their own.
+            const fromThisRepo = pr.head.repo?.full_name === `${owner}/${repo}`;
             core.setOutput(
               'approve',
-              String(pr.base.ref === 'main' && !pr.draft && pr.user.login !== process.env.BOT_LOGIN)
+              String(pr.base.ref === 'main' && fromThisRepo && !pr.draft && pr.user.login !== process.env.BOT_LOGIN)
             );
 
       - name: Approve
@@ -118,4 +120,5 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
           GH_REPO: ${{ github.repository }}
-        run: gh pr review --approve "${{ github.event.pull_request.number }}"
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr review --approve "$PR_NUMBER"
