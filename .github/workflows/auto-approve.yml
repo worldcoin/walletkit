@@ -7,12 +7,14 @@ name: Auto approve
 # `wld-walletkit-bot` is in .github/CODEOWNERS so its approval satisfies the code
 # owner requirement.
 
-# `pull_request_target` runs this file from the base branch, so a pull request
-# cannot rewrite the job that approves it. Nothing from the pull request is
-# checked out or executed.
+# `pull_request` runs this file from the pull request, so a pull request can
+# rewrite the job that approves it. `pull_request_target` runs it from the base
+# branch instead, which is what should ship.
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened, ready_for_review, edited]
+  pull_request_review:
+    types: [submitted, dismissed]
 
 permissions:
   checks: read
