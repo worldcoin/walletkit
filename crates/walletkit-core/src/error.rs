@@ -199,6 +199,14 @@ pub enum WalletKitError {
     InvalidActionSession,
 }
 
+#[uniffi::export]
+impl WalletKitError {
+    /// Returns the error message with potential secrets redacted.
+    pub fn sanitized_message(&self) -> String {
+        crate::logger::sanitize_hex_secrets(self.to_string())
+    }
+}
+
 impl From<reqwest::Error> for WalletKitError {
     fn from(error: reqwest::Error) -> Self {
         Self::Reqwest {
@@ -405,5 +413,19 @@ mod tests {
             }
             other => panic!("expected proof generation error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn sanitized_message_redacts_hex_secrets() {
+        let secret = "a".repeat(64);
+        let error = WalletKitError::Generic {
+            error: format!("keystore error: 0x{secret}"),
+        };
+
+        let message = error.sanitized_message();
+
+        assert!(!message.contains(&secret), "secret must not survive");
+        assert!(message.contains("unexpected_error"));
+        assert!(message.contains("0xaa..aa"));
     }
 }

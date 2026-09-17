@@ -349,7 +349,8 @@ const HEX_SECRET_MIN_LEN: usize = 21;
 /// An optional `0x` prefix is preserved in the output.
 ///
 /// Returns `input` unmodified (zero-allocation) when no redaction is needed.
-fn sanitize_hex_secrets(input: String) -> String {
+#[uniffi::export]
+pub fn sanitize_hex_secrets(input: String) -> String {
     if !has_long_hex_run(input.as_bytes()) {
         return input;
     }
