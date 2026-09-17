@@ -7,11 +7,12 @@ name: Auto approve
 # `wld-walletkit-bot` is in .github/CODEOWNERS so its approval satisfies the code
 # owner requirement.
 
+# `pull_request_target` runs this file from the base branch, so a pull request
+# cannot rewrite the job that approves it. Nothing from the pull request is
+# checked out or executed.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
-  pull_request_review:
-    types: [submitted, dismissed]
 
 permissions:
   checks: read
@@ -27,13 +28,13 @@ env:
   REVIEW_BOTS: "cursor[bot],copilot-pull-request-reviewer[bot]"
   REVIEW_CHECKS: "Cursor Bugbot"
   POLL_SECONDS: "30"
-  REVIEW_TIMEOUT_SECONDS: "600"
+  REVIEW_TIMEOUT_SECONDS: "1800"
 
 jobs:
   auto-approve:
     name: auto-approve
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     steps:
       - name: Wait for the automated review
         id: review
