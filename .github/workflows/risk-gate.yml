@@ -41,11 +41,16 @@ env:
   # Bugbot is enabled on the repository and skips some pushes.
   REVIEW_BOTS: "cursor[bot],copilot-pull-request-reviewer[bot]"
   REVIEW_CHECKS: "Cursor Bugbot"
+  # The reviewer takes minutes and drops no event when it finishes, so wait for it
+  # rather than fail and leave the check stale until something else re-runs it.
+  POLL_SECONDS: "30"
+  REVIEW_TIMEOUT_SECONDS: "600"
 
 jobs:
   risk-gate:
     name: risk-gate
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Assess risk
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
@@ -105,26 +110,6 @@ jobs:
             );
             const isMechanical = files.length > 0 && risky.length === 0;
 
-            const reviews = await github.paginate(github.rest.pulls.listReviews, {
-              owner,
-              repo,
-              pull_number: number,
-              per_page: 100,
-            });
-
-            // The reviewer skips some pushes, so a finished check run on the head
-            // counts as well: otherwise the gate waits for a review that never
-            // arrives.
-            const checkRuns = await github.paginate(github.rest.checks.listForRef, {
-              owner,
-              repo,
-              ref: head,
-              per_page: 100,
-            });
-            const reviewedHead =
-              reviews.some((review) => reviewerBots.has(review.user?.login) && review.commit_id === head) ||
-              checkRuns.some((run) => reviewerChecks.has(run.name) && run.status === 'completed');
-
             // Owners are read from the base branch, so a pull request cannot widen
             // who is allowed to approve its own gate. Team handles are not resolved.
             const owners = new Set();
@@ -149,26 +134,82 @@ jobs:
 
             const isOwner = (login) => owners.has(String(login).toLowerCase()) && login !== pr.user.login;
 
-            // Only a reviewer's latest decisive review counts, so an approval that a
-            // later change request superseded is not an approval.
-            const latestByReviewer = new Map();
-            for (const review of reviews) {
-              if (!['APPROVED', 'CHANGES_REQUESTED'].includes(review.state)) continue;
-              const login = review.user?.login;
-              if (!login) continue;
-              const previous = latestByReviewer.get(login);
-              if (!previous || new Date(review.submitted_at) >= new Date(previous.submitted_at)) {
-                latestByReviewer.set(login, review);
+            async function assessReviews() {
+              const reviews = await github.paginate(github.rest.pulls.listReviews, {
+                owner,
+                repo,
+                pull_number: number,
+                per_page: 100,
+              });
+
+              // The reviewer skips some pushes, so a finished check run on the head
+              // counts as well.
+              const checkRuns = await github.paginate(github.rest.checks.listForRef, {
+                owner,
+                repo,
+                ref: head,
+                per_page: 100,
+              });
+              const reviewedHead =
+                reviews.some((review) => reviewerBots.has(review.user?.login) && review.commit_id === head) ||
+                checkRuns.some((run) => reviewerChecks.has(run.name) && run.status === 'completed');
+
+              // Only a reviewer's latest decisive review counts, so an approval that
+              // a later change request superseded is not an approval.
+              const latestByReviewer = new Map();
+              for (const review of reviews) {
+                if (!['APPROVED', 'CHANGES_REQUESTED'].includes(review.state)) continue;
+                const login = review.user?.login;
+                if (!login) continue;
+                const previous = latestByReviewer.get(login);
+                if (!previous || new Date(review.submitted_at) >= new Date(previous.submitted_at)) {
+                  latestByReviewer.set(login, review);
+                }
               }
+
+              const changesRequestedBy = [...latestByReviewer.values()]
+                .filter((review) => review.state === 'CHANGES_REQUESTED' && isOwner(review.user.login))
+                .map((review) => review.user.login);
+
+              const approved = [...latestByReviewer.values()].some(
+                (review) => review.state === 'APPROVED' && review.commit_id === head && isOwner(review.user.login)
+              );
+
+              return { reviewedHead, changesRequestedBy, approved };
             }
 
-            const changesRequestedBy = [...latestByReviewer.values()]
-              .filter((review) => review.state === 'CHANGES_REQUESTED' && isOwner(review.user.login))
-              .map((review) => review.user.login);
+            let { reviewedHead, changesRequestedBy, approved } = await assessReviews();
 
-            const approved = [...latestByReviewer.values()].some(
-              (review) => review.state === 'APPROVED' && review.commit_id === head && isOwner(review.user.login)
-            );
+            const blocked = () => changesRequestedBy.length > 0 || (!isMechanical && !approved);
+
+            // Fail fast when a human has to act anyway; only wait for the reviewer
+            // when the pull request could pass without one.
+            if (blocked()) {
+              const lines = [];
+              if (changesRequestedBy.length > 0) {
+                lines.push(`Waiting on change requests from: ${changesRequestedBy.join(', ')}.`);
+              }
+              if (!isMechanical && !approved) {
+                lines.push(
+                  `${risky.length} file(s) outside the mechanical allow-list: ${risky.slice(0, 5).map((file) => file.filename).join(', ')}${risky.length > 5 ? ', ...' : ''}.`,
+                  `An approval on ${head.slice(0, 7)} from a code owner other than the author is required.`
+                );
+              }
+              core.setFailed(lines.join('\n'));
+              return;
+            }
+
+            const deadline = Date.now() + Number(process.env.REVIEW_TIMEOUT_SECONDS) * 1000;
+            const pollMs = Number(process.env.POLL_SECONDS) * 1000;
+            while (!reviewedHead && Date.now() + pollMs <= deadline) {
+              core.info(`Waiting for the automated review of ${head.slice(0, 7)}...`);
+              await new Promise((resolve) => setTimeout(resolve, pollMs));
+              ({ reviewedHead, changesRequestedBy, approved } = await assessReviews());
+              if (blocked()) {
+                core.setFailed(`The status of ${head.slice(0, 7)} changed while waiting for the automated review.`);
+                return;
+              }
+            }
 
             await core.summary
               .addHeading('risk-gate')
@@ -181,26 +222,13 @@ jobs:
 
             if (!reviewedHead) {
               core.setFailed(
-                `Waiting for an automated review of ${head.slice(0, 7)} from ${[...reviewerBots, ...reviewerChecks].join(' or ')}.`
+                `No automated review of ${head.slice(0, 7)} from ${[...reviewerBots, ...reviewerChecks].join(' or ')} after ${process.env.REVIEW_TIMEOUT_SECONDS}s.`
               );
               return;
             }
 
-            if (isMechanical) {
-              core.notice(`Mechanical change, reviewed on ${head.slice(0, 7)}; no human review required.`);
-              return;
-            }
-
-            if (approved && changesRequestedBy.length === 0) {
-              core.notice(`Approved by a code owner on ${head.slice(0, 7)}.`);
-              return;
-            }
-
-            core.setFailed(
-              [
-                `${risky.length} file(s) outside the mechanical allow-list: ${risky.slice(0, 5).map((file) => file.filename).join(', ')}${risky.length > 5 ? ', ...' : ''}.`,
-                changesRequestedBy.length > 0
-                  ? `Waiting on change requests from: ${changesRequestedBy.join(', ')}.`
-                  : `An approval on ${head.slice(0, 7)} from a code owner other than the author is required.`,
-              ].join('\n')
+            core.notice(
+              isMechanical
+                ? `Mechanical change, reviewed on ${head.slice(0, 7)}; no human review required.`
+                : `Approved by a code owner on ${head.slice(0, 7)}.`
             );
