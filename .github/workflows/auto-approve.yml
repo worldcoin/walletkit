@@ -1,7 +1,11 @@
-name: Risk gate
+name: Auto approve
 
-# Required on `main` as `risk-gate`. The automated reviewer is the gate: it must
-# review the current head, and its comments must be resolved before the merge.
+# Approves a pull request once the automated reviewer has reviewed the current
+# head, so the reviewer is the gate. Its comments must be resolved before the
+# merge, which branch protection requires separately.
+#
+# `wld-walletkit-bot` is in .github/CODEOWNERS so its approval satisfies the code
+# owner requirement.
 
 on:
   pull_request:
@@ -15,24 +19,24 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: risk-gate-${{ github.event.pull_request.number }}
+  group: auto-approve-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
-  # A review of the head from one of these authors, or a completed check run with
-  # one of these names, counts as reviewed.
+  BOT_LOGIN: "wld-walletkit-bot"
   REVIEW_BOTS: "cursor[bot],copilot-pull-request-reviewer[bot]"
   REVIEW_CHECKS: "Cursor Bugbot"
   POLL_SECONDS: "30"
   REVIEW_TIMEOUT_SECONDS: "600"
 
 jobs:
-  risk-gate:
-    name: risk-gate
+  auto-approve:
+    name: auto-approve
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Wait for the automated review
+        id: review
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
@@ -70,6 +74,7 @@ jobs:
               });
 
               return {
+                pr,
                 head,
                 reviewed:
                   reviews.some((review) => reviewerBots.has(review.user?.login) && review.commit_id === head) ||
@@ -77,18 +82,18 @@ jobs:
               };
             }
 
-            let { head, reviewed } = await reviewOfHead();
+            let { pr, head, reviewed } = await reviewOfHead();
 
             const deadline = Date.now() + Number(process.env.REVIEW_TIMEOUT_SECONDS) * 1000;
             const pollMs = Number(process.env.POLL_SECONDS) * 1000;
             while (!reviewed && Date.now() + pollMs <= deadline) {
               core.info(`Waiting for the automated review of ${head.slice(0, 7)}...`);
               await new Promise((resolve) => setTimeout(resolve, pollMs));
-              ({ head, reviewed } = await reviewOfHead());
+              ({ pr, head, reviewed } = await reviewOfHead());
             }
 
             await core.summary
-              .addHeading('risk-gate')
+              .addHeading('auto-approve')
               .addRaw(`Head: ${head}\n\n`)
               .addRaw(`Automated review on head: ${reviewed}\n`)
               .write();
@@ -100,4 +105,15 @@ jobs:
               return;
             }
 
-            core.notice(`Reviewed on ${head.slice(0, 7)}; resolve any review comments to merge.`);
+            // Only `main`, only non-drafts, and never its own pull requests: GitHub
+            // does not allow an author to approve their own.
+            core.setOutput(
+              'approve',
+              String(pr.base.ref === 'main' && !pr.draft && pr.user.login !== process.env.BOT_LOGIN)
+            );
+
+      - name: Approve
+        if: steps.review.outputs.approve == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
+        run: gh pr review --approve "${{ github.event.pull_request.number }}"
