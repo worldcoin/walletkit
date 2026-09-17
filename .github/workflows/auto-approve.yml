@@ -40,6 +40,8 @@ jobs:
       # No bot token in this step: the agent has shell access over untrusted
       # content, so the approval is submitted by the step below instead.
       - name: Review
+        # Forks get no secrets, so there is nothing to review with.
+        if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GH_TOKEN: ${{ github.token }}
