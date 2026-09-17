@@ -1,8 +1,9 @@
 name: Auto approve
 
-# Approves a pull request once the automated reviewer has reviewed the current
-# head, so the reviewer is the gate. Its comments must be resolved before the
-# merge, which branch protection requires separately.
+# Approves a pull request when the automated reviewer has reviewed the current
+# head and the risk agent rates the change low risk, so both are the gate. Review
+# comments must be resolved before the merge, which branch protection requires
+# separately.
 #
 # `wld-walletkit-bot` is in .github/CODEOWNERS so its approval satisfies the code
 # owner requirement.
@@ -31,6 +32,9 @@ env:
   REVIEW_CHECKS: "Cursor Bugbot"
   POLL_SECONDS: "30"
   REVIEW_TIMEOUT_SECONDS: "1800"
+  RISK_MODEL: "deepseek/deepseek-v4.1-flash"
+  # Longer diffs are not assessed at all, so they wait for a human.
+  RISK_MAX_DIFF_CHARS: "60000"
 
 jobs:
   auto-approve:
@@ -43,13 +47,6 @@ jobs:
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
-            const reviewerBots = new Set(
-              (process.env.REVIEW_BOTS || '').split(',').map((value) => value.trim()).filter(Boolean)
-            );
-            const reviewerChecks = new Set(
-              (process.env.REVIEW_CHECKS || '').split(',').map((value) => value.trim()).filter(Boolean)
-            );
-
             const { owner, repo } = context.repo;
             const number = context.payload.pull_request?.number;
             if (!number) {
@@ -57,70 +54,147 @@ jobs:
               return;
             }
 
-            // A review event's payload head can lag a newer push.
-            async function reviewOfHead() {
-              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
-              const head = pr.head.sha;
+            const reviewerBots = new Set((process.env.REVIEW_BOTS || '').split(',').map((v) => v.trim()).filter(Boolean));
+            const reviewerChecks = new Set((process.env.REVIEW_CHECKS || '').split(',').map((v) => v.trim()).filter(Boolean));
 
-              const reviews = await github.paginate(github.rest.pulls.listReviews, {
-                owner,
-                repo,
-                pull_number: number,
-                per_page: 100,
-              });
+            // A review event's payload head can lag a newer push.
+            async function head() {
+              const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+              const reviews = await github.paginate(github.rest.pulls.listReviews, { owner, repo, pull_number: number, per_page: 100 });
               // The reviewer skips some pushes, leaving no review to wait for.
-              const checkRuns = await github.paginate(github.rest.checks.listForRef, {
-                owner,
-                repo,
-                ref: head,
-                per_page: 100,
-              });
+              const checkRuns = await github.paginate(github.rest.checks.listForRef, { owner, repo, ref: pr.head.sha, per_page: 100 });
 
               return {
                 pr,
-                head,
+                reviews,
                 reviewed:
-                  reviews.some((review) => reviewerBots.has(review.user?.login) && review.commit_id === head) ||
+                  reviews.some((review) => reviewerBots.has(review.user?.login) && review.commit_id === pr.head.sha) ||
                   checkRuns.some((run) => reviewerChecks.has(run.name) && run.status === 'completed'),
               };
             }
 
-            let { pr, head, reviewed } = await reviewOfHead();
+            let { pr, reviews, reviewed } = await head();
 
             const deadline = Date.now() + Number(process.env.REVIEW_TIMEOUT_SECONDS) * 1000;
             const pollMs = Number(process.env.POLL_SECONDS) * 1000;
             while (!reviewed && Date.now() + pollMs <= deadline) {
-              core.info(`Waiting for the automated review of ${head.slice(0, 7)}...`);
+              core.info(`Waiting for the automated review of ${pr.head.sha.slice(0, 7)}...`);
               await new Promise((resolve) => setTimeout(resolve, pollMs));
-              ({ pr, head, reviewed } = await reviewOfHead());
+              ({ pr, reviews, reviewed } = await head());
             }
 
-            await core.summary
-              .addHeading('auto-approve')
-              .addRaw(`Head: ${head}\n\n`)
-              .addRaw(`Automated review on head: ${reviewed}\n`)
-              .write();
-
             if (!reviewed) {
-              core.setFailed(
-                `No automated review of ${head.slice(0, 7)} from ${[...reviewerBots, ...reviewerChecks].join(' or ')}.`
-              );
+              core.setFailed(`No automated review of ${pr.head.sha.slice(0, 7)} from ${[...reviewerBots, ...reviewerChecks].join(' or ')}.`);
               return;
             }
 
-            // Only `main`, only branches of this repository, only non-drafts, and
-            // never its own pull requests: GitHub does not allow an author to
-            // approve their own.
-            const fromThisRepo = pr.head.repo?.full_name === `${owner}/${repo}`;
-            core.setOutput(
-              'approve',
-              String(pr.base.ref === 'main' && fromThisRepo && !pr.draft && pr.user.login !== process.env.BOT_LOGIN)
+            // Already approved this head: approving again would retrigger this
+            // workflow on its own review event.
+            const alreadyApproved = reviews.some(
+              (review) =>
+                review.user?.login === process.env.BOT_LOGIN &&
+                review.state === 'APPROVED' &&
+                review.commit_id === pr.head.sha
             );
 
+            // Only `main`, only branches of this repository, only non-drafts, never
+            // its own pull requests: GitHub does not allow an author to approve
+            // their own.
+            const eligible =
+              pr.base.ref === 'main' &&
+              pr.head.repo?.full_name === `${owner}/${repo}` &&
+              !pr.draft &&
+              pr.user.login !== process.env.BOT_LOGIN &&
+              !alreadyApproved;
+
+            core.setOutput('eligible', String(eligible));
+            core.setOutput('already_approved', String(alreadyApproved));
+
+      - name: Assess risk
+        id: risk
+        if: steps.review.outputs.eligible == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request.number;
+
+            // Fails closed: anything unexpected leaves the verdict at high.
+            let verdict = 'high';
+            let reason = 'not assessed';
+
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
+
+            let diff = '';
+            for (const file of files) {
+              diff += `\n--- ${file.filename} (${file.status}, +${file.additions}/-${file.deletions})\n${file.patch ?? '(no textual diff)'}\n`;
+            }
+
+            const limit = Number(process.env.RISK_MAX_DIFF_CHARS);
+            if (!process.env.OPENROUTER_API_KEY) {
+              reason = 'OPENROUTER_API_KEY is not set';
+            } else if (diff.length > limit) {
+              reason = `diff of ${diff.length} characters exceeds the ${limit} character limit`;
+            } else {
+              const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: process.env.RISK_MODEL,
+                  max_tokens: 200,
+                  temperature: 0,
+                  response_format: { type: 'json_object' },
+                  messages: [
+                    {
+                      role: 'system',
+                      content: [
+                        'You judge whether a pull request to a Rust cryptography and wallet library is low risk.',
+                        'Answer with JSON only: {"risk":"low"|"high","reason":"<one sentence>"}.',
+                        'Answer "low" only when the change cannot alter behaviour or the artifacts built from it: documentation, comments, tests, examples, formatting, or a rename with no logic change.',
+                        'Anything else - code, dependencies, CI, release or binding configuration, schemas, cryptography - and any doubt at all, is "high".',
+                      ].join(' '),
+                    },
+                    {
+                      role: 'user',
+                      content: `Title: ${pr.title}\n\nBody:\n${pr.body ?? ''}\n\nDiff:\n${diff}`,
+                    },
+                  ],
+                }),
+              });
+
+              if (!response.ok) {
+                reason = `risk agent returned HTTP ${response.status}`;
+              } else {
+                const payload = await response.json();
+                try {
+                  const parsed = JSON.parse(payload.choices?.[0]?.message?.content ?? '');
+                  if (parsed.risk === 'low' || parsed.risk === 'high') {
+                    verdict = parsed.risk;
+                    reason = String(parsed.reason ?? '');
+                  } else {
+                    reason = 'risk agent returned an unexpected verdict';
+                  }
+                } catch (error) {
+                  reason = 'risk agent returned unparseable output';
+                }
+              }
+            }
+
+            core.setOutput('verdict', verdict);
+            core.setOutput('reason', reason);
+
       - name: Approve
-        if: steps.review.outputs.approve == 'true'
+        if: steps.review.outputs.eligible == 'true' && steps.risk.outputs.verdict == 'low'
         env:
           GH_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr review --approve "$PR_NUMBER"
+          RISK_REASON: ${{ steps.risk.outputs.reason }}
+        run: |
+          gh pr review --approve --body "Risk agent: $RISK_REASON" "$PR_NUMBER"
