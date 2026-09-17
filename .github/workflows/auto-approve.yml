@@ -5,10 +5,11 @@ name: Auto approve
 # only when that verdict is low risk and the guards hold. Review threads must still
 # be resolved before the merge, which branch protection requires.
 #
-# `pull_request` runs this file from the pull request itself.
+# `pull_request_target` runs this file from the base branch, so a pull request
+# cannot rewrite the job that approves it or reach the OpenRouter key.
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
