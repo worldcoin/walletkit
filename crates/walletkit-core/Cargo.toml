@@ -64,6 +64,7 @@ flamingo-verifier-protocol = { workspace = true }
 flamingo-verifier-sealed-types = { workspace = true }
 reqwest = { workspace = true, features = ["brotli", "rustls-tls"] }
 rustls = { workspace = true, features = ["ring"] }
+tempfile = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 sha2 = { workspace = true, features = ["force-soft"] }
