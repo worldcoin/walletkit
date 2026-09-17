@@ -49,6 +49,7 @@ pub enum FlamingoMatchRequest {
         match_threshold: f64,
     },
     /// Live/challenge matching without credential fields.
+    /// Currently rejected by Flamingo 0.4.0 as an unsupported operation.
     GrayBadge {
         /// Explicit live capture variant.
         live: FlamingoLiveCapture,
@@ -85,25 +86,6 @@ pub enum FlamingoMatchingFrame {
     Illuminated,
     /// Use the unilluminated frame.
     Unilluminated,
-}
-
-/// Already verified normalized cosine scores. No second signature verification is needed.
-#[derive(Debug, Clone, uniffi::Enum)]
-pub enum FlamingoScores {
-    /// Three-way Orb/live/challenge scores.
-    DeepFace {
-        /// Orb versus selfie normalized cosine.
-        similarity_orb_selfie: f64,
-        /// Orb versus challenge normalized cosine.
-        similarity_orb_challenge: f64,
-        /// Selfie versus challenge normalized cosine.
-        similarity_selfie_challenge: f64,
-    },
-    /// Live/challenge score.
-    GrayBadge {
-        /// Selfie versus challenge normalized cosine.
-        similarity_selfie_challenge: f64,
-    },
 }
 
 /// A match token whose signing-key attestation and signature were verified.
@@ -143,6 +125,8 @@ pub enum FlamingoMatchRejection {
     InputTooLarge,
     /// The backend does not implement this capture variant.
     UnsupportedCapture,
+    /// The backend does not implement this operation.
+    UnsupportedOperation,
     /// A comparison did not meet the threshold.
     MatchBelowThreshold {
         /// The comparison that failed.
@@ -361,24 +345,12 @@ impl From<FlamingoLiveCapture> for LiveCapture {
 
 #[uniffi::export]
 impl VerifiedMatchToken {
-    /// Read scores already verified by the Flamingo client.
+    /// Credential-versus-live normalized similarity authenticated by the token.
+    ///
+    /// The other two comparison scores and the requested threshold are not in the token.
     #[must_use]
-    pub const fn scores(&self) -> FlamingoScores {
-        match &self.claims {
-            MatchClaims::DeepFace { scores, .. } => FlamingoScores::DeepFace {
-                similarity_orb_selfie: scores.similarity_orb_selfie,
-                similarity_orb_challenge: scores.similarity_orb_challenge,
-                similarity_selfie_challenge: scores.similarity_selfie_challenge,
-            },
-            MatchClaims::GrayBadge { scores, .. } => FlamingoScores::GrayBadge {
-                similarity_selfie_challenge: scores.similarity_selfie_challenge,
-            },
-        }
-    }
-    /// Threshold authenticated by the token.
-    #[must_use]
-    pub const fn match_threshold(&self) -> f64 {
-        self.claims.context().match_threshold
+    pub const fn match_coefficient(&self) -> f32 {
+        self.claims.match_coefficient
     }
 }
 
@@ -406,6 +378,7 @@ impl From<FailureReason> for FlamingoMatchRejection {
             FailureReason::EmptyImage => Self::EmptyImage,
             FailureReason::InputTooLarge => Self::InputTooLarge,
             FailureReason::UnsupportedCapture => Self::UnsupportedCapture,
+            FailureReason::UnsupportedOperation => Self::UnsupportedOperation,
             FailureReason::Internal => Self::Internal,
             FailureReason::MatchBelowThreshold(comparison) => {
                 Self::MatchBelowThreshold {
@@ -838,6 +811,28 @@ mod tests {
             })
         ));
     }
+    #[tokio::test]
+    async fn gray_badge_preserves_unsupported_operation_rejection() {
+        let client = FakeClient::new([Ok(MatchResult::Failed(
+            FailureReason::UnsupportedOperation,
+        ))]);
+        let outcome = perform_match(
+            &client,
+            FlamingoMatchRequest::GrayBadge {
+                live: FlamingoLiveCapture::Vanilla { image: vec![1] },
+                rtms_challenge: vec![2],
+                match_threshold: 0.5,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            outcome,
+            FlamingoMatchOutcome::Rejected(
+                FlamingoMatchRejection::UnsupportedOperation
+            )
+        ));
+    }
     #[test]
     fn custom_measurements_preserve_required_and_additional_pcrs() {
         let mut pins = measurements();
@@ -1066,14 +1061,19 @@ mod tests {
 
     #[tokio::test]
     async fn returns_a_verified_token_after_the_client_verifies_success() {
-        let client = FakeClient::new([Ok(MatchResult::Success(Box::new(VerifiedMatch { statement: AttestedStatement {
-            token: MatchToken::from_bytes(b"signed-token".to_vec()),
-            signing_key_attestation: b"signing-key-attestation".to_vec(),
-        }, claims: flamingo_verifier_protocol::match_token::MatchClaims::GrayBadge {
-            context: flamingo_verifier_protocol::match_token::MatchContext {
-                live: flamingo_verifier_protocol::match_token::CaptureCommitment::Vanilla([0;32]), rtms_challenge: [0;32], match_threshold: 0.7,
-            }, scores: flamingo_verifier_protocol::match_token::GrayBadgeScores { similarity_selfie_challenge: 0.9 },
-        } })))]);
+        let client =
+            FakeClient::new([Ok(MatchResult::Success(Box::new(VerifiedMatch {
+                statement: AttestedStatement {
+                    token: MatchToken::from_bytes(b"signed-token".to_vec()),
+                    signing_key_attestation: b"signing-key-attestation".to_vec(),
+                },
+                claims: flamingo_verifier_protocol::match_token::MatchClaims {
+                    live_image_hash: [1; 32],
+                    credential_claim: [2; 32],
+                    challenger_image_hash: [3; 32],
+                    match_coefficient: 0.9,
+                },
+            })))]);
 
         let outcome = perform_match(&client, request())
             .await
@@ -1082,6 +1082,7 @@ mod tests {
         let FlamingoMatchOutcome::Matched(token) = outcome else {
             panic!("expected a matched outcome");
         };
+        assert_eq!(token.match_coefficient().to_bits(), 0.9f32.to_bits());
         assert_eq!(token.as_bytes(), b"signed-token");
         assert_eq!(token.signing_key_attestation(), b"signing-key-attestation");
         assert_eq!(client.assignments.load(Ordering::Relaxed), 1);

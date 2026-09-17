@@ -3286,16 +3286,18 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 
 [[package]]
 name = "flamingo-verifier-api-types"
-version = "0.3.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=218c45c812edb594738ad159d4363bbde307e713#218c45c812edb594738ad159d4363bbde307e713"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "753c3bb33c6957e7d83ad9f7bffb36f72e75fd65005fd54813ea085dd439b092"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "flamingo-verifier-client"
-version = "0.3.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=218c45c812edb594738ad159d4363bbde307e713#218c45c812edb594738ad159d4363bbde307e713"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eb4a5c25a10e733f19a507ced5270b7fcab66f6d7a2b47e6391bd4472ad17066"
 dependencies = [
  "base64 0.22.1",
  "flamingo-verifier-api-types",
@@ -3312,14 +3314,14 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-protocol"
-version = "0.3.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=218c45c812edb594738ad159d4363bbde307e713#218c45c812edb594738ad159d4363bbde307e713"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b39b0c2d481a09ce3047a0adda53bfda3372422510bdb4f2a4c11fb0738aa5b9"
 dependencies = [
  "ark-ff 0.5.0",
  "coset",
  "serde",
  "serde_bytes",
- "sha2 0.10.9",
  "taceo-ark-babyjubjub",
  "taceo-eddsa-babyjubjub",
  "taceo-poseidon2",
@@ -3327,8 +3329,9 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-sealed-types"
-version = "0.3.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=218c45c812edb594738ad159d4363bbde307e713#218c45c812edb594738ad159d4363bbde307e713"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f9a69d2013a4be260d5abb9c619b064fa7bd349e250d3127f22213f8b72d8fd"
 dependencies = [
  "ciborium",
  "flamingo-verifier-api-types",
@@ -8371,7 +8374,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
