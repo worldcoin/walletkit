@@ -10,12 +10,15 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use flamingo_verifier_client::{
     Config, Error as ClientError, FlamingoVerifierClient, PcrMeasurement,
-    VerifiedAssignment,
+    VerifiedAssignment, VerifiedMatchResult as MatchResult,
 };
-use flamingo_verifier_sealed_types::{FailureReason, MatchInputs, MatchResult};
+use flamingo_verifier_protocol::match_token::MatchClaims;
+use flamingo_verifier_sealed_types::{
+    DeepFaceInputs, FailureReason, GrayBadgeInputs, LiveCapture, MatchInputs,
+};
 use reqwest::{
-    header::{HeaderMap, HeaderName, HeaderValue, COOKIE},
     Url,
+    header::{COOKIE, HeaderMap, HeaderName, HeaderValue},
 };
 use thiserror::Error;
 use tokio::sync::OnceCell;
@@ -29,24 +32,78 @@ pub struct FlamingoMatcher {
     client: OnceCell<FlamingoVerifierClient>,
 }
 
-/// Inputs for one attested `Flamingo` 3-way match.
-///
-/// `credential_image` and `hashes_json` must come from the same enrolled Orb PCP. In particular,
-/// `hashes_json` must contain the exact archive bytes, not parsed and reserialized JSON.
-#[derive(Debug, uniffi::Record)]
-pub struct FlamingoMatchRequest {
-    /// Raw liveness image bytes captured for this request.
-    pub live_image: Vec<u8>,
-    /// Raw `thumbnail.png` bytes decrypted from the enrolled Orb PCP.
-    pub credential_image: Vec<u8>,
-    /// Exact raw `hashes.json` bytes extracted from the enrolled Orb PCP.
-    pub hashes_json: Vec<u8>,
-    /// Optional second liveness frame for the `LightGuard` flow.
-    pub light_guard_image: Option<Vec<u8>>,
-    /// Raw challenge image bytes downloaded from the relying party.
-    pub challenge_image: Vec<u8>,
-    /// Minimum similarity required by the RP. Must be finite and between zero and one.
-    pub match_threshold: f32,
+/// Explicit operation-specific inputs. Image buffers move into the client without cloning.
+#[derive(uniffi::Enum)]
+pub enum FlamingoMatchRequest {
+    /// Three-way matching with the exact original Orb PCP hashes.json.
+    DeepFace {
+        /// Exact encoded Orb thumbnail bytes.
+        orb_credential: Vec<u8>,
+        /// Explicit live capture variant.
+        live: FlamingoLiveCapture,
+        /// Exact encoded RTMS challenge bytes.
+        rtms_challenge: Vec<u8>,
+        /// Original PCP hashes.json bytes.
+        hashes_json: Vec<u8>,
+        /// Minimum raw cosine similarity in [-1, 1].
+        match_threshold: f64,
+    },
+    /// Live/challenge matching without credential fields.
+    GrayBadge {
+        /// Explicit live capture variant.
+        live: FlamingoLiveCapture,
+        /// Exact encoded RTMS challenge bytes.
+        rtms_challenge: Vec<u8>,
+        /// Minimum raw cosine similarity in [-1, 1].
+        match_threshold: f64,
+    },
+}
+
+/// A single image or an explicitly selected `LightGuard` pair.
+#[derive(uniffi::Enum)]
+pub enum FlamingoLiveCapture {
+    /// Vanilla selfie bytes.
+    Vanilla {
+        /// Encoded vanilla selfie bytes.
+        image: Vec<u8>,
+    },
+    /// Both `LightGuard` frames; rejected explicitly by backends without `LightGuard`.
+    LightGuard {
+        /// Illuminated frame bytes.
+        illuminated: Vec<u8>,
+        /// Unilluminated frame bytes.
+        unilluminated: Vec<u8>,
+        /// Frame used for matching.
+        matching_frame: FlamingoMatchingFrame,
+    },
+}
+
+/// Which `LightGuard` frame provides the matching embedding.
+#[derive(Debug, Clone, Copy, uniffi::Enum)]
+pub enum FlamingoMatchingFrame {
+    /// Use the illuminated frame.
+    Illuminated,
+    /// Use the unilluminated frame.
+    Unilluminated,
+}
+
+/// Already verified raw cosine scores. No second signature verification is needed.
+#[derive(Debug, Clone, uniffi::Enum)]
+pub enum FlamingoScores {
+    /// Three-way Orb/live/challenge scores.
+    DeepFace {
+        /// Orb versus selfie raw cosine.
+        similarity_orb_selfie: f64,
+        /// Orb versus challenge raw cosine.
+        similarity_orb_challenge: f64,
+        /// Selfie versus challenge raw cosine.
+        similarity_selfie_challenge: f64,
+    },
+    /// Live/challenge score.
+    GrayBadge {
+        /// Selfie versus challenge raw cosine.
+        similarity_selfie_challenge: f64,
+    },
 }
 
 /// A match token whose signing-key attestation and signature were verified.
@@ -56,6 +113,7 @@ pub struct FlamingoMatchRequest {
 #[derive(Debug, uniffi::Object)]
 pub struct VerifiedMatchToken {
     token: Vec<u8>,
+    claims: MatchClaims,
     signing_key_attestation: Vec<u8>,
 }
 
@@ -68,21 +126,79 @@ pub enum FlamingoMatchOutcome {
     Rejected(FlamingoMatchRejection),
 }
 
-/// A rejection reason reported in an encrypted match response.
-///
-/// The reason is unsigned; it is not proof that the attested enclave issued it.
+/// A rejection reported inside encryption; not a signed statement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FlamingoMatchRejection {
-    /// The sealed inputs were malformed.
+    /// Malformed encrypted request.
     MalformedInputs,
-    /// The PCP hashes file was invalid or did not contain the thumbnail commitment.
+    /// Invalid PCP hashes file.
     InvalidHashesJson,
-    /// The credential image did not match the PCP thumbnail commitment.
+    /// Orb image did not match its PCP commitment.
     ThumbnailHashMismatch,
-    /// At least one comparison scored below the requested threshold.
-    MatchBelowThreshold,
-    /// The enclave could not obtain a usable comparison score from the images.
-    ImageAnalysisFailed,
+    /// Threshold was not a finite raw cosine value.
+    InvalidThreshold,
+    /// An image was empty.
+    EmptyImage,
+    /// An image or total input exceeded the limit.
+    InputTooLarge,
+    /// The backend does not implement this capture variant.
+    UnsupportedCapture,
+    /// A comparison did not meet the threshold.
+    MatchBelowThreshold {
+        /// The comparison that failed.
+        comparison: FlamingoComparison,
+    },
+    /// A named image could not pass analysis.
+    ImageAnalysisFailed {
+        /// Image bytes or semantic image role.
+        image: FlamingoImageRole,
+        /// Approved validation reason.
+        reason: FlamingoAnalysisFailure,
+    },
+    /// A named comparison failed.
+    MatchingFailed {
+        /// The comparison that failed.
+        comparison: FlamingoComparison,
+    },
+    /// An infrastructure failure, not a biological rejection.
+    Internal,
+}
+/// Comparison names match the worker protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoComparison {
+    /// Orb credential versus live selfie.
+    OrbSelfie,
+    /// Orb credential versus RTMS challenge.
+    OrbChallenge,
+    /// Live selfie versus RTMS challenge.
+    SelfieChallenge,
+}
+/// Image roles match the worker protocol.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoImageRole {
+    /// Orb credential image.
+    OrbCredential,
+    /// Live capture.
+    LiveSelfie,
+    /// RTMS challenge image.
+    RtmsChallenge,
+}
+/// Approved analysis reasons, without raw engine diagnostics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoAnalysisFailure {
+    /// Image decoding or dimension validation failed.
+    InvalidImage,
+    /// No face was detected.
+    NoFaceDetected,
+    /// A typed image validation rejected the input.
+    ValidationFailed {
+        /// Approved validation reason.
+        reason: FlamingoValidationReason,
+        /// Image, frame or pair that failed.
+        target: FlamingoValidationTarget,
+    },
+    /// Embedding generation failed.
+    TemplateFailed,
 }
 
 /// Failures while configuring or performing a match request.
@@ -219,55 +335,68 @@ impl FlamingoMatcher {
 }
 
 impl FlamingoMatchRequest {
-    fn validate(&self) -> Result<(), FlamingoError> {
-        for (attribute, bytes) in [
-            ("live_image", self.live_image.as_slice()),
-            ("credential_image", self.credential_image.as_slice()),
-            ("hashes_json", self.hashes_json.as_slice()),
-        ] {
-            if bytes.is_empty() {
-                return Err(FlamingoError::InvalidInput {
-                    attribute: attribute.to_string(),
-                    reason: "must not be empty".to_string(),
-                });
-            }
-        }
-
-        if self.challenge_image.is_empty() {
-            return Err(FlamingoError::InvalidInput {
-                attribute: "challenge_image".to_string(),
-                reason: "must not be empty".to_string(),
-            });
-        }
-
-        if self.light_guard_image.as_ref().is_some_and(Vec::is_empty) {
-            return Err(FlamingoError::InvalidInput {
-                attribute: "light_guard_image".to_string(),
-                reason: "must not be empty when provided".to_string(),
-            });
-        }
-
-        if !self.match_threshold.is_finite()
-            || !(0.0..=1.0).contains(&self.match_threshold)
-        {
-            return Err(FlamingoError::InvalidInput {
-                attribute: "match_threshold".to_string(),
-                reason: "must be finite and between 0 and 1 inclusive".to_string(),
-            });
-        }
-
-        Ok(())
-    }
-
     fn into_inputs(self) -> MatchInputs {
-        MatchInputs {
-            live_image: self.live_image,
-            credential_image: self.credential_image,
-            light_guard_image: self.light_guard_image,
-            hashes_json: self.hashes_json,
-            challenge_image: self.challenge_image,
-            match_threshold: self.match_threshold,
+        match self {
+            Self::DeepFace {
+                orb_credential,
+                live,
+                rtms_challenge,
+                hashes_json,
+                match_threshold,
+            } => MatchInputs::DeepFace(DeepFaceInputs {
+                orb_credential: orb_credential.into(),
+                live: live.into(),
+                rtms_challenge: rtms_challenge.into(),
+                hashes_json: hashes_json.into(),
+                match_threshold,
+            }),
+            Self::GrayBadge {
+                live,
+                rtms_challenge,
+                match_threshold,
+            } => MatchInputs::GrayBadge(GrayBadgeInputs {
+                live: live.into(),
+                rtms_challenge: rtms_challenge.into(),
+                match_threshold,
+            }),
         }
+    }
+}
+impl From<FlamingoLiveCapture> for LiveCapture {
+    fn from(value: FlamingoLiveCapture) -> Self {
+        match value {
+            FlamingoLiveCapture::Vanilla { image } => Self::Vanilla(image.into()),
+            FlamingoLiveCapture::LightGuard { illuminated, unilluminated, matching_frame } => Self::LightGuard {
+                illuminated: illuminated.into(), unilluminated: unilluminated.into(),
+                matching_frame: match matching_frame {
+                    FlamingoMatchingFrame::Illuminated => flamingo_verifier_sealed_types::LightGuardMatchingFrame::Illuminated,
+                    FlamingoMatchingFrame::Unilluminated => flamingo_verifier_sealed_types::LightGuardMatchingFrame::Unilluminated,
+                },
+            },
+        }
+    }
+}
+
+#[uniffi::export]
+impl VerifiedMatchToken {
+    /// Read scores already verified by the Flamingo client.
+    #[must_use]
+    pub const fn scores(&self) -> FlamingoScores {
+        match &self.claims {
+            MatchClaims::DeepFace { scores, .. } => FlamingoScores::DeepFace {
+                similarity_orb_selfie: scores.similarity_orb_selfie,
+                similarity_orb_challenge: scores.similarity_orb_challenge,
+                similarity_selfie_challenge: scores.similarity_selfie_challenge,
+            },
+            MatchClaims::GrayBadge { scores, .. } => FlamingoScores::GrayBadge {
+                similarity_selfie_challenge: scores.similarity_selfie_challenge,
+            },
+        }
+    }
+    /// Threshold authenticated by the token.
+    #[must_use]
+    pub const fn match_threshold(&self) -> f64 {
+        self.claims.context().match_threshold
     }
 }
 
@@ -291,8 +420,62 @@ impl From<FailureReason> for FlamingoMatchRejection {
             FailureReason::MalformedInputs => Self::MalformedInputs,
             FailureReason::InvalidHashesJson => Self::InvalidHashesJson,
             FailureReason::ThumbnailHashMismatch => Self::ThumbnailHashMismatch,
-            FailureReason::MatchBelowThreshold => Self::MatchBelowThreshold,
-            FailureReason::ImageAnalysisFailed => Self::ImageAnalysisFailed,
+            FailureReason::InvalidThreshold => Self::InvalidThreshold,
+            FailureReason::EmptyImage => Self::EmptyImage,
+            FailureReason::InputTooLarge => Self::InputTooLarge,
+            FailureReason::UnsupportedCapture => Self::UnsupportedCapture,
+            FailureReason::Internal => Self::Internal,
+            FailureReason::MatchBelowThreshold(comparison) => {
+                Self::MatchBelowThreshold {
+                    comparison: comparison.into(),
+                }
+            }
+            FailureReason::MatchingFailed(comparison) => Self::MatchingFailed {
+                comparison: comparison.into(),
+            },
+            FailureReason::ImageAnalysisFailed { image, reason } => {
+                Self::ImageAnalysisFailed {
+                    image: image.into(),
+                    reason: reason.into(),
+                }
+            }
+        }
+    }
+}
+macro_rules! map_variants {
+    ($source:ident, $target:ident, $($variant:ident),+) => {
+        impl From<flamingo_verifier_sealed_types::$source> for $target {
+            fn from(value: flamingo_verifier_sealed_types::$source) -> Self {
+                match value { $(flamingo_verifier_sealed_types::$source::$variant => Self::$variant),+ }
+            }
+        }
+    };
+}
+map_variants!(
+    ComparisonRole,
+    FlamingoComparison,
+    OrbSelfie,
+    OrbChallenge,
+    SelfieChallenge
+);
+map_variants!(
+    ImageRole,
+    FlamingoImageRole,
+    OrbCredential,
+    LiveSelfie,
+    RtmsChallenge
+);
+impl From<flamingo_verifier_sealed_types::AnalysisFailure> for FlamingoAnalysisFailure {
+    fn from(value: flamingo_verifier_sealed_types::AnalysisFailure) -> Self {
+        use flamingo_verifier_sealed_types::AnalysisFailure;
+        match value {
+            AnalysisFailure::InvalidImage => Self::InvalidImage,
+            AnalysisFailure::NoFaceDetected => Self::NoFaceDetected,
+            AnalysisFailure::TemplateFailed => Self::TemplateFailed,
+            AnalysisFailure::ValidationFailed(failure) => Self::ValidationFailed {
+                reason: failure.reason.into(),
+                target: failure.target.into(),
+            },
         }
     }
 }
@@ -372,8 +555,18 @@ async fn perform_match<C: MatchClient>(
     client: &C,
     request: FlamingoMatchRequest,
 ) -> Result<FlamingoMatchOutcome, FlamingoError> {
-    request.validate()?;
     let request = request.into_inputs();
+    request
+        .validate()
+        .map_err(|reason| FlamingoError::InvalidInput {
+            attribute: if reason == FailureReason::InvalidThreshold {
+                "match_threshold"
+            } else {
+                "request"
+            }
+            .to_string(),
+            reason: format!("{reason:?}"),
+        })?;
     let mut reassigned = false;
 
     loop {
@@ -386,8 +579,11 @@ async fn perform_match<C: MatchClient>(
             Ok(MatchResult::Success(statement)) => {
                 return Ok(FlamingoMatchOutcome::Matched(Arc::new(
                     VerifiedMatchToken {
-                        token: statement.token.into_bytes(),
-                        signing_key_attestation: statement.signing_key_attestation,
+                        token: statement.statement.token.into_bytes(),
+                        signing_key_attestation: statement
+                            .statement
+                            .signing_key_attestation,
+                        claims: statement.claims,
                     },
                 )));
             }
@@ -404,25 +600,181 @@ fn verifier_error(error: &ClientError) -> FlamingoError {
     FlamingoError::Verifier(error.to_string())
 }
 
+/// Approved face validation `ValidationReason`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoValidationReason {
+    /// Too many faces.
+    TooManyFaces,
+    /// Image too dark.
+    ImageTooDark,
+    /// Image too bright.
+    ImageTooBright,
+    /// Illumination variance.
+    IlluminationVariance,
+    /// Face too small.
+    FaceTooSmall,
+    /// Face too big.
+    FaceTooBig,
+    /// Face resolution too low.
+    FaceResolutionTooLow,
+    /// Face too high.
+    FaceTooHigh,
+    /// Face too low.
+    FaceTooLow,
+    /// Face too far left.
+    FaceTooFarLeft,
+    /// Face too far right.
+    FaceTooFarRight,
+    /// Head pose yaw.
+    HeadPoseYaw,
+    /// Head pose pitch too high.
+    HeadPosePitchTooHigh,
+    /// Head pose pitch too low.
+    HeadPosePitchTooLow,
+    /// Head pose roll.
+    HeadPoseRoll,
+    /// Low quality.
+    LowQuality,
+    /// Sunglasses occlusion detected.
+    SunglassesOcclusionDetected,
+    /// Glasses occlusion detected.
+    GlassesOcclusionDetected,
+    /// Mask occlusion detected.
+    MaskOcclusionDetected,
+    /// Other occlusion detected.
+    OtherOcclusionDetected,
+    /// Hair occlusion detected.
+    HairOcclusionDetected,
+    /// Fas occlusion detected.
+    FasOcclusionDetected,
+    /// Spoof detected.
+    SpoofDetected,
+    /// Depth spoof detected.
+    DepthSpoofDetected,
+    /// Thermal spoof detected.
+    ThermalSpoofDetected,
+    /// Age below threshold.
+    AgeBelowThreshold,
+    /// No face detected.
+    NoFaceDetected,
+    /// Eyes closed.
+    EyesClosed,
+    /// Non neutral expression.
+    NonNeutralExpression,
+    /// Landmarks alignment.
+    LandmarksAlignment,
+    /// Face overexposed.
+    FaceOverexposed,
+    /// Face underexposed.
+    FaceUnderexposed,
+    /// Segmentation occlusion proportion.
+    SegmentationOcclusionProportion,
+    /// Bright artifacts.
+    BrightArtifacts,
+    /// Light guard score too low.
+    LightGuardScoreTooLow,
+    /// Low contrast.
+    LowContrast,
+    /// Mesh expression score.
+    MeshExpressionScore,
+    /// High color distortion.
+    HighColorDistortion,
+    /// Uneven lighting.
+    UnevenLighting,
+    /// Blurry face.
+    BlurryFace,
+    /// Noisy thermal image.
+    NoisyThermalImage,
+}
+map_variants!(
+    ValidationReason,
+    FlamingoValidationReason,
+    TooManyFaces,
+    ImageTooDark,
+    ImageTooBright,
+    IlluminationVariance,
+    FaceTooSmall,
+    FaceTooBig,
+    FaceResolutionTooLow,
+    FaceTooHigh,
+    FaceTooLow,
+    FaceTooFarLeft,
+    FaceTooFarRight,
+    HeadPoseYaw,
+    HeadPosePitchTooHigh,
+    HeadPosePitchTooLow,
+    HeadPoseRoll,
+    LowQuality,
+    SunglassesOcclusionDetected,
+    GlassesOcclusionDetected,
+    MaskOcclusionDetected,
+    OtherOcclusionDetected,
+    HairOcclusionDetected,
+    FasOcclusionDetected,
+    SpoofDetected,
+    DepthSpoofDetected,
+    ThermalSpoofDetected,
+    AgeBelowThreshold,
+    NoFaceDetected,
+    EyesClosed,
+    NonNeutralExpression,
+    LandmarksAlignment,
+    FaceOverexposed,
+    FaceUnderexposed,
+    SegmentationOcclusionProportion,
+    BrightArtifacts,
+    LightGuardScoreTooLow,
+    LowContrast,
+    MeshExpressionScore,
+    HighColorDistortion,
+    UnevenLighting,
+    BlurryFace,
+    NoisyThermalImage
+);
+
+/// Approved face validation `ValidationTarget`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoValidationTarget {
+    /// Image location.
+    Image,
+    /// `IlluminatedFrame` location.
+    IlluminatedFrame,
+    /// `UnilluminatedFrame` location.
+    UnilluminatedFrame,
+    /// `LightGuardPair` location.
+    LightGuardPair,
+}
+map_variants!(
+    ValidationTarget,
+    FlamingoValidationTarget,
+    Image,
+    IlluminatedFrame,
+    UnilluminatedFrame,
+    LightGuardPair
+);
+
 #[cfg(test)]
 mod tests {
     use std::{
         collections::{HashMap, VecDeque},
         sync::{
-            atomic::{AtomicUsize, Ordering},
             Mutex,
+            atomic::{AtomicUsize, Ordering},
         },
     };
 
-    use flamingo_verifier_client::Error as ClientError;
+    use flamingo_verifier_client::{
+        Error as ClientError, VerifiedMatch, VerifiedMatchResult as MatchResult,
+    };
     use flamingo_verifier_protocol::match_token::MatchToken;
     use flamingo_verifier_sealed_types::{
-        AttestedStatement, FailureReason, MatchInputs, MatchResult,
+        AttestedStatement, FailureReason, MatchInputs,
     };
 
     use super::{
-        perform_match, FlamingoError, FlamingoMatchOutcome, FlamingoMatchRejection,
-        FlamingoMatchRequest, FlamingoMatcher, MatchClient,
+        FlamingoError, FlamingoLiveCapture, FlamingoMatchOutcome,
+        FlamingoMatchRejection, FlamingoMatchRequest, FlamingoMatcher, MatchClient,
+        perform_match,
     };
 
     struct FakeClient {
@@ -463,12 +815,13 @@ mod tests {
     }
 
     fn request() -> FlamingoMatchRequest {
-        FlamingoMatchRequest {
-            live_image: b"live".to_vec(),
-            credential_image: b"credential".to_vec(),
+        FlamingoMatchRequest::DeepFace {
+            orb_credential: b"credential".to_vec(),
+            live: FlamingoLiveCapture::Vanilla {
+                image: b"live".to_vec(),
+            },
             hashes_json: br#"{"thumbnail.png":"00"}"#.to_vec(),
-            light_guard_image: None,
-            challenge_image: b"challenge".to_vec(),
+            rtms_challenge: b"challenge".to_vec(),
             match_threshold: 0.7,
         }
     }
@@ -484,6 +837,69 @@ mod tests {
         ])
     }
 
+    #[test]
+    fn gray_badge_has_no_pcp_and_moves_image_buffers() {
+        let image = vec![1; 1024];
+        let pointer = image.as_ptr();
+        let request = FlamingoMatchRequest::GrayBadge {
+            live: FlamingoLiveCapture::Vanilla { image },
+            rtms_challenge: vec![2; 512],
+            match_threshold: -0.5,
+        }
+        .into_inputs();
+        request.validate().unwrap();
+        let encoded = request.to_cbor().unwrap();
+        assert!(matches!(
+            MatchInputs::from_cbor(&encoded),
+            Ok(MatchInputs::GrayBadge(_))
+        ));
+        let MatchInputs::GrayBadge(inputs) = request else {
+            unreachable!()
+        };
+        let flamingo_verifier_sealed_types::LiveCapture::Vanilla(image) = inputs.live
+        else {
+            unreachable!()
+        };
+        assert_eq!(image.as_ptr(), pointer);
+    }
+    #[tokio::test]
+    async fn gray_badge_preserves_typed_validation_feedback() {
+        use flamingo_verifier_sealed_types::{
+            AnalysisFailure, ImageRole, ValidationFailure, ValidationReason,
+            ValidationTarget,
+        };
+        let client = FakeClient::new([Ok(MatchResult::Failed(
+            FailureReason::ImageAnalysisFailed {
+                image: ImageRole::LiveSelfie,
+                reason: AnalysisFailure::ValidationFailed(ValidationFailure {
+                    reason: ValidationReason::EyesClosed,
+                    target: ValidationTarget::Image,
+                }),
+            },
+        ))]);
+        let outcome = perform_match(
+            &client,
+            FlamingoMatchRequest::GrayBadge {
+                live: FlamingoLiveCapture::Vanilla { image: vec![1] },
+                rtms_challenge: vec![2],
+                match_threshold: 0.5,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            outcome,
+            FlamingoMatchOutcome::Rejected(
+                FlamingoMatchRejection::ImageAnalysisFailed {
+                    image: super::FlamingoImageRole::LiveSelfie,
+                    reason: super::FlamingoAnalysisFailure::ValidationFailed {
+                        reason: super::FlamingoValidationReason::EyesClosed,
+                        target: super::FlamingoValidationTarget::Image
+                    },
+                }
+            )
+        ));
+    }
     #[test]
     fn custom_measurements_preserve_required_and_additional_pcrs() {
         let mut pins = measurements();
@@ -712,10 +1128,14 @@ mod tests {
 
     #[tokio::test]
     async fn returns_a_verified_token_after_the_client_verifies_success() {
-        let client = FakeClient::new([Ok(MatchResult::Success(AttestedStatement {
+        let client = FakeClient::new([Ok(MatchResult::Success(Box::new(VerifiedMatch { statement: AttestedStatement {
             token: MatchToken::from_bytes(b"signed-token".to_vec()),
             signing_key_attestation: b"signing-key-attestation".to_vec(),
-        }))]);
+        }, claims: flamingo_verifier_protocol::match_token::MatchClaims::GrayBadge {
+            context: flamingo_verifier_protocol::match_token::MatchContext {
+                live: flamingo_verifier_protocol::match_token::CaptureCommitment::Vanilla([0;32]), rtms_challenge: [0;32], match_threshold: 0.7,
+            }, scores: flamingo_verifier_protocol::match_token::GrayBadgeScores { similarity_selfie_challenge: 0.9 },
+        } })))]);
 
         let outcome = perform_match(&client, request())
             .await
@@ -751,7 +1171,9 @@ mod tests {
     async fn reassigns_and_reseals_exactly_once() {
         let client = FakeClient::new([
             Err(ClientError::ReassignRequired),
-            Ok(MatchResult::Failed(FailureReason::MatchBelowThreshold)),
+            Ok(MatchResult::Failed(FailureReason::MatchBelowThreshold(
+                flamingo_verifier_sealed_types::ComparisonRole::SelfieChallenge,
+            ))),
         ]);
 
         let outcome = perform_match(&client, request())
@@ -760,7 +1182,9 @@ mod tests {
 
         assert!(matches!(
             outcome,
-            FlamingoMatchOutcome::Rejected(FlamingoMatchRejection::MatchBelowThreshold)
+            FlamingoMatchOutcome::Rejected(
+                FlamingoMatchRejection::MatchBelowThreshold { .. }
+            )
         ));
         assert_eq!(client.assignments.load(Ordering::Relaxed), 2);
     }
@@ -784,7 +1208,13 @@ mod tests {
     async fn rejects_a_non_finite_threshold_before_assignment() {
         let client = FakeClient::new([]);
         let mut request = request();
-        request.match_threshold = f32::NAN;
+        let FlamingoMatchRequest::DeepFace {
+            match_threshold, ..
+        } = &mut request
+        else {
+            unreachable!()
+        };
+        *match_threshold = f64::NAN;
 
         let error = perform_match(&client, request).await.expect_err(
             "NaN would bypass enclave comparisons and must be rejected locally",

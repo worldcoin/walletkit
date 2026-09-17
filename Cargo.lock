@@ -3287,8 +3287,7 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 [[package]]
 name = "flamingo-verifier-api-types"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcd7aeda4fe87369c7302be8efc8f8b7061373a281ee2164ad29d008b45de9d2"
+source = "git+https://github.com/worldcoin/flamingo?rev=1d4307ad9253cec34b00d066df733e02e3c0ce99#1d4307ad9253cec34b00d066df733e02e3c0ce99"
 dependencies = [
  "serde",
 ]
@@ -3296,8 +3295,7 @@ dependencies = [
 [[package]]
 name = "flamingo-verifier-client"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d16ff16567769109a6b945844ed02bc49df4946406cca0cc9c0342e2ecf15859"
+source = "git+https://github.com/worldcoin/flamingo?rev=1d4307ad9253cec34b00d066df733e02e3c0ce99#1d4307ad9253cec34b00d066df733e02e3c0ce99"
 dependencies = [
  "base64 0.22.1",
  "flamingo-verifier-api-types",
@@ -3315,13 +3313,13 @@ dependencies = [
 [[package]]
 name = "flamingo-verifier-protocol"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13864bdee45533d6c83acbcbf1df5faadd36d451a1e42562e1bfc90257213699"
+source = "git+https://github.com/worldcoin/flamingo?rev=1d4307ad9253cec34b00d066df733e02e3c0ce99#1d4307ad9253cec34b00d066df733e02e3c0ce99"
 dependencies = [
  "ark-ff 0.5.0",
  "coset",
  "serde",
  "serde_bytes",
+ "sha2 0.10.9",
  "taceo-ark-babyjubjub",
  "taceo-eddsa-babyjubjub",
  "taceo-poseidon2",
@@ -3330,13 +3328,14 @@ dependencies = [
 [[package]]
 name = "flamingo-verifier-sealed-types"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d5fadf79c8263ee4faae1f024a2d333e973ba5c25462efa898d03e31e19ad2"
+source = "git+https://github.com/worldcoin/flamingo?rev=1d4307ad9253cec34b00d066df733e02e3c0ce99#1d4307ad9253cec34b00d066df733e02e3c0ce99"
 dependencies = [
  "ciborium",
+ "flamingo-verifier-api-types",
  "flamingo-verifier-protocol",
  "serde",
  "serde_bytes",
+ "sha2 0.10.9",
  "zeroize",
 ]
 
