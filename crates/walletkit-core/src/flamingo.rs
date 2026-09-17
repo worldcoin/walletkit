@@ -149,11 +149,11 @@ pub enum FlamingoMatchRejection {
         comparison: FlamingoComparison,
     },
     /// A named image could not pass analysis.
-    ImageAnalysisFailed {
+    ImageRejected {
         /// Image bytes or semantic image role.
         image: FlamingoImageRole,
         /// Approved validation reason.
-        reason: FlamingoAnalysisFailure,
+        reason: FlamingoImageFailureReason,
     },
     /// A named comparison failed.
     MatchingFailed {
@@ -183,24 +183,6 @@ pub enum FlamingoImageRole {
     /// RTMS challenge image.
     RtmsChallenge,
 }
-/// Approved analysis reasons, without raw engine diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum FlamingoAnalysisFailure {
-    /// Image decoding or dimension validation failed.
-    InvalidImage,
-    /// No face was detected.
-    NoFaceDetected,
-    /// A typed image validation rejected the input.
-    ValidationFailed {
-        /// Approved validation reason.
-        reason: FlamingoValidationReason,
-        /// Image, frame or pair that failed.
-        target: FlamingoValidationTarget,
-    },
-    /// Embedding generation failed.
-    TemplateFailed,
-}
-
 /// Failures while configuring or performing a match request.
 #[derive(Debug, Error, uniffi::Error)]
 pub enum FlamingoError {
@@ -433,12 +415,10 @@ impl From<FailureReason> for FlamingoMatchRejection {
             FailureReason::MatchingFailed(comparison) => Self::MatchingFailed {
                 comparison: comparison.into(),
             },
-            FailureReason::ImageAnalysisFailed { image, reason } => {
-                Self::ImageAnalysisFailed {
-                    image: image.into(),
-                    reason: reason.into(),
-                }
-            }
+            FailureReason::ImageRejected { image, reason } => Self::ImageRejected {
+                image: image.into(),
+                reason: reason.into(),
+            },
         }
     }
 }
@@ -465,21 +445,6 @@ map_variants!(
     LiveSelfie,
     RtmsChallenge
 );
-impl From<flamingo_verifier_sealed_types::AnalysisFailure> for FlamingoAnalysisFailure {
-    fn from(value: flamingo_verifier_sealed_types::AnalysisFailure) -> Self {
-        use flamingo_verifier_sealed_types::AnalysisFailure;
-        match value {
-            AnalysisFailure::InvalidImage => Self::InvalidImage,
-            AnalysisFailure::NoFaceDetected => Self::NoFaceDetected,
-            AnalysisFailure::TemplateFailed => Self::TemplateFailed,
-            AnalysisFailure::ValidationFailed(failure) => Self::ValidationFailed {
-                reason: failure.reason.into(),
-                target: failure.target.into(),
-            },
-        }
-    }
-}
-
 #[async_trait]
 impl MatchClient for FlamingoVerifierClient {
     type Assignment = VerifiedAssignment;
@@ -600,9 +565,13 @@ fn verifier_error(error: &ClientError) -> FlamingoError {
     FlamingoError::Verifier(error.to_string())
 }
 
-/// Approved face validation `ValidationReason`.
+/// Image rejection reasons, without raw engine diagnostics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum FlamingoValidationReason {
+pub enum FlamingoImageFailureReason {
+    /// Image decoding or dimension validation failed.
+    InvalidImage,
+    /// Embedding generation failed.
+    TemplateFailed,
     /// Too many faces.
     TooManyFaces,
     /// Image too dark.
@@ -687,8 +656,10 @@ pub enum FlamingoValidationReason {
     NoisyThermalImage,
 }
 map_variants!(
-    ValidationReason,
-    FlamingoValidationReason,
+    ImageFailureReason,
+    FlamingoImageFailureReason,
+    InvalidImage,
+    TemplateFailed,
     TooManyFaces,
     ImageTooDark,
     ImageTooBright,
@@ -730,27 +701,6 @@ map_variants!(
     UnevenLighting,
     BlurryFace,
     NoisyThermalImage
-);
-
-/// Approved face validation `ValidationTarget`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum FlamingoValidationTarget {
-    /// Image location.
-    Image,
-    /// `IlluminatedFrame` location.
-    IlluminatedFrame,
-    /// `UnilluminatedFrame` location.
-    UnilluminatedFrame,
-    /// `LightGuardPair` location.
-    LightGuardPair,
-}
-map_variants!(
-    ValidationTarget,
-    FlamingoValidationTarget,
-    Image,
-    IlluminatedFrame,
-    UnilluminatedFrame,
-    LightGuardPair
 );
 
 #[cfg(test)]
@@ -864,19 +814,12 @@ mod tests {
     }
     #[tokio::test]
     async fn gray_badge_preserves_typed_validation_feedback() {
-        use flamingo_verifier_sealed_types::{
-            AnalysisFailure, ImageRole, ValidationFailure, ValidationReason,
-            ValidationTarget,
-        };
-        let client = FakeClient::new([Ok(MatchResult::Failed(
-            FailureReason::ImageAnalysisFailed {
+        use flamingo_verifier_sealed_types::{ImageFailureReason, ImageRole};
+        let client =
+            FakeClient::new([Ok(MatchResult::Failed(FailureReason::ImageRejected {
                 image: ImageRole::LiveSelfie,
-                reason: AnalysisFailure::ValidationFailed(ValidationFailure {
-                    reason: ValidationReason::EyesClosed,
-                    target: ValidationTarget::Image,
-                }),
-            },
-        ))]);
+                reason: ImageFailureReason::EyesClosed,
+            }))]);
         let outcome = perform_match(
             &client,
             FlamingoMatchRequest::GrayBadge {
@@ -889,15 +832,10 @@ mod tests {
         .unwrap();
         assert!(matches!(
             outcome,
-            FlamingoMatchOutcome::Rejected(
-                FlamingoMatchRejection::ImageAnalysisFailed {
-                    image: super::FlamingoImageRole::LiveSelfie,
-                    reason: super::FlamingoAnalysisFailure::ValidationFailed {
-                        reason: super::FlamingoValidationReason::EyesClosed,
-                        target: super::FlamingoValidationTarget::Image
-                    },
-                }
-            )
+            FlamingoMatchOutcome::Rejected(FlamingoMatchRejection::ImageRejected {
+                image: super::FlamingoImageRole::LiveSelfie,
+                reason: super::FlamingoImageFailureReason::EyesClosed,
+            })
         ));
     }
     #[test]
