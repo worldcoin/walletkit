@@ -344,12 +344,14 @@ pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
 /// Minimum contiguous hex digits to treat as a potential secret.
 const HEX_SECRET_MIN_LEN: usize = 21;
 
-/// Replaces hex sequences of [`HEX_SECRET_MIN_LEN`] or more digits with a
+/// Replaces hex sequences of `HEX_SECRET_MIN_LEN` or more digits with a
 /// redacted form showing only the first and last two hex characters.
 /// An optional `0x` prefix is preserved in the output.
 ///
 /// Returns `input` unmodified (zero-allocation) when no redaction is needed.
-fn sanitize_hex_secrets(input: String) -> String {
+#[must_use]
+#[uniffi::export]
+pub fn sanitize_hex_secrets(input: String) -> String {
     if !has_long_hex_run(input.as_bytes()) {
         return input;
     }
