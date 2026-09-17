@@ -9,7 +9,7 @@ name: Auto approve
 # cannot rewrite the job that approves it or reach the OpenRouter key.
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited]
 
 permissions:
