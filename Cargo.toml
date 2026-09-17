@@ -3,6 +3,7 @@ members = [
   "crates/uniffi-bindgen",
   "crates/walletkit-core",
   "crates/walletkit",
+  "crates/walletkit-web",
   "crates/walletkit-db",
   "crates/walletkit-sqlite",
   "crates/walletkit-cli",
@@ -10,6 +11,7 @@ members = [
   "xtask",
 ]
 resolver = "2"
+exclude = ["target/web-deps/flamingo", "target/web-deps/pontifex"]
 
 [workspace.package]
 version = "0.23.0"

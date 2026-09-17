@@ -1,4 +1,5 @@
 target/
+/target-web/
 .DS_Store
 **/ios_build
 .swiftpm/

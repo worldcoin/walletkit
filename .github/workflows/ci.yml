@@ -110,7 +110,9 @@ jobs:
           llvm-ar-18 --version | head -n1
 
       - name: Run WASM compile check
-        run: cargo check -p walletkit --features embed-zkeys --target wasm32-unknown-unknown
+        run: |
+          bash web/bootstrap-deps.sh
+          bash web/cargo.sh check -p walletkit --features embed-zkeys --target wasm32-unknown-unknown
 
       # Keep this version aligned with the wasm-bindgen version in Cargo.lock.
       - name: Install WASM browser test runner
@@ -119,7 +121,24 @@ jobs:
       - name: Test walletkit-sqlite in a browser runner
         run: |
           CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" \
-            cargo test -p walletkit-sqlite --target wasm32-unknown-unknown
+            bash web/cargo.sh test -p walletkit-sqlite --target wasm32-unknown-unknown
+
+      - name: Test Flamingo and Pontifex in a browser worker
+        env:
+          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
+        run: |
+          export CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver"
+          bash web/test-rust-browser.sh
+
+      - name: Build JavaScript and WASM package
+        run: bash web/build.sh
+
+      - name: Test browser package in Chromium and WebKit
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium webkit
+          npm test
 
   swift-build:
     name: Build Swift

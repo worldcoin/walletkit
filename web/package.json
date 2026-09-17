@@ -1,0 +1,13 @@
+{
+  "name": "walletkit-browser-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash build.sh",
+    "serve": "node server.mjs",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

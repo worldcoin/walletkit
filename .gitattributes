@@ -1,0 +1,2 @@
+# Unified diffs intentionally contain a leading context marker on blank/tabbed lines.
+web/patches/*.patch -whitespace

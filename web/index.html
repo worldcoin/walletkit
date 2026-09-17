@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WalletKit browser match</title>
+<style>
+  body { font: 16px system-ui; max-width: 42rem; margin: 3rem auto; padding: 0 1rem; }
+  label { display: block; margin: 1rem 0; }
+  input { display: block; width: 100%; box-sizing: border-box; padding: .5rem; }
+  button { padding: .6rem 1rem; }
+  output { display: block; margin-top: 1rem; }
+</style>
+<h1>WalletKit browser match</h1>
+<p>Existing three-way Flamingo flow. Use an approved enclave configuration and test PCP.
+This example does not enroll a selfie credential or generate a World ID proof.</p>
+<form id="match">
+  <label>Verifier URL <input name="hostUrl" type="url" required></label>
+  <label>PCR0 <input name="pcr0" pattern="[0-9a-fA-F]{96}" required></label>
+  <label>PCR1 <input name="pcr1" pattern="[0-9a-fA-F]{96}" required></label>
+  <label>PCR2 <input name="pcr2" pattern="[0-9a-fA-F]{96}" required></label>
+  <label>Live image <input name="liveImage" type="file" accept="image/*" required></label>
+  <label>Credential thumbnail <input name="credentialImage" type="file" accept="image/*" required></label>
+  <label>Original PCP hashes.json <input name="hashesJson" type="file" required></label>
+  <label>RP challenge image <input name="challengeImage" type="file" accept="image/*" required></label>
+  <label>Minimum similarity <input name="matchThreshold" type="number" min="0" max="1" step="0.01" value="0.5" required></label>
+  <button type="submit">Run match</button>
+  <button id="cancel" type="button">Cancel</button>
+</form>
+<output id="status" aria-live="polite">Ready.</output>
+<script type="module" src="./example.js"></script>
+</html>

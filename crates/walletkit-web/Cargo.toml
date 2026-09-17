@@ -1,0 +1,27 @@
+[package]
+name = "walletkit-web"
+description = "Browser bindings for WalletKit's attested Flamingo client."
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+walletkit-core = { workspace = true, default-features = false }
+hex = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_bytes = "0.11"
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "=0.2.126"
+wasm-bindgen-futures = "=0.4.76"
+js-sys = "=0.3.103"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }
+
+[lints]
+workspace = true
