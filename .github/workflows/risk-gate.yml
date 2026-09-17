@@ -1,19 +1,11 @@
 name: Risk gate
 
-# Required check on `main`. The automated reviewer is the risk gate: once it has
-# reviewed the current head, the pull request needs no further review. Its
-# comments block the merge until they are resolved, which branch protection
-# enforces separately (required conversation resolution), and new commits need a
-# fresh review of the head.
-#
-# `main` requires this check by the name `risk-gate`, so the job name and the
-# context in worldcoin/infrastructure must match.
+# Required on `main` as `risk-gate`. The automated reviewer is the gate: it must
+# review the current head, and its comments must be resolved before the merge.
 
 on:
   pull_request:
-    # `edited` covers a pull request retargeted at `main`.
     types: [opened, synchronize, reopened, ready_for_review, edited]
-  # Re-evaluate when a review arrives or is dismissed.
   pull_request_review:
     types: [submitted, dismissed]
 
@@ -27,13 +19,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The automated reviewer: a review of the current head from one of these
-  # authors, or a completed check run with one of these names, counts. Cursor
-  # Bugbot is enabled on the repository; Copilot is not.
+  # A review of the head from one of these authors, or a completed check run with
+  # one of these names, counts as reviewed.
   REVIEW_BOTS: "cursor[bot],copilot-pull-request-reviewer[bot]"
   REVIEW_CHECKS: "Cursor Bugbot"
-  # The reviewer takes minutes and posts nothing when it finishes, so wait for it
-  # rather than fail and leave a stale check behind.
   POLL_SECONDS: "30"
   REVIEW_TIMEOUT_SECONDS: "600"
 
@@ -61,8 +50,7 @@ jobs:
               return;
             }
 
-            // Re-read the pull request: on a review event the payload's head can lag
-            // a newer push, and this should judge the commit being merged.
+            // A review event's payload head can lag a newer push.
             async function reviewOfHead() {
               const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
               const head = pr.head.sha;
@@ -73,8 +61,7 @@ jobs:
                 pull_number: number,
                 per_page: 100,
               });
-              // The reviewer skips some pushes, leaving no review to wait for, so a
-              // finished check run on the head counts as well.
+              // The reviewer skips some pushes, leaving no review to wait for.
               const checkRuns = await github.paginate(github.rest.checks.listForRef, {
                 owner,
                 repo,
