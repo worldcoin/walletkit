@@ -116,4 +116,5 @@ jobs:
         if: steps.review.outputs.approve == 'true'
         env:
           GH_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: gh pr review --approve "${{ github.event.pull_request.number }}"
