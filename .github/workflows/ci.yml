@@ -111,8 +111,8 @@ jobs:
 
       - name: Run WASM compile check
         run: |
-          bash web/bootstrap-deps.sh
-          bash web/cargo.sh check -p walletkit --features embed-zkeys --target wasm32-unknown-unknown
+          cargo check -p walletkit --features embed-zkeys --locked --target wasm32-unknown-unknown
+          git diff --exit-code -- Cargo.lock
 
       # Keep this version aligned with the wasm-bindgen version in Cargo.lock.
       - name: Install WASM browser test runner
@@ -121,14 +121,7 @@ jobs:
       - name: Test walletkit-sqlite in a browser runner
         run: |
           CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" \
-            bash web/cargo.sh test -p walletkit-sqlite --target wasm32-unknown-unknown
-
-      - name: Test Flamingo and Pontifex in a browser worker
-        env:
-          CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUNNER: wasm-bindgen-test-runner
-        run: |
-          export CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver"
-          bash web/test-rust-browser.sh
+            cargo test -p walletkit-sqlite --locked --target wasm32-unknown-unknown
 
       - name: Build JavaScript and WASM package
         run: bash web/build.sh

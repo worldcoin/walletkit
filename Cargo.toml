@@ -11,7 +11,6 @@ members = [
   "xtask",
 ]
 resolver = "2"
-exclude = ["target/web-deps/flamingo", "target/web-deps/pontifex"]
 
 [workspace.package]
 version = "0.23.0"
@@ -43,9 +42,9 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-flamingo-verifier-client = "0.3.0"
-flamingo-verifier-protocol = "0.3.0"
-flamingo-verifier-sealed-types = "0.3.0"
+flamingo-verifier-client = { version = "0.3.0", git = "https://github.com/worldcoin/flamingo", rev = "3fc9028493359476aea6a871a95cd05951bc6513" }
+flamingo-verifier-protocol = { version = "0.3.0", git = "https://github.com/worldcoin/flamingo", rev = "3fc9028493359476aea6a871a95cd05951bc6513" }
+flamingo-verifier-sealed-types = { version = "0.3.0", git = "https://github.com/worldcoin/flamingo", rev = "3fc9028493359476aea6a871a95cd05951bc6513" }
 eyre = "0.6"
 getrandom = "0.3"
 hex = "0.4"
