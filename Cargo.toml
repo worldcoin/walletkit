@@ -86,8 +86,8 @@ zeroize = "1"
 zip = { version = "2", default-features = false }
 
 # world-id-protocol crates
-world-id-core = { version = "0.14", default-features = false }
-world-id-proof = { version = "0.14", default-features = false }
+world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "61db4202c71a93c58f4b6a8ab0a0dbbdf609838e", default-features = false }
+world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", rev = "61db4202c71a93c58f4b6a8ab0a0dbbdf609838e", default-features = false }
 
 # internal
 walletkit-core = { version = "0.23.0", path = "crates/walletkit-core", default-features = false }
