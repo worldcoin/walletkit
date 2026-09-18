@@ -28,7 +28,6 @@ pub enum FlamingoMatchRequest {
         match_threshold: f64,
     },
     /// Live/challenge matching without credential fields.
-    /// Currently rejected by Flamingo 0.4.0 as an unsupported operation.
     GrayBadge {
         /// Explicit live capture variant.
         live: FlamingoLiveCapture,
@@ -47,7 +46,7 @@ pub enum FlamingoLiveCapture {
         /// Encoded vanilla selfie bytes.
         image: Vec<u8>,
     },
-    /// Both `LightGuard` frames; rejected explicitly by backends without `LightGuard`.
+    /// Illuminated and unilluminated frames with an explicit matching-frame selection.
     LightGuard {
         /// Illuminated frame bytes.
         illuminated: Vec<u8>,
