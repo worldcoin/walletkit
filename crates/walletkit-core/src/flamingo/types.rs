@@ -1,12 +1,15 @@
 use std::sync::Arc;
 
+use flamingo_verifier_api_types::{
+    MAX_HASHES_JSON_BYTES, MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES,
+};
 use flamingo_verifier_client::VerifiedMatch;
 use flamingo_verifier_protocol::match_token::MatchClaims;
 use flamingo_verifier_sealed_types::{
-    DeepFaceInputs, GrayBadgeInputs, LiveCapture, MatchInputs,
+    valid_similarity, DeepFaceInputs, GrayBadgeInputs, LiveCapture, MatchInputs,
 };
 
-use super::errors::FlamingoMatchRejection;
+use super::errors::{FlamingoError, FlamingoMatchRejection};
 
 /// Explicit operation-specific inputs. Image buffers move into the client without cloning.
 #[derive(uniffi::Enum)]
@@ -85,6 +88,67 @@ pub enum FlamingoMatchOutcome {
 }
 
 impl FlamingoMatchRequest {
+    pub(super) fn validate(&self) -> Result<(), FlamingoError> {
+        let (live, challenge, credential, hashes, threshold) = match self {
+            Self::DeepFace {
+                live,
+                rtms_challenge,
+                orb_credential,
+                hashes_json,
+                match_threshold,
+            } => (
+                live,
+                rtms_challenge,
+                Some(orb_credential),
+                Some(hashes_json),
+                *match_threshold,
+            ),
+            Self::GrayBadge {
+                live,
+                rtms_challenge,
+                match_threshold,
+            } => (live, rtms_challenge, None, None, *match_threshold),
+        };
+        if !valid_similarity(threshold) {
+            return Err(FlamingoError::InvalidInput {
+                attribute: "match_threshold".to_string(),
+                reason: "must be finite and between 0 and 1 inclusive".to_string(),
+            });
+        }
+        if let Some(hashes) = hashes {
+            validate_bytes("hashes_json", hashes, MAX_HASHES_JSON_BYTES)?;
+        }
+        let (first, second) = match live {
+            FlamingoLiveCapture::Vanilla { image } => (("live.image", image), None),
+            FlamingoLiveCapture::LightGuard {
+                illuminated,
+                unilluminated,
+                ..
+            } => (
+                ("live.illuminated", illuminated),
+                Some(("live.unilluminated", unilluminated)),
+            ),
+        };
+        let mut total = 0;
+        for (attribute, image) in std::iter::once(first)
+            .chain(second)
+            .chain(std::iter::once(("rtms_challenge", challenge)))
+            .chain(credential.map(|image| ("orb_credential", image)))
+        {
+            validate_bytes(attribute, image, MAX_IMAGE_BYTES)?;
+            total += image.len();
+        }
+        if total > MAX_TOTAL_IMAGE_BYTES {
+            return Err(FlamingoError::InvalidInput {
+                attribute: "request".to_string(),
+                reason: format!(
+                    "combined image size must not exceed {MAX_TOTAL_IMAGE_BYTES} bytes"
+                ),
+            });
+        }
+        Ok(())
+    }
+
     pub(super) fn into_inputs(self) -> MatchInputs {
         match self {
             Self::DeepFace {
@@ -112,6 +176,24 @@ impl FlamingoMatchRequest {
         }
     }
 }
+fn validate_bytes(
+    attribute: &str,
+    bytes: &[u8],
+    limit: usize,
+) -> Result<(), FlamingoError> {
+    let reason = if bytes.is_empty() {
+        "must not be empty".to_string()
+    } else if bytes.len() > limit {
+        format!("must not exceed {limit} bytes")
+    } else {
+        return Ok(());
+    };
+    Err(FlamingoError::InvalidInput {
+        attribute: attribute.to_string(),
+        reason,
+    })
+}
+
 impl From<FlamingoLiveCapture> for LiveCapture {
     fn from(value: FlamingoLiveCapture) -> Self {
         match value {

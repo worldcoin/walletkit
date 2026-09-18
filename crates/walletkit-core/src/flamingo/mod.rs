@@ -24,7 +24,7 @@ use flamingo_verifier_client::{
     Config, Error as ClientError, FlamingoVerifierClient, PcrMeasurement,
     VerifiedAssignment, VerifiedMatchResult as MatchResult,
 };
-use flamingo_verifier_sealed_types::{FailureReason, MatchInputs};
+use flamingo_verifier_sealed_types::MatchInputs;
 use reqwest::{
     header::{HeaderMap, HeaderName, HeaderValue, COOKIE},
     Url,
@@ -229,18 +229,8 @@ async fn perform_match<C: MatchClient>(
     client: &C,
     request: FlamingoMatchRequest,
 ) -> Result<FlamingoMatchOutcome, FlamingoError> {
+    request.validate()?;
     let request = request.into_inputs();
-    request
-        .validate()
-        .map_err(|reason| FlamingoError::InvalidInput {
-            attribute: if reason == FailureReason::InvalidThreshold {
-                "match_threshold"
-            } else {
-                "request"
-            }
-            .to_string(),
-            reason: format!("{reason:?}"),
-        })?;
     let mut reassigned = false;
 
     loop {
@@ -707,6 +697,131 @@ mod tests {
 
         assert!(matches!(error, FlamingoError::Verifier(_)));
         assert_eq!(client.assignments.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn invalid_fields_fail_before_assignment() {
+        use flamingo_verifier_api_types::{MAX_HASHES_JSON_BYTES, MAX_IMAGE_BYTES};
+
+        for deep_face in [false, true] {
+            for (attribute, limit) in [
+                ("live.image", MAX_IMAGE_BYTES),
+                ("live.illuminated", MAX_IMAGE_BYTES),
+                ("live.unilluminated", MAX_IMAGE_BYTES),
+                ("rtms_challenge", MAX_IMAGE_BYTES),
+                ("orb_credential", MAX_IMAGE_BYTES),
+                ("hashes_json", MAX_HASHES_JSON_BYTES),
+            ] {
+                if !deep_face && matches!(attribute, "orb_credential" | "hashes_json") {
+                    continue;
+                }
+                for length in [0, limit + 1] {
+                    let bytes = |field| {
+                        if field == attribute {
+                            vec![1; length]
+                        } else {
+                            vec![1]
+                        }
+                    };
+                    let live = if attribute.starts_with("live.")
+                        && attribute != "live.image"
+                    {
+                        FlamingoLiveCapture::LightGuard {
+                            illuminated: bytes("live.illuminated"),
+                            unilluminated: bytes("live.unilluminated"),
+                            matching_frame: super::FlamingoMatchingFrame::Illuminated,
+                        }
+                    } else {
+                        FlamingoLiveCapture::Vanilla {
+                            image: bytes("live.image"),
+                        }
+                    };
+                    let request = if deep_face {
+                        FlamingoMatchRequest::DeepFace {
+                            live,
+                            orb_credential: bytes("orb_credential"),
+                            hashes_json: bytes("hashes_json"),
+                            rtms_challenge: bytes("rtms_challenge"),
+                            match_threshold: 0.5,
+                        }
+                    } else {
+                        FlamingoMatchRequest::GrayBadge {
+                            live,
+                            rtms_challenge: bytes("rtms_challenge"),
+                            match_threshold: 0.5,
+                        }
+                    };
+                    let client = FakeClient::new([]);
+                    let error = perform_match(&client, request).await.unwrap_err();
+                    let FlamingoError::InvalidInput {
+                        attribute: actual,
+                        reason,
+                    } = error
+                    else {
+                        panic!("expected an input error");
+                    };
+                    assert_eq!(actual, attribute);
+                    assert_eq!(
+                        reason,
+                        if length == 0 {
+                            "must not be empty".to_string()
+                        } else {
+                            format!("must not exceed {limit} bytes")
+                        }
+                    );
+                    assert_eq!(client.assignments.load(Ordering::Relaxed), 0);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn validates_combined_image_budget_before_assignment() {
+        use flamingo_verifier_api_types::{MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES};
+
+        for deep_face in [false, true] {
+            let mut request = if deep_face {
+                FlamingoMatchRequest::DeepFace {
+                    live: FlamingoLiveCapture::Vanilla {
+                        image: vec![1; MAX_IMAGE_BYTES],
+                    },
+                    orb_credential: vec![1],
+                    hashes_json: vec![1],
+                    rtms_challenge: vec![
+                        1;
+                        MAX_TOTAL_IMAGE_BYTES - MAX_IMAGE_BYTES - 1
+                    ],
+                    match_threshold: 1.0,
+                }
+            } else {
+                FlamingoMatchRequest::GrayBadge {
+                    live: FlamingoLiveCapture::LightGuard {
+                        illuminated: vec![1; MAX_IMAGE_BYTES],
+                        unilluminated: vec![1],
+                        matching_frame: super::FlamingoMatchingFrame::Unilluminated,
+                    },
+                    rtms_challenge: vec![
+                        1;
+                        MAX_TOTAL_IMAGE_BYTES - MAX_IMAGE_BYTES - 1
+                    ],
+                    match_threshold: 0.0,
+                }
+            };
+            request.validate().expect("exact budget is valid");
+            match &mut request {
+                FlamingoMatchRequest::DeepFace { rtms_challenge, .. }
+                | FlamingoMatchRequest::GrayBadge { rtms_challenge, .. } => {
+                    rtms_challenge.push(1);
+                }
+            }
+            let client = FakeClient::new([]);
+            let error = perform_match(&client, request).await.unwrap_err();
+            assert!(
+                matches!(error, FlamingoError::InvalidInput { attribute, reason }
+                if attribute == "request" && reason == format!("combined image size must not exceed {MAX_TOTAL_IMAGE_BYTES} bytes"))
+            );
+            assert_eq!(client.assignments.load(Ordering::Relaxed), 0);
+        }
     }
 
     #[tokio::test]

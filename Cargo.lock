@@ -9326,6 +9326,7 @@ dependencies = [
  "ctor",
  "dotenvy",
  "eyre",
+ "flamingo-verifier-api-types",
  "flamingo-verifier-client",
  "flamingo-verifier-protocol",
  "flamingo-verifier-sealed-types",

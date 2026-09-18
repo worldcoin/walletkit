@@ -59,6 +59,7 @@ getrandom = { workspace = true, features = ["wasm_js"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 async-trait = { workspace = true }
 ctor = { workspace = true }
+flamingo-verifier-api-types = { workspace = true }
 flamingo-verifier-client = { workspace = true }
 flamingo-verifier-protocol = { workspace = true }
 flamingo-verifier-sealed-types = { workspace = true }
