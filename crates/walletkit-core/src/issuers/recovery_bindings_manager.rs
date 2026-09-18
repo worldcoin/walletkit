@@ -258,6 +258,7 @@ mod tests {
     use mockito::ServerGuard;
     use std::sync::Arc;
 
+    // First four bytes of keccak256("getRecoveryCounter(uint64)").
     const GET_RECOVERY_COUNTER_SELECTOR: &[u8] = b"3a51ad3d";
 
     #[tokio::test]

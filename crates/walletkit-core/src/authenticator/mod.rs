@@ -1063,6 +1063,7 @@ pub fn recovery_data_from_seed(seed: Vec<u8>) -> Result<RecoveryData, WalletKitE
 mod tests {
     use super::*;
 
+    // First four bytes of keccak256("getRecoveryCounter(uint64)").
     const GET_RECOVERY_COUNTER_SELECTOR: &[u8] = b"3a51ad3d";
     const TEST_SEED: [u8; 32] = [1u8; 32];
 
