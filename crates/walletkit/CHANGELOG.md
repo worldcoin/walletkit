@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1](https://github.com/worldcoin/walletkit/compare/v0.23.0...v0.23.1) - 2026-09-18
+
+### Added
+
+- *(logging)* expose secret redaction to host bindings ([#546](https://github.com/worldcoin/walletkit/pull/546))
+
+### Other
+
+- support recovery counter RPC during authenticator init ([#551](https://github.com/worldcoin/walletkit/pull/551))
+- align Rust toolchains on 1.98.1 ([#509](https://github.com/worldcoin/walletkit/pull/509))
+
 ## [0.23.0](https://github.com/worldcoin/walletkit/compare/v0.22.0...v0.23.0) - 2026-09-16
 
 ### Fixed
