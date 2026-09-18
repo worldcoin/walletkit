@@ -43,7 +43,7 @@ jobs:
               cfg = data[i+2:i+2+cfg_len]
               # KEM ID sits at offset 1 in the config (after 1-byte key_id)
               kem_id = struct.unpack('>H', cfg[1:3])[0]
-              if kem_id in (0x0020, 0x647a):
+              if kem_id in (0x0020, 0x647a):  # X25519 or X-Wing
                   out += data[i:i+2+cfg_len]
               i += 2 + cfg_len
           print(base64.b64encode(out).decode(), end='')
