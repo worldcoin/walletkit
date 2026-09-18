@@ -258,6 +258,8 @@ mod tests {
     use mockito::ServerGuard;
     use std::sync::Arc;
 
+    const GET_RECOVERY_COUNTER_SELECTOR: &[u8] = b"3a51ad3d";
+
     #[tokio::test]
     async fn test_recovery_agent_token_generator_success() {
         let mut pop_api_server = mockito::Server::new_async().await;
@@ -409,16 +411,27 @@ mod tests {
             .mock("POST", "/")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(
+            .with_body_from_request(|request| {
+                let result = if request
+                    .body()
+                    .expect("request body")
+                    .windows(GET_RECOVERY_COUNTER_SELECTOR.len())
+                    .any(|window| window == GET_RECOVERY_COUNTER_SELECTOR)
+                {
+                    "0x0000000000000000000000000000000000000000000000000000000000000000"
+                } else {
+                    "0x000000000000000000000000000000000000000000000000000000000000002a"
+                };
                 serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": 1,
-                    "result": "0x000000000000000000000000000000000000000000000000000000000000002a"
+                    "result": result
                 })
-                .to_string(),
-            )
+                .to_string()
+                .into_bytes()
+            })
             .expect_at_least(1)
-            .expect_at_most(2)
+            .expect_at_most(3)
             .create_async()
             .await;
         (mock_eth_server, mock)

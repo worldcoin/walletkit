@@ -1063,6 +1063,7 @@ pub fn recovery_data_from_seed(seed: Vec<u8>) -> Result<RecoveryData, WalletKitE
 mod tests {
     use super::*;
 
+    const GET_RECOVERY_COUNTER_SELECTOR: &[u8] = b"3a51ad3d";
     const TEST_SEED: [u8; 32] = [1u8; 32];
 
     async fn test_authenticator(
@@ -1457,14 +1458,25 @@ mod tests {
             .mock("POST", "/")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(
+            .with_body_from_request(|request| {
+                let result = if request
+                    .body()
+                    .expect("request body")
+                    .windows(GET_RECOVERY_COUNTER_SELECTOR.len())
+                    .any(|window| window == GET_RECOVERY_COUNTER_SELECTOR)
+                {
+                    "0x0000000000000000000000000000000000000000000000000000000000000000"
+                } else {
+                    "0x0000000000000000000000000000000000000000000000000000000000000001"
+                };
                 serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": 1,
-                    "result": "0x0000000000000000000000000000000000000000000000000000000000000001"
+                    "result": result
                 })
-                .to_string(),
-            )
+                .to_string()
+                .into_bytes()
+            })
             .create_async()
             .await;
 
