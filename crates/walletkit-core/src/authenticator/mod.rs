@@ -1071,7 +1071,7 @@ mod tests {
     async fn test_authenticator(
         server: &mut mockito::Server,
     ) -> (Authenticator, std::path::PathBuf) {
-        use crate::storage::tests_utils::{temp_root_path, InMemoryStorageProvider};
+        use crate::storage::{tests_utils::temp_root_path, StorageKeys, StoragePaths};
         use alloy::primitives::address;
         use world_id_core::primitives::ServiceEndpoint;
         use world_id_proof::artifacts::dummy::DummyZkArtifactSource;
@@ -1096,9 +1096,11 @@ mod tests {
         )
         .expect("valid config");
         let root = temp_root_path();
-        let provider = InMemoryStorageProvider::new(&root);
+        let keys =
+            StorageKeys::from_bytes(vec![0x51; 32]).expect("resolved database key");
         let store =
-            CredentialStore::from_provider(&provider).expect("credential store");
+            CredentialStore::new(Arc::new(StoragePaths::new(&root)), Arc::new(keys))
+                .expect("credential store");
         let authenticator = Authenticator::init_with_config(
             &TEST_SEED,
             config,
@@ -1207,6 +1209,22 @@ mod tests {
             Err(WalletKitError::InvalidInput { attribute, reason })
                 if attribute == "authenticator_pubkey" && reason.contains("canonical")
         ));
+    }
+
+    #[tokio::test]
+    async fn test_init_with_resolved_database_keys() {
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        authenticator
+            .init_storage(1000)
+            .expect("initialize direct-key storage");
+        assert!(authenticator
+            .store
+            .list_credentials(None, 1000)
+            .expect("read storage")
+            .is_empty());
+        drop(authenticator);
+        crate::storage::tests_utils::cleanup_test_storage(&root);
     }
 
     #[tokio::test]
@@ -1489,7 +1507,7 @@ mod tests {
 
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("store");
+        let store = provider.open_store().expect("store");
         store.init(42, 100).expect("init storage");
 
         let artifacts =
