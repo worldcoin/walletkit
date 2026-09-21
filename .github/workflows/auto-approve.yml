@@ -28,10 +28,11 @@ env:
   PREFILTER_MODEL: typesafe/jev-1.13
   PREFILTER_THRESHOLD: "0.5"
   PREFILTER_INSTRUCTIONS: >-
-    Is this a small, contained change that a reviewer could read in one pass? Answer high only for a
-    clearly small, self-contained diff. Answer low for a large diff, for changes to CI, workflow or
-    release configuration, and for anything introducing or changing a public or exported API surface.
-    Answer low for anything you cannot judge from a partial diff: those go to a fuller review.
+    Should this pull request skip the detailed review? Answer high when the change is clearly large,
+    when it changes CI, workflow or release configuration, or when it introduces or changes a public
+    or exported API surface: those are not candidates for an automatic approval. Answer low when the
+    change is small and contained, and answer low whenever you are unsure, so that the detailed
+    review still runs.
 
 jobs:
   auto-approve:
@@ -59,37 +60,41 @@ jobs:
           # sending the pull request to the full review.
           trap 'echo "run_review=$run_review" >> "$GITHUB_OUTPUT"' EXIT
 
-          files=$(gh api --paginate --slurp "/repos/$GH_REPO/pulls/$PR_NUMBER/files?per_page=100" \
-            | jq -c '[.[][] | {path: .filename, additions, deletions}]')
+          diff=$(gh api "/repos/$GH_REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.v3.diff") \
+            || { echo "::notice::could not read the diff; running the full review"; exit 0; }
+          if [ -z "$diff" ]; then
+            echo "::notice::the diff is empty; running the full review"
+            exit 0
+          fi
           # Past this length the diff is beyond the model's window and beyond what a screen needs.
-          diff=$(gh api "/repos/$GH_REPO/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.v3.diff" \
-            | head -c 40000 || true)
-          state=$(jq -n --argjson files "$files" --arg diff "$diff" '{files: $files, diff: $diff}')
-          payload=$(jq -n --arg model "$PREFILTER_MODEL" --argjson state "$state" \
+          if [ "${#diff}" -gt 40000 ]; then
+            diff="${diff:0:40000}"$'\n\n[The diff above is truncated at 40000 characters; there is more of it.]'
+          fi
+          payload=$(jq -n --arg model "$PREFILTER_MODEL" --arg state "$diff" \
             --arg instructions "$PREFILTER_INSTRUCTIONS" \
-            '{model: $model, state: $state, questions: {low_risk: {type: "noul", instructions: $instructions}}}')
+            '{model: $model, state: $state, questions: {skip_review: {type: "noul", instructions: $instructions}}}')
 
           response=$(curl -sS --max-time 30 https://openrouter.ai/api/v1/systemone \
             -H "Authorization: Bearer $OPENROUTER_API_KEY" \
             -H "Content-Type: application/json" \
             -d "$payload") || { echo "::notice::pre-filter request failed; running the full review"; exit 0; }
 
-          score=$(jq -r 'if (.answers.low_risk.noul | type) == "number" then .answers.low_risk.noul else empty end' <<<"$response")
+          score=$(jq -r 'if (.answers.skip_review.noul | type) == "number" then .answers.skip_review.noul else empty end' <<<"$response")
           if [ -z "$score" ]; then
             echo "::notice::pre-filter gave no answer; running the full review: $(head -c 300 <<<"$response")"
             exit 0
           fi
 
           model=$(jq -r '.model // "unknown"' <<<"$response")
-          echo "Pre-filter $model: low-risk $score (threshold $PREFILTER_THRESHOLD)"
-          if jq -n -e --argjson score "$score" --argjson threshold "$PREFILTER_THRESHOLD" '$score >= $threshold' >/dev/null; then
+          echo "Pre-filter $model: skip-review $score (threshold $PREFILTER_THRESHOLD)"
+          if ! jq -n -e --argjson score "$score" --argjson threshold "$PREFILTER_THRESHOLD" '$score >= $threshold' >/dev/null; then
             exit 0
           fi
 
           jq -n --arg score "$score" --arg model "$model" \
             '{score: ($score | tonumber), model: $model}' > /tmp/prefilter.json
           run_review=false
-          echo "::notice::$model scored this $score, below $PREFILTER_THRESHOLD; skipping the full review"
+          echo "::notice::$model scored this $score, at or above $PREFILTER_THRESHOLD; skipping the full review"
 
       - name: Install pi
         if: steps.prefilter.outputs.run_review != 'false'
@@ -161,7 +166,7 @@ jobs:
           if [ -f /tmp/verdict.json ] && jq -e '.approve == true' /tmp/verdict.json >/dev/null; then
             outcome="Low-risk verdict recorded: $(jq -r .reason /tmp/verdict.json)"
           elif [ -f /tmp/prefilter.json ]; then
-            outcome="Pre-filter $(jq -r .model /tmp/prefilter.json) scored this $(jq -r .score /tmp/prefilter.json) as low-risk, so the full review was skipped."
+            outcome="Pre-filter $(jq -r .model /tmp/prefilter.json) scored this $(jq -r .score /tmp/prefilter.json) on the skip-review question, so the detailed review was skipped."
           fi
           session=$(ls -t /tmp/pi-sessions/*.jsonl 2>/dev/null | head -1 || true)
           said=$( [ -n "$session" ] && jq -r 'select(.message.role == "assistant") | .message.content[]? | select(.type == "text") | .text' "$session" 2>/dev/null | tail -c 2500 || true )
