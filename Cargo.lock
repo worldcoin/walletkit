@@ -3287,8 +3287,7 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 [[package]]
 name = "flamingo-verifier-api-types"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcd7aeda4fe87369c7302be8efc8f8b7061373a281ee2164ad29d008b45de9d2"
+source = "git+https://github.com/worldcoin/flamingo?rev=3fc9028493359476aea6a871a95cd05951bc6513#3fc9028493359476aea6a871a95cd05951bc6513"
 dependencies = [
  "serde",
 ]
@@ -3296,13 +3295,13 @@ dependencies = [
 [[package]]
 name = "flamingo-verifier-client"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d16ff16567769109a6b945844ed02bc49df4946406cca0cc9c0342e2ecf15859"
+source = "git+https://github.com/worldcoin/flamingo?rev=3fc9028493359476aea6a871a95cd05951bc6513#3fc9028493359476aea6a871a95cd05951bc6513"
 dependencies = [
  "base64 0.22.1",
  "flamingo-verifier-api-types",
  "flamingo-verifier-protocol",
  "flamingo-verifier-sealed-types",
+ "getrandom 0.2.17",
  "hex",
  "pontifex",
  "reqwest 0.12.28",
@@ -3315,8 +3314,7 @@ dependencies = [
 [[package]]
 name = "flamingo-verifier-protocol"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13864bdee45533d6c83acbcbf1df5faadd36d451a1e42562e1bfc90257213699"
+source = "git+https://github.com/worldcoin/flamingo?rev=3fc9028493359476aea6a871a95cd05951bc6513#3fc9028493359476aea6a871a95cd05951bc6513"
 dependencies = [
  "ark-ff 0.5.0",
  "coset",
@@ -3330,8 +3328,7 @@ dependencies = [
 [[package]]
 name = "flamingo-verifier-sealed-types"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d5fadf79c8263ee4faae1f024a2d333e973ba5c25462efa898d03e31e19ad2"
+source = "git+https://github.com/worldcoin/flamingo?rev=3fc9028493359476aea6a871a95cd05951bc6513#3fc9028493359476aea6a871a95cd05951bc6513"
 dependencies = [
  "ciborium",
  "flamingo-verifier-protocol",
@@ -5529,12 +5526,12 @@ dependencies = [
 [[package]]
 name = "pontifex"
 version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f05f626f4b534d7891a41b0a0ffc47e8e7eafa40c63f4dbacfa9b2828527195"
+source = "git+https://github.com/worldcoin/pontifex?rev=89d79f45d592a5b7446f106e60372fe357c76fa8#89d79f45d592a5b7446f106e60372fe357c76fa8"
 dependencies = [
  "ciborium",
  "const-fnv1a-hash",
  "coset",
+ "getrandom 0.2.17",
  "p384",
  "quantum-box",
  "serde",
@@ -5543,6 +5540,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "web-time",
  "webpki",
  "x509-cert",
  "zeroize",
@@ -7574,6 +7572,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "serde_bytes"
 version = "0.11.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8372,7 +8381,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -9413,6 +9422,21 @@ dependencies = [
  "uuid",
  "walletkit-core",
  "world-id-core",
+]
+
+[[package]]
+name = "walletkit-web"
+version = "0.23.0"
+dependencies = [
+ "hex",
+ "js-sys",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_bytes",
+ "walletkit-core",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
 ]
 
 [[package]]

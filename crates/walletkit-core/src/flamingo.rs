@@ -104,7 +104,8 @@ pub enum FlamingoError {
     Verifier(String),
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 trait MatchClient: Sync {
     type Assignment: Send + Sync;
 
@@ -297,7 +298,8 @@ impl From<FailureReason> for FlamingoMatchRejection {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl MatchClient for FlamingoVerifierClient {
     type Assignment = VerifiedAssignment;
 
@@ -404,7 +406,7 @@ fn verifier_error(error: &ClientError) -> FlamingoError {
     FlamingoError::Verifier(error.to_string())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use std::{
         collections::{HashMap, VecDeque},

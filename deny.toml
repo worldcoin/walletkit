@@ -4,6 +4,10 @@ all-features = true
 
 [sources]
 unknown-registry = "deny"
+allow-git = [
+  "https://github.com/worldcoin/flamingo",
+  "https://github.com/worldcoin/pontifex",
+]
 
 [bans]
 deny = [
