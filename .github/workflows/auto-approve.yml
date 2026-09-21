@@ -1,9 +1,9 @@
 name: Auto approve
 
-# A pi agent reviews the pull request with its normal tools and records a verdict
-# through its approve_pr tool. The step after it holds the bot token and approves
-# only when that verdict is low risk and the guards hold. Review threads must still
-# be resolved before the merge, which branch protection requires.
+# A pi agent reviews the pull request with its normal tools and records a verdict by
+# writing /tmp/verdict.json. The step after it holds the bot token and approves only
+# when that verdict is low risk and the guards hold. Review threads must still be
+# resolved before the merge, which branch protection requires.
 #
 # `pull_request_target` runs this file from the base branch, so a pull request
 # cannot rewrite the job that approves it or reach the OpenRouter key.
@@ -26,7 +26,7 @@ concurrency:
 
 env:
   BOT_LOGIN: wld-walletkit-bot
-  PI_VERSION: "0.85.1"
+  PI_NIXPKGS_REV: 44a91898084f46797b5fac650c7e8c9ac38c43d4 # pi-coding-agent 0.86.0
   PR_NUMBER: ${{ github.event.pull_request.number }}
   EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
   PREFILTER_MODEL: typesafe/jev-1.13
@@ -103,9 +103,15 @@ jobs:
           run_review=false
           echo "::notice::$model scored this $score, at or above $PREFILTER_THRESHOLD; skipping the full review"
 
+      - name: Install Nix
+        if: steps.prefilter.outputs.run_review != 'false' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+
+      # pi comes from nixpkgs, so the whole tree is pinned by a revision and nothing is resolved
+      # from the registry at run time. Bump PI_NIXPKGS_REV to move it.
       - name: Install pi
         if: steps.prefilter.outputs.run_review != 'false' && github.event.pull_request.head.repo.full_name == github.repository
-        run: npm install --global --ignore-scripts "@earendil-works/pi-coding-agent@$PI_VERSION"
+        run: nix profile install "github:NixOS/nixpkgs/$PI_NIXPKGS_REV#pi-coding-agent"
 
       # No bot token in this step: the agent has shell access over untrusted
       # content, so the approval is submitted by the step below instead.
@@ -118,38 +124,18 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          pi_dir="$(npm root -g)/@earendil-works/pi-coding-agent"
-          cat > "$pi_dir/approve.ts" <<'TS'
-          import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-          import { Type } from "typebox";
-          import { writeFileSync } from "node:fs";
-
-          export default function (pi: ExtensionAPI) {
-            pi.registerTool({
-              name: "approve_pr",
-              label: "Approve PR",
-              description: "Approve a PR as low-risk",
-              parameters: Type.Object({
-                reason: Type.String({ description: "One sentence explaining why the change is low risk" }),
-              }),
-              async execute(_id, params) {
-                writeFileSync("/tmp/verdict.json", JSON.stringify({ approve: true, reason: params.reason }));
-                return { content: [{ type: "text" as const, text: "Verdict recorded." }], details: {} };
-              },
-            });
-          }
-          TS
           # Skills and context files are not disabled. The agent runs in an empty working
           # directory because this workflow checks out nothing, so there is no repository
           # content to load them from. Checking out code before this step would turn both
           # into untrusted instruction channels.
           timeout 900 pi --print --mode text \
             --provider openrouter --model deepseek/deepseek-v4.1-flash \
-            --extension "$pi_dir/approve.ts" \
             --session-dir /tmp/pi-sessions \
             --system-prompt "You are a pull request review agent. Inspect the diff & changes surrounding it. Your job is to figure out if this PR is a low-risk change. A low-risk change is: a change a reviewer can read in one pass: small, self-contained and easy to reason about, such as a bug fix, a contained refactor, or a dependency bump verified against the upstream source
 
-          Call approve_pr when the change is low risk and none of these conditions hold. If any of them holds, say which one and do not call approve_pr:
+          Record your verdict by writing exactly this JSON to /tmp/verdict.json, but only when the change is low risk and none of the conditions below hold:
+          {\"approve\": true, \"reason\": \"one sentence on why the change is low risk\"}
+          If any of these conditions holds, name it and do not write that file:
           - a large new API surface
           - changes to the existing API surface exported to Swift, Kotlin or the web through UniFFI (only that exported surface matters)
           - a lot of code: many lines, many files, or more than a reviewer would read in one pass
@@ -171,7 +157,7 @@ jobs:
           set -euo pipefail
           outcome="No low-risk verdict, so no approval."
           if [ -f /tmp/verdict.json ] && jq -e '.approve == true' /tmp/verdict.json >/dev/null; then
-            outcome="Low-risk verdict recorded: $(jq -r .reason /tmp/verdict.json)"
+            outcome="Low-risk verdict recorded: $(jq -r '.reason // "low risk"' /tmp/verdict.json)"
           elif [ -f /tmp/prefilter.json ]; then
             outcome="Pre-filter $(jq -r .model /tmp/prefilter.json) scored this $(jq -r .score /tmp/prefilter.json) on the skip-review question, so the detailed review was skipped."
           fi
@@ -214,6 +200,6 @@ jobs:
           # Bind the approval to the head that was reviewed. `gh pr review` has no commit_id, so a
           # push landing between the checks above and the review could attach it to a head the agent
           # did not see.
-          body="Risk agent: $(jq -r .reason /tmp/verdict.json)"
+          body="Risk agent: $(jq -r '.reason // "low risk"' /tmp/verdict.json)"
           gh api -X POST "/repos/$repo/pulls/$PR_NUMBER/reviews" \
             -f commit_id="$EXPECTED_HEAD" -f event=APPROVE -f body="$body" >/dev/null
