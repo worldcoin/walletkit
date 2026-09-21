@@ -3286,18 +3286,18 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 
 [[package]]
 name = "flamingo-verifier-api-types"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcd7aeda4fe87369c7302be8efc8f8b7061373a281ee2164ad29d008b45de9d2"
+checksum = "753c3bb33c6957e7d83ad9f7bffb36f72e75fd65005fd54813ea085dd439b092"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "flamingo-verifier-client"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d16ff16567769109a6b945844ed02bc49df4946406cca0cc9c0342e2ecf15859"
+checksum = "eb4a5c25a10e733f19a507ced5270b7fcab66f6d7a2b47e6391bd4472ad17066"
 dependencies = [
  "base64 0.22.1",
  "flamingo-verifier-api-types",
@@ -3314,9 +3314,9 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-protocol"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13864bdee45533d6c83acbcbf1df5faadd36d451a1e42562e1bfc90257213699"
+checksum = "b39b0c2d481a09ce3047a0adda53bfda3372422510bdb4f2a4c11fb0738aa5b9"
 dependencies = [
  "ark-ff 0.5.0",
  "coset",
@@ -3329,14 +3329,16 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-sealed-types"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d5fadf79c8263ee4faae1f024a2d333e973ba5c25462efa898d03e31e19ad2"
+checksum = "5f9a69d2013a4be260d5abb9c619b064fa7bd349e250d3127f22213f8b72d8fd"
 dependencies = [
  "ciborium",
+ "flamingo-verifier-api-types",
  "flamingo-verifier-protocol",
  "serde",
  "serde_bytes",
+ "sha2 0.10.9",
  "zeroize",
 ]
 
@@ -8372,7 +8374,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -9324,6 +9326,7 @@ dependencies = [
  "ctor",
  "dotenvy",
  "eyre",
+ "flamingo-verifier-api-types",
  "flamingo-verifier-client",
  "flamingo-verifier-protocol",
  "flamingo-verifier-sealed-types",

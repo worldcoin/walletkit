@@ -271,8 +271,7 @@ jobs:
         rust:
           - stable
           - nightly
-          - 1.98.1
-          - 1.94.1 # MSRV
+          - 1.98.1 # MSRV
 
     steps:
       - name: Checkout code
