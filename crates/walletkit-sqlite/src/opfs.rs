@@ -144,7 +144,7 @@ mod tests {
         clippy::future_not_send,
         reason = "OPFS and its JavaScript handles are dedicated-worker local"
     )]
-    async fn encrypted_database_persists_without_plaintext_at_rest() {
+    async fn encrypted_database_persists_with_plaintext_header() {
         const DATABASE_PATH: &str = "walletkit-encrypted-opfs-test.sqlite";
         const SECRET: &str = "walletkit-opfs-secret-marker";
 
@@ -165,8 +165,12 @@ mod tests {
         let stored = export_database(path).expect("export encrypted bytes");
 
         assert!(
-            !stored.starts_with(b"SQLite format 3\0"),
-            "encrypted database should not have the plaintext sqlite magic header"
+            stored.starts_with(b"SQLite format 3\0"),
+            "encrypted database should retain the plaintext SQLite header"
+        );
+        assert_eq!(
+            stored[20], 32,
+            "header must advertise the cipher's reserved bytes"
         );
         assert!(
             !stored
