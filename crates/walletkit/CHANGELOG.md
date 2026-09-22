@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.2](https://github.com/worldcoin/walletkit/compare/v0.23.0...v0.23.2) - 2026-09-22
+
+### Fixed
+
+- use a 32-byte plaintext SQLite header on every target and migrate existing fully encrypted-header databases in place
+
+### Notes
+
+- This is a non-linear hotfix based on v0.23.0 and intentionally excludes the changes released in v0.23.1.
+
 ## [0.23.0](https://github.com/worldcoin/walletkit/compare/v0.22.0...v0.23.0) - 2026-09-16
 
 ### Fixed

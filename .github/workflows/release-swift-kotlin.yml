@@ -126,14 +126,13 @@ jobs:
           git push
           git push origin $NEW_VERSION
 
-      - name: Mark release as latest
+      - name: Publish Swift release
         env:
           GH_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
         run: |
           gh release edit ${{ needs.pre-release-checks.outputs.new_version }} \
             --repo worldcoin/walletkit-swift \
-            --draft=false \
-            --latest
+            --draft=false
 
   prepare-kotlin:
     name: Prepare Kotlin
