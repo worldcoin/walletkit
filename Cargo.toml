@@ -41,10 +41,17 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-flamingo-verifier-api-types = "0.4.0"
-flamingo-verifier-client = "0.4.0"
-flamingo-verifier-protocol = "0.4.0"
-flamingo-verifier-sealed-types = "0.4.0"
+# crates.io `flamingo-verifier-*` 0.4.0 and `pontifex` 2.0.0 are not browser-safe:
+# pontifex 2.0.0 calls `std::time::SystemTime::now()`, which panics in browsers.
+# Pin the browser-compatible 0.4 line at worldcoin/flamingo#116's branch head and
+# the merged browser-compat `pontifex` rev (worldcoin/pontifex#47), both in lockstep
+# with flamingo's own manifests. Move to a merged rev/tag once flamingo#116 lands.
+flamingo-verifier-api-types = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "00bdb03bad1229a875ebc6772baff1f18e5b6629" }
+flamingo-verifier-client = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "00bdb03bad1229a875ebc6772baff1f18e5b6629" }
+flamingo-verifier-protocol = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "00bdb03bad1229a875ebc6772baff1f18e5b6629" }
+flamingo-verifier-sealed-types = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "00bdb03bad1229a875ebc6772baff1f18e5b6629" }
+# Merged browser-compat rev (worldcoin/pontifex#47), pinned in lockstep with flamingo's own manifests.
+pontifex = { version = "2.0.0", git = "https://github.com/worldcoin/pontifex", rev = "51d3b1171d8f9d6c915ce1a6ff537058e3292072" }
 eyre = "0.6"
 getrandom = "0.3"
 hex = "0.4"

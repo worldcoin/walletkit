@@ -112,7 +112,7 @@ jobs:
           llvm-ar-18 --version | head -n1
 
       - name: Run WASM compile check
-        run: cargo check -p walletkit --features embed-zkeys --target wasm32-unknown-unknown
+        run: cargo check -p walletkit --features embed-zkeys --locked --target wasm32-unknown-unknown
 
       # Keep this version aligned with the wasm-bindgen version in Cargo.lock.
       - name: Install WASM browser test runner
@@ -121,7 +121,7 @@ jobs:
       - name: Test walletkit-sqlite in a browser runner
         run: |
           CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" \
-            cargo test -p walletkit-sqlite --target wasm32-unknown-unknown
+            cargo test -p walletkit-sqlite --locked --target wasm32-unknown-unknown
 
   swift-build:
     name: Build Swift

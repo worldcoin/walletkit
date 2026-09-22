@@ -243,7 +243,7 @@ impl From<VerifiedMatch> for VerifiedMatchToken {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::{FlamingoLiveCapture, FlamingoMatchRequest, MatchInputs};
 
