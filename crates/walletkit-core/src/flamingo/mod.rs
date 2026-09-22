@@ -40,7 +40,8 @@ pub struct FlamingoMatcher {
     client: OnceCell<FlamingoVerifierClient>,
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 trait MatchClient: Sync {
     type Assignment: Send + Sync;
 
@@ -53,7 +54,8 @@ trait MatchClient: Sync {
     ) -> Result<MatchResult, ClientError>;
 }
 
-#[uniffi::export(async_runtime = "tokio")]
+#[cfg_attr(feature = "uniffi-wasm", uniffi::export)]
+#[cfg_attr(not(feature = "uniffi-wasm"), uniffi::export(async_runtime = "tokio"))]
 impl FlamingoMatcher {
     /// Creates an instance with default values, use `with_measurements` and `with_headers` for customization.
     ///
@@ -154,7 +156,8 @@ impl FlamingoMatcher {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl MatchClient for FlamingoVerifierClient {
     type Assignment = VerifiedAssignment;
 
@@ -258,7 +261,7 @@ fn verifier_error(error: &ClientError) -> FlamingoError {
     FlamingoError::Verifier(error.to_string())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use std::{
         collections::{HashMap, VecDeque},
