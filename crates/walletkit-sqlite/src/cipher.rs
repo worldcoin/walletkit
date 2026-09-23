@@ -730,48 +730,81 @@ mod tests {
         );
     }
 
+    /// Key for [`LEGACY_ENCRYPTED_HEADER_FIXTURE`]. `WalletKit` releases before
+    /// the plaintext-header change encrypted the header with this raw key.
+    const LEGACY_FIXTURE_KEY: [u8; 32] = [0x61; 32];
+
+    /// Database written by a pre-plaintext-header `WalletKit` release, frozen so
+    /// compatibility is measured against real old bytes rather than whatever
+    /// the current codec happens to produce. Regenerate only when the legacy
+    /// format itself must change:
+    /// `cargo test -p walletkit-sqlite --lib -- --ignored regenerate_legacy_encrypted_header_fixture`.
+    const LEGACY_ENCRYPTED_HEADER_FIXTURE: &[u8] =
+        include_bytes!("../tests/fixtures/legacy_encrypted_header.sqlite");
+
     #[test]
-    fn test_encrypted_header_database_migrates_to_plaintext_header() {
+    #[ignore = "regenerates the checked-in legacy migration fixture"]
+    fn regenerate_legacy_encrypted_header_fixture() {
         init_sqlite();
-        let dir = tempfile::tempdir().expect("create temp dir");
-        let path = dir.path().join("encrypted-header.sqlite");
-        let key = SecretBox::init_with(|| [0x61_u8; 32]);
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/legacy_encrypted_header.sqlite");
+        std::fs::create_dir_all(path.parent().expect("fixture has a parent"))
+            .expect("create fixtures directory");
+        let _ = std::fs::remove_file(&path);
+        let key = SecretBox::init_with(|| LEGACY_FIXTURE_KEY);
 
         {
             let conn =
-                open_fully_encrypted(&path, &key).expect("create legacy database");
+                open_fully_encrypted(&path, &key).expect("create legacy fixture");
             conn.execute_batch(
                 "CREATE TABLE secret (id INTEGER PRIMARY KEY, val TEXT);\
                  INSERT INTO secret VALUES (1, 'preserve-me');",
             )
-            .expect("write legacy encrypted data");
+            .expect("write legacy fixture");
         }
 
-        let legacy_bytes = std::fs::read(&path).expect("read legacy database");
+        let bytes = std::fs::read(&path).expect("read regenerated fixture");
         assert!(
-            !legacy_bytes.starts_with(b"SQLite format 3\0"),
+            !bytes.starts_with(b"SQLite format 3\0"),
+            "regenerated fixture must use the fully-encrypted legacy header"
+        );
+    }
+
+    #[test]
+    fn test_frozen_legacy_encrypted_header_database_migrates() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("legacy-encrypted-header.sqlite");
+        let key = SecretBox::init_with(|| LEGACY_FIXTURE_KEY);
+        std::fs::write(&path, LEGACY_ENCRYPTED_HEADER_FIXTURE)
+            .expect("write fixture copy");
+
+        assert!(
+            !LEGACY_ENCRYPTED_HEADER_FIXTURE.starts_with(b"SQLite format 3\0"),
             "fixture must use the fully-encrypted legacy header"
         );
         assert!(
-            !legacy_bytes
+            !LEGACY_ENCRYPTED_HEADER_FIXTURE
                 .windows("preserve-me".len())
                 .any(|window| window == b"preserve-me"),
-            "legacy database contents must be encrypted"
+            "fixture contents must be encrypted"
         );
 
-        let wrong_key = SecretBox::init_with(|| [0x62_u8; 32]);
+        let wrong_key = SecretBox::init_with(|| [0x62u8; 32]);
         assert!(
             open_encrypted(&path, &wrong_key).is_err(),
-            "legacy database must reject the wrong key before migration"
+            "legacy fixture must reject the wrong key before migration"
         );
         assert_eq!(
-            std::fs::read(&path).expect("read legacy database after wrong-key open"),
-            legacy_bytes,
-            "wrong-key open must not migrate or modify the legacy database"
+            std::fs::read(&path)
+                .expect("read fixture after wrong-key open")
+                .as_slice(),
+            LEGACY_ENCRYPTED_HEADER_FIXTURE,
+            "wrong-key open must not migrate or modify the frozen fixture"
         );
 
         {
-            let conn = open_encrypted(&path, &key).expect("migrate legacy database");
+            let conn = open_encrypted(&path, &key).expect("migrate legacy fixture");
             let value = conn
                 .query_row("SELECT val FROM secret WHERE id = 1", &[], |row| {
                     Ok(row.column_text(0))
@@ -792,7 +825,8 @@ mod tests {
             "header must advertise the cipher's reserved bytes"
         );
         assert_ne!(
-            migrated_bytes, legacy_bytes,
+            migrated_bytes.as_slice(),
+            LEGACY_ENCRYPTED_HEADER_FIXTURE,
             "migration must rewrite the encrypted on-disk format"
         );
         assert!(
