@@ -517,29 +517,57 @@ pub fn integrity_check(conn: &Connection) -> DbResult<bool> {
     Ok(result.trim() == "ok")
 }
 
+/// Raw key for the pre-plaintext-header format. `WalletKit` releases before the
+/// plaintext-header change encrypted headers with this key, so it also decrypts
+/// [`LEGACY_ENCRYPTED_HEADER_FIXTURE`].
+#[cfg(test)]
+pub(crate) const LEGACY_FIXTURE_KEY: [u8; 32] = [0x61; 32];
+
+/// Database written by a pre-plaintext-header `WalletKit` release, frozen so
+/// compatibility is measured against real old bytes rather than whatever the
+/// current codec happens to produce. Regenerate only when the legacy format
+/// itself must change:
+/// `cargo test -p walletkit-sqlite --lib -- --ignored regenerate_legacy_encrypted_header_fixture`.
+#[cfg(test)]
+pub(crate) const LEGACY_ENCRYPTED_HEADER_FIXTURE: &[u8] =
+    include_bytes!("../tests/fixtures/legacy_encrypted_header.sqlite");
+
+/// Opens a database in the pre-plaintext-header format for migration tests.
+///
+/// Matching the target's historical journal policy matters: native databases
+/// used WAL while WASM databases used a rollback journal, and the OPFS SAH-pool
+/// cannot open a WAL database at all.
+#[cfg(test)]
+pub(crate) fn open_fully_encrypted(
+    path: &Path,
+    key: &SecretBox<[u8; 32]>,
+) -> DbResult<Connection> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let conn = Connection::open(path, false)?;
+    #[cfg(target_arch = "wasm32")]
+    let conn = Connection::open_with_opfs_vfs(path, false)?;
+    ensure_cipher(&conn)?;
+    encrypt_or_unlock_fully_encrypted(&conn, key)?;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    ensure_journal_mode(&conn, "WAL")?;
+    #[cfg(target_arch = "wasm32")]
+    ensure_journal_mode(&conn, "DELETE")?;
+    Ok(conn)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        encrypt_or_unlock_fully_encrypted, ensure_cipher, ensure_journal_mode,
         export_plaintext_copy, import_plaintext_copy, integrity_check,
-        is_plaintext_header_probe_error, open_encrypted, Error, SQLITE_CORRUPT,
+        is_plaintext_header_probe_error, open_encrypted, open_fully_encrypted, Error,
+        LEGACY_ENCRYPTED_HEADER_FIXTURE, LEGACY_FIXTURE_KEY, SQLITE_CORRUPT,
         SQLITE_ERROR,
     };
     use crate::params;
     use crate::test_utils::init_sqlite;
     use crate::Connection;
     use secrecy::SecretBox;
-
-    fn open_fully_encrypted(
-        path: &std::path::Path,
-        key: &SecretBox<[u8; 32]>,
-    ) -> crate::DbResult<Connection> {
-        let conn = Connection::open(path, false)?;
-        ensure_cipher(&conn)?;
-        encrypt_or_unlock_fully_encrypted(&conn, key)?;
-        ensure_journal_mode(&conn, "WAL")?;
-        Ok(conn)
-    }
 
     #[test]
     fn test_plaintext_header_probe_errors() {
@@ -729,18 +757,6 @@ mod tests {
             "wrong-key open must not modify encrypted data"
         );
     }
-
-    /// Key for [`LEGACY_ENCRYPTED_HEADER_FIXTURE`]. `WalletKit` releases before
-    /// the plaintext-header change encrypted the header with this raw key.
-    const LEGACY_FIXTURE_KEY: [u8; 32] = [0x61; 32];
-
-    /// Database written by a pre-plaintext-header `WalletKit` release, frozen so
-    /// compatibility is measured against real old bytes rather than whatever
-    /// the current codec happens to produce. Regenerate only when the legacy
-    /// format itself must change:
-    /// `cargo test -p walletkit-sqlite --lib -- --ignored regenerate_legacy_encrypted_header_fixture`.
-    const LEGACY_ENCRYPTED_HEADER_FIXTURE: &[u8] =
-        include_bytes!("../tests/fixtures/legacy_encrypted_header.sqlite");
 
     #[test]
     #[ignore = "regenerates the checked-in legacy migration fixture"]
