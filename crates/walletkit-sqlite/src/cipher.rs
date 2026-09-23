@@ -49,6 +49,7 @@ use super::error::{DbResult, Error};
 const CIPHER_CHACHA20: &str = "chacha20";
 const PLAINTEXT_HEADER_SIZE: i64 = 32;
 const SQLITE_ERROR: i32 = 1;
+const SQLITE_CORRUPT: i32 = 11;
 const FOREIGN_KEYS_ON: i64 = 1;
 const SYNCHRONOUS_FULL: i64 = 2;
 const SECURE_DELETE_ON: i64 = 1;
@@ -151,11 +152,14 @@ fn encrypt_or_unlock(
 }
 
 /// A plaintext-header encrypted page exposes format fields that vanilla
-/// `SQLite` rejects before the codec is configured with the stable
-/// `SQLITE_ERROR: unsupported file format` diagnostic.
+/// `SQLite` tries to parse before the codec is configured. Depending on the
+/// encrypted page bytes, that probe can fail either while validating the
+/// header fields or while parsing the page body.
 fn is_plaintext_header_probe_error(error: &Error) -> bool {
     let primary_code = error.code.0 & 0xff;
-    primary_code == SQLITE_ERROR && error.message == "unsupported file format"
+    (primary_code == SQLITE_ERROR && error.message == "unsupported file format")
+        || (primary_code == SQLITE_CORRUPT
+            && error.message == "database disk image is malformed")
 }
 
 fn ensure_plaintext_header(conn: &Connection) -> DbResult<()> {
@@ -517,7 +521,9 @@ pub fn integrity_check(conn: &Connection) -> DbResult<bool> {
 mod tests {
     use super::{
         encrypt_or_unlock_fully_encrypted, ensure_cipher, ensure_journal_mode,
-        export_plaintext_copy, import_plaintext_copy, integrity_check, open_encrypted,
+        export_plaintext_copy, import_plaintext_copy, integrity_check,
+        is_plaintext_header_probe_error, open_encrypted, Error, SQLITE_CORRUPT,
+        SQLITE_ERROR,
     };
     use crate::params;
     use crate::test_utils::init_sqlite;
@@ -533,6 +539,22 @@ mod tests {
         encrypt_or_unlock_fully_encrypted(&conn, key)?;
         ensure_journal_mode(&conn, "WAL")?;
         Ok(conn)
+    }
+
+    #[test]
+    fn test_plaintext_header_probe_errors() {
+        assert!(is_plaintext_header_probe_error(&Error::new(
+            SQLITE_ERROR,
+            "unsupported file format",
+        )));
+        assert!(is_plaintext_header_probe_error(&Error::new(
+            SQLITE_CORRUPT,
+            "database disk image is malformed",
+        )));
+        assert!(!is_plaintext_header_probe_error(&Error::new(
+            SQLITE_CORRUPT,
+            "database or disk is full",
+        )));
     }
 
     #[test]
