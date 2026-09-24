@@ -22,16 +22,16 @@ jobs:
           set -euo pipefail
 
           # The /ohttp-keys endpoints return application/ohttp-keys payloads that
-          # include both X25519 and Kyber768 HPKE key configs. The Rust ohttp crate
-          # (v0.7.2) only supports X25519 and silently skips Kyber — but the Kyber
-          # configs make up ~96% of the payload size. This filter strips them out.
+          # can include X25519, legacy Kyber768, and X-Wing HPKE key configs.
+          # WalletKit supports X25519 and X-Wing; strip unsupported KEMs such as
+          # legacy Kyber768, which otherwise dominates the embedded payload size.
           #
           # Wire format (RFC 9458): list of length-delimited key configs:
           #   [u16 BE] config_length
           #   [u8]     key_id
-          #   [u16 BE] kem_id    <- 0x0020 = X25519 (keep), 0x0030 = Kyber (drop)
+          #   [u16 BE] kem_id    <- 0x0020 = X25519, 0x647a = X-Wing
           #   [...]    public_key + cipher_suites
-          filter_x25519() {
+          filter_supported_kems() {
             python3 -c "
           import sys, struct, base64
           data = base64.b64decode(sys.stdin.read())
@@ -43,7 +43,7 @@ jobs:
               cfg = data[i+2:i+2+cfg_len]
               # KEM ID sits at offset 1 in the config (after 1-byte key_id)
               kem_id = struct.unpack('>H', cfg[1:3])[0]
-              if kem_id == 0x0020:  # DHKEM(X25519, HKDF-SHA256)
+              if kem_id in (0x0020, 0x647a):  # X25519 or X-Wing
                   out += data[i:i+2+cfg_len]
               i += 2 + cfg_len
           print(base64.b64encode(out).decode(), end='')
@@ -62,7 +62,7 @@ jobs:
           for key in "${!ENDPOINTS[@]}"; do
             url="${ENDPOINTS[$key]}"
             echo "Fetching $key from $url"
-            value=$(curl -sf "$url" | base64 -w0 | filter_x25519)
+            value=$(curl -sf "$url" | base64 -w0 | filter_supported_kems)
             if [ -z "$value" ]; then
               echo "::error::Failed to fetch key config for $key from $url"
               exit 1
