@@ -1,3 +1,6 @@
+/// Local credential preflight checks for proof requests.
+pub mod credential_check;
+
 use world_id_core::requests::{
     ProofRequest as CoreProofRequest, ProofResponse as CoreProofResponse,
 };
