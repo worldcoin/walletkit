@@ -17,10 +17,10 @@
 //!
 //! 3. **Detect and encrypt or unlock** -- A read from `sqlite_master` succeeds
 //!    for a plaintext (or new) database. Such a database is moved out of WAL
-//!    mode and atomically encrypted with `PRAGMA rekey`. If the read returns
-//!    `SQLITE_NOTADB`, the database is treated as encrypted and unlocked with
-//!    `PRAGMA key`. Both PRAGMAs receive the 32-byte `K_intermediate` as a raw
-//!    hex key, bypassing the passphrase KDF.
+//!    mode and atomically encrypted with `PRAGMA rekey`. Existing databases
+//!    with a fully encrypted header are unlocked using their old settings and
+//!    migrated in place. Both `key` and `rekey` receive the 32-byte
+//!    `K_intermediate` as a raw hex key, bypassing the passphrase KDF.
 //!
 //! 4. **Verify** -- We read from `sqlite_master` after rekeying or keying. A
 //!    wrong key returns `SQLITE_NOTADB` because the decrypted page header does
@@ -32,6 +32,11 @@
 //! The default cipher is **ChaCha20-Poly1305** (authenticated encryption).
 //! All crypto is built into the `sqlite3mc` amalgamation -- no OpenSSL or
 //! other external crypto library is needed on any platform.
+//!
+//! The first 32 bytes of every database header remain plaintext. This gives
+//! all targets one on-disk format and lets iOS recognize shared-container
+//! databases in WAL mode. Existing databases with fully encrypted headers are
+//! migrated in place on their first successful open.
 
 use std::path::Path;
 
@@ -42,6 +47,9 @@ use super::connection::Connection;
 use super::error::{DbResult, Error};
 
 const CIPHER_CHACHA20: &str = "chacha20";
+const PLAINTEXT_HEADER_SIZE: i64 = 32;
+const SQLITE_ERROR: i32 = 1;
+const SQLITE_CORRUPT: i32 = 11;
 const FOREIGN_KEYS_ON: i64 = 1;
 const SYNCHRONOUS_FULL: i64 = 2;
 const SECURE_DELETE_ON: i64 = 1;
@@ -102,37 +110,101 @@ fn configure_connection(
     Ok(())
 }
 
-/// Encrypts an accessible plaintext database or unlocks an encrypted one.
+/// Encrypts or unlocks a database with a plaintext `SQLite` header.
 ///
-/// Only `SQLITE_NOTADB` identifies the expected encrypted-file case. Other
-/// probe failures (I/O errors, corruption, locking failures) are returned
-/// unchanged so they cannot accidentally initiate a migration.
+/// Earlier `WalletKit` versions encrypted the header completely. Those databases
+/// must first be opened with the old settings, moved out of WAL mode, and rekeyed
+/// after configuring the plaintext header. Databases that already start with the
+/// `SQLite` magic bytes are either plaintext or already use the new format;
+/// probing the schema before applying the key distinguishes the two cases.
 fn encrypt_or_unlock(
     conn: &Connection,
     k_intermediate: &SecretBox<[u8; 32]>,
 ) -> DbResult<()> {
     match verify_schema_readable(conn) {
         Ok(()) => {
-            // sqlite3mc cannot rekey a WAL database. Switching to DELETE also
-            // checkpoints a prior plaintext WAL before encryption. If another
-            // connection prevents the transition, fail without modifying data.
+            // Plaintext (or newly-created) database. Configure the new format
+            // before the first rekey so it is never written with an encrypted
+            // header.
+            ensure_journal_mode(conn, "DELETE")?;
+            ensure_plaintext_header(conn)?;
+            apply_rekey(conn, k_intermediate)?;
+            verify_encryption(conn, "plaintext database encryption verification failed")
+        }
+        Err(error) if is_plaintext_header_probe_error(&error) => {
+            // The SQLite header is visible but the schema is not readable
+            // without the codec: this is already the plaintext-header format.
+            ensure_plaintext_header(conn)?;
+            apply_key(conn, k_intermediate)
+        }
+        Err(error) if error.code.0 & 0xff == super::ffi::SQLITE_NOTADB => {
+            // Legacy WalletKit format. Unlock it with the encrypted-header
+            // settings, checkpoint WAL, then atomically rekey with the same raw
+            // key after selecting the common plaintext-header format.
+            apply_key(conn, k_intermediate)?;
+            ensure_journal_mode(conn, "DELETE")?;
+            ensure_plaintext_header(conn)?;
+            apply_rekey(conn, k_intermediate)?;
+            verify_encryption(conn, "plaintext-header migration verification failed")
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// A plaintext-header encrypted page exposes format fields that vanilla
+/// `SQLite` tries to parse before the codec is configured. Depending on the
+/// encrypted page bytes, that probe can fail either while validating the
+/// header fields or while parsing the page body.
+fn is_plaintext_header_probe_error(error: &Error) -> bool {
+    let primary_code = error.code.0 & 0xff;
+    (primary_code == SQLITE_ERROR && error.message == "unsupported file format")
+        || (primary_code == SQLITE_CORRUPT
+            && error.message == "database disk image is malformed")
+}
+
+fn ensure_plaintext_header(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch(&format!(
+        "PRAGMA plaintext_header_size = {PLAINTEXT_HEADER_SIZE};"
+    ))?;
+    let actual = conn.query_row("PRAGMA plaintext_header_size;", &[], |row| {
+        Ok(row.column_i64(0))
+    })?;
+    if actual == PLAINTEXT_HEADER_SIZE {
+        Ok(())
+    } else {
+        Err(Error::new(
+            -1,
+            format!(
+                "could not ensure plaintext header size {PLAINTEXT_HEADER_SIZE}: SQLite selected {actual}"
+            ),
+        ))
+    }
+}
+
+/// Encrypts or unlocks a database using `WalletKit`'s legacy fully encrypted
+/// header format. Kept only to construct migration fixtures.
+#[cfg(test)]
+fn encrypt_or_unlock_fully_encrypted(
+    conn: &Connection,
+    k_intermediate: &SecretBox<[u8; 32]>,
+) -> DbResult<()> {
+    match verify_schema_readable(conn) {
+        Ok(()) => {
             ensure_journal_mode(conn, "DELETE")?;
             apply_rekey(conn, k_intermediate)?;
-            verify_schema_readable(conn).map_err(|e| {
-                Error::new(
-                    e.code.0,
-                    format!(
-                        "plaintext database encryption verification failed: {}",
-                        e.message
-                    ),
-                )
-            })
+            verify_encryption(conn, "plaintext database encryption verification failed")
         }
         Err(error) if error.code.0 & 0xff == super::ffi::SQLITE_NOTADB => {
             apply_key(conn, k_intermediate)
         }
         Err(error) => Err(error),
     }
+}
+
+fn verify_encryption(conn: &Connection, context: &str) -> DbResult<()> {
+    verify_schema_readable(conn).map_err(|error| {
+        Error::new(error.code.0, format!("{context}: {}", error.message))
+    })
 }
 
 /// Selects and verifies the on-disk cipher before the key activates it.
@@ -445,15 +517,73 @@ pub fn integrity_check(conn: &Connection) -> DbResult<bool> {
     Ok(result.trim() == "ok")
 }
 
+/// Raw key for the pre-plaintext-header format. `WalletKit` releases before the
+/// plaintext-header change encrypted headers with this key, so it also decrypts
+/// [`LEGACY_ENCRYPTED_HEADER_FIXTURE`].
+#[cfg(test)]
+pub(crate) const LEGACY_FIXTURE_KEY: [u8; 32] = [0x61; 32];
+
+/// Database written by a pre-plaintext-header `WalletKit` release, frozen so
+/// compatibility is measured against real old bytes rather than whatever the
+/// current codec happens to produce. Regenerate only when the legacy format
+/// itself must change:
+/// `cargo test -p walletkit-sqlite --lib -- --ignored regenerate_legacy_encrypted_header_fixture`.
+#[cfg(test)]
+pub(crate) const LEGACY_ENCRYPTED_HEADER_FIXTURE: &[u8] =
+    include_bytes!("../tests/fixtures/legacy_encrypted_header.sqlite");
+
+/// Opens a database in the pre-plaintext-header format for migration tests.
+///
+/// Matching the target's historical journal policy matters: native databases
+/// used WAL while WASM databases used a rollback journal, and the OPFS SAH-pool
+/// cannot open a WAL database at all.
+#[cfg(test)]
+pub(crate) fn open_fully_encrypted(
+    path: &Path,
+    key: &SecretBox<[u8; 32]>,
+) -> DbResult<Connection> {
+    #[cfg(not(target_arch = "wasm32"))]
+    let conn = Connection::open(path, false)?;
+    #[cfg(target_arch = "wasm32")]
+    let conn = Connection::open_with_opfs_vfs(path, false)?;
+    ensure_cipher(&conn)?;
+    encrypt_or_unlock_fully_encrypted(&conn, key)?;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    ensure_journal_mode(&conn, "WAL")?;
+    #[cfg(target_arch = "wasm32")]
+    ensure_journal_mode(&conn, "DELETE")?;
+    Ok(conn)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        export_plaintext_copy, import_plaintext_copy, integrity_check, open_encrypted,
+        export_plaintext_copy, import_plaintext_copy, integrity_check,
+        is_plaintext_header_probe_error, open_encrypted, open_fully_encrypted, Error,
+        LEGACY_ENCRYPTED_HEADER_FIXTURE, LEGACY_FIXTURE_KEY, SQLITE_CORRUPT,
+        SQLITE_ERROR,
     };
     use crate::params;
     use crate::test_utils::init_sqlite;
     use crate::Connection;
     use secrecy::SecretBox;
+
+    #[test]
+    fn test_plaintext_header_probe_errors() {
+        assert!(is_plaintext_header_probe_error(&Error::new(
+            SQLITE_ERROR,
+            "unsupported file format",
+        )));
+        assert!(is_plaintext_header_probe_error(&Error::new(
+            SQLITE_CORRUPT,
+            "database disk image is malformed",
+        )));
+        assert!(!is_plaintext_header_probe_error(&Error::new(
+            SQLITE_CORRUPT,
+            "database or disk is full",
+        )));
+    }
 
     #[test]
     fn test_cipher_encrypted_round_trip() {
@@ -493,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn test_plaintext_wal_database_is_rekeyed_in_place() {
+    fn test_plaintext_wal_database_migrates_to_plaintext_header() {
         init_sqlite();
         let dir = tempfile::tempdir().expect("create temp dir");
         let path = dir.path().join("plaintext.sqlite");
@@ -532,8 +662,20 @@ mod tests {
 
         let encrypted_bytes = std::fs::read(&path).expect("read encrypted");
         assert!(
-            !encrypted_bytes.starts_with(b"SQLite format 3\0"),
-            "rekey must remove the plaintext SQLite header"
+            encrypted_bytes.starts_with(b"SQLite format 3\0"),
+            "migration must retain the plaintext SQLite header"
+        );
+        assert_eq!(encrypted_bytes[18], 2, "database must use WAL read mode");
+        assert_eq!(encrypted_bytes[19], 2, "database must use WAL write mode");
+        assert_eq!(
+            encrypted_bytes[20], 32,
+            "header must advertise the cipher's reserved bytes"
+        );
+        assert!(
+            !encrypted_bytes
+                .windows("preserve-me".len())
+                .any(|window| window == b"preserve-me"),
+            "database contents must be encrypted"
         );
 
         {
@@ -554,6 +696,179 @@ mod tests {
         assert_eq!(
             std::fs::read(&path).expect("read after wrong-key open"),
             encrypted_bytes,
+            "wrong-key open must not modify migrated data"
+        );
+    }
+
+    #[test]
+    fn test_plaintext_header_encrypted_round_trip() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("plaintext-header.sqlite");
+        let key = SecretBox::init_with(|| [0x51_u8; 32]);
+
+        {
+            let conn =
+                open_encrypted(&path, &key).expect("create plaintext-header database");
+            conn.execute_batch(
+                "CREATE TABLE secret (id INTEGER PRIMARY KEY, val TEXT);\
+                 INSERT INTO secret VALUES (1, 'visible-header');",
+            )
+            .expect("write encrypted data");
+        }
+
+        let encrypted_bytes = std::fs::read(&path).expect("read encrypted database");
+        assert!(
+            encrypted_bytes.starts_with(b"SQLite format 3\0"),
+            "the SQLite file header must remain visible"
+        );
+        assert_eq!(encrypted_bytes[18], 2, "database must use WAL read mode");
+        assert_eq!(encrypted_bytes[19], 2, "database must use WAL write mode");
+        assert_eq!(
+            encrypted_bytes[20], 32,
+            "header must advertise the cipher's reserved bytes"
+        );
+        assert!(
+            !encrypted_bytes
+                .windows("visible-header".len())
+                .any(|window| window == b"visible-header"),
+            "database contents must remain encrypted"
+        );
+
+        {
+            let conn =
+                open_encrypted(&path, &key).expect("reopen plaintext-header database");
+            let value = conn
+                .query_row("SELECT val FROM secret WHERE id = 1", &[], |row| {
+                    Ok(row.column_text(0))
+                })
+                .expect("read encrypted data");
+            assert_eq!(value, "visible-header");
+        }
+
+        let wrong_key = SecretBox::init_with(|| [0x52_u8; 32]);
+        assert!(
+            open_encrypted(&path, &wrong_key).is_err(),
+            "plaintext-header database must reject the wrong key"
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("read after wrong-key open"),
+            encrypted_bytes,
+            "wrong-key open must not modify encrypted data"
+        );
+    }
+
+    #[test]
+    #[ignore = "regenerates the checked-in legacy migration fixture"]
+    fn regenerate_legacy_encrypted_header_fixture() {
+        init_sqlite();
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/legacy_encrypted_header.sqlite");
+        std::fs::create_dir_all(path.parent().expect("fixture has a parent"))
+            .expect("create fixtures directory");
+        let _ = std::fs::remove_file(&path);
+        let key = SecretBox::init_with(|| LEGACY_FIXTURE_KEY);
+
+        {
+            let conn =
+                open_fully_encrypted(&path, &key).expect("create legacy fixture");
+            conn.execute_batch(
+                "CREATE TABLE secret (id INTEGER PRIMARY KEY, val TEXT);\
+                 INSERT INTO secret VALUES (1, 'preserve-me');",
+            )
+            .expect("write legacy fixture");
+        }
+
+        let bytes = std::fs::read(&path).expect("read regenerated fixture");
+        assert!(
+            !bytes.starts_with(b"SQLite format 3\0"),
+            "regenerated fixture must use the fully-encrypted legacy header"
+        );
+    }
+
+    #[test]
+    fn test_frozen_legacy_encrypted_header_database_migrates() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("legacy-encrypted-header.sqlite");
+        let key = SecretBox::init_with(|| LEGACY_FIXTURE_KEY);
+        std::fs::write(&path, LEGACY_ENCRYPTED_HEADER_FIXTURE)
+            .expect("write fixture copy");
+
+        assert!(
+            !LEGACY_ENCRYPTED_HEADER_FIXTURE.starts_with(b"SQLite format 3\0"),
+            "fixture must use the fully-encrypted legacy header"
+        );
+        assert!(
+            !LEGACY_ENCRYPTED_HEADER_FIXTURE
+                .windows("preserve-me".len())
+                .any(|window| window == b"preserve-me"),
+            "fixture contents must be encrypted"
+        );
+
+        let wrong_key = SecretBox::init_with(|| [0x62u8; 32]);
+        assert!(
+            open_encrypted(&path, &wrong_key).is_err(),
+            "legacy fixture must reject the wrong key before migration"
+        );
+        assert_eq!(
+            std::fs::read(&path)
+                .expect("read fixture after wrong-key open")
+                .as_slice(),
+            LEGACY_ENCRYPTED_HEADER_FIXTURE,
+            "wrong-key open must not migrate or modify the frozen fixture"
+        );
+
+        {
+            let conn = open_encrypted(&path, &key).expect("migrate legacy fixture");
+            let value = conn
+                .query_row("SELECT val FROM secret WHERE id = 1", &[], |row| {
+                    Ok(row.column_text(0))
+                })
+                .expect("read migrated data");
+            assert_eq!(value, "preserve-me");
+        }
+
+        let migrated_bytes = std::fs::read(&path).expect("read migrated database");
+        assert!(
+            migrated_bytes.starts_with(b"SQLite format 3\0"),
+            "migration must expose the SQLite header"
+        );
+        assert_eq!(migrated_bytes[18], 2, "database must use WAL read mode");
+        assert_eq!(migrated_bytes[19], 2, "database must use WAL write mode");
+        assert_eq!(
+            migrated_bytes[20], 32,
+            "header must advertise the cipher's reserved bytes"
+        );
+        assert_ne!(
+            migrated_bytes.as_slice(),
+            LEGACY_ENCRYPTED_HEADER_FIXTURE,
+            "migration must rewrite the encrypted on-disk format"
+        );
+        assert!(
+            !migrated_bytes
+                .windows("preserve-me".len())
+                .any(|window| window == b"preserve-me"),
+            "migrated database contents must remain encrypted"
+        );
+
+        {
+            let conn = open_encrypted(&path, &key).expect("reopen migrated database");
+            let value = conn
+                .query_row("SELECT val FROM secret WHERE id = 1", &[], |row| {
+                    Ok(row.column_text(0))
+                })
+                .expect("read migrated data after reopen");
+            assert_eq!(value, "preserve-me");
+        }
+
+        assert!(
+            open_encrypted(&path, &wrong_key).is_err(),
+            "migrated database must reject the wrong key"
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("read migrated database after wrong-key open"),
+            migrated_bytes,
             "wrong-key open must not modify migrated data"
         );
     }

@@ -24,10 +24,21 @@ replacing the host engine with WalletKit's copy. New native FFI functions must
 add a matching prefixed wrapper; visibility attributes alone do not isolate
 symbols when linking static archives.
 
-The amalgamation, cipher configuration, key encoding, and encrypted on-disk
-format are unchanged. Cipher validation remains enabled. If a host previously
-caused WalletKit to create a plaintext database, opening it read-write now
-preserves its records and encrypts it in place with the supplied WalletKit key.
-The migration checkpoints a plaintext WAL and switches to a rollback journal
-because sqlite3mc cannot rekey in WAL mode; normal WAL policy is restored after
-encryption. A read-only open fails without modifying plaintext data.
+## Encryption format compatibility
+
+WalletKit leaves the first 32 bytes of every encrypted database header in
+plaintext on all targets. The visible header contains SQLite format metadata;
+database pages and application data remain encrypted with the supplied
+WalletKit key.
+
+On the first successful read-write open, WalletKit migrates databases created
+with the earlier fully encrypted header format to the plaintext-header format.
+It also preserves and encrypts records if a host previously caused WalletKit to
+create a plaintext database. Migration checkpoints any existing WAL, switches
+temporarily to a rollback journal because sqlite3mc cannot rekey in WAL mode,
+and restores the target's normal journal policy afterward.
+
+This format migration is forward-only. WalletKit versions that predate the
+32-byte plaintext header cannot open a newly created or migrated database. To
+support application rollback, preserve a compatible database backup before
+upgrading.
