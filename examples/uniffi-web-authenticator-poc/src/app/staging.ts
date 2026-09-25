@@ -1,11 +1,7 @@
 import { parse, stringify } from "lossless-json";
 import { privateKeyToAccount } from "viem/accounts";
 
-import type {
-  AuthenticatorLike,
-  CredentialStoreLike,
-  WalletKit,
-} from "walletkit-web";
+import type { WalletKit } from "walletkit-web";
 
 const FAUX_ISSUER_SCHEMA_ID = 128n;
 const STAGING_RP_ID = 46n;
@@ -39,20 +35,14 @@ function concat(...chunks: Uint8Array[]) {
   return result;
 }
 
-export async function issueFauxCredential(
-  module: WalletKit,
-  authenticator: AuthenticatorLike,
-  store: CredentialStoreLike,
-) {
-  const blindingFactor =
-    await authenticator.generateCredentialBlindingFactorRemote(
-      FAUX_ISSUER_SCHEMA_ID,
-    );
-  const sub = authenticator.computeCredentialSub(blindingFactor);
+export async function issueFauxCredential(wallet: WalletKit) {
+  const { blindingFactor, sub } = await wallet.prepareCredential(
+    FAUX_ISSUER_SCHEMA_ID,
+  );
   const response = await fetch("/api/faux-credential", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sub: sub.toHexString() }),
+    body: JSON.stringify({ sub }),
   });
   if (!response.ok) {
     throw new Error(
@@ -70,27 +60,11 @@ export async function issueFauxCredential(
     throw new Error("Faux issuer response contained an invalid credential");
   }
   const credentialBytes = new TextEncoder().encode(serializedCredential);
-  const credential = module.Credential.fromBytes(credentialBytes.buffer);
-  const now = BigInt(Math.floor(Date.now() / 1000));
-  const credentialId = store.storeCredential(
-    credential,
-    blindingFactor,
-    credential.expiresAt(),
-    undefined,
-    now,
-  );
-
-  return {
-    credentialId,
-    issuerSchemaId: credential.issuerSchemaId(),
-    sub: sub.toHexString(),
-  };
+  const stored = await wallet.storeCredential(credentialBytes, blindingFactor);
+  return { ...stored, sub };
 }
 
-export async function createStagingProofRequest(
-  module: WalletKit,
-  signal: string,
-) {
+export async function createStagingProofRequest(signal: string) {
   const nonce = crypto.getRandomValues(new Uint8Array(32));
   // A 31-byte random value is always within the BabyJubJub base field.
   nonce[0] = 0;
@@ -107,28 +81,26 @@ export async function createStagingProofRequest(
   const account = privateKeyToAccount(STAGING_RP_PRIVATE_KEY);
   const signature = await account.signMessage({ message: { raw: message } });
 
-  return module.ProofRequest.fromJson(
-    JSON.stringify({
-      id: crypto.randomUUID(),
-      version: 1,
-      proof_type: "uniqueness",
-      created_at: Number(createdAt),
-      expires_at: Number(expiresAt),
-      rp_id: `rp_${STAGING_RP_ID.toString(16).padStart(16, "0")}`,
-      oprf_key_id: `0x${STAGING_RP_ID.toString(16)}`,
-      session_id: null,
-      action: hex(action),
-      signature,
-      nonce: hex(nonce),
-      proof_requests: [
-        {
-          identifier: "faux-credential",
-          issuer_schema_id: Number(FAUX_ISSUER_SCHEMA_ID),
-          signal: hex(new TextEncoder().encode(signal)),
-          genesis_issued_at_min: null,
-          expires_at_min: null,
-        },
-      ],
-    }),
-  );
+  return JSON.stringify({
+    id: crypto.randomUUID(),
+    version: 1,
+    proof_type: "uniqueness",
+    created_at: Number(createdAt),
+    expires_at: Number(expiresAt),
+    rp_id: `rp_${STAGING_RP_ID.toString(16).padStart(16, "0")}`,
+    oprf_key_id: `0x${STAGING_RP_ID.toString(16)}`,
+    session_id: null,
+    action: hex(action),
+    signature,
+    nonce: hex(nonce),
+    proof_requests: [
+      {
+        identifier: "faux-credential",
+        issuer_schema_id: Number(FAUX_ISSUER_SCHEMA_ID),
+        signal: hex(new TextEncoder().encode(signal)),
+        genesis_issued_at_min: null,
+        expires_at_min: null,
+      },
+    ],
+  });
 }
