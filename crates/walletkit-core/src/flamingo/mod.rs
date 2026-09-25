@@ -85,14 +85,35 @@ impl FlamingoMatcher {
     /// are also pinned. It's the user's responsibility to ensure the measurements are from a trusted enclave and match the verifier's expectations.
     ///
     /// # Errors
-    /// Returns [`FlamingoError::Configuration`] if no measurement is set.
+    /// Returns [`FlamingoError::Configuration`] for missing PCR0/1/2, zero or malformed
+    /// measurements. Use [`Self::with_debug_measurements`] for development enclaves.
     pub fn with_measurements(
         &self,
         measurements: HashMap<u32, Vec<u8>>,
     ) -> Result<Self, FlamingoError> {
         Ok(Self {
             host_url: self.host_url.clone(),
-            config: Some(matcher_config(self.host_url.as_str(), measurements)?),
+            config: Some(matcher_config(self.host_url.as_str(), measurements, false)?),
+            headers: self.headers.clone(),
+            client: OnceCell::new(),
+        })
+    }
+
+    /// Returns a new instance accepting explicitly supplied debug enclave measurements.
+    ///
+    /// Pass 48 zero bytes for each of PCR0, PCR1 and PCR2 to match a Nitro debug enclave.
+    /// These values do not identify the enclave's code. Attestation signature, certificate,
+    /// freshness and exact PCR matching checks still apply. For development only.
+    ///
+    /// # Errors
+    /// Returns [`FlamingoError::Configuration`] for missing PCR0/1/2 or malformed measurements.
+    pub fn with_debug_measurements(
+        &self,
+        measurements: HashMap<u32, Vec<u8>>,
+    ) -> Result<Self, FlamingoError> {
+        Ok(Self {
+            host_url: self.host_url.clone(),
+            config: Some(matcher_config(self.host_url.as_str(), measurements, true)?),
             headers: self.headers.clone(),
             client: OnceCell::new(),
         })
@@ -198,6 +219,7 @@ fn parse_headers(headers: HashMap<String, String>) -> Result<HeaderMap, Flamingo
 fn matcher_config(
     host_url: &str,
     measurements: HashMap<u32, Vec<u8>>,
+    allow_debug_measurements: bool,
 ) -> Result<Config, FlamingoError> {
     for index in 0..=2 {
         if !measurements.contains_key(&index) {
@@ -213,7 +235,7 @@ fn matcher_config(
                 "PCR{index} must be exactly 48 bytes"
             )));
         }
-        if measurement.iter().all(|byte| *byte == 0) {
+        if !allow_debug_measurements && measurement.iter().all(|byte| *byte == 0) {
             return Err(FlamingoError::Configuration(format!(
                 "PCR{index} must be nonzero; debug enclaves are not accepted"
             )));
@@ -221,8 +243,12 @@ fn matcher_config(
         pcrs.push(PcrMeasurement::new(index, measurement));
     }
     pcrs.sort_unstable_by_key(|pcr| pcr.index);
-    Config::new(host_url, vec![pcrs])
-        .map_err(|error| FlamingoError::Configuration(error.to_string()))
+    let config = if allow_debug_measurements {
+        Config::new_with_debug_measurements(host_url, vec![pcrs])
+    } else {
+        Config::new(host_url, vec![pcrs])
+    };
+    config.map_err(|error| FlamingoError::Configuration(error.to_string()))
 }
 
 async fn perform_match<C: MatchClient>(
@@ -394,7 +420,7 @@ mod tests {
         let mut pins = measurements();
         pins.insert(8, vec![4; 48]);
         let config =
-            super::matcher_config("https://verifier.example.com", pins).unwrap();
+            super::matcher_config("https://verifier.example.com", pins, false).unwrap();
         let json = serde_json::to_value(config).unwrap();
         assert_eq!(json["allowed_pcr_configs"].as_array().unwrap().len(), 1);
         assert_eq!(json["allowed_pcr_configs"][0].as_array().unwrap().len(), 4);
@@ -422,6 +448,60 @@ mod tests {
                     matcher.with_measurements(pins),
                     Err(FlamingoError::Configuration(_))
                 ));
+            }
+        }
+    }
+
+    #[test]
+    fn debug_measurements_are_explicit_and_preserve_headers_and_extra_pins() {
+        let matcher = FlamingoMatcher::new("https://verifier.example.com")
+            .unwrap()
+            .with_headers(HashMap::from([(
+                "Authorization".to_string(),
+                "Bearer test".to_string(),
+            )]))
+            .unwrap();
+        let mut pins: HashMap<_, _> =
+            (0..=2).map(|index| (index, vec![0; 48])).collect();
+        pins.insert(8, vec![4; 48]);
+        assert!(matcher.with_measurements(pins.clone()).is_err());
+        let debug = matcher.with_debug_measurements(pins).unwrap();
+        assert!(debug.config.as_ref().unwrap().verifier().is_ok());
+        let json = serde_json::to_value(debug.config.as_ref().unwrap()).unwrap();
+        assert_eq!(json["allow_debug_measurements"], true);
+        assert_eq!(json["allowed_pcr_configs"][0].as_array().unwrap().len(), 4);
+        for index in 0..=2 {
+            assert_eq!(
+                json["allowed_pcr_configs"][0][index]["value"],
+                "00".repeat(48)
+            );
+        }
+        assert_eq!(json["allowed_pcr_configs"][0][3]["index"], 8);
+        assert_eq!(json["allowed_pcr_configs"][0][3]["value"], "04".repeat(48));
+        assert_eq!(debug.headers, matcher.headers);
+        assert!(matcher.config.is_none());
+        let production = debug.with_measurements(measurements()).unwrap();
+        assert_eq!(
+            serde_json::to_value(production.config.unwrap()).unwrap()
+                ["allow_debug_measurements"],
+            false
+        );
+    }
+
+    #[test]
+    fn debug_measurements_still_require_all_three_well_formed_pins() {
+        let matcher = FlamingoMatcher::new("https://verifier.example.com").unwrap();
+        assert!(matcher.with_debug_measurements(HashMap::new()).is_err());
+        for index in 0..=2 {
+            let mut pins = measurements();
+            pins.remove(&index);
+            assert!(matcher.with_debug_measurements(pins).is_err());
+        }
+        for index in [0, 1, 2, 8] {
+            for invalid in [vec![], vec![0; 47], vec![0; 49]] {
+                let mut pins = measurements();
+                pins.insert(index, invalid);
+                assert!(matcher.with_debug_measurements(pins).is_err());
             }
         }
     }
