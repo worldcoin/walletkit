@@ -297,7 +297,7 @@ mod tests {
     use flamingo_verifier_client::{
         Error as ClientError, VerifiedMatch, VerifiedMatchResult as MatchResult,
     };
-    use flamingo_verifier_protocol::match_token::MatchToken;
+    use flamingo_verifier_protocol::match_token::{MatchOperation, MatchToken};
     use flamingo_verifier_sealed_types::{
         AttestedStatement, FailureReason, MatchInputs,
     };
@@ -394,10 +394,9 @@ mod tests {
         ));
     }
     #[tokio::test]
-    async fn gray_badge_preserves_unsupported_operation_rejection() {
-        let client = FakeClient::new([Ok(MatchResult::Failed(
-            FailureReason::UnsupportedOperation,
-        ))]);
+    async fn gray_badge_preserves_infrastructure_rejection() {
+        let client =
+            FakeClient::new([Ok(MatchResult::Failed(FailureReason::Internal))]);
         let outcome = perform_match(
             &client,
             FlamingoMatchRequest::GrayBadge {
@@ -410,9 +409,7 @@ mod tests {
         .unwrap();
         assert!(matches!(
             outcome,
-            FlamingoMatchOutcome::Rejected(
-                FlamingoMatchRejection::UnsupportedOperation
-            )
+            FlamingoMatchOutcome::Rejected(FlamingoMatchRejection::Internal)
         ));
     }
     #[test]
@@ -704,8 +701,10 @@ mod tests {
                     signing_key_attestation: b"signing-key-attestation".to_vec(),
                 },
                 claims: flamingo_verifier_protocol::match_token::MatchClaims {
-                    live_image_hash: [1; 32],
-                    credential_claim: [2; 32],
+                    live_capture_hash: [1; 32],
+                    operation: MatchOperation::DeepFace {
+                        credential_claim: [2; 32],
+                    },
                     challenger_image_hash: [3; 32],
                     match_coefficient: 0.9,
                 },
