@@ -10,7 +10,7 @@
 //! ## Components
 //!
 //! [`crate::storage::CredentialStore`] is the facade exposed to hosts (via `UniFFI`).
-//! It owns the account key envelope and two databases:
+//! It owns the resolved storage keys and two databases:
 //!
 //! 1. **Vault database (`account.vault.sqlite`)** — authoritative storage for
 //!    credentials, associated data blobs, issuer subject blinding factors, and the account
@@ -27,8 +27,9 @@
 //!
 //! ## Keys
 //!
-//! Both databases are opened with the single `K_intermediate` managed by
-//! `walletkit-db`.
+//! Both databases use the resolved `K_intermediate` supplied through [`crate::storage::StorageKeys`].
+//! Hosts obtain it directly (for example from a passkey PRF) or resolve a sealed
+//! envelope with [`crate::storage::open_or_create_storage_keys`] before constructing [`crate::storage::CredentialStore`].
 //!
 //! ## On-disk layout
 //!
@@ -36,7 +37,8 @@
 //! [`crate::storage::StoragePaths`]. The account key envelope (`account_keys.bin`) is
 //! written separately through the host's [`crate::storage::AtomicBlobStore`] and its
 //! location is host-determined (not necessarily under `worldid/`); backup and
-//! deletion must include it.
+//! deletion must include it when the host uses an envelope. Direct-key stores
+//! have no envelope. [`crate::storage::delete_storage_key_envelope`] handles explicit host cleanup.
 //!
 //! ## Security and privacy properties
 //!
@@ -46,9 +48,10 @@
 pub mod cache;
 pub mod credential_storage;
 pub mod credential_vault;
-#[cfg(any(test, all(target_arch = "wasm32", feature = "uniffi-wasm")))]
+#[cfg(test)]
 mod ephemeral;
 pub mod error;
+mod key_envelope;
 pub mod keys;
 pub mod paths;
 pub mod traits;
@@ -58,6 +61,7 @@ pub use cache::CacheDb;
 pub use credential_storage::CredentialStore;
 pub use credential_vault::CredentialVault;
 pub use error::{StorageError, StorageResult};
+pub use key_envelope::{delete_storage_key_envelope, open_or_create_storage_keys};
 pub use keys::StorageKeys;
 pub use paths::StoragePaths;
 pub use traits::{
@@ -103,7 +107,7 @@ fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
 
 /// Installs persistent encrypted browser storage in the current Web Worker.
 ///
-/// This must be awaited once before initializing a [`CredentialStore`] on
+/// This must be awaited once before initializing a [`crate::storage::CredentialStore`] on
 /// WASM. The function fails when called outside a supported dedicated worker
 /// or when another browsing context owns the same OPFS SAH pool.
 ///
@@ -117,9 +121,6 @@ pub async fn initialize_persistent_storage() -> StorageResult<()> {
         .await
         .map_err(|err| StorageError::PersistentStorage(err.to_string()))
 }
-
-pub(crate) const ACCOUNT_KEYS_FILENAME: &str = "account_keys.bin";
-pub(crate) const ACCOUNT_KEY_ENVELOPE_AD: &[u8] = b"worldid:account-key-envelope";
 
 #[cfg(test)]
 pub(crate) mod tests_utils;
