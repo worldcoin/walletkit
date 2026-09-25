@@ -85,6 +85,23 @@ This will:
 
 In your consuming project, ensure `mavenLocal()` is included in your repositories and update your dependency version to the SNAPSHOT version (e.g., `0.3.1`).
 
+## Flamingo development enclaves
+
+`FlamingoMatcher.withMeasurements(...)` requires nonzero PCR0/1/2. For development
+only, Kotlin and Swift callers can explicitly use `dangerouslySkipMeasurements()`
+without supplying pins. This bypasses all PCR checks and accepts any enclave code
+with otherwise valid attestation. Signature, certificate, freshness, and key-binding
+checks remain enabled. Calling `withMeasurements(...)` restores strict verification.
+Never enable the bypass in production.
+
+```kotlin
+FlamingoMatcher(hostUrl).use { base ->
+    base.dangerouslySkipMeasurements().use { matcher ->
+        // Configure authentication headers and performMatch as usual.
+    }
+}
+```
+
 ## Development
 
 ### Linting

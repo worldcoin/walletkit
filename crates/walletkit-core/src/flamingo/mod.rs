@@ -85,7 +85,8 @@ impl FlamingoMatcher {
     /// are also pinned. It's the user's responsibility to ensure the measurements are from a trusted enclave and match the verifier's expectations.
     ///
     /// # Errors
-    /// Returns [`FlamingoError::Configuration`] if no measurement is set.
+    /// Returns [`FlamingoError::Configuration`] for missing PCR0/1/2, zero or malformed
+    /// measurements.
     pub fn with_measurements(
         &self,
         measurements: HashMap<u32, Vec<u8>>,
@@ -93,6 +94,29 @@ impl FlamingoMatcher {
         Ok(Self {
             host_url: self.host_url.clone(),
             config: Some(matcher_config(self.host_url.as_str(), measurements)?),
+            headers: self.headers.clone(),
+            client: OnceCell::new(),
+        })
+    }
+
+    /// Returns a new instance that bypasses all PCR measurement checks.
+    ///
+    /// No measurements are required, and previously configured pins are discarded.
+    /// Certificate chain, signature, freshness, and channel key binding remain verified.
+    /// Calling [`Self::with_measurements`] on the returned instance restores strict verification.
+    ///
+    /// # Warning
+    /// Accepts any enclave code with otherwise valid attestation, including Nitro debug
+    /// enclaves. Use only for development, never in production.
+    ///
+    /// # Errors
+    /// Returns [`FlamingoError::Configuration`] if the verifier configuration cannot be built.
+    pub fn dangerously_skip_measurements(&self) -> Result<Self, FlamingoError> {
+        let config = Config::dangerously_skip_measurements(self.host_url.as_str())
+            .map_err(|error| FlamingoError::Configuration(error.to_string()))?;
+        Ok(Self {
+            host_url: self.host_url.clone(),
+            config: Some(config),
             headers: self.headers.clone(),
             client: OnceCell::new(),
         })
@@ -119,14 +143,15 @@ impl FlamingoMatcher {
 
     /// Performs an attested 3-way embedding match.
     ///
-    /// - Fetches the enclave assignment and verifies its attestation against the trusted PCRs.
+    /// - Fetches the enclave assignment and verifies its attestation, including PCRs unless explicitly bypassed.
     /// - Encrypts and sends the match inputs using the enclave's attested public key.
     /// - Decrypts the result and, on success, verifies the token's signature and signing-key attestation.
     ///
     /// # Errors
     ///
     /// Returns [`FlamingoError::InvalidInput`] before making a network request when a caller value
-    /// is unusable, or [`FlamingoError::Configuration`] if trusted measurements are missing.
+    /// is unusable, or [`FlamingoError::Configuration`] if neither trusted measurements
+    /// nor the explicit measurement bypass has been configured.
     /// Other failures are returned as [`FlamingoError::Verifier`].
     pub async fn perform_match(
         &self,
@@ -271,7 +296,7 @@ mod tests {
     use flamingo_verifier_client::{
         Error as ClientError, VerifiedMatch, VerifiedMatchResult as MatchResult,
     };
-    use flamingo_verifier_protocol::match_token::MatchToken;
+    use flamingo_verifier_protocol::match_token::{MatchOperation, MatchToken};
     use flamingo_verifier_sealed_types::{
         AttestedStatement, FailureReason, MatchInputs,
     };
@@ -368,10 +393,9 @@ mod tests {
         ));
     }
     #[tokio::test]
-    async fn gray_badge_preserves_unsupported_operation_rejection() {
-        let client = FakeClient::new([Ok(MatchResult::Failed(
-            FailureReason::UnsupportedOperation,
-        ))]);
+    async fn gray_badge_preserves_infrastructure_rejection() {
+        let client =
+            FakeClient::new([Ok(MatchResult::Failed(FailureReason::Internal))]);
         let outcome = perform_match(
             &client,
             FlamingoMatchRequest::GrayBadge {
@@ -384,9 +408,7 @@ mod tests {
         .unwrap();
         assert!(matches!(
             outcome,
-            FlamingoMatchOutcome::Rejected(
-                FlamingoMatchRejection::UnsupportedOperation
-            )
+            FlamingoMatchOutcome::Rejected(FlamingoMatchRejection::Internal)
         ));
     }
     #[test]
@@ -424,6 +446,71 @@ mod tests {
                 ));
             }
         }
+    }
+
+    #[test]
+    fn measurement_skip_needs_no_pins_and_preserves_headers() {
+        let matcher = FlamingoMatcher::new("https://verifier.example.com")
+            .unwrap()
+            .with_headers(headers())
+            .unwrap();
+        let skip = matcher.dangerously_skip_measurements().unwrap();
+        let json = serde_json::to_value(skip.config.as_ref().unwrap()).unwrap();
+        assert_eq!(json["dangerously_skip_measurements"], true);
+        assert_eq!(json["allowed_pcr_configs"], serde_json::json!([]));
+        assert_eq!(skip.headers, matcher.headers);
+        assert!(matcher.config.is_none());
+
+        let skip_first = FlamingoMatcher::new("https://verifier.example.com")
+            .unwrap()
+            .dangerously_skip_measurements()
+            .unwrap()
+            .with_headers(headers())
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&skip.config).unwrap(),
+            serde_json::to_value(&skip_first.config).unwrap()
+        );
+        assert_eq!(skip.headers, skip_first.headers);
+    }
+
+    #[tokio::test]
+    async fn switching_measurement_policy_rebuilds_the_client_and_restores_strict_validation(
+    ) {
+        let pinned = FlamingoMatcher::new("https://verifier.example.com")
+            .unwrap()
+            .with_measurements(measurements())
+            .unwrap();
+        pinned.client().await.unwrap();
+        let skip = pinned.dangerously_skip_measurements().unwrap();
+        assert!(skip.client.get().is_none());
+        skip.client().await.unwrap();
+        assert_eq!(
+            serde_json::to_value(&skip.config).unwrap()["allowed_pcr_configs"],
+            serde_json::json!([])
+        );
+        assert!(skip.with_measurements(HashMap::new()).is_err());
+        assert!(skip
+            .with_measurements((0..=2).map(|index| (index, vec![0; 48])).collect())
+            .is_err());
+
+        let restored = skip.with_measurements(measurements()).unwrap();
+        assert!(restored.client.get().is_none());
+        restored.client().await.unwrap();
+        assert_eq!(
+            serde_json::to_value(&restored.config).unwrap(),
+            serde_json::to_value(&pinned.config).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&restored.config).unwrap()
+                ["dangerously_skip_measurements"],
+            false
+        );
+        assert_eq!(
+            serde_json::to_value(&skip.config).unwrap()
+                ["dangerously_skip_measurements"],
+            true
+        );
     }
 
     #[test]
@@ -624,8 +711,10 @@ mod tests {
                     signing_key_attestation: b"signing-key-attestation".to_vec(),
                 },
                 claims: flamingo_verifier_protocol::match_token::MatchClaims {
-                    live_image_hash: [1; 32],
-                    credential_claim: [2; 32],
+                    live_capture_hash: [1; 32],
+                    operation: MatchOperation::DeepFace {
+                        credential_claim: [2; 32],
+                    },
                     challenger_image_hash: [3; 32],
                     match_coefficient: 0.9,
                 },
