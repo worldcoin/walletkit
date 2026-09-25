@@ -3287,7 +3287,7 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 [[package]]
 name = "flamingo-verifier-api-types"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=8f776fec5e2f76b9bafdb000dc6fc037d1d18f59#8f776fec5e2f76b9bafdb000dc6fc037d1d18f59"
+source = "git+https://github.com/worldcoin/flamingo?rev=93c53592554e39ca15ec89858349924a6c985c36#93c53592554e39ca15ec89858349924a6c985c36"
 dependencies = [
  "serde",
 ]
@@ -3295,7 +3295,7 @@ dependencies = [
 [[package]]
 name = "flamingo-verifier-client"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=8f776fec5e2f76b9bafdb000dc6fc037d1d18f59#8f776fec5e2f76b9bafdb000dc6fc037d1d18f59"
+source = "git+https://github.com/worldcoin/flamingo?rev=93c53592554e39ca15ec89858349924a6c985c36#93c53592554e39ca15ec89858349924a6c985c36"
 dependencies = [
  "base64 0.22.1",
  "flamingo-verifier-api-types",
@@ -3313,7 +3313,7 @@ dependencies = [
 [[package]]
 name = "flamingo-verifier-protocol"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=8f776fec5e2f76b9bafdb000dc6fc037d1d18f59#8f776fec5e2f76b9bafdb000dc6fc037d1d18f59"
+source = "git+https://github.com/worldcoin/flamingo?rev=93c53592554e39ca15ec89858349924a6c985c36#93c53592554e39ca15ec89858349924a6c985c36"
 dependencies = [
  "ark-ff 0.5.0",
  "coset",
@@ -3327,7 +3327,7 @@ dependencies = [
 [[package]]
 name = "flamingo-verifier-sealed-types"
 version = "0.4.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=8f776fec5e2f76b9bafdb000dc6fc037d1d18f59#8f776fec5e2f76b9bafdb000dc6fc037d1d18f59"
+source = "git+https://github.com/worldcoin/flamingo?rev=93c53592554e39ca15ec89858349924a6c985c36#93c53592554e39ca15ec89858349924a6c985c36"
 dependencies = [
  "ciborium",
  "flamingo-verifier-api-types",
@@ -5527,7 +5527,7 @@ dependencies = [
 [[package]]
 name = "pontifex"
 version = "2.0.1"
-source = "git+https://github.com/worldcoin/pontifex?rev=39b8d85205cafaeb06eec4d3ae98a7c6c2dc3bb7#39b8d85205cafaeb06eec4d3ae98a7c6c2dc3bb7"
+source = "git+https://github.com/worldcoin/pontifex?rev=ab61c34184542590e21162d0d446df2f59b53a10#ab61c34184542590e21162d0d446df2f59b53a10"
 dependencies = [
  "ciborium",
  "const-fnv1a-hash",

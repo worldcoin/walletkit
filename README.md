@@ -87,17 +87,16 @@ In your consuming project, ensure `mavenLocal()` is included in your repositorie
 
 ## Flamingo development enclaves
 
-`FlamingoMatcher.withMeasurements(...)` requires nonzero PCR0/1/2. For Nitro
-`--debug-mode` only, explicitly opt in with `withDebugMeasurements(...)` in
-Kotlin or `withDebugMeasurements(measurements:)` in Swift, passing 48 zero bytes
-for each of PCR0, PCR1, and PCR2. Additional pins still have to match exactly.
-Signature, certificate, freshness, and key-binding checks remain enabled, but
-zero measurements cannot identify enclave code. Do not use this opt-in in production.
+`FlamingoMatcher.withMeasurements(...)` requires nonzero PCR0/1/2. For development
+only, Kotlin and Swift callers can explicitly use `dangerouslySkipMeasurements()`
+without supplying pins. This bypasses all PCR checks and accepts any enclave code
+with otherwise valid attestation. Signature, certificate, freshness, and key-binding
+checks remain enabled. Calling `withMeasurements(...)` restores strict verification.
+Never enable the bypass in production.
 
 ```kotlin
-val debugPcrs = (0u..2u).associateWith { ByteArray(48) }
 FlamingoMatcher(hostUrl).use { base ->
-    base.withDebugMeasurements(debugPcrs).use { matcher ->
+    base.dangerouslySkipMeasurements().use { matcher ->
         // Configure authentication headers and performMatch as usual.
     }
 }

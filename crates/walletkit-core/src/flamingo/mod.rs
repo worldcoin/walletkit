@@ -86,34 +86,37 @@ impl FlamingoMatcher {
     ///
     /// # Errors
     /// Returns [`FlamingoError::Configuration`] for missing PCR0/1/2, zero or malformed
-    /// measurements. Use [`Self::with_debug_measurements`] for development enclaves.
+    /// measurements.
     pub fn with_measurements(
         &self,
         measurements: HashMap<u32, Vec<u8>>,
     ) -> Result<Self, FlamingoError> {
         Ok(Self {
             host_url: self.host_url.clone(),
-            config: Some(matcher_config(self.host_url.as_str(), measurements, false)?),
+            config: Some(matcher_config(self.host_url.as_str(), measurements)?),
             headers: self.headers.clone(),
             client: OnceCell::new(),
         })
     }
 
-    /// Returns a new instance accepting explicitly supplied debug enclave measurements.
+    /// Returns a new instance that bypasses all PCR measurement checks.
     ///
-    /// Pass 48 zero bytes for each of PCR0, PCR1 and PCR2 to match a Nitro debug enclave.
-    /// These values do not identify the enclave's code. Attestation signature, certificate,
-    /// freshness and exact PCR matching checks still apply. For development only.
+    /// No measurements are required, and previously configured pins are discarded.
+    /// Certificate chain, signature, freshness, and channel key binding remain verified.
+    /// Calling [`Self::with_measurements`] on the returned instance restores strict verification.
+    ///
+    /// # Warning
+    /// Accepts any enclave code with otherwise valid attestation, including Nitro debug
+    /// enclaves. Use only for development, never in production.
     ///
     /// # Errors
-    /// Returns [`FlamingoError::Configuration`] for missing PCR0/1/2 or malformed measurements.
-    pub fn with_debug_measurements(
-        &self,
-        measurements: HashMap<u32, Vec<u8>>,
-    ) -> Result<Self, FlamingoError> {
+    /// Returns [`FlamingoError::Configuration`] if the verifier configuration cannot be built.
+    pub fn dangerously_skip_measurements(&self) -> Result<Self, FlamingoError> {
+        let config = Config::dangerously_skip_measurements(self.host_url.as_str())
+            .map_err(|error| FlamingoError::Configuration(error.to_string()))?;
         Ok(Self {
             host_url: self.host_url.clone(),
-            config: Some(matcher_config(self.host_url.as_str(), measurements, true)?),
+            config: Some(config),
             headers: self.headers.clone(),
             client: OnceCell::new(),
         })
@@ -140,14 +143,15 @@ impl FlamingoMatcher {
 
     /// Performs an attested 3-way embedding match.
     ///
-    /// - Fetches the enclave assignment and verifies its attestation against the trusted PCRs.
+    /// - Fetches the enclave assignment and verifies its attestation, including PCRs unless explicitly bypassed.
     /// - Encrypts and sends the match inputs using the enclave's attested public key.
     /// - Decrypts the result and, on success, verifies the token's signature and signing-key attestation.
     ///
     /// # Errors
     ///
     /// Returns [`FlamingoError::InvalidInput`] before making a network request when a caller value
-    /// is unusable, or [`FlamingoError::Configuration`] if trusted measurements are missing.
+    /// is unusable, or [`FlamingoError::Configuration`] if neither trusted measurements
+    /// nor the explicit measurement bypass has been configured.
     /// Other failures are returned as [`FlamingoError::Verifier`].
     pub async fn perform_match(
         &self,
@@ -219,7 +223,6 @@ fn parse_headers(headers: HashMap<String, String>) -> Result<HeaderMap, Flamingo
 fn matcher_config(
     host_url: &str,
     measurements: HashMap<u32, Vec<u8>>,
-    allow_debug_measurements: bool,
 ) -> Result<Config, FlamingoError> {
     for index in 0..=2 {
         if !measurements.contains_key(&index) {
@@ -235,7 +238,7 @@ fn matcher_config(
                 "PCR{index} must be exactly 48 bytes"
             )));
         }
-        if !allow_debug_measurements && measurement.iter().all(|byte| *byte == 0) {
+        if measurement.iter().all(|byte| *byte == 0) {
             return Err(FlamingoError::Configuration(format!(
                 "PCR{index} must be nonzero; debug enclaves are not accepted"
             )));
@@ -243,12 +246,8 @@ fn matcher_config(
         pcrs.push(PcrMeasurement::new(index, measurement));
     }
     pcrs.sort_unstable_by_key(|pcr| pcr.index);
-    let config = if allow_debug_measurements {
-        Config::new_with_debug_measurements(host_url, vec![pcrs])
-    } else {
-        Config::new(host_url, vec![pcrs])
-    };
-    config.map_err(|error| FlamingoError::Configuration(error.to_string()))
+    Config::new(host_url, vec![pcrs])
+        .map_err(|error| FlamingoError::Configuration(error.to_string()))
 }
 
 async fn perform_match<C: MatchClient>(
@@ -417,7 +416,7 @@ mod tests {
         let mut pins = measurements();
         pins.insert(8, vec![4; 48]);
         let config =
-            super::matcher_config("https://verifier.example.com", pins, false).unwrap();
+            super::matcher_config("https://verifier.example.com", pins).unwrap();
         let json = serde_json::to_value(config).unwrap();
         assert_eq!(json["allowed_pcr_configs"].as_array().unwrap().len(), 1);
         assert_eq!(json["allowed_pcr_configs"][0].as_array().unwrap().len(), 4);
@@ -450,57 +449,68 @@ mod tests {
     }
 
     #[test]
-    fn debug_measurements_are_explicit_and_preserve_headers_and_extra_pins() {
+    fn measurement_skip_needs_no_pins_and_preserves_headers() {
         let matcher = FlamingoMatcher::new("https://verifier.example.com")
             .unwrap()
-            .with_headers(HashMap::from([(
-                "Authorization".to_string(),
-                "Bearer test".to_string(),
-            )]))
+            .with_headers(headers())
             .unwrap();
-        let mut pins: HashMap<_, _> =
-            (0..=2).map(|index| (index, vec![0; 48])).collect();
-        pins.insert(8, vec![4; 48]);
-        assert!(matcher.with_measurements(pins.clone()).is_err());
-        let debug = matcher.with_debug_measurements(pins).unwrap();
-        assert!(debug.config.as_ref().unwrap().verifier().is_ok());
-        let json = serde_json::to_value(debug.config.as_ref().unwrap()).unwrap();
-        assert_eq!(json["allow_debug_measurements"], true);
-        assert_eq!(json["allowed_pcr_configs"][0].as_array().unwrap().len(), 4);
-        for index in 0..=2 {
-            assert_eq!(
-                json["allowed_pcr_configs"][0][index]["value"],
-                "00".repeat(48)
-            );
-        }
-        assert_eq!(json["allowed_pcr_configs"][0][3]["index"], 8);
-        assert_eq!(json["allowed_pcr_configs"][0][3]["value"], "04".repeat(48));
-        assert_eq!(debug.headers, matcher.headers);
+        let skip = matcher.dangerously_skip_measurements().unwrap();
+        let json = serde_json::to_value(skip.config.as_ref().unwrap()).unwrap();
+        assert_eq!(json["dangerously_skip_measurements"], true);
+        assert_eq!(json["allowed_pcr_configs"], serde_json::json!([]));
+        assert_eq!(skip.headers, matcher.headers);
         assert!(matcher.config.is_none());
-        let production = debug.with_measurements(measurements()).unwrap();
+
+        let skip_first = FlamingoMatcher::new("https://verifier.example.com")
+            .unwrap()
+            .dangerously_skip_measurements()
+            .unwrap()
+            .with_headers(headers())
+            .unwrap();
         assert_eq!(
-            serde_json::to_value(production.config.unwrap()).unwrap()
-                ["allow_debug_measurements"],
-            false
+            serde_json::to_value(&skip.config).unwrap(),
+            serde_json::to_value(&skip_first.config).unwrap()
         );
+        assert_eq!(skip.headers, skip_first.headers);
     }
 
-    #[test]
-    fn debug_measurements_still_require_all_three_well_formed_pins() {
-        let matcher = FlamingoMatcher::new("https://verifier.example.com").unwrap();
-        assert!(matcher.with_debug_measurements(HashMap::new()).is_err());
-        for index in 0..=2 {
-            let mut pins = measurements();
-            pins.remove(&index);
-            assert!(matcher.with_debug_measurements(pins).is_err());
-        }
-        for index in [0, 1, 2, 8] {
-            for invalid in [vec![], vec![0; 47], vec![0; 49]] {
-                let mut pins = measurements();
-                pins.insert(index, invalid);
-                assert!(matcher.with_debug_measurements(pins).is_err());
-            }
-        }
+    #[tokio::test]
+    async fn switching_measurement_policy_rebuilds_the_client_and_restores_strict_validation(
+    ) {
+        let pinned = FlamingoMatcher::new("https://verifier.example.com")
+            .unwrap()
+            .with_measurements(measurements())
+            .unwrap();
+        pinned.client().await.unwrap();
+        let skip = pinned.dangerously_skip_measurements().unwrap();
+        assert!(skip.client.get().is_none());
+        skip.client().await.unwrap();
+        assert_eq!(
+            serde_json::to_value(&skip.config).unwrap()["allowed_pcr_configs"],
+            serde_json::json!([])
+        );
+        assert!(skip.with_measurements(HashMap::new()).is_err());
+        assert!(skip
+            .with_measurements((0..=2).map(|index| (index, vec![0; 48])).collect())
+            .is_err());
+
+        let restored = skip.with_measurements(measurements()).unwrap();
+        assert!(restored.client.get().is_none());
+        restored.client().await.unwrap();
+        assert_eq!(
+            serde_json::to_value(&restored.config).unwrap(),
+            serde_json::to_value(&pinned.config).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(&restored.config).unwrap()
+                ["dangerously_skip_measurements"],
+            false
+        );
+        assert_eq!(
+            serde_json::to_value(&skip.config).unwrap()
+                ["dangerously_skip_measurements"],
+            true
+        );
     }
 
     #[test]

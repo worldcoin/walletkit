@@ -42,10 +42,10 @@ ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
 # Draft dependency: replace these pins with released versions after worldcoin/flamingo#130.
-flamingo-verifier-api-types = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "8f776fec5e2f76b9bafdb000dc6fc037d1d18f59" }
-flamingo-verifier-client = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "8f776fec5e2f76b9bafdb000dc6fc037d1d18f59" }
-flamingo-verifier-protocol = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "8f776fec5e2f76b9bafdb000dc6fc037d1d18f59" }
-flamingo-verifier-sealed-types = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "8f776fec5e2f76b9bafdb000dc6fc037d1d18f59" }
+flamingo-verifier-api-types = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "93c53592554e39ca15ec89858349924a6c985c36" }
+flamingo-verifier-client = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "93c53592554e39ca15ec89858349924a6c985c36" }
+flamingo-verifier-protocol = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "93c53592554e39ca15ec89858349924a6c985c36" }
+flamingo-verifier-sealed-types = { version = "0.4.0", git = "https://github.com/worldcoin/flamingo", rev = "93c53592554e39ca15ec89858349924a6c985c36" }
 eyre = "0.6"
 getrandom = "0.3"
 hex = "0.4"

@@ -7,22 +7,25 @@ import kotlin.test.assertFailsWith
 
 class FlamingoTest {
     @Test
-    fun debugMeasurementsRequireExplicitOptIn() {
-        val measurements = (0u..2u).associateWith { ByteArray(48) }
+    fun measurementSkipIsExplicitAndStrictMeasurementsCanBeRestored() {
+        val zeroMeasurements = (0u..2u).associateWith { ByteArray(48) }
+        val trustedMeasurements = (0u..2u).associateWith { ByteArray(48) { 1 } }
         FlamingoMatcher("https://verifier.example.com").use { matcher ->
             assertFailsWith<FlamingoException.Configuration> {
-                matcher.withMeasurements(measurements)
+                matcher.withMeasurements(zeroMeasurements)
             }
-            matcher.withDebugMeasurements(measurements).use { debug ->
+            matcher.dangerouslySkipMeasurements().use { skip ->
                 assertFailsWith<FlamingoException.Configuration> {
-                    debug.withMeasurements(measurements)
+                    skip.withMeasurements(emptyMap())
                 }
-            }
-            assertFailsWith<FlamingoException.Configuration> {
-                matcher.withDebugMeasurements(measurements - 2u)
-            }
-            assertFailsWith<FlamingoException.Configuration> {
-                matcher.withDebugMeasurements(measurements + (0u to ByteArray(47)))
+                assertFailsWith<FlamingoException.Configuration> {
+                    skip.withMeasurements(zeroMeasurements)
+                }
+                skip.withMeasurements(trustedMeasurements).use { strict ->
+                    assertFailsWith<FlamingoException.Configuration> {
+                        strict.withMeasurements(zeroMeasurements)
+                    }
+                }
             }
         }
     }
