@@ -384,6 +384,7 @@ impl CredentialStore {
     )]
     pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
         let inner = self.lock_inner()?;
+        let _guard = inner.guard()?;
         inner.cleanup_stale_backup_files();
         let path = inner.export_vault_for_backup_to_file()?;
         let _cleanup = CleanupFile(path.clone());
@@ -403,11 +404,37 @@ impl CredentialStore {
     /// Returns an error if the store is not initialized or the import fails.
     pub fn import_vault_from_backup(&self, backup_bytes: &[u8]) -> StorageResult<()> {
         let inner = self.lock_inner()?;
+        let _guard = inner.guard()?;
         inner.cleanup_stale_backup_files();
         let path = inner.write_temp_backup_file(backup_bytes)?;
         let _cleanup = CleanupFile(path.clone());
 
         inner.import_vault_from_file(&path)
+    }
+
+    /// Adds credentials from a backup to an initialized vault, atomically and idempotently.
+    /// Preserves local-only credentials and local record IDs. A missing remote record is not
+    /// a deletion instruction. Returns the number of newly added credentials.
+    /// The host must authenticate the backup as belonging to this account before calling.
+    ///
+    /// # Errors
+    /// Returns an error on an invalid backup, uninitialized store, or database failure.
+    pub fn merge_vault_from_backup(&self, backup_bytes: &[u8]) -> StorageResult<u64> {
+        let added = {
+            let inner = self.lock_inner()?;
+            let _guard = inner.guard()?;
+            inner.cleanup_stale_backup_files();
+            let path = inner.write_temp_backup_file(backup_bytes)?;
+            let _cleanup = CleanupFile(path.clone());
+            inner
+                .state()?
+                .vault
+                .merge_plaintext(std::path::Path::new(&path))?
+        };
+        if added != 0 {
+            self.notify_vault_changed();
+        }
+        Ok(added)
     }
 
     /// Registers a listener that is called after every successful vault
@@ -870,12 +897,11 @@ impl CredentialStoreInner {
     /// Exports the vault to a temporary plaintext file in the worldid directory.
     /// Returns the path to the file. The caller is responsible for cleanup.
     ///
-    /// Holds the cross-process lock for the duration of the export so a
+    /// Caller holds the cross-process lock for the duration of the export so a
     /// concurrent writer can't interleave between the stale-file cleanup
     /// and the ATTACH-based plaintext copy.
     #[cfg(not(target_arch = "wasm32"))]
     fn export_vault_for_backup_to_file(&self) -> StorageResult<String> {
-        let _guard = self.guard()?;
         let state = self.state()?;
         let dest = self.temp_backup_path();
         state.vault.export_plaintext(&dest)?;
@@ -900,11 +926,10 @@ impl CredentialStoreInner {
 
     /// Imports from a plaintext vault file on disk.
     ///
-    /// Holds the cross-process lock for the duration of the import so a
+    /// Caller holds the cross-process lock for the duration of the import so a
     /// concurrent writer can't interleave with the ATTACH-based copy.
     #[cfg(not(target_arch = "wasm32"))]
     fn import_vault_from_file(&self, backup_path: &str) -> StorageResult<()> {
-        let _guard = self.guard()?;
         let state = self.state()?;
         let source = std::path::Path::new(backup_path);
         state.vault.import_plaintext(source)
@@ -1465,6 +1490,50 @@ mod tests {
 
         cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);
+    }
+
+    #[test]
+    fn test_merge_backup_preserves_local_credentials_and_replays_safely() {
+        use world_id_core::Credential as CoreCredential;
+        let source_root = temp_root_path();
+        let local_root = temp_root_path();
+        let source =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&source_root))
+                .unwrap();
+        let local =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&local_root))
+                .unwrap();
+        source.init(42, 1000).unwrap();
+        local.init(42, 1000).unwrap();
+        for (store, schema, factor) in [(&source, 100, 7), (&local, 200, 8)] {
+            let credential: Credential = CoreCredential::new()
+                .issuer_schema_id(schema)
+                .genesis_issued_at(1000)
+                .into();
+            store
+                .store_credential(
+                    &credential,
+                    &FieldElement::from(factor),
+                    9999,
+                    None,
+                    1000,
+                )
+                .unwrap();
+        }
+        let backup = source.export_vault_for_backup().unwrap();
+        assert_eq!(local.merge_vault_from_backup(&backup).unwrap(), 1);
+        assert_eq!(local.merge_vault_from_backup(&backup).unwrap(), 0);
+        for (schema, factor) in [(100, 7), (200, 8)] {
+            let (credential, blinding) =
+                local.get_credential(schema, 1000).unwrap().unwrap();
+            assert_eq!(credential.issuer_schema_id(), schema);
+            assert_eq!(blinding.to_bytes(), FieldElement::from(factor).to_bytes());
+        }
+        assert!(local.merge_vault_from_backup(b"invalid database").is_err());
+        assert!(local.get_credential(100, 1000).unwrap().is_some());
+        assert!(local.get_credential(200, 1000).unwrap().is_some());
+        cleanup_test_storage(&source_root);
+        cleanup_test_storage(&local_root);
     }
 
     #[test]
