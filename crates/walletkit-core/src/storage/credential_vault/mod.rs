@@ -5,6 +5,8 @@
 //! integrity-check machinery and the shared `blob_objects` table come from
 //! [`walletkit_db`].
 
+#[cfg(not(target_arch = "wasm32"))]
+mod merge;
 mod schema;
 #[cfg(test)]
 mod tests;
