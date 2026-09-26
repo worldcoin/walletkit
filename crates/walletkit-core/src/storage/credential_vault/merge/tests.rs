@@ -103,6 +103,76 @@ fn older_snapshot_does_not_replace_newer_local_credential() {
         b"newer"
     );
     assert_eq!(f.merge().unwrap(), 0);
+    // The vault stores versions as separate rows; recovery must not compact history.
+    assert_eq!(f.receiver.list_credentials(None, 2000).unwrap().len(), 2);
+}
+
+#[test]
+fn matching_payload_at_a_later_time_preserves_latest_credential_selection() {
+    let f = Fixture::new();
+    let local_id = store(&f.receiver, 100, b"A", 100);
+    store(&f.source, 100, b"B", 200);
+    store(&f.source, 100, b"A", 300);
+    f.export();
+    assert_eq!(f.merge().unwrap(), 2);
+    assert_eq!(
+        f.receiver
+            .fetch_credential_and_blinding_factor(100, 1000)
+            .unwrap()
+            .unwrap()
+            .0,
+        b"A"
+    );
+    let records = f.receiver.list_credentials(None, 1000).unwrap();
+    assert_eq!(records.len(), 3);
+    assert_eq!(records.last().unwrap().credential_id, local_id);
+    assert_eq!(f.merge().unwrap(), 0);
+    assert_eq!(f.receiver.list_credentials(None, 1000).unwrap().len(), 3);
+}
+
+#[test]
+fn newer_snapshot_version_is_available_without_discarding_local_history() {
+    let f = Fixture::new();
+    let local_id = store(&f.receiver, 100, b"older", 100);
+    store(&f.source, 100, b"newer", 200);
+    f.export();
+    assert_eq!(f.merge().unwrap(), 1);
+    assert_eq!(
+        f.receiver
+            .fetch_credential_and_blinding_factor(100, 1000)
+            .unwrap()
+            .unwrap()
+            .0,
+        b"newer"
+    );
+    let records = f.receiver.list_credentials(None, 1000).unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[1].credential_id, local_id);
+    assert_eq!(f.merge().unwrap(), 0);
+}
+
+#[test]
+fn expired_newer_version_does_not_discard_an_older_usable_version() {
+    let f = Fixture::new();
+    store(&f.receiver, 100, b"valid", 100);
+    f.source
+        .store_credential(100, vec![7; 32], 1000, 1500, b"expired".to_vec(), None, 200)
+        .unwrap();
+    f.export();
+    assert_eq!(f.merge().unwrap(), 1);
+    assert_eq!(
+        f.receiver
+            .fetch_credential_and_blinding_factor(100, 2000)
+            .unwrap()
+            .unwrap()
+            .0,
+        b"valid"
+    );
+    let records = f.receiver.list_credentials(None, 2000).unwrap();
+    assert_eq!(records.len(), 2);
+    assert!(records[0].is_expired);
+    assert!(!records[1].is_expired);
+    assert_eq!(f.merge().unwrap(), 0);
 }
 
 #[test]

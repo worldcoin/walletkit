@@ -12,6 +12,16 @@ impl CredentialVault {
     /// Atomically merges a plaintext backup, returning the number of added records.
     /// Existing IDs and credentials are preserved; replaying the same snapshot is a no-op.
     /// Source IDs are deliberately ignored because independently written vaults reuse them.
+    /// Each distinct version, including its `updated_at`, is retained. The issuer, subject,
+    /// and genesis fields do not uniquely identify a stored version: normal writes append
+    /// records and reads select the most recent non-expired one. Recovery does not compact
+    /// that history or replace receiver rows.
+    ///
+    /// Callers must keep the source file stable until the merge completes. Callers that
+    /// need cross-process exclusion around backup-file creation/cleanup must hold
+    /// [`crate::storage::StorageLock`] themselves, as [`super::CredentialVault::import_plaintext`]
+    /// requires. Prefer [`crate::storage::CredentialStore::merge_vault_from_backup`], which
+    /// holds the lock for the complete temporary-file lifetime.
     ///
     /// # Errors
     /// Returns an error for malformed backup contents, unavailable storage, or a failed transaction.
@@ -99,6 +109,7 @@ fn merge_attached(conn: &Connection) -> StorageResult<u64> {
                  SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE NOT EXISTS (
                     SELECT 1 FROM credential_records WHERE issuer_schema_id = ?1
                     AND subject_blinding_factor = ?2 AND genesis_issued_at = ?3 AND expires_at = ?4
+                    AND updated_at = ?5
                     AND credential_blob_cid = ?6 AND associated_data_cid IS ?7)",
                 params![row.column_i64(0), row.column_blob(1), row.column_i64(2), row.column_i64(3),
                         row.column_i64(4), row.column_blob(5), associated],
