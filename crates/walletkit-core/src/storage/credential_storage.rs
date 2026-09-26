@@ -1060,6 +1060,16 @@ mod tests {
         }
     }
 
+    struct ChannelVaultListener(mpsc::Sender<()>);
+
+    impl VaultChangedListener for ChannelVaultListener {
+        fn on_vault_changed(&self) {
+            self.0
+                .send(())
+                .expect("listener receiver should remain alive");
+        }
+    }
+
     struct TestActivityListener(Arc<AtomicU32>);
 
     impl ActivityChangedListener for TestActivityListener {
@@ -1521,7 +1531,14 @@ mod tests {
                 .unwrap();
         }
         let backup = source.export_vault_for_backup().unwrap();
+        let (notifications_tx, notifications_rx) = mpsc::channel();
+        local.set_vault_changed_listener(Arc::new(ChannelVaultListener(
+            notifications_tx,
+        )));
         assert_eq!(local.merge_vault_from_backup(&backup).unwrap(), 1);
+        notifications_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("a merge that adds credentials should notify the listener");
         assert_eq!(local.merge_vault_from_backup(&backup).unwrap(), 0);
         for (schema, factor) in [(100, 7), (200, 8)] {
             let (credential, blinding) =
@@ -1532,6 +1549,15 @@ mod tests {
         assert!(local.merge_vault_from_backup(b"invalid database").is_err());
         assert!(local.get_credential(100, 1000).unwrap().is_some());
         assert!(local.get_credential(200, 1000).unwrap().is_some());
+
+        // Dropping the store closes its delivery queue. Wait for the listener to
+        // drain and exit so a delayed callback cannot make this assertion pass.
+        drop(local);
+        assert_eq!(
+            notifications_rx.recv_timeout(std::time::Duration::from_secs(1)),
+            Err(mpsc::RecvTimeoutError::Disconnected),
+            "replay and failed merges should not notify the listener"
+        );
         cleanup_test_storage(&source_root);
         cleanup_test_storage(&local_root);
     }
