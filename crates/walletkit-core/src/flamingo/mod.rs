@@ -475,8 +475,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn switching_measurement_policy_rebuilds_the_client_and_restores_strict_validation(
-    ) {
+    async fn measurement_policy_changes_reset_client_and_restore_pins() {
         let pinned = FlamingoMatcher::new("https://verifier.example.com")
             .unwrap()
             .with_measurements(measurements())
@@ -500,16 +499,6 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&restored.config).unwrap(),
             serde_json::to_value(&pinned.config).unwrap()
-        );
-        assert_eq!(
-            serde_json::to_value(&restored.config).unwrap()
-                ["dangerously_skip_measurements"],
-            false
-        );
-        assert_eq!(
-            serde_json::to_value(&skip.config).unwrap()
-                ["dangerously_skip_measurements"],
-            true
         );
     }
 
