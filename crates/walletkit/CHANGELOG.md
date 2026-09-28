@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.2](https://github.com/worldcoin/walletkit/compare/v0.24.1...v0.24.2) - 2026-09-28
+
+### Added
+
+- *(flamingo)* expose dangerous measurement bypass ([#559](https://github.com/worldcoin/walletkit/pull/559))
+
 ## [0.24.1](https://github.com/worldcoin/walletkit/compare/v0.24.0...v0.24.1) - 2026-09-24
 
 ### Fixed
