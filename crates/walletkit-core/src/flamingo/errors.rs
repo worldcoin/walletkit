@@ -18,9 +18,9 @@ pub enum FlamingoMatchRejection {
     EmptyImage,
     /// An image or total input exceeded the limit.
     InputTooLarge,
-    /// The backend does not implement this capture variant.
+    /// Legacy rejection retained for binding compatibility; current verifiers support all captures.
     UnsupportedCapture,
-    /// The backend does not implement this operation.
+    /// Legacy rejection retained for binding compatibility; current verifiers support all operations.
     UnsupportedOperation,
     /// A comparison did not meet the threshold.
     MatchBelowThreshold {
@@ -90,8 +90,6 @@ impl From<FailureReason> for FlamingoMatchRejection {
             FailureReason::InvalidThreshold => Self::InvalidThreshold,
             FailureReason::EmptyImage => Self::EmptyImage,
             FailureReason::InputTooLarge => Self::InputTooLarge,
-            FailureReason::UnsupportedCapture => Self::UnsupportedCapture,
-            FailureReason::UnsupportedOperation => Self::UnsupportedOperation,
             FailureReason::Internal => Self::Internal,
             FailureReason::MatchBelowThreshold(comparison) => {
                 Self::MatchBelowThreshold {
