@@ -2399,7 +2399,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2956,7 +2956,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3131,7 +3131,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3248,16 +3248,18 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 
 [[package]]
 name = "flamingo-verifier-api-types"
-version = "0.5.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=1256ec161557a81258fb627c1d7a453687fe5118#1256ec161557a81258fb627c1d7a453687fe5118"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a847b2a30cc6a5f185f89874503f7d065dfb1c6a560df79f40f36c1e2762f847"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "flamingo-verifier-client"
-version = "0.5.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=1256ec161557a81258fb627c1d7a453687fe5118#1256ec161557a81258fb627c1d7a453687fe5118"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ebebfee43d850a87869f6bf3614e70b354531b14200800a885c4b561b094df5"
 dependencies = [
  "base64 0.22.1",
  "flamingo-verifier-api-types",
@@ -3278,8 +3280,9 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-protocol"
-version = "0.5.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=1256ec161557a81258fb627c1d7a453687fe5118#1256ec161557a81258fb627c1d7a453687fe5118"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ccb1e0e591ead605d91df094032e74041cb2339960483f00b74b18da3cba4db"
 dependencies = [
  "ark-ff 0.5.0",
  "coset",
@@ -3292,8 +3295,9 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-sealed-types"
-version = "0.5.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=1256ec161557a81258fb627c1d7a453687fe5118#1256ec161557a81258fb627c1d7a453687fe5118"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2596fe8d50f0ecd02fbe4849e9992e7fa62736f614a0842142cfbf8c1ab25775"
 dependencies = [
  "ciborium",
  "flamingo-verifier-api-types",
@@ -4231,7 +4235,7 @@ checksum = "3640c1c38b8e4e43584d8df18be5fc6b0aa314ce6ebf51b53313d4306cca8e46"
 dependencies = [
  "hermit-abi",
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4932,7 +4936,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6356,7 +6360,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6884,7 +6888,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6964,7 +6968,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 1.0.8",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8325,7 +8329,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9639,7 +9643,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
