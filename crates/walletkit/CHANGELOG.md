@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0](https://github.com/worldcoin/walletkit/compare/v0.24.2...v0.25.0) - 2026-09-29
+
+### Added
+
+- *(flamingo)* [**breaking**] match over the verifier WebSocket session ([#562](https://github.com/worldcoin/walletkit/pull/562))
+
+## [0.24.2](https://github.com/worldcoin/walletkit/compare/v0.24.1...v0.24.2) - 2026-09-28
+
+### Added
+
+- *(flamingo)* expose dangerous measurement bypass ([#559](https://github.com/worldcoin/walletkit/pull/559))
+
+## [0.24.1](https://github.com/worldcoin/walletkit/compare/v0.24.0...v0.24.1) - 2026-09-24
+
+### Fixed
+
+- *(sqlite)* use plaintext headers for encrypted databases ([#557](https://github.com/worldcoin/walletkit/pull/557))
+
+## [0.24.0](https://github.com/worldcoin/walletkit/compare/v0.23.1...v0.24.0) - 2026-09-22
+
+### Added
+
+- *(flamingo)* [**breaking**] adopt the 0.4.0 matches api ([#549](https://github.com/worldcoin/walletkit/pull/549))
+
 ## [0.23.1](https://github.com/worldcoin/walletkit/compare/v0.23.0...v0.23.1) - 2026-09-18
 
 ### Added

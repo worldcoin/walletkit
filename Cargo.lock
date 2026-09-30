@@ -2495,35 +2495,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cookie"
-version = "0.18.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87"
-dependencies = [
- "percent-encoding",
- "time",
- "version_check",
-]
-
-[[package]]
-name = "cookie_store"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15b2c103cf610ec6cae3da84a766285b42fd16aad564758459e6ecf128c75206"
-dependencies = [
- "cookie",
- "document-features",
- "idna",
- "log",
- "publicsuffix",
- "serde",
- "serde_derive",
- "serde_json",
- "time",
- "url",
-]
-
-[[package]]
 name = "core-foundation"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3011,15 +2982,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "document-features"
-version = "0.2.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
-dependencies = [
- "litrs",
-]
-
-[[package]]
 name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3286,37 +3248,41 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 
 [[package]]
 name = "flamingo-verifier-api-types"
-version = "0.3.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcd7aeda4fe87369c7302be8efc8f8b7061373a281ee2164ad29d008b45de9d2"
+checksum = "a847b2a30cc6a5f185f89874503f7d065dfb1c6a560df79f40f36c1e2762f847"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "flamingo-verifier-client"
-version = "0.3.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d16ff16567769109a6b945844ed02bc49df4946406cca0cc9c0342e2ecf15859"
+checksum = "1ebebfee43d850a87869f6bf3614e70b354531b14200800a885c4b561b094df5"
 dependencies = [
  "base64 0.22.1",
  "flamingo-verifier-api-types",
  "flamingo-verifier-protocol",
  "flamingo-verifier-sealed-types",
+ "futures-util",
  "hex",
  "pontifex",
- "reqwest 0.12.28",
+ "rustls",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
  "url",
+ "webpki-roots 0.26.11",
 ]
 
 [[package]]
 name = "flamingo-verifier-protocol"
-version = "0.3.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13864bdee45533d6c83acbcbf1df5faadd36d451a1e42562e1bfc90257213699"
+checksum = "9ccb1e0e591ead605d91df094032e74041cb2339960483f00b74b18da3cba4db"
 dependencies = [
  "ark-ff 0.5.0",
  "coset",
@@ -3329,14 +3295,16 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-sealed-types"
-version = "0.3.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d5fadf79c8263ee4faae1f024a2d333e973ba5c25462efa898d03e31e19ad2"
+checksum = "2596fe8d50f0ecd02fbe4849e9992e7fa62736f614a0842142cfbf8c1ab25775"
 dependencies = [
  "ciborium",
+ "flamingo-verifier-api-types",
  "flamingo-verifier-protocol",
  "serde",
  "serde_bytes",
+ "sha2 0.10.9",
  "zeroize",
 ]
 
@@ -4611,12 +4579,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
-name = "litrs"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
-
-[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5528,13 +5490,14 @@ dependencies = [
 
 [[package]]
 name = "pontifex"
-version = "2.0.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f05f626f4b534d7891a41b0a0ffc47e8e7eafa40c63f4dbacfa9b2828527195"
+checksum = "453486814dc9edaf62119d4a38a54f904c4e58b4f8a773659ba45d02333aff26"
 dependencies = [
  "ciborium",
  "const-fnv1a-hash",
  "coset",
+ "getrandom 0.2.17",
  "p384",
  "quantum-box",
  "serde",
@@ -5543,6 +5506,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "web-time",
  "webpki",
  "x509-cert",
  "zeroize",
@@ -6323,22 +6287,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "psl-types"
-version = "2.0.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33cb294fe86a74cbcf50d4445b37da762029549ebeea341421c7c70370f86cac"
-
-[[package]]
-name = "publicsuffix"
-version = "2.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f42ea446cab60335f76979ec15e12619a2165b5ae2c12166bef27d283a9fadf"
-dependencies = [
- "idna",
- "psl-types",
-]
-
-[[package]]
 name = "quantum-box"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6681,8 +6629,6 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "cookie",
- "cookie_store",
  "futures-channel",
  "futures-core",
  "futures-util",
@@ -6705,14 +6651,12 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
- "tokio-util",
  "tower",
  "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasm-streams",
  "web-sys",
  "webpki-roots 1.0.8",
 ]
@@ -7811,6 +7755,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
+]
+
+[[package]]
 name = "signature"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8288,7 +8242,7 @@ dependencies = [
  "taceo-poseidon2",
  "thiserror 2.0.18",
  "tokio",
- "tokio-tungstenite",
+ "tokio-tungstenite 0.28.0",
  "tracing",
  "url",
  "uuid",
@@ -8372,7 +8326,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -8594,6 +8548,7 @@ dependencies = [
  "mio",
  "parking_lot",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
@@ -8655,7 +8610,23 @@ dependencies = [
  "rustls-pki-types",
  "tokio",
  "tokio-rustls",
- "tungstenite",
+ "tungstenite 0.28.0",
+ "webpki-roots 0.26.11",
+]
+
+[[package]]
+name = "tokio-tungstenite"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
+dependencies = [
+ "futures-util",
+ "log",
+ "rustls",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls",
+ "tungstenite 0.29.0",
  "webpki-roots 0.26.11",
 ]
 
@@ -8945,6 +8916,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "tungstenite"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c01152af293afb9c7c2a57e4b559c5620b421f6d133261c60dd2d0cdb38e6b8"
+dependencies = [
+ "bytes",
+ "data-encoding",
+ "http",
+ "httparse",
+ "log",
+ "rand 0.9.4",
+ "rustls",
+ "rustls-pki-types",
+ "sha1",
+ "thiserror 2.0.18",
+ "url",
+]
+
+[[package]]
 name = "turboshake"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9039,7 +9029,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.23.1"
+version = "0.25.0"
 dependencies = [
  "uniffi",
 ]
@@ -9279,7 +9269,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit"
-version = "0.23.1"
+version = "0.25.0"
 dependencies = [
  "uniffi",
  "walletkit-core",
@@ -9287,7 +9277,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-cli"
-version = "0.23.1"
+version = "0.25.0"
 dependencies = [
  "alloy-core",
  "base64 0.22.1",
@@ -9311,7 +9301,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-core"
-version = "0.23.1"
+version = "0.25.0"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -9324,9 +9314,11 @@ dependencies = [
  "ctor",
  "dotenvy",
  "eyre",
+ "flamingo-verifier-api-types",
  "flamingo-verifier-client",
  "flamingo-verifier-protocol",
  "flamingo-verifier-sealed-types",
+ "futures-util",
  "getrandom 0.3.4",
  "hex",
  "hkdf 0.12.4",
@@ -9351,6 +9343,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tokio-test",
+ "tokio-tungstenite 0.29.0",
  "tracing",
  "tracing-log",
  "tracing-subscriber 0.3.23",
@@ -9366,7 +9359,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-db"
-version = "0.23.1"
+version = "0.25.0"
 dependencies = [
  "ciborium",
  "getrandom 0.3.4",
@@ -9382,7 +9375,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-sqlite"
-version = "0.23.1"
+version = "0.25.0"
 dependencies = [
  "cc",
  "hex",
@@ -9398,7 +9391,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-testkit"
-version = "0.23.1"
+version = "0.25.0"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -9532,19 +9525,6 @@ name = "wasm-bindgen-test-shared"
 version = "0.2.126"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c31d56021e873866c968588ed85ccdf56db5c426e44afdb4618c39895104b920"
-
-[[package]]
-name = "wasm-streams"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
-dependencies = [
- "futures-util",
- "js-sys",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
 
 [[package]]
 name = "wasmtimer"
@@ -10205,7 +10185,7 @@ checksum = "32ac00cd3f8ec9c1d33fb3e7958a82df6989c42d747bd326c822b1d625283547"
 
 [[package]]
 name = "xtask"
-version = "0.23.1"
+version = "0.25.0"
 dependencies = [
  "clap",
  "eyre",

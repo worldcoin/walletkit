@@ -59,6 +59,7 @@ getrandom = { workspace = true, features = ["wasm_js"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 async-trait = { workspace = true }
 ctor = { workspace = true }
+flamingo-verifier-api-types = { workspace = true }
 flamingo-verifier-client = { workspace = true }
 flamingo-verifier-protocol = { workspace = true }
 flamingo-verifier-sealed-types = { workspace = true }
@@ -82,6 +83,7 @@ chacha20poly1305 = { workspace = true }
 chrono = { workspace = true }
 dotenvy = { workspace = true }
 eyre = { workspace = true }
+futures-util = { workspace = true, features = ["sink"] }
 mockito = { workspace = true }
 regex = { workspace = true }
 taceo-oprf = { workspace = true, features = [
@@ -91,6 +93,7 @@ tempfile = { workspace = true }
 test-case = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
 tokio-test = { workspace = true }
+tokio-tungstenite = { workspace = true, features = ["handshake"] }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 walletkit-testkit = { workspace = true }
 

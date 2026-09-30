@@ -107,7 +107,7 @@ mod tests {
     use wasm_bindgen_test::wasm_bindgen_test;
 
     use super::{delete_file, install, OPFS_POOL};
-    use crate::cipher::open_encrypted;
+    use crate::cipher::{open_encrypted, open_fully_encrypted, LEGACY_FIXTURE_KEY};
     use crate::{error::DbResult, Error};
 
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_dedicated_worker);
@@ -144,7 +144,7 @@ mod tests {
         clippy::future_not_send,
         reason = "OPFS and its JavaScript handles are dedicated-worker local"
     )]
-    async fn encrypted_database_persists_without_plaintext_at_rest() {
+    async fn encrypted_database_persists_with_plaintext_header() {
         const DATABASE_PATH: &str = "walletkit-encrypted-opfs-test.sqlite";
         const SECRET: &str = "walletkit-opfs-secret-marker";
 
@@ -165,8 +165,12 @@ mod tests {
         let stored = export_database(path).expect("export encrypted bytes");
 
         assert!(
-            !stored.starts_with(b"SQLite format 3\0"),
-            "encrypted database should not have the plaintext sqlite magic header"
+            stored.starts_with(b"SQLite format 3\0"),
+            "encrypted database should retain the plaintext SQLite header"
+        );
+        assert_eq!(
+            stored[20], 32,
+            "header must advertise the cipher's reserved bytes"
         );
         assert!(
             !stored
@@ -190,6 +194,78 @@ mod tests {
             open_encrypted(path, &wrong_key).is_err(),
             "should fail to open database with wrong key"
         );
+
+        delete_database_files(path);
+    }
+
+    /// Creates a database in the pre-plaintext-header format through the OPFS
+    /// VFS and migrates it, exercising the real `sqlite-wasm-rs` error codes and
+    /// messages that native tests cannot reproduce.
+    #[wasm_bindgen_test]
+    #[expect(
+        clippy::future_not_send,
+        reason = "OPFS and its JavaScript handles are dedicated-worker local"
+    )]
+    async fn legacy_encrypted_header_database_migrates_to_plaintext_header() {
+        const DATABASE_PATH: &str = "walletkit-legacy-opfs-test.sqlite";
+        const SECRET: &str = "preserve-me";
+
+        install().await.expect("install persistent VFS");
+        let path = Path::new(DATABASE_PATH);
+        delete_database_files(path);
+
+        let key = SecretBox::init_with(|| LEGACY_FIXTURE_KEY);
+        {
+            let conn =
+                open_fully_encrypted(path, &key).expect("create legacy database");
+            conn.execute_batch(
+                "CREATE TABLE secret (id INTEGER PRIMARY KEY, val TEXT);\
+                 INSERT INTO secret VALUES (1, 'preserve-me');",
+            )
+            .expect("write legacy encrypted data");
+        }
+
+        let legacy = export_database(path).expect("export legacy bytes");
+        assert!(
+            !legacy.starts_with(b"SQLite format 3\0"),
+            "legacy database must use the fully-encrypted header"
+        );
+
+        {
+            let conn = open_encrypted(path, &key).expect("migrate legacy database");
+            let value = conn
+                .query_row("SELECT val FROM secret WHERE id = 1", &[], |row| {
+                    Ok(row.column_text(0))
+                })
+                .expect("read migrated secret");
+            assert_eq!(value, SECRET);
+        }
+
+        let migrated = export_database(path).expect("export migrated bytes");
+        assert!(
+            migrated.starts_with(b"SQLite format 3\0"),
+            "migration should expose the plaintext SQLite header"
+        );
+        assert_eq!(
+            migrated[20], 32,
+            "header must advertise the cipher's reserved bytes"
+        );
+        assert!(
+            !migrated
+                .windows(SECRET.len())
+                .any(|window| window == SECRET.as_bytes()),
+            "migrated database should not contain the plaintext secret anywhere"
+        );
+
+        {
+            let conn = open_encrypted(path, &key).expect("reopen migrated database");
+            let value = conn
+                .query_row("SELECT val FROM secret WHERE id = 1", &[], |row| {
+                    Ok(row.column_text(0))
+                })
+                .expect("read secret");
+            assert_eq!(value, SECRET);
+        }
 
         delete_database_files(path);
     }
