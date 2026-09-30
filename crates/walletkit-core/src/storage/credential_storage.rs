@@ -413,8 +413,7 @@ impl CredentialStore {
     }
 
     /// Adds credentials from a backup to an initialized vault, atomically and idempotently.
-    /// Preserves local-only credentials and local record IDs. A missing remote record is not
-    /// a deletion instruction. Returns the number of newly added credentials.
+    /// Preserves local-only credentials and local record IDs. Returns the number of newly added credentials.
     /// The host must authenticate the backup as belonging to this account before calling.
     ///
     /// # Errors
