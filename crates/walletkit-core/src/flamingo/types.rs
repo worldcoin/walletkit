@@ -1,15 +1,11 @@
-use std::sync::Arc;
-
 use flamingo_verifier_api_types::{
     MAX_HASHES_JSON_BYTES, MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES,
 };
-use flamingo_verifier_client::VerifiedMatch;
-use flamingo_verifier_protocol::match_token::MatchClaims;
-use flamingo_verifier_sealed_types::{
-    valid_similarity, DeepFaceInputs, GrayBadgeInputs, LiveCapture, MatchInputs,
-};
+use flamingo_verifier_sealed_types::{valid_similarity, LiveCapture};
+#[cfg(any(not(target_arch = "wasm32"), test))]
+use flamingo_verifier_sealed_types::{DeepFaceInputs, GrayBadgeInputs, MatchInputs};
 
-use super::errors::{FlamingoError, FlamingoMatchRejection};
+use super::errors::FlamingoError;
 
 /// Explicit operation-specific inputs. Image buffers move into the client without cloning.
 #[derive(uniffi::Enum)]
@@ -64,26 +60,6 @@ pub enum FlamingoMatchingFrame {
     Illuminated,
     /// Use the unilluminated frame.
     Unilluminated,
-}
-
-/// A match token whose signing-key attestation and signature were verified.
-///
-/// Foreign callers receive an opaque handle. The token and signing-key attestation remain
-/// together in Rust for proof generation and eventual relay of the attestation to the RP.
-#[derive(Debug, uniffi::Object)]
-pub struct VerifiedMatchToken {
-    token: Vec<u8>,
-    claims: MatchClaims,
-    signing_key_attestation: Vec<u8>,
-}
-
-/// The outcome of the TEE match phase.
-#[derive(Debug, uniffi::Enum)]
-pub enum FlamingoMatchOutcome {
-    /// The enclave issued a token and `WalletKit` verified it against an attested signing key.
-    Matched(Arc<VerifiedMatchToken>),
-    /// The response reported a rejection. An unsigned rejection does not authenticate its sender.
-    Rejected(FlamingoMatchRejection),
 }
 
 impl FlamingoMatchRequest {
@@ -148,6 +124,7 @@ impl FlamingoMatchRequest {
         Ok(())
     }
 
+    #[cfg(any(not(target_arch = "wasm32"), test))]
     pub(super) fn into_inputs(self) -> MatchInputs {
         match self {
             Self::DeepFace {
@@ -208,44 +185,57 @@ impl From<FlamingoLiveCapture> for LiveCapture {
     }
 }
 
-#[uniffi::export]
-impl VerifiedMatchToken {
-    /// Credential-versus-live normalized similarity authenticated by the token.
-    ///
-    /// The other two comparison scores and the requested threshold are not in the token.
-    #[must_use]
-    pub const fn match_coefficient(&self) -> f32 {
-        self.claims.match_coefficient
-    }
-}
-
-impl VerifiedMatchToken {
-    /// Borrows the encoded COSE/CBOR token for proof generation.
-    #[must_use]
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.token
-    }
-
-    /// Borrows the signing-key attestation to relay alongside the generated proof.
-    #[must_use]
-    pub fn signing_key_attestation(&self) -> &[u8] {
-        &self.signing_key_attestation
-    }
-}
-
-impl From<VerifiedMatch> for VerifiedMatchToken {
-    fn from(value: VerifiedMatch) -> Self {
-        Self {
-            token: value.statement.token.into_bytes(),
-            claims: value.claims,
-            signing_key_attestation: value.statement.signing_key_attestation,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{FlamingoLiveCapture, FlamingoMatchRequest, MatchInputs};
+
+    use crate::flamingo::{validate_flamingo_match_request, FlamingoError};
+
+    fn gray_badge(
+        threshold: f64,
+        live: Vec<u8>,
+        challenge: Vec<u8>,
+    ) -> FlamingoMatchRequest {
+        FlamingoMatchRequest::GrayBadge {
+            live: FlamingoLiveCapture::Vanilla { image: live },
+            rtms_challenge: challenge,
+            match_threshold: threshold,
+        }
+    }
+
+    #[test]
+    fn public_validation_rejects_invalid_thresholds() {
+        for threshold in [f64::NAN, f64::INFINITY, -0.1, 1.1] {
+            assert!(matches!(
+                validate_flamingo_match_request(gray_badge(threshold, vec![1], vec![2])),
+                Err(FlamingoError::InvalidInput { attribute, .. }) if attribute == "match_threshold"
+            ));
+        }
+        for threshold in [0.0, 1.0] {
+            validate_flamingo_match_request(gray_badge(threshold, vec![1], vec![2]))
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn public_validation_enforces_empty_individual_and_combined_image_limits() {
+        use flamingo_verifier_api_types::MAX_IMAGE_BYTES;
+        for (live, challenge, expected) in [
+            (vec![], vec![2], "live.image"),
+            (vec![1], vec![], "rtms_challenge"),
+            (vec![1; MAX_IMAGE_BYTES + 1], vec![2], "live.image"),
+            (
+                vec![1; MAX_IMAGE_BYTES],
+                vec![2; MAX_IMAGE_BYTES],
+                "request",
+            ),
+        ] {
+            assert!(matches!(
+                validate_flamingo_match_request(gray_badge(0.5, live, challenge)),
+                Err(FlamingoError::InvalidInput { attribute, .. }) if attribute == expected
+            ));
+        }
+    }
 
     #[test]
     fn gray_badge_has_no_pcp_and_moves_image_buffers() {
