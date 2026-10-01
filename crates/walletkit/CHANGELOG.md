@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.2](https://github.com/worldcoin/walletkit/compare/v0.25.1...v0.25.2) - 2026-10-01
+
+### Other
+
+- [WIDC-258] Merge credential vault backups during recovery ([#560](https://github.com/worldcoin/walletkit/pull/560))
+
 ## [0.25.1](https://github.com/worldcoin/walletkit/compare/v0.25.0...v0.25.1) - 2026-09-30
 
 ### Other
