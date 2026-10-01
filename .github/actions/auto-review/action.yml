@@ -1,0 +1,150 @@
+name: Auto review
+description: Reviews a pull request with a pi agent and approves it when a jev decision model agrees the answer is an approval.
+
+# The review logic lives in src/, one module per stage, so this file stays declarative:
+# screen -> (install pi) -> review -> decide -> report -> approve.
+#
+# The stages that call a model receive OPENROUTER_API_KEY and no bot token. The stages that write
+# to GitHub receive the bot token and call no model. A pull request cannot reach either secret
+# because the calling workflow must use pull_request_target and read the base branch's checkout.
+
+inputs:
+  openrouter-api-key:
+    description: "OpenRouter API key. Pass a secret."
+    required: true
+  bot-token:
+    description: "Token of the bot account that comments and approves. Pass a secret. Must not be GITHUB_TOKEN, which cannot approve its own repository's pull requests."
+    required: true
+  bot-login:
+    description: "Login of the bot account, used for the self-approval and author guards."
+    required: true
+  github-token:
+    description: "Read token the review agent uses to inspect the pull request. Defaults to GITHUB_TOKEN."
+    required: false
+  base-branch:
+    description: "Only pull requests targeting this branch are reviewed and approved."
+    required: false
+    default: main
+  workspace:
+    description: "Checkout the guidelines, policy file and skills are read from. Defaults to the workflow workspace, which pull_request_target checks out from the base branch."
+    required: false
+  guidelines-file:
+    description: "Repository guidelines added to the prompts, relative to the workspace. Optional."
+    required: false
+    default: AGENTS.md
+  policy-file:
+    description: "Repository auto-approval policy added to the prompts, relative to the workspace. Optional; the defaults apply when it is absent."
+    required: false
+    default: .auto-approve.md
+  skills-path:
+    description: "Skills directory or file passed to the review agent, relative to the workspace. Optional."
+    required: false
+    default: .agents/skills
+  provider:
+    description: "Model provider passed to pi."
+    required: false
+    default: openrouter
+  model:
+    description: "Model passed to pi."
+    required: false
+    default: deepseek/deepseek-v4.1-flash
+  pi-nixpkgs-rev:
+    description: "nixpkgs revision that provides pi. Bump it to move pi."
+    required: false
+    default: 44a91898084f46797b5fac650c7e8c9ac38c43d4 # pi-coding-agent 0.86.0
+  prefilter-model:
+    description: "Decision model that screens the pull request before the review."
+    required: false
+    default: typesafe/jev-1.13
+  prefilter-threshold:
+    description: "Reject without a review when the screen scores at or above this value."
+    required: false
+    default: "0.5"
+  decision-model:
+    description: "Decision model that decides whether the review answer is an approval."
+    required: false
+    default: typesafe/jev-1.13
+  decision-threshold:
+    description: "Approve only when the decision scores at or above this value."
+    required: false
+    default: "0.8"
+
+runs:
+  using: composite
+  steps:
+    # The screen can only reject, never approve. It is fail-open: any error sets run_review=true,
+    # so a screen that cannot run still gets the full review.
+    - name: Screen
+      id: screen
+      shell: bash
+      env:
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        REVIEW_GH_TOKEN: ${{ inputs.github-token || github.token }}
+        GH_REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+        WORKSPACE: ${{ inputs.workspace || github.workspace }}
+        GUIDELINES_FILE: ${{ inputs.guidelines-file }}
+        POLICY_FILE: ${{ inputs.policy-file }}
+        PREFILTER_MODEL: ${{ inputs.prefilter-model }}
+        PREFILTER_THRESHOLD: ${{ inputs.prefilter-threshold }}
+      run: PYTHONPATH="${{ github.action_path }}/src" python3 -m auto_review screen
+
+    - name: Install Nix
+      if: steps.screen.outputs.run_review != 'false'
+      uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+
+    - name: Install pi
+      if: steps.screen.outputs.run_review != 'false'
+      shell: bash
+      env:
+        PI_NIXPKGS_REV: ${{ inputs.pi-nixpkgs-rev }}
+      run: nix profile install "github:NixOS/nixpkgs/$PI_NIXPKGS_REV#pi-coding-agent"
+
+    - name: Review
+      if: steps.screen.outputs.run_review != 'false'
+      shell: bash
+      env:
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        REVIEW_GH_TOKEN: ${{ inputs.github-token || github.token }}
+        GH_REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        WORKSPACE: ${{ inputs.workspace || github.workspace }}
+        GUIDELINES_FILE: ${{ inputs.guidelines-file }}
+        POLICY_FILE: ${{ inputs.policy-file }}
+        SKILLS_PATH: ${{ inputs.skills-path }}
+        PROVIDER: ${{ inputs.provider }}
+        MODEL: ${{ inputs.model }}
+      run: PYTHONPATH="${{ github.action_path }}/src" python3 -m auto_review review
+
+    - name: Decide
+      if: steps.screen.outputs.run_review != 'false'
+      shell: bash
+      env:
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        DECISION_MODEL: ${{ inputs.decision-model }}
+        DECISION_THRESHOLD: ${{ inputs.decision-threshold }}
+      run: PYTHONPATH="${{ github.action_path }}/src" python3 -m auto_review decide
+
+    # Runs even when the review failed, so the run always leaves an explanation behind.
+    - name: Report
+      if: always()
+      shell: bash
+      env:
+        BOT_TOKEN: ${{ inputs.bot-token }}
+        GH_REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      run: PYTHONPATH="${{ github.action_path }}/src" python3 -m auto_review report
+
+    - name: Approve
+      shell: bash
+      env:
+        BOT_TOKEN: ${{ inputs.bot-token }}
+        GH_REPO: ${{ github.repository }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        BOT_LOGIN: ${{ inputs.bot-login }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
+        DECISION_THRESHOLD: ${{ inputs.decision-threshold }}
+      run: PYTHONPATH="${{ github.action_path }}/src" python3 -m auto_review approve
