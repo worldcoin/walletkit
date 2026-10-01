@@ -25,9 +25,12 @@ def answer(noul, model="typesafe/jev-1.13-20260917") -> FakeResponse:
 
 
 class AskTest(unittest.TestCase):
+    def ask(self, noul):
+        with mock.patch.object(jev.urllib.request, "urlopen", return_value=answer(noul)):
+            return jev.ask("key", "typesafe/jev-1.13", {}, "approve", "instructions")
+
     def test_returns_the_probability_and_model(self):
-        with mock.patch.object(jev.urllib.request, "urlopen", return_value=answer(0.96)):
-            score, model = jev.ask("key", "typesafe/jev-1.13", {}, "approve", "instructions")
+        score, model = self.ask(0.96)
         self.assertEqual(score, 0.96)
         self.assertEqual(model, "typesafe/jev-1.13-20260917")
 
@@ -36,6 +39,12 @@ class AskTest(unittest.TestCase):
         with mock.patch.object(jev.urllib.request, "urlopen", return_value=response):
             score, _ = jev.ask("key", "m", {}, "approve", "instructions")
         self.assertIsNone(score)
+
+    def test_non_probabilities_are_none(self):
+        # json.loads accepts NaN and Infinity, and NaN compares false against every threshold.
+        for value in [float("nan"), float("inf"), -0.1, 1.1, True, "0.9", None]:
+            score, _ = self.ask(value)
+            self.assertIsNone(score, f"{value!r} was accepted as a probability")
 
     def test_transport_failure_raises(self):
         with mock.patch.object(

@@ -24,6 +24,10 @@ def screen(config: Config) -> bool:
         state.notice("the pull request comes from a fork, so it is never approved")
         return False
 
+    # Record eligibility before anything else can fail, so the report still runs when the rest of
+    # the screen cannot.
+    state.write_json("screen", {"eligible": True, "score": None, "model": None})
+
     context = prompt.screen_state(
         title=pull["title"],
         body=pull.get("body") or "",

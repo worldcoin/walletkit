@@ -46,6 +46,19 @@ class ScreenTest(unittest.TestCase):
                 screen.run(config())
         self.assertEqual(self.output_value("run_review"), "true")
 
+    def test_a_later_failure_still_records_eligibility(self):
+        class FailingGithub(FakeGithub):
+            def diff(self, number):
+                raise RuntimeError("diff unavailable")
+
+        with mock.patch.object(screen.github, "Github", return_value=FailingGithub(pull())):
+            screen.run(config())
+        self.assertEqual(self.output_value("run_review"), "true")
+        # The report step posts the review's answer off this record.
+        self.assertEqual(
+            state.read_json("screen"), {"eligible": True, "score": None, "model": None}
+        )
+
     def test_a_fork_is_ineligible_and_is_never_screened(self):
         forked = pull(head={"repo": {"full_name": "someone/fork"}, "sha": "sha"})
         with mock.patch.object(screen.github, "Github", return_value=FakeGithub(forked)):

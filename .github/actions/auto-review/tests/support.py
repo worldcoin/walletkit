@@ -52,6 +52,7 @@ class FakeGithub:
         self.files = files or []
         self.review_list = reviews or []
         self.approvals = []
+        self.comments = []
 
     def pull_request(self, number):
         return self.pull
@@ -70,3 +71,6 @@ class FakeGithub:
 
     def submit_approval(self, number, commit_id, body):
         self.approvals.append((number, commit_id, body))
+
+    def comment(self, number, body):
+        self.comments.append((number, body))

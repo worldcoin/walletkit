@@ -56,10 +56,13 @@ def command_for(config: Config) -> list[str]:
         config.model,
         "--system-prompt",
         system_prompt,
-        # The workspace is a base-branch checkout, so pi may trust its project-local files.
+        # The workspace is a base-branch checkout, so pi may trust its project-local files. Only
+        # the skills below are wanted, so the other project-local sources stay off.
         "--approve",
-        # The guidelines above already carry AGENTS.md, so do not load it a second time.
         "--no-context-files",
+        "--no-extensions",
+        "--no-prompt-templates",
+        "--no-themes",
     ]
     skills = Path(config.workspace) / config.skills_path
     if skills.exists():

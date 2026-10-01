@@ -1,6 +1,7 @@
 """Client for the OpenRouter System One endpoint that answers jev's typed questions."""
 
 import json
+import math
 import urllib.error
 import urllib.request
 
@@ -45,8 +46,13 @@ def ask(
         raise JevError(f"systemone request failed: {error}") from error
 
     answer = body.get("answers", {}).get(question, {})
+    model = body.get("model", "unknown")
     probability = answer.get("noul")
-    return (
-        float(probability) if isinstance(probability, (int, float)) else None,
-        body.get("model", "unknown"),
-    )
+    # bool is an int subclass, so a JSON true would otherwise pass as 1.0.
+    if isinstance(probability, bool) or not isinstance(probability, (int, float)):
+        return None, model
+    probability = float(probability)
+    # json.loads accepts NaN and Infinity, and NaN compares false against every threshold.
+    if not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
+        return None, model
+    return probability, model

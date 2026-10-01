@@ -26,8 +26,9 @@ def run(config: Config) -> None:
         state.notice("the decision gave no answer, so there is no approval")
         return
 
-    state.write_json("decision", {"score": score, "model": model})
-    if score >= config.decision_threshold:
-        state.notice(f"{model} approved at {score}")
-    else:
+    # Only an approving decision is recorded, so the presence of a decision means an approval.
+    if score < config.decision_threshold:
         state.notice(f"{model} did not approve: {score} is below {config.decision_threshold}")
+        return
+    state.write_json("decision", {"score": score, "model": model})
+    state.notice(f"{model} approved at {score}")

@@ -7,6 +7,10 @@ description: Reviews a pull request with a pi agent and approves it when a jev d
 # The stages that call a model receive OPENROUTER_API_KEY and no bot token. The stages that write
 # to GitHub receive the bot token and call no model. A pull request cannot reach either secret
 # because the calling workflow must use pull_request_target and read the base branch's checkout.
+#
+# TODO: the review and decision stages call a model with OPENROUTER_API_KEY in their environment
+# and a shell over untrusted content, so a prompt injection can read that key. A credential-hiding
+# proxy or a separate job would remove the exposure.
 
 inputs:
   openrouter-api-key:
