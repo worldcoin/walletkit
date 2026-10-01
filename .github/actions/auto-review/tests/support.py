@@ -10,6 +10,8 @@ def config(**overrides) -> Config:
         repo=REPO,
         pull_number="1",
         expected_head="head-sha",
+        pr_head_repo=REPO,
+        pr_base_ref="main",
         workspace="/tmp",
         base_branch="main",
         bot_login="wld-walletkit-bot",

@@ -9,6 +9,8 @@ class Config:
     repo: str
     pull_number: str
     expected_head: str
+    pr_head_repo: str
+    pr_base_ref: str
     workspace: str
     base_branch: str
     bot_login: str
@@ -25,12 +27,22 @@ class Config:
     decision_model: str
     decision_threshold: float
 
+    def eligible(self) -> bool:
+        """Whether this pull request may be reviewed and approved at all.
+
+        Taken from the event payload rather than the API, so a failure to read the pull request
+        cannot make an eligible run look ineligible.
+        """
+        return self.pr_head_repo == self.repo and self.pr_base_ref == self.base_branch
+
     @classmethod
     def from_env(cls) -> "Config":
         return cls(
             repo=os.environ.get("GH_REPO", ""),
             pull_number=os.environ.get("PR_NUMBER", ""),
             expected_head=os.environ.get("EXPECTED_HEAD", ""),
+            pr_head_repo=os.environ.get("PR_HEAD_REPO", ""),
+            pr_base_ref=os.environ.get("PR_BASE_REF", ""),
             workspace=os.environ.get("WORKSPACE") or os.environ.get("GITHUB_WORKSPACE", ""),
             base_branch=os.environ.get("BASE_BRANCH", "main"),
             bot_login=os.environ.get("BOT_LOGIN", ""),

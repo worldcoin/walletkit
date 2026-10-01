@@ -5,6 +5,10 @@ from .config import Config
 
 
 def run(config: Config) -> None:
+    # Decisions come from the review answer, which the review agent produced. The agent runs before
+    # this stage with a shell in the same sandbox, so a decision file it planted must not count.
+    state.remove("decision")
+
     answer = state.read_text("answer.md")
     if not answer.strip():
         state.notice("no review answer was recorded, so there is no decision")

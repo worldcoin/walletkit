@@ -10,6 +10,10 @@ from .config import Config
 
 TIMEOUT_SECONDS = 900
 
+# The runner applies these files to the steps that follow the one that writes them. The review
+# agent must not be able to set environment variables, outputs or the path for the stages after it.
+RUNNER_COMMAND_FILES = ("GITHUB_ENV", "GITHUB_OUTPUT", "GITHUB_PATH", "GITHUB_STATE")
+
 
 class ReviewError(RuntimeError):
     pass
@@ -18,6 +22,8 @@ class ReviewError(RuntimeError):
 def run(config: Config) -> None:
     command = command_for(config)
     environment = {**os.environ, "GH_TOKEN": config.review_token, "GH_REPO": config.repo}
+    for name in RUNNER_COMMAND_FILES:
+        environment.pop(name, None)
     try:
         result = subprocess.run(
             command,

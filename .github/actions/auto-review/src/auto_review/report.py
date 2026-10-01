@@ -5,11 +5,11 @@ from .config import Config
 
 
 def run(config: Config) -> None:
-    screen = state.read_json("screen")
-    if not screen or not screen.get("eligible"):
+    if not config.eligible():
         # Ineligible pull requests never ran a review, so they get no comment.
         return
 
+    screen = state.read_json("screen") or {}
     answer = state.read_text("answer.md").strip()
     if answer:
         body = f"Risk agent, on {config.expected_head}:\n\n{answer}"

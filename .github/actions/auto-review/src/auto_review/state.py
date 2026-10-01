@@ -38,6 +38,10 @@ def read_json(name: str) -> dict | None:
         return None
 
 
+def remove(name: str) -> None:
+    path(name).unlink(missing_ok=True)
+
+
 def set_output(name: str, value: str) -> None:
     with open(os.environ["GITHUB_OUTPUT"], "a") as output:
         output.write(f"{name}={value}\n")

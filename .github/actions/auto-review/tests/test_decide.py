@@ -28,6 +28,15 @@ class DecideTest(unittest.TestCase):
     def test_a_missing_score_is_not_recorded(self):
         self.assertIsNone(self.decide(None))
 
+    def test_a_planted_decision_is_discarded(self):
+        # The review agent runs before this stage with a shell, so a decision it wrote must not
+        # survive.
+        state.write_json("decision", {"score": 1.0, "model": "planted"})
+        state.write_text("answer.md", "Approved: no.")
+        with mock.patch.object(decide.jev, "ask", return_value=(0.5, "jev")):
+            decide.run(config())
+        self.assertIsNone(state.read_json("decision"))
+
     def test_no_answer_is_not_recorded(self):
         with mock.patch.object(decide.jev, "ask") as ask:
             decide.run(config())

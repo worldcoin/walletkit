@@ -16,17 +16,12 @@ def run(config: Config) -> None:
 
 
 def screen(config: Config) -> bool:
-    client = github.Github(config.repo, config.review_token)
-    pull = client.pull_request(config.pull_number)
-
-    if (pull["head"]["repo"] or {}).get("full_name") != config.repo:
-        state.write_json("screen", {"eligible": False})
-        state.notice("the pull request comes from a fork, so it is never approved")
+    if not config.eligible():
+        state.notice("this pull request cannot be approved automatically, so it is not reviewed")
         return False
 
-    # Record eligibility before anything else can fail, so the report still runs when the rest of
-    # the screen cannot.
-    state.write_json("screen", {"eligible": True, "score": None, "model": None})
+    client = github.Github(config.repo, config.review_token)
+    pull = client.pull_request(config.pull_number)
 
     context = prompt.screen_state(
         title=pull["title"],
@@ -43,7 +38,7 @@ def screen(config: Config) -> bool:
         "reject",
         prompt.SCREEN_INSTRUCTIONS,
     )
-    state.write_json("screen", {"eligible": True, "score": score, "model": model})
+    state.write_json("screen", {"score": score, "model": model})
     if score is None:
         state.notice("the screen gave no answer, so the review runs")
         return True

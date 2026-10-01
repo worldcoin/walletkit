@@ -32,7 +32,7 @@ class ScreenTest(unittest.TestCase):
             with mock.patch.object(screen.jev, "ask", return_value=(0.9, "jev")):
                 screen.run(config())
         self.assertEqual(self.output_value("run_review"), "false")
-        self.assertEqual(state.read_json("screen")["eligible"], True)
+        self.assertEqual(state.read_json("screen"), {"score": 0.9, "model": "jev"})
 
     def test_a_low_score_runs_the_review(self):
         with mock.patch.object(screen.github, "Github", return_value=FakeGithub(pull())):
@@ -46,26 +46,19 @@ class ScreenTest(unittest.TestCase):
                 screen.run(config())
         self.assertEqual(self.output_value("run_review"), "true")
 
-    def test_a_later_failure_still_records_eligibility(self):
-        class FailingGithub(FakeGithub):
-            def diff(self, number):
-                raise RuntimeError("diff unavailable")
-
-        with mock.patch.object(screen.github, "Github", return_value=FailingGithub(pull())):
-            screen.run(config())
-        self.assertEqual(self.output_value("run_review"), "true")
-        # The report step posts the review's answer off this record.
-        self.assertEqual(
-            state.read_json("screen"), {"eligible": True, "score": None, "model": None}
-        )
-
-    def test_a_fork_is_ineligible_and_is_never_screened(self):
-        forked = pull(head={"repo": {"full_name": "someone/fork"}, "sha": "sha"})
-        with mock.patch.object(screen.github, "Github", return_value=FakeGithub(forked)):
+    def test_a_fork_is_never_screened(self):
+        # Eligibility comes from the event payload, so nothing is read and nothing is asked.
+        with mock.patch.object(screen.github, "Github") as client:
             with mock.patch.object(screen.jev, "ask") as ask:
-                screen.run(config())
+                screen.run(config(pr_head_repo="someone/fork"))
         self.assertEqual(self.output_value("run_review"), "false")
-        self.assertEqual(state.read_json("screen"), {"eligible": False})
+        client.assert_not_called()
+        ask.assert_not_called()
+
+    def test_a_wrong_base_branch_is_never_screened(self):
+        with mock.patch.object(screen.jev, "ask") as ask:
+            screen.run(config(pr_base_ref="release"))
+        self.assertEqual(self.output_value("run_review"), "false")
         ask.assert_not_called()
 
 

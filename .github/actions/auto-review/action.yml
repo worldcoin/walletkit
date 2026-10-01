@@ -86,6 +86,8 @@ runs:
         REVIEW_GH_TOKEN: ${{ inputs.github-token || github.token }}
         GH_REPO: ${{ github.repository }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
         BASE_BRANCH: ${{ inputs.base-branch }}
         WORKSPACE: ${{ inputs.workspace || github.workspace }}
         GUIDELINES_FILE: ${{ inputs.guidelines-file }}
@@ -138,6 +140,9 @@ runs:
         BOT_TOKEN: ${{ inputs.bot-token }}
         GH_REPO: ${{ github.repository }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        BASE_BRANCH: ${{ inputs.base-branch }}
         EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
       run: PYTHONPATH="${{ github.action_path }}/src" python3 -m auto_review report
 
