@@ -4,13 +4,18 @@ description: Reviews a pull request with a pi agent and approves it when a jev d
 # The review logic lives in src/, one module per stage, so this file stays declarative:
 # screen -> (install pi) -> review -> decide -> report -> approve.
 #
-# The stages that call a model receive OPENROUTER_API_KEY and no bot token. The stages that write
-# to GitHub receive the bot token and call no model. A pull request cannot reach either secret
-# because the calling workflow must use pull_request_target and read the base branch's checkout.
+# The stages that call a model receive OPENROUTER_API_KEY and no bot token, and the stages that
+# write to GitHub receive the bot token and call no model. A pull request cannot reach the action
+# or the checkout it reads, because the calling workflow uses pull_request_target and the base
+# branch's files.
 #
-# TODO: the review and decision stages call a model with OPENROUTER_API_KEY in their environment
-# and a shell over untrusted content, so a prompt injection can read that key. A credential-hiding
-# proxy or a separate job would remove the exposure.
+# That split is not an isolation boundary. Steps in one job share the runner, the filesystem and
+# the user, so the tool-enabled review stage, which reads untrusted content, can rewrite the code
+# and state the write stages use, and can read a later stage's environment through /proc. The split
+# only bounds accidental disclosure. What keeps this action safe is its guards: the author must be
+# a collaborator, no .github file may change, and the approval is bound to the reviewed head, with
+# branch protection still gating the merge. A separate job is the only hard boundary, and a
+# credential-hiding proxy would keep the model key away from the agent's environment.
 
 inputs:
   openrouter-api-key:
