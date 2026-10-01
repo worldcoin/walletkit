@@ -86,40 +86,74 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
-          set -euo pipefail
-          files=$( { git diff --name-only; git ls-files --others --exclude-standard; } | sort -u )
-          if [ -z "$files" ]; then
-            echo "::notice::the review left the release version unchanged"
-            exit 0
-          fi
+          python3 - <<'PY'
+          import os
+          import subprocess
+          import sys
+          import tomllib
+          from pathlib import Path
 
-          allowed='^(Cargo\.toml|Cargo\.lock|crates/walletkit/CHANGELOG\.md)$'
-          if printf '%s\n' "$files" | grep -qvE "$allowed"; then
-            echo "::error::the review changed files outside the release version:"
-            printf '%s\n' "$files"
-            exit 1
-          fi
-          for f in Cargo.toml Cargo.lock crates/walletkit/CHANGELOG.md; do
-            printf '%s\n' "$files" | grep -qxF "$f" \
-              || { echo "::error::the corrected version did not update $f"; exit 1; }
-          done
+          RELEASE_FILES = ["Cargo.toml", "Cargo.lock", "crates/walletkit/CHANGELOG.md"]
 
-          old=$(git show HEAD:Cargo.toml | awk '/^\[workspace\.package\]/{found=1} found && /^version *=/{gsub(/[",]/,"",$3); print $3; exit}')
-          new=$(awk '/^\[workspace\.package\]/{found=1} found && /^version *=/{gsub(/[",]/,"",$3); print $3; exit}' Cargo.toml)
-          if [ -z "$old" ] || [ -z "$new" ]; then
-            echo "::error::could not read the workspace version"
-            exit 1
-          fi
-          IFS=. read -r major minor _ <<<"$old"
-          if [ "$new" != "$major.$((minor + 1)).0" ]; then
-            echo "::error::refusing the version change $old -> $new; only a minor bump of $old is applied"
-            exit 1
-          fi
 
-          git add Cargo.toml Cargo.lock crates/walletkit/CHANGELOG.md
+          def fail(message):
+              print(f"::error::{message}")
+              sys.exit(1)
+
+
+          def run(*command):
+              # The push URL carries the token, so never echo the argument list on failure.
+              if subprocess.run(command).returncode != 0:
+                  fail(f"{command[1]} failed")
+
+
+          def names(*command):
+              output = subprocess.check_output(command, text=True)
+              return {name for name in output.split("\0") if name}
+
+
+          def workspace_version(manifest):
+              return tomllib.loads(manifest)["workspace"]["package"]["version"]
+
+
+          changed = names("git", "diff", "--name-only", "-z") | names(
+              "git", "ls-files", "--others", "--exclude-standard", "-z"
+          )
+          if not changed:
+              print("::notice::the review left the release version unchanged")
+              sys.exit(0)
+
+          outside = changed - set(RELEASE_FILES)
+          if outside:
+              fail("the review changed files outside the release version: " + ", ".join(sorted(outside)))
+          missing = [path for path in RELEASE_FILES if path not in changed]
+          if missing:
+              fail("the corrected version did not update " + ", ".join(missing))
+
+          old = workspace_version(subprocess.check_output(["git", "show", "HEAD:Cargo.toml"], text=True))
+          new = workspace_version(Path("Cargo.toml").read_text())
+          major, minor, _ = (int(part) for part in old.split("."))
+          expected = f"{major}.{minor + 1}.0"
+          if new != expected:
+              fail(f"refusing the version change {old} -> {new}; only {expected} is applied")
+
+          run("git", "add", *RELEASE_FILES)
           # github-actions[bot] is a bot, so release-plz overwrites this commit on its next update
           # instead of closing the release PR.
-          git -c user.name='github-actions[bot]' \
-              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-              commit -m "chore: correct the release version to $new"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
+          run(
+              "git",
+              "-c",
+              "user.name=github-actions[bot]",
+              "-c",
+              "user.email=41898282+github-actions[bot]@users.noreply.github.com",
+              "commit",
+              "-m",
+              f"chore: correct the release version to {new}",
+          )
+          run(
+              "git",
+              "push",
+              f"https://x-access-token:{os.environ['GH_TOKEN']}@github.com/{os.environ['GITHUB_REPOSITORY']}.git",
+              f"HEAD:refs/heads/{os.environ['BRANCH']}",
+          )
+          PY
