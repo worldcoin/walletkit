@@ -34,7 +34,7 @@ Take care to ensure the code you submit is readable.
 
 ### Comments
 
-Comments in code - with the exception of doc comments - should be kept to an **absolute minimum**. Comments in code are justified if they're explaining some tricky concept - or warn against making changes to the code in question.
+Comments in code—with the exception of doc comments—should be kept to an **absolute minimum**. Comments in code are justified if they explain a tricky concept or warn against making changes to the code in question.
 
 If present - comments in code should only describe the current state of the code. They should never refer to any previous version of the code. And they should never include information provided in the prompt that is not relevant to the reader.
 
