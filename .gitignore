@@ -28,6 +28,9 @@ kotlin/walletkit-tests/bin/
 
 .env
 
+# Python bytecode from the auto-review action's tests.
+__pycache__/
+
 # forge
 cache/
 **/out/build-info
