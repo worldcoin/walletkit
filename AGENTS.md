@@ -80,4 +80,4 @@ Commits should follow the Conventional Commits specification. Group changes in m
 
 ## AI Disclosure
 
-When creating a pull request - make sure to disclose the AI model & the prompt used.
+When creating a pull request, disclose the AI model used and provide a sanitized summary of the prompt that excludes sensitive, confidential, and personal information.
