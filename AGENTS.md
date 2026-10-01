@@ -38,7 +38,7 @@ Comments in code—with the exception of doc comments—should be kept to an **a
 
 If present - comments in code should only describe the current state of the code. They should never refer to any previous version of the code. And they should never include information provided in the prompt that is not relevant to the reader.
 
-Code comments linking GH issues, or workaround are acceptable, e.g.
+Code comments linking to GitHub issues or documenting workarounds are acceptable, e.g.
 
 ```rust
 // TODO: A temporary workaround - remove once https://github.com/org/repo/pull/123 is merged
