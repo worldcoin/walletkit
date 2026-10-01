@@ -78,6 +78,8 @@ fn download(dest: &Path) {
             "--retry-connrefused",
             "--retry-max-time",
             "120",
+            "--max-time",
+            "120",
             "-o",
         ])
         .arg(dest)
