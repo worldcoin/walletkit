@@ -68,13 +68,26 @@ fn download(dest: &Path) {
         "cargo:warning=Downloading sqlite3mc v{SQLITE3MC_VERSION} amalgamation \
          (SQLite {SQLITE_VERSION})..."
     );
+    // GitHub release assets intermittently return 5xx; retry with curl's
+    // exponential backoff, bounded so a build cannot hang indefinitely.
     let status = Command::new("curl")
-        .args(["-fsSL", "-o"])
+        .args([
+            "-fsSL",
+            "--retry",
+            "5",
+            "--retry-connrefused",
+            "--retry-max-time",
+            "120",
+            "-o",
+        ])
         .arg(dest)
         .arg(DOWNLOAD_URL)
         .status()
         .expect("failed to run curl -- is it installed?");
-    assert!(status.success(), "curl failed with status {status}");
+    assert!(
+        status.success(),
+        "failed to download {DOWNLOAD_URL}: curl {status}"
+    );
 }
 
 fn verify_checksum(zip_path: &Path) {
