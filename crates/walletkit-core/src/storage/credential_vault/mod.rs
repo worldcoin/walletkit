@@ -5,6 +5,8 @@
 //! integrity-check machinery and the shared `blob_objects` table come from
 //! [`walletkit_db`].
 
+#[cfg(not(target_arch = "wasm32"))]
+mod merge;
 mod schema;
 #[cfg(test)]
 mod tests;
@@ -27,6 +29,12 @@ use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value}
 ///
 /// **Note:** New tables added to the vault schema must be added here too.
 pub(crate) const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
+
+// A version's content, never a device-local row ID, breaks equal-timestamp ties.
+// Use the same total order for reads and recovery regardless of insertion order.
+const CREDENTIAL_VERSION_ORDER: &str = "updated_at DESC, credential_blob_cid DESC,
+    associated_data_cid DESC, issuer_schema_id DESC, subject_blinding_factor DESC,
+    genesis_issued_at DESC, expires_at DESC";
 
 /// Encrypted vault database wrapper around [`walletkit_db::Vault`].
 #[derive(Debug)]
@@ -179,7 +187,8 @@ impl CredentialVault {
     /// reported via [`CredentialRecord::is_expired`] and uses
     /// `now >= expires_at` semantics.
     ///
-    /// Results are ordered by `updated_at` descending (most recent first).
+    /// Results are ordered by `updated_at` descending (most recent first), with
+    /// equal timestamps ordered by the version's content rather than local IDs.
     ///
     /// # Errors
     ///
@@ -197,7 +206,8 @@ impl CredentialVault {
         let mut records = Vec::new();
         let issuer_filter = issuer_schema_id_i64.map_or(Value::Null, Value::Integer);
 
-        let sql = "SELECT
+        let sql = format!(
+            "SELECT
                 cr.credential_id,
                 cr.issuer_schema_id,
                 cr.genesis_issued_at,
@@ -205,12 +215,13 @@ impl CredentialVault {
                 CASE WHEN cr.expires_at <= ?1 THEN 1 ELSE 0 END AS is_expired
              FROM credential_records cr
              WHERE (?2 IS NULL OR cr.issuer_schema_id = ?2)
-             ORDER BY cr.updated_at DESC";
+             ORDER BY {CREDENTIAL_VERSION_ORDER}"
+        );
 
         let mut stmt = self
             .vault
             .connection()
-            .prepare(sql)
+            .prepare(&sql)
             .map_err(|err| map_db_err(&err))?;
         stmt.bind_values(&[Value::Integer(now_i64), issuer_filter])
             .map_err(|err| map_db_err(&err))?;
@@ -279,7 +290,8 @@ impl CredentialVault {
     /// Retrieves the credential bytes and blinding factor by issuer schema ID.
     ///
     /// Returns the most recent non-expired credential matching the issuer
-    /// schema ID.
+    /// schema ID. Equal timestamps are ordered by the version's content,
+    /// independently of the insertion or backup merge order.
     ///
     /// # Errors
     ///
@@ -292,19 +304,21 @@ impl CredentialVault {
         let expires = to_i64(now, "now")?;
         let issuer_schema_id_i64 = to_i64(issuer_schema_id, "issuer_schema_id")?;
 
-        let sql = "SELECT
+        let sql = format!(
+            "SELECT
                 cr.subject_blinding_factor,
                 blob.bytes as credential_blob
              FROM credential_records cr
              INNER JOIN blob_objects blob ON cr.credential_blob_cid = blob.content_id
              WHERE cr.expires_at > ?1 AND cr.issuer_schema_id = ?2
-             ORDER BY cr.updated_at DESC
-             LIMIT 1";
+             ORDER BY {CREDENTIAL_VERSION_ORDER}
+             LIMIT 1"
+        );
 
         let mut stmt = self
             .vault
             .connection()
-            .prepare(sql)
+            .prepare(&sql)
             .map_err(|err| map_db_err(&err))?;
         stmt.bind_values(params![expires, issuer_schema_id_i64])
             .map_err(|err| map_db_err(&err))?;
