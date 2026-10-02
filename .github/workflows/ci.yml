@@ -350,3 +350,16 @@ jobs:
       - run: |
           cargo +nightly docs-rs -p walletkit-core
           cargo +nightly docs-rs -p walletkit
+
+  auto-review:
+    name: Auto review action
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Test
+        working-directory: .github/actions/auto-review
+        run: PYTHONPATH=src python3 -m unittest discover -s tests -v
