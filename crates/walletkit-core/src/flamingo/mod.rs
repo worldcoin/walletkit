@@ -167,7 +167,7 @@ impl FlamingoMatcher {
         })
     }
 
-    /// Performs `DeepFace` or `GrayBadge` matching and returns the outcome and optional worker diagnostics.
+    /// Performs a attested 3-way embedding match and returns the outcome and optional worker diagnostics.
     ///
     /// - Opens a WebSocket session and verifies the enclave assignment delivered on it, including
     ///   PCRs unless explicitly bypassed.
