@@ -231,7 +231,7 @@ mod tests {
     ) -> (CredentialStore, std::path::PathBuf) {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, now).expect("init");
 
         for &id in issuer_ids {
@@ -296,7 +296,7 @@ mod tests {
         let now = 5000;
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, 1000).expect("init");
 
         let cred: Credential = CoreCredential::new()
@@ -634,7 +634,7 @@ mod tests {
     ) -> (CredentialStore, std::path::PathBuf) {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
-        let store = CredentialStore::from_provider(&provider).expect("create store");
+        let store = provider.open_store().expect("create store");
         store.init(42, now).expect("init");
         let cred: Credential = CoreCredential::new()
             .issuer_schema_id(issuer_id)

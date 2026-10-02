@@ -6,8 +6,8 @@ use std::sync::Arc;
 use uuid::Uuid;
 use walletkit_core::authenticator::artifacts::caching::CachingZkArtifacts;
 use walletkit_core::storage::{
-    AtomicBlobStore, CredentialStore, DeviceKeystore, StorageError, StoragePaths,
-    StorageProvider,
+    open_or_create_storage_keys, AtomicBlobStore, CredentialStore, DeviceKeystore,
+    StorageError, StoragePaths, StorageProvider,
 };
 
 /// No-op device keystore that passes data through without encryption.
@@ -149,7 +149,17 @@ pub fn create_fs_credential_store(
     root: &Path,
 ) -> Result<Arc<CredentialStore>, StorageError> {
     let provider = FsStorageProvider::open(root);
-    Ok(Arc::new(CredentialStore::from_provider(&provider)?))
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| StorageError::InvalidInput(e.to_string()))?
+        .as_secs();
+    let keys = open_or_create_storage_keys(
+        provider.paths(),
+        provider.keystore(),
+        provider.blob_store(),
+        now,
+    )?;
+    Ok(Arc::new(CredentialStore::new(provider.paths(), keys)?))
 }
 
 /// Creates a `WalletKitZkArtifactSource` backed by the filesystem at `root`.
