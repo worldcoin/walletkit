@@ -35,6 +35,9 @@ pub enum RequestIntegrityError {
     /// The native signer failed or returned an empty signature.
     #[error("request integrity signing failed")]
     SigningFailed,
+    /// A host callback threw an unexpected exception.
+    #[error("request integrity callback failed")]
+    CallbackFailed,
     /// Preparing or signing exceeded the authentication deadline.
     #[error("request integrity authentication timed out")]
     TimedOut,
@@ -42,7 +45,7 @@ pub enum RequestIntegrityError {
 
 impl From<uniffi::UnexpectedUniFFICallbackError> for RequestIntegrityError {
     fn from(_: uniffi::UnexpectedUniFFICallbackError) -> Self {
-        Self::Unavailable
+        Self::CallbackFailed
     }
 }
 
@@ -312,6 +315,56 @@ mod tests {
         }
     }
 
+    /// Verifies the exact upgrade emitted by the matcher, including encoded path and query values.
+    #[tokio::test]
+    #[allow(clippy::result_large_err)] // Tungstenite fixes the handshake callback's error type.
+    async fn matcher_upgrade_verifies_after_crossing_the_network() {
+        use super::super::{FlamingoError, FlamingoMatcher, MatchClient};
+        use tokio::net::TcpListener;
+        use tokio_tungstenite::accept_hdr_async;
+
+        for platform in [Platform::Ios, Platform::Android] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let authority = listener.local_addr().unwrap().to_string();
+            let (sent, received) = tokio::sync::oneshot::channel();
+            let server = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let socket =
+                    accept_hdr_async(stream, move |upgrade: &Request, response| {
+                        sent.send(upgrade.clone()).unwrap();
+                        Ok(response)
+                    })
+                    .await
+                    .unwrap();
+                drop(socket);
+            });
+            let provider = Arc::new(RotatingProvider::new(platform));
+            let mut matcher = FlamingoMatcher::new(&format!(
+                "http://{authority}/proxy/a%20b/?x=%2F&x=one+two"
+            ))
+            .unwrap();
+            matcher.integrity_provider = Some(provider.clone());
+            let matcher = matcher.dangerously_skip_measurements().unwrap();
+            let result = tokio::time::timeout(Duration::from_secs(5), async {
+                matcher.client().await.unwrap().connect().await
+            })
+            .await
+            .unwrap();
+            assert!(matches!(result, Err(FlamingoError::Transport { .. })));
+            let upgrade = received.await.unwrap();
+            server.await.unwrap();
+            let (mut parts, ()) = upgrade.into_parts();
+            assert_eq!(parts.uri.path_and_query().unwrap().as_str(), TARGET);
+            let verifier = provider.verifier("http", &authority);
+            verifier.verify(&parts, b"").await.unwrap();
+            parts.uri = "/tampered/v1/matches?x=%2F&x=one+two".parse().unwrap();
+            assert_eq!(
+                verifier.verify(&parts, b"").await.unwrap_err().reason,
+                RejectReason::SignatureInvalid
+            );
+        }
+    }
+
     #[tokio::test]
     async fn software_callbacks_verify_for_the_final_websocket_request() {
         for platform in [Platform::Ios, Platform::Android] {
@@ -441,14 +494,15 @@ mod tests {
         }
     }
 
-    struct FailingProvider;
+    /// Returns a selected typed error from the provider callback.
+    struct FailingProvider(RequestIntegrityError);
 
     #[async_trait::async_trait]
     impl RequestIntegrityProvider for FailingProvider {
         async fn prepare(
             &self,
         ) -> Result<RequestIntegritySession, RequestIntegrityError> {
-            Err(RequestIntegrityError::Unavailable)
+            Err(self.0)
         }
     }
 
@@ -456,12 +510,32 @@ mod tests {
     async fn preserves_provider_failure() {
         assert!(matches!(
             sign_request(
-                Arc::new(FailingProvider),
+                Arc::new(FailingProvider(RequestIntegrityError::Unavailable)),
                 request("wss://verifier.example/v1/matches")
             )
             .await,
             Err(RequestIntegrityError::Unavailable)
         ));
+    }
+
+    /// Unexpected native diagnostics are hidden and preserve the same classification at either callback.
+    #[tokio::test]
+    async fn unexpected_callback_failures_are_neutral_and_do_not_expose_details() {
+        let error = RequestIntegrityError::from(
+            uniffi::UnexpectedUniFFICallbackError::new("private native diagnostic"),
+        );
+        assert_eq!(error, RequestIntegrityError::CallbackFailed);
+        assert_eq!(error.to_string(), "request integrity callback failed");
+        for provider in [
+            Arc::new(FailingProvider(error)) as Arc<dyn RequestIntegrityProvider>,
+            fixed_provider("opaque-token", Err(error)),
+        ] {
+            assert_eq!(
+                sign_request(provider, request("wss://verifier.example/v1/matches"))
+                    .await,
+                Err(RequestIntegrityError::CallbackFailed),
+            );
+        }
     }
 
     struct PendingProvider;
