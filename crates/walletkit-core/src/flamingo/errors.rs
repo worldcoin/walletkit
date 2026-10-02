@@ -1,5 +1,6 @@
 use flamingo_verifier_sealed_types::{
-    ComparisonRole, FailureReason, ImageFailureReason, ImageRole,
+    ComparisonRole, FailureReason, ImageFailureReason, ImageRole, InputFailureReason,
+    ValidationTarget,
 };
 use thiserror::Error;
 
@@ -16,14 +17,15 @@ pub enum FlamingoMatchRejection {
     ThumbnailHashMismatch,
     /// Threshold was not a finite normalized cosine value.
     InvalidThreshold,
-    /// An image was empty.
-    EmptyImage,
-    /// An image or total input exceeded the limit.
-    InputTooLarge,
-    /// Legacy rejection retained for binding compatibility; current verifiers support all captures.
-    UnsupportedCapture,
-    /// Legacy rejection retained for binding compatibility; current verifiers support all operations.
-    UnsupportedOperation,
+    /// Exact malformed-input reason and the location/limit supplied by the service.
+    InputRejected {
+        /// Failed constraint.
+        reason: FlamingoInputFailureReason,
+        /// Semantic image role, if supplied.
+        image: Option<FlamingoImageRole>,
+        /// Size limit, when supplied.
+        limit_bytes: Option<u64>,
+    },
     /// A comparison did not meet the threshold.
     MatchBelowThreshold {
         /// The comparison that failed.
@@ -35,6 +37,8 @@ pub enum FlamingoMatchRejection {
         image: FlamingoImageRole,
         /// Approved validation reason.
         reason: FlamingoImageFailureReason,
+        /// Frame/pair target, if the failure came from validation.
+        target: Option<FlamingoValidationTarget>,
     },
     /// A named comparison failed.
     MatchingFailed {
@@ -74,6 +78,10 @@ pub enum FlamingoError {
         attribute: String,
         /// Why the value was rejected.
         reason: String,
+        /// Stable constraint code; applications need not parse the message.
+        kind: FlamingoInputFailureKind,
+        /// Byte limit when applicable.
+        limit_bytes: Option<u64>,
     },
     /// The verifier configuration was not valid.
     #[error("invalid Flamingo verifier configuration: {0}")]
@@ -81,9 +89,51 @@ pub enum FlamingoError {
     /// Preparing the integrity token or signing the request failed.
     #[error("Flamingo request integrity failed: {0}")]
     RequestIntegrity(RequestIntegrityError),
-    /// Assignment, attestation, transport, channel opening, or token verification failed.
-    #[error("Flamingo verifier request failed: {0}")]
-    Verifier(String),
+    /// The host returned a machine-readable service error.
+    #[error("Flamingo service error ({code})")]
+    Service {
+        /// Exact host code.
+        code: String,
+        /// Host retry hint, not an automatic retry policy.
+        allow_retry: bool,
+    },
+    /// Configured exchange deadline expired.
+    #[error("Flamingo request timed out")]
+    Timeout,
+    /// Connection closed, handshake or network I/O failed.
+    #[error("Flamingo transport failed: {details}")]
+    Transport {
+        /// Supplementary diagnostic text.
+        details: String,
+    },
+    /// Assignment, host message or decrypted result was malformed.
+    #[error("invalid Flamingo response at {stage:?}")]
+    InvalidResponse {
+        /// Protocol stage.
+        stage: FlamingoResponseStage,
+    },
+    /// Signing-key attestation did not verify.
+    #[error("Flamingo attestation failed: {details}")]
+    Attestation {
+        /// Supplementary diagnostic text.
+        details: String,
+    },
+    /// Channel attestation, binding, sealing or opening failed.
+    #[error("Flamingo channel failed: {details}")]
+    Channel {
+        /// Supplementary diagnostic text.
+        details: String,
+    },
+    /// Attested signing key was invalid.
+    #[error("invalid Flamingo signing key")]
+    InvalidSigningKey,
+    /// Token signature or request commitments did not verify.
+    #[error("invalid Flamingo match statement")]
+    StatementInvalid,
+    /// The one internal reassignment retry was exhausted.
+    #[error("Flamingo reassignment retry exhausted")]
+    ReassignmentRequired,
+
 }
 
 impl From<FailureReason> for FlamingoMatchRejection {
@@ -93,8 +143,15 @@ impl From<FailureReason> for FlamingoMatchRejection {
             FailureReason::InvalidHashesJson => Self::InvalidHashesJson,
             FailureReason::ThumbnailHashMismatch => Self::ThumbnailHashMismatch,
             FailureReason::InvalidThreshold => Self::InvalidThreshold,
-            FailureReason::EmptyImage => Self::EmptyImage,
-            FailureReason::InputTooLarge => Self::InputTooLarge,
+            FailureReason::InputRejected {
+                reason,
+                image,
+                limit_bytes,
+            } => Self::InputRejected {
+                reason: reason.into(),
+                image: image.map(Into::into),
+                limit_bytes,
+            },
             FailureReason::Internal => Self::Internal,
             FailureReason::MatchBelowThreshold(comparison) => {
                 Self::MatchBelowThreshold {
@@ -104,9 +161,14 @@ impl From<FailureReason> for FlamingoMatchRejection {
             FailureReason::MatchingFailed(comparison) => Self::MatchingFailed {
                 comparison: comparison.into(),
             },
-            FailureReason::ImageRejected { image, reason } => Self::ImageRejected {
+            FailureReason::ImageRejected {
+                image,
+                reason,
+                target,
+            } => Self::ImageRejected {
                 image: image.into(),
                 reason: reason.into(),
+                target: target.map(Into::into),
             },
         }
     }
@@ -273,4 +335,80 @@ impl From<ImageFailureReason> for FlamingoImageFailureReason {
             ImageFailureReason::NoisyThermalImage => Self::NoisyThermalImage,
         }
     }
+}
+
+/// Capture validation targets exported to mobile callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoValidationTarget {
+    /// A single image.
+    Image,
+    /// The illuminated frame.
+    IlluminatedFrame,
+    /// The unilluminated frame.
+    UnilluminatedFrame,
+    /// The complete challenge-response pair.
+    LightGuardPair,
+}
+impl From<ValidationTarget> for FlamingoValidationTarget {
+    fn from(value: ValidationTarget) -> Self {
+        match value {
+            ValidationTarget::Image => Self::Image,
+            ValidationTarget::IlluminatedFrame => Self::IlluminatedFrame,
+            ValidationTarget::UnilluminatedFrame => Self::UnilluminatedFrame,
+            ValidationTarget::LightGuardPair => Self::LightGuardPair,
+        }
+    }
+}
+
+/// Worker input constraints exported to mobile callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoInputFailureReason {
+    /// A required image is missing.
+    MissingImage,
+    /// A capture source is missing.
+    MissingSource,
+    /// The selected matching frame is invalid.
+    InvalidMatchingFrame,
+    /// An image buffer is empty.
+    EmptyImage,
+    /// One image exceeded its size limit.
+    ImageTooLarge,
+    /// All image bytes exceeded the combined limit.
+    TotalImagesTooLarge,
+}
+impl From<InputFailureReason> for FlamingoInputFailureReason {
+    fn from(value: InputFailureReason) -> Self {
+        match value {
+            InputFailureReason::MissingImage => Self::MissingImage,
+            InputFailureReason::MissingSource => Self::MissingSource,
+            InputFailureReason::InvalidMatchingFrame => Self::InvalidMatchingFrame,
+            InputFailureReason::EmptyImage => Self::EmptyImage,
+            InputFailureReason::ImageTooLarge => Self::ImageTooLarge,
+            InputFailureReason::TotalImagesTooLarge => Self::TotalImagesTooLarge,
+        }
+    }
+}
+
+/// Local input constraints exported to mobile callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoInputFailureKind {
+    /// The field is empty.
+    Empty,
+    /// The field exceeded its size limit.
+    TooLarge,
+    /// The images exceeded the combined limit.
+    TotalTooLarge,
+    /// The threshold is nonfinite or outside `[0, 1]`.
+    InvalidThreshold,
+}
+
+/// Response stages exported to mobile callers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoResponseStage {
+    /// The assignment document or public key.
+    Assignment,
+    /// A host protocol message.
+    HostMessage,
+    /// The decrypted match response.
+    MatchResult,
 }

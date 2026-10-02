@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0](https://github.com/worldcoin/walletkit/compare/v0.25.2...v0.26.0) - 2026-10-02
+
+### Added
+
+- *(flamingo)* [**breaking**] expose match diagnostics and typed errors ([#578](https://github.com/worldcoin/walletkit/pull/578))
+
+### Fixed
+
+- *(sqlite)* retry sqlite3mc download on transient GitHub 5xx ([#571](https://github.com/worldcoin/walletkit/pull/571))
+
 ## [0.25.2](https://github.com/worldcoin/walletkit/compare/v0.25.1...v0.25.2) - 2026-10-01
 
 ### Other
