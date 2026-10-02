@@ -392,7 +392,7 @@ pub enum FlamingoInputFailureKind {
     TooLarge,
     /// The images exceeded the combined limit.
     TotalTooLarge,
-    /// The threshold is nonfinite or outside [0,1].
+    /// The threshold is nonfinite or outside `[0, 1]`.
     InvalidThreshold,
 }
 
