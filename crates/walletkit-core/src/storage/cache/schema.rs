@@ -18,7 +18,10 @@ pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
 pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
 pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x03;
 
-use walletkit_sqlite::{params, Connection, DbResult, StepResult};
+use walletkit_sqlite::{
+    error::{Error, ErrorCode},
+    params, Connection, DbResult, StepResult,
+};
 
 /// The cache-database migrations, in order.
 ///
@@ -234,16 +237,39 @@ fn migration_v4(conn: &Connection) -> DbResult<()> {
     };
 
     for (entry_id, blob) in legacy_ids {
-        for chunk in blob.as_chunks::<8>().0 {
+        for issuer_schema_id in decode_legacy_issuer_schema_ids(&blob)? {
             conn.execute(
                 "INSERT OR IGNORE INTO activity_issuer_schema_ids (entry_id, issuer_schema_id)
                  VALUES (?1, ?2)",
-                params![entry_id, i64::from_be_bytes(*chunk)],
+                params![entry_id, issuer_schema_id],
             )?;
         }
     }
 
     conn.execute_batch("ALTER TABLE activity_entries DROP COLUMN issuer_schema_ids;")
+}
+
+/// `SQLite` primary result code for corrupt data (`SQLITE_CORRUPT`).
+const SQLITE_CORRUPT: i32 = 11;
+
+/// Decodes the legacy concatenated big-endian `u64` blob.
+///
+/// A length that is not a multiple of eight indicates corruption, so the
+/// migration fails and the disposable cache is rebuilt rather than silently
+/// dropping ids.
+fn decode_legacy_issuer_schema_ids(bytes: &[u8]) -> DbResult<Vec<i64>> {
+    let (chunks, remainder) = bytes.as_chunks::<8>();
+    if !remainder.is_empty() {
+        return Err(Error {
+            code: ErrorCode(SQLITE_CORRUPT),
+            message: format!("invalid issuer_schema_ids blob length: {}", bytes.len()),
+        });
+    }
+
+    Ok(chunks
+        .iter()
+        .map(|chunk| i64::from_be_bytes(*chunk))
+        .collect())
 }
 
 fn has_legacy_issuer_schema_ids(conn: &Connection) -> DbResult<bool> {

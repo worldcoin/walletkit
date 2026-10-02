@@ -58,10 +58,7 @@ pub(super) fn record(
         tx.execute(
             "INSERT OR IGNORE INTO activity_issuer_schema_ids (entry_id, issuer_schema_id)
              VALUES (?1, ?2)",
-            params![
-                entry_id,
-                to_i64(*issuer_schema_id, "issuer_schema_id")?,
-            ],
+            params![entry_id, issuer_schema_id.cast_signed()],
         )
         .map_err(|err| map_db_err(&err))?;
     }
@@ -83,10 +80,7 @@ pub(super) fn list(
 ) -> StorageResult<Vec<ActivityEntry>> {
     let limit_i64 = i64::from(limit);
     let offset_i64 = i64::from(offset);
-    let issuer_schema_id = query
-        .issuer_schema_id
-        .map(|value| to_i64(value, "issuer_schema_id"))
-        .transpose()?;
+    let issuer_schema_id = query.issuer_schema_id.map(u64::cast_signed);
 
     let sql = "SELECT e.entry_id, e.client_id, e.protocol, e.created_at, e.outcome,
                       e.rp_id, e.app_identifier, e.failure_reason,
@@ -319,6 +313,34 @@ mod tests {
             .list_activities(ActivityQuery::default(), 10, 0)
             .expect("list all");
         assert_eq!(all.len(), 4, "an unset filter returns every entry");
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_issuer_schema_id_above_i64_max_round_trips() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x09u8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let entry = ActivityEntry {
+            issuer_schema_ids: vec![u64::MAX],
+            ..sample_entry()
+        };
+        db.record_activity(&entry, 1000).expect("record activity");
+
+        let entries = db
+            .list_activities(
+                ActivityQuery {
+                    issuer_schema_id: Some(u64::MAX),
+                },
+                10,
+                0,
+            )
+            .expect("list filtered");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].issuer_schema_ids, vec![u64::MAX]);
 
         cleanup_cache_files(&path);
     }

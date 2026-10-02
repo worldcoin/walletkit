@@ -475,6 +475,59 @@ mod tests {
     }
 
     #[test]
+    fn test_activity_migration_rebuilds_on_malformed_legacy_blob() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x8Au8; 32]);
+        let lock_path = temp_lock_path();
+
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key)
+            .expect("create raw connection");
+        conn.execute_batch(
+            "CREATE TABLE cache_meta (
+                schema_version INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE activity_entries (
+                entry_id           INTEGER PRIMARY KEY,
+                client_id          TEXT NOT NULL,
+                protocol           INTEGER NOT NULL,
+                created_at         INTEGER NOT NULL,
+                outcome            TEXT NOT NULL,
+                rp_id              INTEGER NOT NULL,
+                app_identifier     TEXT NOT NULL,
+                issuer_schema_ids  BLOB NOT NULL,
+                failure_reason     TEXT NOT NULL
+            );
+            INSERT INTO cache_meta (schema_version, created_at, updated_at)
+            VALUES (3, 1000, 1000);
+            INSERT INTO activity_entries (
+                entry_id, client_id, protocol, created_at, outcome, rp_id,
+                app_identifier, issuer_schema_ids, failure_reason
+            ) VALUES (
+                1, 'req-corrupt', 3, 1000, 'completed', 7, 'app_corrupt',
+                X'000000000000000A00', ''
+            );",
+        )
+        .expect("seed malformed legacy activity schema");
+        drop(conn);
+
+        let db =
+            CacheDb::new(&path, &key).expect("open cache with malformed legacy blob");
+
+        let entries = db
+            .list_activities(ActivityQuery::default(), 10, 0)
+            .expect("list all");
+        assert!(
+            entries.is_empty(),
+            "a malformed legacy blob must not be silently truncated"
+        );
+
+        cleanup_cache_files(&path);
+        cleanup_lock_file(&lock_path);
+    }
+
+    #[test]
     fn test_schema_version_is_recorded() {
         let path = temp_cache_path();
         let key = SecretBox::init_with(|| [0x99u8; 32]);
