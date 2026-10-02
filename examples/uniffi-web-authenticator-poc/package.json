@@ -1,0 +1,33 @@
+{
+  "name": "walletkit-uniffi-web-authenticator-poc",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "bun@1.3.11",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/worldcoin/walletkit"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "walletkit:local": "bun run --cwd ../../web/walletkit build && bun link --cwd ../../web/walletkit && bun link --no-save walletkit-web",
+    "walletkit:published": "bun install --frozen-lockfile --force"
+  },
+  "dependencies": {
+    "lossless-json": "^4.3.1",
+    "next": "16.3.2",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "viem": "^2.56.0",
+    "walletkit-web": "0.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "25.0.3",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2"
+  }
+}
