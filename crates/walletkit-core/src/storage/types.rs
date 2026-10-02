@@ -161,7 +161,8 @@ pub struct ActivityEntry {
     pub timestamp: Option<u64>,
     /// The result of the activity.
     pub outcome: ActivityOutcome,
-    /// The credentials which produced an output proof for the request.
+    /// The set of issuer schema ids whose credentials produced an output proof
+    /// for the request. Order is not significant; duplicates are dropped.
     pub issuer_schema_ids: Vec<u64>,
     /// Present only when `outcome` is `Failed`.
     pub failure_reason: Option<ActivityFailureReason>,

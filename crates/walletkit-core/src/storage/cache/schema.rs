@@ -214,9 +214,8 @@ fn migration_v4(conn: &Connection) -> DbResult<()> {
         "CREATE TABLE IF NOT EXISTS activity_issuer_schema_ids (
             entry_id          INTEGER NOT NULL
                               REFERENCES activity_entries(entry_id) ON DELETE CASCADE,
-            position          INTEGER NOT NULL,
             issuer_schema_id  INTEGER NOT NULL,
-            PRIMARY KEY (entry_id, position)
+            PRIMARY KEY (entry_id, issuer_schema_id)
         );
 
         CREATE INDEX IF NOT EXISTS idx_activity_issuer_schema_ids_issuer
@@ -238,18 +237,12 @@ fn migration_v4(conn: &Connection) -> DbResult<()> {
     };
 
     for (entry_id, blob) in legacy_ids {
-        for (position, issuer_schema_id) in decode_legacy_issuer_schema_ids(&blob)?
-            .into_iter()
-            .enumerate()
-        {
-            let position = i64::try_from(position).map_err(|_| {
-                corrupt("too many issuer schema ids to migrate".to_string())
-            })?;
+        for issuer_schema_id in decode_legacy_issuer_schema_ids(&blob)? {
             conn.execute(
                 "INSERT OR IGNORE INTO activity_issuer_schema_ids
-                     (entry_id, position, issuer_schema_id)
-                 VALUES (?1, ?2, ?3)",
-                params![entry_id, position, issuer_schema_id],
+                     (entry_id, issuer_schema_id)
+                 VALUES (?1, ?2)",
+                params![entry_id, issuer_schema_id],
             )?;
         }
     }
@@ -267,8 +260,7 @@ const fn corrupt(message: String) -> Error {
     }
 }
 
-/// Decodes the legacy concatenated big-endian `u64` blob, preserving order and
-/// duplicates.
+/// Decodes the legacy concatenated big-endian `u64` blob.
 ///
 /// A length that is not a multiple of eight indicates corruption, so the
 /// migration fails and the disposable cache is rebuilt rather than silently

@@ -54,16 +54,11 @@ pub(super) fn record(
         )
         .map_err(|err| map_db_err(&err))?;
 
-    for (position, issuer_schema_id) in entry.issuer_schema_ids.iter().enumerate() {
-        let position = i64::try_from(position).map_err(|_| {
-            StorageError::ActivityInvalidRecord(
-                "too many issuer schema ids".to_string(),
-            )
-        })?;
+    for issuer_schema_id in &entry.issuer_schema_ids {
         tx.execute(
-            "INSERT OR IGNORE INTO activity_issuer_schema_ids (entry_id, position, issuer_schema_id)
-             VALUES (?1, ?2, ?3)",
-            params![entry_id, position, issuer_schema_id.cast_signed()],
+            "INSERT OR IGNORE INTO activity_issuer_schema_ids (entry_id, issuer_schema_id)
+             VALUES (?1, ?2)",
+            params![entry_id, issuer_schema_id.cast_signed()],
         )
         .map_err(|err| map_db_err(&err))?;
     }
@@ -146,28 +141,36 @@ pub(super) fn clear(conn: &Connection) -> StorageResult<u64> {
 }
 
 /// The columns of an activity entry, with its issuer schema ids reassembled in
-/// their original order.
+/// a normalized order.
 const SELECT_ACTIVITY_ENTRIES: &str =
     "SELECT e.entry_id, e.client_id, e.protocol, e.created_at, e.outcome,
             e.rp_id, e.app_identifier, e.failure_reason,
-            (SELECT GROUP_CONCAT(s.issuer_schema_id ORDER BY s.position)
+            (SELECT GROUP_CONCAT(s.issuer_schema_id)
              FROM activity_issuer_schema_ids s
              WHERE s.entry_id = e.entry_id)
      FROM activity_entries e";
 
+/// Parses the reassembled issuer schema ids.
+///
+/// The ids are a set: the result is sorted ascending and duplicates are
+/// dropped.
 fn decode_issuer_schema_ids(joined: &str) -> StorageResult<Vec<u64>> {
     if joined.is_empty() {
         return Ok(Vec::new());
     }
 
-    joined
+    let mut ids = joined
         .split(',')
         .map(|value| {
             value.parse::<i64>().map(i64::cast_unsigned).map_err(|_| {
                 StorageError::ActivityDb(format!("invalid issuer_schema_id: {value}"))
             })
         })
-        .collect()
+        .collect::<StorageResult<Vec<_>>>()?;
+
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
 }
 
 fn map_entry(row: &Row<'_, '_>) -> StorageResult<ActivityEntry> {
@@ -343,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn test_issuer_schema_ids_preserve_order_and_duplicates() {
+    fn test_issuer_schema_ids_are_a_set() {
         let path = temp_cache_path();
         let key = SecretBox::init_with(|| [0x0Au8; 32]);
         let db = CacheDb::new(&path, &key).expect("create cache");
@@ -357,7 +360,7 @@ mod tests {
         let entries = db
             .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list all");
-        assert_eq!(entries[0].issuer_schema_ids, vec![20, 10, 10]);
+        assert_eq!(entries[0].issuer_schema_ids, vec![10, 20]);
 
         let filtered = db
             .list_activities(&ActivityQuery::new().with_issuer_schema_id(10), 10, 0)
