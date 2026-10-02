@@ -14,9 +14,8 @@ pub use errors::{
     FlamingoResponseStage, FlamingoValidationTarget,
 };
 pub use types::{
-    FlamingoDebugReport, FlamingoLiveCapture, FlamingoMatchObservations,
-    FlamingoMatchOutcome, FlamingoMatchRequest, FlamingoMatchResponse,
-    FlamingoMatchingFrame, VerifiedMatchToken,
+    FlamingoDebugReport, FlamingoLiveCapture, FlamingoMatchOutcome,
+    FlamingoMatchRequest, FlamingoMatchingFrame, VerifiedMatchToken,
 };
 
 use std::collections::HashMap;
@@ -24,7 +23,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use flamingo_verifier_client::{
     Config, Error as ClientError, FlamingoVerifierClient, FlamingoVerifierSession,
-    PcrMeasurement, VerifiedMatchResponse,
+    PcrMeasurement, VerifiedMatchResult,
 };
 use flamingo_verifier_sealed_types::MatchInputs;
 use reqwest::{
@@ -68,7 +67,7 @@ trait MatchClient: Sync {
         &self,
         session: Self::Session,
         inputs: &MatchInputs,
-    ) -> Result<VerifiedMatchResponse, ClientError>;
+    ) -> Result<VerifiedMatchResult, ClientError>;
 }
 
 /// The verifier client plus the headers sent on every WebSocket upgrade.
@@ -185,7 +184,7 @@ impl FlamingoMatcher {
     pub async fn perform_match(
         &self,
         request: FlamingoMatchRequest,
-    ) -> Result<FlamingoMatchResponse, FlamingoError> {
+    ) -> Result<FlamingoMatchOutcome, FlamingoError> {
         perform_match(self.client().await?, request).await
     }
 }
@@ -232,7 +231,7 @@ impl MatchClient for SessionClient {
         &self,
         session: Self::Session,
         inputs: &MatchInputs,
-    ) -> Result<VerifiedMatchResponse, ClientError> {
+    ) -> Result<VerifiedMatchResult, ClientError> {
         session.request_match(inputs).await
     }
 }
@@ -299,7 +298,7 @@ fn matcher_config(
 async fn perform_match<C: MatchClient>(
     client: &C,
     request: FlamingoMatchRequest,
-) -> Result<FlamingoMatchResponse, FlamingoError> {
+) -> Result<FlamingoMatchOutcome, FlamingoError> {
     request.validate()?;
     let request = request.into_inputs();
     let mut reassigned = false;
@@ -375,12 +374,11 @@ mod tests {
     };
 
     use flamingo_verifier_client::{
-        Error as ClientError, VerifiedMatch, VerifiedMatchResponse,
-        VerifiedMatchResult as MatchResult,
+        Error as ClientError, VerifiedMatch, VerifiedMatchResult as MatchResult,
     };
     use flamingo_verifier_protocol::match_token::{MatchOperation, MatchToken};
     use flamingo_verifier_sealed_types::{
-        AttestedStatement, FailureReason, MatchInputs,
+        AttestedStatement, DebugReport, FailureReason, MatchInputs,
     };
 
     use super::{
@@ -390,7 +388,7 @@ mod tests {
 
     struct FakeClient {
         assignments: AtomicUsize,
-        results: Mutex<VecDeque<Result<VerifiedMatchResponse, ClientError>>>,
+        results: Mutex<VecDeque<Result<MatchResult, ClientError>>>,
     }
 
     impl FakeClient {
@@ -399,9 +397,7 @@ mod tests {
         ) -> Self {
             Self {
                 assignments: AtomicUsize::new(0),
-                results: Mutex::new(
-                    results.into_iter().map(|r| r.map(Into::into)).collect(),
-                ),
+                results: Mutex::new(results.into_iter().collect()),
             }
         }
     }
@@ -418,7 +414,7 @@ mod tests {
             &self,
             _session: Self::Session,
             _inputs: &MatchInputs,
-        ) -> Result<VerifiedMatchResponse, ClientError> {
+        ) -> Result<MatchResult, ClientError> {
             self.results
                 .lock()
                 .expect("fake result lock should not be poisoned")
@@ -453,12 +449,14 @@ mod tests {
     #[tokio::test]
     async fn gray_badge_preserves_typed_validation_feedback() {
         use flamingo_verifier_sealed_types::{ImageFailureReason, ImageRole};
-        let client =
-            FakeClient::new([Ok(MatchResult::Failed(FailureReason::ImageRejected {
+        let client = FakeClient::new([Ok(MatchResult::Failed {
+            reason: FailureReason::ImageRejected {
                 image: ImageRole::LiveSelfie,
                 reason: ImageFailureReason::EyesClosed,
                 target: Some(flamingo_verifier_sealed_types::ValidationTarget::Image),
-            }))]);
+            },
+            debug_report: DebugReport::NotProduced,
+        })]);
         let outcome = perform_match(
             &client,
             FlamingoMatchRequest::GrayBadge {
@@ -470,18 +468,23 @@ mod tests {
         .await
         .unwrap();
         assert!(matches!(
-            outcome.outcome,
-            FlamingoMatchOutcome::Rejected(FlamingoMatchRejection::ImageRejected {
-                image: super::FlamingoImageRole::LiveSelfie,
-                reason: super::FlamingoImageFailureReason::EyesClosed,
-                target: Some(super::FlamingoValidationTarget::Image),
-            })
+            outcome,
+            FlamingoMatchOutcome::Rejected {
+                reason: FlamingoMatchRejection::ImageRejected {
+                    image: super::FlamingoImageRole::LiveSelfie,
+                    reason: super::FlamingoImageFailureReason::EyesClosed,
+                    target: Some(super::FlamingoValidationTarget::Image),
+                },
+                ..
+            }
         ));
     }
     #[tokio::test]
     async fn gray_badge_preserves_infrastructure_rejection() {
-        let client =
-            FakeClient::new([Ok(MatchResult::Failed(FailureReason::Internal))]);
+        let client = FakeClient::new([Ok(MatchResult::Failed {
+            reason: FailureReason::Internal,
+            debug_report: DebugReport::NotProduced,
+        })]);
         let outcome = perform_match(
             &client,
             FlamingoMatchRequest::GrayBadge {
@@ -493,8 +496,11 @@ mod tests {
         .await
         .unwrap();
         assert!(matches!(
-            outcome.outcome,
-            FlamingoMatchOutcome::Rejected(FlamingoMatchRejection::Internal)
+            outcome,
+            FlamingoMatchOutcome::Rejected {
+                reason: FlamingoMatchRejection::Internal,
+                ..
+            }
         ));
     }
     #[test]
@@ -779,8 +785,8 @@ mod tests {
 
     #[tokio::test]
     async fn returns_a_verified_token_after_the_client_verifies_success() {
-        let client =
-            FakeClient::new([Ok(MatchResult::Success(Box::new(VerifiedMatch {
+        let client = FakeClient::new([Ok(MatchResult::Success {
+            verified: Box::new(VerifiedMatch {
                 statement: AttestedStatement {
                     token: MatchToken::from_bytes(b"signed-token".to_vec()),
                     signing_key_attestation: b"signing-key-attestation".to_vec(),
@@ -793,13 +799,15 @@ mod tests {
                     challenger_image_hash: [3; 32],
                     match_coefficient: 0.9,
                 },
-            })))]);
+            }),
+            debug_report: DebugReport::NotProduced,
+        })]);
 
         let outcome = perform_match(&client, request())
             .await
             .expect("match should succeed");
 
-        let FlamingoMatchOutcome::Matched(token) = outcome.outcome else {
+        let FlamingoMatchOutcome::Matched { token, .. } = outcome else {
             panic!("expected a matched outcome");
         };
         assert_eq!(token.match_coefficient().to_bits(), 0.9f32.to_bits());
@@ -810,19 +818,21 @@ mod tests {
 
     #[tokio::test]
     async fn returns_a_typed_sealed_rejection() {
-        let client = FakeClient::new([Ok(MatchResult::Failed(
-            FailureReason::ThumbnailHashMismatch,
-        ))]);
+        let client = FakeClient::new([Ok(MatchResult::Failed {
+            reason: FailureReason::ThumbnailHashMismatch,
+            debug_report: DebugReport::NotProduced,
+        })]);
 
         let outcome = perform_match(&client, request())
             .await
             .expect("a sealed rejection is an outcome");
 
         assert!(matches!(
-            outcome.outcome,
-            FlamingoMatchOutcome::Rejected(
-                FlamingoMatchRejection::ThumbnailHashMismatch
-            )
+            outcome,
+            FlamingoMatchOutcome::Rejected {
+                reason: FlamingoMatchRejection::ThumbnailHashMismatch,
+                ..
+            }
         ));
     }
 
@@ -830,9 +840,12 @@ mod tests {
     async fn reassigns_and_reseals_exactly_once() {
         let client = FakeClient::new([
             Err(ClientError::ReassignRequired),
-            Ok(MatchResult::Failed(FailureReason::MatchBelowThreshold(
-                flamingo_verifier_sealed_types::ComparisonRole::SelfieChallenge,
-            ))),
+            Ok(MatchResult::Failed {
+                reason: FailureReason::MatchBelowThreshold(
+                    flamingo_verifier_sealed_types::ComparisonRole::SelfieChallenge,
+                ),
+                debug_report: DebugReport::NotProduced,
+            }),
         ]);
 
         let outcome = perform_match(&client, request())
@@ -840,10 +853,11 @@ mod tests {
             .expect("fresh assignment should recover the match request");
 
         assert!(matches!(
-            outcome.outcome,
-            FlamingoMatchOutcome::Rejected(
-                FlamingoMatchRejection::MatchBelowThreshold { .. }
-            )
+            outcome,
+            FlamingoMatchOutcome::Rejected {
+                reason: FlamingoMatchRejection::MatchBelowThreshold { .. },
+                ..
+            }
         ));
         assert_eq!(client.assignments.load(Ordering::Relaxed), 2);
     }
@@ -1025,77 +1039,66 @@ mod tests {
         assert_eq!(client.assignments.load(Ordering::Relaxed), 0);
     }
     #[tokio::test]
-    async fn complete_response_preserves_reports_and_operation_scores() {
-        use flamingo_verifier_sealed_types::{
-            ComparisonRole, DebugReport, MatchObservations,
-        };
+    async fn reports_survive_success_and_rejection_for_both_operations() {
+        use flamingo_verifier_sealed_types::ComparisonRole;
         for deep_face in [false, true] {
             for rejected in [false, true] {
-                let score = if rejected { 0.1 } else { f64::from(0.9f32) };
-                let observations = if deep_face {
-                    MatchObservations::DeepFace {
-                        credential_live: f64::from(0.9f32),
-                        credential_challenge: f64::from(0.85f32),
-                        live_challenge: score,
-                    }
-                } else {
-                    MatchObservations::GrayBadge {
-                        live_challenge: score,
-                    }
-                };
-                let outcome = if rejected {
-                    MatchResult::Failed(FailureReason::MatchBelowThreshold(
-                        ComparisonRole::SelfieChallenge,
-                    ))
-                } else {
-                    MatchResult::Success(Box::new(VerifiedMatch {
-                        statement: AttestedStatement {
-                            token: MatchToken::from_bytes(b"token".to_vec()),
-                            signing_key_attestation: b"attestation".to_vec(),
-                        },
-                        claims: flamingo_verifier_protocol::match_token::MatchClaims {
-                            operation: if deep_face {
-                                MatchOperation::DeepFace {
-                                    credential_claim: [1; 32],
-                                }
-                            } else {
-                                MatchOperation::GrayBadge
-                            },
-                            live_capture_hash: [2; 32],
-                            challenger_image_hash: [3; 32],
-                            match_coefficient: 0.9,
-                        },
-                    }))
-                };
-                let json = "{ \"raw\": [1, 2] }\n".to_owned();
-                let client = FakeClient {
-                    assignments: AtomicUsize::new(0),
-                    results: Mutex::new(VecDeque::from([Ok(VerifiedMatchResponse {
-                        outcome,
-                        observations: Some(observations),
-                        debug_report: DebugReport::Available { json: json.clone() },
-                    })])),
-                };
-                let request = if deep_face {
-                    request()
-                } else {
-                    FlamingoMatchRequest::GrayBadge {
-                        live: FlamingoLiveCapture::Vanilla { image: vec![1] },
-                        rtms_challenge: vec![2],
-                        match_threshold: 0.7,
-                    }
-                };
-                let response = perform_match(&client, request).await.unwrap();
-                assert_eq!(response.observations, Some(observations.into()));
-                assert_eq!(
-                    response.debug_report,
-                    super::FlamingoDebugReport::Available { json }
-                );
-                assert_eq!(
-                    matches!(response.outcome, FlamingoMatchOutcome::Rejected(_)),
-                    rejected
-                );
-                assert_eq!(client.assignments.load(Ordering::Relaxed), 1);
+                for debug_report in [
+                    DebugReport::Available {
+                        json: "{ \"raw\": [1, 2] }\n".to_owned(),
+                    },
+                    DebugReport::NotProduced,
+                    DebugReport::OmittedTooLarge {
+                        original_size_bytes: 200_000,
+                    },
+                ] {
+                    let outcome = if rejected {
+                        MatchResult::Failed {
+                            reason: FailureReason::MatchBelowThreshold(
+                                ComparisonRole::SelfieChallenge,
+                            ),
+                            debug_report: debug_report.clone(),
+                        }
+                    } else {
+                        MatchResult::Success {
+                            verified: Box::new(VerifiedMatch {
+                                statement: AttestedStatement {
+                                    token: MatchToken::from_bytes(b"token".to_vec()),
+                                    signing_key_attestation: b"attestation".to_vec(),
+                                },
+                                claims: flamingo_verifier_protocol::match_token::MatchClaims {
+                                    operation: if deep_face {
+                                        MatchOperation::DeepFace { credential_claim: [1; 32] }
+                                    } else { MatchOperation::GrayBadge },
+                                    live_capture_hash: [2; 32], challenger_image_hash: [3; 32], match_coefficient: 0.9,
+                                },
+                            }),
+                            debug_report: debug_report.clone(),
+                        }
+                    };
+                    let client = FakeClient::new([Ok(outcome)]);
+                    let request = if deep_face {
+                        request()
+                    } else {
+                        FlamingoMatchRequest::GrayBadge {
+                            live: FlamingoLiveCapture::Vanilla { image: vec![1] },
+                            rtms_challenge: vec![2],
+                            match_threshold: 0.7,
+                        }
+                    };
+                    let response = perform_match(&client, request).await.unwrap();
+                    let (report, is_rejected) = match response {
+                        FlamingoMatchOutcome::Matched { debug_report, .. } => {
+                            (debug_report, false)
+                        }
+                        FlamingoMatchOutcome::Rejected { debug_report, .. } => {
+                            (debug_report, true)
+                        }
+                    };
+                    assert_eq!(report, debug_report.into());
+                    assert_eq!(is_rejected, rejected);
+                    assert_eq!(client.assignments.load(Ordering::Relaxed), 1);
+                }
             }
         }
     }

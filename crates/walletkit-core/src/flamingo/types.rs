@@ -81,9 +81,19 @@ pub struct VerifiedMatchToken {
 #[derive(Debug, uniffi::Enum)]
 pub enum FlamingoMatchOutcome {
     /// The enclave issued a token and `WalletKit` verified it against an attested signing key.
-    Matched(Arc<VerifiedMatchToken>),
+    Matched {
+        /// Verified token handle for proof consumers.
+        token: Arc<VerifiedMatchToken>,
+        /// Original worker diagnostics, not signed proof claims.
+        debug_report: FlamingoDebugReport,
+    },
     /// The response reported a rejection. An unsigned rejection does not authenticate its sender.
-    Rejected(FlamingoMatchRejection),
+    Rejected {
+        /// Structured input or biometric rejection.
+        reason: FlamingoMatchRejection,
+        /// Worker diagnostics, if produced before rejection.
+        debug_report: FlamingoDebugReport,
+    },
 }
 
 impl FlamingoMatchRequest {
@@ -302,37 +312,6 @@ mod tests {
     }
 }
 
-/// The complete caller-visible response from an encrypted match exchange.
-#[derive(Debug, uniffi::Record)]
-pub struct FlamingoMatchResponse {
-    /// Verified token handle or biometric/input rejection.
-    pub outcome: FlamingoMatchOutcome,
-    /// Completed comparisons, including broker threshold rejection.
-    pub observations: Option<FlamingoMatchObservations>,
-    /// Original worker report or explicit delivery status.
-    pub debug_report: FlamingoDebugReport,
-}
-
-/// Normalized [0,1] comparison scores, with f32 normalization precision.
-/// These are auxiliary observations, not additional signed token claims.
-#[derive(Debug, Clone, Copy, PartialEq, uniffi::Enum)]
-pub enum FlamingoMatchObservations {
-    /// All three completed `DeepFace` comparisons.
-    DeepFace {
-        /// Credential versus live.
-        credential_live: f64,
-        /// Credential versus challenge.
-        credential_challenge: f64,
-        /// Live versus challenge.
-        live_challenge: f64,
-    },
-    /// One comparison across two images.
-    GrayBadge {
-        /// Live versus challenge.
-        live_challenge: f64,
-    },
-}
-
 /// Worker diagnostic delivery status. JSON is excluded from `Debug` output.
 #[derive(Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum FlamingoDebugReport {
@@ -368,44 +347,24 @@ impl std::fmt::Debug for FlamingoDebugReport {
     }
 }
 
-impl From<flamingo_verifier_client::VerifiedMatchResponse> for FlamingoMatchResponse {
-    fn from(value: flamingo_verifier_client::VerifiedMatchResponse) -> Self {
+impl From<flamingo_verifier_client::VerifiedMatchResult> for FlamingoMatchOutcome {
+    fn from(value: flamingo_verifier_client::VerifiedMatchResult) -> Self {
         use flamingo_verifier_client::VerifiedMatchResult;
-        Self {
-            outcome: match value.outcome {
-                VerifiedMatchResult::Success(statement) => {
-                    FlamingoMatchOutcome::Matched(Arc::new(VerifiedMatchToken::from(
-                        *statement,
-                    )))
-                }
-                VerifiedMatchResult::Failed(reason) => {
-                    FlamingoMatchOutcome::Rejected(reason.into())
-                }
-            },
-            observations: value.observations.map(Into::into),
-            debug_report: value.debug_report.into(),
-        }
-    }
-}
-
-impl From<flamingo_verifier_sealed_types::MatchObservations>
-    for FlamingoMatchObservations
-{
-    fn from(value: flamingo_verifier_sealed_types::MatchObservations) -> Self {
-        use flamingo_verifier_sealed_types::MatchObservations;
         match value {
-            MatchObservations::DeepFace {
-                credential_live,
-                credential_challenge,
-                live_challenge,
-            } => Self::DeepFace {
-                credential_live,
-                credential_challenge,
-                live_challenge,
+            VerifiedMatchResult::Success {
+                verified,
+                debug_report,
+            } => Self::Matched {
+                token: Arc::new(VerifiedMatchToken::from(*verified)),
+                debug_report: debug_report.into(),
             },
-            MatchObservations::GrayBadge { live_challenge } => {
-                Self::GrayBadge { live_challenge }
-            }
+            VerifiedMatchResult::Failed {
+                reason,
+                debug_report,
+            } => Self::Rejected {
+                reason: reason.into(),
+                debug_report: debug_report.into(),
+            },
         }
     }
 }
