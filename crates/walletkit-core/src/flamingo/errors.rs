@@ -3,6 +3,8 @@ use flamingo_verifier_sealed_types::{
 };
 use thiserror::Error;
 
+use super::RequestIntegrityError;
+
 /// A rejection reported inside encryption; not a signed statement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FlamingoMatchRejection {
@@ -76,6 +78,12 @@ pub enum FlamingoError {
     /// The verifier configuration was not valid.
     #[error("invalid Flamingo verifier configuration: {0}")]
     Configuration(String),
+    /// Preparing the integrity token or signing the request failed.
+    #[error("Flamingo request integrity failed: {0}")]
+    RequestIntegrity(RequestIntegrityError),
+    /// The draft mock digest cannot authenticate a canonical request.
+    #[error("canonical request signing is unavailable in this draft")]
+    CanonicalSigningUnavailable,
     /// Assignment, attestation, transport, channel opening, or token verification failed.
     #[error("Flamingo verifier request failed: {0}")]
     Verifier(String),
