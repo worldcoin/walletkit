@@ -4,6 +4,8 @@ use flamingo_verifier_sealed_types::{
 };
 use thiserror::Error;
 
+use super::RequestIntegrityError;
+
 /// A rejection reported inside encryption; not a signed statement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FlamingoMatchRejection {
@@ -84,6 +86,9 @@ pub enum FlamingoError {
     /// The verifier configuration was not valid.
     #[error("invalid Flamingo verifier configuration: {0}")]
     Configuration(String),
+    /// Preparing the integrity token or signing the request failed.
+    #[error("Flamingo request integrity failed: {0}")]
+    RequestIntegrity(RequestIntegrityError),
     /// The host returned a machine-readable service error.
     #[error("Flamingo service error ({code})")]
     Service {
