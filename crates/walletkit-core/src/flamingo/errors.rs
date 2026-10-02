@@ -81,9 +81,6 @@ pub enum FlamingoError {
     /// Preparing the integrity token or signing the request failed.
     #[error("Flamingo request integrity failed: {0}")]
     RequestIntegrity(RequestIntegrityError),
-    /// The draft mock digest cannot authenticate a canonical request.
-    #[error("canonical request signing is unavailable in this draft")]
-    CanonicalSigningUnavailable,
     /// Assignment, attestation, transport, channel opening, or token verification failed.
     #[error("Flamingo verifier request failed: {0}")]
     Verifier(String),

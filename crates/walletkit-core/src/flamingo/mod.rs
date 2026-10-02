@@ -13,12 +13,10 @@
 //! hardware-key lifecycle; `WalletKit` owns request signing and the verifier connection.
 //! Request authentication is separate from enclave attestation and match-token verification.
 //!
-//! This draft signs the mock digest `[0xA5; 32]`, then returns
-//! [`FlamingoError::CanonicalSigningUnavailable`](crate::flamingo::FlamingoError::CanonicalSigningUnavailable)
-//! before opening a socket. It sends no integrity
-//! headers. Canonical signing must use the shared `attested-request` implementation over the
-//! final WebSocket handshake URI and prepared token, with a fresh timestamp, nonce, and signature
-//! for every connection even when the token is reused.
+//! The shared `attested-request` implementation signs the final WebSocket handshake method,
+//! HTTP(S) scheme, authority, path, query, empty body, and prepared token. Every connection,
+//! including reassignment, gets a fresh timestamp, nonce, and signature even when the token
+//! is reused.
 
 mod errors;
 mod integrity;
@@ -54,6 +52,7 @@ use reqwest::{
     Url,
 };
 use tokio::sync::OnceCell;
+use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 /// A simple wrapper around of `FlamingoVerifierClient`. Flamingo Verifier is a cloud TEE service for attested embedding generation and comparison.
 #[derive(uniffi::Object)]
@@ -92,15 +91,7 @@ trait MatchClient: Sync {
 
 /// The verifier client plus the headers sent on every WebSocket upgrade.
 struct SessionClient {
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "transport awaits canonical signing")
-    )]
     client: FlamingoVerifierClient,
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "transport awaits canonical signing")
-    )]
     headers: HeaderMap,
     integrity_provider: Arc<dyn RequestIntegrityProvider>,
 }
@@ -118,12 +109,12 @@ impl FlamingoMatcher {
     /// Creates a matcher with a host-provided integrity token and hardware signer.
     ///
     /// The provider is called for each new connection. Configure enclave measurements
-    /// with [`Self::with_measurements`]. This draft exercises a mock digest and stops
-    /// before network access until canonical request signing is available.
+    /// with [`Self::with_measurements`]. The request is signed before opening a socket.
     ///
     /// # Errors
     ///
-    /// Returns [`FlamingoError::Configuration`] if the URL is not a valid HTTP(S) URL.
+    /// Returns [`FlamingoError::Configuration`] if the URL is not a valid HTTP(S) URL
+    /// or contains credentials or a fragment.
     #[uniffi::constructor]
     pub fn new(
         host_url: &str,
@@ -133,9 +124,12 @@ impl FlamingoMatcher {
             .map_err(|error| FlamingoError::Configuration(error.to_string()))?;
         if !matches!(host_url.scheme(), "http" | "https")
             || host_url.host_str().is_none()
+            || !host_url.username().is_empty()
+            || host_url.password().is_some()
+            || host_url.fragment().is_some()
         {
             return Err(FlamingoError::Configuration(
-                "host_url must be an absolute HTTP(S) URL".to_string(),
+                "host_url must be an absolute HTTP(S) URL without credentials or a fragment".to_string(),
             ));
         }
         Ok(Self {
@@ -217,9 +211,7 @@ impl FlamingoMatcher {
 
     /// Performs an attested 3-way embedding match.
     ///
-    /// This draft prepares an integrity session and signs a mock digest, then returns
-    /// [`FlamingoError::CanonicalSigningUnavailable`] before opening a socket.
-    /// Once canonical signing is wired, the match flow:
+    /// Prepares an integrity session and signs the WebSocket upgrade before the match flow:
     ///
     /// - Opens a WebSocket session and verifies the enclave assignment delivered on it, including
     ///   PCRs unless explicitly bypassed.
@@ -269,10 +261,32 @@ impl MatchClient for SessionClient {
     type Session = FlamingoVerifierSession;
 
     async fn connect(&self) -> Result<Self::Session, FlamingoError> {
-        integrity::prepare_mock_signature(self.integrity_provider.clone())
+        let mut request = self
+            .client
+            .build_request()
+            .map_err(|error| verifier_error(&error))?;
+        let handshake = request.clone().into_client_request().map_err(|_| {
+            FlamingoError::Configuration("invalid WebSocket handshake".to_string())
+        })?;
+        let signed =
+            integrity::sign_request(self.integrity_provider.clone(), handshake)
+                .await
+                .map_err(FlamingoError::RequestIntegrity)?;
+        for (name, value) in &self.headers {
+            let value = value.to_str().map_err(|_| {
+                FlamingoError::Configuration(
+                    "header values must be visible ASCII".to_string(),
+                )
+            })?;
+            request = request.with_header(name.as_str(), value);
+        }
+        for (name, value) in signed.headers() {
+            request = request.with_header(name, value);
+        }
+        self.client
+            .connect_with(request)
             .await
-            .map_err(FlamingoError::RequestIntegrity)?;
-        Err(FlamingoError::CanonicalSigningUnavailable)
+            .map_err(|error| verifier_error(&error))
     }
 
     async fn request_match(
@@ -281,22 +295,6 @@ impl MatchClient for SessionClient {
         inputs: &MatchInputs,
     ) -> Result<MatchResult, ClientError> {
         session.request_match(inputs).await
-    }
-}
-
-#[cfg(test)]
-impl SessionClient {
-    async fn connect_transport(&self) -> Result<FlamingoVerifierSession, ClientError> {
-        let mut request = self.client.build_request()?;
-        for (name, value) in &self.headers {
-            // `parse_headers` only admits visible ASCII values, so this cannot fail.
-            let value = value.to_str().map_err(|_| ClientError::InvalidConfig {
-                attribute: "headers".to_string(),
-                reason: "header values must be visible ASCII".to_string(),
-            })?;
-            request = request.with_header(name.as_str(), value);
-        }
-        self.client.connect_with(request).await
     }
 }
 
@@ -429,7 +427,7 @@ mod tests {
         perform_match, FlamingoError, FlamingoLiveCapture, FlamingoMatchOutcome,
         FlamingoMatchRejection, FlamingoMatchRequest, FlamingoMatcher, MatchClient,
         RequestDigestSigner, RequestIntegrityError, RequestIntegrityPlatform,
-        RequestIntegrityProvider, RequestIntegritySession, SessionClient,
+        RequestIntegrityProvider, RequestIntegritySession,
     };
 
     struct TestIntegrityProvider {
@@ -445,7 +443,7 @@ mod tests {
             &self,
             digest: Vec<u8>,
         ) -> Result<Vec<u8>, RequestIntegrityError> {
-            assert_eq!(digest, vec![0xA5; 32]);
+            assert_eq!(digest.len(), 32);
             self.0.fetch_add(1, Ordering::Relaxed);
             Ok(vec![1])
         }
@@ -474,29 +472,6 @@ mod tests {
             signer: Arc::new(TestDigestSigner(AtomicUsize::new(0))),
             failure: None,
         })
-    }
-
-    /// Exercises the verifier transport independently of the draft authentication gate.
-    struct TransportClient<'a>(&'a SessionClient);
-
-    #[async_trait::async_trait]
-    impl MatchClient for TransportClient<'_> {
-        type Session = super::FlamingoVerifierSession;
-
-        async fn connect(&self) -> Result<Self::Session, FlamingoError> {
-            self.0
-                .connect_transport()
-                .await
-                .map_err(|error| super::verifier_error(&error))
-        }
-
-        async fn request_match(
-            &self,
-            session: Self::Session,
-            inputs: &MatchInputs,
-        ) -> Result<MatchResult, ClientError> {
-            self.0.request_match(session, inputs).await
-        }
     }
 
     struct FakeClient {
@@ -716,7 +691,13 @@ mod tests {
 
     #[test]
     fn rejects_an_invalid_host_url() {
-        for url in ["not a URL", "/relative", "ftp://verifier.example.com"] {
+        for url in [
+            "not a URL",
+            "/relative",
+            "ftp://verifier.example.com",
+            "https://user:secret@verifier.example.com",
+            "https://verifier.example.com/#fragment",
+        ] {
             assert!(matches!(
                 FlamingoMatcher::new(url, provider()),
                 Err(FlamingoError::Configuration(_))
@@ -839,28 +820,53 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_signing_prepares_each_attempt_and_stops_before_network() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    async fn signs_each_connection_with_fresh_parameters() {
         let integrity = provider();
+        let mut previous_input = None;
+        for _ in 0..2 {
+            let (base_url, seen) =
+                serve_once(|socket| async move { drop(socket) }).await;
+            let matcher = FlamingoMatcher::new(&base_url, integrity.clone())
+                .unwrap()
+                .with_measurements(measurements())
+                .unwrap();
+            assert!(matches!(
+                matcher.perform_match(request()).await,
+                Err(FlamingoError::Verifier(_))
+            ));
+            let upgrade = seen.await.unwrap();
+            let signature_input = upgrade.headers()["signature-input"].clone();
+            assert_ne!(previous_input.as_ref(), Some(&signature_input));
+            previous_input = Some(signature_input);
+            assert_eq!(upgrade.headers()["integrity-token"], "test-integrity-token");
+            assert!(upgrade.headers().contains_key("signature"));
+        }
+        assert_eq!(integrity.prepared.load(Ordering::Relaxed), 2);
+        assert_eq!(integrity.signer.0.load(Ordering::Relaxed), 2);
+    }
+
+    #[tokio::test]
+    async fn integrity_failure_is_typed_and_does_not_invoke_signer() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let integrity = Arc::new(TestIntegrityProvider {
+            prepared: AtomicUsize::new(0),
+            signer: Arc::new(TestDigestSigner(AtomicUsize::new(0))),
+            failure: Some(RequestIntegrityError::Unavailable),
+        });
         let matcher = FlamingoMatcher::new(
             &format!("http://{}", listener.local_addr().unwrap()),
             integrity.clone(),
         )
         .unwrap()
-        .with_headers(headers())
-        .unwrap()
-        .dangerously_skip_measurements()
-        .unwrap()
         .with_measurements(measurements())
         .unwrap();
-        for _ in 0..2 {
-            assert!(matches!(
-                matcher.perform_match(request()).await,
-                Err(FlamingoError::CanonicalSigningUnavailable)
-            ));
-        }
-        assert_eq!(integrity.prepared.load(Ordering::Relaxed), 2);
-        assert_eq!(integrity.signer.0.load(Ordering::Relaxed), 2);
+        assert!(matches!(
+            matcher.perform_match(request()).await,
+            Err(FlamingoError::RequestIntegrity(
+                RequestIntegrityError::Unavailable
+            ))
+        ));
+        assert_eq!(integrity.signer.0.load(Ordering::Relaxed), 0);
         assert!(
             tokio::time::timeout(Duration::from_millis(50), listener.accept())
                 .await
@@ -869,49 +875,33 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn integrity_failure_is_typed_and_does_not_invoke_signer() {
-        let integrity = Arc::new(TestIntegrityProvider {
-            prepared: AtomicUsize::new(0),
-            signer: Arc::new(TestDigestSigner(AtomicUsize::new(0))),
-            failure: Some(RequestIntegrityError::Unavailable),
-        });
-        let matcher =
-            FlamingoMatcher::new("https://verifier.example.com", integrity.clone())
-                .unwrap()
-                .with_measurements(measurements())
-                .unwrap();
-        assert!(matches!(
-            matcher.perform_match(request()).await,
-            Err(FlamingoError::RequestIntegrity(
-                RequestIntegrityError::Unavailable
-            ))
-        ));
-        assert_eq!(integrity.signer.0.load(Ordering::Relaxed), 0);
-    }
-
-    #[tokio::test]
     async fn upgrade_carries_configured_headers_to_the_prefixed_route() {
         let (base_url, seen) = serve_once(|socket| async move { drop(socket) }).await;
-        let matcher =
-            FlamingoMatcher::new(&format!("{base_url}/v1/flamingo/"), provider())
-                .unwrap()
-                .with_measurements(measurements())
-                .unwrap()
-                .with_headers(headers())
-                .unwrap();
+        let matcher = FlamingoMatcher::new(
+            &format!("{base_url}/v1/flamingo/?region=eu%2Fwest&region=us"),
+            provider(),
+        )
+        .unwrap()
+        .with_measurements(measurements())
+        .unwrap()
+        .with_headers(headers())
+        .unwrap();
 
         // The stub closes right after the upgrade, so the session fails before any assignment.
         assert!(matches!(
-            perform_match(&TransportClient(matcher.client().await.unwrap()), request())
-                .await,
+            matcher.perform_match(request()).await,
             Err(FlamingoError::Verifier(_))
         ));
 
         let upgrade = seen.await.unwrap();
         assert_eq!(upgrade.uri().path(), "/v1/flamingo/v1/matches");
+        assert_eq!(upgrade.uri().query(), Some("region=eu%2Fwest&region=us"));
         assert_eq!(upgrade.headers()["authorization"], "Bearer test-token");
         assert_eq!(upgrade.headers()["client-name"], "test-client");
         assert_eq!(upgrade.headers().get_all("host").iter().count(), 1);
+        for name in ["integrity-token", "signature-input", "signature"] {
+            assert_eq!(upgrade.headers().get_all(name).iter().count(), 1);
+        }
     }
 
     #[tokio::test]
@@ -940,10 +930,7 @@ mod tests {
             .with_headers(headers())
             .unwrap();
 
-        let error =
-            perform_match(&TransportClient(matcher.client().await.unwrap()), request())
-                .await
-                .unwrap_err();
+        let error = matcher.perform_match(request()).await.unwrap_err();
 
         assert!(matches!(error, FlamingoError::Verifier(_)));
         drop(matcher);
