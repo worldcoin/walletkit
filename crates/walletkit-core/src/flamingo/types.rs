@@ -9,7 +9,7 @@ use flamingo_verifier_sealed_types::{
     valid_similarity, DeepFaceInputs, GrayBadgeInputs, LiveCapture, MatchInputs,
 };
 
-use super::errors::{FlamingoError, FlamingoMatchRejection};
+use super::errors::{FlamingoError, FlamingoInputFailureKind, FlamingoMatchRejection};
 
 /// Explicit operation-specific inputs. Image buffers move into the client without cloning.
 #[derive(uniffi::Enum)]
@@ -81,9 +81,19 @@ pub struct VerifiedMatchToken {
 #[derive(Debug, uniffi::Enum)]
 pub enum FlamingoMatchOutcome {
     /// The enclave issued a token and `WalletKit` verified it against an attested signing key.
-    Matched(Arc<VerifiedMatchToken>),
+    Matched {
+        /// Verified token handle for proof consumers.
+        token: Arc<VerifiedMatchToken>,
+        /// Original worker diagnostics, not signed proof claims.
+        debug_report: FlamingoDebugReport,
+    },
     /// The response reported a rejection. An unsigned rejection does not authenticate its sender.
-    Rejected(FlamingoMatchRejection),
+    Rejected {
+        /// Structured input or biometric rejection.
+        reason: FlamingoMatchRejection,
+        /// Worker diagnostics, if produced before rejection.
+        debug_report: FlamingoDebugReport,
+    },
 }
 
 impl FlamingoMatchRequest {
@@ -112,6 +122,8 @@ impl FlamingoMatchRequest {
             return Err(FlamingoError::InvalidInput {
                 attribute: "match_threshold".to_string(),
                 reason: "must be finite and between 0 and 1 inclusive".to_string(),
+                kind: FlamingoInputFailureKind::InvalidThreshold,
+                limit_bytes: None,
             });
         }
         if let Some(hashes) = hashes {
@@ -140,6 +152,8 @@ impl FlamingoMatchRequest {
         if total > MAX_TOTAL_IMAGE_BYTES {
             return Err(FlamingoError::InvalidInput {
                 attribute: "request".to_string(),
+                kind: FlamingoInputFailureKind::TotalTooLarge,
+                limit_bytes: Some(MAX_TOTAL_IMAGE_BYTES as u64),
                 reason: format!(
                     "combined image size must not exceed {MAX_TOTAL_IMAGE_BYTES} bytes"
                 ),
@@ -189,6 +203,12 @@ fn validate_bytes(
     };
     Err(FlamingoError::InvalidInput {
         attribute: attribute.to_string(),
+        kind: if bytes.is_empty() {
+            FlamingoInputFailureKind::Empty
+        } else {
+            FlamingoInputFailureKind::TooLarge
+        },
+        limit_bytes: (!bytes.is_empty()).then_some(limit as u64),
         reason,
     })
 }
@@ -210,7 +230,8 @@ impl From<FlamingoLiveCapture> for LiveCapture {
 
 #[uniffi::export]
 impl VerifiedMatchToken {
-    /// Credential-versus-live normalized similarity authenticated by the token.
+    /// Operation-specific normalized similarity authenticated by the token.
+    /// `DeepFace`: credential/live. `GrayBadge`: live/challenge.
     ///
     /// The other two comparison scores and the requested threshold are not in the token.
     #[must_use]
@@ -243,6 +264,78 @@ impl From<VerifiedMatch> for VerifiedMatchToken {
     }
 }
 
+/// Worker diagnostic delivery status. JSON is excluded from `Debug` output.
+#[derive(Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoDebugReport {
+    /// Original worker JSON without reserialization.
+    Available {
+        /// Bounded original UTF-8 JSON.
+        json: String,
+    },
+    /// Worker did not produce a report or inference did not run.
+    NotProduced,
+    /// Entire report omitted while preserving the match outcome.
+    OmittedTooLarge {
+        /// Original UTF-8 byte count.
+        original_size_bytes: u64,
+    },
+}
+
+impl std::fmt::Debug for FlamingoDebugReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Available { json } => f
+                .debug_struct("Available")
+                .field("bytes", &json.len())
+                .finish(),
+            Self::NotProduced => f.write_str("NotProduced"),
+            Self::OmittedTooLarge {
+                original_size_bytes,
+            } => f
+                .debug_struct("OmittedTooLarge")
+                .field("original_size_bytes", original_size_bytes)
+                .finish(),
+        }
+    }
+}
+
+impl From<flamingo_verifier_client::VerifiedMatchResult> for FlamingoMatchOutcome {
+    fn from(value: flamingo_verifier_client::VerifiedMatchResult) -> Self {
+        use flamingo_verifier_client::VerifiedMatchResult;
+        match value {
+            VerifiedMatchResult::Success {
+                verified,
+                debug_report,
+            } => Self::Matched {
+                token: Arc::new(VerifiedMatchToken::from(*verified)),
+                debug_report: debug_report.into(),
+            },
+            VerifiedMatchResult::Failed {
+                reason,
+                debug_report,
+            } => Self::Rejected {
+                reason: reason.into(),
+                debug_report: debug_report.into(),
+            },
+        }
+    }
+}
+
+impl From<flamingo_verifier_sealed_types::DebugReport> for FlamingoDebugReport {
+    fn from(value: flamingo_verifier_sealed_types::DebugReport) -> Self {
+        use flamingo_verifier_sealed_types::DebugReport;
+        match value {
+            DebugReport::Available { json } => Self::Available { json },
+            DebugReport::NotProduced => Self::NotProduced,
+            DebugReport::OmittedTooLarge {
+                original_size_bytes,
+            } => Self::OmittedTooLarge {
+                original_size_bytes,
+            },
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{FlamingoLiveCapture, FlamingoMatchRequest, MatchInputs};
@@ -271,5 +364,22 @@ mod tests {
             unreachable!()
         };
         assert_eq!(image.as_ptr(), pointer);
+    }
+    #[test]
+    fn diagnostic_omission_status_survives_conversion() {
+        use super::FlamingoDebugReport;
+        use flamingo_verifier_sealed_types::DebugReport;
+        assert_eq!(
+            FlamingoDebugReport::from(DebugReport::NotProduced),
+            FlamingoDebugReport::NotProduced
+        );
+        assert_eq!(
+            FlamingoDebugReport::from(DebugReport::OmittedTooLarge {
+                original_size_bytes: 200_000
+            }),
+            FlamingoDebugReport::OmittedTooLarge {
+                original_size_bytes: 200_000
+            }
+        );
     }
 }
