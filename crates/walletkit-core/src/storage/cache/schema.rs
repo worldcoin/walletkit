@@ -18,7 +18,7 @@ pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
 pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
 pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x03;
 
-use walletkit_sqlite::{params, Connection, DbResult};
+use walletkit_sqlite::{params, Connection, DbResult, StepResult};
 
 /// The cache-database migrations, in order.
 ///
@@ -26,7 +26,7 @@ use walletkit_sqlite::{params, Connection, DbResult};
 /// adding a new version means writing a `migration_vN` function and appending it
 /// here — nothing else needs to change.
 const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] =
-    &[migration_v1, migration_v2, migration_v3];
+    &[migration_v1, migration_v2, migration_v3, migration_v4];
 
 #[allow(
     clippy::cast_possible_wrap,
@@ -96,6 +96,7 @@ fn reset_schema(conn: &Connection) -> DbResult<()> {
         "DROP TABLE IF EXISTS used_nullifiers;
          DROP TABLE IF EXISTS merkle_proof_cache;
          DROP TABLE IF EXISTS session_keys;
+         DROP TABLE IF EXISTS activity_issuer_schema_ids;
          DROP TABLE IF EXISTS activity_entries;
          DROP TABLE IF EXISTS cache_entries;",
     )?;
@@ -109,11 +110,12 @@ fn reset_schema(conn: &Connection) -> DbResult<()> {
 fn schema_is_intact(conn: &Connection) -> DbResult<bool> {
     let present = conn.query_row(
         "SELECT COUNT(*) FROM sqlite_master
-         WHERE type = 'table' AND name IN ('cache_entries', 'activity_entries');",
+         WHERE type = 'table'
+           AND name IN ('cache_entries', 'activity_entries', 'activity_issuer_schema_ids');",
         &[],
         |stmt| Ok(stmt.column_i64(0)),
     )?;
-    Ok(present == 2)
+    Ok(present == 3)
 }
 
 /// Records the current schema version, preserving the original `created_at`.
@@ -197,4 +199,58 @@ fn migration_v3(conn: &Connection) -> DbResult<()> {
         CREATE INDEX idx_activity_entries_created_at
         ON activity_entries (created_at DESC);",
     )
+}
+
+/// Migration 4: moves issuer schema ids out of the concatenated-`u64` blob into
+/// an association table, so activity can be filtered by issuer schema.
+///
+/// The table is created before the legacy column is dropped; entries are
+/// backfilled one row per schema id so existing history remains filterable.
+fn migration_v4(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS activity_issuer_schema_ids (
+            entry_id          INTEGER NOT NULL
+                              REFERENCES activity_entries(entry_id) ON DELETE CASCADE,
+            issuer_schema_id  INTEGER NOT NULL,
+            PRIMARY KEY (entry_id, issuer_schema_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_activity_issuer_schema_ids_issuer
+        ON activity_issuer_schema_ids (issuer_schema_id);",
+    )?;
+
+    if !has_legacy_issuer_schema_ids(conn)? {
+        return Ok(());
+    }
+
+    let legacy_ids = {
+        let mut stmt =
+            conn.prepare("SELECT entry_id, issuer_schema_ids FROM activity_entries")?;
+        let mut rows = Vec::new();
+        while let StepResult::Row(row) = stmt.step()? {
+            rows.push((row.column_i64(0), row.column_blob(1)));
+        }
+        rows
+    };
+
+    for (entry_id, blob) in legacy_ids {
+        for chunk in blob.as_chunks::<8>().0 {
+            conn.execute(
+                "INSERT OR IGNORE INTO activity_issuer_schema_ids (entry_id, issuer_schema_id)
+                 VALUES (?1, ?2)",
+                params![entry_id, i64::from_be_bytes(*chunk)],
+            )?;
+        }
+    }
+
+    conn.execute_batch("ALTER TABLE activity_entries DROP COLUMN issuer_schema_ids;")
+}
+
+fn has_legacy_issuer_schema_ids(conn: &Connection) -> DbResult<bool> {
+    conn.query_row_optional(
+        "SELECT 1 FROM pragma_table_info('activity_entries') WHERE name = 'issuer_schema_ids'",
+        &[],
+        |_| Ok(()),
+    )
+    .map(|row| row.is_some())
 }

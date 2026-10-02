@@ -176,4 +176,7 @@ pub struct ActivityMetadata {
 
 /// Filtering/sorting options for [`super::CredentialStore::list_activities`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, uniffi::Record)]
-pub struct ActivityQuery {}
+pub struct ActivityQuery {
+    /// When set, only entries that include this issuer schema id are returned.
+    pub issuer_schema_id: Option<u64>,
+}

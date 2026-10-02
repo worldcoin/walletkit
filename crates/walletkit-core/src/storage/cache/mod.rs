@@ -411,6 +411,70 @@ mod tests {
     }
 
     #[test]
+    fn test_activity_issuer_schema_migration_backfills_legacy_blob() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x89u8; 32]);
+        let lock_path = temp_lock_path();
+
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key)
+            .expect("create raw connection");
+        conn.execute_batch(
+            "CREATE TABLE cache_meta (
+                schema_version INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE activity_entries (
+                entry_id           INTEGER PRIMARY KEY,
+                client_id          TEXT NOT NULL,
+                protocol           INTEGER NOT NULL,
+                created_at         INTEGER NOT NULL,
+                outcome            TEXT NOT NULL,
+                rp_id              INTEGER NOT NULL,
+                app_identifier     TEXT NOT NULL,
+                issuer_schema_ids  BLOB NOT NULL,
+                failure_reason     TEXT NOT NULL
+            );
+            INSERT INTO cache_meta (schema_version, created_at, updated_at)
+            VALUES (3, 1000, 1000);
+            INSERT INTO activity_entries (
+                entry_id, client_id, protocol, created_at, outcome, rp_id,
+                app_identifier, issuer_schema_ids, failure_reason
+            ) VALUES (
+                1, 'req-legacy', 3, 1000, 'completed', 7, 'app_legacy',
+                X'000000000000000A0000000000000014', ''
+            );",
+        )
+        .expect("seed legacy activity schema");
+        drop(conn);
+
+        let db = CacheDb::new(&path, &key).expect("open legacy cache file");
+
+        let by_schema = db
+            .list_activities(
+                ActivityQuery {
+                    issuer_schema_id: Some(20),
+                },
+                10,
+                0,
+            )
+            .expect("list filtered");
+
+        assert_eq!(by_schema.len(), 1, "legacy blob must be backfilled");
+        assert_eq!(by_schema[0].issuer_schema_ids, vec![10, 20]);
+
+        let entries = db
+            .list_activities(ActivityQuery::default(), 10, 0)
+            .expect("list all");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, Some(1));
+        assert_eq!(entries[0].app_identifier, "app_legacy");
+
+        cleanup_cache_files(&path);
+        cleanup_lock_file(&lock_path);
+    }
+
+    #[test]
     fn test_schema_version_is_recorded() {
         let path = temp_cache_path();
         let key = SecretBox::init_with(|| [0x99u8; 32]);
@@ -430,8 +494,9 @@ mod tests {
             .expect("read cache schema version");
         drop(conn);
 
-        // Three migrations: cache_entries, activity init, activity rebuild.
-        assert_eq!(version, 3, "the cache schema registers as version 3");
+        // Four migrations: cache_entries, activity init, activity rebuild,
+        // issuer-schema association table.
+        assert_eq!(version, 4, "the cache schema registers as version 4");
 
         let db = CacheDb::new(&path, &key).expect("reopen cache");
         let entries = db
