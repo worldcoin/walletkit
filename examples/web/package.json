@@ -1,5 +1,5 @@
 {
-  "name": "walletkit-uniffi-web-authenticator-poc",
+  "name": "walletkit-web-example",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "next dev",
+    "test": "bun test",
     "build": "next build",
     "start": "next start",
     "walletkit:local": "bun run --cwd ../../web/walletkit build && bun link --cwd ../../web/walletkit && bun link --no-save walletkit-web",
