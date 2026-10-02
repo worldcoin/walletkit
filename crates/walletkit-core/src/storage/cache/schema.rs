@@ -214,8 +214,9 @@ fn migration_v4(conn: &Connection) -> DbResult<()> {
         "CREATE TABLE IF NOT EXISTS activity_issuer_schema_ids (
             entry_id          INTEGER NOT NULL
                               REFERENCES activity_entries(entry_id) ON DELETE CASCADE,
+            position          INTEGER NOT NULL,
             issuer_schema_id  INTEGER NOT NULL,
-            PRIMARY KEY (entry_id, issuer_schema_id)
+            PRIMARY KEY (entry_id, position)
         );
 
         CREATE INDEX IF NOT EXISTS idx_activity_issuer_schema_ids_issuer
@@ -237,11 +238,18 @@ fn migration_v4(conn: &Connection) -> DbResult<()> {
     };
 
     for (entry_id, blob) in legacy_ids {
-        for issuer_schema_id in decode_legacy_issuer_schema_ids(&blob)? {
+        for (position, issuer_schema_id) in decode_legacy_issuer_schema_ids(&blob)?
+            .into_iter()
+            .enumerate()
+        {
+            let position = i64::try_from(position).map_err(|_| {
+                corrupt("too many issuer schema ids to migrate".to_string())
+            })?;
             conn.execute(
-                "INSERT OR IGNORE INTO activity_issuer_schema_ids (entry_id, issuer_schema_id)
-                 VALUES (?1, ?2)",
-                params![entry_id, issuer_schema_id],
+                "INSERT OR IGNORE INTO activity_issuer_schema_ids
+                     (entry_id, position, issuer_schema_id)
+                 VALUES (?1, ?2, ?3)",
+                params![entry_id, position, issuer_schema_id],
             )?;
         }
     }
@@ -252,7 +260,15 @@ fn migration_v4(conn: &Connection) -> DbResult<()> {
 /// `SQLite` primary result code for corrupt data (`SQLITE_CORRUPT`).
 const SQLITE_CORRUPT: i32 = 11;
 
-/// Decodes the legacy concatenated big-endian `u64` blob.
+const fn corrupt(message: String) -> Error {
+    Error {
+        code: ErrorCode(SQLITE_CORRUPT),
+        message,
+    }
+}
+
+/// Decodes the legacy concatenated big-endian `u64` blob, preserving order and
+/// duplicates.
 ///
 /// A length that is not a multiple of eight indicates corruption, so the
 /// migration fails and the disposable cache is rebuilt rather than silently
@@ -260,10 +276,10 @@ const SQLITE_CORRUPT: i32 = 11;
 fn decode_legacy_issuer_schema_ids(bytes: &[u8]) -> DbResult<Vec<i64>> {
     let (chunks, remainder) = bytes.as_chunks::<8>();
     if !remainder.is_empty() {
-        return Err(Error {
-            code: ErrorCode(SQLITE_CORRUPT),
-            message: format!("invalid issuer_schema_ids blob length: {}", bytes.len()),
-        });
+        return Err(corrupt(format!(
+            "invalid issuer_schema_ids blob length: {}",
+            bytes.len()
+        )));
     }
 
     Ok(chunks

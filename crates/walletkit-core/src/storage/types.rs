@@ -175,8 +175,29 @@ pub struct ActivityMetadata {
 }
 
 /// Filtering/sorting options for [`super::CredentialStore::list_activities`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, uniffi::Record)]
+///
+/// Build one with [`ActivityQuery::new`] and add filters with the `with_*`
+/// methods, so new filters can be added without changing constructors on the
+/// foreign side.
+#[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Object)]
 pub struct ActivityQuery {
-    /// When set, only entries that include this issuer schema id are returned.
-    pub issuer_schema_id: Option<u64>,
+    pub(crate) issuer_schema_id: Option<u64>,
+}
+
+#[uniffi::export]
+impl ActivityQuery {
+    /// Creates a query with no filters.
+    #[uniffi::constructor]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Restricts results to entries that include this issuer schema id.
+    #[must_use]
+    pub fn with_issuer_schema_id(&self, issuer_schema_id: u64) -> Self {
+        let mut next = self.clone();
+        next.issuer_schema_id = Some(issuer_schema_id);
+        next
+    }
 }

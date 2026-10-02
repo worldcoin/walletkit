@@ -3,7 +3,7 @@ use crate::storage::types::{
     ActivityEntry, ActivityMetadata, ActivityOutcome, ActivityQuery, ProtocolVersion,
 };
 use crate::storage::ActivityFailureReason;
-use walletkit_sqlite::{params, Connection, Row, StepResult, Value};
+use walletkit_sqlite::{params, Connection, Row, StepResult};
 
 use super::util::{map_db_err, to_i64, to_u64};
 
@@ -54,11 +54,16 @@ pub(super) fn record(
         )
         .map_err(|err| map_db_err(&err))?;
 
-    for issuer_schema_id in &entry.issuer_schema_ids {
+    for (position, issuer_schema_id) in entry.issuer_schema_ids.iter().enumerate() {
+        let position = i64::try_from(position).map_err(|_| {
+            StorageError::ActivityInvalidRecord(
+                "too many issuer schema ids".to_string(),
+            )
+        })?;
         tx.execute(
-            "INSERT OR IGNORE INTO activity_issuer_schema_ids (entry_id, issuer_schema_id)
-             VALUES (?1, ?2)",
-            params![entry_id, issuer_schema_id.cast_signed()],
+            "INSERT OR IGNORE INTO activity_issuer_schema_ids (entry_id, position, issuer_schema_id)
+             VALUES (?1, ?2, ?3)",
+            params![entry_id, position, issuer_schema_id.cast_signed()],
         )
         .map_err(|err| map_db_err(&err))?;
     }
@@ -70,11 +75,11 @@ pub(super) fn record(
 
 /// Lists activity entries, most recent first.
 ///
-/// When [`ActivityQuery::issuer_schema_id`] is set, only entries that include
-/// that issuer schema id are returned.
+/// When [`ActivityQuery::with_issuer_schema_id`] is used, only entries that
+/// include that issuer schema id are returned.
 pub(super) fn list(
     conn: &Connection,
-    query: ActivityQuery,
+    query: &ActivityQuery,
     limit: u32,
     offset: u32,
 ) -> StorageResult<Vec<ActivityEntry>> {
@@ -82,29 +87,35 @@ pub(super) fn list(
     let offset_i64 = i64::from(offset);
     let issuer_schema_id = query.issuer_schema_id.map(u64::cast_signed);
 
-    let sql = "SELECT e.entry_id, e.client_id, e.protocol, e.created_at, e.outcome,
-                      e.rp_id, e.app_identifier, e.failure_reason,
-                      (SELECT GROUP_CONCAT(s.issuer_schema_id)
-                       FROM activity_issuer_schema_ids s
-                       WHERE s.entry_id = e.entry_id)
-                FROM activity_entries e
-                WHERE ?1 IS NULL OR EXISTS (
-                    SELECT 1 FROM activity_issuer_schema_ids f
-                    WHERE f.entry_id = e.entry_id AND f.issuer_schema_id = ?1
-                )
-                ORDER BY e.created_at DESC, e.entry_id DESC
-                LIMIT ?2 OFFSET ?3";
+    let sql = if issuer_schema_id.is_some() {
+        format!(
+            "{SELECT_ACTIVITY_ENTRIES}
+             WHERE e.entry_id IN (
+                 SELECT entry_id FROM activity_issuer_schema_ids
+                 WHERE issuer_schema_id = ?1
+             )
+             ORDER BY e.created_at DESC, e.entry_id DESC
+             LIMIT ?2 OFFSET ?3"
+        )
+    } else {
+        format!(
+            "{SELECT_ACTIVITY_ENTRIES}
+             ORDER BY e.created_at DESC, e.entry_id DESC
+             LIMIT ?1 OFFSET ?2"
+        )
+    };
 
     let mut entries = Vec::new();
 
-    let mut stmt = conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+    let mut stmt = conn.prepare(&sql).map_err(|err| map_db_err(&err))?;
 
-    stmt.bind_values(params![
-        issuer_schema_id.map_or(Value::Null, Value::Integer),
-        limit_i64,
-        offset_i64,
-    ])
-    .map_err(|err| map_db_err(&err))?;
+    if let Some(issuer_schema_id) = issuer_schema_id {
+        stmt.bind_values(params![issuer_schema_id, limit_i64, offset_i64])
+            .map_err(|err| map_db_err(&err))?;
+    } else {
+        stmt.bind_values(params![limit_i64, offset_i64])
+            .map_err(|err| map_db_err(&err))?;
+    }
 
     while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
         entries.push(map_entry(&row)?);
@@ -134,22 +145,29 @@ pub(super) fn clear(conn: &Connection) -> StorageResult<u64> {
     Ok(deleted as u64)
 }
 
+/// The columns of an activity entry, with its issuer schema ids reassembled in
+/// their original order.
+const SELECT_ACTIVITY_ENTRIES: &str =
+    "SELECT e.entry_id, e.client_id, e.protocol, e.created_at, e.outcome,
+            e.rp_id, e.app_identifier, e.failure_reason,
+            (SELECT GROUP_CONCAT(s.issuer_schema_id ORDER BY s.position)
+             FROM activity_issuer_schema_ids s
+             WHERE s.entry_id = e.entry_id)
+     FROM activity_entries e";
+
 fn decode_issuer_schema_ids(joined: &str) -> StorageResult<Vec<u64>> {
     if joined.is_empty() {
         return Ok(Vec::new());
     }
 
-    let mut ids = joined
+    joined
         .split(',')
         .map(|value| {
             value.parse::<i64>().map(i64::cast_unsigned).map_err(|_| {
                 StorageError::ActivityDb(format!("invalid issuer_schema_id: {value}"))
             })
         })
-        .collect::<StorageResult<Vec<_>>>()?;
-
-    ids.sort_unstable();
-    Ok(ids)
+        .collect()
 }
 
 fn map_entry(row: &Row<'_, '_>) -> StorageResult<ActivityEntry> {
@@ -240,7 +258,7 @@ mod tests {
             .expect("record activity");
 
         let entries = db
-            .list_activities(ActivityQuery::default(), 10, 0)
+            .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list activities");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, Some(entry_id));
@@ -259,19 +277,22 @@ mod tests {
         db.record_activity(&sample_entry(), 1000)
             .expect("record activity");
         db.clear_activities().expect("clear activities");
+        drop(db);
 
-        let entries = db
-            .list_activities(
-                ActivityQuery {
-                    issuer_schema_id: Some(10),
-                },
-                10,
-                0,
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key)
+            .expect("open raw connection");
+        let associations = conn
+            .query_row(
+                "SELECT COUNT(*) FROM activity_issuer_schema_ids",
+                &[],
+                |stmt| Ok(stmt.column_i64(0)),
             )
-            .expect("list filtered");
-        assert!(
-            entries.is_empty(),
-            "clearing activity must remove issuer-schema associations"
+            .expect("count associations");
+        drop(conn);
+
+        assert_eq!(
+            associations, 0,
+            "clearing activity must cascade to issuer-schema associations"
         );
 
         cleanup_cache_files(&path);
@@ -297,22 +318,51 @@ mod tests {
         db.record_activity(&with_schemas(vec![]), 1003)
             .expect("record");
 
-        let filtered = |issuer_schema_id| {
-            db.list_activities(ActivityQuery { issuer_schema_id }, 10, 0)
-                .expect("list filtered")
-        };
-
-        let schema_10 = filtered(Some(10));
+        let schema_10 = db
+            .list_activities(&ActivityQuery::new().with_issuer_schema_id(10), 10, 0)
+            .expect("list filtered");
         assert_eq!(schema_10.len(), 2);
         assert!(schema_10.iter().all(|e| e.issuer_schema_ids.contains(&10)));
 
-        assert_eq!(filtered(Some(20)).len(), 2);
-        assert!(filtered(Some(30)).is_empty());
+        let schema_20 = db
+            .list_activities(&ActivityQuery::new().with_issuer_schema_id(20), 10, 0)
+            .expect("list filtered");
+        assert_eq!(schema_20.len(), 2);
+
+        let schema_30 = db
+            .list_activities(&ActivityQuery::new().with_issuer_schema_id(30), 10, 0)
+            .expect("list filtered");
+        assert!(schema_30.is_empty());
 
         let all = db
-            .list_activities(ActivityQuery::default(), 10, 0)
+            .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list all");
         assert_eq!(all.len(), 4, "an unset filter returns every entry");
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_issuer_schema_ids_preserve_order_and_duplicates() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Au8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let entry = ActivityEntry {
+            issuer_schema_ids: vec![20, 10, 10],
+            ..sample_entry()
+        };
+        db.record_activity(&entry, 1000).expect("record activity");
+
+        let entries = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("list all");
+        assert_eq!(entries[0].issuer_schema_ids, vec![20, 10, 10]);
+
+        let filtered = db
+            .list_activities(&ActivityQuery::new().with_issuer_schema_id(10), 10, 0)
+            .expect("list filtered");
+        assert_eq!(filtered.len(), 1);
 
         cleanup_cache_files(&path);
     }
@@ -331,9 +381,7 @@ mod tests {
 
         let entries = db
             .list_activities(
-                ActivityQuery {
-                    issuer_schema_id: Some(u64::MAX),
-                },
+                &ActivityQuery::new().with_issuer_schema_id(u64::MAX),
                 10,
                 0,
             )
@@ -399,13 +447,13 @@ mod tests {
         }
 
         let page1 = db
-            .list_activities(ActivityQuery::default(), 2, 0)
+            .list_activities(&ActivityQuery::new(), 2, 0)
             .expect("list page 1");
         let page2 = db
-            .list_activities(ActivityQuery::default(), 2, 2)
+            .list_activities(&ActivityQuery::new(), 2, 2)
             .expect("list page 2");
         let page3 = db
-            .list_activities(ActivityQuery::default(), 2, 4)
+            .list_activities(&ActivityQuery::new(), 2, 4)
             .expect("list page 3");
 
         assert_eq!(page1.len(), 2);
@@ -449,7 +497,7 @@ mod tests {
 
         let db = CacheDb::new(&path, &key).expect("reopen cache");
         let entries = db
-            .list_activities(ActivityQuery::default(), 10, 0)
+            .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list after reopen");
         assert_eq!(
             entries.len(),

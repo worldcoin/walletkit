@@ -160,7 +160,7 @@ impl CacheDb {
     /// Returns an error if the query fails.
     pub fn list_activities(
         &self,
-        query: ActivityQuery,
+        query: &ActivityQuery,
         limit: u32,
         offset: u32,
     ) -> StorageResult<Vec<ActivityEntry>> {
@@ -338,7 +338,7 @@ mod tests {
         );
 
         let entries = db
-            .list_activities(ActivityQuery::default(), 10, 0)
+            .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list activities after version bump");
 
         assert!(
@@ -385,7 +385,7 @@ mod tests {
             .expect("record activity after migration");
 
         let entries = db
-            .list_activities(ActivityQuery::default(), 10, 0)
+            .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list activities");
 
         assert_eq!(entries.len(), 1, "migration should add activity_entries");
@@ -451,20 +451,14 @@ mod tests {
         let db = CacheDb::new(&path, &key).expect("open legacy cache file");
 
         let by_schema = db
-            .list_activities(
-                ActivityQuery {
-                    issuer_schema_id: Some(20),
-                },
-                10,
-                0,
-            )
+            .list_activities(&ActivityQuery::new().with_issuer_schema_id(20), 10, 0)
             .expect("list filtered");
 
         assert_eq!(by_schema.len(), 1, "legacy blob must be backfilled");
         assert_eq!(by_schema[0].issuer_schema_ids, vec![10, 20]);
 
         let entries = db
-            .list_activities(ActivityQuery::default(), 10, 0)
+            .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list all");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, Some(1));
@@ -516,7 +510,7 @@ mod tests {
             CacheDb::new(&path, &key).expect("open cache with malformed legacy blob");
 
         let entries = db
-            .list_activities(ActivityQuery::default(), 10, 0)
+            .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list all");
         assert!(
             entries.is_empty(),
@@ -553,7 +547,7 @@ mod tests {
 
         let db = CacheDb::new(&path, &key).expect("reopen cache");
         let entries = db
-            .list_activities(ActivityQuery::default(), 10, 0)
+            .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list activities");
 
         assert_eq!(entries.len(), 1, "reopening must not restamp or reset");
