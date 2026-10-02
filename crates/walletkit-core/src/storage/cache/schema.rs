@@ -208,9 +208,13 @@ fn migration_v3(conn: &Connection) -> DbResult<()> {
 /// an association table, so activity can be filtered by issuer schema.
 ///
 /// The table is created before the legacy column is dropped; entries are
-/// backfilled one row per schema id so existing history remains filterable.
+/// backfilled one row per schema id so existing history remains filterable. The
+/// whole migration runs in one transaction so a large history does not fsync
+/// once per schema id.
 fn migration_v4(conn: &Connection) -> DbResult<()> {
-    conn.execute_batch(
+    let tx = conn.transaction_immediate()?;
+
+    tx.execute_batch(
         "CREATE TABLE IF NOT EXISTS activity_issuer_schema_ids (
             entry_id          INTEGER NOT NULL
                               REFERENCES activity_entries(entry_id) ON DELETE CASCADE,
@@ -222,32 +226,43 @@ fn migration_v4(conn: &Connection) -> DbResult<()> {
         ON activity_issuer_schema_ids (issuer_schema_id);",
     )?;
 
-    if !has_legacy_issuer_schema_ids(conn)? {
-        return Ok(());
+    let has_legacy_column = tx
+        .query_row_optional(
+            "SELECT 1 FROM pragma_table_info('activity_entries')
+             WHERE name = 'issuer_schema_ids'",
+            &[],
+            |_| Ok(()),
+        )?
+        .is_some();
+
+    if has_legacy_column {
+        let legacy_ids = {
+            let mut stmt =
+                tx.prepare("SELECT entry_id, issuer_schema_ids FROM activity_entries")?;
+            let mut rows = Vec::new();
+            while let StepResult::Row(row) = stmt.step()? {
+                rows.push((row.column_i64(0), row.column_blob(1)));
+            }
+            rows
+        };
+
+        for (entry_id, blob) in legacy_ids {
+            for issuer_schema_id in decode_legacy_issuer_schema_ids(&blob)? {
+                tx.execute(
+                    "INSERT OR IGNORE INTO activity_issuer_schema_ids
+                         (entry_id, issuer_schema_id)
+                     VALUES (?1, ?2)",
+                    params![entry_id, issuer_schema_id],
+                )?;
+            }
+        }
+
+        tx.execute_batch(
+            "ALTER TABLE activity_entries DROP COLUMN issuer_schema_ids;",
+        )?;
     }
 
-    let legacy_ids = {
-        let mut stmt =
-            conn.prepare("SELECT entry_id, issuer_schema_ids FROM activity_entries")?;
-        let mut rows = Vec::new();
-        while let StepResult::Row(row) = stmt.step()? {
-            rows.push((row.column_i64(0), row.column_blob(1)));
-        }
-        rows
-    };
-
-    for (entry_id, blob) in legacy_ids {
-        for issuer_schema_id in decode_legacy_issuer_schema_ids(&blob)? {
-            conn.execute(
-                "INSERT OR IGNORE INTO activity_issuer_schema_ids
-                     (entry_id, issuer_schema_id)
-                 VALUES (?1, ?2)",
-                params![entry_id, issuer_schema_id],
-            )?;
-        }
-    }
-
-    conn.execute_batch("ALTER TABLE activity_entries DROP COLUMN issuer_schema_ids;")
+    tx.commit()
 }
 
 /// `SQLite` primary result code for corrupt data (`SQLITE_CORRUPT`).
@@ -278,13 +293,4 @@ fn decode_legacy_issuer_schema_ids(bytes: &[u8]) -> DbResult<Vec<i64>> {
         .iter()
         .map(|chunk| i64::from_be_bytes(*chunk))
         .collect())
-}
-
-fn has_legacy_issuer_schema_ids(conn: &Connection) -> DbResult<bool> {
-    conn.query_row_optional(
-        "SELECT 1 FROM pragma_table_info('activity_entries') WHERE name = 'issuer_schema_ids'",
-        &[],
-        |_| Ok(()),
-    )
-    .map(|row| row.is_some())
 }
