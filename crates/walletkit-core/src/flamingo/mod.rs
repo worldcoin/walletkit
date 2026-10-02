@@ -6,9 +6,8 @@
 //! opening, and match-token verification.
 //!
 //! Request authentication uses a host-supplied
-//! [`RequestIntegrityProvider`](crate::flamingo::RequestIntegrityProvider). Each connection
-//! attempt prepares a [`RequestIntegritySession`](crate::flamingo::RequestIntegritySession)
-//! containing a token and its key-bound [`RequestDigestSigner`](crate::flamingo::RequestDigestSigner).
+//! [`RequestIntegrityProvider`]. Each connection attempt prepares a [`RequestIntegritySession`]
+//! containing a token and its key-bound [`RequestDigestSigner`].
 //! The host owns token acquisition, refresh, audience selection, and
 //! hardware-key lifecycle; `WalletKit` owns request signing and the verifier connection.
 //! Request authentication is separate from enclave attestation and match-token verification.
