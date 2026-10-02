@@ -41,11 +41,10 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-# Pin the coordinated response-contract change until its crate release.
-flamingo-verifier-api-types = { git = "https://github.com/worldcoin/flamingo", rev = "16ad29702019f2d3193e7bda8b4d65ae02f56d33" }
-flamingo-verifier-client = { git = "https://github.com/worldcoin/flamingo", rev = "16ad29702019f2d3193e7bda8b4d65ae02f56d33" }
-flamingo-verifier-protocol = { git = "https://github.com/worldcoin/flamingo", rev = "16ad29702019f2d3193e7bda8b4d65ae02f56d33" }
-flamingo-verifier-sealed-types = { git = "https://github.com/worldcoin/flamingo", rev = "16ad29702019f2d3193e7bda8b4d65ae02f56d33" }
+flamingo-verifier-api-types = "0.8.0"
+flamingo-verifier-client = "0.8.0"
+flamingo-verifier-protocol = "0.8.0"
+flamingo-verifier-sealed-types = "0.8.0"
 eyre = "0.6"
 futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"

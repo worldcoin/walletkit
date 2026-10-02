@@ -3248,16 +3248,18 @@ checksum = "b7ac824320a75a52197e8f2d787f6a38b6718bb6897a35142d749af3c0e8f4fe"
 
 [[package]]
 name = "flamingo-verifier-api-types"
-version = "0.7.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=16ad29702019f2d3193e7bda8b4d65ae02f56d33#16ad29702019f2d3193e7bda8b4d65ae02f56d33"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfd5b171659ee599ceb8f08b8eb7f2e6cf3cdb323a096fc885df85fce270a3d8"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "flamingo-verifier-client"
-version = "0.7.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=16ad29702019f2d3193e7bda8b4d65ae02f56d33#16ad29702019f2d3193e7bda8b4d65ae02f56d33"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a8976f0c76360b54ddd8ec747b001ef7260cf0379ad69d99182cf1bd4f75cfa"
 dependencies = [
  "base64 0.22.1",
  "flamingo-verifier-api-types",
@@ -3278,8 +3280,9 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-protocol"
-version = "0.7.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=16ad29702019f2d3193e7bda8b4d65ae02f56d33#16ad29702019f2d3193e7bda8b4d65ae02f56d33"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b0cf129906b7dc0cfee7e1673bb2c9700d79315cf40da1c8f88cdbc73f01223"
 dependencies = [
  "ark-ff 0.5.0",
  "coset",
@@ -3292,8 +3295,9 @@ dependencies = [
 
 [[package]]
 name = "flamingo-verifier-sealed-types"
-version = "0.7.0"
-source = "git+https://github.com/worldcoin/flamingo?rev=16ad29702019f2d3193e7bda8b4d65ae02f56d33#16ad29702019f2d3193e7bda8b4d65ae02f56d33"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31ff1d73d15e4b3b74869481a9d72ffacc64a0a8e0afeb04bb4e03516f7807de"
 dependencies = [
  "ciborium",
  "flamingo-verifier-api-types",
