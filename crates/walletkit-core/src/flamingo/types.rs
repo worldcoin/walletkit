@@ -9,7 +9,7 @@ use flamingo_verifier_sealed_types::{
     valid_similarity, DeepFaceInputs, GrayBadgeInputs, LiveCapture, MatchInputs,
 };
 
-use super::errors::{FlamingoError, FlamingoMatchRejection};
+use super::errors::{FlamingoError, FlamingoInputFailureKind, FlamingoMatchRejection};
 
 /// Explicit operation-specific inputs. Image buffers move into the client without cloning.
 #[derive(uniffi::Enum)]
@@ -112,6 +112,8 @@ impl FlamingoMatchRequest {
             return Err(FlamingoError::InvalidInput {
                 attribute: "match_threshold".to_string(),
                 reason: "must be finite and between 0 and 1 inclusive".to_string(),
+                kind: FlamingoInputFailureKind::InvalidThreshold,
+                limit_bytes: None,
             });
         }
         if let Some(hashes) = hashes {
@@ -140,6 +142,8 @@ impl FlamingoMatchRequest {
         if total > MAX_TOTAL_IMAGE_BYTES {
             return Err(FlamingoError::InvalidInput {
                 attribute: "request".to_string(),
+                kind: FlamingoInputFailureKind::TotalTooLarge,
+                limit_bytes: Some(MAX_TOTAL_IMAGE_BYTES as u64),
                 reason: format!(
                     "combined image size must not exceed {MAX_TOTAL_IMAGE_BYTES} bytes"
                 ),
@@ -189,6 +193,12 @@ fn validate_bytes(
     };
     Err(FlamingoError::InvalidInput {
         attribute: attribute.to_string(),
+        kind: if bytes.is_empty() {
+            FlamingoInputFailureKind::Empty
+        } else {
+            FlamingoInputFailureKind::TooLarge
+        },
+        limit_bytes: (!bytes.is_empty()).then_some(limit as u64),
         reason,
     })
 }
@@ -210,7 +220,8 @@ impl From<FlamingoLiveCapture> for LiveCapture {
 
 #[uniffi::export]
 impl VerifiedMatchToken {
-    /// Credential-versus-live normalized similarity authenticated by the token.
+    /// Operation-specific normalized similarity authenticated by the token.
+    /// `DeepFace`: credential/live. `GrayBadge`: live/challenge.
     ///
     /// The other two comparison scores and the requested threshold are not in the token.
     #[must_use]
@@ -271,5 +282,145 @@ mod tests {
             unreachable!()
         };
         assert_eq!(image.as_ptr(), pointer);
+    }
+    #[test]
+    fn diagnostic_omission_status_survives_conversion() {
+        use super::FlamingoDebugReport;
+        use flamingo_verifier_sealed_types::DebugReport;
+        assert_eq!(
+            FlamingoDebugReport::from(DebugReport::NotProduced),
+            FlamingoDebugReport::NotProduced
+        );
+        assert_eq!(
+            FlamingoDebugReport::from(DebugReport::OmittedTooLarge {
+                original_size_bytes: 200_000
+            }),
+            FlamingoDebugReport::OmittedTooLarge {
+                original_size_bytes: 200_000
+            }
+        );
+    }
+}
+
+/// The complete caller-visible response from an encrypted match exchange.
+#[derive(Debug, uniffi::Record)]
+pub struct FlamingoMatchResponse {
+    /// Verified token handle or biometric/input rejection.
+    pub outcome: FlamingoMatchOutcome,
+    /// Completed comparisons, including broker threshold rejection.
+    pub observations: Option<FlamingoMatchObservations>,
+    /// Original worker report or explicit delivery status.
+    pub debug_report: FlamingoDebugReport,
+}
+
+/// Normalized [0,1] comparison scores, with f32 normalization precision.
+/// These are auxiliary observations, not additional signed token claims.
+#[derive(Debug, Clone, Copy, PartialEq, uniffi::Enum)]
+pub enum FlamingoMatchObservations {
+    /// All three completed `DeepFace` comparisons.
+    DeepFace {
+        /// Credential versus live.
+        credential_live: f64,
+        /// Credential versus challenge.
+        credential_challenge: f64,
+        /// Live versus challenge.
+        live_challenge: f64,
+    },
+    /// One comparison across two images.
+    GrayBadge {
+        /// Live versus challenge.
+        live_challenge: f64,
+    },
+}
+
+/// Worker diagnostic delivery status. JSON is excluded from `Debug` output.
+#[derive(Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum FlamingoDebugReport {
+    /// Original worker JSON without reserialization.
+    Available {
+        /// Bounded original UTF-8 JSON.
+        json: String,
+    },
+    /// Worker did not produce a report or inference did not run.
+    NotProduced,
+    /// Entire report omitted while preserving the match outcome.
+    OmittedTooLarge {
+        /// Original UTF-8 byte count.
+        original_size_bytes: u64,
+    },
+}
+
+impl std::fmt::Debug for FlamingoDebugReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Available { json } => f
+                .debug_struct("Available")
+                .field("bytes", &json.len())
+                .finish(),
+            Self::NotProduced => f.write_str("NotProduced"),
+            Self::OmittedTooLarge {
+                original_size_bytes,
+            } => f
+                .debug_struct("OmittedTooLarge")
+                .field("original_size_bytes", original_size_bytes)
+                .finish(),
+        }
+    }
+}
+
+impl From<flamingo_verifier_client::VerifiedMatchResponse> for FlamingoMatchResponse {
+    fn from(value: flamingo_verifier_client::VerifiedMatchResponse) -> Self {
+        use flamingo_verifier_client::VerifiedMatchResult;
+        Self {
+            outcome: match value.outcome {
+                VerifiedMatchResult::Success(statement) => {
+                    FlamingoMatchOutcome::Matched(Arc::new(VerifiedMatchToken::from(
+                        *statement,
+                    )))
+                }
+                VerifiedMatchResult::Failed(reason) => {
+                    FlamingoMatchOutcome::Rejected(reason.into())
+                }
+            },
+            observations: value.observations.map(Into::into),
+            debug_report: value.debug_report.into(),
+        }
+    }
+}
+
+impl From<flamingo_verifier_sealed_types::MatchObservations>
+    for FlamingoMatchObservations
+{
+    fn from(value: flamingo_verifier_sealed_types::MatchObservations) -> Self {
+        use flamingo_verifier_sealed_types::MatchObservations;
+        match value {
+            MatchObservations::DeepFace {
+                credential_live,
+                credential_challenge,
+                live_challenge,
+            } => Self::DeepFace {
+                credential_live,
+                credential_challenge,
+                live_challenge,
+            },
+            MatchObservations::GrayBadge { live_challenge } => {
+                Self::GrayBadge { live_challenge }
+            }
+        }
+    }
+}
+
+impl From<flamingo_verifier_sealed_types::DebugReport> for FlamingoDebugReport {
+    fn from(value: flamingo_verifier_sealed_types::DebugReport) -> Self {
+        use flamingo_verifier_sealed_types::DebugReport;
+        match value {
+            DebugReport::Available { json } => Self::Available { json },
+            DebugReport::NotProduced => Self::NotProduced,
+            DebugReport::OmittedTooLarge {
+                original_size_bytes,
+            } => Self::OmittedTooLarge {
+                original_size_bytes,
+            },
+        }
     }
 }
