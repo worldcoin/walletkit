@@ -5,7 +5,8 @@
 //! module owns the WebSocket session, assignment, attestation verification, sealing, response
 //! opening, and match-token verification.
 //!
-//! Request authentication uses a host-supplied
+//! Legacy connections use [`FlamingoMatcher::new`] with app-token headers.
+//! Attested connections use [`FlamingoMatcher::new_attested`] with a host-supplied
 //! [`RequestIntegrityProvider`]. Each connection attempt prepares a [`RequestIntegritySession`]
 //! containing a token and its key-bound [`RequestDigestSigner`].
 //! The host owns token acquisition, refresh, audience selection, and
@@ -60,7 +61,7 @@ pub struct FlamingoMatcher {
     host_url: Url,
     config: Option<Config>,
     headers: HeaderMap,
-    integrity_provider: Arc<dyn RequestIntegrityProvider>,
+    integrity_provider: Option<Arc<dyn RequestIntegrityProvider>>,
     client: OnceCell<SessionClient>,
 }
 
@@ -93,7 +94,7 @@ trait MatchClient: Sync {
 struct SessionClient {
     client: FlamingoVerifierClient,
     headers: HeaderMap,
-    integrity_provider: Arc<dyn RequestIntegrityProvider>,
+    integrity_provider: Option<Arc<dyn RequestIntegrityProvider>>,
 }
 
 impl std::fmt::Debug for FlamingoMatcher {
@@ -106,20 +107,16 @@ impl std::fmt::Debug for FlamingoMatcher {
 
 #[uniffi::export(async_runtime = "tokio")]
 impl FlamingoMatcher {
-    /// Creates a matcher with a host-provided integrity token and hardware signer.
+    /// Creates a legacy matcher; supply app-token authentication with [`Self::with_headers`].
     ///
-    /// The provider is called for each new connection. Configure enclave measurements
-    /// with [`Self::with_measurements`]. The request is signed before opening a socket.
+    /// Configure enclave measurements with [`Self::with_measurements`].
     ///
     /// # Errors
     ///
     /// Returns [`FlamingoError::Configuration`] if the URL is not a valid HTTP(S) URL
     /// or contains credentials or a fragment.
     #[uniffi::constructor]
-    pub fn new(
-        host_url: &str,
-        integrity_provider: Arc<dyn RequestIntegrityProvider>,
-    ) -> Result<Self, FlamingoError> {
+    pub fn new(host_url: &str) -> Result<Self, FlamingoError> {
         let host_url = Url::parse(host_url)
             .map_err(|error| FlamingoError::Configuration(error.to_string()))?;
         if !matches!(host_url.scheme(), "http" | "https")
@@ -136,9 +133,32 @@ impl FlamingoMatcher {
             host_url,
             config: None,
             headers: HeaderMap::new(),
-            integrity_provider,
+            integrity_provider: None,
             client: OnceCell::new(),
         })
+    }
+
+    /// Creates a matcher that signs every connection with a host-provided integrity session.
+    ///
+    /// Select this mode before connecting. Authentication failures never fall back to legacy.
+    /// Configure enclave measurements with [`Self::with_measurements`].
+    ///
+    /// # Errors
+    /// Returns [`FlamingoError::Configuration`] unless the URL is HTTPS without credentials
+    /// or a fragment. Tokens and signatures must only be sent over an encrypted transport.
+    #[uniffi::constructor]
+    pub fn new_attested(
+        host_url: &str,
+        integrity_provider: Arc<dyn RequestIntegrityProvider>,
+    ) -> Result<Self, FlamingoError> {
+        let mut matcher = Self::new(host_url)?;
+        if matcher.host_url.scheme() != "https" {
+            return Err(FlamingoError::Configuration(
+                "attested host_url must use HTTPS".to_string(),
+            ));
+        }
+        matcher.integrity_provider = Some(integrity_provider);
+        Ok(matcher)
     }
 
     /// Returns a new instance with trusted measurements keyed by PCR index.
@@ -265,13 +285,6 @@ impl MatchClient for SessionClient {
             .client
             .build_request()
             .map_err(|error| verifier_error(&error))?;
-        let handshake = request.clone().into_client_request().map_err(|_| {
-            FlamingoError::Configuration("invalid WebSocket handshake".to_string())
-        })?;
-        let signed =
-            integrity::sign_request(self.integrity_provider.clone(), handshake)
-                .await
-                .map_err(FlamingoError::RequestIntegrity)?;
         for (name, value) in &self.headers {
             let value = value.to_str().map_err(|_| {
                 FlamingoError::Configuration(
@@ -280,8 +293,16 @@ impl MatchClient for SessionClient {
             })?;
             request = request.with_header(name.as_str(), value);
         }
-        for (name, value) in signed.headers() {
-            request = request.with_header(name, value);
+        if let Some(provider) = &self.integrity_provider {
+            let handshake = request.clone().into_client_request().map_err(|_| {
+                FlamingoError::Configuration("invalid WebSocket handshake".to_string())
+            })?;
+            let signed = integrity::sign_request(provider.clone(), handshake)
+                .await
+                .map_err(FlamingoError::RequestIntegrity)?;
+            for (name, value) in signed.headers() {
+                request = request.with_header(name, value);
+            }
         }
         self.client
             .connect_with(request)
@@ -499,6 +520,17 @@ mod tests {
         })
     }
 
+    /// Attaches a signer to an HTTP loopback fixture without weakening the public constructor.
+    fn loopback_attested_matcher(
+        host_url: &str,
+        provider: Arc<dyn RequestIntegrityProvider>,
+    ) -> Result<FlamingoMatcher, FlamingoError> {
+        let mut matcher = FlamingoMatcher::new(host_url)?;
+        assert_eq!(matcher.host_url.host_str(), Some("127.0.0.1"));
+        matcher.integrity_provider = Some(provider);
+        Ok(matcher)
+    }
+
     struct FakeClient {
         assignments: AtomicUsize,
         results: Mutex<VecDeque<Result<MatchResult, ClientError>>>,
@@ -641,7 +673,8 @@ mod tests {
     #[test]
     fn rejects_zero_or_malformed_measurements() {
         let matcher =
-            FlamingoMatcher::new("https://verifier.example.com", provider()).unwrap();
+            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
+                .unwrap();
         for index in [0, 1, 2, 8] {
             for invalid in [vec![0; 48], vec![], vec![1; 47], vec![1; 49]] {
                 let mut pins = measurements();
@@ -656,10 +689,11 @@ mod tests {
 
     #[test]
     fn measurement_skip_needs_no_pins_and_preserves_headers() {
-        let matcher = FlamingoMatcher::new("https://verifier.example.com", provider())
-            .unwrap()
-            .with_headers(headers())
-            .unwrap();
+        let matcher =
+            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
+                .unwrap()
+                .with_headers(headers())
+                .unwrap();
         let skip = matcher.dangerously_skip_measurements().unwrap();
         let json = serde_json::to_value(skip.config.as_ref().unwrap()).unwrap();
         assert_eq!(json["dangerously_skip_measurements"], true);
@@ -668,7 +702,7 @@ mod tests {
         assert!(matcher.config.is_none());
 
         let skip_first =
-            FlamingoMatcher::new("https://verifier.example.com", provider())
+            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
                 .unwrap()
                 .dangerously_skip_measurements()
                 .unwrap()
@@ -683,10 +717,11 @@ mod tests {
 
     #[tokio::test]
     async fn measurement_policy_changes_reset_client_and_restore_pins() {
-        let pinned = FlamingoMatcher::new("https://verifier.example.com", provider())
-            .unwrap()
-            .with_measurements(measurements())
-            .unwrap();
+        let pinned =
+            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
+                .unwrap()
+                .with_measurements(measurements())
+                .unwrap();
         pinned.client().await.unwrap();
         let skip = pinned.dangerously_skip_measurements().unwrap();
         assert!(skip.client.get().is_none());
@@ -712,7 +747,8 @@ mod tests {
     #[test]
     fn rejects_missing_required_measurements() {
         let matcher =
-            FlamingoMatcher::new("https://verifier.example.com", provider()).unwrap();
+            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
+                .unwrap();
         assert!(matches!(
             matcher.with_measurements(HashMap::new()),
             Err(FlamingoError::Configuration(_))
@@ -726,6 +762,42 @@ mod tests {
         }
     }
 
+    /// Attested credentials cannot be sent to HTTP endpoints, including loopback.
+    #[test]
+    fn attested_constructor_requires_https() {
+        for url in [
+            "http://verifier.example.com",
+            "http://127.0.0.1",
+            "http://[::1]",
+        ] {
+            assert!(matches!(
+                FlamingoMatcher::new_attested(url, provider()),
+                Err(FlamingoError::Configuration(_))
+            ));
+        }
+    }
+
+    /// The legacy route still receives app authentication and no integrity headers.
+    #[tokio::test]
+    async fn legacy_upgrade_preserves_app_token_without_integrity_headers() {
+        let (base_url, seen) = serve_once(|socket| async move { drop(socket) }).await;
+        let matcher = FlamingoMatcher::new(&base_url)
+            .unwrap()
+            .with_measurements(measurements())
+            .unwrap()
+            .with_headers(headers())
+            .unwrap();
+        assert!(matches!(
+            matcher.perform_match(request()).await,
+            Err(FlamingoError::Transport { .. })
+        ));
+        let upgrade = seen.await.unwrap();
+        assert_eq!(upgrade.headers()["authorization"], "Bearer test-token");
+        for header in ["integrity-token", "signature-input", "signature"] {
+            assert!(!upgrade.headers().contains_key(header));
+        }
+    }
+
     #[test]
     fn rejects_an_invalid_host_url() {
         for url in [
@@ -736,7 +808,7 @@ mod tests {
             "https://verifier.example.com/#fragment",
         ] {
             assert!(matches!(
-                FlamingoMatcher::new(url, provider()),
+                FlamingoMatcher::new_attested(url, provider()),
                 Err(FlamingoError::Configuration(_))
             ));
         }
@@ -746,7 +818,8 @@ mod tests {
     fn rejects_invalid_duplicate_cookie_and_handshake_headers_without_exposing_values()
     {
         let matcher =
-            FlamingoMatcher::new("https://verifier.example.com", provider()).unwrap();
+            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
+                .unwrap();
         for headers in [
             HashMap::from([("bad name".to_string(), "secret".to_string())]),
             HashMap::from([("authorization".to_string(), "secret\nvalue".to_string())]),
@@ -771,7 +844,8 @@ mod tests {
     #[tokio::test]
     async fn fluent_configuration_is_order_independent_and_preserves_originals() {
         let original =
-            FlamingoMatcher::new("https://verifier.example.com", provider()).unwrap();
+            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
+                .unwrap();
         let first = original
             .with_measurements(measurements())
             .unwrap()
@@ -836,7 +910,7 @@ mod tests {
     #[tokio::test]
     async fn missing_measurements_fail_before_any_request() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let matcher = FlamingoMatcher::new(
+        let matcher = loopback_attested_matcher(
             &format!("http://{}", listener.local_addr().unwrap()),
             provider(),
         )
@@ -863,7 +937,7 @@ mod tests {
         for _ in 0..2 {
             let (base_url, seen) =
                 serve_once(|socket| async move { drop(socket) }).await;
-            let matcher = FlamingoMatcher::new(&base_url, integrity.clone())
+            let matcher = loopback_attested_matcher(&base_url, integrity.clone())
                 .unwrap()
                 .with_measurements(measurements())
                 .unwrap();
@@ -890,7 +964,7 @@ mod tests {
             signer: Arc::new(TestDigestSigner(AtomicUsize::new(0))),
             failure: Some(RequestIntegrityError::Unavailable),
         });
-        let matcher = FlamingoMatcher::new(
+        let matcher = loopback_attested_matcher(
             &format!("http://{}", listener.local_addr().unwrap()),
             integrity.clone(),
         )
@@ -914,7 +988,7 @@ mod tests {
     #[tokio::test]
     async fn upgrade_carries_configured_headers_to_the_prefixed_route() {
         let (base_url, seen) = serve_once(|socket| async move { drop(socket) }).await;
-        let matcher = FlamingoMatcher::new(
+        let matcher = loopback_attested_matcher(
             &format!("{base_url}/v1/flamingo/?region=eu%2Fwest&region=us"),
             provider(),
         )
@@ -960,7 +1034,7 @@ mod tests {
             let _ = sent.send(binary);
         })
         .await;
-        let matcher = FlamingoMatcher::new(&base_url, provider())
+        let matcher = loopback_attested_matcher(&base_url, provider())
             .unwrap()
             .with_measurements(measurements())
             .unwrap()

@@ -133,7 +133,6 @@ pub enum FlamingoError {
     /// The one internal reassignment retry was exhausted.
     #[error("Flamingo reassignment retry exhausted")]
     ReassignmentRequired,
-
 }
 
 impl From<FailureReason> for FlamingoMatchRejection {

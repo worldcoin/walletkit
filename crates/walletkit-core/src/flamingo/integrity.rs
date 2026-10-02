@@ -1,6 +1,11 @@
 //! Native request-integrity callbacks used to authenticate Flamingo connections.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
+
+use tokio::sync::Semaphore;
 
 use attested_request::{
     base::CanonicalRequest,
@@ -46,7 +51,8 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for RequestIntegrityError {
 /// The host captures the key identifier and audience in this object. `WalletKit` never
 /// receives private-key material. The callback is invoked on a blocking worker.
 /// A running native signing operation cannot be cancelled when authentication times
-/// out; its late result is discarded.
+/// out; its late result is discarded. At most four native signing calls run process-wide;
+/// a timed-out call retains its slot until the native callback returns.
 #[uniffi::export(with_foreign)]
 pub trait RequestDigestSigner: Send + Sync {
     /// Signs exactly 32 bytes and returns the platform's native signature encoding.
@@ -96,9 +102,23 @@ pub trait RequestIntegrityProvider: Send + Sync {
 
 const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Bounds native callbacks even when timed-out callers abandon their results.
+static SIGNING_SLOTS: LazyLock<Arc<Semaphore>> =
+    LazyLock::new(|| Arc::new(Semaphore::new(4)));
+
+/// Signs within a shared deadline and the process-wide native callback limit.
 pub(super) async fn sign_request(
     provider: Arc<dyn RequestIntegrityProvider>,
     request: Request,
+) -> Result<SignedHeaders, RequestIntegrityError> {
+    sign_request_with_limit(provider, request, SIGNING_SLOTS.clone()).await
+}
+
+/// Accepts an isolated limit so timeout regression tests do not share live signing slots.
+async fn sign_request_with_limit(
+    provider: Arc<dyn RequestIntegrityProvider>,
+    request: Request,
+    slots: Arc<Semaphore>,
 ) -> Result<SignedHeaders, RequestIntegrityError> {
     tokio::time::timeout(AUTHENTICATION_TIMEOUT, async move {
         let session = provider.prepare().await?;
@@ -111,7 +131,12 @@ pub(super) async fn sign_request(
             return Err(RequestIntegrityError::InvalidSession);
         }
 
+        let permit = slots
+            .acquire_owned()
+            .await
+            .map_err(|_| RequestIntegrityError::Unavailable)?;
         tokio::task::spawn_blocking(move || {
+            let _permit = permit;
             let uri = request.uri();
             let scheme = match uri.scheme_str() {
                 Some("ws" | "http") => "http",
@@ -573,16 +598,36 @@ mod tests {
                 finished: Mutex::new(Some(finished_tx)),
             }),
         }));
-        let signing = tokio::spawn(sign_request(
+        let slots = Arc::new(Semaphore::new(1));
+        let signing = tokio::spawn(sign_request_with_limit(
             provider,
             request("wss://verifier.example/v1/matches"),
+            slots.clone(),
         ));
         entered_rx.await.unwrap();
         tokio::time::advance(AUTHENTICATION_TIMEOUT).await;
         let result = signing.await.unwrap();
+        let queued = tokio::spawn(sign_request_with_limit(
+            fixed_provider("opaque-token", Ok(vec![1])),
+            request("wss://verifier.example/v1/matches"),
+            slots.clone(),
+        ));
+        tokio::task::yield_now().await;
+        tokio::time::advance(AUTHENTICATION_TIMEOUT).await;
+        let queued_result = queued.await.unwrap();
         *release.0.lock().unwrap() = true;
         release.1.notify_one();
         finished_rx.await.unwrap();
         assert_eq!(result, Err(RequestIntegrityError::TimedOut));
+        assert_eq!(queued_result, Err(RequestIntegrityError::TimedOut));
+        // The native worker releases its slot after returning, which can follow the signal.
+        tokio::time::resume();
+        assert!(sign_request_with_limit(
+            fixed_provider("opaque-token", Ok(vec![1])),
+            request("wss://verifier.example/v1/matches"),
+            slots,
+        )
+        .await
+        .is_ok());
     }
 }
