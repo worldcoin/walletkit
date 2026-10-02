@@ -236,24 +236,21 @@ fn migration_v4(conn: &Connection) -> DbResult<()> {
         .is_some();
 
     if has_legacy_column {
-        let legacy_ids = {
+        {
             let mut stmt =
                 tx.prepare("SELECT entry_id, issuer_schema_ids FROM activity_entries")?;
-            let mut rows = Vec::new();
             while let StepResult::Row(row) = stmt.step()? {
-                rows.push((row.column_i64(0), row.column_blob(1)));
-            }
-            rows
-        };
-
-        for (entry_id, blob) in legacy_ids {
-            for issuer_schema_id in decode_legacy_issuer_schema_ids(&blob)? {
-                tx.execute(
-                    "INSERT OR IGNORE INTO activity_issuer_schema_ids
-                         (entry_id, issuer_schema_id)
-                     VALUES (?1, ?2)",
-                    params![entry_id, issuer_schema_id],
-                )?;
+                let entry_id = row.column_i64(0);
+                let issuer_schema_ids =
+                    decode_legacy_issuer_schema_ids(&row.column_blob(1))?;
+                for issuer_schema_id in issuer_schema_ids {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO activity_issuer_schema_ids
+                             (entry_id, issuer_schema_id)
+                         VALUES (?1, ?2)",
+                        params![entry_id, issuer_schema_id],
+                    )?;
+                }
             }
         }
 
