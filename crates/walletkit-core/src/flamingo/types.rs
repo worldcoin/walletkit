@@ -264,54 +264,6 @@ impl From<VerifiedMatch> for VerifiedMatchToken {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{FlamingoLiveCapture, FlamingoMatchRequest, MatchInputs};
-
-    #[test]
-    fn gray_badge_has_no_pcp_and_moves_image_buffers() {
-        let image = vec![1; 1024];
-        let pointer = image.as_ptr();
-        let request = FlamingoMatchRequest::GrayBadge {
-            live: FlamingoLiveCapture::Vanilla { image },
-            rtms_challenge: vec![2; 512],
-            match_threshold: 0.5,
-        }
-        .into_inputs();
-        request.validate().unwrap();
-        let encoded = request.to_cbor().unwrap();
-        assert!(matches!(
-            MatchInputs::from_cbor(&encoded),
-            Ok(MatchInputs::GrayBadge(_))
-        ));
-        let MatchInputs::GrayBadge(inputs) = request else {
-            unreachable!()
-        };
-        let flamingo_verifier_sealed_types::LiveCapture::Vanilla(image) = inputs.live
-        else {
-            unreachable!()
-        };
-        assert_eq!(image.as_ptr(), pointer);
-    }
-    #[test]
-    fn diagnostic_omission_status_survives_conversion() {
-        use super::FlamingoDebugReport;
-        use flamingo_verifier_sealed_types::DebugReport;
-        assert_eq!(
-            FlamingoDebugReport::from(DebugReport::NotProduced),
-            FlamingoDebugReport::NotProduced
-        );
-        assert_eq!(
-            FlamingoDebugReport::from(DebugReport::OmittedTooLarge {
-                original_size_bytes: 200_000
-            }),
-            FlamingoDebugReport::OmittedTooLarge {
-                original_size_bytes: 200_000
-            }
-        );
-    }
-}
-
 /// Worker diagnostic delivery status. JSON is excluded from `Debug` output.
 #[derive(Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum FlamingoDebugReport {
@@ -381,5 +333,53 @@ impl From<flamingo_verifier_sealed_types::DebugReport> for FlamingoDebugReport {
                 original_size_bytes,
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FlamingoLiveCapture, FlamingoMatchRequest, MatchInputs};
+
+    #[test]
+    fn gray_badge_has_no_pcp_and_moves_image_buffers() {
+        let image = vec![1; 1024];
+        let pointer = image.as_ptr();
+        let request = FlamingoMatchRequest::GrayBadge {
+            live: FlamingoLiveCapture::Vanilla { image },
+            rtms_challenge: vec![2; 512],
+            match_threshold: 0.5,
+        }
+        .into_inputs();
+        request.validate().unwrap();
+        let encoded = request.to_cbor().unwrap();
+        assert!(matches!(
+            MatchInputs::from_cbor(&encoded),
+            Ok(MatchInputs::GrayBadge(_))
+        ));
+        let MatchInputs::GrayBadge(inputs) = request else {
+            unreachable!()
+        };
+        let flamingo_verifier_sealed_types::LiveCapture::Vanilla(image) = inputs.live
+        else {
+            unreachable!()
+        };
+        assert_eq!(image.as_ptr(), pointer);
+    }
+    #[test]
+    fn diagnostic_omission_status_survives_conversion() {
+        use super::FlamingoDebugReport;
+        use flamingo_verifier_sealed_types::DebugReport;
+        assert_eq!(
+            FlamingoDebugReport::from(DebugReport::NotProduced),
+            FlamingoDebugReport::NotProduced
+        );
+        assert_eq!(
+            FlamingoDebugReport::from(DebugReport::OmittedTooLarge {
+                original_size_bytes: 200_000
+            }),
+            FlamingoDebugReport::OmittedTooLarge {
+                original_size_bytes: 200_000
+            }
+        );
     }
 }
