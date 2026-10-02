@@ -58,6 +58,8 @@ pub trait RequestDigestSigner: Send + Sync {
 /// A token and the signer pinned to the exact key certified by that token.
 ///
 /// The provider must create the pair atomically so a later key rotation cannot mix them.
+/// An already-returned signer must keep using its captured key. The host adapts its native
+/// session to these callbacks without passing private-key material or other SDK callback types.
 #[derive(Clone, uniffi::Record)]
 pub struct RequestIntegritySession {
     /// A valid integrity token for the host-selected Flamingo audience.
@@ -71,6 +73,9 @@ pub struct RequestIntegritySession {
 /// Supplies authentication material before each WebSocket connection or reassignment.
 ///
 /// The host owns token acquisition, refresh, audience policy, and hardware-key lifecycle.
+/// It selects the audience when configuring the provider; `WalletKit` does not decode the
+/// token or receive the audience or key identifier. Preparing and signing share a 30-second
+/// deadline in the matcher.
 #[uniffi::export(with_foreign)]
 #[async_trait::async_trait]
 pub trait RequestIntegrityProvider: Send + Sync {

@@ -4,6 +4,21 @@
 //! image and the credential material obtained through the platform's Oxide/OrbKit adapter. The
 //! module owns the WebSocket session, assignment, attestation verification, sealing, response
 //! opening, and match-token verification.
+//!
+//! Request authentication uses a host-supplied
+//! [`RequestIntegrityProvider`](crate::flamingo::RequestIntegrityProvider). Each connection
+//! attempt prepares a [`RequestIntegritySession`](crate::flamingo::RequestIntegritySession)
+//! containing a token and its key-bound [`RequestDigestSigner`](crate::flamingo::RequestDigestSigner).
+//! The host owns token acquisition, refresh, audience selection, and
+//! hardware-key lifecycle; `WalletKit` owns request signing and the verifier connection.
+//! Request authentication is separate from enclave attestation and match-token verification.
+//!
+//! This draft signs the mock digest `[0xA5; 32]`, then returns
+//! [`FlamingoError::CanonicalSigningUnavailable`](crate::flamingo::FlamingoError::CanonicalSigningUnavailable)
+//! before opening a socket. It sends no integrity
+//! headers. Canonical signing must use the shared `attested-request` implementation over the
+//! final WebSocket handshake URI and prepared token, with a fresh timestamp, nonce, and signature
+//! for every connection even when the token is reused.
 
 mod errors;
 mod integrity;

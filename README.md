@@ -121,9 +121,6 @@ WalletKit is broken down into separate crates, offering the following functional
 
 ## Getting Started
 
-For Flamingo matching and the draft mobile request-integrity callbacks, see
-[`docs/flamingo-request-integrity.md`](docs/flamingo-request-integrity.md).
-
 WalletKit is generally centered around a World ID. The most basic usage requires initializing a `WorldId`.
 
 A World ID can then be used to generate [Zero-Knowledge Proofs](https://docs.world.org/world-id/further-reading/zero-knowledge-proofs).
