@@ -22,6 +22,10 @@ Source snapshots:
 
 ## Existing work and overlap
 
+See the [closed-PR reuse audit](flamingo-browser-reuse-audit.md) for each old
+PR's actual scope, exact source revisions, file-level reuse decisions, and the
+remaining implementation diff. Prefer selective ports over whole-file replacement.
+
 | PR                                                                                                                         | State at review     | Decision                                                                                                                                                                                          |
 | -------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [WalletKit #508](https://github.com/worldcoin/walletkit/pull/508), [#562](https://github.com/worldcoin/walletkit/pull/562) | Merged              | Reuse native matching and current WebSocket semantics.                                                                                                                                            |
