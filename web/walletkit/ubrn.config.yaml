@@ -1,9 +1,0 @@
-rust:
-  directory: ../../crates/walletkit
-  manifestPath: Cargo.toml
-
-wasm2:
-  defaultFeatures: false
-  features:
-    - embed-zkeys
-  ts: src/generated
