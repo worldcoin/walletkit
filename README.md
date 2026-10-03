@@ -53,9 +53,9 @@ See [`swift/README.md`](swift/README.md) for package integration details.
 
 ## Local development (browser/WASM)
 
-The experimental `walletkit-web` package builds directly from the
-`walletkit` crate and contains the generated bindings, wasm-bindgen glue, and
-optimized WASM module. Build it with the pinned WASM toolchain:
+The experimental `walletkit-web` package wraps the `walletkit-web` crate, a
+`wasm-bindgen` facade over `walletkit-core`, and ships its glue and the
+optimized WASM module. The browser build does not use UniFFI bindings. Build it with the pinned WASM toolchain:
 
 ```bash
 nix develop .#wasm --command bun install --cwd web/walletkit --frozen-lockfile

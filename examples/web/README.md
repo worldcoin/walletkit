@@ -3,8 +3,8 @@
 > PROTOTYPE: integration probe for the published `walletkit-web` package.
 
 This example verifies that a Next.js App Router application can consume
-WalletKit as an ordinary package without owning its Rust wrapper, UniFFI
-generation, WASM optimization, or asset staging.
+WalletKit as an ordinary package without owning its Rust wrapper, WASM
+optimization, or asset staging.
 
 Run it from the repository root:
 
@@ -14,7 +14,7 @@ bun run --cwd examples/web dev
 ```
 
 The example installs `walletkit-web` from the npm registry and does not build the
-package's Rust, generated bindings, or WASM locally. Use `bun run build` to prove the
+package's Rust, wasm-bindgen glue, or WASM locally. Use `bun run build` to prove the
 production bundle as well.
 
 To test the package from this checkout instead, run `bun run walletkit:local`
@@ -38,23 +38,16 @@ local package. Run `bun run walletkit:published` to restore the registry package
 - A same-origin Next.js route forwards the issuance request because the hosted
   staging faux issuer does not allow browser CORS preflights.
 
-## Experimental compatibility pins
+## Browser build
 
-The published `walletkit-web` 0.21.3 package was generated with UniFFI 0.31.2
-because the released generator (`0.31.0-5`) cannot parse UniFFI 0.32 metadata.
-Its internal wasm-bindgen processor is pinned to 0.2.100, while
-`sqlite-wasm-rs` requires a newer schema; the package build aligns the
-generator to WalletKit's 0.2.126 schema.
-
-WalletKit's native bindings ask UniFFI to adapt exported futures to Tokio. That
-adapter creates a fallback thread when it is polled without a Tokio runtime,
-which browser WASM cannot do. The `walletkit` crate enables
-`walletkit-core/uniffi-wasm` only for `wasm32-unknown-unknown`, so the
-authenticator exports are polled directly by the generator's WASM player while
-native builds keep their existing Tokio behavior.
+The package is built from the `walletkit-web` crate, a small `wasm-bindgen`
+facade over `walletkit-core`, rather than from generated UniFFI bindings. The
+facade owns WalletKit's Rust objects inside the worker and returns plain data.
+It enables `walletkit-core/uniffi-wasm`, which exports futures without UniFFI's
+Tokio adapter; that adapter needs a fallback thread browser WASM cannot create.
 
 The package is imported dynamically from a Client Component. This keeps the
-WASM player and browser-only APIs out of Next.js server rendering.
+WASM module and browser-only APIs out of Next.js server rendering.
 
 The package's WASM is optimized with Binaryen's `wasm-opt -Oz --converge` and
 resolved from the package with `new URL(..., import.meta.url)`. Proof generation

@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 exec nix develop .#wasm --command cargo build \
-  -p walletkit \
+  -p walletkit-web \
   --release \
   --locked \
   --target wasm32-unknown-unknown \

@@ -49,11 +49,13 @@ returns the subject and serialized blinding factor for an issuer flow;
 `storeCredential` accepts credential bytes and that factor. Issuer HTTP calls and
 relying-party request construction remain application code.
 
-This replaces the prototype API that returned the generated UniFFI namespace.
-Generated Rust objects are internal and never cross the worker boundary. Existing
-consumers must migrate their calls to the browser client; it is not a transparent
-proxy for every generated binding. See the Next.js demo for a complete registration,
-issuance and proof flow.
+The worker runs the `walletkit-web` crate, a `wasm-bindgen` facade over
+`walletkit-core` that exposes exactly these operations. Rust objects stay inside
+the facade and never cross the worker boundary; results are plain data. Rust errors
+reject with their source as `name` (`WalletKitError`, `StorageError`) and the
+variant details appended to `message`, with hex secrets redacted. A Rust panic
+crashes the module: the call rejects and every later call fails, so reinitialize.
+See the Next.js demo for a complete registration, issuance and proof flow.
 
 Operations run in order, including asynchronous work. `close()` drains queued
 operations, destroys owned Rust objects and terminates the worker. `terminate()`
@@ -108,8 +110,11 @@ nix develop .#wasm --command bun run --cwd web/walletkit test:browser
 
 Browser tests use installed Google Chrome and a production Vite fixture. They
 cover worker startup and lifecycle, URL overrides, exclusive pool ownership,
-wrong-key rejection, and reopening storage with directly supplied keys.
-`bun run bundle` reuses generated bindings for TypeScript-only development.
+wrong-key rejection, reopening storage with directly supplied keys, and error
+mapping. They build a separate module with the `test-hooks` feature into
+`tests/generated`; never ship that module. `bun run bundle` reuses the built module
+for TypeScript-only development. The build checks that the `wasm-bindgen` CLI
+matches the version in `Cargo.lock`.
 
 The example uses a new namespace and memory-only database keys on each load. Its encrypted
 files persist, but it intentionally cannot unlock them after reload; a production
