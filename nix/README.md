@@ -41,7 +41,7 @@ intentionally match the native Nix CLI:
 
 ```bash
 nix/docker.sh develop .#android --command cargo xtask kotlin build
-nix/docker.sh develop .#wasm --command cargo build -p walletkit --release --locked --target wasm32-unknown-unknown
+nix/docker.sh develop .#wasm --command cargo build -p walletkit-web --release --locked --target wasm32-unknown-unknown
 nix/docker.sh develop .#default                  # interactive shell
 nix/docker.sh flake show                         # other Nix commands work too
 ```

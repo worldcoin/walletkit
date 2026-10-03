@@ -16,8 +16,7 @@ Object.assign(window, {
       };
       worker.postMessage({
         secret,
-        wasmUrl: new URL("../../dist/generated/walletkit.wasm", import.meta.url)
-          .href,
+        wasmUrl: new URL("../generated/walletkit.wasm", import.meta.url).href,
       });
     });
   },

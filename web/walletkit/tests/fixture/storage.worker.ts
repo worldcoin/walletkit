@@ -1,23 +1,24 @@
-// Test the exported Rust components directly, independently of network registration.
-import * as b from "../../src/generated";
+// Test the Rust storage directly, independently of network registration.
+// Uses the module built with the `test-hooks` feature.
+import init, { WalletKit } from "../generated/walletkit.js";
 self.onmessage = async ({ data }) => {
   try {
-    await b.uniffiInitAsync(new URL(data.wasmUrl));
-    await b.initializePersistentStorage();
-    const keys = b.StorageKeys.fromBytes(
-      new Uint8Array(32).fill(data.secret).buffer,
+    await init({ module_or_path: new URL(data.wasmUrl) });
+    const wallet = await WalletKit.open(
+      "test-account",
+      new Uint8Array(32).fill(data.secret),
+      "staging",
+      "eu",
+      undefined,
     );
-    const paths = b.StoragePaths.fromRoot("/test-account");
-    const store = new b.CredentialStore(paths, keys);
-    (keys as unknown as { uniffiDestroy(): void }).uniffiDestroy();
-    (paths as unknown as { uniffiDestroy(): void }).uniffiDestroy();
     try {
-      store.init(42n, 1000n);
+      wallet.testInitStorage(42n, 1000n);
       self.postMessage({ result: "initialized" });
     } finally {
-      store.uniffiDestroy();
+      wallet.free();
     }
   } catch (error) {
-    self.postMessage({ error: String(error) });
+    const e = error as Error & { detail?: string };
+    self.postMessage({ error: `${e.name}: ${e.message} (${e.detail})` });
   }
 };

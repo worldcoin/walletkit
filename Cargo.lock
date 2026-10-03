@@ -9035,12 +9035,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "uniffi-runtime-wasm"
-version = "0.31.0-5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb05d9a7313e50a448bbf2e28804c3acf477c379f25199476a7fff231b67f2f1"
-
-[[package]]
 name = "uniffi_bindgen"
 version = "0.31.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9278,7 +9272,6 @@ name = "walletkit"
 version = "0.23.1"
 dependencies = [
  "uniffi",
- "uniffi-runtime-wasm",
  "walletkit-core",
 ]
 
@@ -9411,6 +9404,16 @@ dependencies = [
  "uuid",
  "walletkit-core",
  "world-id-core",
+]
+
+[[package]]
+name = "walletkit-web"
+version = "0.23.1"
+dependencies = [
+ "js-sys",
+ "walletkit-core",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
