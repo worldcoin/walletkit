@@ -48,8 +48,6 @@
 pub mod cache;
 pub mod credential_storage;
 pub mod credential_vault;
-#[cfg(test)]
-mod ephemeral;
 pub mod error;
 mod key_envelope;
 pub mod keys;
@@ -115,7 +113,6 @@ fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
 ///
 /// Returns [`StorageError::PersistentStorage`] when OPFS setup fails.
 #[cfg(target_arch = "wasm32")]
-#[uniffi::export]
 pub async fn initialize_persistent_storage() -> StorageResult<()> {
     walletkit_sqlite::opfs::install()
         .await
