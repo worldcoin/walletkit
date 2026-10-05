@@ -9464,6 +9464,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "walletkit-web"
+version = "0.26.0"
+dependencies = [
+ "js-sys",
+ "walletkit-core",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "want"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

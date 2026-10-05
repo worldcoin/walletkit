@@ -1,0 +1,43 @@
+{
+  "name": "@worldcoin/walletkit-web",
+  "version": "0.22.1",
+  "description": "WalletKit enables users to hold credentials and prove their humanity with World ID .",
+  "type": "module",
+  "packageManager": "bun@1.3.11",
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "format": "prettier --write \"**/*.ts\"",
+    "format:check": "prettier --check \"**/*.ts\"",
+    "generate": "node scripts/build-wasm.mjs",
+    "build": "bun run clean && bun run generate && bun run bundle",
+    "pack:check": "bun pm pack --dry-run",
+    "bundle": "tsc -p tsconfig.build.json && esbuild src/index.ts src/walletkit.worker.ts --bundle --format=esm --platform=browser --target=es2022 --outdir=dist --footer:js=\"export {};\" && node scripts/copy-wasm.mjs",
+    "test:serve": "vite preview --config tests/vite.config.ts --host 127.0.0.1 --port 4173 --strictPort",
+    "test:browser": "tsc -p tests/fixture/tsconfig.json && vite build --config tests/vite.config.ts && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "esbuild": "0.25.9",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2",
+    "vite": "^8.2.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/worldcoin/walletkit",
+    "directory": "web/walletkit"
+  }
+}
