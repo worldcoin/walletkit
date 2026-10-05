@@ -10,16 +10,14 @@ test("packaged worker initializes, correlates calls, reports errors and closes",
 }) => {
   const result = await page.evaluate(async () => {
     const w = window as any;
-    const wallet = await w.initializeWalletKit({
-      databaseKey: new Uint8Array(32).fill(7),
-    });
+    const wallet = await w.initializeWalletKit();
     const identities = await Promise.all([
       wallet.recoveryDataFromSeed(new Uint8Array(32).fill(1)),
       wallet.recoveryDataFromSeed(new Uint8Array(32).fill(2)),
     ]);
-    const error = await wallet
-      .pollRegistration()
-      .catch((e: Error) => e.message);
+    const error = await wallet.FieldElement.fromBytes(new Uint8Array(2)).catch(
+      (e: Error) => e.message,
+    );
     await wallet.close();
     const closed = await wallet
       .recoveryDataFromSeed(new Uint8Array(32))
@@ -29,7 +27,7 @@ test("packaged worker initializes, correlates calls, reports errors and closes",
   expect(result.identities[0].authenticatorAddress).not.toEqual(
     result.identities[1].authenticatorAddress,
   );
-  expect(result.error).toContain("Start registration");
+  expect(result.error).toContain("InvalidInput");
   expect(result.closed).toContain("closed");
 });
 
@@ -38,21 +36,17 @@ test("second owner fails and storage can reopen after close", async ({
 }) => {
   await page.evaluate(async () => {
     const w = window as any;
-    w.wallet = await w.initializeWalletKit({
-      databaseKey: new Uint8Array(32).fill(7),
-    });
+    w.wallet = await w.initializeWalletKit();
   });
   const error = await page.evaluate(async () => {
     const w = window as any;
-    return w
-      .initializeWalletKit({ databaseKey: new Uint8Array(32).fill(7) })
-      .then(
-        (client: any) => {
-          client.terminate();
-          return "unexpected success";
-        },
-        (e: Error) => e.message,
-      );
+    return w.initializeWalletKit().then(
+      (client: any) => {
+        client.terminate();
+        return "unexpected success";
+      },
+      (e: Error) => e.message,
+    );
   });
   expect(error).not.toBe("unexpected success");
   await page.evaluate(async () => {
@@ -61,9 +55,7 @@ test("second owner fails and storage can reopen after close", async ({
   // Browser worker termination releases handles asynchronously.
   await expect(async () => {
     await page.evaluate(async () => {
-      const wallet = await (window as any).initializeWalletKit({
-        databaseKey: new Uint8Array(32).fill(7),
-      });
+      const wallet = await (window as any).initializeWalletKit();
       await wallet.close();
     });
   }).toPass({ timeout: 5000 });
@@ -86,24 +78,15 @@ test("encrypted databases reopen with a directly supplied key", async ({
   }).toPass({ timeout: 5000 });
 });
 
-test("abort cancels initialization and invalid secrets do not spawn a worker", async ({
-  page,
-}) => {
+test("abort cancels initialization", async ({ page }) => {
   const result = await page.evaluate(async () => {
     const w = window as any;
-    const invalid = await w
-      .initializeWalletKit({ databaseKey: new Uint8Array(2) })
-      .catch((e: Error) => e.message);
     const controller = new AbortController();
-    const pending = w.initializeWalletKit({
-      databaseKey: new Uint8Array(32),
-      signal: controller.signal,
-    });
+    const pending = w.initializeWalletKit({ signal: controller.signal });
     controller.abort();
-    return { invalid, aborted: await pending.catch((e: Error) => e.message) };
+    return pending.catch((e: Error) => e.message);
   });
-  expect(result.invalid).toContain("32-byte");
-  expect(result.aborted).toContain("terminated");
+  expect(result).toContain("terminated");
 });
 
 test("custom worker and Wasm URLs load the same runtime", async ({ page }) => {
@@ -116,9 +99,7 @@ test("custom worker and Wasm URLs load the same runtime", async ({ page }) => {
     if (request.url().endsWith(".wasm")) wasmUrl = request.url();
   });
   await page.evaluate(async () => {
-    const wallet = await (window as any).initializeWalletKit({
-      databaseKey: new Uint8Array(32).fill(7),
-    });
+    const wallet = await (window as any).initializeWalletKit();
     await wallet.close();
   });
   expect(workerUrl).toContain("walletkit.worker");
@@ -127,7 +108,6 @@ test("custom worker and Wasm URLs load the same runtime", async ({ page }) => {
     await page.evaluate(
       async ({ workerUrl, wasmUrl }) => {
         const wallet = await (window as any).initializeWalletKit({
-          databaseKey: new Uint8Array(32).fill(7),
           workerUrl,
           wasmUrl,
         });
@@ -141,10 +121,7 @@ test("custom worker and Wasm URLs load the same runtime", async ({ page }) => {
 test("a worker load failure rejects initialization", async ({ page }) => {
   const result = await page.evaluate(async () => {
     return (window as any)
-      .initializeWalletKit({
-        databaseKey: new Uint8Array(32),
-        workerUrl: "/missing-worker.js",
-      })
+      .initializeWalletKit({ workerUrl: "/missing-worker.js" })
       .catch((e: Error) => e.message);
   });
   expect(result).toContain("worker");
@@ -155,27 +132,93 @@ test("Rust errors keep their name and variant detail across the worker", async (
 }) => {
   const result = await page.evaluate(async () => {
     const w = window as any;
-    const wallet = await w.initializeWalletKit({
-      databaseKey: new Uint8Array(32).fill(7),
-    });
+    const wallet = await w.initializeWalletKit();
     const capture = (promise: Promise<unknown>) =>
       promise.then(
         () => ({ name: "none", message: "unexpected success" }),
         (e: Error) => ({ name: e.name, message: e.message }),
       );
     const invalidSeed = await capture(
-      wallet.initializeAuthenticator(new Uint8Array(2)),
+      wallet.recoveryDataFromSeed(new Uint8Array(2)),
     );
-    const notReady = await capture(
-      wallet.storeCredential(new Uint8Array(), "0x01"),
+    const invalidKey = await capture(
+      wallet.StorageKeys.fromBytes(new Uint8Array(2)),
+    );
+    const invalidCredential = await capture(
+      wallet.Credential.fromBytes(new Uint8Array([1, 2, 3])),
+    );
+    const unknownEnvironment = await capture(
+      wallet.pohRecoveryAgentAddress("moon"),
     );
     await wallet.close();
-    return { invalidSeed, notReady };
+    return { invalidSeed, invalidKey, invalidCredential, unknownEnvironment };
   });
   expect(result.invalidSeed.name).toBe("WalletKitError");
   expect(result.invalidSeed.message).toMatch(/InvalidInput \{/);
-  expect(result.notReady).toEqual({
-    name: "InvalidStateError",
-    message: "Initialize the authenticator first",
+  expect(result.invalidKey.name).toBe("StorageError");
+  expect(result.invalidCredential.name).toBe("WalletKitError");
+  expect(result.unknownEnvironment).toEqual({
+    name: "TypeError",
+    message: "Unknown environment: moon",
   });
+});
+
+test("Rust objects stay in the worker and are used through handles", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const w = window as any;
+    const wallet = await w.initializeWalletKit();
+    const element = await wallet.FieldElement.fromU64(255n);
+    const hex = await element.toHexString();
+    const roundTrip = await (
+      await wallet.FieldElement.tryFromHexString(hex)
+    ).toBytes();
+
+    const keys = await wallet.StorageKeys.fromBytes(new Uint8Array(32).fill(9));
+    const paths = await wallet.StoragePaths.fromRoot("/walletkit/handles");
+    const store = await wallet.CredentialStore.new(paths, keys);
+    await store.init(42n, 1000n);
+    const credentials = await store.listCredentials(undefined, 1000n);
+    const entry = {
+      rpId: 1n,
+      appIdentifier: "app_test",
+      clientId: "client",
+      protocol: 4,
+      outcome: "completed",
+      issuerSchemaIds: [1n, 2n],
+    };
+    const activityId = await store.recordActivity(entry, 1000n);
+    const activities = await store.listActivities({}, 10, 0);
+    const metadata = await store.activityMetadata();
+    const sameRoot = await (await store.storagePaths()).rootPathString();
+
+    element.free();
+    const released = await element.toHexString().catch((e: Error) => e.message);
+    await wallet.close();
+    return {
+      hex,
+      roundTripLength: roundTrip.length,
+      credentials,
+      activityId,
+      activities,
+      metadata,
+      sameRoot,
+      released,
+    };
+  });
+  expect(result.hex).toMatch(/ff$/);
+  expect(result.roundTripLength).toBe(32);
+  expect(result.credentials).toEqual([]);
+  expect(result.activities).toHaveLength(1);
+  expect(result.activities[0]).toMatchObject({
+    id: result.activityId,
+    appIdentifier: "app_test",
+    protocol: 4,
+    outcome: "completed",
+    issuerSchemaIds: [1n, 2n],
+  });
+  expect(result.metadata).toEqual({ totalCount: 1n });
+  expect(result.sameRoot).toBe("/walletkit/handles");
+  expect(result.released).toContain("released");
 });

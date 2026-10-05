@@ -1,59 +1,55 @@
-/** Values crossing the worker boundary are plain structured-clone data. */
-export interface RecoveryData {
-  authenticatorAddress: string;
-  authenticatorPubkey: string;
-  offchainSignerCommitment: string;
+/**
+ * Messages between the page and the dedicated worker that owns the WASM module.
+ *
+ * Rust objects cannot cross `postMessage`, so the worker keeps them in a handle table
+ * and the page holds opaque `Ref`s. Everything else is plain structured-clone data.
+ */
+
+/** Exported Rust classes, named as in the Swift and Kotlin bindings. */
+export const CLASS_NAMES = [
+  "Authenticator",
+  "InitializingAuthenticator",
+  "CredentialStore",
+  "StorageKeys",
+  "StoragePaths",
+  "EmbeddedZkArtifacts",
+  "FieldElement",
+  "Credential",
+  "ProofRequest",
+  "ProofResponse",
+] as const;
+export type ClassName = (typeof CLASS_NAMES)[number];
+
+/** Exported Rust free functions. */
+export const FUNCTION_NAMES = [
+  "recoveryDataFromSeed",
+  "validateAuthenticatorPubkey",
+  "checkCredentialsAgainstProofRequest",
+  "pohRecoveryAgentAddress",
+  "worldIdVerifierAddress",
+] as const;
+export type FunctionName = (typeof FUNCTION_NAMES)[number];
+
+export type Handle = number;
+
+/** A Rust object owned by the worker. */
+export interface Ref {
+  $ref: Handle;
+  class: ClassName;
 }
 
-export type RegistrationStatus =
-  | { state: "queued" | "batching" | "submitted" | "finalized" }
-  | { state: "failed"; error: string; errorCode?: string };
+export type Target =
+  | { function: FunctionName }
+  | { class: ClassName; construct: true }
+  | { class: ClassName; static: string }
+  | { handle: Handle; method: string };
 
-export interface InitializeOptions {
-  /** 32-byte database encryption key. Supply the same databaseKey when reopening storage. */
-  databaseKey: Uint8Array;
-  /** Stable storage namespace, unique per consumer/account. Default: "default". */
-  storageId?: string;
-  environment?: "production" | "staging";
-  region?: "eu" | "us" | "ap";
-  rpcUrl?: string;
-  workerUrl?: string | URL;
-  wasmUrl?: string | URL;
-  /** Abort initialization and release the worker (for example on unmount). */
-  signal?: AbortSignal;
-}
-
-export type WorkerOptions = Required<
-  Pick<InitializeOptions, "storageId" | "environment" | "region">
-> &
-  Pick<InitializeOptions, "rpcUrl"> & {
-    databaseKey: Uint8Array;
-    wasmUrl: string;
-  };
-
-export interface Operations {
-  initialize: { args: [WorkerOptions]; result: void };
-  recoveryDataFromSeed: { args: [Uint8Array]; result: RecoveryData };
-  register: { args: [Uint8Array]; result: void };
-  pollRegistration: { args: []; result: RegistrationStatus };
-  initializeAuthenticator: { args: [Uint8Array, bigint]; result: void };
-  prepareCredential: {
-    args: [bigint];
-    result: { blindingFactor: string; sub: string };
-  };
-  storeCredential: {
-    args: [Uint8Array, string, bigint];
-    result: { credentialId: bigint; issuerSchemaId: bigint };
-  };
-  generateProof: { args: [string, bigint]; result: string };
-  close: { args: []; result: void };
-}
-
-export type Method = keyof Operations;
-
-export type Request = {
-  [M in Method]: { id: number; method: M; args: Operations[M]["args"] };
-}[Method];
+export type Request = { id: number } & (
+  | { op: "initialize"; wasmUrl: string }
+  | { op: "call"; target: Target; args: unknown[] }
+  | { op: "release"; handle: Handle }
+  | { op: "close" }
+);
 
 export type Response = { id: number } & (
   | { ok: true; result: unknown }

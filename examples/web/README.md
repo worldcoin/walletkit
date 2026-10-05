@@ -14,7 +14,9 @@ bun run --cwd examples/web dev
 ```
 
 The example installs `walletkit-web` from the npm registry and does not build the
-package's Rust, wasm-bindgen glue, or WASM locally. Use `bun run build` to prove the
+package's Rust, wasm-bindgen glue, or WASM locally. It targets the Swift/Kotlin-style
+object API (`Authenticator`, `CredentialStore`, …), so until that API is published
+run it with `bun run walletkit:local`. Use `bun run build` to prove the
 production bundle as well.
 
 To test the package from this checkout instead, run `bun run walletkit:local`
@@ -25,7 +27,8 @@ local package. Run `bun run walletkit:published` to restore the registry package
 
 - `walletkit-web` hides generation and WASM loading behind
   `initializeWalletKit()`.
-- The package exposes an async facade and owns the worker running WalletKit.
+- The package exposes an async facade that mirrors the Swift and Kotlin objects
+  and owns the worker running WalletKit.
 - The generated WASM loads in a browser and calls WalletKit synchronously to
   derive authenticator recovery material from secure browser randomness.
 - Next.js can bundle the package's generated JavaScript glue and emit its WASM
@@ -42,7 +45,8 @@ local package. Run `bun run walletkit:published` to restore the registry package
 
 The package is built from the `walletkit-web` crate, a small `wasm-bindgen`
 facade over `walletkit-core`, rather than from generated UniFFI bindings. The
-facade owns WalletKit's Rust objects inside the worker and returns plain data.
+facade keeps WalletKit's Rust objects inside the worker, hands the page handles to
+them, and returns records as plain data.
 It enables `walletkit-core/uniffi-wasm`, which exports futures without UniFFI's
 Tokio adapter; that adapter needs a fallback thread browser WASM cannot create.
 

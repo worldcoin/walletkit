@@ -28,8 +28,6 @@ walletkit-core = { workspace = true, features = ["uniffi-wasm"] }
 default = ["embed-zkeys"]
 # The browser has no other way to load proving material yet.
 embed-zkeys = ["walletkit-core/embed-zkeys"]
-# Exports `WalletKit.testInitStorage` for the browser storage tests. Never ship it.
-test-hooks = []
 
 [lints]
 workspace = true

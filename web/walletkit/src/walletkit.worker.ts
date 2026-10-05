@@ -1,15 +1,27 @@
-import init, {
-  WalletKit,
-  recoveryDataFromSeed,
-} from "./generated/walletkit.js";
-import type { Request, Response, WorkerOptions } from "./protocol";
+import init, * as wasm from "./generated/walletkit.js";
+import { CLASS_NAMES, FUNCTION_NAMES } from "./protocol";
+import type {
+  ClassName,
+  Handle,
+  Ref,
+  Request,
+  Response,
+  Target,
+} from "./protocol";
 
 const scope = globalThis as unknown as {
   onmessage: ((event: MessageEvent<Request>) => void) | null;
   postMessage(message: Response): void;
 };
 
-let wallet: WalletKit | undefined;
+type Exports = Record<string, any>;
+const wasmExports = wasm as unknown as Exports;
+
+/** Live Rust objects, addressed by the page through opaque handles. */
+const objects = new Map<Handle, { free(): void }>();
+let nextHandle = 0;
+
+let initialized = false;
 // A Rust panic traps the module and leaves its memory in an unknown state.
 let crashed: Error | undefined;
 
@@ -34,82 +46,102 @@ scope.onmessage = ({ data }) => {
 };
 
 async function perform(request: Request): Promise<unknown> {
-  switch (request.method) {
+  switch (request.op) {
     case "initialize":
-      return initialize(...request.args);
-
-    case "recoveryDataFromSeed":
-      return consume(request.args[0], (seed) => {
-        current();
-        return recoveryDataFromSeed(seed);
-      });
-
-    case "register":
-      return consume(request.args[0], (seed) => current().register(seed));
-
-    case "pollRegistration":
-      return current().pollRegistration();
-
-    case "initializeAuthenticator": {
-      const [seed, now] = request.args;
-      return consume(seed, (seed) =>
-        current().initializeAuthenticator(seed, now),
-      );
-    }
-
-    case "prepareCredential":
-      return current().prepareCredential(...request.args);
-
-    case "storeCredential":
-      return current().storeCredential(...request.args);
-
-    case "generateProof":
-      return current().generateProof(...request.args);
-
+      return initialize(request.wasmUrl);
+    case "call":
+      return call(request.target, request.args);
+    case "release":
+      return release(request.handle);
     case "close":
       return close();
   }
 }
 
-async function initialize(input: WorkerOptions): Promise<void> {
-  if (wallet) throw new Error("WalletKit is already initialized");
+async function initialize(wasmUrl: string): Promise<void> {
+  if (initialized) throw new Error("WalletKit is already initialized");
+  await init({ module_or_path: new URL(wasmUrl) });
+  // Fails when another context owns the storage pool.
+  await wasm.initializePersistentStorage();
+  initialized = true;
+}
 
+async function call(target: Target, encodedArgs: unknown[]): Promise<unknown> {
+  if (!initialized) throw new Error("WalletKit is not initialized");
+  const args = encodedArgs.map(resolve);
   try {
-    await init({ module_or_path: new URL(input.wasmUrl) });
-    wallet = await WalletKit.open(
-      input.storageId,
-      input.databaseKey,
-      input.environment,
-      input.region,
-      input.rpcUrl,
-    );
+    return reveal(await invoke(target, args));
   } finally {
-    input.databaseKey.fill(0);
+    // The page sent copies; clear any secret bytes (seeds, keys) held here.
+    for (const arg of args) if (arg instanceof Uint8Array) arg.fill(0);
   }
+}
+
+function invoke(target: Target, args: unknown[]): unknown {
+  if ("function" in target) {
+    if (!(FUNCTION_NAMES as readonly string[]).includes(target.function))
+      throw new Error(`Unknown function: ${target.function}`);
+    return wasmExports[target.function](...args);
+  }
+  if ("construct" in target) {
+    return new (exportedClass(target.class))(...args);
+  }
+  if ("static" in target) {
+    return callable(exportedClass(target.class), target.static)(...args);
+  }
+  const object = objects.get(target.handle);
+  if (!object) throw new Error("WalletKit object was released");
+  return callable(object, target.method).apply(object, args);
+}
+
+function exportedClass(name: ClassName): any {
+  if (!(CLASS_NAMES as readonly string[]).includes(name))
+    throw new Error(`Unknown class: ${name}`);
+  return wasmExports[name];
+}
+
+/** Looks up a method that the Rust class itself exports. */
+function callable(owner: any, name: string): (...args: unknown[]) => unknown {
+  const home =
+    typeof owner === "function" ? owner : Object.getPrototypeOf(owner);
+  const method = Object.hasOwn(home, name) ? home[name] : undefined;
+  if (typeof method !== "function" || name === "constructor" || name === "free")
+    throw new Error(`Unknown method: ${name}`);
+  return method;
+}
+
+/** Swaps handles from the page for the Rust objects they refer to. */
+function resolve(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(resolve);
+  if (typeof value === "object" && value !== null && "$ref" in value) {
+    const object = objects.get((value as Ref).$ref);
+    if (!object) throw new Error("WalletKit object was released");
+    return object;
+  }
+  return value;
+}
+
+/** Keeps Rust objects in the worker and returns handles for the page. */
+function reveal(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reveal);
+  for (const name of CLASS_NAMES) {
+    if (value instanceof wasmExports[name]) {
+      const handle = nextHandle++;
+      objects.set(handle, value as { free(): void });
+      return { $ref: handle, class: name } satisfies Ref;
+    }
+  }
+  return value;
+}
+
+function release(handle: Handle): void {
+  objects.get(handle)?.free();
+  objects.delete(handle);
 }
 
 function close(): void {
   // The client terminates this worker after the reply, releasing the OPFS pool.
-  wallet?.close();
-  wallet?.free();
-  wallet = undefined;
-}
-
-function current(): WalletKit {
-  if (!wallet) throw new Error("WalletKit is not initialized");
-  return wallet;
-}
-
-/** Runs `operation` with secret bytes, then clears this worker's copy. */
-async function consume<T>(
-  secret: Uint8Array,
-  operation: (secret: Uint8Array) => T | Promise<T>,
-): Promise<T> {
-  try {
-    return await operation(secret);
-  } finally {
-    secret.fill(0);
-  }
+  for (const handle of [...objects.keys()]) release(handle);
 }
 
 function serialize(error: unknown): { name: string; message: string } {

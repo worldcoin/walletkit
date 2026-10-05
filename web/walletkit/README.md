@@ -7,29 +7,42 @@ is safe during SSR; call `initializeWalletKit` in a browser.
 ```ts
 import { initializeWalletKit } from "walletkit-web";
 
-const wallet = await initializeWalletKit({
-  databaseKey, // Uint8Array containing the resolved 32-byte K_intermediate
-  storageId: "my-account", // stable namespace for this consumer/account
-  environment: "staging", // defaults to production
-  region: "eu",
-});
-const recovery = await wallet.recoveryDataFromSeed(seed);
-// For an already registered account:
-await wallet.initializeAuthenticator(seed);
-const proofJson = await wallet.generateProof(requestJson);
-await wallet.close();
+const walletkit = await initializeWalletKit();
+
+// Open the account's encrypted storage, as the Swift and Kotlin bindings do.
+const keys = await walletkit.StorageKeys.fromBytes(databaseKey); // resolved 32-byte key
+const paths = await walletkit.StoragePaths.fromRoot("/walletkit/my-account");
+const store = await walletkit.CredentialStore.new(paths, keys);
+const artifacts = await walletkit.EmbeddedZkArtifacts.new();
+
+// Register a new account...
+const registration = await walletkit.InitializingAuthenticator.registerWithDefaults(
+  seed, undefined, "staging", "eu", undefined,
+);
+const status = await registration.pollStatus(); // { state: "queued" | ... }
+
+// ...or open a registered one and prove.
+const authenticator = await walletkit.Authenticator.initWithDefaults(
+  seed, undefined, "staging", "eu", artifacts, store,
+);
+await authenticator.initStorage();
+const request = await walletkit.ProofRequest.fromJson(requestJson);
+const response = await authenticator.generateProof(request);
+const proofJson = await response.toJson();
+
+await walletkit.close();
 ```
 
 The host supplies the resolved `databaseKey`, for example after obtaining passkey
 PRF output and deriving the database key. PRF acquisition/derivation happens before
 initialization; WalletKit does not call WebAuthn or wrap this key in an envelope.
-The worker constructs `StorageKeys.fromBytes(databaseKey)` and passes those keys to
-`CredentialStore`. Both vault and cache use that key directly through sqlite3mc.
+Both vault and cache use that key directly through sqlite3mc. Supply the same key
+and root path when reopening.
 
-Supply the same key and storage ID when reopening. The authenticator seed and
-database key are separate inputs. The package does not persist the database key;
-initialization copies it and the caller owns clearing its own copy. Rust keeps the
-resolved key in zeroizing memory until its last owner releases it.
+The authenticator seed and database key are separate inputs. The package does not
+persist the database key; the worker clears its copy of every byte array it receives,
+and the caller owns clearing its own. Rust keeps the resolved key in zeroizing memory
+until its last owner releases it.
 
 Mobile hosts can instead resolve `openOrCreateStorageKeys(paths, keystore,
 blobStore, now)` before constructing the same `CredentialStore(paths, keys)`.
@@ -41,24 +54,44 @@ key; the old wrapping secret is not a replacement for that database key.
 
 ## Browser API
 
-All calls into the worker return Promises. The public client exposes
-`recoveryDataFromSeed`, `register`, `pollRegistration`, `initializeAuthenticator`,
-`prepareCredential`, `storeCredential`, and `generateProof`. Registration polling
-returns plain status records, including failure details. `prepareCredential`
-returns the subject and serialized blinding factor for an issuer flow;
-`storeCredential` accepts credential bytes and that factor. Issuer HTTP calls and
-relying-party request construction remain application code.
+The classes, methods and arguments mirror the `walletkit-core` UniFFI objects that
+the Swift and Kotlin bindings expose, in `camelCase`: `Authenticator`,
+`InitializingAuthenticator`, `CredentialStore`, `StorageKeys`, `StoragePaths`,
+`EmbeddedZkArtifacts`, `FieldElement`, `Credential`, `ProofRequest` and
+`ProofResponse`, plus `recoveryDataFromSeed`, `validateAuthenticatorPubkey`,
+`checkCredentialsAgainstProofRequest`, `pohRecoveryAgentAddress` and
+`worldIdVerifierAddress`. Constructors and static functions live on the object
+returned by `initializeWalletKit()` (`walletkit.FieldElement.fromU64(1n)`,
+`walletkit.CredentialStore.new(paths, keys)`); instance methods are on the objects
+they return. Conventions that differ from native:
 
-The worker runs the `walletkit-web` crate, a `wasm-bindgen` facade over
-`walletkit-core` that exposes exactly these operations. Rust objects stay inside
-the facade and never cross the worker boundary; results are plain data. Rust errors
-reject with their source as `name` (`WalletKitError`, `StorageError`) and the
-variant details appended to `message`, with hex secrets redacted. A Rust panic
+- Every call returns a Promise, because it crosses to the worker.
+- `u64` is `bigint`, byte arrays are `Uint8Array`, `Environment` is
+  `"production" | "staging"` and `Region` is `"eu" | "us" | "ap"`.
+- `now` parameters default to the current time. Core requires `now` in the browser.
+- 256-bit values, such as `packedAccountData()`, are 0x-prefixed hex strings.
+- Records (`RegistrationStatus`, `CredentialRecord`, `ActivityEntry`, …) are plain
+  objects. Their enum fields are lowercase strings, as in core's serialization.
+- Rust objects live in the worker until you call `free()` (they are also released
+  when garbage collected). Using a freed object rejects.
+
+Not available in the browser: `Logger`, `DeviceKeystore`, `AtomicBlobStore`,
+`StorageProvider` and the change listeners (foreign traits), vault backup and
+`proveCredentialSub` (native-only in core), and the issuer and Flamingo modules.
+
+Rust errors reject with their source as `name` (`WalletKitError`, `StorageError`,
+`CredentialConstraintsCheckError`) and the variant details appended to `message`,
+with hex secrets redacted. Invalid arguments reject with a `TypeError`. A Rust panic
 crashes the module: the call rejects and every later call fails, so reinitialize.
+Issuer HTTP calls and relying-party request construction remain application code.
 See the Next.js demo for a complete registration, issuance and proof flow.
 
+The worker runs the `walletkit-web` crate, a `wasm-bindgen` facade over
+`walletkit-core` with one wrapper class per UniFFI object. Adding a core export to
+the browser means adding its wrapper there, and its proxy in `src/api.ts`.
+
 Operations run in order, including asynchronous work. `close()` drains queued
-operations, destroys owned Rust objects and terminates the worker. `terminate()`
+operations, frees every Rust object and terminates the worker. `terminate()`
 interrupts immediately and rejects pending requests. Worker failures also reject
 pending requests. An optional `signal` cancels initialization only; after it
 resolves, use `close()` or `terminate()`.
@@ -72,8 +105,7 @@ including the generated glue and its runtime dependencies.
 Hosts with custom asset layouts can provide explicit URLs:
 
 ```ts
-const wallet = await initializeWalletKit({
-  databaseKey,
+const walletkit = await initializeWalletKit({
   workerUrl: "/assets/walletkit.worker.js",
   wasmUrl: "/assets/walletkit.wasm",
 });
@@ -92,7 +124,7 @@ vault/cache retain their existing format and use rollback journals on WASM.
 Closing a SQLite connection does not release the pool's OPFS handles: the pool
 remains alive until worker termination. Currently one worker owns the WalletKit
 pool per origin. A second tab/client receives an initialization error, even with
-a different storage ID. After shutdown, browser handle release may be asynchronous;
+a different root path. After shutdown, browser handle release may be asynchronous;
 a subsequent initializer may need to retry. There is no silent memory fallback.
 Pool capacity is reserved at startup rather than expanded during synchronous SQL.
 
@@ -110,10 +142,9 @@ nix develop .#wasm --command bun run --cwd web/walletkit test:browser
 
 Browser tests use installed Google Chrome and a production Vite fixture. They
 cover worker startup and lifecycle, URL overrides, exclusive pool ownership,
-wrong-key rejection, reopening storage with directly supplied keys, and error
-mapping. They build a separate module with the `test-hooks` feature into
-`tests/generated`; never ship that module. `bun run bundle` reuses the built module
-for TypeScript-only development. The build checks that the `wasm-bindgen` CLI
+wrong-key rejection, reopening storage with directly supplied keys, error
+mapping, and using Rust objects through handles. `bun run bundle` reuses the built
+module for TypeScript-only development. The build checks that the `wasm-bindgen` CLI
 matches the version in `Cargo.lock`.
 
 The example uses a new namespace and memory-only database keys on each load. Its encrypted

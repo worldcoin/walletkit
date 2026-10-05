@@ -62,9 +62,8 @@ nix develop .#wasm --command bun install --cwd web/walletkit --frozen-lockfile
 nix develop .#wasm --command bun run --cwd web/walletkit build
 ```
 
-The Next.js integration probe under `examples/web`
-installs the published package and consumes its public `initializeWalletKit()`
-interface.
+The Next.js integration probe under `examples/web` consumes the package's public
+`initializeWalletKit()` interface, which mirrors the Swift and Kotlin objects.
 
 ## Local development (Android/Kotlin)
 

@@ -1,7 +1,7 @@
 import { parse, stringify } from "lossless-json";
 import { privateKeyToAccount } from "viem/accounts";
 
-import type { WalletKit } from "walletkit-web";
+import type { Authenticator, CredentialStore, WalletKit } from "walletkit-web";
 
 const FAUX_ISSUER_SCHEMA_ID = 128n;
 const STAGING_RP_ID = 46n;
@@ -35,10 +35,18 @@ function concat(...chunks: Uint8Array[]) {
   return result;
 }
 
-export async function issueFauxCredential(wallet: WalletKit) {
-  const { blindingFactor, sub } = await wallet.prepareCredential(
-    FAUX_ISSUER_SCHEMA_ID,
-  );
+export async function issueFauxCredential(
+  client: WalletKit,
+  authenticator: Authenticator,
+  store: CredentialStore,
+) {
+  const blindingFactor =
+    await authenticator.generateCredentialBlindingFactorRemote(
+      FAUX_ISSUER_SCHEMA_ID,
+    );
+  const subElement = await authenticator.computeCredentialSub(blindingFactor);
+  const sub = await subElement.toHexString();
+  subElement.free();
   const response = await fetch("/api/faux-credential", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -60,8 +68,16 @@ export async function issueFauxCredential(wallet: WalletKit) {
     throw new Error("Faux issuer response contained an invalid credential");
   }
   const credentialBytes = new TextEncoder().encode(serializedCredential);
-  const stored = await wallet.storeCredential(credentialBytes, blindingFactor);
-  return { ...stored, sub };
+  const credential = await client.Credential.fromBytes(credentialBytes);
+  const issuerSchemaId = await credential.issuerSchemaId();
+  const credentialId = await store.storeCredential(
+    credential,
+    blindingFactor,
+    await credential.expiresAt(),
+  );
+  credential.free();
+  blindingFactor.free();
+  return { credentialId, issuerSchemaId, sub };
 }
 
 export async function createStagingProofRequest(signal: string) {

@@ -23,7 +23,7 @@
     "pack:check": "bun pm pack --dry-run",
     "bundle": "tsc -p tsconfig.build.json && esbuild src/index.ts src/walletkit.worker.ts --bundle --format=esm --platform=browser --target=es2022 --outdir=dist --footer:js=\"export {};\" && node scripts/copy-wasm.mjs",
     "test:serve": "vite preview --config tests/vite.config.ts --host 127.0.0.1 --port 4173 --strictPort",
-    "test:browser": "node scripts/build-wasm.mjs --features test-hooks --out-dir tests/generated && tsc -p tests/fixture/tsconfig.json && vite build --config tests/vite.config.ts && playwright test"
+    "test:browser": "tsc -p tests/fixture/tsconfig.json && vite build --config tests/vite.config.ts && playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

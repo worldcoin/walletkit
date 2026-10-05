@@ -2,7 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { RecoveryData, WalletKit } from "walletkit-web";
+import type {
+  Authenticator,
+  CredentialStore,
+  EmbeddedZkArtifacts,
+  InitializingAuthenticator,
+  RecoveryData,
+  WalletKit,
+} from "walletkit-web";
 import {
   loadDemoProfile,
   saveDemoProfile,
@@ -12,8 +19,20 @@ import { createStagingProofRequest, issueFauxCredential } from "./staging";
 
 type Action = "derive" | "register" | "initialize" | "issue" | "prove";
 
+const ENVIRONMENT = "staging";
+const REGION = "us";
+
+/** Rust objects the worker keeps for the open account. */
+interface Session {
+  client: WalletKit;
+  store: CredentialStore;
+  artifacts: EmbeddedZkArtifacts;
+  registration?: InitializingAuthenticator;
+  authenticator?: Authenticator;
+}
+
 export default function Home() {
-  const wallet = useRef<WalletKit | null>(null);
+  const wallet = useRef<Session | null>(null);
   const seed = useRef(new Uint8Array(32));
   const profile = useRef<DemoProfile | null>(null);
   const acting = useRef(false);
@@ -39,20 +58,20 @@ export default function Home() {
         seed.current = currentSeed;
         const { initializeWalletKit } = await import("walletkit-web");
         if (controller.signal.aborted) return;
-        client = await initializeWalletKit({
-          databaseKey,
-          storageId: saved.storageId,
-          environment: "staging",
-          region: "us",
-          signal: controller.signal,
-        });
+        client = await initializeWalletKit({ signal: controller.signal });
         if (controller.signal.aborted) {
           client.terminate();
           return;
         }
+        const keys = await client.StorageKeys.fromBytes(databaseKey);
+        const paths = await client.StoragePaths.fromRoot(
+          `/walletkit/${saved.storageId}`,
+        );
+        const store = await client.CredentialStore.new(paths, keys);
+        const artifacts = await client.EmbeddedZkArtifacts.new();
         const recovery = await client.recoveryDataFromSeed(currentSeed);
         if (controller.signal.aborted) return;
-        wallet.current = client;
+        wallet.current = { client, store, artifacts };
         setRecovery(recovery);
         setRegistered(saved.registered);
         setCredentialIssued(saved.credentialIssued);
@@ -75,15 +94,16 @@ export default function Home() {
     return () => {
       controller.abort();
       client?.terminate();
-      if (wallet.current === client) wallet.current = null;
+      if (wallet.current?.client === client) wallet.current = null;
       currentSeed.fill(0);
     };
   }, []);
 
   async function perform(action: Action) {
-    const client = wallet.current;
+    const session = wallet.current;
     const saved = profile.current;
-    if (!client || !saved || acting.current) return;
+    if (!session || !saved || acting.current) return;
+    const { client } = session;
     acting.current = true;
     setBusy(true);
     try {
@@ -103,9 +123,16 @@ export default function Home() {
           break;
         }
         case "register": {
-          await client.register(seed.current);
+          session.registration =
+            await client.InitializingAuthenticator.registerWithDefaults(
+              seed.current,
+              undefined,
+              ENVIRONMENT,
+              REGION,
+              undefined,
+            );
           for (;;) {
-            const status = await client.pollRegistration();
+            const status = await session.registration.pollStatus();
             setStatus(JSON.stringify(status));
             if (status.state === "failed") throw new Error(status.error);
             if (status.state === "finalized") break;
@@ -117,14 +144,29 @@ export default function Home() {
           break;
         }
         case "initialize":
-          await client.initializeAuthenticator(seed.current);
+          session.authenticator = await client.Authenticator.initWithDefaults(
+            seed.current,
+            undefined,
+            ENVIRONMENT,
+            REGION,
+            session.artifacts,
+            session.store,
+          );
+          await session.authenticator.initStorage();
           setAuthenticatorReady(true);
           setStatus(
             "Authenticator initialized with the supplied database key and OPFS storage.",
           );
           break;
         case "issue": {
-          const issued = await issueFauxCredential(client);
+          if (!session.authenticator) {
+            throw new Error("Initialize the authenticator first");
+          }
+          const issued = await issueFauxCredential(
+            client,
+            session.authenticator,
+            session.store,
+          );
           setStatus(
             JSON.stringify(
               issued,
@@ -138,13 +180,19 @@ export default function Home() {
           setCredentialIssued(true);
           break;
         }
-        case "prove":
-          setStatus(
-            await client.generateProof(
-              await createStagingProofRequest("walletkit-web-example"),
-            ),
+        case "prove": {
+          if (!session.authenticator) {
+            throw new Error("Initialize the authenticator first");
+          }
+          const request = await client.ProofRequest.fromJson(
+            await createStagingProofRequest("walletkit-web-example"),
           );
+          const response = await session.authenticator.generateProof(request);
+          setStatus(await response.toJson());
+          request.free();
+          response.free();
           break;
+        }
       }
     } catch (error) {
       setStatus(String(error));

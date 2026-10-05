@@ -8,7 +8,9 @@ use std::fmt::{Debug, Display};
 
 use js_sys::{Error, Reflect};
 use walletkit_core::{
-    error::WalletKitError, logger::sanitize_hex_secrets, storage::StorageError,
+    error::WalletKitError, logger::sanitize_hex_secrets,
+    proof_request_credential_constraints_check::CredentialConstraintsCheckError,
+    storage::StorageError,
 };
 use wasm_bindgen::JsValue;
 
@@ -26,6 +28,10 @@ impl JsReportable for StorageError {
     const NAME: &'static str = "StorageError";
 }
 
+impl JsReportable for CredentialConstraintsCheckError {
+    const NAME: &'static str = "CredentialConstraintsCheckError";
+}
+
 /// Converts a `WalletKit` error into a JavaScript `Error`.
 #[allow(clippy::needless_pass_by_value)] // Used as `map_err(to_js)`.
 pub fn to_js<E: JsReportable>(error: E) -> JsValue {
@@ -34,11 +40,6 @@ pub fn to_js<E: JsReportable>(error: E) -> JsValue {
         &sanitize_hex_secrets(error.to_string()),
         Some(&sanitize_hex_secrets(format!("{error:?}"))),
     )
-}
-
-/// An operation was called in the wrong lifecycle state.
-pub fn invalid_state(message: &str) -> JsValue {
-    build("InvalidStateError", message, None)
 }
 
 /// An argument failed validation before reaching `WalletKit`.
