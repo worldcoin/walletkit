@@ -64,10 +64,20 @@ async function openSession(
   const databaseKey = new Uint8Array(saved.databaseKey);
   try {
     const keys = await client.StorageKeys.fromBytes(databaseKey);
-    const paths = await client.StoragePaths.fromRoot(
-      `/walletkit/${saved.storageId}`,
-    );
-    const store = await client.CredentialStore.new(paths, keys);
+    let store: CredentialStore;
+    try {
+      const paths = await client.StoragePaths.fromRoot(
+        `/walletkit/${saved.storageId}`,
+      );
+      try {
+        store = await client.CredentialStore.new(paths, keys);
+      } finally {
+        paths.free();
+      }
+    } finally {
+      // The store holds its own reference; do not keep a second key handle alive.
+      keys.free();
+    }
     const artifacts = await client.EmbeddedZkArtifacts.new();
     const recovery = await client.recoveryDataFromSeed(seed);
     return { session: { client, store, artifacts }, recovery };
@@ -219,6 +229,8 @@ export default function Home() {
         break;
       }
       case "register": {
+        session.registration?.free();
+        session.registration = undefined;
         session.registration =
           await client.InitializingAuthenticator.registerWithDefaults(
             seed.current,
@@ -245,6 +257,8 @@ export default function Home() {
       case "initialize": {
         // Not gated on the saved `registered` flag: if registration finalized but
         // saving it failed, initializing is how the account is recovered.
+        session.authenticator?.free();
+        session.authenticator = undefined;
         session.authenticator = await client.Authenticator.initWithDefaults(
           seed.current,
           undefined,
