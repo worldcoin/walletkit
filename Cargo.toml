@@ -31,6 +31,7 @@ alloy-core = { version = "1", default-features = false, features = [
   "sol-types",
 ] }
 async-trait = "0.1"
+attested-request = "0.1.0"
 backon = "1.6"
 base64 = "0.22"
 cc = "1"
