@@ -13,8 +13,7 @@
     "test": "bun test",
     "build": "next build",
     "start": "next start",
-    "walletkit:local": "bun run --cwd ../../web/walletkit build && bun link --cwd ../../web/walletkit && bun link --no-save walletkit-web",
-    "walletkit:published": "bun install --frozen-lockfile --force"
+    "walletkit:local": "bun run --cwd ../../web/walletkit build && bun link --cwd ../../web/walletkit && bun install"
   },
   "dependencies": {
     "lossless-json": "^4.3.1",
@@ -22,7 +21,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "viem": "^2.56.0",
-    "walletkit-web": "0.21.3"
+    "@worldcoin/walletkit-web": "link:@worldcoin/walletkit-web"
   },
   "devDependencies": {
     "@types/node": "25.0.3",

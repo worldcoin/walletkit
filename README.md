@@ -53,7 +53,7 @@ See [`swift/README.md`](swift/README.md) for package integration details.
 
 ## Local development (browser/WASM)
 
-The experimental `walletkit-web` package wraps the `walletkit-web` crate, a
+The experimental `@worldcoin/walletkit-web` package wraps the `walletkit-web` crate, a
 `wasm-bindgen` facade over `walletkit-core`, and ships its glue and the
 optimized WASM module. The browser build does not use UniFFI bindings. Build it with the pinned WASM toolchain:
 

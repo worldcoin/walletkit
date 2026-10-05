@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "walletkit-web",
+      "name": "@worldcoin/walletkit-web",
       "devDependencies": {
         "@playwright/test": "^1.63.0",
         "esbuild": "0.25.9",

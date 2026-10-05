@@ -1,5 +1,5 @@
 {
-  "name": "walletkit-web",
+  "name": "@worldcoin/walletkit-web",
   "version": "0.22.1",
   "description": "WalletKit enables users to hold credentials and prove their humanity with World ID .",
   "type": "module",

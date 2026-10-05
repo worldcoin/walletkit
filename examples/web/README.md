@@ -1,28 +1,27 @@
 # WalletKit web package Next.js example
 
-> PROTOTYPE: integration probe for the published `walletkit-web` package.
+> PROTOTYPE: integration probe for the `@worldcoin/walletkit-web` package.
 
 This example verifies that a Next.js App Router application can consume
 WalletKit as an ordinary package without owning its Rust wrapper, WASM
 optimization, or asset staging.
 
-The example targets the Swift/Kotlin-style object API (`Authenticator`,
-`CredentialStore`, …), which the published `walletkit-web` does not have yet, so
-run it against the package in this checkout. From the example directory, inside the
-WASM Nix shell, build and link it, then start the app:
+The example consumes `@worldcoin/walletkit-web` from this checkout (a `link:`
+dependency), so it always runs the package's current Swift/Kotlin-style object API
+(`Authenticator`, `CredentialStore`, …). `walletkit:local` builds the package, links
+it and installs; run it inside the WASM Nix shell, then start the app:
 
 ```sh
 nix develop .#wasm --command bash -c \
-  'cd examples/web && bun install --frozen-lockfile && bun run walletkit:local && bun run dev'
+  'cd examples/web && bun run walletkit:local && bun run dev'
 ```
 
-Use `bun run build` to prove the production bundle as well. Once the new API is
-published, `bun run walletkit:published` restores the registry package, which needs
-no local Rust, wasm-bindgen glue or WASM build.
+Use `bun run build` to prove the production bundle as well. To exercise a published
+build instead, replace the `link:` dependency with a registry version once one exists.
 
 ## What the POC proves
 
-- `walletkit-web` hides generation and WASM loading behind
+- `@worldcoin/walletkit-web` hides generation and WASM loading behind
   `initializeWalletKit()`.
 - The package exposes an async facade that mirrors the Swift and Kotlin objects
   and owns the worker running WalletKit.

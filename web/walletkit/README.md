@@ -1,11 +1,11 @@
-# `walletkit-web`
+# `@worldcoin/walletkit-web`
 
 WalletKit's browser client. The package always runs Rust/WASM, cryptography,
 proof generation and SQLite in a dedicated Web Worker. Importing the package
 is safe during SSR; call `initializeWalletKit` in a browser.
 
 ```ts
-import { initializeWalletKit } from "walletkit-web";
+import { initializeWalletKit } from "@worldcoin/walletkit-web";
 
 const walletkit = await initializeWalletKit();
 
