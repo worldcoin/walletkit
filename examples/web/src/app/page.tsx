@@ -188,6 +188,9 @@ export default function Home() {
       if (error instanceof DeadlineError) {
         // The worker is gone; reopen the account so the demo stays usable.
         await open(`${error.message}; WalletKit was restarted. Try again.`);
+      } else if (client.isStopped()) {
+        // A worker failure or a Rust panic stops the client for good; replace it.
+        await open(`${String(error)}. WalletKit stopped and was restarted.`);
       } else {
         setStatus(String(error));
       }
