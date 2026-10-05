@@ -248,9 +248,11 @@ impl JsCredentialStore {
     pub fn list_activities(
         &self,
         #[wasm_bindgen(unchecked_param_type = "ActivityQuery")] query: &JsValue,
-        limit: u32,
-        offset: u32,
+        #[wasm_bindgen(unchecked_param_type = "number")] limit: f64,
+        #[wasm_bindgen(unchecked_param_type = "number")] offset: f64,
     ) -> Result<JsValue, JsValue> {
+        let (limit, offset) =
+            (js::u32_arg("limit", limit)?, js::u32_arg("offset", offset)?);
         // `ActivityQuery` has no filters yet.
         if !query.is_object() {
             return Err(invalid_argument("`query` must be an object"));

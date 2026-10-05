@@ -1,5 +1,5 @@
 import init, * as wasm from "./generated/walletkit.js";
-import { CLASS_NAMES, FUNCTION_NAMES } from "./protocol";
+import { API, CLASS_NAMES, FUNCTION_NAMES } from "./protocol";
 import type {
   ClassName,
   Handle,
@@ -18,7 +18,10 @@ type Exports = Record<string, any>;
 const wasmExports = wasm as unknown as Exports;
 
 /** Live Rust objects, addressed by the page through opaque handles. */
-const objects = new Map<Handle, { free(): void }>();
+const objects = new Map<
+  Handle,
+  { object: { free(): void }; className: ClassName }
+>();
 let nextHandle = 0;
 
 let initialized = false;
@@ -32,7 +35,8 @@ let queue = Promise.resolve();
 scope.onmessage = ({ data }) => {
   queue = queue.then(async () => {
     try {
-      if (crashed) throw crashed;
+      // A crashed module can still be closed; the client then terminates the worker.
+      if (crashed && data.op !== "close") throw crashed;
       scope.postMessage({ id: data.id, ok: true, result: await perform(data) });
     } catch (error) {
       if (error instanceof WebAssembly.RuntimeError) {
@@ -68,55 +72,58 @@ async function initialize(wasmUrl: string): Promise<void> {
 
 async function call(target: Target, encodedArgs: unknown[]): Promise<unknown> {
   if (!initialized) throw new Error("WalletKit is not initialized");
-  const args = encodedArgs.map(resolve);
+  let args: unknown[] = encodedArgs;
   try {
+    args = encodedArgs.map(resolve);
     return reveal(await invoke(target, args));
   } finally {
-    // The page sent copies; clear any secret bytes (seeds, keys) held here.
-    for (const arg of args) if (arg instanceof Uint8Array) arg.fill(0);
+    // The page sent copies; clear any secret bytes (seeds, keys) held here, even
+    // when an argument failed to resolve.
+    for (const arg of encodedArgs) if (arg instanceof Uint8Array) arg.fill(0);
   }
 }
 
+/** Calls only what the API registry lists; never wasm-bindgen internals. */
 function invoke(target: Target, args: unknown[]): unknown {
   if ("function" in target) {
     if (!(FUNCTION_NAMES as readonly string[]).includes(target.function))
       throw new Error(`Unknown function: ${target.function}`);
     return wasmExports[target.function](...args);
   }
+  if ("handle" in target) {
+    const entry = objects.get(target.handle);
+    if (!entry) throw new Error("WalletKit object was released");
+    const methods: readonly string[] = API[entry.className].methods;
+    if (!methods.includes(target.method))
+      throw new Error(`Unknown method: ${entry.className}.${target.method}`);
+    const object = entry.object as unknown as Record<
+      string,
+      (...args: unknown[]) => unknown
+    >;
+    return object[target.method](...args);
+  }
+  const spec = API[target.class] as
+    | { construct?: true; statics: readonly string[] }
+    | undefined;
+  if (!spec || !Object.hasOwn(API, target.class))
+    throw new Error(`Unknown class: ${target.class}`);
+  const constructor = wasmExports[target.class];
   if ("construct" in target) {
-    return new (exportedClass(target.class))(...args);
+    if (!spec.construct) throw new Error(`${target.class} has no constructor`);
+    return new constructor(...args);
   }
-  if ("static" in target) {
-    return callable(exportedClass(target.class), target.static)(...args);
-  }
-  const object = objects.get(target.handle);
-  if (!object) throw new Error("WalletKit object was released");
-  return callable(object, target.method).apply(object, args);
-}
-
-function exportedClass(name: ClassName): any {
-  if (!(CLASS_NAMES as readonly string[]).includes(name))
-    throw new Error(`Unknown class: ${name}`);
-  return wasmExports[name];
-}
-
-/** Looks up a method that the Rust class itself exports. */
-function callable(owner: any, name: string): (...args: unknown[]) => unknown {
-  const home =
-    typeof owner === "function" ? owner : Object.getPrototypeOf(owner);
-  const method = Object.hasOwn(home, name) ? home[name] : undefined;
-  if (typeof method !== "function" || name === "constructor" || name === "free")
-    throw new Error(`Unknown method: ${name}`);
-  return method;
+  if (!spec.statics.includes(target.static))
+    throw new Error(`Unknown function: ${target.class}.${target.static}`);
+  return constructor[target.static](...args);
 }
 
 /** Swaps handles from the page for the Rust objects they refer to. */
 function resolve(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(resolve);
   if (typeof value === "object" && value !== null && "$ref" in value) {
-    const object = objects.get((value as Ref).$ref);
-    if (!object) throw new Error("WalletKit object was released");
-    return object;
+    const entry = objects.get((value as Ref).$ref);
+    if (!entry) throw new Error("WalletKit object was released");
+    return entry.object;
   }
   return value;
 }
@@ -124,35 +131,51 @@ function resolve(value: unknown): unknown {
 /** Keeps Rust objects in the worker and returns handles for the page. */
 function reveal(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(reveal);
-  for (const name of CLASS_NAMES) {
-    if (value instanceof wasmExports[name]) {
+  for (const className of CLASS_NAMES) {
+    if (value instanceof wasmExports[className]) {
       const handle = nextHandle++;
-      objects.set(handle, value as { free(): void });
-      return { $ref: handle, class: name } satisfies Ref;
+      objects.set(handle, {
+        object: value as { free(): void },
+        className,
+      });
+      return { $ref: handle, class: className } satisfies Ref;
     }
   }
   return value;
 }
 
 function release(handle: Handle): void {
-  objects.get(handle)?.free();
+  const entry = objects.get(handle);
   objects.delete(handle);
+  entry?.object.free();
 }
 
 function close(): void {
   // The client terminates this worker after the reply, releasing the OPFS pool.
-  for (const handle of [...objects.keys()]) release(handle);
+  // A crashed module cannot run destructors, so ignore their failures.
+  for (const handle of [...objects.keys()]) {
+    try {
+      release(handle);
+    } catch (error) {
+      if (!crashed) throw error;
+    }
+  }
 }
 
-function serialize(error: unknown): { name: string; message: string } {
+function serialize(error: unknown): {
+  name: string;
+  message: string;
+  code?: string;
+} {
   if (!(error instanceof Error))
     return { name: "Error", message: String(error) };
-  const detail = (error as { detail?: unknown }).detail;
+  const { detail, code } = error as { detail?: unknown; code?: unknown };
   return {
     name: error.name,
     message:
       typeof detail === "string"
         ? `${error.message} (${detail})`
         : error.message,
+    ...(typeof code === "string" && { code }),
   };
 }

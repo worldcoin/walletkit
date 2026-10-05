@@ -187,10 +187,16 @@ export default function Home() {
           const request = await client.ProofRequest.fromJson(
             await createStagingProofRequest("walletkit-web-example"),
           );
-          const response = await session.authenticator.generateProof(request);
-          setStatus(await response.toJson());
-          request.free();
-          response.free();
+          try {
+            const response = await session.authenticator.generateProof(request);
+            try {
+              setStatus(await response.toJson());
+            } finally {
+              response.free();
+            }
+          } finally {
+            request.free();
+          }
           break;
         }
       }

@@ -84,9 +84,10 @@ test("abort cancels initialization", async ({ page }) => {
     const controller = new AbortController();
     const pending = w.initializeWalletKit({ signal: controller.signal });
     controller.abort();
-    return pending.catch((e: Error) => e.message);
+    return pending.catch((e: Error) => e.name);
   });
-  expect(result).toContain("terminated");
+  // The caller sees the signal's own reason, so cancellation is detectable.
+  expect(result).toBe("AbortError");
 });
 
 test("custom worker and Wasm URLs load the same runtime", async ({ page }) => {
@@ -150,11 +151,28 @@ test("Rust errors keep their name and variant detail across the worker", async (
     const unknownEnvironment = await capture(
       wallet.pohRecoveryAgentAddress("moon"),
     );
+    const code = await wallet.FieldElement.fromBytes(new Uint8Array(2)).catch(
+      (e: Error & { code?: string }) => e.code,
+    );
+    const keys = await wallet.StorageKeys.fromBytes(new Uint8Array(32).fill(3));
+    const paths = await wallet.StoragePaths.fromRoot("/walletkit/args");
+    const store = await wallet.CredentialStore.new(paths, keys);
+    const negativeLimit = await capture(store.listActivities({}, -1, 0));
     await wallet.close();
-    return { invalidSeed, invalidKey, invalidCredential, unknownEnvironment };
+    return {
+      invalidSeed,
+      invalidKey,
+      invalidCredential,
+      unknownEnvironment,
+      code,
+      negativeLimit,
+    };
   });
   expect(result.invalidSeed.name).toBe("WalletKitError");
   expect(result.invalidSeed.message).toMatch(/InvalidInput \{/);
+  expect(result.code).toBe("InvalidInput");
+  expect(result.negativeLimit.name).toBe("TypeError");
+  expect(result.negativeLimit.message).toContain("limit");
   expect(result.invalidKey.name).toBe("StorageError");
   expect(result.invalidCredential.name).toBe("WalletKitError");
   expect(result.unknownEnvironment).toEqual({
@@ -221,4 +239,92 @@ test("Rust objects stay in the worker and are used through handles", async ({
   expect(result.metadata).toEqual({ totalCount: 1n });
   expect(result.sameRoot).toBe("/walletkit/handles");
   expect(result.released).toContain("released");
+});
+
+test("close frees live objects, is idempotent and rejects later calls", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    const element = await wallet.FieldElement.fromU64(1n);
+    const first = wallet.close();
+    const second = wallet.close();
+    await Promise.all([first, second]);
+    const afterClose = await element
+      .toHexString()
+      .catch((e: Error) => e.message);
+    return { sameClose: first === second, afterClose };
+  });
+  expect(result.sameClose).toBe(true);
+  expect(result.afterClose).toContain("closed");
+});
+
+test("the worker only dispatches names from the API registry", async ({
+  page,
+}) => {
+  // Learn the packaged worker and Wasm URLs from a first run, then release the pool.
+  let workerUrl = "";
+  let wasmUrl = "";
+  page.on("worker", (worker) => (workerUrl = worker.url()));
+  page.on("request", (request) => {
+    if (request.url().endsWith(".wasm")) wasmUrl = request.url();
+  });
+  await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    await wallet.close();
+  });
+  await expect(async () => {
+    const result = await page.evaluate(
+      async ({ workerUrl, wasmUrl }) => {
+        const worker = new Worker(workerUrl, { type: "module" });
+        let nextId = 0;
+        const send = (message: object) =>
+          new Promise<any>((resolve) => {
+            const id = nextId++;
+            worker.onmessage = ({ data }) => data.id === id && resolve(data);
+            worker.postMessage({ ...message, id });
+          });
+        try {
+          const initialized = await send({ op: "initialize", wasmUrl });
+          if (!initialized.ok) throw new Error(initialized.error.message);
+          const call = (target: object, args: unknown[] = []) =>
+            send({ op: "call", target, args });
+          const created = await call(
+            { class: "FieldElement", static: "fromU64" },
+            [5n],
+          );
+          const handle = created.result.$ref;
+          return {
+            allowed: (await call({ handle, method: "toHexString" })).ok,
+            free: await call({ handle, method: "free" }),
+            internal: await call({ handle, method: "__destroy_into_raw" }),
+            wrap: await call({ class: "FieldElement", static: "__wrap" }, [1]),
+            noConstructor: await call({
+              class: "Authenticator",
+              construct: true,
+            }),
+            startFn: await call({ function: "start" }),
+            unknownClass: await call({ class: "toString", static: "call" }),
+            stillAlive: (await call({ handle, method: "toHexString" })).ok,
+          };
+        } finally {
+          worker.terminate();
+        }
+      },
+      { workerUrl, wasmUrl },
+    );
+    expect(result.allowed).toBe(true);
+    for (const rejected of [
+      result.free,
+      result.internal,
+      result.wrap,
+      result.noConstructor,
+      result.startFn,
+      result.unknownClass,
+    ]) {
+      expect(rejected.ok).toBe(false);
+      expect(rejected.error.message).toMatch(/^Unknown |no constructor/);
+    }
+    expect(result.stillAlive).toBe(true);
+  }).toPass({ timeout: 5000 });
 });

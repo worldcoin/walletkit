@@ -7,6 +7,7 @@
 use std::future::Future;
 
 use js_sys::{Array, Object, Promise, Reflect};
+use walletkit_core::logger::{sanitize_hex_secrets, LogLevel, Logger};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
 
@@ -16,6 +17,27 @@ use crate::error::invalid_argument;
 extern "C" {
     #[wasm_bindgen(js_namespace = console, js_name = error)]
     pub fn console_error(message: &str);
+
+    #[wasm_bindgen(js_namespace = console, js_name = warn)]
+    fn console_warn(message: &str);
+}
+
+/// Forwards core's warnings and errors to the worker console.
+///
+/// Core reports best-effort failures through `tracing` only, for example a vault
+/// that could not be deleted or a credential that could not be loaded for proving.
+/// Lower levels are dropped to keep the console quiet, and hex secrets are redacted.
+pub struct ConsoleLogger;
+
+impl Logger for ConsoleLogger {
+    fn log(&self, level: LogLevel, message: String) {
+        let message = sanitize_hex_secrets(message);
+        match level {
+            LogLevel::Error => console_error(&message),
+            LogLevel::Warn => console_warn(&message),
+            LogLevel::Trace | LogLevel::Debug | LogLevel::Info => {}
+        }
+    }
 }
 
 /// Builds a plain object, which survives `postMessage` unlike exported Rust types.
@@ -37,6 +59,25 @@ pub fn promise(
     future: impl Future<Output = Result<JsValue, JsValue>> + 'static,
 ) -> Promise {
     future_to_promise(future)
+}
+
+/// Validates an unsigned 32-bit integer argument.
+///
+/// Taking the argument as a JavaScript number and checking it here avoids the silent
+/// wrap-around of `-1`, `2**32` or `NaN` that a direct `u32` parameter would get.
+pub fn u32_arg(name: &str, value: f64) -> Result<u32, JsValue> {
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "the range and integrality are checked first"
+    )]
+    if (0.0..=f64::from(u32::MAX)).contains(&value) && value.fract() == 0.0 {
+        return Ok(value as u32);
+    }
+    Err(invalid_argument(&format!(
+        "`{name}` must be an integer between 0 and {}",
+        u32::MAX
+    )))
 }
 
 /// Reads the field `key` of a plain object argument.

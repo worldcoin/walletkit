@@ -2,7 +2,7 @@
 
 use std::{str::FromStr, sync::Arc};
 
-use js_sys::Promise;
+use js_sys::{Promise, Reflect};
 use walletkit_core::{
     authenticator::{
         artifacts::embedded::EmbeddedZkArtifacts, validate_authenticator_pubkey,
@@ -38,7 +38,9 @@ fn parse_region(region: Option<String>) -> Result<Option<Region>, JsValue> {
 /// # Errors
 /// Throws a `TypeError` for an unknown environment.
 #[wasm_bindgen(js_name = pohRecoveryAgentAddress)]
-pub fn poh_recovery_agent_address(environment: &str) -> Result<String, JsValue> {
+pub fn poh_recovery_agent_address(
+    #[wasm_bindgen(unchecked_param_type = "Environment")] environment: &str,
+) -> Result<String, JsValue> {
     Ok(parse_environment(environment)?.poh_recovery_agent_address())
 }
 
@@ -47,7 +49,9 @@ pub fn poh_recovery_agent_address(environment: &str) -> Result<String, JsValue> 
 /// # Errors
 /// Throws a `TypeError` for an unknown environment.
 #[wasm_bindgen(js_name = worldIdVerifierAddress)]
-pub fn world_id_verifier_address(environment: &str) -> Result<String, JsValue> {
+pub fn world_id_verifier_address(
+    #[wasm_bindgen(unchecked_param_type = "Environment")] environment: &str,
+) -> Result<String, JsValue> {
     Ok(parse_environment(environment)?.world_id_verifier_address())
 }
 
@@ -97,8 +101,10 @@ impl JsAuthenticator {
     pub fn init_with_defaults(
         seed: Vec<u8>,
         rpc_url: Option<String>,
-        environment: &str,
-        region: Option<String>,
+        #[wasm_bindgen(unchecked_param_type = "Environment")] environment: &str,
+        #[wasm_bindgen(unchecked_param_type = "Region | undefined")] region: Option<
+            String,
+        >,
         artifacts: &JsEmbeddedZkArtifacts,
         store: &JsCredentialStore,
     ) -> Promise {
@@ -129,8 +135,10 @@ impl JsAuthenticator {
     pub fn init_with_ohttp_defaults(
         seed: Vec<u8>,
         rpc_url: Option<String>,
-        environment: &str,
-        region: Option<String>,
+        #[wasm_bindgen(unchecked_param_type = "Environment")] environment: &str,
+        #[wasm_bindgen(unchecked_param_type = "Region | undefined")] region: Option<
+            String,
+        >,
         artifacts: &JsEmbeddedZkArtifacts,
         store: &JsCredentialStore,
     ) -> Promise {
@@ -384,11 +392,12 @@ impl JsAuthenticator {
     pub fn remove_authenticator(
         &self,
         authenticator_address: String,
-        pubkey_id: u32,
+        #[wasm_bindgen(unchecked_param_type = "number")] pubkey_id: f64,
         expected_authenticator_pubkey: String,
     ) -> Promise {
         let authenticator = Arc::clone(&self.0);
         js::promise(async move {
+            let pubkey_id = js::u32_arg("pubkeyId", pubkey_id)?;
             let request_id = authenticator
                 .remove_authenticator(
                     authenticator_address,
@@ -416,21 +425,17 @@ impl JsAuthenticator {
 
     /// Generates a proof for `proof_request` from the stored credentials.
     ///
-    /// `now` is the current unix time in seconds and is required in the browser.
+    /// `now` is the current unix time in seconds; the browser has no clock core can use.
     ///
     /// # Errors
     /// Rejects when no credential satisfies the request, the request is a replay, or proving fails.
     #[wasm_bindgen(js_name = generateProof, unchecked_return_type = "Promise<ProofResponse>")]
-    pub fn generate_proof(
-        &self,
-        proof_request: &JsProofRequest,
-        now: Option<u64>,
-    ) -> Promise {
+    pub fn generate_proof(&self, proof_request: &JsProofRequest, now: u64) -> Promise {
         let authenticator = Arc::clone(&self.0);
         let proof_request = proof_request.0.clone();
         js::promise(async move {
             let response = authenticator
-                .generate_proof(&proof_request, now)
+                .generate_proof(&proof_request, Some(now))
                 .await
                 .map_err(to_js)?;
             Ok(JsProofResponse(response).into())
@@ -452,8 +457,10 @@ impl JsInitializingAuthenticator {
     pub fn register_with_defaults(
         seed: Vec<u8>,
         rpc_url: Option<String>,
-        environment: &str,
-        region: Option<String>,
+        #[wasm_bindgen(unchecked_param_type = "Environment")] environment: &str,
+        #[wasm_bindgen(unchecked_param_type = "Region | undefined")] region: Option<
+            String,
+        >,
         recovery_address: Option<String>,
     ) -> Promise {
         let environment = parse_environment(environment);
@@ -480,8 +487,10 @@ impl JsInitializingAuthenticator {
     pub fn register_with_ohttp_defaults(
         seed: Vec<u8>,
         rpc_url: Option<String>,
-        environment: &str,
-        region: Option<String>,
+        #[wasm_bindgen(unchecked_param_type = "Environment")] environment: &str,
+        #[wasm_bindgen(unchecked_param_type = "Region | undefined")] region: Option<
+            String,
+        >,
         recovery_address: Option<String>,
     ) -> Promise {
         let environment = parse_environment(environment);
@@ -532,34 +541,40 @@ impl JsInitializingAuthenticator {
     }
 }
 
-fn registration_status(status: RegistrationStatus) -> Result<JsValue, JsValue> {
-    match status {
-        RegistrationStatus::Queued => js::object(&[("state", "queued".into())]),
-        RegistrationStatus::Batching => js::object(&[("state", "batching".into())]),
-        RegistrationStatus::Submitted => js::object(&[("state", "submitted".into())]),
-        RegistrationStatus::Finalized => js::object(&[("state", "finalized".into())]),
-        RegistrationStatus::Failed { error, error_code } => js::object(&[
-            ("state", "failed".into()),
-            ("error", error.into()),
-            ("errorCode", error_code.into()),
-        ]),
+fn status(state: &str, fields: &[(&str, JsValue)]) -> Result<JsValue, JsValue> {
+    let object = js::object(&[("state", state.into())])?;
+    for (key, value) in fields {
+        Reflect::set(&object, &JsValue::from_str(key), value)?;
+    }
+    Ok(object)
+}
+
+fn registration_status(status_: RegistrationStatus) -> Result<JsValue, JsValue> {
+    match status_ {
+        RegistrationStatus::Queued => status("queued", &[]),
+        RegistrationStatus::Batching => status("batching", &[]),
+        RegistrationStatus::Submitted => status("submitted", &[]),
+        RegistrationStatus::Finalized => status("finalized", &[]),
+        RegistrationStatus::Failed { error, error_code } => status(
+            "failed",
+            &[("error", error.into()), ("errorCode", error_code.into())],
+        ),
     }
 }
 
-fn gateway_request_status(status: GatewayRequestStatus) -> Result<JsValue, JsValue> {
-    match status {
-        GatewayRequestStatus::Queued => js::object(&[("state", "queued".into())]),
-        GatewayRequestStatus::Batching => js::object(&[("state", "batching".into())]),
+fn gateway_request_status(status_: GatewayRequestStatus) -> Result<JsValue, JsValue> {
+    match status_ {
+        GatewayRequestStatus::Queued => status("queued", &[]),
+        GatewayRequestStatus::Batching => status("batching", &[]),
         GatewayRequestStatus::Submitted { tx_hash } => {
-            js::object(&[("state", "submitted".into()), ("txHash", tx_hash.into())])
+            status("submitted", &[("txHash", tx_hash.into())])
         }
         GatewayRequestStatus::Finalized { tx_hash } => {
-            js::object(&[("state", "finalized".into()), ("txHash", tx_hash.into())])
+            status("finalized", &[("txHash", tx_hash.into())])
         }
-        GatewayRequestStatus::Failed { error, error_code } => js::object(&[
-            ("state", "failed".into()),
-            ("error", error.into()),
-            ("errorCode", error_code.into()),
-        ]),
+        GatewayRequestStatus::Failed { error, error_code } => status(
+            "failed",
+            &[("error", error.into()), ("errorCode", error_code.into())],
+        ),
     }
 }

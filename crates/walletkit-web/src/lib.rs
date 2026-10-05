@@ -19,8 +19,11 @@ mod js;
 mod storage;
 mod values;
 
+use std::sync::Arc;
+
 use walletkit_core::{
     authenticator::recovery_data_from_seed,
+    logger::{init_logging, sanitize_hex_secrets, LogLevel},
     proof_request_credential_constraints_check::{
         check_credentials_against_proof_request, CredentialConstraintsCheckResult,
     },
@@ -115,7 +118,10 @@ export interface CredentialConstraintsCheckResult {
 /// `WebAssembly.RuntimeError` and refuses further calls.
 #[wasm_bindgen(start)]
 fn start() {
-    std::panic::set_hook(Box::new(|info| js::console_error(&info.to_string())));
+    std::panic::set_hook(Box::new(|info| {
+        js::console_error(&sanitize_hex_secrets(info.to_string()));
+    }));
+    init_logging(Arc::new(js::ConsoleLogger), Some(LogLevel::Warn));
 }
 
 /// Derives the recovery identity material for a 32-byte seed.

@@ -3,19 +3,24 @@
 // The pinned wasm-bindgen CLI and Binaryen come from `nix develop .#wasm`.
 import { execFileSync } from "node:child_process";
 import { readFileSync, renameSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 
 const { values } = parseArgs({
   options: {
-    features: { type: "string", default: "" },
     "out-dir": { type: "string", default: "src/generated" },
   },
 });
 
 const packageDir = fileURLToPath(new URL("..", import.meta.url));
 const outDir = resolve(packageDir, values["out-dir"]);
+if (
+  outDir === resolve(packageDir) ||
+  !outDir.startsWith(resolve(packageDir) + sep)
+) {
+  throw new Error(`--out-dir must be a subdirectory of ${packageDir}`);
+}
 const run = (command, args) =>
   execFileSync(command, args, { cwd: packageDir, stdio: "inherit" });
 
@@ -50,7 +55,6 @@ run("cargo", [
   "--locked",
   "--target",
   "wasm32-unknown-unknown",
-  ...(values.features ? ["--features", values.features] : []),
 ]);
 
 const { target_directory: targetDir } = JSON.parse(
@@ -82,4 +86,7 @@ run("wasm-opt", [
   wasm,
 ]);
 rmSync(join(outDir, "walletkit_bg.wasm"));
-renameSync(join(outDir, "walletkit_bg.wasm.d.ts"), join(outDir, "walletkit.wasm.d.ts"));
+renameSync(
+  join(outDir, "walletkit_bg.wasm.d.ts"),
+  join(outDir, "walletkit.wasm.d.ts"),
+);

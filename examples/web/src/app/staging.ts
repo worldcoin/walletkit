@@ -44,40 +44,46 @@ export async function issueFauxCredential(
     await authenticator.generateCredentialBlindingFactorRemote(
       FAUX_ISSUER_SCHEMA_ID,
     );
-  const subElement = await authenticator.computeCredentialSub(blindingFactor);
-  const sub = await subElement.toHexString();
-  subElement.free();
-  const response = await fetch("/api/faux-credential", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sub }),
-  });
-  if (!response.ok) {
-    throw new Error(
-      `Faux issuer returned ${response.status}: ${await response.text()}`,
-    );
-  }
+  try {
+    const subElement = await authenticator.computeCredentialSub(blindingFactor);
+    const sub = await subElement.toHexString();
+    subElement.free();
+    const response = await fetch("/api/faux-credential", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sub }),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Faux issuer returned ${response.status}: ${await response.text()}`,
+      );
+    }
 
-  const body = parse(await response.text()) as { credential?: unknown };
-  if (body.credential === undefined) {
-    throw new Error("Faux issuer response did not contain a credential");
-  }
+    const body = parse(await response.text()) as { credential?: unknown };
+    if (body.credential === undefined) {
+      throw new Error("Faux issuer response did not contain a credential");
+    }
 
-  const serializedCredential = stringify(body.credential);
-  if (serializedCredential === undefined) {
-    throw new Error("Faux issuer response contained an invalid credential");
+    const serializedCredential = stringify(body.credential);
+    if (serializedCredential === undefined) {
+      throw new Error("Faux issuer response contained an invalid credential");
+    }
+    const credentialBytes = new TextEncoder().encode(serializedCredential);
+    const credential = await client.Credential.fromBytes(credentialBytes);
+    try {
+      const issuerSchemaId = await credential.issuerSchemaId();
+      const credentialId = await store.storeCredential(
+        credential,
+        blindingFactor,
+        await credential.expiresAt(),
+      );
+      return { credentialId, issuerSchemaId, sub };
+    } finally {
+      credential.free();
+    }
+  } finally {
+    blindingFactor.free();
   }
-  const credentialBytes = new TextEncoder().encode(serializedCredential);
-  const credential = await client.Credential.fromBytes(credentialBytes);
-  const issuerSchemaId = await credential.issuerSchemaId();
-  const credentialId = await store.storeCredential(
-    credential,
-    blindingFactor,
-    await credential.expiresAt(),
-  );
-  credential.free();
-  blindingFactor.free();
-  return { credentialId, issuerSchemaId, sub };
 }
 
 export async function createStagingProofRequest(signal: string) {

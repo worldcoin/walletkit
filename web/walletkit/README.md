@@ -77,12 +77,16 @@ they return. Conventions that differ from native:
 
 Not available in the browser: `Logger`, `DeviceKeystore`, `AtomicBlobStore`,
 `StorageProvider` and the change listeners (foreign traits), vault backup and
-`proveCredentialSub` (native-only in core), and the issuer and Flamingo modules.
+`proveCredentialSub` (native-only in core), `UserAgent`, `sanitizeHexSecrets`, and the
+issuer and Flamingo modules. Core's warnings and errors, for example a vault that
+could not be deleted, are written to the worker console with hex secrets redacted.
 
 Rust errors reject with their source as `name` (`WalletKitError`, `StorageError`,
-`CredentialConstraintsCheckError`) and the variant details appended to `message`,
-with hex secrets redacted. Invalid arguments reject with a `TypeError`. A Rust panic
-crashes the module: the call rejects and every later call fails, so reinitialize.
+`CredentialConstraintsCheckError`), the variant name as `code` (for example
+`NullifierReplay`) and the variant details appended to `message`, with hex secrets
+redacted. Invalid arguments reject with a `TypeError`. A Rust panic traps the module:
+the failing call rejects (or the worker error stops the client) and every later call
+fails, so reinitialize.
 Issuer HTTP calls and relying-party request construction remain application code.
 See the Next.js demo for a complete registration, issuance and proof flow.
 
@@ -90,9 +94,11 @@ The worker runs the `walletkit-web` crate, a `wasm-bindgen` facade over
 `walletkit-core` with one wrapper class per UniFFI object. Adding a core export to
 the browser means adding its wrapper there, and its proxy in `src/api.ts`.
 
-Operations run in order, including asynchronous work. `close()` drains queued
-operations, frees every Rust object and terminates the worker. `terminate()`
-interrupts immediately and rejects pending requests. Worker failures also reject
+Operations run in order, including asynchronous work, and have no deadline of their
+own: a network call that never settles blocks the calls queued behind it. `close()`
+drains queued operations, frees every Rust object and terminates the worker; if the
+worker does not answer within 5 seconds it is terminated and `close()` rejects.
+`terminate()` interrupts immediately and rejects pending requests. Worker failures also reject
 pending requests. An optional `signal` cancels initialization only; after it
 resolves, use `close()` or `terminate()`.
 
@@ -147,6 +153,6 @@ mapping, and using Rust objects through handles. `bun run bundle` reuses the bui
 module for TypeScript-only development. The build checks that the `wasm-bindgen` CLI
 matches the version in `Cargo.lock`.
 
-The example uses a new namespace and memory-only database keys on each load. Its encrypted
-files persist, but it intentionally cannot unlock them after reload; a production
-host must implement key recovery/unlock and stable account namespace selection.
+The example persists its storage ID and database key in `localStorage` so it can
+reopen its encrypted files after a reload; a production host must implement key
+recovery/unlock and stable account namespace selection.

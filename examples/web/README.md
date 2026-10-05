@@ -6,22 +6,19 @@ This example verifies that a Next.js App Router application can consume
 WalletKit as an ordinary package without owning its Rust wrapper, WASM
 optimization, or asset staging.
 
-Run it from the repository root:
+The example targets the Swift/Kotlin-style object API (`Authenticator`,
+`CredentialStore`, …), which the published `walletkit-web` does not have yet, so
+run it against the package in this checkout. From the example directory, inside the
+WASM Nix shell, build and link it, then start the app:
 
 ```sh
-bun install --cwd examples/web --frozen-lockfile
-bun run --cwd examples/web dev
+nix develop .#wasm --command bash -c \
+  'cd examples/web && bun install --frozen-lockfile && bun run walletkit:local && bun run dev'
 ```
 
-The example installs `walletkit-web` from the npm registry and does not build the
-package's Rust, wasm-bindgen glue, or WASM locally. It targets the Swift/Kotlin-style
-object API (`Authenticator`, `CredentialStore`, …), so until that API is published
-run it with `bun run walletkit:local`. Use `bun run build` to prove the
-production bundle as well.
-
-To test the package from this checkout instead, run `bun run walletkit:local`
-from the example directory inside the WASM Nix shell. This builds and links the
-local package. Run `bun run walletkit:published` to restore the registry package.
+Use `bun run build` to prove the production bundle as well. Once the new API is
+published, `bun run walletkit:published` restores the registry package, which needs
+no local Rust, wasm-bindgen glue or WASM build.
 
 ## What the POC proves
 
@@ -47,8 +44,6 @@ The package is built from the `walletkit-web` crate, a small `wasm-bindgen`
 facade over `walletkit-core`, rather than from generated UniFFI bindings. The
 facade keeps WalletKit's Rust objects inside the worker, hands the page handles to
 them, and returns records as plain data.
-It enables `walletkit-core/uniffi-wasm`, which exports futures without UniFFI's
-Tokio adapter; that adapter needs a fallback thread browser WASM cannot create.
 
 The package is imported dynamically from a Client Component. This keeps the
 WASM module and browser-only APIs out of Next.js server rendering.

@@ -36,6 +36,9 @@ export interface InitializeOptions {
   signal?: AbortSignal;
 }
 
+/** How long `close()` waits for the worker before terminating it. */
+const CLOSE_TIMEOUT_MS = 5000;
+
 type Distribute<T> = T extends unknown ? Omit<T, "id"> : never;
 type Message = Distribute<Request>;
 
@@ -45,7 +48,7 @@ class WorkerClient implements Rpc {
     number,
     { resolve(value: unknown): void; reject(error: Error): void }
   >();
-  private stopped = false;
+  private stopped?: Error;
   private closing?: Promise<void>;
 
   /** @internal Use initializeWalletKit(). */
@@ -64,7 +67,8 @@ class WorkerClient implements Rpc {
    * closing or closed.
    */
   send(message: Message): Promise<unknown> {
-    if (this.stopped || (this.closing && message.op !== "close"))
+    if (this.stopped) return Promise.reject(this.stopped);
+    if (this.closing && message.op !== "close")
       return Promise.reject(new Error("WalletKit is closed"));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
@@ -90,18 +94,46 @@ class WorkerClient implements Rpc {
     this.send({ op: "release", handle }).catch(() => {});
   }
 
-  /** Releases every Rust object, then terminates the worker. */
+  /**
+   * Releases every Rust object, then terminates the worker. The worker handles
+   * requests in order, so a call that never settles would block the reply: after
+   * {@link CLOSE_TIMEOUT_MS} the worker is terminated and the promise rejects.
+   */
   close = (): Promise<void> => {
     if (this.stopped) return Promise.resolve();
-    return (this.closing ??= this.send({ op: "close" })
-      .then(() => {})
-      .finally(() => this.stop(new Error("WalletKit is closed"))));
+    return (this.closing ??= this.closeWithDeadline());
   };
 
   /** Immediately stops the worker and rejects pending calls. */
   terminate = (): void => {
-    this.stop(new Error("WalletKit was terminated"));
+    this.abort(new Error("WalletKit was terminated"));
   };
+
+  /** Stops the worker and rejects pending calls with `reason`. */
+  abort(reason: Error): void {
+    this.stop(reason);
+  }
+
+  private async closeWithDeadline(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `WalletKit did not close within ${CLOSE_TIMEOUT_MS} ms; the worker was terminated`,
+            ),
+          ),
+        CLOSE_TIMEOUT_MS,
+      );
+    });
+    try {
+      await Promise.race([this.send({ op: "close" }), deadline]);
+    } finally {
+      clearTimeout(timer);
+      this.stop(new Error("WalletKit is closed"));
+    }
+  }
 
   private handleResponse(response: Response) {
     const pending = this.pending.get(response.id);
@@ -109,14 +141,18 @@ class WorkerClient implements Rpc {
     this.pending.delete(response.id);
     if (response.ok) pending.resolve(response.result);
     else {
-      const error = new Error(response.error.message);
-      error.name = response.error.name;
+      const { name, message } = response.error;
+      const error =
+        name === "TypeError" ? new TypeError(message) : new Error(message);
+      error.name = name;
+      if (response.error.code)
+        Object.assign(error, { code: response.error.code });
       pending.reject(error);
     }
   }
 
   private stop(error: Error) {
-    this.stopped = true;
+    this.stopped ??= error;
     this.worker.terminate();
     for (const pending of this.pending.values()) pending.reject(error);
     this.pending.clear();
@@ -144,7 +180,12 @@ export async function initializeWalletKit(
       });
 
   const client = new WorkerClient(worker);
-  const abort = () => client.terminate();
+  const abort = () => {
+    const reason: unknown = options.signal?.reason;
+    client.abort(
+      reason instanceof Error ? reason : new Error("WalletKit was terminated"),
+    );
+  };
 
   options.signal?.addEventListener("abort", abort, { once: true });
 

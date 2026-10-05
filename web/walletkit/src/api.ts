@@ -8,7 +8,16 @@
  * them when finished. Pass arguments as the Rust types describe: `u64` values are
  * `bigint`, byte arrays are `Uint8Array`.
  */
-import type { ClassName, Handle, Ref, Target } from "./protocol";
+import { API } from "./protocol";
+import type {
+  ClassName,
+  FunctionName,
+  Handle,
+  MethodName,
+  Ref,
+  StaticName,
+  Target,
+} from "./protocol";
 import type {
   ActivityEntry,
   ActivityMetadata,
@@ -36,7 +45,7 @@ const finalizer = new FinalizationRegistry<{ rpc: Rpc; handle: Handle }>(
 );
 
 /** A Rust object owned by the worker. */
-export abstract class RemoteObject {
+export abstract class RemoteObject<C extends ClassName = ClassName> {
   /** @internal */
   readonly rpc: Rpc;
   /** @internal */
@@ -56,13 +65,13 @@ export abstract class RemoteObject {
   }
 
   /** @internal */
-  protected invoke<T>(method: string, ...args: unknown[]): Promise<T> {
+  protected invoke<T>(method: MethodName<C>, ...args: unknown[]): Promise<T> {
     return this.rpc.call({ handle: this.handle, method }, args) as Promise<T>;
   }
 }
 
 /** An element of the scalar field used by the World ID proofs. */
-export class FieldElement extends RemoteObject {
+export class FieldElement extends RemoteObject<"FieldElement"> {
   toBytes() {
     return this.invoke<Uint8Array>("toBytes");
   }
@@ -72,7 +81,7 @@ export class FieldElement extends RemoteObject {
 }
 
 /** A World ID credential issued to the holder. */
-export class Credential extends RemoteObject {
+export class Credential extends RemoteObject<"Credential"> {
   sub() {
     return this.invoke<FieldElement>("sub");
   }
@@ -100,7 +109,7 @@ export class Credential extends RemoteObject {
 }
 
 /** A proof request received from a relying party. */
-export class ProofRequest extends RemoteObject {
+export class ProofRequest extends RemoteObject<"ProofRequest"> {
   toJson() {
     return this.invoke<string>("toJson");
   }
@@ -113,7 +122,7 @@ export class ProofRequest extends RemoteObject {
 }
 
 /** The response to a {@link ProofRequest}. */
-export class ProofResponse extends RemoteObject {
+export class ProofResponse extends RemoteObject<"ProofResponse"> {
   toJson() {
     return this.invoke<string>("toJson");
   }
@@ -129,10 +138,10 @@ export class ProofResponse extends RemoteObject {
 }
 
 /** The 32-byte database key that encrypts the credential store. */
-export class StorageKeys extends RemoteObject {}
+export class StorageKeys extends RemoteObject<"StorageKeys"> {}
 
 /** The location of the credential store inside the browser's OPFS pool. */
-export class StoragePaths extends RemoteObject {
+export class StoragePaths extends RemoteObject<"StoragePaths"> {
   rootPathString() {
     return this.invoke<string>("rootPathString");
   }
@@ -166,10 +175,10 @@ export class StoragePaths extends RemoteObject {
 }
 
 /** Proving material compiled into the WASM module. */
-export class EmbeddedZkArtifacts extends RemoteObject {}
+export class EmbeddedZkArtifacts extends RemoteObject<"EmbeddedZkArtifacts"> {}
 
 /** The encrypted store of credentials and activity. `now` defaults to the current time. */
-export class CredentialStore extends RemoteObject {
+export class CredentialStore extends RemoteObject<"CredentialStore"> {
   storagePaths() {
     return this.invoke<StoragePaths>("storagePaths");
   }
@@ -230,7 +239,7 @@ export class CredentialStore extends RemoteObject {
 }
 
 /** The main component with which users interact with the World ID Protocol. */
-export class Authenticator extends RemoteObject {
+export class Authenticator extends RemoteObject<"Authenticator"> {
   initStorage(now = nowSeconds()) {
     return this.invoke<void>("initStorage", now);
   }
@@ -317,7 +326,7 @@ export class Authenticator extends RemoteObject {
 }
 
 /** A World ID registration that has been submitted but not yet finalized. */
-export class InitializingAuthenticator extends RemoteObject {
+export class InitializingAuthenticator extends RemoteObject<"InitializingAuthenticator"> {
   pollStatus() {
     return this.invoke<RegistrationStatus>("pollStatus");
   }
@@ -346,6 +355,11 @@ export function encode(value: unknown): unknown {
     return { $ref: value.handle };
   }
   if (Array.isArray(value)) return value.map(encode);
+  // Structured clone copies a view's entire backing buffer. Send only the bytes
+  // the caller passed, so the worker does not receive (and cannot be asked to clear) the rest.
+  if (ArrayBuffer.isView(value) && value instanceof Uint8Array) {
+    return value.slice();
+  }
   return value;
 }
 
@@ -483,48 +497,46 @@ export function createApi(
   lifecycle: Pick<WalletKit, "close" | "terminate">,
 ): WalletKit {
   const call = (target: Target, ...args: unknown[]) => rpc.call(target, args);
-  const statics = <T>(className: ClassName, names: readonly (keyof T)[]): T =>
+  // Static functions of `className`, as listed in the API registry.
+  const statics = <
+    C extends ClassName,
+    T extends Record<StaticName<C>, (...args: never[]) => Promise<unknown>>,
+  >(
+    className: C,
+  ): T =>
     Object.fromEntries(
-      names.map((name) => [
+      API[className].statics.map((name) => [
         name,
         (...args: unknown[]) =>
-          call({ class: className, static: name as string }, ...args),
+          call({ class: className, static: name }, ...args),
       ]),
-    ) as T;
+    ) as unknown as T;
   const construct = (className: ClassName) => ({
     new: (...args: unknown[]) =>
       call({ class: className, construct: true }, ...args),
   });
   const fn =
-    <A extends unknown[], R>(
-      name: Extract<Target, { function: string }>["function"],
-    ) =>
+    <A extends unknown[], R>(name: FunctionName) =>
     (...args: A) =>
       call({ function: name }, ...args) as Promise<R>;
 
   return {
-    Authenticator: statics<AuthenticatorStatic>("Authenticator", [
-      "initWithDefaults",
-      "initWithOhttpDefaults",
-      "init",
-    ]),
-    InitializingAuthenticator: statics<InitializingAuthenticatorStatic>(
-      "InitializingAuthenticator",
-      ["registerWithDefaults", "registerWithOhttpDefaults", "register"],
+    Authenticator: statics<"Authenticator", AuthenticatorStatic>(
+      "Authenticator",
     ),
+    InitializingAuthenticator: statics<
+      "InitializingAuthenticator",
+      InitializingAuthenticatorStatic
+    >("InitializingAuthenticator"),
     CredentialStore: construct("CredentialStore") as CredentialStoreStatic,
-    StorageKeys: statics<StorageKeysStatic>("StorageKeys", ["fromBytes"]),
-    StoragePaths: statics<StoragePathsStatic>("StoragePaths", ["fromRoot"]),
+    StorageKeys: statics<"StorageKeys", StorageKeysStatic>("StorageKeys"),
+    StoragePaths: statics<"StoragePaths", StoragePathsStatic>("StoragePaths"),
     EmbeddedZkArtifacts: construct(
       "EmbeddedZkArtifacts",
     ) as EmbeddedZkArtifactsStatic,
-    FieldElement: statics<FieldElementStatic>("FieldElement", [
-      "fromBytes",
-      "fromU64",
-      "tryFromHexString",
-    ]),
-    Credential: statics<CredentialStatic>("Credential", ["fromBytes"]),
-    ProofRequest: statics<ProofRequestStatic>("ProofRequest", ["fromJson"]),
+    FieldElement: statics<"FieldElement", FieldElementStatic>("FieldElement"),
+    Credential: statics<"Credential", CredentialStatic>("Credential"),
+    ProofRequest: statics<"ProofRequest", ProofRequestStatic>("ProofRequest"),
 
     recoveryDataFromSeed: fn("recoveryDataFromSeed"),
     validateAuthenticatorPubkey: fn("validateAuthenticatorPubkey"),
