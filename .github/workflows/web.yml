@@ -135,10 +135,12 @@ jobs:
           nix develop ../..#wasm --command npm pack --pack-destination "$RUNNER_TEMP/pack"
           TARBALL=$(ls "$RUNNER_TEMP"/pack/*.tgz)
           echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
-          tar -tzf "$TARBALL"
+          # List once: `tar | grep -q` would fail under pipefail when grep exits early.
+          CONTENTS=$(tar -tzf "$TARBALL")
+          echo "$CONTENTS"
           for file in dist/index.js dist/index.d.ts dist/walletkit.worker.js \
-            dist/generated/walletkit.wasm README.md; do
-            tar -tzf "$TARBALL" | grep -qx "package/$file" || {
+            dist/generated/walletkit.wasm dist/generated/walletkit.d.ts README.md; do
+            grep -qx "package/$file" <<< "$CONTENTS" || {
               echo "::error::$file is missing from the package tarball"
               exit 1
             }
