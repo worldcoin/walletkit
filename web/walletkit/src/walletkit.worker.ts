@@ -97,8 +97,15 @@ async function installPersistentStorage(): Promise<void> {
       return await wasm.initializePersistentStorage();
     } catch (error) {
       const delay = POOL_RETRY_DELAYS_MS[attempt];
+      // Every install failure has code `PersistentStorage`; only another context
+      // holding the pool is transient. sqlite-wasm-vfs (pinned) reports that as a
+      // failure to create a sync access handle. Not-supported, directory and
+      // quota failures are reported at once.
+      const { code, message } = error as { code?: unknown; message?: unknown };
       const poolBusy =
-        (error as { code?: unknown }).code === "PersistentStorage";
+        code === "PersistentStorage" &&
+        typeof message === "string" &&
+        message.includes("creating sync access handle");
       if (!poolBusy || delay === undefined) throw error;
       // Jitter so contexts racing for the pool do not retry in lockstep.
       await new Promise((resolve) =>
