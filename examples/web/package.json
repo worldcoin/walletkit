@@ -13,7 +13,8 @@
     "test": "bun test",
     "build": "next build",
     "start": "next start",
-    "walletkit:local": "bun run --cwd ../../web/walletkit build && bun link --cwd ../../web/walletkit && bun install"
+    "walletkit:local": "bun install --cwd ../../web/walletkit --frozen-lockfile && bun run --cwd ../../web/walletkit build && bun run walletkit:link",
+    "walletkit:link": "bun link --cwd ../../web/walletkit && bun install --frozen-lockfile"
   },
   "dependencies": {
     "lossless-json": "^4.3.1",

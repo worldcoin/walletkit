@@ -7,7 +7,7 @@ import type {
   WalletKit,
 } from "@worldcoin/walletkit-web";
 
-const FAUX_ISSUER_SCHEMA_ID = 128n;
+export const FAUX_ISSUER_SCHEMA_ID = 128n;
 const STAGING_RP_ID = 46n;
 const STAGING_RP_PRIVATE_KEY =
   "0x1111111111111111111111111111111111111111111111111111111111111111";
@@ -50,12 +50,18 @@ export async function issueFauxCredential(
     );
   try {
     const subElement = await authenticator.computeCredentialSub(blindingFactor);
-    const sub = await subElement.toHexString();
-    subElement.free();
+    let sub: string;
+    try {
+      sub = await subElement.toHexString();
+    } finally {
+      subElement.free();
+    }
     const response = await fetch("/api/faux-credential", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sub }),
+      // The route bounds its upstream call at 15 s; do not wait much longer.
+      signal: AbortSignal.timeout(20_000),
     });
     if (!response.ok) {
       throw new Error(
