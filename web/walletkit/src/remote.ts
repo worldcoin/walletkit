@@ -121,8 +121,16 @@ function release(binding: Binding): void {
  * @internal Replaces proxies with the handles `rpc`'s worker can resolve. A proxy
  * from another (for example closed and reopened) client, or one already freed, is
  * rejected rather than sent: its handle could name an unrelated object there.
+ *
+ * Byte arrays are copied, and the copies' buffers are added to `transfer` so that
+ * `postMessage` moves them to the worker (which clears them) instead of leaving a
+ * second copy of a seed or key in the page heap. The caller's array is untouched.
  */
-export function encode(rpc: Rpc, value: unknown): unknown {
+export function encode(
+  rpc: Rpc,
+  value: unknown,
+  transfer: ArrayBuffer[],
+): unknown {
   if (typeof value === "object" && value !== null) {
     const binding = bindings.get(value);
     if (binding !== undefined) {
@@ -137,10 +145,15 @@ export function encode(rpc: Rpc, value: unknown): unknown {
       return { $ref: binding.handle } satisfies Ref;
     }
   }
-  if (Array.isArray(value)) return value.map((item) => encode(rpc, item));
-  // Structured clone copies a view's whole backing buffer: send only the viewed
-  // bytes, so the worker receives (and clears) no more than the caller passed.
-  if (value instanceof Uint8Array) return value.slice();
+  if (Array.isArray(value)) {
+    return value.map((item) => encode(rpc, item, transfer));
+  }
+  // Copying also sends only the viewed bytes, not a view's whole backing buffer.
+  if (value instanceof Uint8Array) {
+    const copy = value.slice();
+    transfer.push(copy.buffer);
+    return copy;
+  }
   return value;
 }
 

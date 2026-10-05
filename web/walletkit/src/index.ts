@@ -74,7 +74,7 @@ class WorkerClient implements Rpc {
    * response with the matching request ID. Rejects immediately if the client is
    * closing or closed.
    */
-  send(message: Message): Promise<unknown> {
+  send(message: Message, transfer: Transferable[] = []): Promise<unknown> {
     if (this.stopped) return Promise.reject(this.stopReason);
     if (this.closing && message.op !== "close")
       return Promise.reject(new Error("WalletKit is closed"));
@@ -82,7 +82,7 @@ class WorkerClient implements Rpc {
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       try {
-        this.worker.postMessage({ ...message, id } as Request);
+        this.worker.postMessage({ ...message, id } as Request, transfer);
       } catch (error) {
         this.pending.delete(id);
         reject(error);
@@ -91,13 +91,11 @@ class WorkerClient implements Rpc {
   }
 
   async call(target: Target, args: unknown[]): Promise<unknown> {
+    const transfer: ArrayBuffer[] = [];
+    const encoded = args.map((arg) => encode(this, arg, transfer));
     return decode(
       this,
-      await this.send({
-        op: "call",
-        target,
-        args: args.map((arg) => encode(this, arg)),
-      }),
+      await this.send({ op: "call", target, args: encoded }, transfer),
     );
   }
 

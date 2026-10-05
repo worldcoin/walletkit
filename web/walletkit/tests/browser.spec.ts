@@ -11,6 +11,12 @@ test("packaged worker initializes, correlates calls, reports errors and closes",
   const result = await page.evaluate(async () => {
     const w = window as any;
     const wallet = await w.initializeWalletKit();
+    // Byte arguments are copied and the copies transferred: the caller's array
+    // stays intact and usable.
+    const seed = new Uint8Array(32).fill(1);
+    await wallet.recoveryDataFromSeed(seed);
+    const seedIntact =
+      seed.byteLength === 32 && seed.every((b: number) => b === 1);
     const identities = await Promise.all([
       wallet.recoveryDataFromSeed(new Uint8Array(32).fill(1)),
       wallet.recoveryDataFromSeed(new Uint8Array(32).fill(2)),
@@ -22,12 +28,13 @@ test("packaged worker initializes, correlates calls, reports errors and closes",
     const closed = await wallet
       .recoveryDataFromSeed(new Uint8Array(32))
       .catch((e: Error) => e.message);
-    return { identities, error, closed };
+    return { identities, error, closed, seedIntact };
   });
   expect(result.identities[0].authenticatorAddress).not.toEqual(
     result.identities[1].authenticatorAddress,
   );
   expect(result.error).toContain("InvalidInput");
+  expect(result.seedIntact).toBe(true);
   expect(result.closed).toContain("closed");
 });
 
