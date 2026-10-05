@@ -1,7 +1,11 @@
 import { parse, stringify } from "lossless-json";
 import { privateKeyToAccount } from "viem/accounts";
 
-import type { Authenticator, CredentialStore, WalletKit } from "@worldcoin/walletkit-web";
+import type {
+  Authenticator,
+  CredentialStore,
+  WalletKit,
+} from "@worldcoin/walletkit-web";
 
 const FAUX_ISSUER_SCHEMA_ID = 128n;
 const STAGING_RP_ID = 46n;

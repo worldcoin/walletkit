@@ -56,7 +56,9 @@ export default function Home() {
         databaseKey = new Uint8Array(saved.databaseKey);
         currentSeed.set(saved.seed);
         seed.current = currentSeed;
-        const { initializeWalletKit } = await import("@worldcoin/walletkit-web");
+        const { initializeWalletKit } = await import(
+          "@worldcoin/walletkit-web"
+        );
         if (controller.signal.aborted) return;
         client = await initializeWalletKit({ signal: controller.signal });
         if (controller.signal.aborted) {
