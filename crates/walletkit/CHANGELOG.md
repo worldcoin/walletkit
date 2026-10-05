@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0](https://github.com/worldcoin/walletkit/compare/v0.26.0...v0.27.0) - 2026-10-05
+
+### Added
+
+- *(flamingo)* add optional attested request signing ([#579](https://github.com/worldcoin/walletkit/pull/579))
+- *(activity)* [**breaking**] filter credential activity by issuer schema id ([#583](https://github.com/worldcoin/walletkit/pull/583))
+
 ## [0.26.0](https://github.com/worldcoin/walletkit/compare/v0.25.2...v0.26.0) - 2026-10-02
 
 ### Added
