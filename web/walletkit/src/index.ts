@@ -92,11 +92,20 @@ class WorkerClient implements Rpc {
 
   async call(target: Target, args: unknown[]): Promise<unknown> {
     const transfer: ArrayBuffer[] = [];
-    const encoded = args.map((arg) => encode(this, arg, transfer));
-    return decode(
-      this,
-      await this.send({ op: "call", target, args: encoded }, transfer),
-    );
+    let reply: Promise<unknown>;
+    try {
+      const encoded = args.map((arg) => encode(this, arg, transfer));
+      reply = this.send({ op: "call", target, args: encoded }, transfer);
+    } finally {
+      // Transferred buffers are now detached and empty. Any copy left behind, because
+      // encoding failed part-way or nothing was posted, is cleared here instead of
+      // waiting for garbage collection.
+      for (const buffer of transfer) {
+        // A detached buffer has length 0, and viewing it would throw.
+        if (buffer.byteLength > 0) new Uint8Array(buffer).fill(0);
+      }
+    }
+    return decode(this, await reply);
   }
 
   release(handle: Handle): void {

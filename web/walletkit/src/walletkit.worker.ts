@@ -110,15 +110,16 @@ async function installPersistentStorage(): Promise<void> {
 
 async function call(target: Target, encodedArgs: unknown[]): Promise<unknown> {
   if (!initialized) throw new Error("WalletKit is not initialized");
-  let args: unknown[] = encodedArgs;
+  let result: unknown;
   try {
-    args = encodedArgs.map(resolve);
-    return reveal(await invoke(target, args));
+    result = invoke(target, encodedArgs.map(resolve));
   } finally {
-    // The page sent copies; clear any secret bytes (seeds, keys) held here, even
-    // when an argument failed to resolve.
+    // wasm-bindgen copies byte arguments into Rust during the call itself, so clear
+    // the page's copies (seeds, keys) now: not after a network call settles, which
+    // may take long. Also cleared when an argument fails to resolve.
     for (const arg of encodedArgs) if (arg instanceof Uint8Array) arg.fill(0);
   }
+  return reveal(await result);
 }
 
 /** Calls only functions and methods the Rust module exports. */

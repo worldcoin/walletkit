@@ -110,10 +110,16 @@ test("proxies belong to the instance that created them", async ({ page }) => {
       const foreign = await second.CredentialStore.new(paths, keys).catch(
         (e: Error) => `${e.name}: ${e.message}`,
       );
+      // Encoding fails on the foreign proxy after the seed was already copied.
+      const seed = new Uint8Array(32).fill(5);
+      const mixed = await second
+        .checkCredentialsAgainstProofRequest(seed, keys)
+        .catch((e: Error) => e.name);
+      const seedIntact = seed.every((b: number) => b === 5);
       const outOfRange = await second.FieldElement.fromU64(
         2n ** 64n + 7n,
       ).catch((e: Error) => `${e.name}: ${e.message}`);
-      return { foreign, outOfRange };
+      return { foreign, outOfRange, mixed, seedIntact };
     } finally {
       await second.close();
     }
@@ -122,6 +128,8 @@ test("proxies belong to the instance that created them", async ({ page }) => {
     "TypeError: This WalletKit object belongs to a different WalletKit instance",
   );
   expect(result.outOfRange).toMatch(/^TypeError: `value` must be a bigint/);
+  expect(result.mixed).toBe("TypeError");
+  expect(result.seedIntact).toBe(true);
 });
 
 test("encrypted databases reopen with a directly supplied key", async ({
