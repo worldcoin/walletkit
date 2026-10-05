@@ -13,6 +13,7 @@ name: Web package (@worldcoin/walletkit-web)
 on:
   pull_request:
     paths:
+      - ".cargo/**"
       - ".github/workflows/web.yml"
       - "Cargo.lock"
       - "Cargo.toml"
@@ -29,6 +30,7 @@ on:
     branches:
       - main
     paths:
+      - ".cargo/**"
       - ".github/workflows/web.yml"
       - "Cargo.lock"
       - "Cargo.toml"
