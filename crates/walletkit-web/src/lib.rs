@@ -93,9 +93,6 @@ export interface ActivityEntry {
   failureReason?: ActivityFailureReason;
 }
 
-/** No filters are supported yet. */
-export type ActivityQuery = Record<string, never>;
-
 export interface ActivityMetadata {
   totalCount: bigint;
 }

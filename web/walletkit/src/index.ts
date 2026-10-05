@@ -3,6 +3,7 @@ import type { Rpc, WalletKit } from "./remote";
 import type { Handle, Request, Response, Target } from "./protocol";
 
 export type {
+  ActivityQuery,
   Authenticator,
   Credential,
   CredentialStore,
@@ -23,7 +24,6 @@ export type {
   ActivityFailureReason,
   ActivityMetadata,
   ActivityOutcome,
-  ActivityQuery,
   CredentialConstraintsCheckItem,
   CredentialConstraintsCheckResult,
   CredentialRecord,
@@ -52,9 +52,11 @@ class WorkerClient implements Rpc {
   private nextId = 0;
   private pending = new Map<
     number,
-    { resolve(value: unknown): void; reject(error: Error): void }
+    { resolve(value: unknown): void; reject(reason: unknown): void }
   >();
-  private stopped?: Error;
+  private stopped = false;
+  /** Why the client stopped; any value, since an `AbortSignal` reason can be one. */
+  private stopReason: unknown;
   private closing?: Promise<void>;
 
   /** @internal Use initializeWalletKit(). */
@@ -73,7 +75,7 @@ class WorkerClient implements Rpc {
    * closing or closed.
    */
   send(message: Message): Promise<unknown> {
-    if (this.stopped) return Promise.reject(this.stopped);
+    if (this.stopped) return Promise.reject(this.stopReason);
     if (this.closing && message.op !== "close")
       return Promise.reject(new Error("WalletKit is closed"));
     const id = this.nextId++;
@@ -115,8 +117,8 @@ class WorkerClient implements Rpc {
     this.abort(new Error("WalletKit was terminated"));
   };
 
-  /** Stops the worker and rejects pending calls with `reason`. */
-  abort(reason: Error): void {
+  /** Stops the worker and rejects pending calls with `reason`, whatever it is. */
+  abort(reason: unknown): void {
     this.stop(reason);
   }
 
@@ -157,10 +159,13 @@ class WorkerClient implements Rpc {
     }
   }
 
-  private stop(error: Error) {
-    this.stopped ??= error;
+  private stop(reason: unknown) {
+    if (!this.stopped) {
+      this.stopped = true;
+      this.stopReason = reason;
+    }
     this.worker.terminate();
-    for (const pending of this.pending.values()) pending.reject(error);
+    for (const pending of this.pending.values()) pending.reject(reason);
     this.pending.clear();
   }
 }
@@ -186,12 +191,8 @@ export async function initializeWalletKit(
       });
 
   const client = new WorkerClient(worker);
-  const abort = () => {
-    const reason: unknown = options.signal?.reason;
-    client.abort(
-      reason instanceof Error ? reason : new Error("WalletKit was terminated"),
-    );
-  };
+  // Reject with the signal's own reason, like `signal.throwIfAborted()` does.
+  const abort = () => client.abort(options.signal?.reason);
 
   options.signal?.addEventListener("abort", abort, { once: true });
 

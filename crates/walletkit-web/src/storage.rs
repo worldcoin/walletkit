@@ -121,6 +121,33 @@ impl JsStoragePaths {
     }
 }
 
+/// Filters for [`JsCredentialStore::list_activities`], built like the native builder.
+#[wasm_bindgen(js_name = ActivityQuery)]
+pub struct JsActivityQuery(ActivityQuery);
+
+#[wasm_bindgen(js_class = ActivityQuery)]
+impl JsActivityQuery {
+    /// A query without filters.
+    #[wasm_bindgen(js_name = new)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self(ActivityQuery::new())
+    }
+
+    /// Restricts the query to activity that disclosed `issuer_schema_id`.
+    #[wasm_bindgen(js_name = withIssuerSchemaId)]
+    #[must_use]
+    pub fn with_issuer_schema_id(&self, issuer_schema_id: u64) -> Self {
+        Self(self.0.with_issuer_schema_id(issuer_schema_id))
+    }
+}
+
+impl Default for JsActivityQuery {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The encrypted store of credentials and activity.
 #[wasm_bindgen(js_name = CredentialStore)]
 pub struct JsCredentialStore(pub(crate) Arc<CredentialStore>);
@@ -247,19 +274,15 @@ impl JsCredentialStore {
     #[wasm_bindgen(js_name = listActivities, unchecked_return_type = "ActivityEntry[]")]
     pub fn list_activities(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "ActivityQuery")] query: &JsValue,
+        query: &JsActivityQuery,
         #[wasm_bindgen(unchecked_param_type = "number")] limit: f64,
         #[wasm_bindgen(unchecked_param_type = "number")] offset: f64,
     ) -> Result<JsValue, JsValue> {
         let (limit, offset) =
             (js::u32_arg("limit", limit)?, js::u32_arg("offset", offset)?);
-        // `ActivityQuery` has no filters yet.
-        if !query.is_object() {
-            return Err(invalid_argument("`query` must be an object"));
-        }
         let entries = self
             .0
-            .list_activities(ActivityQuery {}, limit, offset)
+            .list_activities(&query.0, limit, offset)
             .map_err(to_js)?;
         let entries = entries
             .iter()

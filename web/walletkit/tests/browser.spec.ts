@@ -78,16 +78,26 @@ test("encrypted databases reopen with a directly supplied key", async ({
   }).toPass({ timeout: 5000 });
 });
 
-test("abort cancels initialization", async ({ page }) => {
+test("abort cancels initialization with the signal's reason", async ({
+  page,
+}) => {
   const result = await page.evaluate(async () => {
     const w = window as any;
-    const controller = new AbortController();
-    const pending = w.initializeWalletKit({ signal: controller.signal });
-    controller.abort();
-    return pending.catch((e: Error) => e.name);
+    const aborted = async (reason?: unknown) => {
+      const controller = new AbortController();
+      const pending = w.initializeWalletKit({ signal: controller.signal });
+      controller.abort(reason);
+      return pending.catch((e: unknown) => e);
+    };
+    const byDefault = await aborted();
+    return {
+      defaultName: (byDefault as Error).name,
+      custom: await aborted("navigation"),
+    };
   });
   // The caller sees the signal's own reason, so cancellation is detectable.
-  expect(result).toBe("AbortError");
+  expect(result.defaultName).toBe("AbortError");
+  expect(result.custom).toBe("navigation");
 });
 
 test("custom worker and Wasm URLs load the same runtime", async ({ page }) => {
@@ -157,7 +167,8 @@ test("Rust errors keep their name and variant detail across the worker", async (
     const keys = await wallet.StorageKeys.fromBytes(new Uint8Array(32).fill(3));
     const paths = await wallet.StoragePaths.fromRoot("/walletkit/args");
     const store = await wallet.CredentialStore.new(paths, keys);
-    const negativeLimit = await capture(store.listActivities({}, -1, 0));
+    const query = await wallet.ActivityQuery.new();
+    const negativeLimit = await capture(store.listActivities(query, -1, 0));
     await wallet.close();
     return {
       invalidSeed,
@@ -207,7 +218,13 @@ test("Rust objects stay in the worker and are used through handles", async ({
       issuerSchemaIds: [1n, 2n],
     };
     const activityId = await store.recordActivity(entry, 1000n);
-    const activities = await store.listActivities({}, 10, 0);
+    const query = await wallet.ActivityQuery.new();
+    const activities = await store.listActivities(query, 10, 0);
+    const filtered = await store.listActivities(
+      await query.withIssuerSchemaId(3n),
+      10,
+      0,
+    );
     const metadata = await store.activityMetadata();
     const sameRoot = await (await store.storagePaths()).rootPathString();
 
@@ -220,6 +237,7 @@ test("Rust objects stay in the worker and are used through handles", async ({
       credentials,
       activityId,
       activities,
+      filtered,
       metadata,
       sameRoot,
       released,
@@ -229,6 +247,7 @@ test("Rust objects stay in the worker and are used through handles", async ({
   expect(result.roundTripLength).toBe(32);
   expect(result.credentials).toEqual([]);
   expect(result.activities).toHaveLength(1);
+  expect(result.filtered).toEqual([]);
   expect(result.activities[0]).toMatchObject({
     id: result.activityId,
     appIdentifier: "app_test",

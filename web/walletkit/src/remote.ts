@@ -78,6 +78,7 @@ export type WalletKit = {
   terminate(): void;
 };
 
+export type ActivityQuery = RemoteObject<Wasm.ActivityQuery>;
 export type Authenticator = RemoteObject<Wasm.Authenticator>;
 export type InitializingAuthenticator =
   RemoteObject<Wasm.InitializingAuthenticator>;

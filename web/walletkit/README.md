@@ -47,14 +47,16 @@ until its last owner releases it.
 `StorageKeys.fromBytes` and `CredentialStore.new(paths, keys)` are browser-only:
 the browser has no device keystore, so the host supplies the key and no key
 envelope is written. Mobile hosts keep opening the store from their keystore and
-blob store. `destroyStorage()` deletes the databases; discarding a supplied key is
-up to the host.
+blob store. With a supplied key there is no envelope to delete, so
+`destroyStorage()` rejects unless the database files are actually removed, and the
+store drops its key reference either way; discarding the host's own copy is up to
+the host.
 
 ## Browser API
 
 The classes, methods and arguments mirror the `walletkit-core` UniFFI objects that
 the Swift and Kotlin bindings expose, in `camelCase`: `Authenticator`,
-`InitializingAuthenticator`, `CredentialStore`, `StorageKeys`, `StoragePaths`,
+`InitializingAuthenticator`, `CredentialStore`, `ActivityQuery`, `StorageKeys`, `StoragePaths`,
 `EmbeddedZkArtifacts`, `FieldElement`, `Credential`, `ProofRequest` and
 `ProofResponse`, plus `recoveryDataFromSeed`, `validateAuthenticatorPubkey`,
 `checkCredentialsAgainstProofRequest`, `pohRecoveryAgentAddress` and
