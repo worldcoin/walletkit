@@ -172,8 +172,12 @@ pre-release version (`X.Y.Z-rc.1`) is published under the `next` dist-tag instea
 
 Publishing uses npm [trusted publishing](https://docs.npmjs.com/trusted-publishers),
 so the repository holds no npm token. One-time setup on npmjs.com, under the
-`walletkit-web` package settings: add a trusted publisher for GitHub repository
-`worldcoin/walletkit`, workflow `web.yml`, environment `production`.
+`@worldcoin/walletkit-web` package settings: add a trusted publisher for GitHub
+repository `worldcoin/walletkit`, workflow `web.yml`, environment `production`. The
+scoped package does not exist yet, so its first version may have to be published by
+hand (or with a short-lived token) before a trusted publisher can be attached. After
+the first scoped release, point users of the old unscoped package at it with
+`npm deprecate walletkit-web "Moved to @worldcoin/walletkit-web"`.
 
-To roll back a bad release, `npm deprecate walletkit-web@X.Y.Z "<reason>"` and
-publish a fixed version; do not rely on `npm unpublish`.
+To roll back a bad release, `npm deprecate @worldcoin/walletkit-web@X.Y.Z "<reason>"`
+and publish a fixed version; do not rely on `npm unpublish`.
