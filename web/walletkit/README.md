@@ -156,3 +156,24 @@ matches the version in `Cargo.lock`.
 The example persists its storage ID and database key in `localStorage` so it can
 reopen its encrypted files after a reload; a production host must implement key
 recovery/unlock and stable account namespace selection.
+
+## Releasing
+
+[`web.yml`](../../.github/workflows/web.yml) builds, tests and publishes the package.
+Pull requests and pushes to `main` build it with the pinned `nix develop .#wasm`
+toolchain, run `format:check` and the browser tests, and verify the tarball contents.
+Nothing is published from them.
+
+Publishing happens when release-plz publishes a GitHub release (tag `vX.Y.Z`): the
+same job stamps `X.Y.Z` into `package.json`, packs the tarball, and a second job in
+the `production` environment publishes that exact tarball with provenance. A
+pre-release version (`X.Y.Z-rc.1`) is published under the `next` dist-tag instead of
+`latest`, and re-running a release skips a version that is already on npm.
+
+Publishing uses npm [trusted publishing](https://docs.npmjs.com/trusted-publishers),
+so the repository holds no npm token. One-time setup on npmjs.com, under the
+`walletkit-web` package settings: add a trusted publisher for GitHub repository
+`worldcoin/walletkit`, workflow `web.yml`, environment `production`.
+
+To roll back a bad release, `npm deprecate walletkit-web@X.Y.Z "<reason>"` and
+publish a fixed version; do not rely on `npm unpublish`.
