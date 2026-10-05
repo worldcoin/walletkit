@@ -110,7 +110,10 @@ Operations run in order, including asynchronous work, and have no deadline of th
 own: a network call that never settles blocks the calls queued behind it. `close()`
 drains queued operations, frees every Rust object and terminates the worker; if the
 worker does not answer within 5 seconds it is terminated and `close()` rejects.
-`terminate()` interrupts immediately and rejects pending requests. Worker failures also reject
+`terminate()` interrupts immediately and rejects pending requests. `isStopped()`
+reports whether the instance can still serve calls: it turns `true` after `close()`,
+`terminate()`, a worker failure or a Rust panic, and the app should then initialize
+a new instance. Worker failures also reject
 pending requests. An optional `signal` cancels initialization only; after it
 resolves, use `close()` or `terminate()`.
 

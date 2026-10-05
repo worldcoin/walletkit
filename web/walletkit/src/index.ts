@@ -114,6 +114,9 @@ class WorkerClient implements Rpc {
     return (this.closing ??= this.closeWithDeadline());
   };
 
+  /** Whether this instance can no longer serve calls: closed, terminated or crashed. */
+  isStopped = (): boolean => this.stopped;
+
   /** Immediately stops the worker and rejects pending calls. */
   terminate = (): void => {
     this.abort(new Error("WalletKit was terminated"));
@@ -158,6 +161,9 @@ class WorkerClient implements Rpc {
       if (response.error.code)
         Object.assign(error, { code: response.error.code });
       pending.reject(error);
+      // A trapped module cannot recover: stop, so every later call fails fast with
+      // this error and `isStopped()` tells the app to reinitialize.
+      if (response.error.fatal) this.stop(error);
     }
   }
 

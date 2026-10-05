@@ -76,6 +76,11 @@ export type WalletKit = {
   close(): Promise<void>;
   /** Immediately stops the worker and rejects pending calls. */
   terminate(): void;
+  /**
+   * Whether this instance can no longer serve calls because it was closed or
+   * terminated, its worker failed, or the module crashed. Reinitialize to recover.
+   */
+  isStopped(): boolean;
 };
 
 export type ActivityQuery = RemoteObject<Wasm.ActivityQuery>;
@@ -192,7 +197,7 @@ function remoteObject(binding: Binding): object {
 /** @internal Builds the `WalletKit` API on top of a transport. */
 export function createApi(
   rpc: Rpc,
-  lifecycle: Pick<WalletKit, "close" | "terminate">,
+  lifecycle: Pick<WalletKit, "close" | "terminate" | "isStopped">,
 ): WalletKit {
   const named = (call: (name: string) => unknown) =>
     new Proxy(Object.create(null), {
@@ -203,6 +208,7 @@ export function createApi(
   return named((name) => {
     if (name === "close") return lifecycle.close;
     if (name === "terminate") return lifecycle.terminate;
+    if (name === "isStopped") return lifecycle.isStopped;
     // Classes are PascalCase and functions camelCase, as wasm-bindgen exports them.
     if (/^[A-Z]/.test(name)) {
       if (!classes.has(name)) {

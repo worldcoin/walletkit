@@ -55,7 +55,11 @@ scope.onmessage = ({ data }) => {
           `WalletKit crashed and must be reinitialized: ${error.message}`,
         );
       }
-      scope.postMessage({ id: data.id, ok: false, error: serialize(error) });
+      scope.postMessage({
+        id: data.id,
+        ok: false,
+        error: { ...serialize(error), ...(crashed && { fatal: true }) },
+      });
     }
   });
 };

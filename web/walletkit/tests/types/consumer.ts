@@ -64,6 +64,7 @@ export async function consumer() {
   const recovery = await walletkit.recoveryDataFromSeed(new Uint8Array(32));
   const address: string = recovery.authenticatorAddress;
   factor.free();
+  const stopped: boolean = walletkit.isStopped();
   await walletkit.close();
   walletkit.terminate();
 
@@ -91,5 +92,6 @@ export async function consumer() {
     status,
     responseJson,
     address,
+    stopped,
   };
 }

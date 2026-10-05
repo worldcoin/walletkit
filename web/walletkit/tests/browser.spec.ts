@@ -24,17 +24,31 @@ test("packaged worker initializes, correlates calls, reports errors and closes",
     const error = await wallet.FieldElement.fromBytes(new Uint8Array(2)).catch(
       (e: Error) => e.message,
     );
+    const runningStopped = wallet.isStopped();
     await wallet.close();
     const closed = await wallet
       .recoveryDataFromSeed(new Uint8Array(32))
       .catch((e: Error) => e.message);
-    return { identities, error, closed, seedIntact };
+    const other = await w.initializeWalletKit();
+    other.terminate();
+    return {
+      identities,
+      error,
+      closed,
+      seedIntact,
+      runningStopped,
+      closedStopped: wallet.isStopped(),
+      terminatedStopped: other.isStopped(),
+    };
   });
   expect(result.identities[0].authenticatorAddress).not.toEqual(
     result.identities[1].authenticatorAddress,
   );
   expect(result.error).toContain("InvalidInput");
   expect(result.seedIntact).toBe(true);
+  expect(result.runningStopped).toBe(false);
+  expect(result.closedStopped).toBe(true);
+  expect(result.terminatedStopped).toBe(true);
   expect(result.closed).toContain("closed");
 });
 

@@ -26,5 +26,9 @@ export type Request = { id: number } & (
 
 export type Response = { id: number } & (
   | { ok: true; result: unknown }
-  | { ok: false; error: { name: string; message: string; code?: string } }
+  | {
+      ok: false;
+      /** `fatal`: the module trapped; the worker cannot serve further calls. */
+      error: { name: string; message: string; code?: string; fatal?: boolean };
+    }
 );
