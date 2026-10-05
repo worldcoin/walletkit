@@ -314,7 +314,7 @@ impl CredentialStore {
     /// Returns an error if the store is not initialized or the query fails.
     pub fn list_activities(
         &self,
-        query: ActivityQuery,
+        query: &ActivityQuery,
         limit: u32,
         offset: u32,
     ) -> StorageResult<Vec<ActivityEntry>> {
@@ -768,7 +768,7 @@ impl CredentialStoreInner {
 
     fn list_activities(
         &self,
-        query: ActivityQuery,
+        query: &ActivityQuery,
         limit: u32,
         offset: u32,
     ) -> StorageResult<Vec<ActivityEntry>> {

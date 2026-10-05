@@ -161,7 +161,8 @@ pub struct ActivityEntry {
     pub timestamp: Option<u64>,
     /// The result of the activity.
     pub outcome: ActivityOutcome,
-    /// The credentials which produced an output proof for the request.
+    /// The set of issuer schema ids whose credentials produced an output proof
+    /// for the request. Order is not significant; duplicates are dropped.
     pub issuer_schema_ids: Vec<u64>,
     /// Present only when `outcome` is `Failed`.
     pub failure_reason: Option<ActivityFailureReason>,
@@ -175,5 +176,29 @@ pub struct ActivityMetadata {
 }
 
 /// Filtering/sorting options for [`super::CredentialStore::list_activities`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, uniffi::Record)]
-pub struct ActivityQuery {}
+///
+/// Build one with [`ActivityQuery::new`] and add filters with the `with_*`
+/// methods, so new filters can be added without changing constructors on the
+/// foreign side.
+#[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Object)]
+pub struct ActivityQuery {
+    pub(crate) issuer_schema_id: Option<u64>,
+}
+
+#[uniffi::export]
+impl ActivityQuery {
+    /// Creates a query with no filters.
+    #[uniffi::constructor]
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Restricts results to entries that include this issuer schema id.
+    #[must_use]
+    pub fn with_issuer_schema_id(&self, issuer_schema_id: u64) -> Self {
+        let mut next = self.clone();
+        next.issuer_schema_id = Some(issuer_schema_id);
+        next
+    }
+}

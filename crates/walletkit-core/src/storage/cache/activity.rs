@@ -27,13 +27,16 @@ pub(super) fn record(
     }
 
     let now_i64 = to_i64(now, "now")?;
+    let tx = conn
+        .transaction_immediate()
+        .map_err(|err| map_db_err(&err))?;
 
-    let entry_id = conn
+    let entry_id = tx
         .query_row(
             "INSERT INTO activity_entries (
                 client_id, protocol, created_at,
-                outcome, rp_id, app_identifier, issuer_schema_ids, failure_reason
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                outcome, rp_id, app_identifier, failure_reason
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             RETURNING entry_id",
             params![
                 entry.client_id.as_str(),
@@ -42,7 +45,6 @@ pub(super) fn record(
                 entry.outcome.to_string(),
                 entry.rp_id.cast_signed(),
                 entry.app_identifier.as_str(),
-                encode_issuer_schema_ids(&entry.issuer_schema_ids),
                 entry
                     .failure_reason
                     .map(|v| v.to_string())
@@ -52,32 +54,63 @@ pub(super) fn record(
         )
         .map_err(|err| map_db_err(&err))?;
 
+    for issuer_schema_id in &entry.issuer_schema_ids {
+        tx.execute(
+            "INSERT OR IGNORE INTO activity_issuer_schema_ids (entry_id, issuer_schema_id)
+             VALUES (?1, ?2)",
+            params![entry_id, issuer_schema_id.cast_signed()],
+        )
+        .map_err(|err| map_db_err(&err))?;
+    }
+
+    tx.commit().map_err(|err| map_db_err(&err))?;
+
     to_u64(entry_id, "entry_id")
 }
 
 /// Lists activity entries, most recent first.
+///
+/// When [`ActivityQuery::with_issuer_schema_id`] is used, only entries that
+/// include that issuer schema id are returned.
 pub(super) fn list(
     conn: &Connection,
-    query: ActivityQuery,
+    query: &ActivityQuery,
     limit: u32,
     offset: u32,
 ) -> StorageResult<Vec<ActivityEntry>> {
-    let _ = query;
     let limit_i64 = i64::from(limit);
     let offset_i64 = i64::from(offset);
+    let issuer_schema_id = query.issuer_schema_id.map(u64::cast_signed);
 
-    let sql = "SELECT entry_id, client_id, protocol, created_at, outcome,
-                       rp_id, app_identifier, issuer_schema_ids, failure_reason
-                FROM activity_entries
-                ORDER BY created_at DESC, entry_id DESC
-                LIMIT ?1 OFFSET ?2";
+    let sql = if issuer_schema_id.is_some() {
+        format!(
+            "{SELECT_ACTIVITY_ENTRIES}
+             WHERE e.entry_id IN (
+                 SELECT entry_id FROM activity_issuer_schema_ids
+                 WHERE issuer_schema_id = ?1
+             )
+             ORDER BY e.created_at DESC, e.entry_id DESC
+             LIMIT ?2 OFFSET ?3"
+        )
+    } else {
+        format!(
+            "{SELECT_ACTIVITY_ENTRIES}
+             ORDER BY e.created_at DESC, e.entry_id DESC
+             LIMIT ?1 OFFSET ?2"
+        )
+    };
 
     let mut entries = Vec::new();
 
-    let mut stmt = conn.prepare(sql).map_err(|err| map_db_err(&err))?;
+    let mut stmt = conn.prepare(&sql).map_err(|err| map_db_err(&err))?;
 
-    stmt.bind_values(params![limit_i64, offset_i64])
-        .map_err(|err| map_db_err(&err))?;
+    if let Some(issuer_schema_id) = issuer_schema_id {
+        stmt.bind_values(params![issuer_schema_id, limit_i64, offset_i64])
+            .map_err(|err| map_db_err(&err))?;
+    } else {
+        stmt.bind_values(params![limit_i64, offset_i64])
+            .map_err(|err| map_db_err(&err))?;
+    }
 
     while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
         entries.push(map_entry(&row)?);
@@ -107,28 +140,37 @@ pub(super) fn clear(conn: &Connection) -> StorageResult<u64> {
     Ok(deleted as u64)
 }
 
-fn encode_issuer_schema_ids(issuer_schema_ids: &[u64]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(issuer_schema_ids.len() * 8);
-    for id in issuer_schema_ids {
-        bytes.extend_from_slice(&id.to_be_bytes());
-    }
-    bytes
-}
+/// The columns of an activity entry, with its issuer schema ids reassembled in
+/// a normalized order.
+const SELECT_ACTIVITY_ENTRIES: &str =
+    "SELECT e.entry_id, e.client_id, e.protocol, e.created_at, e.outcome,
+            e.rp_id, e.app_identifier, e.failure_reason,
+            (SELECT GROUP_CONCAT(s.issuer_schema_id)
+             FROM activity_issuer_schema_ids s
+             WHERE s.entry_id = e.entry_id)
+     FROM activity_entries e";
 
-fn decode_issuer_schema_ids(bytes: &[u8]) -> StorageResult<Vec<u64>> {
-    if !bytes.len().is_multiple_of(8) {
-        return Err(StorageError::ActivityDb(format!(
-            "invalid issuer_schema_ids blob length: {}",
-            bytes.len()
-        )));
+/// Parses the reassembled issuer schema ids.
+///
+/// The ids are a set: the result is sorted ascending and duplicates are
+/// dropped.
+fn decode_issuer_schema_ids(joined: &str) -> StorageResult<Vec<u64>> {
+    if joined.is_empty() {
+        return Ok(Vec::new());
     }
 
-    Ok(bytes
-        .as_chunks::<8>()
-        .0
-        .iter()
-        .map(|chunk| u64::from_be_bytes(*chunk))
-        .collect())
+    let mut ids = joined
+        .split(',')
+        .map(|value| {
+            value.parse::<i64>().map(i64::cast_unsigned).map_err(|_| {
+                StorageError::ActivityDb(format!("invalid issuer_schema_id: {value}"))
+            })
+        })
+        .collect::<StorageResult<Vec<_>>>()?;
+
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
 }
 
 fn map_entry(row: &Row<'_, '_>) -> StorageResult<ActivityEntry> {
@@ -142,15 +184,14 @@ fn map_entry(row: &Row<'_, '_>) -> StorageResult<ActivityEntry> {
     })?;
     let rp_id = row.column_i64(5).cast_unsigned();
     let app_identifier = row.column_text(6);
-    let issuer_schema_ids = decode_issuer_schema_ids(&row.column_blob(7))?;
+    let failure_reason_text = row.column_text(7);
+    let issuer_schema_ids = decode_issuer_schema_ids(&row.column_text(8))?;
 
-    let failure_reason = row.column_text(8);
-
-    let failure_reason = if failure_reason.is_empty() {
+    let failure_reason = if failure_reason_text.is_empty() {
         None
     } else {
         Some(
-            row.column_text(8)
+            failure_reason_text
                 .parse::<ActivityFailureReason>()
                 .map_err(|_| {
                     StorageError::ActivityDb("invalid failure_reason in db".to_string())
@@ -220,12 +261,137 @@ mod tests {
             .expect("record activity");
 
         let entries = db
-            .list_activities(ActivityQuery::default(), 10, 0)
+            .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list activities");
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, Some(entry_id));
         assert_eq!(entries[0].outcome, ActivityOutcome::Completed);
         assert_eq!(entries[0].issuer_schema_ids.len(), 1);
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_clear_activities_removes_issuer_schema_associations() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x08u8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        db.record_activity(&sample_entry(), 1000)
+            .expect("record activity");
+        db.clear_activities().expect("clear activities");
+        drop(db);
+
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key)
+            .expect("open raw connection");
+        let associations = conn
+            .query_row(
+                "SELECT COUNT(*) FROM activity_issuer_schema_ids",
+                &[],
+                |stmt| Ok(stmt.column_i64(0)),
+            )
+            .expect("count associations");
+        drop(conn);
+
+        assert_eq!(
+            associations, 0,
+            "clearing activity must cascade to issuer-schema associations"
+        );
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_list_activities_filters_by_issuer_schema_id() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x04u8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let with_schemas = |ids: Vec<u64>| ActivityEntry {
+            issuer_schema_ids: ids,
+            ..sample_entry()
+        };
+
+        db.record_activity(&with_schemas(vec![10]), 1000)
+            .expect("record");
+        db.record_activity(&with_schemas(vec![20]), 1001)
+            .expect("record");
+        db.record_activity(&with_schemas(vec![10, 20]), 1002)
+            .expect("record");
+        db.record_activity(&with_schemas(vec![]), 1003)
+            .expect("record");
+
+        let schema_10 = db
+            .list_activities(&ActivityQuery::new().with_issuer_schema_id(10), 10, 0)
+            .expect("list filtered");
+        assert_eq!(schema_10.len(), 2);
+        assert!(schema_10.iter().all(|e| e.issuer_schema_ids.contains(&10)));
+
+        let schema_20 = db
+            .list_activities(&ActivityQuery::new().with_issuer_schema_id(20), 10, 0)
+            .expect("list filtered");
+        assert_eq!(schema_20.len(), 2);
+
+        let schema_30 = db
+            .list_activities(&ActivityQuery::new().with_issuer_schema_id(30), 10, 0)
+            .expect("list filtered");
+        assert!(schema_30.is_empty());
+
+        let all = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("list all");
+        assert_eq!(all.len(), 4, "an unset filter returns every entry");
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_issuer_schema_ids_are_a_set() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Au8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let entry = ActivityEntry {
+            issuer_schema_ids: vec![20, 10, 10],
+            ..sample_entry()
+        };
+        db.record_activity(&entry, 1000).expect("record activity");
+
+        let entries = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("list all");
+        assert_eq!(entries[0].issuer_schema_ids, vec![10, 20]);
+
+        let filtered = db
+            .list_activities(&ActivityQuery::new().with_issuer_schema_id(10), 10, 0)
+            .expect("list filtered");
+        assert_eq!(filtered.len(), 1);
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_issuer_schema_id_above_i64_max_round_trips() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x09u8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let entry = ActivityEntry {
+            issuer_schema_ids: vec![u64::MAX],
+            ..sample_entry()
+        };
+        db.record_activity(&entry, 1000).expect("record activity");
+
+        let entries = db
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_id(u64::MAX),
+                10,
+                0,
+            )
+            .expect("list filtered");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].issuer_schema_ids, vec![u64::MAX]);
 
         cleanup_cache_files(&path);
     }
@@ -284,13 +450,13 @@ mod tests {
         }
 
         let page1 = db
-            .list_activities(ActivityQuery::default(), 2, 0)
+            .list_activities(&ActivityQuery::new(), 2, 0)
             .expect("list page 1");
         let page2 = db
-            .list_activities(ActivityQuery::default(), 2, 2)
+            .list_activities(&ActivityQuery::new(), 2, 2)
             .expect("list page 2");
         let page3 = db
-            .list_activities(ActivityQuery::default(), 2, 4)
+            .list_activities(&ActivityQuery::new(), 2, 4)
             .expect("list page 3");
 
         assert_eq!(page1.len(), 2);
@@ -334,7 +500,7 @@ mod tests {
 
         let db = CacheDb::new(&path, &key).expect("reopen cache");
         let entries = db
-            .list_activities(ActivityQuery::default(), 10, 0)
+            .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list after reopen");
         assert_eq!(
             entries.len(),

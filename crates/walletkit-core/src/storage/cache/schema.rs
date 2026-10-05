@@ -18,7 +18,10 @@ pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
 pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
 pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x03;
 
-use walletkit_sqlite::{params, Connection, DbResult};
+use walletkit_sqlite::{
+    error::{Error, ErrorCode},
+    params, Connection, DbResult, StepResult,
+};
 
 /// The cache-database migrations, in order.
 ///
@@ -26,7 +29,7 @@ use walletkit_sqlite::{params, Connection, DbResult};
 /// adding a new version means writing a `migration_vN` function and appending it
 /// here — nothing else needs to change.
 const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] =
-    &[migration_v1, migration_v2, migration_v3];
+    &[migration_v1, migration_v2, migration_v3, migration_v4];
 
 #[allow(
     clippy::cast_possible_wrap,
@@ -96,6 +99,7 @@ fn reset_schema(conn: &Connection) -> DbResult<()> {
         "DROP TABLE IF EXISTS used_nullifiers;
          DROP TABLE IF EXISTS merkle_proof_cache;
          DROP TABLE IF EXISTS session_keys;
+         DROP TABLE IF EXISTS activity_issuer_schema_ids;
          DROP TABLE IF EXISTS activity_entries;
          DROP TABLE IF EXISTS cache_entries;",
     )?;
@@ -109,11 +113,12 @@ fn reset_schema(conn: &Connection) -> DbResult<()> {
 fn schema_is_intact(conn: &Connection) -> DbResult<bool> {
     let present = conn.query_row(
         "SELECT COUNT(*) FROM sqlite_master
-         WHERE type = 'table' AND name IN ('cache_entries', 'activity_entries');",
+         WHERE type = 'table'
+           AND name IN ('cache_entries', 'activity_entries', 'activity_issuer_schema_ids');",
         &[],
         |stmt| Ok(stmt.column_i64(0)),
     )?;
-    Ok(present == 2)
+    Ok(present == 3)
 }
 
 /// Records the current schema version, preserving the original `created_at`.
@@ -197,4 +202,92 @@ fn migration_v3(conn: &Connection) -> DbResult<()> {
         CREATE INDEX idx_activity_entries_created_at
         ON activity_entries (created_at DESC);",
     )
+}
+
+/// Migration 4: moves issuer schema ids out of the concatenated-`u64` blob into
+/// an association table, so activity can be filtered by issuer schema.
+///
+/// The table is created before the legacy column is dropped; entries are
+/// backfilled one row per schema id so existing history remains filterable. The
+/// whole migration runs in one transaction so a large history does not fsync
+/// once per schema id.
+fn migration_v4(conn: &Connection) -> DbResult<()> {
+    let tx = conn.transaction_immediate()?;
+
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS activity_issuer_schema_ids (
+            entry_id          INTEGER NOT NULL
+                              REFERENCES activity_entries(entry_id) ON DELETE CASCADE,
+            issuer_schema_id  INTEGER NOT NULL,
+            PRIMARY KEY (entry_id, issuer_schema_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_activity_issuer_schema_ids_issuer
+        ON activity_issuer_schema_ids (issuer_schema_id);",
+    )?;
+
+    let has_legacy_column = tx
+        .query_row_optional(
+            "SELECT 1 FROM pragma_table_info('activity_entries')
+             WHERE name = 'issuer_schema_ids'",
+            &[],
+            |_| Ok(()),
+        )?
+        .is_some();
+
+    if has_legacy_column {
+        {
+            let mut stmt =
+                tx.prepare("SELECT entry_id, issuer_schema_ids FROM activity_entries")?;
+            while let StepResult::Row(row) = stmt.step()? {
+                let entry_id = row.column_i64(0);
+                let issuer_schema_ids =
+                    decode_legacy_issuer_schema_ids(&row.column_blob(1))?;
+                for issuer_schema_id in issuer_schema_ids {
+                    tx.execute(
+                        "INSERT OR IGNORE INTO activity_issuer_schema_ids
+                             (entry_id, issuer_schema_id)
+                         VALUES (?1, ?2)",
+                        params![entry_id, issuer_schema_id],
+                    )?;
+                }
+            }
+        }
+
+        tx.execute_batch(
+            "ALTER TABLE activity_entries DROP COLUMN issuer_schema_ids;",
+        )?;
+    }
+
+    tx.commit()
+}
+
+/// `SQLite` primary result code for corrupt data (`SQLITE_CORRUPT`).
+const SQLITE_CORRUPT: i32 = 11;
+
+const fn corrupt(message: String) -> Error {
+    Error {
+        code: ErrorCode(SQLITE_CORRUPT),
+        message,
+    }
+}
+
+/// Decodes the legacy concatenated big-endian `u64` blob.
+///
+/// A length that is not a multiple of eight indicates corruption, so the
+/// migration fails and the disposable cache is rebuilt rather than silently
+/// dropping ids.
+fn decode_legacy_issuer_schema_ids(bytes: &[u8]) -> DbResult<Vec<i64>> {
+    let (chunks, remainder) = bytes.as_chunks::<8>();
+    if !remainder.is_empty() {
+        return Err(corrupt(format!(
+            "invalid issuer_schema_ids blob length: {}",
+            bytes.len()
+        )));
+    }
+
+    Ok(chunks
+        .iter()
+        .map(|chunk| i64::from_be_bytes(*chunk))
+        .collect())
 }
