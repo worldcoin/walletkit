@@ -9471,6 +9471,7 @@ dependencies = [
  "walletkit-core",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "zeroize",
 ]
 
 [[package]]
