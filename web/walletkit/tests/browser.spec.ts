@@ -132,6 +132,39 @@ test("proxies belong to the instance that created them", async ({ page }) => {
   expect(result.seedIntact).toBe(true);
 });
 
+test("destroying supplied-key storage removes its OPFS files", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    try {
+      const root = `/walletkit/destroy-${crypto.randomUUID()}`;
+      const open = async (byte: number) => {
+        const keys = await wallet.StorageKeys.fromBytes(
+          new Uint8Array(32).fill(byte),
+        );
+        const paths = await wallet.StoragePaths.fromRoot(root);
+        return wallet.CredentialStore.new(paths, keys);
+      };
+      const store = await open(1);
+      await store.init(42n, 1000n);
+      await store.destroyStorage();
+      const reinit = await store.init(42n, 1000n).then(
+        () => "reinitialized",
+        (e: Error) => e.name,
+      );
+      // Had the encrypted files survived, a different key could not open them.
+      const reopened = await open(2);
+      await reopened.init(42n, 1000n);
+      return { reinit, reopenedWithAnotherKey: true };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result.reinit).toBe("StorageError");
+  expect(result.reopenedWithAnotherKey).toBe(true);
+});
+
 test("encrypted databases reopen with a directly supplied key", async ({
   page,
 }) => {
