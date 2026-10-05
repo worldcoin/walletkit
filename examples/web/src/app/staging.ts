@@ -69,12 +69,22 @@ export async function issueFauxCredential(
       );
     }
 
-    const body = parse(await response.text()) as { credential?: unknown };
-    if (body.credential === undefined) {
+    // Untrusted: validate the shape before reading from it.
+    let body: unknown;
+    try {
+      body = parse(await response.text());
+    } catch (cause) {
+      throw new Error("Faux issuer returned invalid JSON", { cause });
+    }
+    const credentialJson =
+      typeof body === "object" && body !== null
+        ? (body as { credential?: unknown }).credential
+        : undefined;
+    if (credentialJson === undefined) {
       throw new Error("Faux issuer response did not contain a credential");
     }
 
-    const serializedCredential = stringify(body.credential);
+    const serializedCredential = stringify(credentialJson);
     if (serializedCredential === undefined) {
       throw new Error("Faux issuer response contained an invalid credential");
     }

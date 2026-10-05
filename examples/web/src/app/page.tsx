@@ -243,12 +243,16 @@ export default function Home() {
             undefined,
           );
         try {
-          for (;;) {
+          // Back off from 1 s to 5 s (the CLI's interval) with jitter, to keep the
+          // load on the shared staging gateway low; the action deadline bounds it.
+          for (let delay = 1000; ; delay = Math.min(delay * 1.5, 5000)) {
             const status = await registration.pollStatus();
             setStatus(JSON.stringify(status));
             if (status.state === "failed") throw new Error(status.error);
             if (status.state === "finalized") break;
-            await new Promise((resolve) => setTimeout(resolve, 500));
+            await new Promise((resolve) =>
+              setTimeout(resolve, delay * (0.75 + Math.random() / 2)),
+            );
           }
         } finally {
           registration.free();
