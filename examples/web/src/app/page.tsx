@@ -6,7 +6,6 @@ import type {
   Authenticator,
   CredentialStore,
   EmbeddedZkArtifacts,
-  InitializingAuthenticator,
   RecoveryData,
   WalletKit,
 } from "@worldcoin/walletkit-web";
@@ -45,7 +44,6 @@ interface Session {
   client: WalletKit;
   store: CredentialStore;
   artifacts: EmbeddedZkArtifacts;
-  registration?: InitializingAuthenticator;
   authenticator?: Authenticator;
 }
 
@@ -103,6 +101,7 @@ export default function Home() {
   const seed = useRef(new Uint8Array(32));
   const profile = useRef<DemoProfile | null>(null);
   const opening = useRef<AbortController | null>(null);
+  const mounted = useRef(false);
   const acting = useRef(false);
   const [runtime, setRuntime] = useState("Loading…");
   const [recovery, setRecovery] = useState<RecoveryData>();
@@ -114,6 +113,9 @@ export default function Home() {
 
   /** (Re)opens WalletKit for the saved profile, replacing any previous session. */
   const open = useCallback(async (message?: string) => {
+    // Never after unmount: unmounting terminates the client, which also fails any
+    // pending action; reopening then would leave a worker holding the OPFS pool.
+    if (!mounted.current) return;
     opening.current?.abort();
     const controller = new AbortController();
     opening.current = controller;
@@ -151,8 +153,10 @@ export default function Home() {
 
   useEffect(() => {
     const currentSeed = seed.current;
+    mounted.current = true;
     void open();
     return () => {
+      mounted.current = false;
       opening.current?.abort();
       wallet.current?.client.terminate();
       wallet.current = null;
@@ -229,9 +233,8 @@ export default function Home() {
         break;
       }
       case "register": {
-        session.registration?.free();
-        session.registration = undefined;
-        session.registration =
+        // Only needed while polling, so released on every path.
+        const registration =
           await client.InitializingAuthenticator.registerWithDefaults(
             seed.current,
             undefined,
@@ -239,12 +242,16 @@ export default function Home() {
             REGION,
             undefined,
           );
-        for (;;) {
-          const status = await session.registration.pollStatus();
-          setStatus(JSON.stringify(status));
-          if (status.state === "failed") throw new Error(status.error);
-          if (status.state === "finalized") break;
-          await new Promise((resolve) => setTimeout(resolve, 500));
+        try {
+          for (;;) {
+            const status = await registration.pollStatus();
+            setStatus(JSON.stringify(status));
+            if (status.state === "failed") throw new Error(status.error);
+            if (status.state === "finalized") break;
+            await new Promise((resolve) => setTimeout(resolve, 500));
+          }
+        } finally {
+          registration.free();
         }
         saved.registered = true;
         setRegistered(true);
@@ -257,9 +264,7 @@ export default function Home() {
       case "initialize": {
         // Not gated on the saved `registered` flag: if registration finalized but
         // saving it failed, initializing is how the account is recovered.
-        session.authenticator?.free();
-        session.authenticator = undefined;
-        session.authenticator = await client.Authenticator.initWithDefaults(
+        const authenticator = await client.Authenticator.initWithDefaults(
           seed.current,
           undefined,
           ENVIRONMENT,
@@ -267,7 +272,15 @@ export default function Home() {
           session.artifacts,
           session.store,
         );
-        await session.authenticator.initStorage(nowSeconds());
+        try {
+          await authenticator.initStorage(nowSeconds());
+        } catch (error) {
+          // Not kept: the UI allows another attempt, which creates a new one.
+          authenticator.free();
+          throw error;
+        }
+        session.authenticator?.free();
+        session.authenticator = authenticator;
         let saveNote = "";
         if (!saved.registered) {
           saved.registered = true;

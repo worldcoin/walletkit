@@ -121,9 +121,10 @@ jobs:
           nix develop ../..#wasm --command bash -c '
             set -euo pipefail
             bun run walletkit:link
-            bunx tsc --noEmit -p tsconfig.json
             bun test
+            # Build first: it generates the Next route types the type check imports.
             bun run build
+            bunx tsc --noEmit -p tsconfig.json
           '
 
       - name: Upload browser test report
