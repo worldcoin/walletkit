@@ -419,7 +419,9 @@ export default function Home() {
             </li>
           </ol>
           <h3>Action output</h3>
-          <pre className="action-output">{status}</pre>
+          <pre className="action-output" role="status" aria-live="polite">
+            {status}
+          </pre>
         </section>
       </div>
       <div
