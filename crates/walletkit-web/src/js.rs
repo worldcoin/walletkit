@@ -6,7 +6,7 @@
 
 use std::future::Future;
 
-use js_sys::{Array, Object, Promise, Reflect};
+use js_sys::{Array, BigInt, Object, Promise, Reflect};
 use walletkit_core::logger::{sanitize_hex_secrets, LogLevel, Logger};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::future_to_promise;
@@ -69,6 +69,27 @@ pub fn promise(
 )]
 pub fn now_seconds() -> u64 {
     (js_sys::Date::now() / 1000.0) as u64
+}
+
+/// Validates a `u64` argument passed as a `bigint`.
+///
+/// A direct `u64` parameter would wrap silently: `2n ** 64n + 7n` would become `7`,
+/// and `-1n` would become `u64::MAX`.
+pub fn u64_arg(name: &str, value: BigInt) -> Result<u64, JsValue> {
+    u64::try_from(JsValue::from(value)).map_err(|_| {
+        invalid_argument(&format!(
+            "`{name}` must be a bigint between 0 and {}",
+            u64::MAX
+        ))
+    })
+}
+
+/// Like [`u64_arg`], for an argument that may be omitted.
+pub fn optional_u64_arg(
+    name: &str,
+    value: Option<BigInt>,
+) -> Result<Option<u64>, JsValue> {
+    value.map(|value| u64_arg(name, value)).transpose()
 }
 
 /// Validates an unsigned 32-bit integer argument.

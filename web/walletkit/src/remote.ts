@@ -97,16 +97,47 @@ export interface Rpc {
   release(handle: Handle): void;
 }
 
-const handles = new WeakMap<object, Handle>();
-const finalizer = new FinalizationRegistry<() => void>((release) => release());
+/** The worker object behind a proxy, and the client that owns it. */
+interface Binding {
+  rpc: Rpc;
+  handle: Handle;
+  released: boolean;
+}
 
-/** @internal Replaces proxies with the handles the worker can resolve. */
-export function encode(value: unknown): unknown {
+const bindings = new WeakMap<object, Binding>();
+// Holds plain data, never a closure: a closure created next to the proxy would share
+// its scope with the proxy and keep it reachable, so it would never be collected.
+const finalizer = new FinalizationRegistry<Binding>((binding) =>
+  release(binding),
+);
+
+function release(binding: Binding): void {
+  if (binding.released) return;
+  binding.released = true;
+  binding.rpc.release(binding.handle);
+}
+
+/**
+ * @internal Replaces proxies with the handles `rpc`'s worker can resolve. A proxy
+ * from another (for example closed and reopened) client, or one already freed, is
+ * rejected rather than sent: its handle could name an unrelated object there.
+ */
+export function encode(rpc: Rpc, value: unknown): unknown {
   if (typeof value === "object" && value !== null) {
-    const handle = handles.get(value);
-    if (handle !== undefined) return { $ref: handle } satisfies Ref;
+    const binding = bindings.get(value);
+    if (binding !== undefined) {
+      if (binding.rpc !== rpc) {
+        throw new TypeError(
+          "This WalletKit object belongs to a different WalletKit instance",
+        );
+      }
+      if (binding.released) {
+        throw new TypeError("This WalletKit object was freed");
+      }
+      return { $ref: binding.handle } satisfies Ref;
+    }
   }
-  if (Array.isArray(value)) return value.map(encode);
+  if (Array.isArray(value)) return value.map((item) => encode(rpc, item));
   // Structured clone copies a view's whole backing buffer: send only the viewed
   // bytes, so the worker receives (and clears) no more than the caller passed.
   if (value instanceof Uint8Array) return value.slice();
@@ -117,34 +148,31 @@ export function encode(value: unknown): unknown {
 export function decode(rpc: Rpc, value: unknown): unknown {
   if (Array.isArray(value)) return value.map((item) => decode(rpc, item));
   if (typeof value === "object" && value !== null && "$ref" in value) {
-    return remoteObject(rpc, (value as Ref).$ref);
+    return remoteObject({ rpc, handle: (value as Ref).$ref, released: false });
   }
   return value;
 }
 
-function remoteObject(rpc: Rpc, handle: Handle): object {
-  let released = false;
-  // Must not reference the proxy, or the registry would keep it alive.
-  const release = () => {
-    if (released) return;
-    released = true;
-    rpc.release(handle);
-  };
+function remoteObject(binding: Binding): object {
+  const { rpc, handle } = binding;
   const proxy: object = new Proxy(Object.create(null), {
     get(_, name) {
       if (name === "free") {
         return () => {
           finalizer.unregister(proxy);
-          release();
+          release(binding);
         };
       }
       // Not a thenable, and no symbol-keyed methods.
       if (typeof name !== "string" || name === "then") return undefined;
-      return (...args: unknown[]) => rpc.call({ handle, method: name }, args);
+      return (...args: unknown[]) =>
+        binding.released
+          ? Promise.reject(new TypeError("This WalletKit object was freed"))
+          : rpc.call({ handle, method: name }, args);
     },
   });
-  handles.set(proxy, handle);
-  finalizer.register(proxy, release, proxy);
+  bindings.set(proxy, binding);
+  finalizer.register(proxy, binding, proxy);
   return proxy;
 }
 

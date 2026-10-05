@@ -76,9 +76,32 @@ async function perform(request: Request): Promise<unknown> {
 async function initialize(wasmUrl: string): Promise<void> {
   if (initialized) throw new Error("WalletKit is already initialized");
   await init({ module_or_path: new URL(wasmUrl) });
-  // Fails when another context owns the storage pool.
-  await wasm.initializePersistentStorage();
+  await installPersistentStorage();
   initialized = true;
+}
+
+/**
+ * Backoff before each retry of the OPFS pool install. A context that just closed
+ * (a reload, a remount) releases its handles asynchronously, so its successor can
+ * briefly see the pool as owned. About 3 s in total, then the error is reported.
+ */
+const POOL_RETRY_DELAYS_MS = [100, 200, 400, 800, 1600];
+
+async function installPersistentStorage(): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await wasm.initializePersistentStorage();
+    } catch (error) {
+      const delay = POOL_RETRY_DELAYS_MS[attempt];
+      const poolBusy =
+        (error as { code?: unknown }).code === "PersistentStorage";
+      if (!poolBusy || delay === undefined) throw error;
+      // Jitter so contexts racing for the pool do not retry in lockstep.
+      await new Promise((resolve) =>
+        setTimeout(resolve, delay * (0.5 + Math.random() / 2)),
+      );
+    }
+  }
 }
 
 async function call(target: Target, encodedArgs: unknown[]): Promise<unknown> {

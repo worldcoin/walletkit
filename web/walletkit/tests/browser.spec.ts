@@ -61,6 +61,48 @@ test("second owner fails and storage can reopen after close", async ({
   }).toPass({ timeout: 5000 });
 });
 
+test("initializing right after a close waits for the pool instead of failing", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const w = window as any;
+    const first = await w.initializeWalletKit();
+    await first.close();
+    // No retry here: the worker retries the OPFS install while the closed worker's
+    // handles are released.
+    const second = await w.initializeWalletKit();
+    await second.close();
+    return "reopened";
+  });
+  expect(result).toBe("reopened");
+});
+
+test("proxies belong to the instance that created them", async ({ page }) => {
+  const result = await page.evaluate(async () => {
+    const w = window as any;
+    const first = await w.initializeWalletKit();
+    const keys = await first.StorageKeys.fromBytes(new Uint8Array(32).fill(1));
+    await first.close();
+    const second = await w.initializeWalletKit();
+    try {
+      const paths = await second.StoragePaths.fromRoot("/walletkit/owner");
+      const foreign = await second.CredentialStore.new(paths, keys).catch(
+        (e: Error) => `${e.name}: ${e.message}`,
+      );
+      const outOfRange = await second.FieldElement.fromU64(
+        2n ** 64n + 7n,
+      ).catch((e: Error) => `${e.name}: ${e.message}`);
+      return { foreign, outOfRange };
+    } finally {
+      await second.close();
+    }
+  });
+  expect(result.foreign).toBe(
+    "TypeError: This WalletKit object belongs to a different WalletKit instance",
+  );
+  expect(result.outOfRange).toMatch(/^TypeError: `value` must be a bigint/);
+});
+
 test("encrypted databases reopen with a directly supplied key", async ({
   page,
 }) => {
@@ -257,7 +299,7 @@ test("Rust objects stay in the worker and are used through handles", async ({
   });
   expect(result.metadata).toEqual({ totalCount: 1n });
   expect(result.sameRoot).toBe("/walletkit/handles");
-  expect(result.released).toContain("released");
+  expect(result.released).toContain("freed");
 });
 
 test("close frees live objects, is idempotent and rejects later calls", async ({

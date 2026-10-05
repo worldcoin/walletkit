@@ -7,6 +7,7 @@
     reason = "`#[wasm_bindgen]` does not support `const fn`"
 )]
 
+use js_sys::BigInt;
 use walletkit_core::{
     requests::{ProofRequest, ProofResponse},
     Credential, FieldElement,
@@ -30,10 +31,11 @@ impl JsFieldElement {
         FieldElement::from_bytes(bytes).map(Self).map_err(to_js)
     }
 
+    /// # Errors
+    /// Throws a `TypeError` when `value` is not a bigint in the `u64` range.
     #[wasm_bindgen(js_name = fromU64)]
-    #[must_use]
-    pub fn from_u64(value: u64) -> Self {
-        Self(FieldElement::from_u64(value))
+    pub fn from_u64(value: BigInt) -> Result<Self, JsValue> {
+        Ok(Self(FieldElement::from_u64(js::u64_arg("value", value)?)))
     }
 
     /// Parses a hex string with an optional `0x` prefix.

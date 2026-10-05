@@ -2,6 +2,7 @@
 
 use std::{str::FromStr, sync::Arc};
 
+use js_sys::BigInt;
 use walletkit_core::storage::{
     initialize_persistent_storage, ActivityEntry, ActivityFailureReason,
     ActivityOutcome, ActivityQuery, CredentialRecord, CredentialStore, ProtocolVersion,
@@ -135,10 +136,16 @@ impl JsActivityQuery {
     }
 
     /// Restricts the query to activity that disclosed `issuer_schema_id`.
+    ///
+    /// # Errors
+    /// Throws a `TypeError` when `issuer_schema_id` is not a bigint in the `u64` range.
     #[wasm_bindgen(js_name = withIssuerSchemaId)]
-    #[must_use]
-    pub fn with_issuer_schema_id(&self, issuer_schema_id: u64) -> Self {
-        Self(self.0.with_issuer_schema_id(issuer_schema_id))
+    pub fn with_issuer_schema_id(
+        &self,
+        issuer_schema_id: BigInt,
+    ) -> Result<Self, JsValue> {
+        let issuer_schema_id = js::u64_arg("issuerSchemaId", issuer_schema_id)?;
+        Ok(Self(self.0.with_issuer_schema_id(issuer_schema_id)))
     }
 }
 
@@ -180,8 +187,11 @@ impl JsCredentialStore {
     ///
     /// # Errors
     /// Throws a `StorageError` when the store belongs to a different account.
-    pub fn init(&self, leaf_index: u64, now: u64) -> Result<(), JsValue> {
-        self.0.init(leaf_index, now).map_err(to_js)
+    pub fn init(&self, leaf_index: BigInt, now: BigInt) -> Result<(), JsValue> {
+        let leaf_index = js::u64_arg("leafIndex", leaf_index)?;
+        self.0
+            .init(leaf_index, js::u64_arg("now", now)?)
+            .map_err(to_js)
     }
 
     /// # Errors
@@ -189,9 +199,12 @@ impl JsCredentialStore {
     #[wasm_bindgen(js_name = listCredentials, unchecked_return_type = "CredentialRecord[]")]
     pub fn list_credentials(
         &self,
-        issuer_schema_id: Option<u64>,
-        now: u64,
+        issuer_schema_id: Option<BigInt>,
+        now: BigInt,
     ) -> Result<JsValue, JsValue> {
+        let issuer_schema_id =
+            js::optional_u64_arg("issuerSchemaId", issuer_schema_id)?;
+        let now = js::u64_arg("now", now)?;
         let records = self
             .0
             .list_credentials(issuer_schema_id, now)
@@ -208,9 +221,11 @@ impl JsCredentialStore {
     #[wasm_bindgen(js_name = fetchCredential)]
     pub fn fetch_credential(
         &self,
-        issuer_schema_id: u64,
-        now: u64,
+        issuer_schema_id: BigInt,
+        now: BigInt,
     ) -> Result<Option<JsCredential>, JsValue> {
+        let issuer_schema_id = js::u64_arg("issuerSchemaId", issuer_schema_id)?;
+        let now = js::u64_arg("now", now)?;
         let credential = self
             .0
             .fetch_credential(issuer_schema_id, now)
@@ -221,8 +236,10 @@ impl JsCredentialStore {
     /// # Errors
     /// Throws a `StorageError` when the credential does not exist.
     #[wasm_bindgen(js_name = deleteCredential)]
-    pub fn delete_credential(&self, credential_id: u64) -> Result<(), JsValue> {
-        self.0.delete_credential(credential_id).map_err(to_js)
+    pub fn delete_credential(&self, credential_id: BigInt) -> Result<(), JsValue> {
+        self.0
+            .delete_credential(js::u64_arg("credentialId", credential_id)?)
+            .map_err(to_js)
     }
 
     /// Stores `credential` with its blinding factor and returns the new credential ID.
@@ -234,10 +251,12 @@ impl JsCredentialStore {
         &self,
         credential: &JsCredential,
         blinding_factor: &JsFieldElement,
-        expires_at: u64,
+        expires_at: BigInt,
         associated_data: Option<Vec<u8>>,
-        now: u64,
+        now: BigInt,
     ) -> Result<u64, JsValue> {
+        let expires_at = js::u64_arg("expiresAt", expires_at)?;
+        let now = js::u64_arg("now", now)?;
         self.0
             .store_credential(
                 &credential.0,
@@ -262,8 +281,9 @@ impl JsCredentialStore {
     pub fn record_activity(
         &self,
         #[wasm_bindgen(unchecked_param_type = "ActivityEntry")] entry: &JsValue,
-        now: u64,
+        now: BigInt,
     ) -> Result<u64, JsValue> {
+        let now = js::u64_arg("now", now)?;
         self.0
             .record_activity(&parse_activity_entry(entry)?, now)
             .map_err(to_js)

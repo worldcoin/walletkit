@@ -16,14 +16,24 @@ const store = await walletkit.CredentialStore.new(paths, keys);
 const artifacts = await walletkit.EmbeddedZkArtifacts.new();
 
 // Register a new account...
-const registration = await walletkit.InitializingAuthenticator.registerWithDefaults(
-  seed, undefined, "staging", "eu", undefined,
-);
+const registration =
+  await walletkit.InitializingAuthenticator.registerWithDefaults(
+    seed,
+    undefined,
+    "staging",
+    "eu",
+    undefined,
+  );
 const status = await registration.pollStatus(); // { state: "queued" | ... }
 
 // ...or open a registered one and prove.
 const authenticator = await walletkit.Authenticator.initWithDefaults(
-  seed, undefined, "staging", "eu", artifacts, store,
+  seed,
+  undefined,
+  "staging",
+  "eu",
+  artifacts,
+  store,
 );
 await authenticator.initStorage(BigInt(Math.floor(Date.now() / 1000)));
 const request = await walletkit.ProofRequest.fromJson(requestJson);
@@ -132,8 +142,9 @@ vault/cache retain their existing format and use rollback journals on WASM.
 Closing a SQLite connection does not release the pool's OPFS handles: the pool
 remains alive until worker termination. Currently one worker owns the WalletKit
 pool per origin. A second tab/client receives an initialization error, even with
-a different root path. After shutdown, browser handle release may be asynchronous;
-a subsequent initializer may need to retry. There is no silent memory fallback.
+a different root path. After shutdown, browser handle release may be asynchronous,
+so initialization retries the pool install with backoff for about 3 seconds before
+reporting it as owned. There is no silent memory fallback.
 Pool capacity is reserved at startup rather than expanded during synchronous SQL.
 
 Browser storage requires a supported secure context (localhost is suitable for

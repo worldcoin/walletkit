@@ -21,6 +21,7 @@ mod values;
 
 use std::sync::Arc;
 
+use js_sys::BigInt;
 use walletkit_core::{
     authenticator::recovery_data_from_seed,
     logger::{init_logging, sanitize_hex_secrets, LogLevel},
@@ -147,8 +148,9 @@ pub fn recovery_data_from_seed_js(seed: Vec<u8>) -> Result<JsValue, JsValue> {
 pub fn check_credentials_against_proof_request_js(
     request: &JsProofRequest,
     store: &JsCredentialStore,
-    now: u64,
+    now: BigInt,
 ) -> Result<JsValue, JsValue> {
+    let now = js::u64_arg("now", now)?;
     let CredentialConstraintsCheckResult {
         is_satisfied,
         check_results,

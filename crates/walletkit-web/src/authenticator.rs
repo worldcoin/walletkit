@@ -2,7 +2,7 @@
 
 use std::{str::FromStr, sync::Arc};
 
-use js_sys::{Promise, Reflect};
+use js_sys::{BigInt, Promise, Reflect};
 use walletkit_core::{
     authenticator::{
         artifacts::embedded::EmbeddedZkArtifacts, validate_authenticator_pubkey,
@@ -11,6 +11,7 @@ use walletkit_core::{
     Authenticator, Environment, InitializingAuthenticator, Region, RegistrationStatus,
 };
 use wasm_bindgen::prelude::*;
+use zeroize::Zeroizing;
 
 use crate::{
     error::{invalid_argument, to_js},
@@ -112,12 +113,15 @@ impl JsAuthenticator {
         let region = parse_region(region);
         let artifacts = Arc::clone(&artifacts.0).as_zk_artifact_source();
         let store = Arc::clone(&store.0);
+        // The seed only reaches core's zeroizing guard once validation passed.
+        let mut seed = Zeroizing::new(seed);
         js::promise(async move {
+            let (environment, region) = (environment?, region?);
             let authenticator = Authenticator::init_with_defaults(
-                seed,
+                std::mem::take(&mut *seed),
                 rpc_url,
-                &environment?,
-                region?,
+                &environment,
+                region,
                 artifacts,
                 store,
             )
@@ -146,12 +150,15 @@ impl JsAuthenticator {
         let region = parse_region(region);
         let artifacts = Arc::clone(&artifacts.0).as_zk_artifact_source();
         let store = Arc::clone(&store.0);
+        // The seed only reaches core's zeroizing guard once validation passed.
+        let mut seed = Zeroizing::new(seed);
         js::promise(async move {
+            let (environment, region) = (environment?, region?);
             let authenticator = Authenticator::init_with_ohttp_defaults(
-                seed,
+                std::mem::take(&mut *seed),
                 rpc_url,
-                &environment?,
-                region?,
+                &environment,
+                region,
                 artifacts,
                 store,
             )
@@ -187,8 +194,8 @@ impl JsAuthenticator {
     /// # Errors
     /// Throws a `WalletKitError` when the store belongs to a different account.
     #[wasm_bindgen(js_name = initStorage)]
-    pub fn init_storage(&self, now: u64) -> Result<(), JsValue> {
-        self.0.init_storage(now).map_err(to_js)
+    pub fn init_storage(&self, now: BigInt) -> Result<(), JsValue> {
+        self.0.init_storage(js::u64_arg("now", now)?).map_err(to_js)
     }
 
     /// Deletes the credential store.
@@ -242,10 +249,12 @@ impl JsAuthenticator {
     #[wasm_bindgen(js_name = generateCredentialBlindingFactorRemote, unchecked_return_type = "Promise<FieldElement>")]
     pub fn generate_credential_blinding_factor_remote(
         &self,
-        issuer_schema_id: u64,
+        issuer_schema_id: BigInt,
     ) -> Promise {
         let authenticator = Arc::clone(&self.0);
+        let issuer_schema_id = js::u64_arg("issuerSchemaId", issuer_schema_id);
         js::promise(async move {
+            let issuer_schema_id = issuer_schema_id?;
             let factor = authenticator
                 .generate_credential_blinding_factor_remote(issuer_schema_id)
                 .await
@@ -434,11 +443,13 @@ impl JsAuthenticator {
     pub fn generate_proof(
         &self,
         proof_request: &JsProofRequest,
-        now: Option<u64>,
+        now: Option<BigInt>,
     ) -> Promise {
         let authenticator = Arc::clone(&self.0);
         let proof_request = proof_request.0.clone();
+        let now = js::optional_u64_arg("now", now);
         js::promise(async move {
+            let now = now?;
             let response = authenticator
                 .generate_proof(
                     &proof_request,
@@ -473,12 +484,15 @@ impl JsInitializingAuthenticator {
     ) -> Promise {
         let environment = parse_environment(environment);
         let region = parse_region(region);
+        // The seed only reaches core's zeroizing guard once validation passed.
+        let mut seed = Zeroizing::new(seed);
         js::promise(async move {
+            let (environment, region) = (environment?, region?);
             let registration = InitializingAuthenticator::register_with_defaults(
-                seed,
+                std::mem::take(&mut *seed),
                 rpc_url,
-                &environment?,
-                region?,
+                &environment,
+                region,
                 recovery_address,
             )
             .await
@@ -503,12 +517,15 @@ impl JsInitializingAuthenticator {
     ) -> Promise {
         let environment = parse_environment(environment);
         let region = parse_region(region);
+        // The seed only reaches core's zeroizing guard once validation passed.
+        let mut seed = Zeroizing::new(seed);
         js::promise(async move {
+            let (environment, region) = (environment?, region?);
             let registration = InitializingAuthenticator::register_with_ohttp_defaults(
-                seed,
+                std::mem::take(&mut *seed),
                 rpc_url,
-                &environment?,
-                region?,
+                &environment,
+                region,
                 recovery_address,
             )
             .await

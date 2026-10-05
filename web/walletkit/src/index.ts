@@ -93,7 +93,11 @@ class WorkerClient implements Rpc {
   async call(target: Target, args: unknown[]): Promise<unknown> {
     return decode(
       this,
-      await this.send({ op: "call", target, args: args.map(encode) }),
+      await this.send({
+        op: "call",
+        target,
+        args: args.map((arg) => encode(this, arg)),
+      }),
     );
   }
 
