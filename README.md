@@ -64,7 +64,9 @@ nix develop .#wasm --command bun run --cwd web/walletkit build
 nix develop .#wasm --command bun run --cwd web/walletkit test:browser
 ```
 
-See [`web/walletkit/README.md`](web/walletkit/README.md) for the API and releasing.
+See [`web/walletkit/README.md`](web/walletkit/README.md) for the API and releasing. The
+Next.js demo under [`examples/web`](examples/web) drives a full staging registration,
+issuance and proof flow against the package in this checkout.
 
 ## Local development (Android/Kotlin)
 

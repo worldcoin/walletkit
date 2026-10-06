@@ -99,6 +99,8 @@ redacted. Invalid arguments reject with a `TypeError`. A Rust panic traps the mo
 the failing call rejects (or the worker error stops the client) and every later call
 fails, so reinitialize.
 Issuer HTTP calls and relying-party request construction remain application code.
+See the Next.js demo in [`examples/web`](../../examples/web) for a complete
+registration, issuance and proof flow.
 
 The worker runs the `walletkit-web` crate, a `wasm-bindgen` facade over
 `walletkit-core` with one wrapper class per UniFFI object. The page-side API is

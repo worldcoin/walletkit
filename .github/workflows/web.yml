@@ -21,6 +21,7 @@ on:
       - "crates/walletkit-db/**"
       - "crates/walletkit-sqlite/**"
       - "crates/walletkit-web/**"
+      - "examples/web/**"
       - "flake.lock"
       - "flake.nix"
       - "nix/**"
@@ -38,6 +39,7 @@ on:
       - "crates/walletkit-db/**"
       - "crates/walletkit-sqlite/**"
       - "crates/walletkit-web/**"
+      - "examples/web/**"
       - "flake.lock"
       - "flake.nix"
       - "nix/**"
@@ -110,6 +112,20 @@ jobs:
         run: |
           google-chrome --version
           nix develop .#wasm --command bun run --cwd web/walletkit test:browser
+
+      # The Next.js demo is the package's integration consumer: it must keep
+      # type-checking, testing and bundling against the package just built.
+      - name: Check the Next.js demo against the package
+        working-directory: examples/web
+        run: |
+          nix develop ../..#wasm --command bash -c '
+            set -euo pipefail
+            bun run walletkit:link
+            bun test
+            # Build first: it generates the Next route types the type check imports.
+            bun run build
+            bunx tsc --noEmit -p tsconfig.json
+          '
 
       - name: Upload browser test report
         if: failure()

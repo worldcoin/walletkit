@@ -1,0 +1,34 @@
+{
+  "name": "walletkit-web-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "bun@1.3.11",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/worldcoin/walletkit"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "test": "bun test",
+    "build": "next build",
+    "start": "next start",
+    "walletkit:local": "bun install --cwd ../../web/walletkit --frozen-lockfile && bun run --cwd ../../web/walletkit build && bun run walletkit:link",
+    "walletkit:link": "bun link --cwd ../../web/walletkit && bun install --frozen-lockfile"
+  },
+  "dependencies": {
+    "@worldcoin/walletkit-web": "link:@worldcoin/walletkit-web",
+    "lossless-json": "^4.3.1",
+    "next": "16.3.8",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "viem": "^2.56.0"
+  },
+  "devDependencies": {
+    "@types/node": "25.0.3",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2"
+  }
+}

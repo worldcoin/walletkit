@@ -1,0 +1,150 @@
+import { parse, stringify } from "lossless-json";
+import { privateKeyToAccount } from "viem/accounts";
+
+import type {
+  Authenticator,
+  CredentialStore,
+  WalletKit,
+} from "@worldcoin/walletkit-web";
+
+export const FAUX_ISSUER_SCHEMA_ID = 128n;
+const STAGING_RP_ID = 46n;
+const STAGING_RP_PRIVATE_KEY =
+  "0x1111111111111111111111111111111111111111111111111111111111111111";
+
+function fixedWidthBytes(value: bigint, width: number) {
+  const bytes = new Uint8Array(width);
+  for (let index = width - 1; index >= 0; index -= 1) {
+    bytes[index] = Number(value & 0xffn);
+    value >>= 8n;
+  }
+  return bytes;
+}
+
+function hex(bytes: Uint8Array) {
+  return `0x${Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("")}`;
+}
+
+function concat(...chunks: Uint8Array[]) {
+  const result = new Uint8Array(
+    chunks.reduce((length, chunk) => length + chunk.length, 0),
+  );
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
+export async function issueFauxCredential(
+  client: WalletKit,
+  authenticator: Authenticator,
+  store: CredentialStore,
+) {
+  const blindingFactor =
+    await authenticator.generateCredentialBlindingFactorRemote(
+      FAUX_ISSUER_SCHEMA_ID,
+    );
+  try {
+    const subElement = await authenticator.computeCredentialSub(blindingFactor);
+    let sub: string;
+    try {
+      sub = await subElement.toHexString();
+    } finally {
+      subElement.free();
+    }
+    const response = await fetch("/api/faux-credential", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sub }),
+      // The route bounds its upstream call at 15 s; do not wait much longer.
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Faux issuer returned ${response.status}: ${await response.text()}`,
+      );
+    }
+
+    // Untrusted: validate the shape before reading from it.
+    let body: unknown;
+    try {
+      body = parse(await response.text());
+    } catch (cause) {
+      throw new Error("Faux issuer returned invalid JSON", { cause });
+    }
+    const credentialJson =
+      typeof body === "object" && body !== null
+        ? (body as { credential?: unknown }).credential
+        : undefined;
+    if (credentialJson === undefined) {
+      throw new Error("Faux issuer response did not contain a credential");
+    }
+
+    const serializedCredential = stringify(credentialJson);
+    if (serializedCredential === undefined) {
+      throw new Error("Faux issuer response contained an invalid credential");
+    }
+    const credentialBytes = new TextEncoder().encode(serializedCredential);
+    const credential = await client.Credential.fromBytes(credentialBytes);
+    try {
+      const issuerSchemaId = await credential.issuerSchemaId();
+      const credentialId = await store.storeCredential(
+        credential,
+        blindingFactor,
+        await credential.expiresAt(),
+        undefined,
+        BigInt(Math.floor(Date.now() / 1000)),
+      );
+      return { credentialId, issuerSchemaId, sub };
+    } finally {
+      credential.free();
+    }
+  } finally {
+    blindingFactor.free();
+  }
+}
+
+export async function createStagingProofRequest(signal: string) {
+  const nonce = crypto.getRandomValues(new Uint8Array(32));
+  // A 31-byte random value is always within the BabyJubJub base field.
+  nonce[0] = 0;
+  const action = fixedWidthBytes(1n, 32);
+  const createdAt = BigInt(Math.floor(Date.now() / 1000));
+  const expiresAt = createdAt + 300n;
+  const message = concat(
+    new Uint8Array([1]),
+    nonce,
+    fixedWidthBytes(createdAt, 8),
+    fixedWidthBytes(expiresAt, 8),
+    action,
+  );
+  const account = privateKeyToAccount(STAGING_RP_PRIVATE_KEY);
+  const signature = await account.signMessage({ message: { raw: message } });
+
+  return JSON.stringify({
+    id: crypto.randomUUID(),
+    version: 1,
+    proof_type: "uniqueness",
+    created_at: Number(createdAt),
+    expires_at: Number(expiresAt),
+    rp_id: `rp_${STAGING_RP_ID.toString(16).padStart(16, "0")}`,
+    oprf_key_id: `0x${STAGING_RP_ID.toString(16)}`,
+    session_id: null,
+    action: hex(action),
+    signature,
+    nonce: hex(nonce),
+    proof_requests: [
+      {
+        identifier: "faux-credential",
+        issuer_schema_id: Number(FAUX_ISSUER_SCHEMA_ID),
+        signal: hex(new TextEncoder().encode(signal)),
+        genesis_issued_at_min: null,
+        expires_at_min: null,
+      },
+    ],
+  });
+}
