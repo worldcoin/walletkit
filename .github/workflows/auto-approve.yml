@@ -22,7 +22,8 @@ jobs:
   select:
     if: >-
       (github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'main') ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
+        !(github.event.sender.login == 'wld-walletkit-bot' && startsWith(github.event.comment.body, '<!-- walletkit-auto-approval-report -->'))) ||
       (github.event_name == 'schedule') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest

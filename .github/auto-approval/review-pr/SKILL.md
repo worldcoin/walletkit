@@ -60,5 +60,8 @@ Write `verdict.json` in the current directory, even when approval is withheld:
 
 Use exactly these keys, a JSON boolean, and nonempty strings of at most 8,000
 characters each. Set `approve` true only when all four questions pass. Do not
-include secrets or unnecessary source excerpts. The separate approval job checks
+include secrets or unnecessary source excerpts. After writing the verdict, finish
+with a concise, PR-ready summary explaining the decision and any blockers. Your
+final response and verdict will be published in a PR comment; omit private data.
+The separate approval job checks
 the verdict against fresh GitHub state before submitting a review.

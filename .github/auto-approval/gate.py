@@ -11,14 +11,17 @@ import subprocess
 
 POLICY_NAMES = {"AGENTS.md", "CLAUDE.md", ".code-review.md"}
 MAX_EVIDENCE_BYTES = 2_000_000
+REPORT_MARKER = "<!-- walletkit-auto-approval-report -->"
 
 
 class Ineligible(Exception):
     """An expected reason to leave approval to a human."""
 
 
-def api(endpoint, payload=None, paginate=False):
+def api(endpoint, payload=None, paginate=False, method=None):
     command = ["gh", "api", endpoint]
+    if method:
+        command += ["--method", method]
     if paginate:
         command += ["--paginate", "--slurp"]
     if payload is not None:
@@ -35,6 +38,10 @@ def api(endpoint, payload=None, paginate=False):
 
 def pages(endpoint):
     return [item for page in api(endpoint + "?per_page=100", paginate=True) for item in page]
+
+
+def is_report(comment, bot):
+    return comment["user"]["login"] == bot and (comment.get("body") or "").startswith(REPORT_MARKER)
 
 
 def fingerprint(evidence):
@@ -132,7 +139,7 @@ def snapshot(repo, number, bot):
                 "base": pr["base"]["sha"], "title": pr["title"], "body": pr["body"],
                 "labels": sorted(label["name"] for label in pr["labels"]),
                 "files": files, "reviews": reviews, "threads": discussions,
-                "comments": pages(f"repos/{repo}/issues/{number}/comments"),
+                "comments": [c for c in pages(f"repos/{repo}/issues/{number}/comments") if not is_report(c, bot)],
                 "policy_files": policies(repo, pr["base"]["sha"], files)}
     if len(json.dumps(evidence).encode()) > MAX_EVIDENCE_BYTES:
         raise Ineligible("Review evidence exceeds supported size; refusing to truncate")
@@ -167,8 +174,6 @@ def validate_verdict(value, expected_head, expected_fingerprint):
         raise ValueError("Verdict evidence must be nonempty bounded text")
     if value["head"] != expected_head or value["evidence"] != expected_fingerprint:
         raise Ineligible("Verdict does not match the prepared commit and evidence")
-    if not value["approve"]:
-        raise Ineligible("Agent withheld approval; inspect the verdict artifact")
 
 
 def output(name, value):
@@ -184,6 +189,7 @@ def main():
     if args.number <= 0:
         parser.error("PR number must be positive")
     repo, bot = os.environ["GITHUB_REPOSITORY"], os.environ["BOT_LOGIN"]
+    result = {"status": "unconfirmed", "reason": "Approval failed or could not be confirmed; inspect the run log."}
     try:
         evidence = snapshot(repo, args.number, bot)
         if args.mode == "prepare":
@@ -196,8 +202,10 @@ def main():
         verdict_path = Path("verdict/verdict.json")
         if verdict_path.stat().st_size > 64_000:
             raise ValueError("Oversized verdict")
-        validate_verdict(json.loads(verdict_path.read_text()), os.environ["EXPECTED_HEAD"],
-                         os.environ["EXPECTED_FINGERPRINT"])
+        verdict = json.loads(verdict_path.read_text())
+        validate_verdict(verdict, os.environ["EXPECTED_HEAD"], os.environ["EXPECTED_FINGERPRINT"])
+        if not verdict["approve"]:
+            raise Ineligible("Agent withheld approval")
         if fingerprint(evidence) != os.environ["EXPECTED_FINGERPRINT"]:
             raise Ineligible("Head, base, policy, or review evidence changed during review")
         if api("user")["login"] != bot:
@@ -207,11 +215,16 @@ def main():
             "body": "Agent review passed the repository review policy, discussion resolution, "
                     "and independent code review. Verdict and evidence: "
                     f"https://github.com/{repo}/actions/runs/{os.environ['GITHUB_RUN_ID']}"})
+        result = {"status": "approved", "reason": "Approval submitted for the reviewed commit."}
         print("Approved reviewed commit " + evidence["head"])
     except Ineligible as error:
+        result = {"status": "withheld", "reason": str(error)}
         print("Human review required: " + str(error))
         if args.mode == "prepare":
             output("eligible", "false")
+    finally:
+        if args.mode == "approve":
+            Path("approval-result.json").write_text(json.dumps(result))
 
 
 if __name__ == "__main__":

@@ -87,7 +87,8 @@ class ApprovalGateTests(unittest.TestCase):
         for fields in [{"approve": "true"}, {"extra": True}, {"policy_checks": ""}]:
             with self.subTest(fields=fields), self.assertRaises(ValueError):
                 gate.validate_verdict(verdict | fields, "head", "hash")
-        for fields in [{"approve": False}, {"head": "new"}, {"evidence": "other"}]:
+        gate.validate_verdict(verdict | {"approve": False}, "head", "hash")
+        for fields in [{"head": "new"}, {"evidence": "other"}]:
             with self.subTest(fields=fields), self.assertRaises(gate.Ineligible):
                 gate.validate_verdict(verdict | fields, "head", "hash")
 
@@ -159,10 +160,11 @@ class ApprovalGateTests(unittest.TestCase):
         env = {"GITHUB_REPOSITORY": "owner/repo", "BOT_LOGIN": "bot", "EXPECTED_HEAD": "head",
                "EXPECTED_FINGERPRINT": fingerprint, "GITHUB_RUN_ID": "123"}
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "verdict.json"
+            path = Path(directory) / "verdict/verdict.json"
+            path.parent.mkdir()
             path.write_text(json.dumps(verdict))
             with patch.dict(os.environ, env), patch("sys.argv", ["gate.py", "approve", "1"]), \
-                    patch("gate.Path", return_value=path):
+                    patch("gate.Path", side_effect=lambda name: Path(directory) / name):
                 snapshot.return_value = evidence | {"comments": ["new concern"]}
                 gate.main()
                 api.assert_not_called()
@@ -171,6 +173,18 @@ class ApprovalGateTests(unittest.TestCase):
                 gate.main()
                 self.assertEqual(api.call_args.args[1]["commit_id"], "head")
                 self.assertEqual(api.call_args.args[1]["event"], "APPROVE")
+                result_path = Path(directory) / "approval-result.json"
+                self.assertEqual(json.loads(result_path.read_text())["status"], "approved")
+                api.reset_mock()
+                path.write_text(json.dumps(verdict | {"approve": False}))
+                gate.main()
+                api.assert_not_called()
+                self.assertEqual(json.loads(result_path.read_text())["status"], "withheld")
+                path.write_text(json.dumps(verdict))
+                api.side_effect = RuntimeError("Request failed")
+                with self.assertRaises(RuntimeError):
+                    gate.main()
+                self.assertEqual(json.loads(result_path.read_text())["status"], "unconfirmed")
 
     @patch("gate.subprocess.run")
     def test_api_failure_and_graphql_errors_are_surfaced(self, run):

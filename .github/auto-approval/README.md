@@ -43,7 +43,18 @@ The original evidence fingerprint is a prepare-job output, not an agent-controll
 artifact. Invalid output and API failures fail the job. Ordinary ineligibility
 leaves the PR unapproved with a reason in the run log. Decisions and source review
 evidence are retained as run artifacts for seven days; the approval links the run.
-No model-authored text is posted to public comments.
+After a completed, valid verdict, the bot creates or updates one PR comment with
+its final response, recommendation, actual approval outcome, and collapsible
+assessments and JSON. Changed evidence can withhold approval despite a positive
+recommendation; API failures are reported as unconfirmed. Reporting errors fail
+the job. Early eligibility stops and invalid/incomplete agent output remain in
+Actions logs. The report identifies the reviewed SHA and links the run. Its own
+comment is excluded from evidence and does not trigger another review.
+
+Only the final assistant text is published, not thinking or tool results. Public
+text is escaped, known credentials are redacted, and long output is truncated with
+an artifact link. The verdict artifact includes `final-response.txt`; raw pi events
+remain temporary runner files.
 
 The code always rejects forks, drafts, external authors, bot-authored PRs,
 outstanding change requests, unresolved threads, and changes to `.github/` or

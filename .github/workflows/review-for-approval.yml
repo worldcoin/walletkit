@@ -92,11 +92,16 @@ jobs:
             --session-dir "$RUNNER_TEMP/pi-sessions" \
             --skill "$skill" \
             "/skill:review-pr Review $GH_REPO#$PR_NUMBER at $EXPECTED_HEAD. Read .code-review.md and evidence.json. The evidence fingerprint is $EXPECTED_FINGERPRINT. Write verdict.json here." \
+            | tee "$RUNNER_TEMP/pi-events.jsonl" \
             | jq --unbuffered --join-output -f "$GITHUB_WORKSPACE/.github/auto-approval/stream.jq"
+          jq --null-input --raw-output -f "$GITHUB_WORKSPACE/.github/auto-approval/final-response.jq" \
+            < "$RUNNER_TEMP/pi-events.jsonl" > final-response.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verdict-${{ inputs.pr_number }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/review/verdict.json
+          path: |
+            ${{ runner.temp }}/review/verdict.json
+            ${{ runner.temp }}/review/final-response.txt
           retention-days: 7
           if-no-files-found: error
 
@@ -110,6 +115,7 @@ jobs:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        id: verdict
         with:
           name: verdict-${{ inputs.pr_number }}-${{ github.run_attempt }}
           path: verdict
@@ -119,3 +125,11 @@ jobs:
           EXPECTED_HEAD: ${{ needs.prepare.outputs.head }}
           EXPECTED_FINGERPRINT: ${{ needs.prepare.outputs.fingerprint }}
         run: python3 .github/auto-approval/gate.py approve "$PR_NUMBER"
+      - name: Publish agent report
+        if: always() && steps.verdict.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.APPROVAL_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          EXPECTED_HEAD: ${{ needs.prepare.outputs.head }}
+          EXPECTED_FINGERPRINT: ${{ needs.prepare.outputs.fingerprint }}
+        run: python3 .github/auto-approval/report.py "$PR_NUMBER"
