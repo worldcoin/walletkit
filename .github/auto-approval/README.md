@@ -5,6 +5,27 @@ from `.code-review.md` and applicable `AGENTS.md` / `CLAUDE.md` files. Reviewer
 identities, required coverage, substantive resolution, and extra human-review
 conditions belong in those instructions, not Python configuration.
 
+The harness is pi 1.0.4, installed with jq from pinned nixpkgs revision
+`061e83fc010a624d8045793836ee20bb8f4b5348`. The model is
+`deepseek/deepseek-v4.1-flash` through OpenRouter. Jev is not used.
+The review skill is registered with `--skill` and invoked with `/skill:review-pr`;
+pi's default system prompt and automatic resource discovery remain enabled.
+
+The prepare job writes `.code-review.md` and applicable instruction files from
+base-commit blobs into the review working directory. The agent reads these files
+directly. `evidence.json` holds PR evidence and a `policy_files` map of paths to blob
+SHAs, not embedded policy text. Those SHAs participate in the evidence fingerprint.
+
+Pi runs in JSON mode. An unbuffered jq filter prints assistant text deltas as they
+arrive and tool start/end markers to the Actions log, without raw tool payloads or
+thinking blocks. Newlines in the text become log lines; GitHub may add display
+latency. Pipeline failures propagate through `pipefail`. GitHub workflow-command
+parsing is suspended around model output so it is treated as log text.
+
+`verdict.json` contains `approve`, `reason`, `review_coverage`,
+`discussion_resolution`, `independent_review`, `policy_checks`, `head`, and
+`evidence` (the fingerprint). The final job validates it before submitting approval.
+
 The workflow runs on PR changes and general PR comments. An hourly sweep catches
 review submissions and thread resolutions, for which this workflow has no direct
 trusted Actions trigger. Use **Auto approve → Run workflow → pr_number** for an
@@ -54,7 +75,7 @@ workflow currently checks out caller-repository helpers, so it is not yet a
 standalone cross-repository package.
 
 Run helper regressions with `python3 -m unittest discover -s .github/auto-approval`.
-Use Nix-provided Python where it is not in the development shell. Validate both
+Use Nix-provided Python and jq where they are not in the development shell. Validate both
 workflow files with `actionlint`. These checks do not invoke a model or submit a
 GitHub review.
 

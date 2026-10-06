@@ -113,10 +113,9 @@ def policies(repo, base, files):
             continue
         if entry["mode"] not in {"100644", "100755"}:
             raise Ineligible("Review instructions must be regular text files")
-        blob = api(f"repos/{repo}/git/blobs/{entry['sha']}")
-        if blob["encoding"] != "base64" or blob["size"] > 100_000:
-            raise Ineligible("Unsupported or oversized review instructions")
-        result[str(path)] = base64.b64decode(blob["content"]).decode("utf-8")
+        if path.is_absolute() or ".." in path.parts:
+            raise Ineligible("Invalid review instruction path")
+        result[str(path)] = entry["sha"]
     if ".code-review.md" not in result:
         raise Ineligible("No trusted .code-review.md policy")
     return result
@@ -134,7 +133,7 @@ def snapshot(repo, number, bot):
                 "labels": sorted(label["name"] for label in pr["labels"]),
                 "files": files, "reviews": reviews, "threads": discussions,
                 "comments": pages(f"repos/{repo}/issues/{number}/comments"),
-                "trusted_policy": policies(repo, pr["base"]["sha"], files)}
+                "policy_files": policies(repo, pr["base"]["sha"], files)}
     if len(json.dumps(evidence).encode()) > MAX_EVIDENCE_BYTES:
         raise Ineligible("Review evidence exceeds supported size; refusing to truncate")
     current = api(prefix)
@@ -144,6 +143,18 @@ def snapshot(repo, number, bot):
     if any(current[key] != pr[key] for key in ("title", "body", "labels")):
         raise Ineligible("PR metadata changed while collecting evidence")
     return evidence
+
+
+def write_review_input(evidence, directory):
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, sha in evidence["policy_files"].items():
+        blob = api(f"repos/{evidence['repo']}/git/blobs/{sha}")
+        if blob["encoding"] != "base64" or blob["size"] > 100_000:
+            raise Ineligible("Unsupported or oversized review instructions")
+        path = directory / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(base64.b64decode(blob["content"]).decode("utf-8"))
+    (directory / "evidence.json").write_text(json.dumps(evidence, indent=2))
 
 
 def validate_verdict(value, expected_head, expected_fingerprint):
@@ -176,7 +187,7 @@ def main():
     try:
         evidence = snapshot(repo, args.number, bot)
         if args.mode == "prepare":
-            Path("evidence.json").write_text(json.dumps(evidence, indent=2))
+            write_review_input(evidence, Path("review-input"))
             output("head", evidence["head"])
             output("fingerprint", fingerprint(evidence))
             output("eligible", "true")

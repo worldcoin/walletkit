@@ -72,7 +72,7 @@ class ApprovalGateTests(unittest.TestCase):
             self.check()
 
     def test_fingerprint_binds_policy_commit_and_discussion(self):
-        evidence = {"head": "a", "base": "b", "trusted_policy": {"rule": "one"}, "comments": ["fixed"]}
+        evidence = {"head": "a", "base": "b", "policy_files": {"rule": "sha-one"}, "comments": ["fixed"]}
         expected = gate.fingerprint(evidence)
         self.assertEqual(expected, gate.fingerprint(dict(reversed(list(evidence.items())))))
         for key in evidence:
@@ -115,12 +115,32 @@ class ApprovalGateTests(unittest.TestCase):
     def test_policy_comes_from_base_and_includes_ancestors_only(self, api):
         entries = [{"path": name, "mode": "100644", "sha": str(i)} for i, name in enumerate(
             [".code-review.md", "AGENTS.md", "src/AGENTS.md", "unrelated/AGENTS.md"])]
-        api.side_effect = [{"truncated": False, "tree": entries}] + [
-            {"encoding": "base64", "size": 4, "content": base64.b64encode(b"rule").decode()}
-            for _ in range(3)]
+        api.return_value = {"truncated": False, "tree": entries}
         result = gate.policies("owner/repo", "trusted-base", self.files)
-        self.assertEqual(set(result), {".code-review.md", "AGENTS.md", "src/AGENTS.md"})
+        self.assertEqual(result, {".code-review.md": "0", "AGENTS.md": "1", "src/AGENTS.md": "2"})
         self.assertIn("trusted-base", api.call_args_list[0].args[0])
+
+    @patch("gate.api")
+    def test_review_input_contains_readable_base_policy_files(self, api):
+        api.return_value = {"encoding": "base64", "size": 4,
+                            "content": base64.b64encode(b"rule").decode()}
+        evidence = {"repo": "owner/repo", "policy_files": {
+            ".code-review.md": "base-policy", "src/AGENTS.md": "base-instructions"}}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "input"
+            gate.write_review_input(evidence, root)
+            self.assertEqual((root / ".code-review.md").read_text(), "rule")
+            self.assertEqual((root / "src/AGENTS.md").read_text(), "rule")
+            self.assertEqual(json.loads((root / "evidence.json").read_text()), evidence)
+        self.assertEqual([c.args[0] for c in api.call_args_list], [
+            "repos/owner/repo/git/blobs/base-policy", "repos/owner/repo/git/blobs/base-instructions"])
+
+    @patch("gate.api")
+    def test_oversized_policy_file_withholds_review(self, api):
+        api.return_value = {"encoding": "base64", "size": 100001}
+        with tempfile.TemporaryDirectory() as directory, self.assertRaises(gate.Ineligible):
+            gate.write_review_input({"repo": "owner/repo", "policy_files": {".code-review.md": "sha"}},
+                                    Path(directory))
 
     @patch("gate.api")
     def test_incomplete_policy_tree_blocks(self, api):

@@ -46,7 +46,8 @@ jobs:
         if: steps.prepare.outputs.eligible == 'true'
         with:
           name: evidence-${{ inputs.pr_number }}-${{ github.run_attempt }}
-          path: evidence.json
+          path: review-input/
+          include-hidden-files: true
           retention-days: 7
           if-no-files-found: error
 
@@ -65,11 +66,12 @@ jobs:
           name: evidence-${{ inputs.pr_number }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/review
       - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
-      - name: Install pinned agent and jq
+      - name: Install pi 1.0.4 and jq
         run: |
           nix profile install \
-            github:NixOS/nixpkgs/44a91898084f46797b5fac650c7e8c9ac38c43d4#pi-coding-agent \
-            github:NixOS/nixpkgs/44a91898084f46797b5fac650c7e8c9ac38c43d4#jq
+            github:NixOS/nixpkgs/061e83fc010a624d8045793836ee20bb8f4b5348#pi-coding-agent \
+            github:NixOS/nixpkgs/061e83fc010a624d8045793836ee20bb8f4b5348#jq
+          pi --version
           jq --version
       - name: Review PR with gh and repository policy
         env:
@@ -82,11 +84,15 @@ jobs:
           set -euo pipefail
           skill="$GITHUB_WORKSPACE/.github/auto-approval/review-pr/SKILL.md"
           cd "$RUNNER_TEMP/review"
-          timeout 900 pi --print --mode text \
+          log_token="$(cat /proc/sys/kernel/random/uuid)"
+          echo "::stop-commands::$log_token"
+          trap 'echo "::$log_token::"' EXIT
+          timeout 900 pi --mode json \
             --provider openrouter --model deepseek/deepseek-v4.1-flash \
             --session-dir "$RUNNER_TEMP/pi-sessions" \
-            --system-prompt "$(cat "$skill")" \
-            "Review $GH_REPO#$PR_NUMBER at $EXPECTED_HEAD using evidence.json. The evidence fingerprint is $EXPECTED_FINGERPRINT. Write verdict.json here."
+            --skill "$skill" \
+            "/skill:review-pr Review $GH_REPO#$PR_NUMBER at $EXPECTED_HEAD. Read .code-review.md and evidence.json. The evidence fingerprint is $EXPECTED_FINGERPRINT. Write verdict.json here." \
+            | jq --unbuffered --join-output -f "$GITHUB_WORKSPACE/.github/auto-approval/stream.jq"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: verdict-${{ inputs.pr_number }}-${{ github.run_attempt }}
