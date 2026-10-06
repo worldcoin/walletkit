@@ -65,8 +65,12 @@ jobs:
           name: evidence-${{ inputs.pr_number }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/review
       - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
-      - name: Install pinned agent
-        run: nix profile install github:NixOS/nixpkgs/44a91898084f46797b5fac650c7e8c9ac38c43d4#pi-coding-agent
+      - name: Install pinned agent and jq
+        run: |
+          nix profile install \
+            github:NixOS/nixpkgs/44a91898084f46797b5fac650c7e8c9ac38c43d4#pi-coding-agent \
+            github:NixOS/nixpkgs/44a91898084f46797b5fac650c7e8c9ac38c43d4#jq
+          jq --version
       - name: Review PR with gh and repository policy
         env:
           GH_TOKEN: ${{ github.token }}
