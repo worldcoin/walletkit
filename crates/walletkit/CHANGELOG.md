@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1](https://github.com/worldcoin/walletkit/compare/v0.27.0...v0.27.1) - 2026-10-06
+
+### Added
+
+- *(web)* add a Next.js demo of @worldcoin/walletkit-web ([#590](https://github.com/worldcoin/walletkit/pull/590))
+- *(web)* add the @worldcoin/walletkit-web browser package ([#589](https://github.com/worldcoin/walletkit/pull/589))
+
 ## [0.27.0](https://github.com/worldcoin/walletkit/compare/v0.26.0...v0.27.0) - 2026-10-05
 
 ### Added
