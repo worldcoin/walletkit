@@ -1,3 +1,4 @@
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import subprocess
@@ -36,6 +37,33 @@ class ReportTests(unittest.TestCase):
         self.assertIn("[redacted]", body)
         self.assertIn("Approval not confirmed", body)
         self.assertLess(len(body), 65536)
+
+    def test_multiline_reasons_stay_in_literal_html_blocks(self):
+        class LiteralText(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.in_pre = False
+                self.text = []
+
+            def handle_starttag(self, tag, attrs):
+                if tag == "pre":
+                    self.in_pre = True
+
+            def handle_endtag(self, tag):
+                if tag == "pre":
+                    self.in_pre = False
+
+            def handle_data(self, data):
+                if self.in_pre:
+                    self.text.append(data)
+
+        payload = "Reason\n\n![tracking](https://example.com/pixel)\n\n</pre><img src=x>"
+        body = report.render_report(self.verdict | {"reason": payload}, "Done",
+                                    {"status": "withheld", "reason": payload}, "https://example.com/run")
+        parser = LiteralText()
+        parser.feed(body)
+        self.assertEqual(parser.text.count(payload), 2)
+        self.assertNotIn("<img", body)
 
     @patch("gate.api")
     @patch("gate.pages")

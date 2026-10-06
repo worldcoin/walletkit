@@ -33,7 +33,8 @@ immediate recheck. Re-run all jobs rather than only failed jobs, because evidenc
 artifacts are scoped to the run attempt. At most two PRs per invocation are reviewed concurrently; each
 agent has a 15-minute deadline. The sweep refuses more than 100 candidates rather
 than silently omitting PRs. Reviews that withhold approval may run again hourly;
-the `no-auto-approve` label opts a PR out. Disable the Auto approve workflow to
+the `no-auto-approve` label opts a PR out. Withheld verdicts are not cached by
+fingerprint: the agent can inspect CI and upstream evidence outside the snapshot. Disable the Auto approve workflow to
 stop the automation without affecting normal human review.
 
 Three separate GitHub-hosted jobs collect evidence, run the agent, and approve.

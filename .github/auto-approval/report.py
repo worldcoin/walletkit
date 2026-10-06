@@ -22,10 +22,10 @@ def render_report(verdict, response, result, run_url, secrets=()):
     status = {"approved": "Approved", "withheld": "Approval withheld",
               "unconfirmed": "Approval not confirmed"}[result["status"]]
     parts = [gate.REPORT_MARKER, f"## Agent review · {status}",
-             f"<p>{safe(result['reason'])}</p>",
+             f"<pre>{safe(result['reason'])}</pre>",
              f"Reviewed commit: <code>{safe(verdict['head'], 100)}</code> · [Workflow run]({run_url})",
              "Agent recommendation: **" + ("approve" if verdict["approve"] else "withhold approval") + "**",
-             f"<p>{safe(verdict['reason'])}</p>",
+             f"<pre>{safe(verdict['reason'])}</pre>",
              "### Final agent response", f"<pre>{safe(response or 'No final response was emitted.', 6000)}</pre>",
              "<details><summary>Structured review assessment</summary>\n"]
     for field, title in [("review_coverage", "Review coverage"),
