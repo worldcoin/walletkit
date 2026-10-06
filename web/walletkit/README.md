@@ -169,9 +169,10 @@ mapping, and using Rust objects through handles. `bun run bundle` reuses the bui
 module for TypeScript-only development. The build checks that the `wasm-bindgen` CLI
 matches the version in `Cargo.lock`.
 
-The example persists its storage ID and database key in `localStorage` so it can
-reopen its encrypted files after a reload; a production host must implement key
-recovery/unlock and stable account namespace selection.
+Do not persist the database key in `localStorage` or other script-readable storage:
+supplied-key stores have no envelope, so the key is the vault's only protection. A
+production host must implement key recovery/unlock (for example from a passkey PRF)
+and stable account namespace selection.
 
 ## Releasing
 

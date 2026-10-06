@@ -57,11 +57,16 @@ impl StorageKeys {
     /// Returns an error if the key is not exactly 32 bytes.
     pub fn from_bytes(database_key: Vec<u8>) -> StorageResult<Self> {
         let database_key = Zeroizing::new(database_key);
-        let key: &[u8; 32] = database_key.as_slice().try_into().map_err(|_| {
-            StorageError::InvalidInput("expected a 32-byte database key".to_string())
-        })?;
+        if database_key.len() != 32 {
+            return Err(StorageError::InvalidInput(
+                "expected a 32-byte database key".to_string(),
+            ));
+        }
+        // Copy straight into the boxed key; `init_with` would leave a stack copy.
         Ok(Self {
-            intermediate_key: SecretBox::init_with(|| *key),
+            intermediate_key: SecretBox::init_with_mut(|key: &mut [u8; 32]| {
+                key.copy_from_slice(&database_key);
+            }),
         })
     }
 
