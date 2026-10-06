@@ -91,6 +91,8 @@ jobs:
       # TODO: magic-nix-cache is best-effort; builds still work without it.
       - name: Enable Nix cache
         uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
+        with:
+          use-gha-cache: ${{ github.event_name != 'release' }}
 
       # The pinned toolchain (Rust, wasm-bindgen CLI, Binaryen, bun, nargo) is the same
       # one the docs use locally, so CI builds what developers build.
