@@ -73,15 +73,31 @@ pub use walletkit_db::{Lock as StorageLock, LockGuard as StorageLockGuard};
 ///
 /// Best effort - logs failed operations but does not return an error.
 pub(crate) fn delete_database_files(path: &std::path::Path) {
-    for path in [
+    if let Err(err) = try_delete_database_files(path) {
+        tracing::error!("{err}");
+    }
+}
+
+/// Deletes a database and its journal files, attempting every file and reporting
+/// all failures.
+pub(crate) fn try_delete_database_files(path: &std::path::Path) -> Result<(), String> {
+    let errors: Vec<String> = [
         path.to_path_buf(),
         path.with_extension("sqlite-journal"),
         path.with_extension("sqlite-wal"),
         path.with_extension("sqlite-shm"),
-    ] {
-        if let Err(err) = delete_database_file(&path) {
-            tracing::error!("Failed to delete database file {}: {err}", path.display());
-        }
+    ]
+    .iter()
+    .filter_map(|path| {
+        delete_database_file(path).err().map(|err| {
+            format!("Failed to delete database file {}: {err}", path.display())
+        })
+    })
+    .collect();
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
     }
 }
 

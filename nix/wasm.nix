@@ -18,12 +18,15 @@ in
 pkgs.mkShell {
   packages = [
     rustToolchain
+    pkgs.bun
     llvm.clang-unwrapped
     llvm.bintools-unwrapped
     wasmBindgenCli
+    pkgs.binaryen
     pkgs.curl
     pkgs.git
     pkgs.nargo
+    pkgs.nodejs
   ]
   ++ pkgs.lib.optionals firefoxAvailable [
     pkgs.firefox
@@ -39,7 +42,7 @@ pkgs.mkShell {
     echo "  target: wasm32-unknown-unknown"
     echo "  clang: $CC_wasm32_unknown_unknown"
     echo ""
-    echo "Build with: cargo build -p walletkit --target wasm32-unknown-unknown"
+    echo "Build with: cargo build -p walletkit-web --target wasm32-unknown-unknown"
     echo "Test with:  cargo test -p walletkit-sqlite --target wasm32-unknown-unknown"
   '';
 }

@@ -66,15 +66,26 @@ impl std::fmt::Debug for CredentialStore {
 
 struct CredentialStoreInner {
     lock: StorageLock,
-    keystore: Arc<dyn DeviceKeystore>,
-    blob_store: Arc<dyn AtomicBlobStore>,
+    key_source: KeySource,
     paths: StoragePaths,
     state: Option<StorageState>,
 }
 
+/// Where the database key comes from.
+enum KeySource {
+    /// Opened (or created) from the account key envelope on first `init`.
+    Envelope {
+        keystore: Arc<dyn DeviceKeystore>,
+        blob_store: Arc<dyn AtomicBlobStore>,
+    },
+    /// Resolved by the host, for example derived from a passkey in the browser.
+    /// The host owns the key; the store keeps no envelope. `None` once destroyed.
+    Supplied(Option<Arc<StorageKeys>>),
+}
+
 struct StorageState {
     #[allow(dead_code)]
-    keys: StorageKeys,
+    keys: Arc<StorageKeys>,
     vault: CredentialVault,
     cache: CacheDb,
     leaf_index: u64,
@@ -105,11 +116,23 @@ impl CredentialStoreInner {
         keystore: Arc<dyn DeviceKeystore>,
         blob_store: Arc<dyn AtomicBlobStore>,
     ) -> StorageResult<Self> {
+        Self::with_key_source(
+            paths,
+            KeySource::Envelope {
+                keystore,
+                blob_store,
+            },
+        )
+    }
+
+    fn with_key_source(
+        paths: StoragePaths,
+        key_source: KeySource,
+    ) -> StorageResult<Self> {
         let lock = StorageLock::open(&paths.lock_path())?;
         Ok(Self {
             lock,
-            keystore,
-            blob_store,
+            key_source,
             paths,
             state: None,
         })
@@ -350,17 +373,25 @@ impl CredentialStore {
 impl CredentialStore {
     /// Permanently destroys all credential storage data.
     ///
-    /// This removes the encryption key envelope, the vault database, and the
-    /// cache database. After this call the store is left in an uninitialized
-    /// state — any subsequent operation (other than re-initialization) will
-    /// return [`StorageError::NotInitialized`].
-    ///
     /// Intended for use when the user logs out or deletes their account.
+    ///
+    /// For a store opened from a keystore and blob store, this removes the
+    /// encryption key envelope, then the vault and cache databases on a best-effort
+    /// basis (deleting the envelope already makes them unreadable). The store is
+    /// left uninitialized: any later operation other than re-initialization
+    /// returns [`StorageError::NotInitialized`].
+    ///
+    /// For a store opened with a supplied key ([`Self::with_keys`]) there is no
+    /// envelope, so the databases must actually be deleted. The store also drops its
+    /// key reference: this handle can no longer be initialized, and reopening needs
+    /// a new store. Discarding the host's own copy of the key is up to the host.
     ///
     /// # Errors
     ///
-    /// Returns an error if the storage lock cannot be acquired or the key
-    /// envelope cannot be deleted from the blob store.
+    /// Returns an error if the storage lock cannot be acquired or the key envelope
+    /// cannot be deleted from the blob store. For a supplied-key store, also
+    /// returns [`StorageError::VaultDb`] or [`StorageError::CacheDb`] if a database
+    /// file cannot be deleted.
     pub fn destroy_storage(&self) -> StorageResult<()> {
         self.lock_inner()?.destroy_storage()
     }
@@ -663,12 +694,22 @@ impl CredentialStoreInner {
             return Ok(());
         }
 
-        let keys = StorageKeys::init(
-            self.keystore.as_ref(),
-            self.blob_store.as_ref(),
-            &self.lock,
-            now,
-        )?;
+        let keys = match &self.key_source {
+            KeySource::Envelope {
+                keystore,
+                blob_store,
+            } => Arc::new(StorageKeys::init(
+                keystore.as_ref(),
+                blob_store.as_ref(),
+                &self.lock,
+                now,
+            )?),
+            KeySource::Supplied(Some(keys)) => Arc::clone(keys),
+            KeySource::Supplied(None) => return Err(StorageError::InvalidInput(
+                "credential storage was destroyed; open a new store to use it again"
+                    .to_string(),
+            )),
+        };
         let k_intermediate = keys.intermediate_key();
         let vault = CredentialVault::new(&self.paths.vault_db_path(), k_intermediate)?;
         let cache = CacheDb::new(&self.paths.cache_db_path(), k_intermediate)?;
@@ -981,20 +1022,63 @@ impl CredentialStoreInner {
     fn destroy_storage(&mut self) -> StorageResult<()> {
         let _guard = self.guard()?;
         self.state = None;
-        // Delete the encryption key envelope. Without this key the database
-        // files are unreadable even if file deletion below fails.
-        self.blob_store.delete(ACCOUNT_KEYS_FILENAME.to_string())?;
+        match &mut self.key_source {
+            KeySource::Envelope { blob_store, .. } => {
+                // Delete the encryption key envelope. Without this key the database
+                // files are unreadable even if file deletion below fails.
+                blob_store.delete(ACCOUNT_KEYS_FILENAME.to_string())?;
 
-        // Best-effort removal: deleting the key above cryptographically destroys
-        // the databases even if their encrypted files cannot be removed.
-        super::delete_database_files(&self.paths.vault_db_path());
-        super::delete_database_files(&self.paths.cache_db_path());
+                // Best-effort removal: deleting the key above cryptographically
+                // destroys the databases even if their encrypted files remain.
+                super::delete_database_files(&self.paths.vault_db_path());
+                super::delete_database_files(&self.paths.cache_db_path());
+            }
+            KeySource::Supplied(keys) => {
+                // There is no envelope to delete, and the host still holds the key, so
+                // the files stay readable unless they are actually removed: deletion
+                // must succeed. Drop this store's key reference first either way.
+                keys.take();
+                let vault =
+                    super::try_delete_database_files(&self.paths.vault_db_path());
+                let cache =
+                    super::try_delete_database_files(&self.paths.cache_db_path());
+                vault.map_err(StorageError::VaultDb)?;
+                cache.map_err(StorageError::CacheDb)?;
+            }
+        }
 
         Ok(())
     }
 }
 
 impl CredentialStore {
+    /// Creates a storage handle that opens its databases with an already resolved key.
+    ///
+    /// Used by the browser, which has no device keystore: the host derives the key
+    /// (for example from a passkey PRF) and must supply the same key to reopen the
+    /// store. No key envelope is written, so [`Self::destroy_storage`] fails unless
+    /// the database files are actually deleted, and drops this store's key reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the storage lock cannot be opened.
+    pub fn with_keys(
+        paths: StoragePaths,
+        keys: Arc<StorageKeys>,
+    ) -> StorageResult<Self> {
+        let inner = CredentialStoreInner::with_key_source(
+            paths,
+            KeySource::Supplied(Some(keys)),
+        )?;
+        Ok(Self {
+            inner: Mutex::new(inner),
+            #[cfg(not(target_arch = "wasm32"))]
+            vault_changed_tx: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
+            activity_changed_tx: Mutex::new(None),
+        })
+    }
+
     /// Creates a new storage handle from a platform provider.
     ///
     /// # Errors
@@ -1050,6 +1134,91 @@ mod tests {
     use crate::storage::types::{ActivityOutcome, ProtocolVersion};
 
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    fn supplied_keys(byte: u8) -> Arc<StorageKeys> {
+        Arc::new(StorageKeys::from_bytes(vec![byte; 32]).expect("32-byte key"))
+    }
+
+    #[test]
+    fn supplied_keys_reopen_storage_and_reject_a_different_key() {
+        let root = temp_root_path();
+        let paths = StoragePaths::new(&root);
+
+        let store =
+            CredentialStore::with_keys(paths.clone(), supplied_keys(7)).expect("store");
+        store
+            .init(42, 100)
+            .expect("create storage with a supplied key");
+        drop(store);
+
+        let reopened =
+            CredentialStore::with_keys(paths.clone(), supplied_keys(7)).expect("store");
+        reopened.init(42, 100).expect("reopen with the same key");
+        drop(reopened);
+
+        let wrong = CredentialStore::with_keys(paths, supplied_keys(8)).expect("store");
+        assert!(
+            wrong.init(42, 100).is_err(),
+            "a different key must not open the vault"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn destroying_supplied_key_storage_deletes_files_and_drops_the_key() {
+        let root = temp_root_path();
+        let paths = StoragePaths::new(&root);
+        let store =
+            CredentialStore::with_keys(paths.clone(), supplied_keys(7)).expect("store");
+        store.init(42, 100).expect("init storage");
+
+        store.destroy_storage().expect("destroy storage");
+        assert!(!paths.vault_db_path().exists(), "vault must be deleted");
+        assert!(!paths.cache_db_path().exists(), "cache must be deleted");
+        assert!(
+            store.init(42, 100).is_err(),
+            "a destroyed store must not reopen with its old key"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn destroying_supplied_key_storage_reports_deletion_failures() {
+        let root = temp_root_path();
+        let paths = StoragePaths::new(&root);
+        let store =
+            CredentialStore::with_keys(paths.clone(), supplied_keys(7)).expect("store");
+        store.init(42, 100).expect("init storage");
+
+        // A directory where the vault file was cannot be removed as a file.
+        std::fs::remove_file(paths.vault_db_path()).expect("remove vault");
+        std::fs::create_dir(paths.vault_db_path()).expect("block vault path");
+
+        assert!(
+            matches!(store.destroy_storage(), Err(StorageError::VaultDb(_))),
+            "a failed deletion must not report success"
+        );
+        assert!(
+            !paths.cache_db_path().exists(),
+            "the cache is still deleted"
+        );
+        assert!(
+            store.init(42, 100).is_err(),
+            "the key is dropped even on failure"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn supplied_keys_must_be_32_bytes() {
+        assert!(matches!(
+            StorageKeys::from_bytes(vec![0; 31]),
+            Err(StorageError::InvalidInput(_))
+        ));
+    }
 
     struct TestVaultListener(Arc<AtomicU32>);
 

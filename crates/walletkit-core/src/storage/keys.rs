@@ -7,10 +7,10 @@
 //! `walletkit-db` README.
 
 use secrecy::SecretBox;
-use zeroize::{Zeroize, ZeroizeOnDrop};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use super::{
-    error::StorageResult,
+    error::{StorageError, StorageResult},
     traits::{AtomicBlobStore, DeviceKeystore},
     ACCOUNT_KEYS_FILENAME, ACCOUNT_KEY_ENVELOPE_AD,
 };
@@ -47,6 +47,27 @@ impl StorageKeys {
             now,
         )?;
         Ok(Self { intermediate_key })
+    }
+
+    /// Wraps an already resolved 32-byte database key, for example one derived from a
+    /// passkey PRF in the browser. See [`super::CredentialStore::with_keys`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the key is not exactly 32 bytes.
+    pub fn from_bytes(database_key: Vec<u8>) -> StorageResult<Self> {
+        let database_key = Zeroizing::new(database_key);
+        if database_key.len() != 32 {
+            return Err(StorageError::InvalidInput(
+                "expected a 32-byte database key".to_string(),
+            ));
+        }
+        // Copy straight into the boxed key; `init_with` would leave a stack copy.
+        Ok(Self {
+            intermediate_key: SecretBox::init_with_mut(|key: &mut [u8; 32]| {
+                key.copy_from_slice(&database_key);
+            }),
+        })
     }
 
     /// Returns a reference to the intermediate key's [`SecretBox`].

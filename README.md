@@ -51,6 +51,21 @@ binding tests with `cargo xtask swift test`.
 
 See [`swift/README.md`](swift/README.md) for package integration details.
 
+## Local development (browser/WASM)
+
+The experimental `@worldcoin/walletkit-web` npm package (`web/walletkit`) wraps the
+`walletkit-web` crate, a `wasm-bindgen` facade over `walletkit-core` whose classes
+mirror the Swift and Kotlin objects. It runs WalletKit in a dedicated Web Worker and
+does not use UniFFI bindings. Build and test it with the pinned WASM toolchain:
+
+```bash
+nix develop .#wasm --command bun install --cwd web/walletkit --frozen-lockfile
+nix develop .#wasm --command bun run --cwd web/walletkit build
+nix develop .#wasm --command bun run --cwd web/walletkit test:browser
+```
+
+See [`web/walletkit/README.md`](web/walletkit/README.md) for the API and releasing.
+
 ## Local development (Android/Kotlin)
 
 ### Prerequisites

@@ -17,6 +17,7 @@ use world_id_core::{
     InitializingAuthenticator as CoreInitializingAuthenticator,
     OnchainKeyRepresentable, Signer,
 };
+use zeroize::Zeroizing;
 
 use crate::requests::{ProofRequest, ProofResponse};
 use crate::storage::CredentialStore;
@@ -513,6 +514,7 @@ impl Authenticator {
         artifacts: Arc<dyn WalletKitZkArtifactSource>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
+        let seed = Zeroizing::new(seed);
         let config = defaults::default_config(environment, rpc_url, region)?;
         Self::init_with_config(&seed, config, artifacts, store).await
     }
@@ -536,6 +538,7 @@ impl Authenticator {
         artifacts: Arc<dyn WalletKitZkArtifactSource>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
+        let seed = Zeroizing::new(seed);
         let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
         Self::init_with_config(&seed, config, artifacts, store).await
     }
@@ -555,6 +558,7 @@ impl Authenticator {
         artifacts: Arc<dyn WalletKitZkArtifactSource>,
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
+        let seed = Zeroizing::new(seed);
         let config =
             Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
                 attribute: "config".to_string(),
@@ -864,6 +868,7 @@ impl InitializingAuthenticator {
         region: Option<Region>,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
+        let seed = Zeroizing::new(seed);
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
@@ -897,6 +902,7 @@ impl InitializingAuthenticator {
         region: Option<Region>,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
+        let seed = Zeroizing::new(seed);
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
@@ -926,6 +932,7 @@ impl InitializingAuthenticator {
         config: &str,
         recovery_address: Option<String>,
     ) -> Result<Self, WalletKitError> {
+        let seed = Zeroizing::new(seed);
         let recovery_address =
             Address::parse_from_ffi_optional(recovery_address, "recovery_address")?;
 
@@ -1056,6 +1063,7 @@ pub fn validate_authenticator_pubkey(
     reason = "seed is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
 )]
 pub fn recovery_data_from_seed(seed: Vec<u8>) -> Result<RecoveryData, WalletKitError> {
+    let seed = Zeroizing::new(seed);
     RecoveryData::from_seed(&seed)
 }
 

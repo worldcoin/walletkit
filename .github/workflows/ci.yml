@@ -74,7 +74,7 @@ jobs:
         run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 
   wasm-check:
-    name: WASM walletkit compile check
+    name: WASM walletkit-web compile check
     runs-on: ubuntu-latest
 
     steps:
@@ -110,7 +110,11 @@ jobs:
           llvm-ar-18 --version | head -n1
 
       - name: Run WASM compile check
-        run: cargo check -p walletkit --features embed-zkeys --target wasm32-unknown-unknown
+        run: cargo check -p walletkit-web --target wasm32-unknown-unknown --locked
+
+      # `--no-deps`: walletkit-core is linted on its native targets above.
+      - name: Run WASM clippy
+        run: cargo clippy -p walletkit-web --no-deps --target wasm32-unknown-unknown --locked -- -D warnings
 
       # Keep this version aligned with the wasm-bindgen version in Cargo.lock.
       - name: Install WASM browser test runner
