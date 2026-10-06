@@ -26,16 +26,13 @@ parsing is suspended around model output so it is treated as log text.
 `discussion_resolution`, `independent_review`, `policy_checks`, `head`, and
 `evidence` (the fingerprint). The final job validates it before submitting approval.
 
-The workflow runs on PR changes and general PR comments. An hourly sweep catches
-review submissions and thread resolutions, for which this workflow has no direct
-trusted Actions trigger. Use **Auto approve → Run workflow → pr_number** for an
-immediate recheck. Re-run all jobs rather than only failed jobs, because evidence
-artifacts are scoped to the run attempt. At most two PRs per invocation are reviewed concurrently; each
-agent has a 15-minute deadline. The sweep refuses more than 100 candidates rather
-than silently omitting PRs. Reviews that withhold approval may run again hourly;
-the `no-auto-approve` label opts a PR out. Withheld verdicts are not cached by
-fingerprint: the agent can inspect CI and upstream evidence outside the snapshot. Disable the Auto approve workflow to
-stop the automation without affecting normal human review.
+The workflow runs on PR changes and general PR comments, with no scheduled runs.
+Review submissions and thread resolutions alone do not trigger it. Use
+**Auto approve → Run workflow → pr_number** to recheck after those events.
+Re-run all jobs rather than only failed jobs, because evidence artifacts are scoped
+to the run attempt. Each invocation reviews one PR; each agent has a 15-minute
+deadline. The `no-auto-approve` label opts a PR out. Disable the Auto approve
+workflow to stop the automation without affecting normal human review.
 
 Three separate GitHub-hosted jobs collect evidence, run the agent, and approve.
 Only the final job receives `WALLETKIT_BOT_TOKEN`. It re-fetches the evidence,

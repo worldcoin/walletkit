@@ -5,8 +5,6 @@ on:
     types: [opened, synchronize, reopened, ready_for_review, edited, labeled, unlabeled]
   issue_comment:
     types: [created, edited, deleted]
-  schedule:
-    - cron: '23 * * * *'
   workflow_dispatch:
     inputs:
       pr_number:
@@ -24,53 +22,36 @@ jobs:
       (github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'main') ||
       (github.event_name == 'issue_comment' && github.event.issue.pull_request &&
         !(github.event.sender.login == 'wld-walletkit-bot' && startsWith(github.event.comment.body, '<!-- walletkit-auto-approval-report -->'))) ||
-      (github.event_name == 'schedule') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      prs: ${{ steps.select.outputs.prs }}
+      pr: ${{ steps.select.outputs.pr }}
     steps:
-      - name: Select pull requests
+      - name: Select pull request
         id: select
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
         run: |
           python3 - <<'PY'
-          import json, os, subprocess
+          import json, os
           event = json.load(open(os.environ['GITHUB_EVENT_PATH']))
           kind = os.environ['GITHUB_EVENT_NAME']
-          if kind == 'schedule':
-              result = subprocess.run(
-                  ['gh', 'api', f"repos/{os.environ['GH_REPO']}/pulls?state=open&base=main&per_page=100",
-                   '--paginate', '--slurp'], check=True, capture_output=True, text=True, timeout=90)
-              prs = [p['number'] for page in json.loads(result.stdout) for p in page
-                     if not p['draft'] and p['head']['repo']
-                     and p['head']['repo']['full_name'] == os.environ['GH_REPO']]
-          elif kind == 'workflow_dispatch':
-              prs = [int(event['inputs']['pr_number'])]
+          if kind == 'workflow_dispatch':
+              pr = int(event['inputs']['pr_number'])
           elif kind == 'issue_comment':
-              prs = [event['issue']['number']]
+              pr = event['issue']['number']
           else:
-              prs = [event['pull_request']['number']]
-          if len(prs) > 100 or any(type(n) is not int or n <= 0 for n in prs):
-              raise ValueError('Unsupported PR selection; use workflow_dispatch for individual PRs')
+              pr = event['pull_request']['number']
+          if type(pr) is not int or pr <= 0:
+              raise ValueError('PR number must be a positive integer')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write('prs=' + json.dumps(prs) + '\n')
+              output.write('pr=' + str(pr) + '\n')
           PY
 
   review:
     needs: select
-    if: needs.select.outputs.prs != '[]'
-    strategy:
-      fail-fast: false
-      max-parallel: 2
-      matrix:
-        pr: ${{ fromJSON(needs.select.outputs.prs) }}
     uses: ./.github/workflows/review-for-approval.yml
     with:
-      pr_number: ${{ matrix.pr }}
+      pr_number: ${{ fromJSON(needs.select.outputs.pr) }}
     secrets:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       APPROVAL_TOKEN: ${{ secrets.WALLETKIT_BOT_TOKEN }}
