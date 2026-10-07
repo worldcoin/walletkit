@@ -60,6 +60,30 @@ impl Connection {
         Ok(Self { db })
     }
 
+    /// Keeps temporary tables and indices in memory.
+    ///
+    /// `sqlite3mc` does not encrypt temporary databases, so allowing temporary
+    /// storage to spill to a filesystem could expose plaintext at rest.
+    ///
+    /// # Errors
+    /// Returns an error if the setting cannot be applied or verified.
+    pub fn ensure_temp_store_memory(&self) -> DbResult<()> {
+        const TEMP_STORE_MEMORY: i64 = 2;
+        self.execute_batch("PRAGMA temp_store = MEMORY;")?;
+        let actual =
+            self.query_row("PRAGMA temp_store;", &[], |row| Ok(row.column_i64(0)))?;
+        if actual == TEMP_STORE_MEMORY {
+            Ok(())
+        } else {
+            Err(Error::new(
+                -1,
+                format!(
+                    "could not ensure PRAGMA temp_store = MEMORY: expected {TEMP_STORE_MEMORY}, got {actual}"
+                ),
+            ))
+        }
+    }
+
     /// Replaces an existing schema with a read-only in-memory database image.
     ///
     /// Copies `bytes` into SQLite-owned memory, freed when the schema is detached
@@ -242,6 +266,18 @@ mod tests {
             })
             .expect("query");
         assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn test_temp_store_memory_overrides_file_storage() {
+        init_sqlite();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA temp_store = FILE;").unwrap();
+        conn.ensure_temp_store_memory().unwrap();
+        let temp_store = conn
+            .query_row("PRAGMA temp_store;", &[], |row| Ok(row.column_i64(0)))
+            .unwrap();
+        assert_eq!(temp_store, 2);
     }
 
     #[cfg(not(target_arch = "wasm32"))]

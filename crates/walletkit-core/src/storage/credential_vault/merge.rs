@@ -31,6 +31,9 @@ impl CredentialVault {
         let incoming =
             Connection::open(":memory:", false).map_err(|e| map_db_err(&e))?;
         incoming
+            .ensure_temp_store_memory()
+            .map_err(|e| map_db_err(&e))?;
+        incoming
             .deserialize_readonly("main", bytes)
             .map_err(|e| map_db_err(&e))?;
         merge_from(self.vault.connection(), &incoming)

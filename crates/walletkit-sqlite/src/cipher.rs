@@ -53,7 +53,6 @@ const SQLITE_CORRUPT: i32 = 11;
 const FOREIGN_KEYS_ON: i64 = 1;
 const SYNCHRONOUS_FULL: i64 = 2;
 const SECURE_DELETE_ON: i64 = 1;
-const TEMP_STORE_MEMORY: i64 = 2;
 
 /// Opens a writable database, applies the encryption key, and configures the connection.
 ///
@@ -106,7 +105,7 @@ fn configure_connection(
     ensure_foreign_keys(conn)?;
     ensure_synchronous_full(conn)?;
     ensure_secure_delete(conn)?;
-    ensure_temp_store_memory(conn)?;
+    conn.ensure_temp_store_memory()?;
     Ok(())
 }
 
@@ -362,26 +361,6 @@ fn ensure_secure_delete(conn: &Connection) -> DbResult<()> {
             -1,
             format!(
                 "could not ensure PRAGMA secure_delete = ON: expected {SECURE_DELETE_ON}, got {actual}"
-            ),
-        ))
-    }
-}
-
-/// Keeps temporary tables and indices in memory.
-///
-/// `sqlite3mc` does not encrypt temporary databases, so allowing temporary
-/// storage to spill to a filesystem could expose plaintext at rest.
-fn ensure_temp_store_memory(conn: &Connection) -> DbResult<()> {
-    conn.execute_batch("PRAGMA temp_store = MEMORY;")?;
-    let actual =
-        conn.query_row("PRAGMA temp_store;", &[], |row| Ok(row.column_i64(0)))?;
-    if actual == TEMP_STORE_MEMORY {
-        Ok(())
-    } else {
-        Err(Error::new(
-            -1,
-            format!(
-                "could not ensure PRAGMA temp_store = MEMORY: expected {TEMP_STORE_MEMORY}, got {actual}"
             ),
         ))
     }

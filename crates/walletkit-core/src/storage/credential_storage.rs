@@ -381,6 +381,11 @@ impl CredentialStore {
         let added = {
             let inner = self.lock_inner()?;
             let _guard = inner.guard()?;
+            // TODO: Move stale-file cleanup to storage initialization. Merges now
+            // stay in memory, but files left by crashed file-based backup
+            // operations still need removal, even for apps that only merge.
+            #[cfg(not(target_arch = "wasm32"))]
+            inner.cleanup_stale_backup_files();
             inner.state()?.vault.merge_plaintext_bytes(backup_bytes)?
         };
         if added != 0 {
@@ -1697,7 +1702,17 @@ mod tests {
         local.set_vault_changed_listener(Arc::new(ChannelVaultListener(
             notifications_tx,
         )));
+        let stale_path = local
+            .storage_paths()
+            .unwrap()
+            .worldid_dir()
+            .join(format!("{VAULT_BACKUP_TEMP_PREFIX}stale.sqlite"));
+        std::fs::write(&stale_path, b"stale plaintext data").unwrap();
         assert_eq!(local.merge_vault_from_backup(&backup).unwrap(), 1);
+        assert!(
+            !stale_path.exists(),
+            "merge should remove stale backup files"
+        );
         notifications_rx
             .recv_timeout(std::time::Duration::from_secs(1))
             .expect("a merge that adds credentials should notify the listener");
