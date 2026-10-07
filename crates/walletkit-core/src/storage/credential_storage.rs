@@ -353,6 +353,26 @@ impl CredentialStore {
         self.lock_inner()?.activity_metadata()
     }
 
+    /// Deletes the activities identified by `entry_ids`, returning the
+    /// number of activities that were removed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the query fails.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "uniffi requires an owned Vec to lift a foreign sequence"
+    )]
+    pub fn delete_activities(&self, entry_ids: Vec<u64>) -> StorageResult<u64> {
+        let deleted = self.lock_inner()?.delete_activities(&entry_ids)?;
+
+        if deleted > 0 {
+            self.notify_activity_changed();
+        }
+
+        Ok(deleted)
+    }
+
     /// Deletes all activity entries. Returns the number of entries deleted.
     ///
     /// # Errors
@@ -820,6 +840,11 @@ impl CredentialStoreInner {
     fn activity_metadata(&self) -> StorageResult<ActivityMetadata> {
         let state = self.state()?;
         state.cache.activity_metadata()
+    }
+
+    fn delete_activities(&mut self, entry_ids: &[u64]) -> StorageResult<u64> {
+        let state = self.state_mut()?;
+        state.cache.delete_activities(entry_ids)
     }
 
     fn clear_activities(&mut self) -> StorageResult<u64> {
@@ -2234,6 +2259,109 @@ mod tests {
             count.load(Ordering::SeqCst),
             0,
             "listener should not be notified when record_activity fails"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_activity_changed_listener_notified_on_delete() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let count = Arc::new(AtomicU32::new(0));
+        store.set_activity_changed_listener(Arc::new(TestActivityListener(
+            Arc::clone(&count),
+        )));
+
+        let entry_id = store
+            .record_activity(&sample_new_activity_entry(), 1000)
+            .expect("record activity");
+
+        wait_for_listener_count(&count, 1);
+
+        let deleted = store
+            .delete_activities(vec![entry_id])
+            .expect("delete activities");
+
+        assert_eq!(deleted, 1);
+
+        wait_for_listener_count(&count, 2);
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_activity_changed_listener_not_notified_when_delete_removes_nothing() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let count = Arc::new(AtomicU32::new(0));
+        store.set_activity_changed_listener(Arc::new(TestActivityListener(
+            Arc::clone(&count),
+        )));
+
+        let entry_id = store
+            .record_activity(&sample_new_activity_entry(), 1000)
+            .expect("record activity");
+
+        wait_for_listener_count(&count, 1);
+
+        assert_eq!(store.delete_activities(vec![]).expect("delete none"), 0);
+        assert_eq!(
+            store
+                .delete_activities(vec![entry_id + 100])
+                .expect("delete unknown id"),
+            0
+        );
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "listener should not be notified when delete_activities removes nothing"
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_activity_changed_listener_not_notified_when_delete_fails() {
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = CredentialStore::from_provider(&provider).expect("create store");
+        store.init(42, 1000).expect("init storage");
+
+        let count = Arc::new(AtomicU32::new(0));
+        store.set_activity_changed_listener(Arc::new(TestActivityListener(
+            Arc::clone(&count),
+        )));
+
+        let entry_id = store
+            .record_activity(&sample_new_activity_entry(), 1000)
+            .expect("record activity");
+
+        wait_for_listener_count(&count, 1);
+
+        let result = store.delete_activities(vec![entry_id, u64::MAX]);
+        assert!(result.is_err());
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "listener should not be notified when delete_activities fails"
+        );
+        assert_eq!(
+            store.activity_metadata().expect("metadata").total_count,
+            1,
+            "a failed delete must not remove any activity"
         );
 
         cleanup_test_storage(&root);

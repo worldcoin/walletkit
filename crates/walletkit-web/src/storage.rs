@@ -319,6 +319,19 @@ impl JsCredentialStore {
         js::object(&[("totalCount", metadata.total_count.into())])
     }
 
+    /// Deletes the given activity entries and returns how many were removed.
+    ///
+    /// # Errors
+    /// Throws a `TypeError` for malformed ids, or a `StorageError` when the write fails.
+    #[wasm_bindgen(js_name = deleteActivities)]
+    pub fn delete_activities(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "bigint[]")] entry_ids: &JsValue,
+    ) -> Result<u64, JsValue> {
+        let entry_ids = js::u64_array_arg("entryIds", entry_ids)?;
+        self.0.delete_activities(entry_ids).map_err(to_js)
+    }
+
     /// # Errors
     /// Throws a `StorageError` when the activity log cannot be written.
     #[wasm_bindgen(js_name = clearActivities)]

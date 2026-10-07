@@ -3,7 +3,7 @@ use crate::storage::types::{
     ActivityEntry, ActivityMetadata, ActivityOutcome, ActivityQuery, ProtocolVersion,
 };
 use crate::storage::ActivityFailureReason;
-use walletkit_sqlite::{params, Connection, Row, StepResult};
+use walletkit_sqlite::{params, Connection, Row, StepResult, Value};
 
 use super::util::{map_db_err, to_i64, to_u64};
 
@@ -132,6 +132,36 @@ pub(super) fn metadata(conn: &Connection) -> StorageResult<ActivityMetadata> {
     })
 }
 
+/// Deletes the provided `entry_ids` and returns the count of the deleted entries.
+pub(super) fn delete(conn: &Connection, entry_ids: &[u64]) -> StorageResult<u64> {
+    if entry_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let values = entry_ids
+        .iter()
+        .copied()
+        .map(|id| to_i64(id, "entry_id").map(Value::Integer))
+        .collect::<StorageResult<Vec<_>>>()?;
+
+    let tx = conn
+        .transaction_immediate()
+        .map_err(|err| map_db_err(&err))?;
+
+    let mut deleted = 0;
+    for batch in values.chunks(MAX_IDS_PER_DELETE) {
+        let placeholders = vec!["?"; batch.len()].join(", ");
+        let sql =
+            format!("DELETE FROM activity_entries WHERE entry_id IN ({placeholders})");
+
+        deleted += tx.execute(&sql, batch).map_err(|err| map_db_err(&err))?;
+    }
+
+    tx.commit().map_err(|err| map_db_err(&err))?;
+
+    Ok(deleted as u64)
+}
+
 pub(super) fn clear(conn: &Connection) -> StorageResult<u64> {
     let deleted = conn
         .execute("DELETE FROM activity_entries", &[])
@@ -139,6 +169,8 @@ pub(super) fn clear(conn: &Connection) -> StorageResult<u64> {
 
     Ok(deleted as u64)
 }
+
+const MAX_IDS_PER_DELETE: usize = 1000;
 
 /// The columns of an activity entry, with its issuer schema ids reassembled in
 /// a normalized order.
@@ -485,6 +517,148 @@ mod tests {
             .expect("record activity");
 
         assert_eq!(db.activity_metadata().expect("metadata").total_count, 2);
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_activity_delete_empty_ids() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x06u8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        db.record_activity(&sample_entry(), 1000)
+            .expect("record activity");
+
+        assert_eq!(db.delete_activities(&[]).expect("delete activities"), 0);
+        assert_eq!(db.activity_metadata().expect("metadata").total_count, 1);
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_delete_activities_removes_only_given_ids() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Bu8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let first = db
+            .record_activity(&sample_entry(), 1000)
+            .expect("record activity");
+        let second = db
+            .record_activity(&sample_entry(), 1001)
+            .expect("record activity");
+        let third = db
+            .record_activity(&sample_entry(), 1002)
+            .expect("record activity");
+        let deleted = db
+            .delete_activities(&[first, third, third + 100])
+            .expect("delete activities");
+
+        assert_eq!(deleted, 2, "unknown ids are not counted");
+
+        let remaining = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("list activities");
+
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, Some(second));
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_delete_activities_spans_multiple_batches() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Eu8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let mut entry_ids = (0..=MAX_IDS_PER_DELETE as u64)
+            .map(|i| {
+                db.record_activity(&sample_entry(), 1000 + i)
+                    .expect("record activity")
+            })
+            .collect::<Vec<_>>();
+        let kept = entry_ids.pop().expect("at least one entry");
+        let unknown = kept + 1;
+        entry_ids.push(unknown);
+
+        let deleted = db.delete_activities(&entry_ids).expect("delete activities");
+        assert_eq!(deleted, MAX_IDS_PER_DELETE as u64);
+
+        let remaining = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("list activities");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, Some(kept));
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_delete_activities_removes_issuer_schema_associations() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Cu8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let with_schemas = |ids: Vec<u64>| ActivityEntry {
+            issuer_schema_ids: ids,
+            ..sample_entry()
+        };
+
+        let deleted_id = db
+            .record_activity(&with_schemas(vec![10, 20]), 1000)
+            .expect("record activity");
+
+        db.record_activity(&with_schemas(vec![30]), 1001)
+            .expect("record activity");
+
+        db.delete_activities(&[deleted_id])
+            .expect("delete activities");
+
+        drop(db);
+
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key)
+            .expect("open raw connection");
+
+        let associations = conn
+            .query_row(
+                "SELECT COUNT(*) FROM activity_issuer_schema_ids",
+                &[],
+                |stmt| Ok(stmt.column_i64(0)),
+            )
+            .expect("count associations");
+
+        drop(conn);
+
+        assert_eq!(
+            associations, 1,
+            "deleting an activity must cascade to only its issuer-schema associations"
+        );
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_delete_activities_rejects_id_above_i64_max_without_deleting() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Du8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let entry_id = db
+            .record_activity(&sample_entry(), 1000)
+            .expect("record activity");
+
+        let err = db
+            .delete_activities(&[entry_id, u64::MAX])
+            .expect_err("an id above i64::MAX should be rejected");
+
+        assert!(matches!(err, StorageError::CacheDb(_)));
+        assert_eq!(
+            db.activity_metadata().expect("metadata").total_count,
+            1,
+            "a rejected batch must not delete any entries"
+        );
 
         cleanup_cache_files(&path);
     }
