@@ -23,7 +23,6 @@ impl CredentialVault {
     ///
     /// The source is copied into a read-only in-memory database on every platform.
     /// A separate source connection isolates malformed schemas from the vault.
-    /// No plaintext temporary file is written.
     ///
     /// # Errors
     /// Returns an error for malformed backup contents, unavailable storage, or a failed transaction.
