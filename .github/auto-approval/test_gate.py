@@ -14,14 +14,31 @@ class ApprovalGateTests(unittest.TestCase):
     def setUp(self):
         self.pr = {"state": "open", "draft": False, "base": {"ref": "main", "sha": "base"},
                    "head": {"sha": "head", "repo": {"full_name": "owner/repo"}},
-                   "author_association": "MEMBER", "user": {"login": "author"},
+                   "user": {"login": "author"},
                    "labels": [], "changed_files": 1, "title": "Fix", "body": "Description"}
         self.files = [{"filename": "src/lib.rs"}]
         self.reviews = []
         self.discussions = []
+        self.permission = "write"
 
     def check(self):
-        gate.eligibility(self.pr, self.files, self.reviews, self.discussions, "owner/repo", "bot")
+        gate.eligibility(self.pr, self.files, self.reviews, self.discussions, "owner/repo", "bot",
+                         self.permission)
+
+    def test_author_without_write_access_blocks(self):
+        self.permission = "admin"
+        self.check()
+        for permission in ["read", "none"]:
+            with self.subTest(permission=permission):
+                self.permission = permission
+                with self.assertRaisesRegex(gate.Ineligible, f"write access.*{permission}"):
+                    self.check()
+
+    @patch("gate.api")
+    def test_author_permission_uses_repository_access(self, api):
+        api.return_value = {"permission": "write", "role_name": "maintain"}
+        self.assertEqual(gate.author_permission("owner/repo", self.pr), "write")
+        api.assert_called_once_with("repos/owner/repo/collaborators/author/permission")
 
     def test_review_requirements_are_left_to_agent_policy(self):
         self.check()

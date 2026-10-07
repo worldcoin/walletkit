@@ -76,12 +76,17 @@ def threads(repo, number):
         cursor = connection["pageInfo"]["endCursor"]
 
 
-def eligibility(pr, files, reviews, discussions, repo, bot):
+def author_permission(repo, pr):
+    # author_association hides private org membership from the workflow token.
+    return api(f"repos/{repo}/collaborators/{pr['user']['login']}/permission")["permission"]
+
+
+def eligibility(pr, files, reviews, discussions, repo, bot, permission):
     if (pr["state"] != "open" or pr["draft"] or pr["base"]["ref"] != "main"
             or not pr["head"]["repo"] or pr["head"]["repo"]["full_name"] != repo):
         raise Ineligible("PR must be open, ready, and from this repository into main")
-    if pr["author_association"] not in {"OWNER", "MEMBER", "COLLABORATOR"}:
-        raise Ineligible("External contributor")
+    if permission not in {"admin", "write"}:
+        raise Ineligible(f"PR author lacks write access (repository permission: {permission})")
     if pr["user"]["login"] == bot:
         raise Ineligible("Approval bot authored this PR")
     if any(label["name"] == "no-auto-approve" for label in pr["labels"]):
@@ -134,7 +139,8 @@ def snapshot(repo, number, bot):
     files = pages(prefix + "/files")
     reviews = pages(prefix + "/reviews")
     discussions = threads(repo, number)
-    eligibility(pr, files, reviews, discussions, repo, bot)
+    permission = author_permission(repo, pr)
+    eligibility(pr, files, reviews, discussions, repo, bot, permission)
     evidence = {"repo": repo, "number": number, "head": pr["head"]["sha"],
                 "base": pr["base"]["sha"], "title": pr["title"], "body": pr["body"],
                 "labels": sorted(label["name"] for label in pr["labels"]),
@@ -146,7 +152,7 @@ def snapshot(repo, number, bot):
     current = api(prefix)
     if current["head"]["sha"] != evidence["head"] or current["base"]["sha"] != evidence["base"]:
         raise Ineligible("PR moved while collecting evidence")
-    eligibility(current, files, reviews, discussions, repo, bot)
+    eligibility(current, files, reviews, discussions, repo, bot, permission)
     if any(current[key] != pr[key] for key in ("title", "body", "labels")):
         raise Ineligible("PR metadata changed while collecting evidence")
     return evidence
