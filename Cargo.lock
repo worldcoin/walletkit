@@ -9090,6 +9090,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "walletkit-jni-macros"
+version = "0.27.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
+]
+
+[[package]]
 name = "walletkit-sqlite"
 version = "0.27.1"
 dependencies = [
