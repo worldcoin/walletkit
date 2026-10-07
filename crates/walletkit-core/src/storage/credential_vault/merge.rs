@@ -1,6 +1,7 @@
 //! Additive backup recovery. Row IDs are local database keys, not credential identities.
 //! Absence from a snapshot is not a deletion instruction: preserve receiver-only credentials.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
 use super::{map_db_err, CredentialVault, CREDENTIAL_VERSION_ORDER};
@@ -31,6 +32,7 @@ impl CredentialVault {
     ///
     /// # Errors
     /// Returns an error for malformed backup contents, unavailable storage, or a failed transaction.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn merge_plaintext(&self, source: &Path) -> StorageResult<u64> {
         if !source.is_file() {
             return Err(StorageError::VaultDb(
@@ -48,6 +50,25 @@ impl CredentialVault {
         let added = result?;
         detached.map_err(|e| map_db_err(&e))?;
         Ok(added)
+    }
+
+    /// Merges a plaintext backup staged only in the worker's memory VFS.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn merge_plaintext_bytes(&self, bytes: &[u8]) -> StorageResult<u64> {
+        let path = format!("/walletkit-backup-{}.sqlite", uuid::Uuid::new_v4());
+        let _backup =
+            walletkit_sqlite::memory::ImportedDatabase::new(path.clone(), bytes)
+                .map_err(|e| map_db_err(&e))?;
+        let conn = self.vault.connection();
+        conn.execute(
+            "ATTACH DATABASE ?1 AS incoming KEY '';",
+            params![format!("file:{path}?vfs=memvfs&mode=ro")],
+        )
+        .map_err(|e| map_db_err(&e))?;
+        let result = merge_attached(conn);
+        let detached = conn.execute_batch("DETACH DATABASE incoming;");
+        detached.map_err(|e| map_db_err(&e))?;
+        result
     }
 }
 
@@ -134,7 +155,7 @@ fn validate_incoming(tx: &Transaction<'_>) -> StorageResult<()> {
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use secrecy::SecretBox;

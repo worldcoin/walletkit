@@ -448,3 +448,79 @@ test("the worker only dispatches functions and methods the module exports", asyn
     expect(result.stillAlive).toBe(true);
   }).toPass({ timeout: 5000 });
 });
+
+test("vault backups merge additively, reject invalid data, and survive reopening", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const w = window as any;
+    const wallet = await w.initializeWalletKit();
+    const keys = await wallet.StorageKeys.fromBytes(new Uint8Array(32).fill(7));
+    const paths = await wallet.StoragePaths.fromRoot("/walletkit/merge-test");
+    let store = await wallet.CredentialStore.new(paths, keys);
+    const backup = async (name: string) => {
+      const response = await fetch(`/backups/${name}.sqlite`);
+      if (!response.ok) throw new Error(`backup fixture: ${response.status}`);
+      return new Uint8Array(await response.arrayBuffer());
+    };
+    try {
+      const local = await backup("local-backup");
+      const uninitialized = await store
+        .mergeVaultFromBackup(local)
+        .catch((e: Error) => e.name);
+      await store.init(42n, 1000n);
+      const first = await store.mergeVaultFromBackup(local);
+      const before = await store.listCredentials(undefined, 1000n);
+      const invalid = await store
+        .mergeVaultFromBackup(await backup("invalid-backup"))
+        .catch((e: Error) => e.name);
+      const malformed = await store
+        .mergeVaultFromBackup(new Uint8Array([1, 2, 3]))
+        .catch((e: Error) => e.name);
+      const badPageSize = local.slice();
+      badPageSize[16] = 0;
+      badPageSize[17] = 0;
+      const invalidPage = await store
+        .mergeVaultFromBackup(badPageSize)
+        .catch((e: Error) => e.name);
+      const afterFailure = await store.listCredentials(undefined, 1000n);
+      const incoming = await backup("incoming-backup");
+      const added = await store.mergeVaultFromBackup(incoming);
+      const replay = await store.mergeVaultFromBackup(incoming);
+      const records = await store.listCredentials(undefined, 1000n);
+      store.free();
+      store = await wallet.CredentialStore.new(paths, keys);
+      await store.init(42n, 1000n);
+      const reopened = await store.listCredentials(undefined, 1000n);
+      return {
+        uninitialized,
+        first,
+        before,
+        invalid,
+        malformed,
+        invalidPage,
+        afterFailure,
+        added,
+        replay,
+        records,
+        reopened,
+      };
+    } finally {
+      store.free();
+      paths.free();
+      keys.free();
+      await wallet.close();
+    }
+  });
+  expect(result.uninitialized).toBe("StorageError");
+  expect(result.first).toBe(1n);
+  expect(result.invalid).toBe("StorageError");
+  expect(result.malformed).toBe("StorageError");
+  expect(result.invalidPage).toBe("StorageError");
+  expect(result.afterFailure).toEqual(result.before);
+  expect(result.added).toBe(1n);
+  expect(result.replay).toBe(0n);
+  expect(result.records).toHaveLength(2);
+  expect(result.records).toEqual(expect.arrayContaining(result.before));
+  expect(result.reopened).toEqual(result.records);
+});
