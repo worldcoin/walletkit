@@ -421,8 +421,17 @@ test("issuer clients are constructed in the worker and validate arguments", asyn
     const unknownEnvironment = await capture(
       wallet.RecoveryBindingManager.new("moon", builder),
     );
+    const insecureBaseUrl = await capture(
+      wallet.RecoveryBindingManager.newWithBaseUrl("http://pop.test", builder),
+    );
     await wallet.close();
-    return { userAgent, invalidHeaders, invalidLeafIndex, unknownEnvironment };
+    return {
+      userAgent,
+      invalidHeaders,
+      invalidLeafIndex,
+      unknownEnvironment,
+      insecureBaseUrl,
+    };
   });
   expect(result.userAgent).toMatch(/^Web\/1\.0 walletkit-core\/\d+\.\d+\.\d+/);
   expect(result.invalidHeaders).toEqual({
@@ -435,6 +444,118 @@ test("issuer clients are constructed in the worker and validate arguments", asyn
     name: "TypeError",
     message: "Unknown environment: moon",
   });
+  expect(result.insecureBaseUrl).toEqual({
+    name: "TypeError",
+    message: "`baseUrl` must be an https:// URL",
+  });
+});
+
+test("issuer clients send requests from the worker and convert responses", async ({
+  page,
+}) => {
+  const zero = "0x" + "0".repeat(64);
+  const credential = {
+    id: 1,
+    version: "V1",
+    issuer_version: 0,
+    issuer_schema_id: 7,
+    sub: zero,
+    genesis_issued_at: 1700000000,
+    expires_at: 1900000000,
+    claims: Array(15).fill(zero),
+    associated_data_commitment: zero,
+    signature: null,
+    issuer: "01" + "0".repeat(62),
+  };
+  const cors = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "*",
+  };
+  const nfcRequests: { headers: Record<string, string>; body: string }[] = [];
+  let nfcExpired = false;
+  await page.route("https://nfc.stage-crypto.worldcoin.org/**", (route) => {
+    const request = route.request();
+    if (request.method() === "OPTIONS")
+      return route.fulfill({ status: 204, headers: cors });
+    nfcRequests.push({
+      headers: request.headers(),
+      body: request.postData() ?? "",
+    });
+    if (nfcExpired)
+      return route.fulfill({
+        status: 400,
+        headers: cors,
+        json: { error: "document_expired" },
+      });
+    if (nfcRequests.length === 1)
+      return route.fulfill({ status: 503, headers: cors });
+    return route.fulfill({
+      headers: cors,
+      json: { result: { credential: btoa(JSON.stringify(credential)) } },
+    });
+  });
+  const popUrls: string[] = [];
+  await page.route("https://pop.walletkit.test/**", (route) => {
+    const url = route.request().url();
+    popUrls.push(url);
+    if (url.endsWith("leafIndex=404"))
+      return route.fulfill({ status: 404, headers: cors });
+    return route.fulfill({
+      headers: cors,
+      json: { recoveryAgent: "0xabc", pendingRecoveryAgent: null },
+    });
+  });
+
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    const nfc = await wallet.TfhNfcIssuer.new("staging", "WalletKitTest/1.0");
+    const refreshed = await nfc.refreshNfcCredential('{"document":"x"}', {
+      "X-Request-Id": "abc",
+    });
+    const refreshedCredential = {
+      issuerSchemaId: await refreshed.issuerSchemaId(),
+      expiresAt: await refreshed.expiresAt(),
+    };
+    const builder = await wallet.UserAgentBuilder.new();
+    const recovery = await wallet.RecoveryBindingManager.newWithBaseUrl(
+      "https://pop.walletkit.test",
+      builder,
+    );
+    const binding = await recovery.getRecoveryBinding(42n);
+    const missing = await recovery
+      .getRecoveryBinding(404n)
+      .catch((e: Error & { code?: string }) => e.code);
+    await wallet.close();
+    return { refreshedCredential, binding, missing };
+  });
+  // The first attempt got a 503 and was retried.
+  expect(nfcRequests).toHaveLength(2);
+  expect(nfcRequests[1].body).toBe('{"document":"x"}');
+  expect(nfcRequests[1].headers["x-request-id"]).toBe("abc");
+  expect(result.refreshedCredential).toEqual({
+    issuerSchemaId: 7n,
+    expiresAt: 1900000000n,
+  });
+  expect(result.binding).toEqual({ recoveryAgent: "0xabc" });
+  expect(result.missing).toBe("RecoveryBindingDoesNotExist");
+  expect(popUrls).toEqual([
+    "https://pop.walletkit.test/api/v1/recovery-binding?leafIndex=42",
+    "https://pop.walletkit.test/api/v1/recovery-binding?leafIndex=404",
+  ]);
+
+  nfcRequests.length = 0;
+  nfcExpired = true;
+  const nonRetryable = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    const nfc = await wallet.TfhNfcIssuer.new("staging", "WalletKitTest/1.0");
+    const code = await nfc
+      .refreshNfcCredential("{}", {})
+      .catch((e: Error & { code?: string }) => e.code);
+    await wallet.close();
+    return code;
+  });
+  expect(nonRetryable).toBe("NfcNonRetryable");
+  expect(nfcRequests).toHaveLength(1);
 });
 
 test("close frees live objects, is idempotent and rejects later calls", async ({
