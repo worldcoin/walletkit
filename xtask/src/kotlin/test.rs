@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 use eyre::{bail, Result, WrapErr as _};
 use xshell::{cmd, Shell};
 
-const CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3";
-const JAVA_SOURCE_DIR: &str = "kotlin/walletkit/src/main/java";
+const CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3,jni";
 const HOST_LIBRARIES_DIR: &str = "kotlin/libs";
 const TEST_RESULTS_DIR: &str = "kotlin/walletkit-tests/build/test-results/test";
 
@@ -22,9 +21,7 @@ pub(super) fn run(sh: &Shell) -> Result<()> {
 }
 
 fn build_host_bindings(sh: &Shell) -> Result<()> {
-    sh.remove_path(JAVA_SOURCE_DIR)?;
     sh.remove_path(HOST_LIBRARIES_DIR)?;
-    sh.create_dir(JAVA_SOURCE_DIR)?;
     sh.create_dir(HOST_LIBRARIES_DIR)?;
 
     println!("Building WalletKit for the host platform...");
@@ -39,13 +36,7 @@ fn build_host_bindings(sh: &Shell) -> Result<()> {
     sh.copy_file(&library, HOST_LIBRARIES_DIR)
         .wrap_err_with(|| format!("failed to copy {}", library.display()))?;
 
-    println!("Generating Kotlin test bindings...");
-    cmd!(
-        sh,
-        "cargo run -p uniffi-bindgen --locked -- generate {library} --language kotlin --library --crate walletkit_core --out-dir {JAVA_SOURCE_DIR}"
-    )
-    .run()
-    .wrap_err("failed to generate Kotlin test bindings")
+    Ok(())
 }
 
 fn host_library() -> Result<PathBuf> {

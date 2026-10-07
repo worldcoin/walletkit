@@ -13,7 +13,7 @@ ordinary `cargo build` invocations run inside a shell.
 
 | Shell | Purpose | Systems |
 |---|---|---|
-| `default` | Host builds, uniffi-bindgen, nargo | all |
+| `default` | Host builds, native SDKs, nargo | all |
 | `android` | Cross-compile the 4 Android targets (NDK, linkers, API 23) | linux/darwin x86_64, darwin aarch64 |
 | `wasm` | `wasm32-unknown-unknown` builds and headless browser tests with Node and Binaryen | all |
 

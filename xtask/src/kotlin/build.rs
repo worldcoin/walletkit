@@ -5,9 +5,8 @@ use std::path::{Path, PathBuf};
 use eyre::{bail, Result, WrapErr as _};
 use xshell::{cmd, Shell};
 
-const DEFAULT_CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3";
+const DEFAULT_CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3,jni";
 const JNI_LIBS_DIR: &str = "kotlin/walletkit/src/main/jniLibs";
-const KOTLIN_SOURCE_DIR: &str = "kotlin/walletkit/src/main/java";
 
 /// Build profile for the native libraries backing the Android AAR. Both profiles
 /// build the same Android targets; only optimization level, symbols, and output
@@ -83,7 +82,6 @@ pub(super) fn run(
     }
 
     copy_native_libraries(sh, artifacts_dir, profile)?;
-    generate_bindings(sh)?;
 
     println!("Kotlin/Android build complete.");
     Ok(())
@@ -136,10 +134,12 @@ fn build_native_libraries(sh: &Shell, profile: Profile) -> Result<()> {
 }
 
 fn cargo_features(sh: &Shell) -> String {
-    sh.var("WALLETKIT_CARGO_FEATURES")
+    let features = sh
+        .var("WALLETKIT_CARGO_FEATURES")
         .ok()
         .filter(|features| !features.is_empty())
-        .unwrap_or_else(|| DEFAULT_CARGO_FEATURES.to_owned())
+        .unwrap_or_else(|| DEFAULT_CARGO_FEATURES.to_owned());
+    format!("{features},jni")
 }
 
 fn copy_native_libraries(
@@ -188,20 +188,6 @@ fn native_library_source(
                 .join("libwalletkit.so")
         },
     )
-}
-
-fn generate_bindings(sh: &Shell) -> Result<()> {
-    let library = Path::new(JNI_LIBS_DIR)
-        .join("arm64-v8a")
-        .join("libwalletkit.so");
-
-    println!("Generating Kotlin bindings...");
-    cmd!(
-        sh,
-        "cargo run -p uniffi-bindgen --locked -- generate {library} --library --language kotlin --no-format --out-dir {KOTLIN_SOURCE_DIR}"
-    )
-    .run()
-    .wrap_err("failed to generate Kotlin bindings")
 }
 
 #[cfg(test)]

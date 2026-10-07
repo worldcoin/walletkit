@@ -15,7 +15,7 @@ use xshell::Shell;
 /// Swift/iOS tasks.
 #[derive(Subcommand)]
 pub enum Command {
-    /// Build iOS libraries, generate Swift bindings, and create an `XCFramework`.
+    /// Build iOS libraries, package Swift sources, and create an `XCFramework`.
     Build(BuildOptions),
 
     /// Build the Swift bindings and run the iOS foreign-binding tests.
@@ -31,7 +31,7 @@ pub enum Command {
 /// Options for building the Swift/iOS library.
 #[derive(Args)]
 pub struct BuildOptions {
-    /// Directory in which to create the `XCFramework` and generated sources.
+    /// Directory in which to create the `XCFramework` and SDK sources.
     ///
     /// Relative paths are resolved from the `swift` directory. Defaults to `swift`.
     #[arg(value_name = "OUTPUT_DIR")]

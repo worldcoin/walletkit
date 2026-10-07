@@ -71,4 +71,4 @@ exec nix develop .#android --command cargo build \
   --release \
   --locked \
   --target "${TARGET}" \
-  --features "${WALLETKIT_CARGO_FEATURES:-compress-zkeys,embed-zkeys,v3}"
+  --features "${WALLETKIT_CARGO_FEATURES:-compress-zkeys,embed-zkeys,v3},jni"
