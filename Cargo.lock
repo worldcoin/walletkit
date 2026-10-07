@@ -8989,7 +8989,17 @@ dependencies = [
 name = "walletkit"
 version = "0.27.1"
 dependencies = [
+ "async-trait",
+ "cesu8",
+ "futures-util",
+ "jni 0.21.1",
+ "ruint",
+ "tempfile",
+ "tokio",
+ "tracing",
  "walletkit-core",
+ "walletkit-jni-macros",
+ "zeroize",
 ]
 
 [[package]]

@@ -1,5 +1,7 @@
-//! `WalletKit` is the reference implementation for World ID clients.
-//!
-//! The public API is re-exported from [`walletkit_core`].
+//! `WalletKit` Rust interface plus the typed JNI (`jni`) and C (`c`) bindings used by the
+//! maintained Kotlin and Swift SDKs.
 
 pub use walletkit_core::*;
+
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+mod native;
