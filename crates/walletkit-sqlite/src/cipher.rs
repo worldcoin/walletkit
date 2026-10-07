@@ -53,6 +53,7 @@ const SQLITE_CORRUPT: i32 = 11;
 const FOREIGN_KEYS_ON: i64 = 1;
 const SYNCHRONOUS_FULL: i64 = 2;
 const SECURE_DELETE_ON: i64 = 1;
+const TEMP_STORE_MEMORY: i64 = 2;
 
 /// Opens a writable database, applies the encryption key, and configures the connection.
 ///
@@ -105,7 +106,7 @@ fn configure_connection(
     ensure_foreign_keys(conn)?;
     ensure_synchronous_full(conn)?;
     ensure_secure_delete(conn)?;
-    conn.ensure_temp_store_memory()?;
+    ensure_temp_store_memory(conn)?;
     Ok(())
 }
 
@@ -366,6 +367,29 @@ fn ensure_secure_delete(conn: &Connection) -> DbResult<()> {
     }
 }
 
+/// Keeps temporary tables and indices in memory.
+///
+/// `sqlite3mc` does not encrypt temporary databases, so allowing temporary
+/// storage to spill to a filesystem could expose plaintext at rest.
+///
+/// # Errors
+/// Returns an error if the setting cannot be applied or verified.
+pub fn ensure_temp_store_memory(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch("PRAGMA temp_store = MEMORY;")?;
+    let actual =
+        conn.query_row("PRAGMA temp_store;", &[], |row| Ok(row.column_i64(0)))?;
+    if actual == TEMP_STORE_MEMORY {
+        Ok(())
+    } else {
+        Err(Error::new(
+            -1,
+            format!(
+                "could not ensure PRAGMA temp_store = MEMORY: expected {TEMP_STORE_MEMORY}, got {actual}"
+            ),
+        ))
+    }
+}
+
 /// Creates a plaintext (unencrypted) copy of an already-open encrypted database.
 ///
 /// The copy is produced by `ATTACH`-ing a new unencrypted database and copying
@@ -538,15 +562,27 @@ pub(crate) fn open_fully_encrypted(
 #[cfg(test)]
 mod tests {
     use super::{
-        export_plaintext_copy, import_plaintext_copy, integrity_check,
-        is_plaintext_header_probe_error, open_encrypted, open_fully_encrypted, Error,
-        LEGACY_ENCRYPTED_HEADER_FIXTURE, LEGACY_FIXTURE_KEY, SQLITE_CORRUPT,
-        SQLITE_ERROR,
+        ensure_temp_store_memory, export_plaintext_copy, import_plaintext_copy,
+        integrity_check, is_plaintext_header_probe_error, open_encrypted,
+        open_fully_encrypted, Error, LEGACY_ENCRYPTED_HEADER_FIXTURE,
+        LEGACY_FIXTURE_KEY, SQLITE_CORRUPT, SQLITE_ERROR,
     };
     use crate::params;
     use crate::test_utils::init_sqlite;
     use crate::Connection;
     use secrecy::SecretBox;
+
+    #[test]
+    fn test_temp_store_memory_overrides_file_storage() {
+        init_sqlite();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA temp_store = FILE;").unwrap();
+        ensure_temp_store_memory(&conn).unwrap();
+        let temp_store = conn
+            .query_row("PRAGMA temp_store;", &[], |row| Ok(row.column_i64(0)))
+            .unwrap();
+        assert_eq!(temp_store, 2);
+    }
 
     #[test]
     fn test_plaintext_header_probe_errors() {

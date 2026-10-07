@@ -4,7 +4,9 @@
 use super::{map_db_err, CredentialVault, CREDENTIAL_VERSION_ORDER};
 use crate::storage::error::{StorageError, StorageResult};
 use walletkit_db::blobs::compute_content_id;
-use walletkit_sqlite::{params, Connection, StepResult};
+use walletkit_sqlite::{
+    cipher::ensure_temp_store_memory, params, Connection, StepResult,
+};
 
 impl CredentialVault {
     /// Atomically merges a plaintext backup, returning the number of added records.
@@ -29,9 +31,7 @@ impl CredentialVault {
     pub(crate) fn merge_plaintext_bytes(&self, bytes: &[u8]) -> StorageResult<u64> {
         let incoming =
             Connection::open(":memory:", false).map_err(|e| map_db_err(&e))?;
-        incoming
-            .ensure_temp_store_memory()
-            .map_err(|e| map_db_err(&e))?;
+        ensure_temp_store_memory(&incoming).map_err(|e| map_db_err(&e))?;
         incoming
             .deserialize_readonly("main", bytes)
             .map_err(|e| map_db_err(&e))?;
