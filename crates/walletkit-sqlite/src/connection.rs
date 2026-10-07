@@ -60,6 +60,22 @@ impl Connection {
         Ok(Self { db })
     }
 
+    /// Replaces an existing schema with a read-only in-memory database image.
+    ///
+    /// Copies `bytes` into SQLite-owned memory, freed when the schema is detached
+    /// or the connection closes. The input can be dropped immediately afterward.
+    /// Use a disposable connection for untrusted images: malformed schemas can
+    /// prevent further operations on that connection, including detaching them.
+    /// The image must be a complete plaintext database in rollback-journal mode;
+    /// WAL sidecars are not loaded. SQLite validates database contents when queried.
+    ///
+    /// # Errors
+    /// Returns an error if the schema is unavailable or busy, the image is empty,
+    /// or allocating or deserializing it fails.
+    pub fn deserialize_readonly(&self, schema: &str, bytes: &[u8]) -> DbResult<()> {
+        self.db.deserialize_readonly(schema, bytes)
+    }
+
     /// Executes one or more SQL statements separated by semicolons.
     ///
     /// No result rows are returned. Suitable for DDL, PRAGMAs, and
@@ -226,6 +242,67 @@ mod tests {
             })
             .expect("query");
         assert_eq!(result, "hello");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_deserialize_readonly_owns_image_and_preserves_main() {
+        init_sqlite();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.sqlite");
+        {
+            let source = Connection::open(&path, false).unwrap();
+            source
+                .execute_batch(
+                    "CREATE TABLE t(value TEXT); INSERT INTO t VALUES ('backup');",
+                )
+                .unwrap();
+        }
+        let mut image = std::fs::read(&path).unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE local(value TEXT); ATTACH DATABASE ':memory:' AS incoming KEY '';")
+            .unwrap();
+        conn.deserialize_readonly("incoming", &image).unwrap();
+        image.fill(0);
+        drop(image);
+
+        assert_eq!(
+            conn.query_row("SELECT value FROM incoming.t", &[], |row| Ok(
+                row.column_text(0)
+            ))
+            .unwrap(),
+            "backup"
+        );
+        assert!(conn
+            .execute_batch("INSERT INTO incoming.t VALUES ('changed');")
+            .is_err());
+        conn.execute_batch("INSERT INTO local SELECT value FROM incoming.t;")
+            .unwrap();
+        conn.execute_batch("DETACH DATABASE incoming;").unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT value FROM local",
+                &[],
+                |row| Ok(row.column_text(0))
+            )
+            .unwrap(),
+            "backup"
+        );
+
+        let image = std::fs::read(&path).unwrap();
+        assert!(conn.deserialize_readonly("missing", &image).is_err());
+        assert!(conn.deserialize_readonly("temp", &image).is_err());
+        conn.execute_batch("ATTACH DATABASE ':memory:' AS incoming KEY '';")
+            .unwrap();
+        conn.deserialize_readonly("incoming", &image).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM incoming.t", &[], |row| Ok(
+                row.column_i64(0)
+            ))
+            .unwrap(),
+            1
+        );
+        conn.execute_batch("DETACH DATABASE incoming;").unwrap();
     }
 
     #[test]

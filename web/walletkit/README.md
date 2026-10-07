@@ -90,7 +90,8 @@ they return. Conventions that differ from native:
 vault backup into an initialized store and returns a `bigint` count of added
 credentials. Existing credentials are preserved, replay is a no-op, and invalid
 backups leave the vault unchanged. Authenticate the backup as belonging to the
-current account before calling. Incoming plaintext is staged in worker memory.
+current account before calling. On native and web, incoming plaintext is loaded into a read-only SQLite
+in-memory database; merging writes no plaintext temporary files.
 
 Not available in the browser: `Logger`, `DeviceKeystore`, `AtomicBlobStore`,
 `StorageProvider` and the change listeners (foreign traits), vault backup

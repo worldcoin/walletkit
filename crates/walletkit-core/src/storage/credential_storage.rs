@@ -381,17 +381,6 @@ impl CredentialStore {
         let added = {
             let inner = self.lock_inner()?;
             let _guard = inner.guard()?;
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                inner.cleanup_stale_backup_files();
-                let path = inner.write_temp_backup_file(backup_bytes)?;
-                let _cleanup = CleanupFile(path.clone());
-                inner
-                    .state()?
-                    .vault
-                    .merge_plaintext(std::path::Path::new(&path))?
-            }
-            #[cfg(target_arch = "wasm32")]
             inner.state()?.vault.merge_plaintext_bytes(backup_bytes)?
         };
         if added != 0 {

@@ -494,6 +494,13 @@ test("vault backups merge additively, reject invalid data, and survive reopening
         .mergeVaultFromBackup(badPageSize)
         .catch((e: Error) => e.name);
 
+      // A corrupt schema must not poison the live vault connection.
+      const corruptSchema = local.slice();
+      corruptSchema[100] = 0xff;
+      const invalidSchema = await store
+        .mergeVaultFromBackup(corruptSchema)
+        .catch((e: Error) => e.name);
+
       const afterFailure = await store.listCredentials(undefined, 1000n);
 
       // The incoming record reuses the local row ID; merge must allocate a new one.
@@ -517,6 +524,7 @@ test("vault backups merge additively, reject invalid data, and survive reopening
         invalid,
         malformed,
         invalidPage,
+        invalidSchema,
         afterFailure,
         added,
         replay,
@@ -537,6 +545,7 @@ test("vault backups merge additively, reject invalid data, and survive reopening
   expect(result.invalid).toBe("StorageError");
   expect(result.malformed).toBe("StorageError");
   expect(result.invalidPage).toBe("StorageError");
+  expect(result.invalidSchema).toBe("StorageError");
   expect(result.afterFailure).toEqual(result.before);
 
   expect(result.added).toBe(1n);

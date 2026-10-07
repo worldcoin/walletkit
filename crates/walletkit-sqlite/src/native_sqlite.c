@@ -23,6 +23,14 @@ int walletkit_sqlite3_exec(sqlite3 *db, const char *sql, int (*callback)(void *,
     return sqlite3_exec(db, sql, callback, arg, error);
 }
 
+void *walletkit_sqlite3_malloc64(sqlite3_uint64 size) {
+    return sqlite3_malloc64(size);
+}
+
+int walletkit_sqlite3_deserialize(sqlite3 *db, const char *schema, unsigned char *data, sqlite3_int64 size, sqlite3_int64 capacity, unsigned int flags) {
+    return sqlite3_deserialize(db, schema, data, size, capacity, flags);
+}
+
 void walletkit_sqlite3_free(void *pointer) {
     sqlite3_free(pointer);
 }
