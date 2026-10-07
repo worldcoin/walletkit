@@ -60,9 +60,7 @@ jobs:
 
       - uses: ./.github/actions/prefetch-noir-dependencies
 
-      # Includes temporary downstream UniFFI callback vtable patch:
-      # https://github.com/mozilla/uniffi-rs/pull/2821
-      - name: Build the project (iOS, with temporary UniFFI ASan workaround)
+      - name: Build the project (iOS)
         run: cargo xtask swift build
 
       - name: Compress XCFramework binary
@@ -225,7 +223,7 @@ jobs:
         with:
           path: artifacts
 
-      - name: Assemble jniLibs & generate bindings
+      - name: Assemble jniLibs & package SDK sources
         run: nix develop . --command cargo xtask kotlin build --artifacts-dir artifacts
 
       - name: Publish

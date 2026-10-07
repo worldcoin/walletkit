@@ -1,12 +1,7 @@
-//! `WalletKit` is the reference implementation for World ID clients.
-//!
-//! It provides the Rust API and `UniFFI` bindings used by mobile applications
-//! to interact with World ID. The public API is re-exported from
-//! [`walletkit_core`].
-
-extern crate walletkit_core;
-walletkit_core::uniffi_reexport_scaffolding!();
+//! `WalletKit` Rust interface plus the typed JNI (`jni`) and C (`c`) bindings used by the
+//! maintained Kotlin and Swift SDKs.
 
 pub use walletkit_core::*;
 
-uniffi::setup_scaffolding!("walletkit");
+#[cfg(all(feature = "native", not(target_arch = "wasm32")))]
+mod native;

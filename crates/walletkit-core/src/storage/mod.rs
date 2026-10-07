@@ -9,7 +9,7 @@
 //!
 //! ## Components
 //!
-//! [`crate::storage::CredentialStore`] is the facade exposed to hosts (via `UniFFI`).
+//! [`crate::storage::CredentialStore`] is the facade exposed to hosts (through the native SDKs).
 //! It owns the account key envelope and two databases:
 //!
 //! 1. **Vault database (`account.vault.sqlite`)** — authoritative storage for
@@ -125,7 +125,6 @@ fn delete_database_file(path: &std::path::Path) -> Result<(), String> {
 ///
 /// Returns [`StorageError::PersistentStorage`] when OPFS setup fails.
 #[cfg(target_arch = "wasm32")]
-#[uniffi::export]
 pub async fn initialize_persistent_storage() -> StorageResult<()> {
     walletkit_sqlite::opfs::install()
         .await

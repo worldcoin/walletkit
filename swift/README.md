@@ -16,7 +16,7 @@ Run from anywhere in the workspace:
 cargo xtask swift build
 ```
 
-This cross-compiles WalletKit, generates the UniFFI Swift bindings, and creates
+This cross-compiles WalletKit, copies the maintained Swift 6 sources from `native/`, and creates
 `swift/WalletKit.xcframework`.
 
 ## Testing WalletKit locally

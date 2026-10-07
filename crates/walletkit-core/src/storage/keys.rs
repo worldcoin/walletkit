@@ -77,16 +77,8 @@ impl StorageKeys {
     }
 }
 
-// Trait-object bridge from walletkit-core's uniffi-annotated traits onto
-// walletkit-db's plain-Rust trait surface. Required because Rust's orphan
-// rule prevents a blanket impl across crates. `Keystore::seal` borrows its
-// plaintext (see walletkit-db/src/traits.rs); `Ks::seal` is the single
-// point where the secret is copied into an owned `Vec<u8>`, because
-// `DeviceKeystore` is a uniffi callback interface and those only support
-// pass-by-value parameters (no `&[u8]`). That copy — and any further copy
-// the foreign (Swift/Kotlin/etc.) implementation makes on its own side — is
-// outside Rust's control; this is an accepted uniffi limitation, not a bug.
-
+// The DB trait borrows plaintext; host callbacks need an owned copy. Managed
+// runtimes may copy it again, so Rust cannot guarantee zeroization of host memory.
 struct Ks<'a>(&'a dyn DeviceKeystore);
 impl walletkit_db::Keystore for Ks<'_> {
     fn seal(&self, aad: &[u8], pt: &[u8]) -> walletkit_db::StoreResult<Vec<u8>> {

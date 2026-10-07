@@ -137,7 +137,7 @@ jobs:
           {\"approve\": true, \"reason\": \"one sentence on why the change is low risk\"}
           If any of these conditions holds, name it and do not write that file:
           - a large new API surface
-          - changes to the existing API surface exported to Swift, Kotlin or the web through UniFFI (only that exported surface matters)
+          - changes to the existing API surface exported to Swift, Kotlin or the web through the native SDKs or web adapter (only that exported surface matters)
           - a lot of code: many lines, many files, or more than a reviewer would read in one pass
           - CI, workflow or release configuration
           - a dependency or lockfile change you could not verify against the upstream source

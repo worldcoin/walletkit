@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 /// Request payload for registering or unregistering a recovery binding.
 ///
 /// Serialized as JSON with `leafIndex` (camelCase) to match the `PoP` backend API.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct ManageRecoveryBindingRequest {
     /// Hex-encoded subject identifier of the recovery binding.
     pub sub: String,
@@ -33,7 +33,7 @@ struct RecoveryBindingErrorResponse {
     error: String,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct RecoveryBindingResponse {
     #[serde(rename = "recoveryAgent")]
     pub recovery_agent: Option<String>,

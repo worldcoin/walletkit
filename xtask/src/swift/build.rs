@@ -9,7 +9,7 @@ const DEFAULT_CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3";
 const FRAMEWORK_NAME: &str = "WalletKit.xcframework";
 const INTERMEDIATE_DIR: &str = "swift/ios_build";
 const PACKAGE_NAME: &str = "walletkit";
-const SUPPORT_SOURCES_DIR: &str = "swift/support";
+const SDK_SOURCES_DIR: &str = "swift/native";
 const TARGET_DIR: &str = "target";
 
 const IOS_TARGETS: [&str; 3] = [
@@ -95,7 +95,7 @@ pub(super) fn run(
     configure_ios_build(sh, profile);
     build_native_libraries(sh, profile)?;
     create_universal_simulator_library(sh, profile)?;
-    generate_bindings(sh, &sources_dir, profile)?;
+    copy_sdk_sources(sh, &sources_dir)?;
     create_xcframework(sh, &framework_output, profile)?;
 
     sh.remove_path(INTERMEDIATE_DIR)?;
@@ -190,11 +190,14 @@ fn build_native_libraries(sh: &Shell, profile: Profile) -> Result<()> {
     Ok(())
 }
 
+/// The Swift SDK always needs the C ABI.
 fn cargo_features(sh: &Shell) -> String {
-    sh.var("WALLETKIT_CARGO_FEATURES")
+    let features = sh
+        .var("WALLETKIT_CARGO_FEATURES")
         .ok()
         .filter(|features| !features.is_empty())
-        .unwrap_or_else(|| DEFAULT_CARGO_FEATURES.to_owned())
+        .unwrap_or_else(|| DEFAULT_CARGO_FEATURES.to_owned());
+    format!("{features},c")
 }
 
 fn create_universal_simulator_library(sh: &Shell, profile: Profile) -> Result<()> {
@@ -223,39 +226,19 @@ fn create_universal_simulator_library(sh: &Shell, profile: Profile) -> Result<()
         .wrap_err("failed to inspect universal iOS simulator library")
 }
 
-fn generate_bindings(sh: &Shell, sources_dir: &Path, profile: Profile) -> Result<()> {
-    let library = Path::new(TARGET_DIR)
-        .join("aarch64-apple-ios-sim")
-        .join(profile.dir_name())
-        .join("libwalletkit.dylib");
-
+fn copy_sdk_sources(sh: &Shell, sources_dir: &Path) -> Result<()> {
     let bindings_dir = Path::new(INTERMEDIATE_DIR).join("bindings");
-
-    println!("Generating Swift bindings...");
-    cmd!(
-        sh,
-        "cargo run -p uniffi-bindgen --locked --target-dir {TARGET_DIR} -- generate {library} --library --crate walletkit_core --language swift --no-format --out-dir {bindings_dir}"
-    )
-    .run()
-    .wrap_err("failed to generate Swift bindings")?;
-
-    let generated_source = bindings_dir.join("walletkit_core.swift");
-    let destination = sources_dir.join("walletkit.swift");
-    sh.copy_file(&generated_source, &destination)
-        .wrap_err_with(|| {
-            format!(
-                "failed to move {} to {}",
-                generated_source.display(),
-                destination.display()
-            )
-        })?;
-    sh.remove_path(&generated_source)?;
-
-    if sh.path_exists(SUPPORT_SOURCES_DIR) {
-        copy_directory_contents(sh, Path::new(SUPPORT_SOURCES_DIR), sources_dir)?;
-    }
-
-    Ok(())
+    sh.copy_file(
+        "native/include/walletkit_coreFFI.h",
+        bindings_dir.join("walletkit_coreFFI.h"),
+    )?;
+    sh.copy_file(
+        "native/include/module.modulemap",
+        bindings_dir.join("walletkit_coreFFI.modulemap"),
+    )?;
+    sh.remove_path(sources_dir)?;
+    sh.create_dir(sources_dir)?;
+    copy_directory_contents(sh, Path::new(SDK_SOURCES_DIR), sources_dir)
 }
 
 fn copy_directory_contents(

@@ -61,14 +61,13 @@ use tracing_subscriber::{
 ///
 /// WalletKit.initLogging(logger: WalletKitLoggerBridge.shared, level: .debug)
 /// ```
-#[uniffi::export(with_foreign)]
 pub trait Logger: Sync + Send {
     /// Receives a log `message` with its corresponding `level`.
     fn log(&self, level: LogLevel, message: String);
 }
 
 /// Enumeration of possible log levels for foreign logger callbacks.
-#[derive(Debug, Clone, Copy, uniffi::Enum)]
+#[derive(Debug, Clone, Copy)]
 pub enum LogLevel {
     /// Very detailed diagnostic messages.
     Trace,
@@ -121,25 +120,14 @@ impl tracing::field::Visit for EventFieldVisitor {
 /// Forwards walletkit tracing events to the foreign logger.
 struct ForeignLoggerLayer;
 
-// On native targets, log events flow through a channel to avoid making FFI
-// calls from within a UniFFI future-poll context.  On WASM the Logger is
-// called directly because there is no background thread support.
+// Native delivery runs off the emitting thread so host logging cannot re-enter
+// the operation or its locks. WASM has no background delivery thread.
 #[cfg(not(target_arch = "wasm32"))]
 struct LogEvent {
     level: LogLevel,
     message: String,
 }
 
-// Log events are pushed into this channel by `ForeignLoggerLayer::on_event`
-// and delivered to the foreign callback on a dedicated thread.
-//
-// This architecture is required because UniFFI foreign callbacks crash with
-// EXC_BAD_ACCESS when invoked synchronously from within a UniFFI future-poll
-// context (`rust_call_with_out_status`). The nested FFI boundary crossing
-// corrupts state. By decoupling collection from delivery through a channel,
-// the tracing layer never makes an FFI call — it only pushes to an in-process
-// queue — and the dedicated delivery thread calls `Logger::log` from a clean
-// stack with no active FFI frames.
 #[cfg(not(target_arch = "wasm32"))]
 static LOG_CHANNEL: OnceLock<Mutex<mpsc::Sender<LogEvent>>> = OnceLock::new();
 #[cfg(target_arch = "wasm32")]
@@ -255,7 +243,6 @@ fn build_env_filter(level: Option<LogLevel>) -> EnvFilter {
 /// Emits a message at the given level through `WalletKit`'s tracing pipeline.
 ///
 /// Useful for verifying that the logging bridge is wired up correctly.
-#[uniffi::export]
 pub fn emit_log(level: LogLevel, message: String) {
     let message = message.into_boxed_str();
     let message = message.as_ref();
@@ -272,11 +259,7 @@ pub fn emit_log(level: LogLevel, message: String) {
 /// Native platform initializer: wires the foreign logger to a dedicated
 /// delivery thread via an mpsc channel.
 ///
-/// The channel decouples `ForeignLoggerLayer::on_event` (called from inside
-/// `UniFFI`'s future-poll machinery) from the actual FFI call to `Logger::log`.
-/// Invoking a `UniFFI` foreign callback synchronously while a `UniFFI` frame is
-/// already on the stack causes an `EXC_BAD_ACCESS`; the background thread avoids
-/// that by delivering events from a clean, FFI-free call stack.
+/// Host logging runs outside the emitting operation's locks and runtime context.
 ///
 /// # Panics
 ///
@@ -299,9 +282,6 @@ fn init_logging_native(logger: Arc<dyn Logger>) {
 /// WASM platform initializer: stores the logger directly so that
 /// `ForeignLoggerLayer::on_event` can call it synchronously.
 ///
-/// On WASM there is no background-thread risk: the runtime is
-/// single-threaded and cooperative, so no UniFFI future-poll frame can be
-/// on the stack when a tracing event fires.
 #[cfg(target_arch = "wasm32")]
 fn init_logging_wasm(logger: Arc<dyn Logger>) {
     let _ = LOGGER_INSTANCE.set(logger);
@@ -319,7 +299,6 @@ fn init_logging_wasm(logger: Arc<dyn Logger>) {
 /// # Panics
 ///
 /// Panics if the dedicated logger delivery thread cannot be spawned (native only).
-#[uniffi::export]
 pub fn init_logging(logger: Arc<dyn Logger>, level: Option<LogLevel>) {
     if LOGGING_INITIALIZED.get().is_some() {
         return;
@@ -350,7 +329,6 @@ const HEX_SECRET_MIN_LEN: usize = 21;
 ///
 /// Returns `input` unmodified (zero-allocation) when no redaction is needed.
 #[must_use]
-#[uniffi::export]
 pub fn sanitize_hex_secrets(input: String) -> String {
     if !has_long_hex_run(input.as_bytes()) {
         return input;

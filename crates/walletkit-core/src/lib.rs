@@ -62,7 +62,7 @@ fn init() {
 /// Each environment uses different sources of truth for the World ID credentials.
 ///
 /// More information on testing for the World ID Protocol can be found in: `https://docs.world.org/world-id/quick-start/testing`
-#[derive(Debug, Clone, PartialEq, Eq, EnumString, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, EnumString)]
 #[strum(serialize_all = "lowercase")]
 pub enum Environment {
     /// For testing purposes ONLY.
@@ -71,8 +71,7 @@ pub enum Environment {
     Production,
 }
 
-/// Methods exported to Swift/Kotlin via `UniFFI`.
-#[uniffi::export]
+/// Methods exported to Swift/Kotlin through the native SDKs.
 impl Environment {
     /// Returns the `PoH` Recovery Agent contract address for this environment.
     #[must_use]
@@ -88,9 +87,7 @@ impl Environment {
 }
 
 /// Region for node selection.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, Display, uniffi::Enum,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, EnumString, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum Region {
     /// United States
@@ -165,11 +162,7 @@ pub mod v3;
 ////////////////////////////////////////////////////////////////////////////////
 // Private modules
 ////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(any(feature = "issuers", feature = "v3"))]
 mod http_request;
 pub(crate) mod primitives;
-
-uniffi::setup_scaffolding!("walletkit_core");
-
-ruint_uniffi::register_types!(Uint256);
+pub use primitives::Uint256;

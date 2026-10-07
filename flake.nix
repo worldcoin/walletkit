@@ -38,6 +38,8 @@
               pkgs.curl
               pkgs.git
               pkgs.nargo
+              # Regenerates native/include/walletkit_coreFFI.h; see crates/walletkit/cbindgen.toml.
+              pkgs.rust-cbindgen
             ];
           };
 

@@ -1,5 +1,6 @@
 //! The Authenticator is the main component with which users interact with the World ID Protocol.
 
+use crate::primitives::Uint256;
 use crate::{
     authenticator::artifacts::WalletKitZkArtifactSource, defaults,
     error::WalletKitError, primitives::ParseFromForeignBinding, Environment,
@@ -7,7 +8,6 @@ use crate::{
 };
 use alloy_core::primitives::Address;
 use ruint::aliases::U256;
-use ruint_uniffi::Uint256;
 use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestId, GatewayRequestState},
@@ -27,7 +27,7 @@ pub mod artifacts;
 mod with_storage;
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
 pub struct Authenticator {
     inner: CoreAuthenticator,
     store: Arc<CredentialStore>,
@@ -101,7 +101,6 @@ fn parse_authenticator_pubkey(
     Ok(pubkey)
 }
 
-#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Returns the packed account data for the holder's World ID.
     ///
@@ -188,10 +187,7 @@ impl Authenticator {
     ///
     /// # Errors
     /// May error if very unexpectedly the signing process fails. Not expected.
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "seed is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
-    )]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn danger_sign_challenge(
         &self,
         challenge: Vec<u8>,
@@ -495,7 +491,6 @@ impl Authenticator {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
 impl Authenticator {
     /// Initializes a new Authenticator from a seed and with SDK defaults.
     ///
@@ -504,7 +499,6 @@ impl Authenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
-    #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init_with_defaults(
         seed: Vec<u8>,
@@ -528,7 +522,6 @@ impl Authenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::init` for potential errors.
-    #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init_with_ohttp_defaults(
         seed: Vec<u8>,
@@ -550,7 +543,6 @@ impl Authenticator {
     ///
     /// # Errors
     /// Will error if the provided seed is not valid or if the config is not valid.
-    #[uniffi::constructor]
     #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
     pub async fn init(
         seed: Vec<u8>,
@@ -764,7 +756,7 @@ impl Authenticator {
 }
 
 /// Registration status for a World ID being created through the gateway.
-#[derive(Debug, Clone, uniffi::Enum)]
+#[derive(Debug, Clone)]
 pub enum RegistrationStatus {
     /// Request queued but not yet batched.
     Queued,
@@ -784,7 +776,7 @@ pub enum RegistrationStatus {
 }
 
 /// Status of an account operation submitted through the gateway.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GatewayRequestStatus {
     /// Request queued but not yet batched.
     Queued,
@@ -843,10 +835,8 @@ impl From<GatewayRequestState> for RegistrationStatus {
 ///
 /// The account is not yet registered in the `WorldIDRegistry` contract.
 /// Use this for non-blocking registration flows where you want to poll the status yourself.
-#[derive(uniffi::Object)]
 pub struct InitializingAuthenticator(CoreInitializingAuthenticator);
 
-#[uniffi::export(async_runtime = "tokio")]
 impl InitializingAuthenticator {
     /// Registers a new World ID with SDK defaults.
     ///
@@ -855,7 +845,6 @@ impl InitializingAuthenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
-    #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "gateway_register",
@@ -889,7 +878,6 @@ impl InitializingAuthenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
-    #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "gateway_register",
@@ -921,7 +909,6 @@ impl InitializingAuthenticator {
     ///
     /// # Errors
     /// See `CoreAuthenticator::register` for potential errors.
-    #[uniffi::constructor]
     #[tracing::instrument(
         target = "walletkit_latency",
         name = "gateway_register",
@@ -965,10 +952,7 @@ impl InitializingAuthenticator {
 
 /// The signature and signing nonce returned by
 /// [`Authenticator::danger_sign_initiate_recovery_agent_update`].
-///
-/// `UniFFI` does not support returning bare tuples across the FFI boundary, so
-/// the two values are bundled in this record type.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
 pub struct RecoveryUpdateSignature {
     /// Raw bytes of the secp256k1 ECDSA signature over the EIP-712
     /// `InitiateRecoveryAgentUpdate` payload.
@@ -985,7 +969,7 @@ pub struct RecoveryUpdateSignature {
 /// submitted on-chain during the recovery transaction.
 ///
 /// All fields are hex-encoded strings suitable for direct use in API requests.
-#[derive(Debug, Clone, uniffi::Record)]
+#[derive(Debug, Clone)]
 pub struct RecoveryData {
     /// Checksummed hex Ethereum address of the on-chain signer.
     pub authenticator_address: String,
@@ -1041,7 +1025,6 @@ impl RecoveryData {
 /// # Errors
 /// Returns [`WalletKitError::InvalidInput`] if the public key is invalid,
 /// is not in canonical form, or is the `BabyJubJub` identity point.
-#[uniffi::export]
 pub fn validate_authenticator_pubkey(
     authenticator_pubkey: &str,
 ) -> Result<String, WalletKitError> {
@@ -1057,11 +1040,7 @@ pub fn validate_authenticator_pubkey(
 ///
 /// # Errors
 /// Returns [`WalletKitError`] if the seed is invalid or serialization fails.
-#[uniffi::export]
-#[allow(
-    clippy::needless_pass_by_value,
-    reason = "seed is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
-)]
+#[allow(clippy::needless_pass_by_value)]
 pub fn recovery_data_from_seed(seed: Vec<u8>) -> Result<RecoveryData, WalletKitError> {
     let seed = Zeroizing::new(seed);
     RecoveryData::from_seed(&seed)

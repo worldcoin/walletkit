@@ -8,7 +8,7 @@ use xshell::{cmd, Shell};
 use super::build;
 
 const FRAMEWORK_DIR: &str = "swift/WalletKit.xcframework";
-const GENERATED_SOURCES_DIR: &str = "swift/Sources/WalletKit";
+const SDK_SOURCES_DIR: &str = "swift/Sources/WalletKit";
 const TEST_BUILD_DIR: &str = "swift/tests/.build";
 const TEST_SOURCES_DIR: &str = "swift/tests/Sources/WalletKit";
 const TESTS_DIR: &str = "swift/tests";
@@ -53,9 +53,9 @@ fn prepare_test_package(sh: &Shell) -> Result<()> {
             "{FRAMEWORK_DIR} is missing; run `cargo xtask swift build` first or omit --skip-build"
         );
     }
-    if !sh.path_exists(GENERATED_SOURCES_DIR) {
+    if !sh.path_exists(SDK_SOURCES_DIR) {
         bail!(
-            "{GENERATED_SOURCES_DIR} is missing; run `cargo xtask swift build` first or omit --skip-build"
+            "{SDK_SOURCES_DIR} is missing; run `cargo xtask swift build` first or omit --skip-build"
         );
     }
 
@@ -63,7 +63,7 @@ fn prepare_test_package(sh: &Shell) -> Result<()> {
     sh.create_dir(TEST_SOURCES_DIR)?;
     copy_directory_contents(
         sh,
-        Path::new(GENERATED_SOURCES_DIR),
+        Path::new(SDK_SOURCES_DIR),
         Path::new(TEST_SOURCES_DIR),
     )?;
 

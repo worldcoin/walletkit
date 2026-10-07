@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- [**breaking**] Replace UniFFI with maintained Kotlin (`org.world.walletkit`) and Swift (`WalletKit`) SDKs over typed native bindings: direct JNI exports for Kotlin and a C ABI with a generated header (`walletkit_coreFFI.h`) for Swift. Records, lists, and errors cross in a binary encoding; async methods run on four bounded workers with cooperative cancellation. See `docs/native-bindings.md` for the design and migration from UniFFI.
+
+### Added
+
+- `FlamingoMatcher.newAttested` with `RequestIntegrityProvider` and `RequestDigestSigner` in the Kotlin and Swift SDKs.
+
 ## [0.27.1](https://github.com/worldcoin/walletkit/compare/v0.27.0...v0.27.1) - 2026-10-06
 
 ### Added

@@ -22,7 +22,7 @@ Swift/iOS builds require macOS and Xcode; use `cargo xtask swift` on the host. S
 ## Compatibility pitfalls
 
 - Preserve the on-disk format: schemas, CBOR layouts, and `compute_content_id` derivations must remain compatible with existing databases. Guard format-sensitive changes with frozen-byte tests next to the code.
-- Never name a UniFFI-exported method `to_string`: its Kotlin binding conflicts with `Any.toString()`. Use a descriptive name such as `to_hex_string`, `to_decimal_string`, or `to_json`.
+- Keep the native operations (`crates/walletkit/src/native`), the generated C header, and both maintained SDKs aligned. The binary encoding has one implementation per language; change all three with their frozen-byte fixtures. Preserve typed errors, resource ownership, cancellation cleanup, and callback threading contracts; see `docs/native-bindings.md`.
 
 ## Logging & Error handling
 

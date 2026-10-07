@@ -71,6 +71,6 @@ pkgs.mkShell {
     echo "  targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android (API $ANDROID_API_LEVEL)"
     echo "  ndk:    $ANDROID_NDK_HOME"
     echo ""
-    echo "Build with: cargo build -p walletkit --release --target aarch64-linux-android --features compress-zkeys,embed-zkeys,v3"
+    echo "Build with: cargo build -p walletkit --release --target aarch64-linux-android --features compress-zkeys,embed-zkeys,v3,jni"
   '';
 }

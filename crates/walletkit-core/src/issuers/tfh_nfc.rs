@@ -43,16 +43,13 @@ impl NfcRefreshResultRaw {
 }
 
 /// TFH NFC credential issuer API client
-#[derive(uniffi::Object)]
 pub struct TfhNfcIssuer {
     base_url: String,
     request: Request,
 }
 
-#[uniffi::export]
 impl TfhNfcIssuer {
     /// Create a new TFH NFC issuer for the specified environment
-    #[uniffi::constructor]
     #[must_use]
     pub fn new(environment: &Environment, user_agent: String) -> Self {
         let base_url = match environment {
@@ -67,7 +64,6 @@ impl TfhNfcIssuer {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
 impl TfhNfcIssuer {
     /// Refresh an NFC credential (migrate PCP to v4).
     ///

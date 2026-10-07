@@ -8,7 +8,6 @@ use world_id_core::primitives::TREE_DEPTH;
 /// The amount of time a Merkle inclusion proof remains valid in the cache.
 const MERKLE_PROOF_VALIDITY_SECONDS: u64 = 60 * 15;
 
-#[uniffi::export]
 impl Authenticator {
     /// Initializes storage using the authenticator's leaf index.
     ///

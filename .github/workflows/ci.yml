@@ -27,10 +27,20 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: worldcoin/bedrock/.github/actions/version-alignment@857c252013ac52cea24f5d7add3475a909d663f2 # main
-        with:
-          uniffi_version: ${{ vars.UNIFFI_VERSION }}
-          rust_toolchain_channel: ${{ vars.RUST_TOOLCHAIN_CHANNEL }}
+      - name: Check Rust toolchain channel
+        env:
+          EXPECTED_CHANNEL: ${{ vars.RUST_TOOLCHAIN_CHANNEL }}
+        run: |
+          python3 - <<'PYTHON'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          expected = os.environ["EXPECTED_CHANNEL"]
+          actual = tomllib.loads(Path("rust-toolchain.toml").read_text())["toolchain"]["channel"]
+          if not expected or actual != expected:
+              raise SystemExit(f"Rust toolchain mismatch: expected {expected!r}, found {actual!r}")
+          PYTHON
 
   lint:
     name: Format, Clippy & Build
@@ -72,6 +82,24 @@ jobs:
 
       - name: Run clippy (no default features)
         run: cargo clippy --workspace --all-targets --no-default-features -- -D warnings
+
+      # Keep the version aligned with `rust-cbindgen` in the flake's default devshell.
+      - name: Install cbindgen
+        run: cargo install cbindgen --version 0.29.2 --locked
+
+      - name: Check the generated C header
+        run: |
+          cbindgen --quiet --config crates/walletkit/cbindgen.toml \
+            --output native/include/walletkit_coreFFI.h crates/walletkit
+          git diff --exit-code native/include/walletkit_coreFFI.h
+          for std in c99 c11; do
+            echo '#include "walletkit_coreFFI.h"' | clang -x c -std="$std" \
+              -Wall -Wextra -pedantic -Werror -fsyntax-only -I native/include -
+          done
+          for std in c++11 c++17; do
+            echo '#include "walletkit_coreFFI.h"' | clang++ -x c++ -std="$std" \
+              -Wall -Wextra -pedantic -Werror -fsyntax-only -I native/include -
+          done
 
   wasm-check:
     name: WASM walletkit-web compile check
@@ -157,9 +185,7 @@ jobs:
 
       - uses: ./.github/actions/prefetch-noir-dependencies
 
-      # Includes temporary downstream UniFFI callback vtable patch:
-      # https://github.com/mozilla/uniffi-rs/pull/2821
-      - name: Build the Swift project (with temporary UniFFI ASan workaround)
+      - name: Build the Swift project
         run: cargo xtask swift build
 
       - name: Upload Swift build artifacts

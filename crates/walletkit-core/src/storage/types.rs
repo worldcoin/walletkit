@@ -8,7 +8,7 @@ use super::error::{StorageError, StorageResult};
 ///
 /// Blob records (stored in the `blob_objects` table) carry a kind tag that
 /// distinguishes credential payloads from associated data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum BlobKind {
     /// Credential blob payload.
@@ -47,7 +47,7 @@ pub type Nullifier = [u8; 32];
 ///
 /// This is intentionally small and excludes blobs; full credential payloads can
 /// be fetched separately to avoid heavy list queries.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredentialRecord {
     /// Credential identifier.
     pub credential_id: u64,
@@ -64,7 +64,7 @@ pub struct CredentialRecord {
 }
 
 /// FFI-friendly replay guard result kind.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReplayGuardKind {
     /// Stored bytes for the first disclosure of a request.
     Fresh,
@@ -73,7 +73,7 @@ pub enum ReplayGuardKind {
 }
 
 /// Replay guard result.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplayGuardResult {
     /// Result kind.
     pub kind: ReplayGuardKind,
@@ -82,7 +82,7 @@ pub struct ReplayGuardResult {
 }
 
 /// Which World ID protocol handled a proof-share request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ProtocolVersion {
     /// Legacy Semaphore-based protocol.
@@ -112,7 +112,7 @@ impl TryFrom<i64> for ProtocolVersion {
 }
 
 /// Terminal outcome of a proof-share request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Display, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum ActivityOutcome {
     /// Proof request was completed successfully.
@@ -129,7 +129,7 @@ pub enum ActivityOutcome {
 }
 
 /// Reasons a proof fails.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Display, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumString, Display)]
 #[strum(serialize_all = "lowercase")]
 pub enum ActivityFailureReason {
     /// A network request failed.
@@ -145,7 +145,7 @@ pub enum ActivityFailureReason {
 }
 
 /// A single row of credential activity history.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActivityEntry {
     /// Unique identifier for this entry.
     pub id: Option<u64>,
@@ -169,7 +169,7 @@ pub struct ActivityEntry {
 }
 
 /// Aggregate counts over credential activity history.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActivityMetadata {
     /// Total number of recorded entries.
     pub total_count: u64,
@@ -180,18 +180,22 @@ pub struct ActivityMetadata {
 /// Build one with [`ActivityQuery::new`] and add filters with the `with_*`
 /// methods, so new filters can be added without changing constructors on the
 /// foreign side.
-#[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Object)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ActivityQuery {
     pub(crate) issuer_schema_id: Option<u64>,
 }
 
-#[uniffi::export]
 impl ActivityQuery {
     /// Creates a query with no filters.
-    #[uniffi::constructor]
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Returns the issuer schema filter, or `None` for all issuers.
+    #[must_use]
+    pub const fn issuer_schema_id(&self) -> Option<u64> {
+        self.issuer_schema_id
     }
 
     /// Restricts results to entries that include this issuer schema id.
