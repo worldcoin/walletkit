@@ -25,7 +25,11 @@
 
 pub mod authenticator;
 pub mod identity;
+#[cfg(feature = "issuers")]
+pub mod issuers;
 pub mod storage;
+#[cfg(feature = "v3")]
+pub mod v3;
 
 use super::{
     operation::OperationState,
