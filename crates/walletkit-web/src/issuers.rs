@@ -90,17 +90,12 @@ impl JsRecoveryBindingManager {
     }
 
     /// # Errors
-    /// Throws a `TypeError` when `baseUrl` is not an `https://` URL, or a
-    /// `WalletKitError` when the client cannot be built.
+    /// Throws a `WalletKitError` when the client cannot be built.
     #[wasm_bindgen(js_name = newWithBaseUrl)]
     pub fn new_with_base_url(
         base_url: &str,
         user_agent_builder: &JsUserAgentBuilder,
     ) -> Result<Self, JsValue> {
-        // Core asserts HTTPS when sending, and a panic would trap the whole module.
-        if !base_url.starts_with("https://") {
-            return Err(invalid_argument("`baseUrl` must be an https:// URL"));
-        }
         RecoveryBindingManager::new_with_base_url(base_url, &user_agent_builder.0)
             .map(|manager| Self(Arc::new(manager)))
             .map_err(to_js)
