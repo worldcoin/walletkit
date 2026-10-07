@@ -12,7 +12,6 @@ use flamingo_verifier_sealed_types::{
 use super::errors::{FlamingoError, FlamingoInputFailureKind, FlamingoMatchRejection};
 
 /// Explicit operation-specific inputs. Image buffers move into the client without cloning.
-#[derive(uniffi::Enum)]
 pub enum FlamingoMatchRequest {
     /// Three-way matching with the exact original Orb PCP hashes.json.
     DeepFace {
@@ -39,7 +38,6 @@ pub enum FlamingoMatchRequest {
 }
 
 /// A single image or an explicitly selected `LightGuard` pair.
-#[derive(uniffi::Enum)]
 pub enum FlamingoLiveCapture {
     /// Vanilla selfie bytes.
     Vanilla {
@@ -58,7 +56,7 @@ pub enum FlamingoLiveCapture {
 }
 
 /// Which `LightGuard` frame provides the matching embedding.
-#[derive(Debug, Clone, Copy, uniffi::Enum)]
+#[derive(Debug, Clone, Copy)]
 pub enum FlamingoMatchingFrame {
     /// Use the illuminated frame.
     Illuminated,
@@ -70,7 +68,7 @@ pub enum FlamingoMatchingFrame {
 ///
 /// Foreign callers receive an opaque handle. The token and signing-key attestation remain
 /// together in Rust for proof generation and eventual relay of the attestation to the RP.
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
 pub struct VerifiedMatchToken {
     token: Vec<u8>,
     claims: MatchClaims,
@@ -78,7 +76,7 @@ pub struct VerifiedMatchToken {
 }
 
 /// The outcome of the TEE match phase.
-#[derive(Debug, uniffi::Enum)]
+#[derive(Debug)]
 pub enum FlamingoMatchOutcome {
     /// The enclave issued a token and `WalletKit` verified it against an attested signing key.
     Matched {
@@ -228,7 +226,6 @@ impl From<FlamingoLiveCapture> for LiveCapture {
     }
 }
 
-#[uniffi::export]
 impl VerifiedMatchToken {
     /// Operation-specific normalized similarity authenticated by the token.
     /// `DeepFace`: credential/live. `GrayBadge`: live/challenge.
@@ -265,7 +262,7 @@ impl From<VerifiedMatch> for VerifiedMatchToken {
 }
 
 /// Worker diagnostic delivery status. JSON is excluded from `Debug` output.
-#[derive(Clone, PartialEq, Eq, uniffi::Enum)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum FlamingoDebugReport {
     /// Original worker JSON without reserialization.
     Available {

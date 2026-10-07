@@ -47,7 +47,6 @@ impl Drop for CleanupFile {
 }
 
 /// Concrete storage implementation backed by `SQLCipher` databases.
-#[derive(uniffi::Object)]
 pub struct CredentialStore {
     inner: Mutex<CredentialStoreInner>,
     /// Channel sender for the vault-changed notification thread.
@@ -151,14 +150,12 @@ impl CredentialStoreInner {
     }
 }
 
-#[uniffi::export]
 impl CredentialStore {
     /// Creates a new storage handle from explicit components.
     ///
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[uniffi::constructor]
     pub fn new_with_components(
         paths: Arc<StoragePaths>,
         keystore: Arc<dyn DeviceKeystore>,
@@ -180,7 +177,6 @@ impl CredentialStore {
     /// # Errors
     ///
     /// Returns an error if the storage lock cannot be opened.
-    #[uniffi::constructor]
     #[allow(clippy::needless_pass_by_value)]
     pub fn from_provider_arc(
         provider: Arc<dyn StorageProvider>,
@@ -369,7 +365,6 @@ impl CredentialStore {
     }
 }
 
-#[uniffi::export]
 impl CredentialStore {
     /// Permanently destroys all credential storage data.
     ///
@@ -398,7 +393,6 @@ impl CredentialStore {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-#[uniffi::export]
 impl CredentialStore {
     /// Exports the current vault as an in-memory plaintext (unencrypted)
     /// `SQLite` database for backup.
@@ -475,7 +469,7 @@ impl CredentialStore {
     /// automatically when the old sender is dropped.
     ///
     /// Delivery happens on a dedicated background thread to avoid re-entering
-    /// the `UniFFI` call stack (see `logger.rs` for rationale).
+    /// the active store operation and its locks.
     ///
     /// **Warning:** the listener **must not** call back into this
     /// `CredentialStore` — doing so will deadlock.

@@ -6,7 +6,7 @@ use thiserror::Error;
 pub type StorageResult<T> = Result<T, StorageError>;
 
 /// Errors raised by credential storage primitives.
-#[derive(Debug, Error, uniffi::Error)]
+#[derive(Debug, Error)]
 pub enum StorageError {
     /// Errors coming from the device keystore.
     #[error("keystore error: {0}")]
@@ -99,24 +99,12 @@ pub enum StorageError {
     #[error("invalid activity record: {0}")]
     ActivityInvalidRecord(String),
 
-    /// Unexpected `UniFFI` callback error.
-    #[error("unexpected uniffi callback error: {0}")]
-    UnexpectedUniFFICallbackError(String),
+    /// A host callback failed.
+    #[error("host callback error: {0}")]
+    Callback(String),
 }
 
-impl From<uniffi::UnexpectedUniFFICallbackError> for StorageError {
-    fn from(error: uniffi::UnexpectedUniFFICallbackError) -> Self {
-        Self::UnexpectedUniFFICallbackError(error.reason)
-    }
-}
-
-/// 1-1 variant mapping is intentional: hosts pattern-match on `StorageError`
-/// for UX, and `walletkit-db` is uniffi-free by design, so the translation
-/// has to live in each FFI-exporting consumer. Don't flatten.
-///
-/// TODO: when a second consumer (`OrbKit`, `IssuerKit`) ships its own
-/// uniffi-exported error mirroring `StoreError`, extract this mapping into a
-/// shared `walletkit-ffi-shared` crate. Not worth it for one consumer.
+/// Preserves storage error variants so hosts can choose an appropriate recovery action.
 impl From<walletkit_db::StoreError> for StorageError {
     fn from(err: walletkit_db::StoreError) -> Self {
         match err {

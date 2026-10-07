@@ -107,13 +107,7 @@ pub fn init_or_open_envelope_key(
         let mut k_intermediate = Zeroizing::new([0u8; 32]);
         getrandom::fill(k_intermediate.as_mut())
             .map_err(|err| StoreError::Crypto(format!("rng failure: {err}")))?;
-        // `keystore.seal` borrows the plaintext, so `k_intermediate` is
-        // never copied into an un-zeroized `Vec<u8>` at this layer. A
-        // `Keystore` bridging to an owned-only interface (e.g. a uniffi
-        // callback like walletkit-core's `DeviceKeystore`) still needs one
-        // owned copy to cross that boundary; that is an accepted,
-        // uniffi-imposed limitation (callback interfaces only support
-        // pass-by-value), not something fixable from this layer.
+        // Host adapters may copy this borrowed secret into managed memory.
         let wrapped = keystore.seal(ad, k_intermediate.as_slice())?;
         let envelope = KeyEnvelope::new(wrapped, now);
         let bytes = envelope.serialize()?;

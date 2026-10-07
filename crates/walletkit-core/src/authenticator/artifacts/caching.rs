@@ -24,13 +24,10 @@ use super::WalletKitZkArtifactSource;
 /// Nullifier proofs) on the filesystem.
 ///
 /// Primary reason for caching is amortization of decompression costs.
-#[derive(uniffi::Object)]
 pub struct CachingZkArtifacts(CachedZkArtifactSource);
 
-#[uniffi::export]
 impl CachingZkArtifacts {
     /// Constructs a new [`CachingZkArtifacts`]
-    #[uniffi::constructor]
     #[must_use]
     pub fn new(storage_paths: Arc<StoragePaths>) -> Self {
         let inner = CachingZkArtifactsInner::new(storage_paths).cached();
@@ -96,7 +93,7 @@ impl ZkArtifactSource for CachingZkArtifacts {
 ///
 /// It implements the caching logic & exists to be wrapped by the `CachedZkArtifactSource` which
 /// provides in-memory caching of the artifacts.
-#[derive(Clone, uniffi::Object)]
+#[derive(Clone)]
 struct CachingZkArtifactsInner {
     storage_paths: Arc<StoragePaths>,
     inner: Arc<dyn ZkArtifactSource>,

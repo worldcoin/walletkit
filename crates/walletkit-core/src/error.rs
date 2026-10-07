@@ -8,8 +8,12 @@ use world_id_proof::ProofError;
 use crate::storage::StorageError;
 
 /// Error outputs from `WalletKit`
-#[derive(Debug, Error, uniffi::Error)]
+#[derive(Debug, Error)]
 pub enum WalletKitError {
+    /// A credential store or host storage capability failed.
+    #[error(transparent)]
+    Storage(StorageError),
+
     /// Invalid input provided (e.g., incorrect length, format, etc.)
     #[error("invalid_input_{attribute}")]
     InvalidInput {
@@ -199,7 +203,6 @@ pub enum WalletKitError {
     InvalidActionSession,
 }
 
-#[uniffi::export]
 impl WalletKitError {
     /// Returns the error message with potential secrets redacted.
     #[must_use]
@@ -283,9 +286,7 @@ impl From<semaphore_rs::protocol::ProofError> for WalletKitError {
 
 impl From<StorageError> for WalletKitError {
     fn from(error: StorageError) -> Self {
-        Self::Generic {
-            error: error.to_string(),
-        }
+        Self::Storage(error)
     }
 }
 

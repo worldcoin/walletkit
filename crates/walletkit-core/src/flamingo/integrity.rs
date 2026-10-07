@@ -15,7 +15,7 @@ use attested_request::{
 use tokio_tungstenite::tungstenite::handshake::client::Request;
 
 /// The platform determines the native signature encoding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestIntegrityPlatform {
     /// An App Attest assertion encoded as CBOR.
     Ios,
@@ -24,7 +24,7 @@ pub enum RequestIntegrityPlatform {
 }
 
 /// Request-integrity failures without token, key, or native diagnostic contents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error, uniffi::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum RequestIntegrityError {
     /// The host could not prepare an integrity session.
     #[error("request integrity is unavailable")]
@@ -43,12 +43,6 @@ pub enum RequestIntegrityError {
     TimedOut,
 }
 
-impl From<uniffi::UnexpectedUniFFICallbackError> for RequestIntegrityError {
-    fn from(_: uniffi::UnexpectedUniFFICallbackError) -> Self {
-        Self::CallbackFailed
-    }
-}
-
 /// Signs a SHA-256 client-data digest with the key certified by the session token.
 ///
 /// The host captures the key identifier and audience in this object. `WalletKit` never
@@ -56,7 +50,6 @@ impl From<uniffi::UnexpectedUniFFICallbackError> for RequestIntegrityError {
 /// A running native signing operation cannot be cancelled when authentication times
 /// out; its late result is discarded. At most four native signing calls run process-wide;
 /// a timed-out call retains its slot until the native callback returns.
-#[uniffi::export(with_foreign)]
 pub trait RequestDigestSigner: Send + Sync {
     /// Signs exactly 32 bytes and returns the platform's native signature encoding.
     ///
@@ -77,7 +70,7 @@ pub trait RequestDigestSigner: Send + Sync {
 /// The provider must create the pair atomically so a later key rotation cannot mix them.
 /// An already-returned signer must keep using its captured key. The host adapts its native
 /// session to these callbacks without passing private-key material or other SDK callback types.
-#[derive(Clone, uniffi::Record)]
+#[derive(Clone)]
 pub struct RequestIntegritySession {
     /// A valid integrity token for the host-selected Flamingo audience.
     pub token: String,
@@ -93,7 +86,6 @@ pub struct RequestIntegritySession {
 /// It selects the audience when configuring the provider; `WalletKit` does not decode the
 /// token or receive the audience or key identifier. Preparing and signing share a 30-second
 /// deadline in the matcher.
-#[uniffi::export(with_foreign)]
 #[async_trait::async_trait]
 pub trait RequestIntegrityProvider: Send + Sync {
     /// Returns a usable token and its matching signer, reusing a cached token when valid.
@@ -521,10 +513,7 @@ mod tests {
     /// Unexpected native diagnostics are hidden and preserve the same classification at either callback.
     #[tokio::test]
     async fn unexpected_callback_failures_are_neutral_and_do_not_expose_details() {
-        let error = RequestIntegrityError::from(
-            uniffi::UnexpectedUniFFICallbackError::new("private native diagnostic"),
-        );
-        assert_eq!(error, RequestIntegrityError::CallbackFailed);
+        let error = RequestIntegrityError::CallbackFailed;
         assert_eq!(error.to_string(), "request integrity callback failed");
         for provider in [
             Arc::new(FailingProvider(error)) as Arc<dyn RequestIntegrityProvider>,

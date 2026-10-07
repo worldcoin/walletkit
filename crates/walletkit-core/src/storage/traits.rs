@@ -21,7 +21,6 @@ use super::error::StorageResult;
 use super::paths::StoragePaths;
 
 /// Device keystore interface used to seal and open account keys.
-#[uniffi::export(with_foreign)]
 pub trait DeviceKeystore: Send + Sync {
     /// Seals plaintext under the device-bound key, authenticating `associated_data`.
     ///
@@ -53,7 +52,6 @@ pub trait DeviceKeystore: Send + Sync {
 }
 
 /// Atomic blob store for small binary files (e.g., `account_keys.bin`).
-#[uniffi::export(with_foreign)]
 pub trait AtomicBlobStore: Send + Sync {
     /// Reads the blob at `path`, if present.
     ///
@@ -78,7 +76,6 @@ pub trait AtomicBlobStore: Send + Sync {
 }
 
 /// Provider responsible for platform-specific storage components and paths.
-#[uniffi::export(with_foreign)]
 pub trait StorageProvider: Send + Sync {
     /// Returns the device keystore implementation.
     fn keystore(&self) -> Arc<dyn DeviceKeystore>;
@@ -95,7 +92,7 @@ pub trait StorageProvider: Send + Sync {
 ///
 /// Register via [`super::CredentialStore::set_vault_changed_listener`]. The
 /// callback is delivered on a dedicated background thread to avoid re-entering
-/// the `UniFFI` call stack (see `logger.rs` for rationale).
+/// the active store operation and its locks.
 ///
 /// This is only called when individual credentials are added or removed.
 ///
@@ -110,7 +107,6 @@ pub trait StorageProvider: Send + Sync {
 /// [`super::CredentialStore`] from
 /// [`on_vault_changed`](VaultChangedListener::on_vault_changed) — doing so
 /// will deadlock.
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 pub trait VaultChangedListener: Send + Sync {
     /// Called after a credential is added or removed.
     fn on_vault_changed(&self);
@@ -120,7 +116,7 @@ pub trait VaultChangedListener: Send + Sync {
 ///
 /// Register via [`super::CredentialStore::set_activity_changed_listener`]. The
 /// callback is delivered on a dedicated background thread to avoid re-entering
-/// the `UniFFI` call stack (see `logger.rs` for rationale).
+/// the active store operation and its locks.
 ///
 /// This is only called when an activity entry is recorded.
 ///
@@ -135,7 +131,6 @@ pub trait VaultChangedListener: Send + Sync {
 /// [`super::CredentialStore`] from
 /// [`on_activity_changed`](ActivityChangedListener::on_activity_changed) —
 /// doing so will deadlock.
-#[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 pub trait ActivityChangedListener: Send + Sync {
     /// Called after an activity entry is recorded, finalized, or reconciled.
     fn on_activity_changed(&self);

@@ -56,7 +56,6 @@ use tokio::sync::OnceCell;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
 /// A simple wrapper around of `FlamingoVerifierClient`. Flamingo Verifier is a cloud TEE service for attested embedding generation and comparison.
-#[derive(uniffi::Object)]
 pub struct FlamingoMatcher {
     host_url: Url,
     config: Option<Config>,
@@ -105,7 +104,6 @@ impl std::fmt::Debug for FlamingoMatcher {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
 impl FlamingoMatcher {
     /// Creates a legacy matcher; supply app-token authentication with [`Self::with_headers`].
     ///
@@ -115,7 +113,6 @@ impl FlamingoMatcher {
     ///
     /// Returns [`FlamingoError::Configuration`] if the URL is not a valid HTTP(S) URL
     /// or contains credentials or a fragment.
-    #[uniffi::constructor]
     pub fn new(host_url: &str) -> Result<Self, FlamingoError> {
         let host_url = Url::parse(host_url)
             .map_err(|error| FlamingoError::Configuration(error.to_string()))?;
@@ -146,7 +143,6 @@ impl FlamingoMatcher {
     /// # Errors
     /// Returns [`FlamingoError::Configuration`] unless the URL is HTTPS without credentials
     /// or a fragment. Tokens and signatures must only be sent over an encrypted transport.
-    #[uniffi::constructor]
     pub fn new_attested(
         host_url: &str,
         integrity_provider: Arc<dyn RequestIntegrityProvider>,

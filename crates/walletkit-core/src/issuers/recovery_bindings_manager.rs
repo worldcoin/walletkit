@@ -23,7 +23,7 @@ use alloy_core::primitives::keccak256;
 use alloy_core::primitives::Address;
 use std::string::String;
 /// Represents a recovery binding.
-#[derive(Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RecoveryBinding {
     /// The hex address of the recovery agent (e.g. `"0x1234…"`).
     pub recovery_agent: Option<String>,
@@ -47,19 +47,16 @@ impl From<RecoveryBindingResponse> for RecoveryBinding {
 ///
 /// Each instance is bound to a specific [`Environment`] (staging or production),
 /// which determines the backend URL used for all requests.
-#[derive(uniffi::Object)]
 pub struct RecoveryBindingManager {
     pop_backend_client: PopBackendClient,
 }
 
-#[uniffi::export]
 impl RecoveryBindingManager {
     /// Creates a new `RecoveryBindingManager` for the specified environment.
     ///
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be built.
-    #[uniffi::constructor]
     pub fn new(
         environment: &Environment,
         user_agent_builder: &UserAgentBuilder,
@@ -77,7 +74,6 @@ impl RecoveryBindingManager {
     /// # Errors
     ///
     /// Returns an error if the HTTP client cannot be built.
-    #[uniffi::constructor]
     pub fn new_with_base_url(
         base_url: &str,
         user_agent_builder: &UserAgentBuilder,
@@ -89,7 +85,6 @@ impl RecoveryBindingManager {
     }
 }
 
-#[uniffi::export(async_runtime = "tokio")]
 impl RecoveryBindingManager {
     /// Registers a recovery agent for the given authenticator.
     ///

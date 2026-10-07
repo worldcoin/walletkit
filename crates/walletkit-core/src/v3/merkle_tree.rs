@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use ruint_uniffi::Uint256;
+use crate::primitives::Uint256;
 use semaphore_rs::poseidon_tree::Proof;
 use serde::{Deserialize, Serialize};
 
@@ -23,10 +23,12 @@ struct InclusionProofResponse {
 const CREDENTIAL_NOT_ISSUED_RESPONSE: &str = "provided identity commitment not found";
 const MINED_STATUS: &str = "mined"; // https://github.com/worldcoin/signup-sequencer/blob/f6050fbb3131ee6a61b2f44db3813f9150a045f5/schemas/openapi.yaml#L163
 
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
+/// A validated legacy Merkle inclusion proof.
 pub struct MerkleTreeProof {
     poseidon_proof: Proof,
+    /// The tree root authenticated by this inclusion proof.
     pub merkle_root: Uint256,
 }
 
@@ -38,14 +40,12 @@ impl MerkleTreeProof {
     }
 }
 
-#[uniffi::export]
 impl MerkleTreeProof {
     /// Retrieves a Merkle inclusion proof from the sign up sequencer for a given identity commitment.
     /// Each credential/environment pair uses a different sign up sequencer.
     ///
     /// # Errors
     /// Will throw an error if the request fails or parsing the response fails.
-    #[uniffi::constructor]
     pub async fn from_identity_commitment(
         identity_commitment: &Uint256,
         sequencer_host: &str,
@@ -99,7 +99,10 @@ impl MerkleTreeProof {
         }
     }
 
-    #[uniffi::constructor]
+    /// Parses a legacy Poseidon proof and hexadecimal root.
+    ///
+    /// # Errors
+    /// Returns an error if either representation is invalid.
     pub fn from_json_proof(
         json_proof: &str,
         merkle_root: &str,

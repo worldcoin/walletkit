@@ -1,6 +1,6 @@
 use crate::{error::WalletKitError, Environment};
 
-use ruint_uniffi::Uint256;
+use crate::primitives::Uint256;
 use secrecy::{ExposeSecret, SecretBox};
 use semaphore_rs::{identity::seed_hex, protocol::generate_nullifier_hash};
 use subtle::ConstantTimeEq;
@@ -15,7 +15,7 @@ use super::{
 /// A base World ID identity which can be used to generate World ID Proofs for different credentials.
 ///
 /// Most essential primitive for World ID.
-#[derive(Debug, uniffi::Object)]
+#[derive(Debug)]
 pub struct WorldId {
     /// The hashed hex-encoded World ID secret (32 byte secret -> 64 byte hex-encoded)
     /// Note: we need to store this hex-encoded because `semaphore-rs` performs operations on it hex-encoded. Can be improved in the future.
@@ -24,15 +24,10 @@ pub struct WorldId {
     environment: Environment,
 }
 
-#[uniffi::export(async_runtime = "tokio")]
 impl WorldId {
     /// Initializes a new `Identity` from a World ID secret. The identity is initialized for a specific environment.
     #[must_use]
-    #[uniffi::constructor]
-    #[allow(
-        clippy::needless_pass_by_value,
-        reason = "secret is passed by value so uniffi 0.32 maps it to a `RustBuffer` (Kotlin `ByteArray` / Swift `Data`) rather than the non-`Send` `ForeignBytes` view produced for `&[u8]`"
-    )]
+    #[allow(clippy::needless_pass_by_value)]
     pub fn new(secret: Vec<u8>, environment: &Environment) -> Self {
         let hashed_secret_hex: SecretBox<[u8; 64]> =
             SecretBox::init_with(|| seed_hex(&secret));

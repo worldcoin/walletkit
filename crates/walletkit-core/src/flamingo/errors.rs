@@ -7,7 +7,7 @@ use thiserror::Error;
 use super::RequestIntegrityError;
 
 /// A rejection reported inside encryption; not a signed statement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlamingoMatchRejection {
     /// Malformed encrypted request.
     MalformedInputs,
@@ -49,7 +49,7 @@ pub enum FlamingoMatchRejection {
     Internal,
 }
 /// Comparison names match the worker protocol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlamingoComparison {
     /// Orb credential versus live selfie.
     OrbSelfie,
@@ -59,7 +59,7 @@ pub enum FlamingoComparison {
     SelfieChallenge,
 }
 /// Image roles match the worker protocol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlamingoImageRole {
     /// Orb credential image.
     OrbCredential,
@@ -69,7 +69,7 @@ pub enum FlamingoImageRole {
     RtmsChallenge,
 }
 /// Failures while configuring or performing a match request.
-#[derive(Debug, Error, uniffi::Error)]
+#[derive(Debug, Error)]
 pub enum FlamingoError {
     /// A caller-supplied value cannot form a valid match request.
     #[error("invalid {attribute}: {reason}")]
@@ -191,7 +191,7 @@ impl From<ImageRole> for FlamingoImageRole {
     }
 }
 /// Image rejection reasons, without raw engine diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlamingoImageFailureReason {
     /// Image decoding or dimension validation failed.
     InvalidImage,
@@ -337,7 +337,7 @@ impl From<ImageFailureReason> for FlamingoImageFailureReason {
 }
 
 /// Capture validation targets exported to mobile callers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlamingoValidationTarget {
     /// A single image.
     Image,
@@ -360,7 +360,7 @@ impl From<ValidationTarget> for FlamingoValidationTarget {
 }
 
 /// Worker input constraints exported to mobile callers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlamingoInputFailureReason {
     /// A required image is missing.
     MissingImage,
@@ -389,7 +389,7 @@ impl From<InputFailureReason> for FlamingoInputFailureReason {
 }
 
 /// Local input constraints exported to mobile callers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlamingoInputFailureKind {
     /// The field is empty.
     Empty,
@@ -402,7 +402,7 @@ pub enum FlamingoInputFailureKind {
 }
 
 /// Response stages exported to mobile callers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FlamingoResponseStage {
     /// The assignment document or public key.
     Assignment,

@@ -2,7 +2,7 @@
 
 Encrypted on-device storage abstractions for WalletKit: vault opener,
 content-addressed blobs, sealed key envelope, and cross-process lock. Built on
-`walletkit-sqlite`; plain Rust with no `uniffi`.
+`walletkit-sqlite`; plain Rust with no native binding dependency.
 
 Consumed by `walletkit-core::storage` (credential vault) and by sibling SDKs in the WalletKit workspace that need an encrypted on-device store.
 
@@ -21,8 +21,8 @@ Five physical pieces. Knowing what each one is and isn't makes everything else s
 ```mermaid
 flowchart TB
     subgraph Host["Host platform (Kotlin / Swift)"]
-        KS["DeviceKeystore (uniffi)"]
-        BS["AtomicBlobStore (uniffi)"]
+        KS["DeviceKeystore (host callback)"]
+        BS["AtomicBlobStore (host callback)"]
     end
     subgraph WKDB["walletkit-db (this crate)"]
         OV["Vault::open / connection"]
@@ -49,7 +49,7 @@ flowchart TB
 
 Dependency direction is one-way: consumers depend on `walletkit-db`, which
 depends on `walletkit-sqlite`. `walletkit-db` doesn't know about its consumers,
-`uniffi`, or any specific consumer schema. Each consumer brings its own
+native bindings, or any specific consumer schema. Each consumer brings its own
 filename, AD namespace, lock file, vault file, and SQL schema.
 
 ## Key hierarchy
