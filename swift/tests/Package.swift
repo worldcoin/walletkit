@@ -1,4 +1,4 @@
-// swift-tools-version: 5.7
+// swift-tools-version: 6.0
 
 import PackageDescription
 
@@ -14,14 +14,12 @@ let package = Package(
             targets: ["WalletKit"])
     ],
     dependencies: [
-        .package(url: "https://github.com/attaswift/BigInt.git", from: "5.4.0"),
     ],
     targets: [
         .target(
             name: "WalletKit",
             dependencies: [
                 "WalletKitFFI",
-                .product(name: "BigInt", package: "BigInt"),
             ],
             path: "Sources/WalletKit"
         ),
