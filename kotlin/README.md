@@ -22,7 +22,7 @@ The Android cross-compilation environment must be configured. See
 cargo xtask kotlin test
 ```
 
-The test task builds a host library for macOS or Linux, generates bindings, and
+The test task builds a host library for macOS or Linux, compiles the maintained Kotlin sources, and
 runs the Kotlin/JVM test suite.
 
 ## Publishing to Maven Local
@@ -35,5 +35,5 @@ nix develop .#android --command cargo xtask kotlin local 0.3.1
 
 The Kotlin project has two members:
 
-- `walletkit`: The main WalletKit library with UniFFI bindings for Kotlin.
+- `walletkit`: The maintained `org.world.walletkit` library and private JNI bridge.
 - `walletkit-tests`: Unit tests to assert the Kotlin bindings behave as intended (foreign tests).
