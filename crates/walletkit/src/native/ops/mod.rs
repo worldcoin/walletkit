@@ -24,6 +24,7 @@
 )]
 
 pub mod authenticator;
+pub mod flamingo;
 pub mod identity;
 #[cfg(feature = "issuers")]
 pub mod issuers;
