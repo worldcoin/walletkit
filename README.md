@@ -2,7 +2,7 @@ WalletKit enables mobile applications to use [World ID](https://world.org/world-
 
 Part of the [World ID SDK](https://docs.world.org/world-id).
 
-WalletKit can be used as a Rust crate, or directly as a Swift or Android package. WalletKit includes foreign bindings for direct usage in Swift/Kotlin through [UniFFI](https://github.com/mozilla/uniffi-rs).
+WalletKit can be used as a Rust crate, or directly as a Swift or Android package. WalletKit owns the Swift and Kotlin APIs, their native bridge, and their release packages. Apps depend only on the WalletKit library. See [native SDK architecture and migration](docs/native-bindings.md).
 
 ## Installation
 
@@ -56,7 +56,7 @@ See [`swift/README.md`](swift/README.md) for package integration details.
 The experimental `@worldcoin/walletkit-web` npm package (`web/walletkit`) wraps the
 `walletkit-web` crate, a `wasm-bindgen` facade over `walletkit-core` whose classes
 mirror the Swift and Kotlin objects. It runs WalletKit in a dedicated Web Worker and
-does not use UniFFI bindings. Build and test it with the pinned WASM toolchain:
+does not use the native Kotlin and Swift bindings. Build and test it with the pinned WASM toolchain:
 
 ```bash
 nix develop .#wasm --command bun install --cwd web/walletkit --frozen-lockfile
@@ -82,7 +82,7 @@ issuance and proof flow against the package in this checkout.
 
 ### Building and publishing
 
-To test local changes before publishing a release, use the Kotlin xtask to compile the Rust library, generate UniFFI bindings, and publish a SNAPSHOT to Maven Local:
+To test local changes before publishing a release, use the Kotlin xtask to compile the Rust library, package the Kotlin sources, and publish a SNAPSHOT to Maven Local:
 
 ```bash
 nix develop .#android --command cargo xtask kotlin local 0.3.1
@@ -97,7 +97,7 @@ RUSTUP_HOME=~/.rustup CARGO_HOME=~/.cargo cargo xtask kotlin local 0.1.0-SNAPSHO
 
 This will:
 1. Build the Rust library for all Android architectures (arm64-v8a, armeabi-v7a, x86_64, x86)
-2. Generate Kotlin UniFFI bindings
+2. Package the maintained Kotlin library with its JNI binaries
 3. Publish to `~/.m2/repository/org/world/walletkit/`
 
 In your consuming project, ensure `mavenLocal()` is included in your repositories and update your dependency version to the SNAPSHOT version (e.g., `0.3.1`).
@@ -114,7 +114,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --workspace --all-targets --no-default-features -- -D warnings
 ```
 
-CI runs all three checks. Formatting:
+CI runs all three checks. After changing the C functions in `crates/walletkit/src/native/c`,
+regenerate the header that ships in the XCFramework (CI checks that it is current):
+
+```bash
+nix develop --command cbindgen --config crates/walletkit/cbindgen.toml \
+  --output native/include/walletkit_coreFFI.h crates/walletkit
+```
+
+Formatting:
 
 ```bash
 cargo fmt -- --check
@@ -124,6 +132,8 @@ cargo fmt -- --check
 
 WalletKit is broken down into separate crates, offering the following functionality.
 
+- `walletkit` - Re-exports `walletkit-core` and contains the typed JNI (`jni` feature) and C (`c` feature) bindings behind the Kotlin and Swift SDKs.
+- `walletkit-jni-macros` - The `#[jni_export]` attribute that generates the JNI entry points.
 - `walletkit-core` - Enables basic usage of a World ID to generate ZKPs using different credentials.
 - `walletkit-sqlite` - Low-level safe Rust wrapper around encrypted SQLite (`sqlite3mc`), including connections, statements, transactions, and cipher operations.
 - `walletkit-db` - Higher-level encrypted storage abstractions for WalletKit: vault opener, content-addressed blob storage, sealed key envelope, and cross-process lock. Built on `walletkit-sqlite` and consumable by `walletkit-core` and sibling SDKs.
@@ -192,10 +202,12 @@ init_logging(Arc::new(MyLogger), Some(LogLevel::Debug));
 ### Swift Integration
 
 ```swift
-class WalletKitLoggerBridge: WalletKit.Logger {
+import WalletKit
+
+final class WalletKitLoggerBridge: WalletKit.Logger {
     static let shared = WalletKitLoggerBridge()
 
-    func log(level: WalletKit.LogLevel, message: String) {
+    func log(level: LogLevel, message: String) {
         switch level {
         case .trace, .debug:
             Log.debug(message)
@@ -211,35 +223,39 @@ class WalletKitLoggerBridge: WalletKit.Logger {
     }
 }
 
-public func setupWalletKitLogging() {
-    WalletKit.initLogging(logger: WalletKitLoggerBridge.shared, level: .debug)
+public func setupWalletKitLogging() throws {
+    try WalletKit.initLogging(logger: WalletKitLoggerBridge.shared, level: .debug)
 }
 ```
 
 ### Kotlin Integration
 
 ```kotlin
-class WalletKitLoggerBridge : WalletKit.Logger {
+import org.world.walletkit.Logger
+import org.world.walletkit.LogLevel
+import org.world.walletkit.WalletKit
+
+class WalletKitLoggerBridge : Logger {
     companion object {
         val shared = WalletKitLoggerBridge()
     }
 
-    override fun log(level: WalletKit.LogLevel, message: String) {
+    override fun log(level: LogLevel, message: String) {
         when (level) {
-            WalletKit.LogLevel.TRACE, WalletKit.LogLevel.DEBUG ->
+            LogLevel.TRACE, LogLevel.DEBUG ->
                 Log.d("WalletKit", message)
-            WalletKit.LogLevel.INFO ->
+            LogLevel.INFO ->
                 Log.i("WalletKit", message)
-            WalletKit.LogLevel.WARN ->
+            LogLevel.WARN ->
                 Log.w("WalletKit", message)
-            WalletKit.LogLevel.ERROR ->
+            LogLevel.ERROR ->
                 Log.e("WalletKit", message)
         }
     }
 }
 
 fun setupWalletKitLogging() {
-    WalletKit.initLogging(WalletKitLoggerBridge.shared, WalletKit.LogLevel.DEBUG)
+    WalletKit.initLogging(WalletKitLoggerBridge.shared, LogLevel.DEBUG)
 }
 ```
 
