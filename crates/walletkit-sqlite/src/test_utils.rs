@@ -23,9 +23,6 @@ use crate::Connection;
 pub fn init_sqlite() {
     static INIT: OnceLock<()> = OnceLock::new();
     INIT.get_or_init(|| {
-        drop(
-            Connection::open(std::path::Path::new(":memory:"), false)
-                .expect("sqlite3mc pre-init"),
-        );
+        drop(Connection::open(":memory:", false).expect("sqlite3mc pre-init"));
     });
 }

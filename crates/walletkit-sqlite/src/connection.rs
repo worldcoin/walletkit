@@ -26,8 +26,8 @@ impl Connection {
     /// # Errors
     ///
     /// Returns `Error` if `SQLite` cannot open the file.
-    pub fn open(path: &Path, read_only: bool) -> DbResult<Self> {
-        Self::open_with_vfs(path, read_only, None)
+    pub fn open(path: impl AsRef<Path>, read_only: bool) -> DbResult<Self> {
+        Self::open_with_vfs(path.as_ref(), read_only, None)
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -214,7 +214,7 @@ impl Connection {
     ///
     /// Returns `Error` if the in-memory database cannot be opened.
     pub fn open_in_memory() -> DbResult<Self> {
-        Self::open(Path::new(":memory:"), false)
+        Self::open(":memory:", false)
     }
 }
 

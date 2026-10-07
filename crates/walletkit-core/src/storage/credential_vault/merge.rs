@@ -28,8 +28,8 @@ impl CredentialVault {
     /// # Errors
     /// Returns an error for malformed backup contents, unavailable storage, or a failed transaction.
     pub(crate) fn merge_plaintext_bytes(&self, bytes: &[u8]) -> StorageResult<u64> {
-        let incoming = Connection::open(std::path::Path::new(":memory:"), false)
-            .map_err(|e| map_db_err(&e))?;
+        let incoming =
+            Connection::open(":memory:", false).map_err(|e| map_db_err(&e))?;
         incoming
             .deserialize_readonly("main", bytes)
             .map_err(|e| map_db_err(&e))?;
