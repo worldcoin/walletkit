@@ -5,6 +5,7 @@
 import type {
   Authenticator,
   CredentialRecord,
+  RecoveryBinding,
   RegistrationStatus,
   WalletKit,
 } from "../../dist/index.js";
@@ -64,6 +65,23 @@ export async function consumer() {
   const responseJson: string = await response.toJson();
   const recovery = await walletkit.recoveryDataFromSeed(new Uint8Array(32));
   const address: string = recovery.authenticatorAddress;
+  const redacted: string = await walletkit.sanitizeHexSecrets("0x00");
+  await walletkit.emitLog("warn", "logging works");
+  const userAgent = await (
+    await (await walletkit.UserAgentBuilder.new()).withWalletkitSegment()
+  ).build();
+  const userAgentValue: string = await userAgent.headerValue();
+  const nfcIssuer = await walletkit.TfhNfcIssuer.new("staging", userAgentValue);
+  const nfcCredential = await nfcIssuer.refreshNfcCredential("{}", {
+    "X-Header": "value",
+  });
+  const recoveryBindings = await walletkit.RecoveryBindingManager.new(
+    "staging",
+    await walletkit.UserAgentBuilder.new(),
+  );
+  await recoveryBindings.bindRecoveryAgent(authenticator, "0x01", "0x02");
+  const binding: RecoveryBinding =
+    await recoveryBindings.getRecoveryBinding(leafIndex);
   factor.free();
   const stopped: boolean = walletkit.isStopped();
   await walletkit.close();
@@ -73,6 +91,8 @@ export async function consumer() {
   void walletkit.Authenticator.missing;
   // @ts-expect-error not an `Environment`
   await walletkit.pohRecoveryAgentAddress("moon");
+  // @ts-expect-error not a `LogLevel`
+  await walletkit.emitLog("loud", "message");
   // @ts-expect-error wasm-bindgen internals are not part of the API
   void walletkit.FieldElement.__wrap;
   // @ts-expect-error the worker runs module setup itself
@@ -94,6 +114,9 @@ export async function consumer() {
     status,
     responseJson,
     address,
+    redacted,
+    nfcCredential,
+    binding,
     stopped,
   };
 }

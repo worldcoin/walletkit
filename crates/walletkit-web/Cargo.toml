@@ -22,7 +22,7 @@ crate-type = ["cdylib", "rlib"]
 js-sys = "0.3.103"
 wasm-bindgen = "=0.2.126"
 wasm-bindgen-futures = "0.4.76"
-walletkit-core = { workspace = true, features = ["embed-zkeys"] }
+walletkit-core = { workspace = true, features = ["embed-zkeys", "issuers"] }
 zeroize = { workspace = true }
 
 [lints]

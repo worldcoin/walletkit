@@ -364,6 +364,79 @@ test("Rust objects stay in the worker and are used through handles", async ({
   expect(result.released).toContain("freed");
 });
 
+test("logging helpers redact secrets and reach the worker console", async ({
+  page,
+}) => {
+  const secret = "0xde" + "0".repeat(60) + "ef";
+  const warnings: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "warning") warnings.push(message.text());
+  });
+  const result = await page.evaluate(async (secret) => {
+    const wallet = await (window as any).initializeWalletKit();
+    const redacted = await wallet.sanitizeHexSecrets(`key ${secret}`);
+    await wallet.emitLog("warn", `emitted ${secret}`);
+    await wallet.emitLog("debug", "dropped below warn");
+    const unknownLevel = await wallet
+      .emitLog("loud", "message")
+      .catch((e: Error) => ({ name: e.name, message: e.message }));
+    await wallet.close();
+    return { redacted, unknownLevel };
+  }, secret);
+  expect(result.redacted).toBe("key 0xde..ef");
+  expect(result.unknownLevel).toEqual({
+    name: "TypeError",
+    message: "Unknown log level: loud",
+  });
+  await expect
+    .poll(() => warnings.find((text) => text.includes("emitted")))
+    .toContain("emitted 0xde..ef");
+  expect(warnings.join("\n")).not.toContain(secret);
+  expect(warnings.join("\n")).not.toContain("dropped below warn");
+});
+
+test("issuer clients are constructed in the worker and validate arguments", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    const capture = (promise: Promise<unknown>) =>
+      promise.then(
+        () => ({ name: "none", message: "unexpected success" }),
+        (e: Error) => ({ name: e.name, message: e.message }),
+      );
+    const builder = await (
+      await (await wallet.UserAgentBuilder.new()).withSegment("Web", "1.0")
+    ).withWalletkitSegment();
+    const userAgent = await (await builder.build()).headerValue();
+    const nfc = await wallet.TfhNfcIssuer.new("staging", userAgent);
+    const invalidHeaders = await capture(
+      nfc.refreshNfcCredential("{}", { "X-Count": 1 }),
+    );
+    const recovery = await wallet.RecoveryBindingManager.new(
+      "production",
+      builder,
+    );
+    const invalidLeafIndex = await capture(recovery.getRecoveryBinding(-1n));
+    const unknownEnvironment = await capture(
+      wallet.RecoveryBindingManager.new("moon", builder),
+    );
+    await wallet.close();
+    return { userAgent, invalidHeaders, invalidLeafIndex, unknownEnvironment };
+  });
+  expect(result.userAgent).toMatch(/^Web\/1\.0 walletkit-core\/\d+\.\d+\.\d+/);
+  expect(result.invalidHeaders).toEqual({
+    name: "TypeError",
+    message: "`headers` must be an object of strings",
+  });
+  expect(result.invalidLeafIndex.name).toBe("TypeError");
+  expect(result.invalidLeafIndex.message).toContain("leafIndex");
+  expect(result.unknownEnvironment).toEqual({
+    name: "TypeError",
+    message: "Unknown environment: moon",
+  });
+});
+
 test("close frees live objects, is idempotent and rejects later calls", async ({
   page,
 }) => {

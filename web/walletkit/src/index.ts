@@ -12,10 +12,14 @@ export type {
   InitializingAuthenticator,
   ProofRequest,
   ProofResponse,
+  RecoveryBindingManager,
   RemoteClass,
   RemoteObject,
   StorageKeys,
   StoragePaths,
+  TfhNfcIssuer,
+  UserAgent,
+  UserAgentBuilder,
   WalletKit,
 } from "./remote";
 // Records are plain data and need no proxy.
@@ -29,6 +33,8 @@ export type {
   CredentialRecord,
   Environment,
   GatewayRequestStatus,
+  LogLevel,
+  RecoveryBinding,
   RecoveryData,
   RecoveryUpdateSignature,
   Region,

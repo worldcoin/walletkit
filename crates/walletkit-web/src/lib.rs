@@ -16,8 +16,10 @@
 
 mod authenticator;
 mod error;
+mod issuers;
 mod js;
 mod storage;
+mod user_agent;
 mod values;
 
 use std::sync::Arc;
@@ -25,19 +27,24 @@ use std::sync::Arc;
 use js_sys::BigInt;
 use walletkit_core::{
     authenticator::recovery_data_from_seed,
-    logger::{init_logging, sanitize_hex_secrets, LogLevel},
+    logger::{emit_log, init_logging, sanitize_hex_secrets, LogLevel},
     proof_request_credential_constraints_check::{
         check_credentials_against_proof_request, CredentialConstraintsCheckResult,
     },
 };
 use wasm_bindgen::prelude::*;
 
-use crate::{error::to_js, storage::JsCredentialStore, values::JsProofRequest};
+use crate::{
+    error::{invalid_argument, to_js},
+    storage::JsCredentialStore,
+    values::JsProofRequest,
+};
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 export type Environment = "production" | "staging";
 export type Region = "eu" | "us" | "ap";
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
 export interface RecoveryData {
   authenticatorAddress: string;
@@ -121,6 +128,37 @@ fn start() {
         js::console_error(&sanitize_hex_secrets(info.to_string()));
     }));
     init_logging(Arc::new(js::ConsoleLogger), Some(LogLevel::Warn));
+}
+
+/// Replaces hex sequences long enough to be secrets with a redacted form that keeps
+/// only the first and last two digits.
+#[wasm_bindgen(js_name = sanitizeHexSecrets)]
+#[must_use]
+pub fn sanitize_hex_secrets_js(input: String) -> String {
+    sanitize_hex_secrets(input)
+}
+
+/// Emits `message` through `WalletKit`'s logging pipeline, to check that it is wired up.
+///
+/// The worker writes warnings and errors to its console; lower levels are dropped.
+///
+/// # Errors
+/// Throws a `TypeError` for an unknown level.
+#[wasm_bindgen(js_name = emitLog)]
+pub fn emit_log_js(
+    #[wasm_bindgen(unchecked_param_type = "LogLevel")] level: &str,
+    message: String,
+) -> Result<(), JsValue> {
+    let level = match level {
+        "trace" => LogLevel::Trace,
+        "debug" => LogLevel::Debug,
+        "info" => LogLevel::Info,
+        "warn" => LogLevel::Warn,
+        "error" => LogLevel::Error,
+        _ => return Err(invalid_argument(&format!("Unknown log level: {level}"))),
+    };
+    emit_log(level, message);
+    Ok(())
 }
 
 /// Derives the recovery identity material for a 32-byte seed.
