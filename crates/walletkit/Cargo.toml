@@ -40,7 +40,9 @@ tempfile.workspace = true
 default = ["issuers"]
 # Typed JNI entry points for the Kotlin SDK (Android AAR).
 jni = ["native", "dep:cesu8", "dep:jni", "dep:tracing", "dep:walletkit-jni-macros"]
-# Shared runtime of the bindings; enable a binding feature instead.
+# Typed C ABI for the Swift SDK and other C hosts (`native/include/walletkit_coreFFI.h`).
+c = ["native"]
+# Shared runtime of the `jni` and `c` bindings; enable one of those instead.
 native = [
   "dep:async-trait",
   "dep:futures-util",
