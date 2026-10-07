@@ -176,6 +176,16 @@ impl CacheDb {
         activity::metadata(self.vault.connection())
     }
 
+    /// Deletes the provided activity entry IDs and returns the
+    /// number of deleted entries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn delete_activities(&self, entry_ids: &[u64]) -> StorageResult<u64> {
+        activity::delete(self.vault.connection(), entry_ids)
+    }
+
     /// Deletes all activity entries. Returns the number of entries deleted.
     ///
     /// # Errors
