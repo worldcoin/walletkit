@@ -1,0 +1,135 @@
+name: Review for approval
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        required: true
+        type: number
+    secrets:
+      OPENROUTER_API_KEY:
+        required: true
+      APPROVAL_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: auto-approve-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+env:
+  BOT_LOGIN: wld-walletkit-bot
+  PR_NUMBER: ${{ inputs.pr_number }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      eligible: ${{ steps.prepare.outputs.eligible }}
+      head: ${{ steps.prepare.outputs.head }}
+      fingerprint: ${{ steps.prepare.outputs.fingerprint }}
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - name: Collect trusted review evidence
+        id: prepare
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/auto-approval/gate.py prepare "$PR_NUMBER"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.prepare.outputs.eligible == 'true'
+        with:
+          name: evidence-${{ inputs.pr_number }}-${{ github.run_attempt }}
+          path: review-input/
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
+
+  agent:
+    needs: prepare
+    if: needs.prepare.outputs.eligible == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: evidence-${{ inputs.pr_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/review
+      - uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+      - name: Install pi 1.0.4 and jq
+        run: |
+          nix profile install \
+            github:NixOS/nixpkgs/061e83fc010a624d8045793836ee20bb8f4b5348#pi-coding-agent \
+            github:NixOS/nixpkgs/061e83fc010a624d8045793836ee20bb8f4b5348#jq
+          pi --version
+          jq --version
+      - name: Review PR with gh and repository policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          EXPECTED_HEAD: ${{ needs.prepare.outputs.head }}
+          EXPECTED_FINGERPRINT: ${{ needs.prepare.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          skill="$GITHUB_WORKSPACE/.github/auto-approval/review-pr/SKILL.md"
+          cd "$RUNNER_TEMP/review"
+          log_token="$(cat /proc/sys/kernel/random/uuid)"
+          echo "::stop-commands::$log_token"
+          trap 'echo "::$log_token::"' EXIT
+          timeout 900 pi --mode json \
+            --provider openrouter --model deepseek/deepseek-v4.1-flash \
+            --session-dir "$RUNNER_TEMP/pi-sessions" \
+            --skill "$skill" \
+            "/skill:review-pr Review $GH_REPO#$PR_NUMBER at $EXPECTED_HEAD. Read .code-review.md and evidence.json. The evidence fingerprint is $EXPECTED_FINGERPRINT. Write verdict.json here." \
+            | tee "$RUNNER_TEMP/pi-events.jsonl" \
+            | jq --unbuffered --join-output -f "$GITHUB_WORKSPACE/.github/auto-approval/stream.jq"
+          jq --null-input --raw-output -f "$GITHUB_WORKSPACE/.github/auto-approval/final-response.jq" \
+            < "$RUNNER_TEMP/pi-events.jsonl" > final-response.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verdict-${{ inputs.pr_number }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/review/verdict.json
+            ${{ runner.temp }}/review/final-response.txt
+          retention-days: 7
+          if-no-files-found: error
+
+  approve:
+    needs: [prepare, agent]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        id: verdict
+        with:
+          name: verdict-${{ inputs.pr_number }}-${{ github.run_attempt }}
+          path: verdict
+      - name: Recheck evidence and approve the reviewed commit
+        env:
+          GH_TOKEN: ${{ secrets.APPROVAL_TOKEN }}
+          EXPECTED_HEAD: ${{ needs.prepare.outputs.head }}
+          EXPECTED_FINGERPRINT: ${{ needs.prepare.outputs.fingerprint }}
+        run: python3 .github/auto-approval/gate.py approve "$PR_NUMBER"
+      - name: Publish agent report
+        if: always() && steps.verdict.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.APPROVAL_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          EXPECTED_HEAD: ${{ needs.prepare.outputs.head }}
+          EXPECTED_FINGERPRINT: ${{ needs.prepare.outputs.fingerprint }}
+        run: python3 .github/auto-approval/report.py "$PR_NUMBER"
