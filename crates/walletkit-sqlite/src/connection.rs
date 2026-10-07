@@ -266,28 +266,22 @@ mod tests {
         image.fill(0);
         drop(image);
 
-        assert_eq!(
-            conn.query_row("SELECT value FROM incoming.t", &[], |row| Ok(
-                row.column_text(0)
-            ))
-            .unwrap(),
-            "backup"
-        );
+        let source_value = conn
+            .query_row("SELECT value FROM incoming.t", &[], |row| {
+                Ok(row.column_text(0))
+            })
+            .unwrap();
+        assert_eq!(source_value, "backup");
         assert!(conn
             .execute_batch("INSERT INTO incoming.t VALUES ('changed');")
             .is_err());
         conn.execute_batch("INSERT INTO local SELECT value FROM incoming.t;")
             .unwrap();
         conn.execute_batch("DETACH DATABASE incoming;").unwrap();
-        assert_eq!(
-            conn.query_row(
-                "SELECT value FROM local",
-                &[],
-                |row| Ok(row.column_text(0))
-            )
-            .unwrap(),
-            "backup"
-        );
+        let destination_value = conn
+            .query_row("SELECT value FROM local", &[], |row| Ok(row.column_text(0)))
+            .unwrap();
+        assert_eq!(destination_value, "backup");
 
         let image = std::fs::read(&path).unwrap();
         assert!(conn.deserialize_readonly("missing", &image).is_err());
@@ -295,13 +289,12 @@ mod tests {
         conn.execute_batch("ATTACH DATABASE ':memory:' AS incoming KEY '';")
             .unwrap();
         conn.deserialize_readonly("incoming", &image).unwrap();
-        assert_eq!(
-            conn.query_row("SELECT COUNT(*) FROM incoming.t", &[], |row| Ok(
-                row.column_i64(0)
-            ))
-            .unwrap(),
-            1
-        );
+        let reloaded_count = conn
+            .query_row("SELECT COUNT(*) FROM incoming.t", &[], |row| {
+                Ok(row.column_i64(0))
+            })
+            .unwrap();
+        assert_eq!(reloaded_count, 1);
         conn.execute_batch("DETACH DATABASE incoming;").unwrap();
     }
 

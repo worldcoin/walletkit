@@ -120,15 +120,16 @@ impl RawDb {
     /// Replaces a schema with a read-only, SQLite-owned copy of a database image.
     pub fn deserialize_readonly(&self, schema: &str, bytes: &[u8]) -> DbResult<()> {
         let schema = to_cstring(schema)?;
-        let size = i64::try_from(bytes.len())
+        let size_bytes = i64::try_from(bytes.len())
             .map_err(|_| Error::new(SQLITE_ERROR, "database image is too large"))?;
         if bytes.is_empty() {
             return Err(Error::new(SQLITE_NOTADB, "database image is empty"));
         }
 
         // Safety: allocate through the same SQLite engine that will own and free
-        // the buffer. The checked size is positive and fits both integer widths.
-        let buffer = unsafe { raw::sqlite3_malloc64(size.unsigned_abs()) }.cast::<u8>();
+        // the buffer. The checked byte count is positive and fits both integer widths.
+        let buffer =
+            unsafe { raw::sqlite3_malloc64(size_bytes.cast_unsigned()) }.cast::<u8>();
         if buffer.is_null() {
             return Err(Error::new(
                 SQLITE_NOMEM,
@@ -144,8 +145,8 @@ impl RawDb {
                 self.ptr,
                 schema.as_ptr(),
                 buffer,
-                size,
-                size,
+                size_bytes,
+                size_bytes,
                 SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_READONLY,
             )
         };

@@ -37,13 +37,11 @@ impl CredentialVault {
     }
 }
 
-fn invalid_backup() -> StorageError {
-    StorageError::VaultDb("invalid credential backup contents".to_owned())
-}
-
-fn merge_from(conn: &Connection, incoming: &Connection) -> StorageResult<u64> {
+fn merge_from(destination: &Connection, incoming: &Connection) -> StorageResult<u64> {
     validate_incoming(incoming)?;
-    let tx = conn.transaction_immediate().map_err(|e| map_db_err(&e))?;
+    let tx = destination
+        .transaction_immediate()
+        .map_err(|e| map_db_err(&e))?;
     {
         let mut blobs = incoming.prepare(
             "SELECT content_id, blob_kind, MIN(created_at), bytes FROM blob_objects GROUP BY content_id",
@@ -63,7 +61,7 @@ fn merge_from(conn: &Connection, incoming: &Connection) -> StorageResult<u64> {
         }
     }
 
-    let mut added = 0;
+    let mut added_records = 0;
     {
         let mut records = incoming.prepare(&format!(
             "SELECT issuer_schema_id, subject_blinding_factor, genesis_issued_at, expires_at,
@@ -71,12 +69,12 @@ fn merge_from(conn: &Connection, incoming: &Connection) -> StorageResult<u64> {
              FROM credential_records ORDER BY {CREDENTIAL_VERSION_ORDER}",
         )).map_err(|e| map_db_err(&e))?;
         while let StepResult::Row(row) = records.step().map_err(|e| map_db_err(&e))? {
-            let associated = if row.is_column_null(6) {
+            let associated_data_cid = if row.is_column_null(6) {
                 walletkit_sqlite::Value::Null
             } else {
                 walletkit_sqlite::Value::Blob(row.column_blob(6))
             };
-            let count = tx.execute(
+            let inserted = tx.execute(
                 "INSERT INTO credential_records(issuer_schema_id, subject_blinding_factor,
                     genesis_issued_at, expires_at, updated_at, credential_blob_cid, associated_data_cid)
                  SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE NOT EXISTS (
@@ -85,19 +83,19 @@ fn merge_from(conn: &Connection, incoming: &Connection) -> StorageResult<u64> {
                     AND updated_at = ?5
                     AND credential_blob_cid = ?6 AND associated_data_cid IS ?7)",
                 params![row.column_i64(0), row.column_blob(1), row.column_i64(2), row.column_i64(3),
-                        row.column_i64(4), row.column_blob(5), associated],
+                        row.column_i64(4), row.column_blob(5), associated_data_cid],
             ).map_err(|e| map_db_err(&e))?;
-            added += count as u64;
+            added_records += inserted as u64;
         }
     }
     tx.commit().map_err(|e| map_db_err(&e))?;
-    Ok(added)
+    Ok(added_records)
 }
 
 fn validate_incoming(incoming: &Connection) -> StorageResult<()> {
     // Exports made with CREATE TABLE AS have no NOT NULL or type constraints.
     // Validate before using SQLite's permissive getters or writing destination data.
-    let invalid: i64 = incoming.query_row(
+    let has_invalid_rows = incoming.query_row(
         "SELECT EXISTS(SELECT 1 FROM blob_objects WHERE
             typeof(content_id) != 'blob' OR length(content_id) != 32 OR
             typeof(blob_kind) != 'integer' OR blob_kind NOT IN (1, 2) OR
@@ -112,9 +110,9 @@ fn validate_incoming(incoming: &Connection) -> StorageResult<()> {
             NOT EXISTS(SELECT 1 FROM blob_objects b WHERE b.content_id = r.credential_blob_cid AND b.blob_kind = 1) OR
             (associated_data_cid IS NOT NULL AND (typeof(associated_data_cid) != 'blob' OR
              NOT EXISTS(SELECT 1 FROM blob_objects b WHERE b.content_id = r.associated_data_cid AND b.blob_kind = 2))))",
-        &[], |row| Ok(row.column_i64(0)),
+        &[], |row| Ok(row.column_i64(0) != 0),
     ).map_err(|e| map_db_err(&e))?;
-    if invalid != 0 {
+    if has_invalid_rows {
         return Err(invalid_backup());
     }
 
@@ -130,6 +128,10 @@ fn validate_incoming(incoming: &Connection) -> StorageResult<()> {
         }
     }
     Ok(())
+}
+
+fn invalid_backup() -> StorageError {
+    StorageError::VaultDb("invalid credential backup contents".to_owned())
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
