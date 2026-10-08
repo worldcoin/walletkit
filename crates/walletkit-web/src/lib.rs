@@ -16,7 +16,6 @@
 
 mod authenticator;
 mod error;
-mod issuers;
 mod js;
 mod storage;
 mod values;

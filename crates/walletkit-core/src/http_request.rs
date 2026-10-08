@@ -30,8 +30,6 @@ impl Request {
 
     /// Creates a request builder with defaults applied.
     pub(crate) fn req(&self, method: Method, url: &str) -> RequestBuilder {
-        // TODO: Return an error instead of panicking. The panic aborts native apps and
-        // traps the browser worker.
         #[cfg(not(test))]
         assert!(url.starts_with("https"));
 

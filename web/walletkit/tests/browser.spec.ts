@@ -395,32 +395,6 @@ test("logging helpers redact secrets and reach the worker console", async ({
   expect(warnings.join("\n")).not.toContain("dropped below warn");
 });
 
-test("recovery binding manager is constructed in the worker and validates arguments", async ({
-  page,
-}) => {
-  const result = await page.evaluate(async () => {
-    const wallet = await (window as any).initializeWalletKit();
-    const capture = (promise: Promise<unknown>) =>
-      promise.then(
-        () => ({ name: "none", message: "unexpected success" }),
-        (e: Error) => ({ name: e.name, message: e.message }),
-      );
-    const recovery = await wallet.RecoveryBindingManager.new("production");
-    const invalidLeafIndex = await capture(recovery.getRecoveryBinding(-1n));
-    const unknownEnvironment = await capture(
-      wallet.RecoveryBindingManager.new("moon"),
-    );
-    await wallet.close();
-    return { invalidLeafIndex, unknownEnvironment };
-  });
-  expect(result.invalidLeafIndex.name).toBe("TypeError");
-  expect(result.invalidLeafIndex.message).toContain("leafIndex");
-  expect(result.unknownEnvironment).toEqual({
-    name: "TypeError",
-    message: "Unknown environment: moon",
-  });
-});
-
 test("close frees live objects, is idempotent and rejects later calls", async ({
   page,
 }) => {

@@ -20,7 +20,7 @@ use crate::{
     values::{JsFieldElement, JsProofRequest, JsProofResponse},
 };
 
-pub fn parse_environment(environment: &str) -> Result<Environment, JsValue> {
+fn parse_environment(environment: &str) -> Result<Environment, JsValue> {
     Environment::from_str(environment)
         .map_err(|_| invalid_argument(&format!("Unknown environment: {environment}")))
 }
@@ -88,7 +88,7 @@ impl Default for JsEmbeddedZkArtifacts {
 
 /// The main component with which users interact with the World ID Protocol.
 #[wasm_bindgen(js_name = Authenticator)]
-pub struct JsAuthenticator(pub(crate) Arc<Authenticator>);
+pub struct JsAuthenticator(Arc<Authenticator>);
 
 #[wasm_bindgen(js_class = Authenticator)]
 impl JsAuthenticator {

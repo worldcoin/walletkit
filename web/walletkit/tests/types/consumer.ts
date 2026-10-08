@@ -5,7 +5,6 @@
 import type {
   Authenticator,
   CredentialRecord,
-  RecoveryBinding,
   RegistrationStatus,
   WalletKit,
 } from "../../dist/index.js";
@@ -67,11 +66,6 @@ export async function consumer() {
   const address: string = recovery.authenticatorAddress;
   const redacted: string = await walletkit.sanitizeHexSecrets("0x00");
   await walletkit.emitLog("warn", "logging works");
-  const recoveryBindings =
-    await walletkit.RecoveryBindingManager.new("staging");
-  await recoveryBindings.bindRecoveryAgent(authenticator, "0x01", "0x02");
-  const binding: RecoveryBinding =
-    await recoveryBindings.getRecoveryBinding(leafIndex);
   factor.free();
   const stopped: boolean = walletkit.isStopped();
   await walletkit.close();
@@ -105,7 +99,6 @@ export async function consumer() {
     responseJson,
     address,
     redacted,
-    binding,
     stopped,
   };
 }
