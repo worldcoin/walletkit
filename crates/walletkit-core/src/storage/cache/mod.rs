@@ -191,6 +191,7 @@ mod tests {
     use super::*;
     use crate::storage::types::{ActivityOutcome, ProtocolVersion};
     use secrecy::SecretBox;
+    use std::collections::HashSet;
     use std::fs;
     use std::path::PathBuf;
     use uuid::Uuid;
@@ -451,7 +452,11 @@ mod tests {
         let db = CacheDb::new(&path, &key).expect("open legacy cache file");
 
         let by_schema = db
-            .list_activities(&ActivityQuery::new().with_issuer_schema_id(20), 10, 0)
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([20])),
+                10,
+                0,
+            )
             .expect("list filtered");
 
         assert_eq!(by_schema.len(), 1, "legacy blob must be backfilled");

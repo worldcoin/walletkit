@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{
     ActivityEntry, ActivityMetadata, ActivityOutcome, ActivityQuery, ProtocolVersion,
@@ -69,9 +71,6 @@ pub(super) fn record(
 }
 
 /// Lists activity entries, most recent first.
-///
-/// When [`ActivityQuery::with_issuer_schema_id`] is used, only entries that
-/// include that issuer schema id are returned.
 pub(super) fn list(
     conn: &Connection,
     query: &ActivityQuery,
@@ -80,14 +79,17 @@ pub(super) fn list(
 ) -> StorageResult<Vec<ActivityEntry>> {
     let limit_i64 = i64::from(limit);
     let offset_i64 = i64::from(offset);
-    let issuer_schema_id = query.issuer_schema_id.map(u64::cast_signed);
+    let issuer_schema_ids = query
+        .issuer_schema_ids
+        .as_ref()
+        .map(encode_issuer_schema_ids);
 
-    let sql = if issuer_schema_id.is_some() {
+    let sql = if issuer_schema_ids.is_some() {
         format!(
             "{SELECT_ACTIVITY_ENTRIES}
              WHERE e.entry_id IN (
                  SELECT entry_id FROM activity_issuer_schema_ids
-                 WHERE issuer_schema_id = ?1
+                 WHERE issuer_schema_id IN (SELECT value FROM json_each(?1))
              )
              ORDER BY e.created_at DESC, e.entry_id DESC
              LIMIT ?2 OFFSET ?3"
@@ -104,8 +106,8 @@ pub(super) fn list(
 
     let mut stmt = conn.prepare(&sql).map_err(|err| map_db_err(&err))?;
 
-    if let Some(issuer_schema_id) = issuer_schema_id {
-        stmt.bind_values(params![issuer_schema_id, limit_i64, offset_i64])
+    if let Some(issuer_schema_ids) = issuer_schema_ids {
+        stmt.bind_values(params![issuer_schema_ids, limit_i64, offset_i64])
             .map_err(|err| map_db_err(&err))?;
     } else {
         stmt.bind_values(params![limit_i64, offset_i64])
@@ -149,6 +151,15 @@ const SELECT_ACTIVITY_ENTRIES: &str =
              FROM activity_issuer_schema_ids s
              WHERE s.entry_id = e.entry_id)
      FROM activity_entries e";
+
+fn encode_issuer_schema_ids(issuer_schema_ids: &BTreeSet<u64>) -> String {
+    let ids = issuer_schema_ids
+        .iter()
+        .map(|id| id.cast_signed().to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{ids}]")
+}
 
 /// Parses the reassembled issuer schema ids.
 ///
@@ -217,6 +228,7 @@ mod tests {
     use super::*;
     use crate::storage::cache::CacheDb;
     use secrecy::SecretBox;
+    use std::collections::HashSet;
     use std::fs;
     use std::path::{Path, PathBuf};
     use uuid::Uuid;
@@ -322,18 +334,30 @@ mod tests {
             .expect("record");
 
         let schema_10 = db
-            .list_activities(&ActivityQuery::new().with_issuer_schema_id(10), 10, 0)
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([10])),
+                10,
+                0,
+            )
             .expect("list filtered");
         assert_eq!(schema_10.len(), 2);
         assert!(schema_10.iter().all(|e| e.issuer_schema_ids.contains(&10)));
 
         let schema_20 = db
-            .list_activities(&ActivityQuery::new().with_issuer_schema_id(20), 10, 0)
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([20])),
+                10,
+                0,
+            )
             .expect("list filtered");
         assert_eq!(schema_20.len(), 2);
 
         let schema_30 = db
-            .list_activities(&ActivityQuery::new().with_issuer_schema_id(30), 10, 0)
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([30])),
+                10,
+                0,
+            )
             .expect("list filtered");
         assert!(schema_30.is_empty());
 
@@ -341,6 +365,83 @@ mod tests {
             .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list all");
         assert_eq!(all.len(), 4, "an unset filter returns every entry");
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_list_activities_filters_by_multiple_issuer_schema_ids() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Bu8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let with_schemas = |ids: Vec<u64>| ActivityEntry {
+            issuer_schema_ids: ids,
+            ..sample_entry()
+        };
+
+        let only_10 = db
+            .record_activity(&with_schemas(vec![10]), 1000)
+            .expect("record");
+        let only_20 = db
+            .record_activity(&with_schemas(vec![20]), 1001)
+            .expect("record");
+        let both = db
+            .record_activity(&with_schemas(vec![10, 20]), 1002)
+            .expect("record");
+
+        db.record_activity(&with_schemas(vec![30]), 1003)
+            .expect("record");
+
+        db.record_activity(&with_schemas(vec![]), 1004)
+            .expect("record");
+
+        let ids = |entries: Vec<ActivityEntry>| {
+            entries.into_iter().map(|e| e.id).collect::<Vec<_>>()
+        };
+
+        let filtered = db
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([20, 10])),
+                10,
+                0,
+            )
+            .expect("list filtered");
+
+        assert_eq!(
+            ids(filtered),
+            vec![Some(both), Some(only_20), Some(only_10)],
+            "an entry matching several ids is returned once, most recent first"
+        );
+
+        let first_page = db
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([10, 20])),
+                2,
+                0,
+            )
+            .expect("list first page");
+
+        let second_page = db
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([10, 20])),
+                2,
+                2,
+            )
+            .expect("list second page");
+
+        assert_eq!(ids(first_page), vec![Some(both), Some(only_20)]);
+        assert_eq!(ids(second_page), vec![Some(only_10)]);
+
+        let none = db
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::new()),
+                10,
+                0,
+            )
+            .expect("list empty filter");
+
+        assert!(none.is_empty(), "an empty id set matches no entries");
 
         cleanup_cache_files(&path);
     }
@@ -363,7 +464,11 @@ mod tests {
         assert_eq!(entries[0].issuer_schema_ids, vec![10, 20]);
 
         let filtered = db
-            .list_activities(&ActivityQuery::new().with_issuer_schema_id(10), 10, 0)
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([10])),
+                10,
+                0,
+            )
             .expect("list filtered");
         assert_eq!(filtered.len(), 1);
 
@@ -384,7 +489,7 @@ mod tests {
 
         let entries = db
             .list_activities(
-                &ActivityQuery::new().with_issuer_schema_id(u64::MAX),
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([u64::MAX])),
                 10,
                 0,
             )
