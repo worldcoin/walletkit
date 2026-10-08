@@ -62,5 +62,6 @@ with absolute GitHub URLs, because the book is served without the rest of the
 repository.
 
 The [`docs.yml`](https://github.com/worldcoin/walletkit/blob/main/.github/workflows/docs.yml)
-workflow builds the book for every pull request that changes it, and publishes it
-to GitHub Pages from `main`.
+workflow builds the book and publishes it to GitHub Pages on every push to
+`main`. Pull requests don't build the book, so preview your changes locally with
+`mdbook serve` before you merge them.
