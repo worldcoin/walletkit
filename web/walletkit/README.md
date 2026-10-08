@@ -68,8 +68,7 @@ The classes, methods and arguments mirror the `walletkit-core` UniFFI objects th
 the Swift and Kotlin bindings expose, in `camelCase`: `Authenticator`,
 `InitializingAuthenticator`, `CredentialStore`, `ActivityQuery`, `StorageKeys`, `StoragePaths`,
 `EmbeddedZkArtifacts`, `FieldElement`, `Credential`, `ProofRequest`,
-`ProofResponse`, `UserAgentBuilder`, `UserAgent`, and the issuer clients
-`TfhNfcIssuer` and `RecoveryBindingManager`, plus `recoveryDataFromSeed`,
+`ProofResponse` and `RecoveryBindingManager`, plus `recoveryDataFromSeed`,
 `validateAuthenticatorPubkey`, `checkCredentialsAgainstProofRequest`,
 `pohRecoveryAgentAddress`, `worldIdVerifierAddress`, `sanitizeHexSecrets` and
 `emitLog`. Constructors and static functions live on the object
@@ -105,11 +104,11 @@ backup export and replacement import. Not available because of a platform constr
 native attestation), and `DeviceKeystore`, `AtomicBlobStore` and `StorageProvider`
 (synchronous host callbacks; supply the key with `StorageKeys.fromBytes` instead).
 `CachingZkArtifacts` is unnecessary because the module embeds uncompressed proving
-keys, and the legacy World ID v3 API is not included.
+keys. Not included: `UserAgent` and `UserAgentBuilder` (the browser controls the
+`User-Agent` header), `TfhNfcIssuer`, and the legacy World ID v3 API.
 
-The issuer clients send requests with `fetch`, so the issuer services must allow
-the page's origin (CORS). Browsers control the `User-Agent` request header and may
-drop the value the clients set.
+`RecoveryBindingManager` sends requests with `fetch`, so the backend must allow the
+page's origin (CORS).
 
 Rust errors reject with their source as `name` (`WalletKitError`, `StorageError`,
 `CredentialConstraintsCheckError`), the variant name as `code` (for example

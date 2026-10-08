@@ -67,18 +67,8 @@ export async function consumer() {
   const address: string = recovery.authenticatorAddress;
   const redacted: string = await walletkit.sanitizeHexSecrets("0x00");
   await walletkit.emitLog("warn", "logging works");
-  const userAgent = await (
-    await (await walletkit.UserAgentBuilder.new()).withWalletkitSegment()
-  ).build();
-  const userAgentValue: string = await userAgent.headerValue();
-  const nfcIssuer = await walletkit.TfhNfcIssuer.new("staging", userAgentValue);
-  const nfcCredential = await nfcIssuer.refreshNfcCredential("{}", {
-    "X-Header": "value",
-  });
-  const recoveryBindings = await walletkit.RecoveryBindingManager.new(
-    "staging",
-    await walletkit.UserAgentBuilder.new(),
-  );
+  const recoveryBindings =
+    await walletkit.RecoveryBindingManager.new("staging");
   await recoveryBindings.bindRecoveryAgent(authenticator, "0x01", "0x02");
   const binding: RecoveryBinding =
     await recoveryBindings.getRecoveryBinding(leafIndex);
@@ -115,7 +105,6 @@ export async function consumer() {
     responseJson,
     address,
     redacted,
-    nfcCredential,
     binding,
     stopped,
   };

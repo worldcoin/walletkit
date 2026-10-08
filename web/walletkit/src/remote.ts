@@ -95,9 +95,6 @@ export type FieldElement = RemoteObject<Wasm.FieldElement>;
 export type Credential = RemoteObject<Wasm.Credential>;
 export type ProofRequest = RemoteObject<Wasm.ProofRequest>;
 export type ProofResponse = RemoteObject<Wasm.ProofResponse>;
-export type UserAgent = RemoteObject<Wasm.UserAgent>;
-export type UserAgentBuilder = RemoteObject<Wasm.UserAgentBuilder>;
-export type TfhNfcIssuer = RemoteObject<Wasm.TfhNfcIssuer>;
 export type RecoveryBindingManager = RemoteObject<Wasm.RecoveryBindingManager>;
 
 /** @internal The transport the proxies use to reach the worker. */

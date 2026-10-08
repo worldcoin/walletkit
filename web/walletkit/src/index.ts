@@ -17,9 +17,6 @@ export type {
   RemoteObject,
   StorageKeys,
   StoragePaths,
-  TfhNfcIssuer,
-  UserAgent,
-  UserAgentBuilder,
   WalletKit,
 } from "./remote";
 // Records are plain data and need no proxy.

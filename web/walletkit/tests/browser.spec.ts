@@ -395,7 +395,7 @@ test("logging helpers redact secrets and reach the worker console", async ({
   expect(warnings.join("\n")).not.toContain("dropped below warn");
 });
 
-test("issuer clients are constructed in the worker and validate arguments", async ({
+test("recovery binding manager is constructed in the worker and validates arguments", async ({
   page,
 }) => {
   const result = await page.evaluate(async () => {
@@ -405,29 +405,13 @@ test("issuer clients are constructed in the worker and validate arguments", asyn
         () => ({ name: "none", message: "unexpected success" }),
         (e: Error) => ({ name: e.name, message: e.message }),
       );
-    const builder = await (
-      await (await wallet.UserAgentBuilder.new()).withSegment("Web", "1.0")
-    ).withWalletkitSegment();
-    const userAgent = await (await builder.build()).headerValue();
-    const nfc = await wallet.TfhNfcIssuer.new("staging", userAgent);
-    const invalidHeaders = await capture(
-      nfc.refreshNfcCredential("{}", { "X-Count": 1 }),
-    );
-    const recovery = await wallet.RecoveryBindingManager.new(
-      "production",
-      builder,
-    );
+    const recovery = await wallet.RecoveryBindingManager.new("production");
     const invalidLeafIndex = await capture(recovery.getRecoveryBinding(-1n));
     const unknownEnvironment = await capture(
-      wallet.RecoveryBindingManager.new("moon", builder),
+      wallet.RecoveryBindingManager.new("moon"),
     );
     await wallet.close();
-    return { userAgent, invalidHeaders, invalidLeafIndex, unknownEnvironment };
-  });
-  expect(result.userAgent).toMatch(/^Web\/1\.0 walletkit-core\/\d+\.\d+\.\d+/);
-  expect(result.invalidHeaders).toEqual({
-    name: "TypeError",
-    message: "`headers` must be an object of strings",
+    return { invalidLeafIndex, unknownEnvironment };
   });
   expect(result.invalidLeafIndex.name).toBe("TypeError");
   expect(result.invalidLeafIndex.message).toContain("leafIndex");

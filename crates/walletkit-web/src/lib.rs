@@ -19,7 +19,6 @@ mod error;
 mod issuers;
 mod js;
 mod storage;
-mod user_agent;
 mod values;
 
 use std::sync::Arc;

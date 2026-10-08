@@ -1,20 +1,18 @@
-//! Credential issuer clients.
+//! Recovery agent binding through the Proof-of-Personhood backend.
 //!
-//! Requests go out through `fetch`, so the issuer services must allow the page's
-//! origin (CORS) for these calls to succeed in the browser.
+//! Requests go out through `fetch`, so the backend must allow the page's origin
+//! (CORS) for these calls to succeed in the browser.
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use js_sys::{BigInt, Object, Promise};
-use walletkit_core::issuers::{RecoveryBindingManager, TfhNfcIssuer};
+use js_sys::{BigInt, Promise};
+use walletkit_core::{issuers::RecoveryBindingManager, UserAgentBuilder};
 use wasm_bindgen::prelude::*;
 
 use crate::{
     authenticator::{parse_environment, JsAuthenticator},
-    error::{invalid_argument, to_js},
+    error::to_js,
     js,
-    user_agent::JsUserAgentBuilder,
-    values::JsCredential,
 };
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -29,47 +27,6 @@ export interface RecoveryBinding {
 }
 "#;
 
-/// Client for the TFH NFC credential issuer (passport, eID, MNC).
-#[wasm_bindgen(js_name = TfhNfcIssuer)]
-pub struct JsTfhNfcIssuer(Arc<TfhNfcIssuer>);
-
-#[wasm_bindgen(js_class = TfhNfcIssuer)]
-impl JsTfhNfcIssuer {
-    /// # Errors
-    /// Throws a `TypeError` for an unknown environment.
-    #[wasm_bindgen(js_name = new)]
-    pub fn new(
-        #[wasm_bindgen(unchecked_param_type = "Environment")] environment: &str,
-        user_agent: String,
-    ) -> Result<Self, JsValue> {
-        let environment = parse_environment(environment)?;
-        Ok(Self(Arc::new(TfhNfcIssuer::new(&environment, user_agent))))
-    }
-
-    /// Refreshes an NFC credential (migrates a PCP credential to v4).
-    ///
-    /// # Errors
-    /// Rejects with `NfcNonRetryable` when the document cannot be refreshed, or with
-    /// a `NetworkError` when the request fails.
-    #[wasm_bindgen(js_name = refreshNfcCredential, unchecked_return_type = "Promise<Credential>")]
-    pub fn refresh_nfc_credential(
-        &self,
-        request_body: String,
-        #[wasm_bindgen(unchecked_param_type = "Record<string, string>")]
-        headers: &JsValue,
-    ) -> Promise {
-        let issuer = Arc::clone(&self.0);
-        let headers = string_map("headers", headers);
-        js::promise(async move {
-            let credential = issuer
-                .refresh_nfc_credential(&request_body, headers?)
-                .await
-                .map_err(to_js)?;
-            Ok(JsCredential(credential).into())
-        })
-    }
-}
-
 /// Registers and removes recovery agents through the Proof-of-Personhood backend.
 #[wasm_bindgen(js_name = RecoveryBindingManager)]
 pub struct JsRecoveryBindingManager(Arc<RecoveryBindingManager>);
@@ -81,10 +38,9 @@ impl JsRecoveryBindingManager {
     #[wasm_bindgen(js_name = new)]
     pub fn new(
         #[wasm_bindgen(unchecked_param_type = "Environment")] environment: &str,
-        user_agent_builder: &JsUserAgentBuilder,
     ) -> Result<Self, JsValue> {
         let environment = parse_environment(environment)?;
-        RecoveryBindingManager::new(&environment, &user_agent_builder.0)
+        RecoveryBindingManager::new(&environment, &user_agent())
             .map(|manager| Self(Arc::new(manager)))
             .map_err(to_js)
     }
@@ -92,11 +48,8 @@ impl JsRecoveryBindingManager {
     /// # Errors
     /// Throws a `WalletKitError` when the client cannot be built.
     #[wasm_bindgen(js_name = newWithBaseUrl)]
-    pub fn new_with_base_url(
-        base_url: &str,
-        user_agent_builder: &JsUserAgentBuilder,
-    ) -> Result<Self, JsValue> {
-        RecoveryBindingManager::new_with_base_url(base_url, &user_agent_builder.0)
+    pub fn new_with_base_url(base_url: &str) -> Result<Self, JsValue> {
+        RecoveryBindingManager::new_with_base_url(base_url, &user_agent())
             .map(|manager| Self(Arc::new(manager)))
             .map_err(to_js)
     }
@@ -175,18 +128,8 @@ impl JsRecoveryBindingManager {
     }
 }
 
-/// Reads a plain object whose values are all strings.
-fn string_map(name: &str, value: &JsValue) -> Result<HashMap<String, String>, JsValue> {
-    let error = || invalid_argument(&format!("`{name}` must be an object of strings"));
-    if !value.is_object() {
-        return Err(error());
-    }
-    Object::entries(value.unchecked_ref())
-        .iter()
-        .map(|entry| {
-            let entry: js_sys::Array = entry.unchecked_into();
-            Some((entry.get(0).as_string()?, entry.get(1).as_string()?))
-        })
-        .collect::<Option<_>>()
-        .ok_or_else(error)
+/// The browser controls the `User-Agent` header, so the value only identifies
+/// `WalletKit` where the browser keeps it.
+fn user_agent() -> UserAgentBuilder {
+    UserAgentBuilder::new().with_walletkit_segment()
 }
