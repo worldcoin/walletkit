@@ -67,11 +67,10 @@ the host.
 The classes, methods and arguments mirror the `walletkit-core` UniFFI objects that
 the Swift and Kotlin bindings expose, in `camelCase`: `Authenticator`,
 `InitializingAuthenticator`, `CredentialStore`, `ActivityQuery`, `StorageKeys`, `StoragePaths`,
-`EmbeddedZkArtifacts`, `FieldElement`, `Credential`, `ProofRequest`,
-`ProofResponse` and `RecoveryBindingManager`, plus `recoveryDataFromSeed`,
-`validateAuthenticatorPubkey`, `checkCredentialsAgainstProofRequest`,
-`pohRecoveryAgentAddress`, `worldIdVerifierAddress`, `sanitizeHexSecrets` and
-`emitLog`. Constructors and static functions live on the object
+`EmbeddedZkArtifacts`, `FieldElement`, `Credential`, `ProofRequest` and
+`ProofResponse`, plus `recoveryDataFromSeed`, `validateAuthenticatorPubkey`,
+`checkCredentialsAgainstProofRequest`, `pohRecoveryAgentAddress` and
+`worldIdVerifierAddress`. Constructors and static functions live on the object
 returned by `initializeWalletKit()` (`walletkit.FieldElement.fromU64(1n)`,
 `walletkit.CredentialStore.new(paths, keys)`); instance methods are on the objects
 they return. Conventions that differ from native:
@@ -94,21 +93,11 @@ backups leave the vault unchanged. Authenticate the backup as belonging to the
 current account before calling. On native and web, incoming plaintext is loaded into a read-only SQLite
 in-memory database; merging writes no plaintext temporary files.
 
-Not available in the browser yet, because they need a browser implementation:
-`Logger` and the log level (core's warnings and errors, for example a vault that
-could not be deleted, are written to the worker console with hex secrets redacted;
-`emitLog` checks that path), the vault and activity change listeners, and vault
-backup export and replacement import. Not available because of a platform constraint:
-`proveCredentialSub` (ownership proofs are not supported on WASM upstream), Flamingo
-(the browser `WebSocket` cannot send its signed handshake headers, and it relies on
-native attestation), and `DeviceKeystore`, `AtomicBlobStore` and `StorageProvider`
-(synchronous host callbacks; supply the key with `StorageKeys.fromBytes` instead).
-`CachingZkArtifacts` is unnecessary because the module embeds uncompressed proving
-keys. Not included: `UserAgent` and `UserAgentBuilder` (the browser controls the
-`User-Agent` header), `TfhNfcIssuer`, and the legacy World ID v3 API.
-
-`RecoveryBindingManager` sends requests with `fetch`, so the backend must allow the
-page's origin (CORS).
+Not available in the browser: `Logger`, `DeviceKeystore`, `AtomicBlobStore`,
+`StorageProvider` and the change listeners (foreign traits), vault backup
+export/replacement import and `proveCredentialSub` (native-only in core),
+`UserAgent`, `sanitizeHexSecrets`, and the issuer and Flamingo modules. Core's warnings and errors, for example a vault that
+could not be deleted, are written to the worker console with hex secrets redacted.
 
 Rust errors reject with their source as `name` (`WalletKitError`, `StorageError`,
 `CredentialConstraintsCheckError`), the variant name as `code` (for example
@@ -116,7 +105,7 @@ Rust errors reject with their source as `name` (`WalletKitError`, `StorageError`
 redacted. Invalid arguments reject with a `TypeError`. A Rust panic traps the module:
 the failing call rejects (or the worker error stops the client) and every later call
 fails, so reinitialize.
-Relying-party request construction remains application code.
+Issuer HTTP calls and relying-party request construction remain application code.
 See the Next.js demo in [`examples/web`](../../examples/web) for a complete
 registration, issuance and proof flow.
 
