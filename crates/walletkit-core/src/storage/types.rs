@@ -1,5 +1,7 @@
 //! Public types for credential storage.
 
+use std::collections::{BTreeSet, HashSet};
+
 use strum::{Display, EnumString};
 
 use super::error::{StorageError, StorageResult};
@@ -182,7 +184,7 @@ pub struct ActivityMetadata {
 /// foreign side.
 #[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Object)]
 pub struct ActivityQuery {
-    pub(crate) issuer_schema_id: Option<u64>,
+    pub(crate) issuer_schema_ids: Option<BTreeSet<u64>>,
 }
 
 #[uniffi::export]
@@ -194,11 +196,16 @@ impl ActivityQuery {
         Self::default()
     }
 
-    /// Restricts results to entries that include this issuer schema id.
+    /// Restricts results to entries that include any of these issuer schema
+    /// ids, replacing any previously set ids.
+    ///
+    /// The ids are a set: order and duplicates are ignored. An empty set
+    /// matches no entries.
     #[must_use]
-    pub fn with_issuer_schema_id(&self, issuer_schema_id: u64) -> Self {
+    pub fn with_issuer_schema_ids(&self, issuer_schema_ids: HashSet<u64>) -> Self {
         let mut next = self.clone();
-        next.issuer_schema_id = Some(issuer_schema_id);
+        next.issuer_schema_ids = Some(issuer_schema_ids.into_iter().collect());
+
         next
     }
 }
