@@ -273,6 +273,7 @@ test("Rust errors keep their name and variant detail across the worker", async (
     const store = await wallet.CredentialStore.new(paths, keys);
     const query = await wallet.ActivityQuery.new();
     const negativeLimit = await capture(store.listActivities(query, -1, 0));
+    const negativeEntryId = await capture(store.deleteActivities([-1n]));
     await wallet.close();
     return {
       invalidSeed,
@@ -281,6 +282,7 @@ test("Rust errors keep their name and variant detail across the worker", async (
       unknownEnvironment,
       code,
       negativeLimit,
+      negativeEntryId,
     };
   });
   expect(result.invalidSeed.name).toBe("WalletKitError");
@@ -288,6 +290,8 @@ test("Rust errors keep their name and variant detail across the worker", async (
   expect(result.code).toBe("InvalidInput");
   expect(result.negativeLimit.name).toBe("TypeError");
   expect(result.negativeLimit.message).toContain("limit");
+  expect(result.negativeEntryId.name).toBe("TypeError");
+  expect(result.negativeEntryId.message).toContain("entryIds");
   expect(result.invalidKey.name).toBe("StorageError");
   expect(result.invalidCredential.name).toBe("WalletKitError");
   expect(result.unknownEnvironment).toEqual({
@@ -330,6 +334,11 @@ test("Rust objects stay in the worker and are used through handles", async ({
       0,
     );
     const metadata = await store.activityMetadata();
+    const deleted = await store.deleteActivities([
+      activityId,
+      activityId + 100n,
+    ]);
+    const metadataAfterDelete = await store.activityMetadata();
     const sameRoot = await (await store.storagePaths()).rootPathString();
 
     element.free();
@@ -343,6 +352,8 @@ test("Rust objects stay in the worker and are used through handles", async ({
       activities,
       filtered,
       metadata,
+      deleted,
+      metadataAfterDelete,
       sameRoot,
       released,
     };
@@ -360,6 +371,8 @@ test("Rust objects stay in the worker and are used through handles", async ({
     issuerSchemaIds: [1n, 2n],
   });
   expect(result.metadata).toEqual({ totalCount: 1n });
+  expect(result.deleted).toBe(1n);
+  expect(result.metadataAfterDelete).toEqual({ totalCount: 0n });
   expect(result.sameRoot).toBe("/walletkit/handles");
   expect(result.released).toContain("freed");
 });
