@@ -13,5 +13,5 @@ command = "mdbook-mermaid"
 [output.html]
 additional-js = ["docs/mermaid.min.js", "docs/mermaid-init.js"]
 git-repository-url = "https://github.com/worldcoin/walletkit"
-edit-url-template = "https://github.com/worldcoin/walletkit/edit/main/{path}"
+edit-url-template = "https://github.com/worldcoin/walletkit/edit/main/docs/{path}"
 site-url = "/walletkit/"
