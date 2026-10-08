@@ -1,6 +1,9 @@
 # WalletKit
 
 [![Documentation](https://github.com/worldcoin/walletkit/actions/workflows/docs.yml/badge.svg)][book]
+[![crates.io](https://img.shields.io/crates/v/walletkit.svg?label=crates.io)](https://crates.io/crates/walletkit)
+[![docs.rs](https://img.shields.io/docsrs/walletkit?label=docs.rs)](https://docs.rs/walletkit)
+[![npm](https://img.shields.io/npm/v/@worldcoin/walletkit-web.svg?label=npm)](https://www.npmjs.com/package/@worldcoin/walletkit-web)
 
 WalletKit lets apps hold World ID credentials and prove things about their holder
 with [World ID](https://world.org/world-id). It is the reference implementation
@@ -34,10 +37,10 @@ package that runs it as WebAssembly.
 
 | Crate                                                                                            | Description                                                                                        |
 | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| [`walletkit`](https://github.com/worldcoin/walletkit/tree/main/crates/walletkit)                 | The published entry point, re-exporting `walletkit-core`.                                          |
-| [`walletkit-core`](https://github.com/worldcoin/walletkit/tree/main/crates/walletkit-core)       | Accounts, credential storage, and World ID proofs; the UniFFI surface for Swift and Kotlin.        |
-| [`walletkit-db`](https://github.com/worldcoin/walletkit/tree/main/crates/walletkit-db)           | Encrypted on-device storage: vault, content-addressed blobs, key envelope, and cross-process lock. |
-| [`walletkit-sqlite`](https://github.com/worldcoin/walletkit/tree/main/crates/walletkit-sqlite)   | Safe Rust wrapper around encrypted SQLite (`sqlite3mc`).                                           |
+| [`walletkit`](https://crates.io/crates/walletkit)                                                | The published entry point, re-exporting `walletkit-core`.                                          |
+| [`walletkit-core`](https://crates.io/crates/walletkit-core)                                      | Accounts, credential storage, and World ID proofs; the UniFFI surface for Swift and Kotlin.        |
+| [`walletkit-db`](https://crates.io/crates/walletkit-db)                                          | Encrypted on-device storage: vault, content-addressed blobs, key envelope, and cross-process lock. |
+| [`walletkit-sqlite`](https://crates.io/crates/walletkit-sqlite)                                  | Safe Rust wrapper around encrypted SQLite (`sqlite3mc`).                                           |
 | [`walletkit-web`](https://github.com/worldcoin/walletkit/tree/main/crates/walletkit-web)         | `wasm-bindgen` facade over `walletkit-core` for the browser package.                               |
 | [`walletkit-cli`](https://github.com/worldcoin/walletkit/tree/main/crates/walletkit-cli)         | Developer CLI for accounts, credentials, and proofs.                                               |
 | [`walletkit-testkit`](https://github.com/worldcoin/walletkit/tree/main/crates/walletkit-testkit) | End-to-end test helpers.                                                                           |

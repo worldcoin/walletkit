@@ -5,8 +5,8 @@ for your platform.
 
 ## Rust
 
-To add WalletKit to a Rust project with the proving keys embedded, run the
-following command:
+WalletKit is published on crates.io as [`walletkit`](https://crates.io/crates/walletkit). To add it
+to a Rust project with the proving keys embedded, run the following command:
 
 ```sh
 cargo add walletkit --features embed-zkeys
@@ -70,7 +70,9 @@ API level 23 and later. To add them to an Android app, do the following:
 
 ## Browser
 
-To add WalletKit to a web app, run the following command:
+WalletKit is published on npm as
+[`@worldcoin/walletkit-web`](https://www.npmjs.com/package/@worldcoin/walletkit-web). To add it to a web app, run the following
+command:
 
 ```sh
 npm install @worldcoin/walletkit-web

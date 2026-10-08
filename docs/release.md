@@ -4,12 +4,12 @@ This page describes how a WalletKit release is prepared and published. All
 packages share one version, `X.Y.Z`, taken from the workspace `Cargo.toml`, and
 one release publishes all of them:
 
-| Package                                                                       | Published to                                                                             | Workflow                     |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------- |
-| Rust crates `walletkit`, `walletkit-core`, `walletkit-db`, `walletkit-sqlite` | crates.io                                                                                | [`release.yml`]              |
-| Swift package                                                                 | [`worldcoin/walletkit-swift`](https://github.com/worldcoin/walletkit-swift), tag `X.Y.Z` | [`release-swift-kotlin.yml`] |
-| Kotlin library `org.world:walletkit`                                          | GitHub Packages                                                                          | [`release-swift-kotlin.yml`] |
-| Browser package `@worldcoin/walletkit-web`                                    | npm                                                                                      | [`web.yml`]                  |
+| Package                                                                                                                                                                                                                                                  | Published to                                                                             | Workflow                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ---------------------------- |
+| Rust crates [`walletkit`](https://crates.io/crates/walletkit), [`walletkit-core`](https://crates.io/crates/walletkit-core), [`walletkit-db`](https://crates.io/crates/walletkit-db), and [`walletkit-sqlite`](https://crates.io/crates/walletkit-sqlite) | crates.io                                                                                | [`release.yml`]              |
+| Swift package                                                                                                                                                                                                                                            | [`worldcoin/walletkit-swift`](https://github.com/worldcoin/walletkit-swift), tag `X.Y.Z` | [`release-swift-kotlin.yml`] |
+| Kotlin library `org.world:walletkit`                                                                                                                                                                                                                     | [GitHub Packages](https://github.com/worldcoin/walletkit/packages)                       | [`release-swift-kotlin.yml`] |
+| Browser package [`@worldcoin/walletkit-web`](https://www.npmjs.com/package/@worldcoin/walletkit-web)                                                                                                                                                     | npm                                                                                      | [`web.yml`]                  |
 
 ## How a release happens
 
