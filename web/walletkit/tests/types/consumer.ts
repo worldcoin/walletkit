@@ -64,6 +64,8 @@ export async function consumer() {
   const responseJson: string = await response.toJson();
   const recovery = await walletkit.recoveryDataFromSeed(new Uint8Array(32));
   const address: string = recovery.authenticatorAddress;
+  const redacted: string = await walletkit.sanitizeHexSecrets("0x00");
+  await walletkit.emitLog("warn", "logging works");
   factor.free();
   const stopped: boolean = walletkit.isStopped();
   await walletkit.close();
@@ -73,6 +75,8 @@ export async function consumer() {
   void walletkit.Authenticator.missing;
   // @ts-expect-error not an `Environment`
   await walletkit.pohRecoveryAgentAddress("moon");
+  // @ts-expect-error not a `LogLevel`
+  await walletkit.emitLog("loud", "message");
   // @ts-expect-error wasm-bindgen internals are not part of the API
   void walletkit.FieldElement.__wrap;
   // @ts-expect-error the worker runs module setup itself
@@ -94,6 +98,7 @@ export async function consumer() {
     status,
     responseJson,
     address,
+    redacted,
     stopped,
   };
 }

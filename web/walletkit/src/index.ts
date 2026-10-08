@@ -29,6 +29,7 @@ export type {
   CredentialRecord,
   Environment,
   GatewayRequestStatus,
+  LogLevel,
   RecoveryData,
   RecoveryUpdateSignature,
   Region,

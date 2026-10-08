@@ -364,6 +364,37 @@ test("Rust objects stay in the worker and are used through handles", async ({
   expect(result.released).toContain("freed");
 });
 
+test("logging helpers redact secrets and reach the worker console", async ({
+  page,
+}) => {
+  const secret = "0xde" + "0".repeat(60) + "ef";
+  const warnings: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "warning") warnings.push(message.text());
+  });
+  const result = await page.evaluate(async (secret) => {
+    const wallet = await (window as any).initializeWalletKit();
+    const redacted = await wallet.sanitizeHexSecrets(`key ${secret}`);
+    await wallet.emitLog("warn", `emitted ${secret}`);
+    await wallet.emitLog("debug", "dropped below warn");
+    const unknownLevel = await wallet
+      .emitLog("loud", "message")
+      .catch((e: Error) => ({ name: e.name, message: e.message }));
+    await wallet.close();
+    return { redacted, unknownLevel };
+  }, secret);
+  expect(result.redacted).toBe("key 0xde..ef");
+  expect(result.unknownLevel).toEqual({
+    name: "TypeError",
+    message: "Unknown log level: loud",
+  });
+  await expect
+    .poll(() => warnings.find((text) => text.includes("emitted")))
+    .toContain("emitted 0xde..ef");
+  expect(warnings.join("\n")).not.toContain(secret);
+  expect(warnings.join("\n")).not.toContain("dropped below warn");
+});
+
 test("close frees live objects, is idempotent and rejects later calls", async ({
   page,
 }) => {
