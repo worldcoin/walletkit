@@ -27,16 +27,28 @@ Cross-origin isolation headers aren't required.
    npm install @worldcoin/walletkit-web
    ```
 
-1. In browser code, initialize WalletKit and open the account's encrypted
-   storage:
+1. In browser code, initialize WalletKit, and close the instance in a `finally`
+   block. An open instance keeps the origin's storage, so closing it even when a
+   later step fails lets a new instance start. Run the remaining steps inside the
+   `try` block:
 
    ```ts
    import { initializeWalletKit } from "@worldcoin/walletkit-web";
 
+   const walletkit = await initializeWalletKit();
+   try {
+     // Steps 3 to 5 go here.
+   } finally {
+     await walletkit.close();
+   }
+   ```
+
+1. Open the account's encrypted storage:
+
+   ```ts
    declare const seed: Uint8Array; // The account's authenticator seed.
    declare const databaseKey: Uint8Array; // See "Protect the database key".
 
-   const walletkit = await initializeWalletKit();
    const keys = await walletkit.StorageKeys.fromBytes(databaseKey);
    const paths = await walletkit.StoragePaths.fromRoot("/walletkit/my-account");
    const store = await walletkit.CredentialStore.new(paths, keys);
@@ -85,14 +97,6 @@ Cross-origin isolation headers aren't required.
    const proofJson = await (
      await authenticator.generateProof(request)
    ).toJson();
-   ```
-
-1. When your app no longer needs WalletKit, or when a step fails, close the
-   instance. An open instance keeps the origin's storage, so a new instance can't
-   start until this one closes:
-
-   ```ts
-   await walletkit.close();
    ```
 
 Importing the package is safe during server-side rendering; call
