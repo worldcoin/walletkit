@@ -74,8 +74,8 @@ version from the workspace `Cargo.toml`.
 ## Browser package
 
 The `web.yml` workflow builds and tests the package, stamps `X.Y.Z` from the
-release tag into `package.json`, and packs the tarball. A tag that isn't of the
-form `vX.Y.Z` fails the build. A second job, in the `production` environment,
+release tag into `package.json`, and packs the tarball. The tag must have the form
+`vX.Y.Z` or `vX.Y.Z-<pre-release>`; any other tag fails the build. A second job, in the `production` environment,
 publishes that exact tarball to npm with provenance:
 
 - A version with a pre-release suffix, such as `X.Y.Z-rc.1`, goes to the `next`

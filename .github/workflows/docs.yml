@@ -24,8 +24,10 @@ on:
       - "web/walletkit/README.md"
   workflow_dispatch:
 
+# One run per ref: a newer run, whatever triggered it, cancels an older one, so an
+# older build can't publish after a newer one.
 concurrency:
-  group: docs-${{ github.event_name }}-${{ github.ref }}
+  group: docs-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -66,10 +68,6 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # One publish at a time, in order, whatever triggered it.
-    concurrency:
-      group: docs-pages
-      cancel-in-progress: false
     permissions:
       contents: write # push to the gh-pages branch
     steps:

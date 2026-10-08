@@ -53,7 +53,7 @@ sequenceDiagram
     Chain-->>GW: tx finalized
 
     Note over App,Store: 2) Initialize Authenticator after registration
-    App->>WK: Authenticator.init_with_defaults(seed, ..., paths, store)
+    App->>WK: Authenticator.init_with_defaults(seed, ..., artifacts, store)
     WK->>Chain: rpc_init (fetch account data by on-chain key)
     Chain-->>WK: packed_account_data + leaf_index context
     WK-->>App: Authenticator

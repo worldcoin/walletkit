@@ -42,7 +42,8 @@ Cross-origin isolation headers aren't required.
    const store = await walletkit.CredentialStore.new(paths, keys);
    ```
 
-1. If the account isn't registered, register it:
+1. If the account isn't registered, register it and wait until the registration
+   is final:
 
    ```ts
    const registration =
@@ -53,7 +54,13 @@ Cross-origin isolation headers aren't required.
        "eu",
        undefined, // recoveryAddress: none.
      );
-   const status = await registration.pollStatus(); // For example, { state: "queued" }.
+   for (;;) {
+     const status = await registration.pollStatus();
+     if (status.state === "finalized") break;
+     if (status.state === "failed") throw new Error(status.error);
+     await new Promise((resolve) => setTimeout(resolve, 2000));
+   }
+   registration.free();
    ```
 
 1. To answer a relying party's proof request, open the registered account and
@@ -124,7 +131,8 @@ example `walletkit.FieldElement.fromU64(1n)`.
 
 The browser API differs from the Swift and Kotlin bindings in these ways:
 
-- Every WalletKit function and method returns a `Promise`.
+- Every WalletKit function and method returns a `Promise`, except `free()`,
+  `terminate()`, and `isStopped()`, which return immediately.
 - A `u64` is a `bigint`, a byte array is a `Uint8Array`, and a 256-bit value is a
   0x-prefixed hex string.
 - `Environment`, `Region`, and other enums are lowercase strings, such as
@@ -180,7 +188,7 @@ These parts of the Swift and Kotlin bindings aren't available in the browser:
 
 | API                                                        | Reason                                                                                           |
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `Logger` and the log level                                 | Not implemented for the browser.                                                                 |
+| `Logger` and `initLogging`                                 | Not implemented for the browser.                                                                 |
 | Vault and activity change listeners                        | Not implemented for the browser.                                                                 |
 | Vault backup export and replacement import                 | Supported only on iOS and Android. Use `mergeVaultFromBackup` to import.                         |
 | `proveCredentialSub`                                       | Credential ownership proofs aren't supported on WASM.                                            |

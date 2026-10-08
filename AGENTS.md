@@ -21,7 +21,7 @@ Swift/iOS builds require macOS and Xcode; use `cargo xtask swift` on the host. S
 
 Human-facing guides live in the mdBook under `docs/` (see `docs/SUMMARY.md`); update the page that owns a fact instead of repeating it elsewhere.
 
-For changes to the browser package (`crates/walletkit-web` or `web/walletkit`), follow [docs/web/development.md](docs/web/development.md). Exposing an API there also requires edits to `remote.ts`, `index.ts` and the type tests.
+For changes to the browser package (`crates/walletkit-web` or `web/walletkit`), follow [docs/web/development.md](docs/web/development.md). New functions need no TypeScript changes; a new class also needs a `RemoteObject` alias in `remote.ts` and an export from `index.ts`, and a new record or enum needs an export from `index.ts`. Add type tests for every new export.
 
 ## Compatibility pitfalls
 
