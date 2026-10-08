@@ -8,8 +8,9 @@
 //! Rust objects never cross into the page: the worker keeps them and hands the page
 //! opaque handles. Records, such as registration status or credential records, are
 //! returned as plain structured-clone data. Only the surface the browser can serve is
-//! exported: there are no foreign traits or callbacks, and vault backup,
-//! change listeners and credential ownership proofs are native-only in core.
+//! exported: there are no foreign traits or callbacks. Vault backup export and
+//! replacement import, change listeners and credential ownership proofs are
+//! native-only in core.
 
 #![cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 

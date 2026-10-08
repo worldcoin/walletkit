@@ -16,6 +16,7 @@ export async function consumer() {
   const keys = await walletkit.StorageKeys.fromBytes(new Uint8Array(32));
   const paths = await walletkit.StoragePaths.fromRoot("/walletkit/account");
   const store = await walletkit.CredentialStore.new(paths, keys);
+  const added: bigint = await store.mergeVaultFromBackup(new Uint8Array());
   const artifacts = await walletkit.EmbeddedZkArtifacts.new();
   const authenticator: Authenticator =
     await walletkit.Authenticator.initWithDefaults(
@@ -82,6 +83,7 @@ export async function consumer() {
   recovery.free();
 
   return {
+    added,
     leafIndex,
     records,
     factorHex,

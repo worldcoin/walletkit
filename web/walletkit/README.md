@@ -86,10 +86,17 @@ they return. Conventions that differ from native:
 - Rust objects live in the worker until you call `free()` (they are also released
   when garbage collected). Using a freed object rejects.
 
+`store.mergeVaultFromBackup(backupBytes)` merges an authenticated plaintext SQLite
+vault backup into an initialized store and returns a `bigint` count of added
+credentials. Existing credentials are preserved, replay is a no-op, and invalid
+backups leave the vault unchanged. Authenticate the backup as belonging to the
+current account before calling. On native and web, incoming plaintext is loaded into a read-only SQLite
+in-memory database; merging writes no plaintext temporary files.
+
 Not available in the browser: `Logger`, `DeviceKeystore`, `AtomicBlobStore`,
-`StorageProvider` and the change listeners (foreign traits), vault backup and
-`proveCredentialSub` (native-only in core), `UserAgent`, `sanitizeHexSecrets`, and the
-issuer and Flamingo modules. Core's warnings and errors, for example a vault that
+`StorageProvider` and the change listeners (foreign traits), vault backup
+export/replacement import and `proveCredentialSub` (native-only in core),
+`UserAgent`, `sanitizeHexSecrets`, and the issuer and Flamingo modules. Core's warnings and errors, for example a vault that
 could not be deleted, are written to the worker console with hex secrets redacted.
 
 Rust errors reject with their source as `name` (`WalletKitError`, `StorageError`,

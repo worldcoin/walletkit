@@ -44,6 +44,9 @@ pub const SQLITE_OPEN_FULLMUTEX: i32 = 0x0001_0000;
 
 const SQLITE_TRANSIENT: isize = -1;
 const SQLITE_ERROR: i32 = 1;
+const SQLITE_NOMEM: i32 = 7;
+const SQLITE_DESERIALIZE_FREEONCLOSE: u32 = 1;
+const SQLITE_DESERIALIZE_READONLY: u32 = 4;
 
 // -- Safe handle types --------------------------------------------------------
 
@@ -112,6 +115,45 @@ impl RawDb {
         }
 
         Ok(Self { ptr })
+    }
+
+    /// Replaces a schema with a read-only, SQLite-owned copy of a database image.
+    pub fn deserialize_readonly(&self, schema: &str, bytes: &[u8]) -> DbResult<()> {
+        let schema = to_cstring(schema)?;
+        let size_bytes = i64::try_from(bytes.len())
+            .map_err(|_| Error::new(SQLITE_ERROR, "database image is too large"))?;
+        if bytes.is_empty() {
+            return Err(Error::new(SQLITE_NOTADB, "database image is empty"));
+        }
+
+        // Safety: allocate through the same SQLite engine that will own and free
+        // the buffer. The checked byte count is positive and fits both integer widths.
+        let buffer =
+            unsafe { raw::sqlite3_malloc64(size_bytes.cast_unsigned()) }.cast::<u8>();
+        if buffer.is_null() {
+            return Err(Error::new(
+                SQLITE_NOMEM,
+                "could not allocate database image",
+            ));
+        }
+        // Safety: buffer has bytes.len() writable bytes and cannot overlap the
+        // borrowed input. FREEONCLOSE transfers ownership even on deserialize
+        // failure; on success SQLite frees it when the schema is closed.
+        let rc = unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len());
+            raw::sqlite3_deserialize(
+                self.ptr,
+                schema.as_ptr(),
+                buffer,
+                size_bytes,
+                size_bytes,
+                SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_READONLY,
+            )
+        };
+        if rc != SQLITE_OK {
+            return Err(Error::new(rc, self.errmsg()));
+        }
+        Ok(())
     }
 
     /// Executes one or more semicolon-separated SQL statements. No results.
@@ -459,6 +501,17 @@ mod raw {
             arg: *mut c_void,
             errmsg: *mut *mut c_char,
         ) -> c_int;
+        #[link_name = "walletkit_sqlite3_malloc64"]
+        pub fn sqlite3_malloc64(size: u64) -> *mut c_void;
+        #[link_name = "walletkit_sqlite3_deserialize"]
+        pub fn sqlite3_deserialize(
+            db: *mut sqlite3,
+            schema: *const c_char,
+            data: *mut u8,
+            size: i64,
+            capacity: i64,
+            flags: u32,
+        ) -> c_int;
         #[link_name = "walletkit_sqlite3_free"]
         pub fn sqlite3_free(ptr: *mut c_void);
         #[link_name = "walletkit_sqlite3_prepare_v2"]
@@ -552,6 +605,19 @@ mod raw {
         errmsg: *mut *mut c_char,
     ) -> c_int {
         wasm::sqlite3_exec(db.cast(), sql.cast(), callback, arg, errmsg.cast())
+    }
+    pub unsafe fn sqlite3_malloc64(size: u64) -> *mut c_void {
+        wasm::sqlite3_malloc64(size)
+    }
+    pub unsafe fn sqlite3_deserialize(
+        db: *mut c_void,
+        schema: *const c_char,
+        data: *mut u8,
+        size: i64,
+        capacity: i64,
+        flags: u32,
+    ) -> c_int {
+        wasm::sqlite3_deserialize(db.cast(), schema.cast(), data, size, capacity, flags)
     }
     pub unsafe fn sqlite3_free(ptr: *mut c_void) {
         wasm::sqlite3_free(ptr);

@@ -448,3 +448,112 @@ test("the worker only dispatches functions and methods the module exports", asyn
     expect(result.stillAlive).toBe(true);
   }).toPass({ timeout: 5000 });
 });
+
+test("vault backups merge additively, reject invalid data, and survive reopening", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const w = window as any;
+    const wallet = await w.initializeWalletKit();
+    const keys = await wallet.StorageKeys.fromBytes(new Uint8Array(32).fill(7));
+    const paths = await wallet.StoragePaths.fromRoot("/walletkit/merge-test");
+    let store = await wallet.CredentialStore.new(paths, keys);
+
+    const loadBackup = async (name: string) => {
+      const response = await fetch(`/backups/${name}.sqlite`);
+      if (!response.ok) throw new Error(`backup fixture: ${response.status}`);
+      return new Uint8Array(await response.arrayBuffer());
+    };
+
+    try {
+      // Reject recovery until the store has been initialized.
+      const localBackup = await loadBackup("local-backup");
+      const uninitializedError = await store
+        .mergeVaultFromBackup(localBackup)
+        .catch((e: Error) => e.name);
+
+      // Seed the vault with a credential that subsequent merges must preserve.
+      await store.init(42n, 1000n);
+      const initialAdded = await store.mergeVaultFromBackup(localBackup);
+      const localRecords = await store.listCredentials(undefined, 1000n);
+
+      // Reject both invalid database contents and malformed database bytes.
+      const invalidContentsError = await store
+        .mergeVaultFromBackup(await loadBackup("invalid-backup"))
+        .catch((e: Error) => e.name);
+
+      const malformedHeaderError = await store
+        .mergeVaultFromBackup(new Uint8Array([1, 2, 3]))
+        .catch((e: Error) => e.name);
+
+      // SQLite stores its two-byte page size at header offsets 16–17.
+      const badPageSize = localBackup.slice();
+      badPageSize[16] = 0;
+      badPageSize[17] = 0;
+      const invalidPageSizeError = await store
+        .mergeVaultFromBackup(badPageSize)
+        .catch((e: Error) => e.name);
+
+      // A corrupt schema must not poison the live vault connection.
+      const corruptSchema = localBackup.slice();
+      corruptSchema[100] = 0xff;
+      const invalidSchemaError = await store
+        .mergeVaultFromBackup(corruptSchema)
+        .catch((e: Error) => e.name);
+
+      const recordsAfterFailure = await store.listCredentials(undefined, 1000n);
+
+      // The incoming record reuses the local row ID; merge must allocate a new one.
+      const incomingBackup = await loadBackup("incoming-backup");
+      const added = await store.mergeVaultFromBackup(incomingBackup);
+
+      // Replaying the same backup must not duplicate its credential.
+      const replayedAdded = await store.mergeVaultFromBackup(incomingBackup);
+      const mergedRecords = await store.listCredentials(undefined, 1000n);
+
+      // Reopen the encrypted vault to verify that the merge was persisted.
+      store.free();
+      store = await wallet.CredentialStore.new(paths, keys);
+      await store.init(42n, 1000n);
+      const reopenedRecords = await store.listCredentials(undefined, 1000n);
+
+      return {
+        uninitializedError,
+        initialAdded,
+        localRecords,
+        invalidContentsError,
+        malformedHeaderError,
+        invalidPageSizeError,
+        invalidSchemaError,
+        recordsAfterFailure,
+        added,
+        replayedAdded,
+        mergedRecords,
+        reopenedRecords,
+      };
+    } finally {
+      store.free();
+      paths.free();
+      keys.free();
+      await wallet.close();
+    }
+  });
+
+  expect(result.uninitializedError).toBe("StorageError");
+  expect(result.initialAdded).toBe(1n);
+
+  expect(result.invalidContentsError).toBe("StorageError");
+  expect(result.malformedHeaderError).toBe("StorageError");
+  expect(result.invalidPageSizeError).toBe("StorageError");
+  expect(result.invalidSchemaError).toBe("StorageError");
+  expect(result.recordsAfterFailure).toEqual(result.localRecords);
+
+  expect(result.added).toBe(1n);
+  expect(result.replayedAdded).toBe(0n);
+  expect(result.mergedRecords).toHaveLength(2);
+  expect(result.mergedRecords).toEqual(
+    expect.arrayContaining(result.localRecords),
+  );
+
+  expect(result.reopenedRecords).toEqual(result.mergedRecords);
+});

@@ -194,6 +194,18 @@ impl JsCredentialStore {
             .map_err(to_js)
     }
 
+    /// Adds credentials from a plaintext vault backup, preserving local credentials.
+    /// Returns the number added; replaying the same backup returns zero.
+    /// The caller must authenticate the backup as belonging to this account.
+    ///
+    /// # Errors
+    /// Throws a `StorageError` if the store is uninitialized, the backup is invalid,
+    /// or the database operation fails. Invalid backups leave the vault unchanged.
+    #[wasm_bindgen(js_name = mergeVaultFromBackup)]
+    pub fn merge_vault_from_backup(&self, backup_bytes: &[u8]) -> Result<u64, JsValue> {
+        self.0.merge_vault_from_backup(backup_bytes).map_err(to_js)
+    }
+
     /// # Errors
     /// Throws a `StorageError` when the vault cannot be read.
     #[wasm_bindgen(js_name = listCredentials, unchecked_return_type = "CredentialRecord[]")]

@@ -371,6 +371,29 @@ impl CredentialStore {
 
 #[uniffi::export]
 impl CredentialStore {
+    /// Adds credentials from a backup to an initialized vault, atomically and idempotently.
+    /// Preserves local-only credentials and local record IDs. Returns the number of newly added credentials.
+    /// The host must authenticate the backup as belonging to this account before calling.
+    ///
+    /// # Errors
+    /// Returns an error on an invalid backup, uninitialized store, or database failure.
+    pub fn merge_vault_from_backup(&self, backup_bytes: &[u8]) -> StorageResult<u64> {
+        let added = {
+            let inner = self.lock_inner()?;
+            let _guard = inner.guard()?;
+            // TODO: Move stale-file cleanup to storage initialization. Merges now
+            // stay in memory, but files left by crashed file-based backup
+            // operations still need removal, even for apps that only merge.
+            #[cfg(not(target_arch = "wasm32"))]
+            inner.cleanup_stale_backup_files();
+            inner.state()?.vault.merge_plaintext_bytes(backup_bytes)?
+        };
+        if added != 0 {
+            self.notify_vault_changed();
+        }
+        Ok(added)
+    }
+
     /// Permanently destroys all credential storage data.
     ///
     /// Intended for use when the user logs out or deletes their account.
@@ -441,30 +464,6 @@ impl CredentialStore {
         let _cleanup = CleanupFile(path.clone());
 
         inner.import_vault_from_file(&path)
-    }
-
-    /// Adds credentials from a backup to an initialized vault, atomically and idempotently.
-    /// Preserves local-only credentials and local record IDs. Returns the number of newly added credentials.
-    /// The host must authenticate the backup as belonging to this account before calling.
-    ///
-    /// # Errors
-    /// Returns an error on an invalid backup, uninitialized store, or database failure.
-    pub fn merge_vault_from_backup(&self, backup_bytes: &[u8]) -> StorageResult<u64> {
-        let added = {
-            let inner = self.lock_inner()?;
-            let _guard = inner.guard()?;
-            inner.cleanup_stale_backup_files();
-            let path = inner.write_temp_backup_file(backup_bytes)?;
-            let _cleanup = CleanupFile(path.clone());
-            inner
-                .state()?
-                .vault
-                .merge_plaintext(std::path::Path::new(&path))?
-        };
-        if added != 0 {
-            self.notify_vault_changed();
-        }
-        Ok(added)
     }
 
     /// Registers a listener that is called after every successful vault
@@ -1703,7 +1702,17 @@ mod tests {
         local.set_vault_changed_listener(Arc::new(ChannelVaultListener(
             notifications_tx,
         )));
+        let stale_path = local
+            .storage_paths()
+            .unwrap()
+            .worldid_dir()
+            .join(format!("{VAULT_BACKUP_TEMP_PREFIX}stale.sqlite"));
+        std::fs::write(&stale_path, b"stale plaintext data").unwrap();
         assert_eq!(local.merge_vault_from_backup(&backup).unwrap(), 1);
+        assert!(
+            !stale_path.exists(),
+            "merge should remove stale backup files"
+        );
         notifications_rx
             .recv_timeout(std::time::Duration::from_secs(1))
             .expect("a merge that adds credentials should notify the listener");

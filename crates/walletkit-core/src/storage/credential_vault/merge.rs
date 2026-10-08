@@ -1,12 +1,12 @@
 //! Additive backup recovery. Row IDs are local database keys, not credential identities.
 //! Absence from a snapshot is not a deletion instruction: preserve receiver-only credentials.
 
-use std::path::Path;
-
 use super::{map_db_err, CredentialVault, CREDENTIAL_VERSION_ORDER};
 use crate::storage::error::{StorageError, StorageResult};
 use walletkit_db::blobs::compute_content_id;
-use walletkit_sqlite::{params, Connection, StepResult, Transaction};
+use walletkit_sqlite::{
+    cipher::ensure_temp_store_memory, params, Connection, StepResult,
+};
 
 impl CredentialVault {
     /// Atomically merges a plaintext backup, returning the number of added records.
@@ -23,62 +23,60 @@ impl CredentialVault {
     /// Only INSERT is used: no existing credential, timestamp, or blob is updated
     /// or deleted. Invalid snapshots roll back the entire transaction.
     ///
-    /// Callers must keep the source file stable until the merge completes. Callers that
-    /// need cross-process exclusion around backup-file creation/cleanup must hold
-    /// [`crate::storage::StorageLock`] themselves, as [`super::CredentialVault::import_plaintext`]
-    /// requires. Prefer [`crate::storage::CredentialStore::merge_vault_from_backup`], which
-    /// holds the lock for the complete temporary-file lifetime.
+    /// The source is copied into a read-only in-memory database on every platform.
+    /// A separate source connection isolates malformed schemas from the vault.
     ///
     /// # Errors
     /// Returns an error for malformed backup contents, unavailable storage, or a failed transaction.
-    pub(crate) fn merge_plaintext(&self, source: &Path) -> StorageResult<u64> {
-        if !source.is_file() {
-            return Err(StorageError::VaultDb(
-                "credential backup file is missing or not a regular file".to_owned(),
-            ));
-        }
-        let conn = self.vault.connection();
-        let source_path = source.to_string_lossy().replace('\'', "''");
-        conn.execute_batch(&format!(
-            "ATTACH DATABASE '{source_path}' AS incoming KEY '';"
-        ))
-        .map_err(|e| map_db_err(&e))?;
-        let result = merge_attached(conn);
-        let detached = conn.execute_batch("DETACH DATABASE incoming;");
-        let added = result?;
-        detached.map_err(|e| map_db_err(&e))?;
-        Ok(added)
+    pub(crate) fn merge_plaintext_bytes(&self, bytes: &[u8]) -> StorageResult<u64> {
+        let incoming =
+            Connection::open(":memory:", false).map_err(|e| map_db_err(&e))?;
+        ensure_temp_store_memory(&incoming).map_err(|e| map_db_err(&e))?;
+        incoming
+            .deserialize_readonly("main", bytes)
+            .map_err(|e| map_db_err(&e))?;
+        merge_from(self.vault.connection(), &incoming)
     }
 }
 
-fn invalid_backup() -> StorageError {
-    StorageError::VaultDb("invalid credential backup contents".to_owned())
-}
-
-fn merge_attached(conn: &Connection) -> StorageResult<u64> {
-    let tx = conn.transaction_immediate().map_err(|e| map_db_err(&e))?;
-    validate_incoming(&tx)?;
-    tx.execute_batch(
-        "INSERT INTO blob_objects(content_id, blob_kind, created_at, bytes)
-         SELECT content_id, blob_kind, MIN(created_at), bytes FROM incoming.blob_objects
-         GROUP BY content_id ON CONFLICT(content_id) DO NOTHING;",
-    )
-    .map_err(|e| map_db_err(&e))?;
-
-    let mut added = 0;
+fn merge_from(destination: &Connection, incoming: &Connection) -> StorageResult<u64> {
+    validate_incoming(incoming)?;
+    let tx = destination
+        .transaction_immediate()
+        .map_err(|e| map_db_err(&e))?;
     {
-        let mut records = tx.prepare(&format!(
+        let mut blobs = incoming.prepare(
+            "SELECT content_id, blob_kind, MIN(created_at), bytes FROM blob_objects GROUP BY content_id",
+        ).map_err(|e| map_db_err(&e))?;
+        while let StepResult::Row(row) = blobs.step().map_err(|e| map_db_err(&e))? {
+            tx.execute(
+                "INSERT INTO blob_objects(content_id, blob_kind, created_at, bytes)
+                 VALUES (?1, ?2, ?3, ?4) ON CONFLICT(content_id) DO NOTHING;",
+                params![
+                    row.column_blob(0),
+                    row.column_i64(1),
+                    row.column_i64(2),
+                    row.column_blob(3)
+                ],
+            )
+            .map_err(|e| map_db_err(&e))?;
+        }
+    }
+
+    let mut added_records = 0;
+    {
+        let mut records = incoming.prepare(&format!(
             "SELECT issuer_schema_id, subject_blinding_factor, genesis_issued_at, expires_at,
                     updated_at, credential_blob_cid, associated_data_cid
-             FROM incoming.credential_records ORDER BY {CREDENTIAL_VERSION_ORDER}",
+             FROM credential_records ORDER BY {CREDENTIAL_VERSION_ORDER}",
         )).map_err(|e| map_db_err(&e))?;
         while let StepResult::Row(row) = records.step().map_err(|e| map_db_err(&e))? {
-            let associated = if row.is_column_null(6) {
+            let associated_data_cid = if row.is_column_null(6) {
                 walletkit_sqlite::Value::Null
             } else {
                 walletkit_sqlite::Value::Blob(row.column_blob(6))
             };
-            let count = tx.execute(
+            let inserted = tx.execute(
                 "INSERT INTO credential_records(issuer_schema_id, subject_blinding_factor,
                     genesis_issued_at, expires_at, updated_at, credential_blob_cid, associated_data_cid)
                  SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE NOT EXISTS (
@@ -87,42 +85,42 @@ fn merge_attached(conn: &Connection) -> StorageResult<u64> {
                     AND updated_at = ?5
                     AND credential_blob_cid = ?6 AND associated_data_cid IS ?7)",
                 params![row.column_i64(0), row.column_blob(1), row.column_i64(2), row.column_i64(3),
-                        row.column_i64(4), row.column_blob(5), associated],
+                        row.column_i64(4), row.column_blob(5), associated_data_cid],
             ).map_err(|e| map_db_err(&e))?;
-            added += count as u64;
+            added_records += inserted as u64;
         }
     }
     tx.commit().map_err(|e| map_db_err(&e))?;
-    Ok(added)
+    Ok(added_records)
 }
 
-fn validate_incoming(tx: &Transaction<'_>) -> StorageResult<()> {
+fn validate_incoming(incoming: &Connection) -> StorageResult<()> {
     // Exports made with CREATE TABLE AS have no NOT NULL or type constraints.
     // Validate before using SQLite's permissive getters or writing destination data.
-    let invalid: i64 = tx.query_row(
-        "SELECT EXISTS(SELECT 1 FROM incoming.blob_objects WHERE
+    let has_invalid_rows = incoming.query_row(
+        "SELECT EXISTS(SELECT 1 FROM blob_objects WHERE
             typeof(content_id) != 'blob' OR length(content_id) != 32 OR
             typeof(blob_kind) != 'integer' OR blob_kind NOT IN (1, 2) OR
             typeof(created_at) != 'integer' OR created_at < 0 OR typeof(bytes) != 'blob')
-         OR EXISTS(SELECT 1 FROM incoming.credential_records r WHERE
+         OR EXISTS(SELECT 1 FROM credential_records r WHERE
             typeof(issuer_schema_id) != 'integer' OR issuer_schema_id < 0 OR
             typeof(subject_blinding_factor) != 'blob' OR length(subject_blinding_factor) != 32 OR
             typeof(genesis_issued_at) != 'integer' OR genesis_issued_at < 0 OR
             typeof(expires_at) != 'integer' OR expires_at < 0 OR
             typeof(updated_at) != 'integer' OR updated_at < 0 OR
             typeof(credential_blob_cid) != 'blob' OR
-            NOT EXISTS(SELECT 1 FROM incoming.blob_objects b WHERE b.content_id = r.credential_blob_cid AND b.blob_kind = 1) OR
+            NOT EXISTS(SELECT 1 FROM blob_objects b WHERE b.content_id = r.credential_blob_cid AND b.blob_kind = 1) OR
             (associated_data_cid IS NOT NULL AND (typeof(associated_data_cid) != 'blob' OR
-             NOT EXISTS(SELECT 1 FROM incoming.blob_objects b WHERE b.content_id = r.associated_data_cid AND b.blob_kind = 2))))",
-        &[], |row| Ok(row.column_i64(0)),
+             NOT EXISTS(SELECT 1 FROM blob_objects b WHERE b.content_id = r.associated_data_cid AND b.blob_kind = 2))))",
+        &[], |row| Ok(row.column_i64(0) != 0),
     ).map_err(|e| map_db_err(&e))?;
-    if invalid != 0 {
+    if has_invalid_rows {
         return Err(invalid_backup());
     }
 
     {
-        let mut blobs = tx
-            .prepare("SELECT content_id, blob_kind, bytes FROM incoming.blob_objects")
+        let mut blobs = incoming
+            .prepare("SELECT content_id, blob_kind, bytes FROM blob_objects")
             .map_err(|e| map_db_err(&e))?;
         while let StepResult::Row(row) = blobs.step().map_err(|e| map_db_err(&e))? {
             let kind = u8::try_from(row.column_i64(1)).map_err(|_| invalid_backup())?;
@@ -134,7 +132,11 @@ fn validate_incoming(tx: &Transaction<'_>) -> StorageResult<()> {
     Ok(())
 }
 
-#[cfg(test)]
+fn invalid_backup() -> StorageError {
+    StorageError::VaultDb("invalid credential backup contents".to_owned())
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
     use secrecy::SecretBox;
@@ -171,7 +173,8 @@ mod tests {
         }
 
         fn merge(&self) -> StorageResult<u64> {
-            self.receiver.merge_plaintext(&self.backup)
+            self.receiver
+                .merge_plaintext_bytes(&std::fs::read(&self.backup).unwrap())
         }
     }
 
@@ -217,6 +220,33 @@ mod tests {
     }
 
     #[test]
+    fn malformed_images_leave_vault_usable_and_valid_retry_succeeds() {
+        let f = Fixture::new();
+        store(&f.receiver, 100, b"local", 1000);
+        store(&f.source, 200, b"incoming", 1000);
+        f.export();
+        let backup = std::fs::read(&f.backup).unwrap();
+        let before = versions(&f.receiver);
+
+        let mut corrupt_schema = backup.clone();
+        corrupt_schema[100] = 0xff; // Invalid page type for the sqlite_schema B-tree.
+        let mut wal_image = backup.clone();
+        wal_image[18..20].fill(2);
+        for bytes in [
+            Vec::new(),
+            b"not a database".to_vec(),
+            corrupt_schema,
+            wal_image,
+        ] {
+            assert!(f.receiver.merge_plaintext_bytes(&bytes).is_err());
+            assert_eq!(versions(&f.receiver), before);
+        }
+
+        assert_eq!(f.receiver.merge_plaintext_bytes(&backup).unwrap(), 1);
+        assert_eq!(f.receiver.merge_plaintext_bytes(&backup).unwrap(), 0);
+    }
+
+    #[test]
     fn equal_timestamp_versions_converge_in_every_merge_order() {
         let dir = TempDir::new().unwrap();
         let key = SecretBox::init_with(|| [42; 32]);
@@ -253,7 +283,14 @@ mod tests {
             )
             .unwrap();
             for index in order {
-                assert_eq!(receiver.merge_plaintext(&snapshots[*index]).unwrap(), 1);
+                assert_eq!(
+                    receiver
+                        .merge_plaintext_bytes(
+                            &std::fs::read(&snapshots[*index]).unwrap()
+                        )
+                        .unwrap(),
+                    1
+                );
             }
             let state = (
                 versions(&receiver),
@@ -270,7 +307,14 @@ mod tests {
                 expected = Some(state);
             }
             for index in order {
-                assert_eq!(receiver.merge_plaintext(&snapshots[*index]).unwrap(), 0);
+                assert_eq!(
+                    receiver
+                        .merge_plaintext_bytes(
+                            &std::fs::read(&snapshots[*index]).unwrap()
+                        )
+                        .unwrap(),
+                    0
+                );
             }
             assert_eq!(versions(&receiver).len(), 3);
         }
@@ -372,7 +416,12 @@ mod tests {
             )
             .unwrap();
         drop(snapshot);
-        assert_eq!(other.merge_plaintext(&f.backup).unwrap(), 3);
+        assert_eq!(
+            other
+                .merge_plaintext_bytes(&std::fs::read(&f.backup).unwrap())
+                .unwrap(),
+            3
+        );
         assert_eq!(versions(&f.receiver), versions(&other));
         let first_ids: Vec<_> = f
             .receiver
