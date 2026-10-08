@@ -10,5 +10,5 @@ The following pages are for contributors to the package:
   object handles, error handling, and storage.
 - [Develop the browser package](development.md): build and test the package, and
   expose a `walletkit-core` API to the browser.
-- [Release the browser package](releasing.md): publish to npm, configure trusted
-  publishing, and roll back a release.
+
+To publish the package, see [Release WalletKit](../release.md#browser-package).

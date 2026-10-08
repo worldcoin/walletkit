@@ -24,6 +24,7 @@ see [Browser limitations](web/package.md#browser-limitations).
   [Accounts and credentials](accounts.md).
 - To answer a relying party's proof request, see [Generate a proof](proofs.md).
 - To change WalletKit, see [Develop WalletKit](development/).
+- To publish a release, see [Release WalletKit](release.md).
 - For the API reference of the Rust crates, see
   [`walletkit` on docs.rs](https://docs.rs/walletkit).
 

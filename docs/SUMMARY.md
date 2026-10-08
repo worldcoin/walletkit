@@ -18,4 +18,4 @@
 - [Browser package](web/README.md)
   - [How the browser package works](web/architecture.md)
   - [Develop the browser package](web/development.md)
-  - [Release the browser package](web/releasing.md)
+- [Release WalletKit](release.md)
