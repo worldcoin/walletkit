@@ -22,7 +22,9 @@ logger must be safe to call from any thread.
 - If the `RUST_LOG` environment variable is set, it takes precedence over `level`.
 - Only the first call takes effect; later calls do nothing.
 
-To check that your logger receives messages, call `emit_log(level, message)`.
+To check that your logger receives messages, call `emit_log(level, message)`. To
+redact hex secrets from your own messages in the same way, call
+`sanitize_hex_secrets(text)`.
 
 ## Rust
 
@@ -100,3 +102,4 @@ fun setupWalletKitLogging() {
 
 The browser package has no `Logger`. WalletKit writes its warnings and errors to
 the worker's console, and `emitLog` writes through the same path.
+`sanitizeHexSecrets` redacts hex secrets as on the other platforms.

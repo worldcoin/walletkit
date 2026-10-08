@@ -38,14 +38,16 @@ nix develop --command cargo fmt -- --check
 
 ## Test
 
-To run the workspace tests, run the following command:
+To run the workspace tests with the default features, run the following command:
 
 ```sh
 nix develop --command cargo test --workspace
 ```
 
 CI runs the tests with all features enabled, using `cargo nextest`, on several
-Rust toolchains.
+Rust toolchains. Locally, `--all-features` also enables `compress-zkeys`, which
+makes every test that loads the proving keys decompress them, so expect much
+slower runs.
 
 ## Write documentation
 

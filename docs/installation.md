@@ -43,7 +43,10 @@ WalletKit's Kotlin bindings are published to GitHub Packages and support Android
 API level 23 and later. To add them to an Android app, do the following:
 
 1. Add the GitHub Packages repository to your Gradle repositories. GitHub Packages
-   requires credentials with the `read:packages` scope, even for public packages:
+   requires credentials with the `read:packages` scope, even for public packages.
+   This example reads them from the `gpr.user` and `gpr.key` Gradle properties;
+   set those in your user-level `~/.gradle/gradle.properties` or in CI, and never
+   commit them:
 
    ```kotlin
    repositories {

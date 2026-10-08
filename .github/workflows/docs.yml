@@ -15,12 +15,14 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write # push to the gh-pages branch
+  contents: read
 
 jobs:
   publish:
     name: Build and publish the book
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # push to the gh-pages branch
     timeout-minutes: 15
     steps:
       - name: Checkout code

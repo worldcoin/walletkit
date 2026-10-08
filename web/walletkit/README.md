@@ -54,13 +54,16 @@ Cross-origin isolation headers aren't required.
        "eu",
        undefined, // recoveryAddress: none.
      );
-   for (;;) {
-     const status = await registration.pollStatus();
-     if (status.state === "finalized") break;
-     if (status.state === "failed") throw new Error(status.error);
-     await new Promise((resolve) => setTimeout(resolve, 2000));
+   try {
+     for (;;) {
+       const status = await registration.pollStatus();
+       if (status.state === "finalized") break;
+       if (status.state === "failed") throw new Error(status.error);
+       await new Promise((resolve) => setTimeout(resolve, 2000));
+     }
+   } finally {
+     registration.free();
    }
-   registration.free();
    ```
 
 1. To answer a relying party's proof request, open the registered account and
@@ -84,7 +87,9 @@ Cross-origin isolation headers aren't required.
    ).toJson();
    ```
 
-1. When your app no longer needs WalletKit, close the instance:
+1. When your app no longer needs WalletKit, or when a step fails, close the
+   instance. An open instance keeps the origin's storage, so a new instance can't
+   start until this one closes:
 
    ```ts
    await walletkit.close();
@@ -155,7 +160,9 @@ WalletKit reports failures in these ways:
 - A crash in WalletKit's Rust code stops the instance, and every later call
   rejects. To recover, initialize a new instance.
 
-WalletKit logs its own warnings and errors to the worker's console.
+WalletKit logs its own warnings and errors to the worker's console. To redact hex
+secrets from your own messages before you log them, call
+`walletkit.sanitizeHexSecrets(text)`.
 
 ## Manage the instance
 

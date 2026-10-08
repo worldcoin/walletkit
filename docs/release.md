@@ -88,11 +88,12 @@ stores no npm token. This is a one-time setup for an owner of the npm package. O
 npmjs.com, in the `@worldcoin/walletkit-web` package settings, add a trusted
 publisher with these values:
 
-| Setting     | Value                 |
-| ----------- | --------------------- |
-| Repository  | `worldcoin/walletkit` |
-| Workflow    | `web.yml`             |
-| Environment | `production`          |
+| Setting              | Value        |
+| -------------------- | ------------ |
+| Organization or user | `worldcoin`  |
+| Repository           | `walletkit`  |
+| Workflow filename    | `web.yml`    |
+| Environment name     | `production` |
 
 ## Recover from a failed release
 
