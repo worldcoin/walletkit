@@ -167,15 +167,19 @@ pub fn number_field(object: &JsValue, key: &str) -> Result<f64, JsValue> {
 
 /// Reads a required array-of-`bigint` field.
 pub fn u64_array_field(object: &JsValue, key: &str) -> Result<Vec<u64>, JsValue> {
-    let value = field(object, key)?;
-    if !Array::is_array(&value) {
-        return Err(invalid_argument(&format!("`{key}` must be an array")));
+    u64_array_arg(key, &field(object, key)?)
+}
+
+/// Validates an array-of-`bigint` argument, each in the `u64` range.
+pub fn u64_array_arg(name: &str, value: &JsValue) -> Result<Vec<u64>, JsValue> {
+    if !Array::is_array(value) {
+        return Err(invalid_argument(&format!("`{name}` must be an array")));
     }
-    Array::from(&value)
+    Array::from(value)
         .iter()
         .map(|item| {
             u64::try_from(item).map_err(|_| {
-                invalid_argument(&format!("`{key}` must contain only bigints"))
+                invalid_argument(&format!("`{name}` must contain only bigints"))
             })
         })
         .collect()
