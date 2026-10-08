@@ -11,16 +11,7 @@ Thank you for your interest in contributing to our project! This document provid
 
 ## Local Development
 
-1. Install Rust (`rustup` is recommended). [Instructions](https://www.rust-lang.org/tools/install)/
-2. Install Foundry. Anvil (from the Foundry toolkit) is required for functional tests with Solidity.
-   ```bash
-   curl -L https://foundry.paradigm.xyz | bash
-   foundryup
-   ```
-3. Run tests to ensure everything is working as expected. Note: `compress-zkeys` is excluded because ARK point decompression is expensive and only needed for release builds.
-   ```bash
-   cargo test --workspace
-   ```
+To set up a development environment and run the checks that CI runs, see [Develop WalletKit](docs/development/README.md). For the browser package, see the [browser package docs](docs/web/README.md).
 
 ## Code of Conduct
 

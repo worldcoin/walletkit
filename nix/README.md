@@ -16,6 +16,7 @@ ordinary `cargo build` invocations run inside a shell.
 | `default` | Host builds, uniffi-bindgen, nargo | all |
 | `android` | Cross-compile the 4 Android targets (NDK, linkers, API 23) | linux/darwin x86_64, darwin aarch64 |
 | `wasm` | `wasm32-unknown-unknown` builds and headless browser tests with Node and Binaryen | all |
+| `docs` | mdBook and mdbook-mermaid for the [WalletKit book](../docs/README.md) | all |
 
 ```bash
 nix develop .#android   # enter a shell
@@ -63,7 +64,7 @@ Notes:
 - On Apple Silicon, enable Rosetta emulation in Docker Desktop settings (on by
   default in recent versions).
 - The flake does not provide a Swift shell. Swift builds depend on the host
-  macOS/Xcode configuration; see [`swift/README.md`](../swift/README.md).
+  macOS/Xcode configuration; see [iOS and Swift](../docs/development/ios.md).
 - On Linux hosts, files created by the container (e.g. `target/`) are
   root-owned.
 

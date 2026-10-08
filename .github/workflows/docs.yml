@@ -1,0 +1,88 @@
+name: Docs
+
+# Builds the mdBook in docs/ on pull requests and publishes it to GitHub Pages
+# (gh-pages branch) from main. See "Write documentation" in docs/development/README.md.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/docs.yml"
+      - "book.toml"
+      - "docs/**"
+      - "flake.lock"
+      - "flake.nix"
+      - "web/walletkit/README.md"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/docs.yml"
+      - "book.toml"
+      - "docs/**"
+      - "flake.lock"
+      - "flake.nix"
+      - "web/walletkit/README.md"
+  workflow_dispatch:
+
+concurrency:
+  group: docs-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build the book
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+
+      - name: Build the book
+        run: |
+          nix develop .#docs --command mdbook build
+          touch book/.nojekyll
+
+      - name: Upload the book
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: book
+          path: book
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish to GitHub Pages
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # One publish at a time, in order, whatever triggered it.
+    concurrency:
+      group: docs-pages
+      cancel-in-progress: false
+    permissions:
+      contents: write # push to the gh-pages branch
+    steps:
+      - name: Download the book
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: book
+          path: book
+
+      - name: Publish the book
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
+        with:
+          github_token: ${{ github.token }}
+          publish_branch: gh-pages
+          publish_dir: ./book
+          force_orphan: true

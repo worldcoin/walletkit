@@ -37,3 +37,6 @@ cache/
 !crates/walletkit-core/src/storage/cache/**
 
 # NOTE: Cargo.lock is not ignored because it is used for FFI builds (Swift & Kotlin)
+
+# mdBook output
+book/

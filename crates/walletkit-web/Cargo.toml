@@ -1,6 +1,6 @@
 [package]
 name = "walletkit-web"
-description = "wasm-bindgen facade over WalletKit for the walletkit-web browser package."
+description = "wasm-bindgen facade over WalletKit for the @worldcoin/walletkit-web browser package."
 publish = false
 version.workspace = true
 edition.workspace = true
