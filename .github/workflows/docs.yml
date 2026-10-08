@@ -1,0 +1,47 @@
+name: Docs
+
+# Builds the mdBook in docs/ and publishes it to GitHub Pages (gh-pages branch).
+# See "Write documentation" in docs/development/README.md.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# A newer run cancels an older one, so an older build can't publish after a newer one.
+concurrency:
+  group: docs-pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build and publish the book
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push to the gh-pages branch
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+
+      - name: Build the book
+        run: |
+          nix develop .#docs --command mdbook build
+          touch book/.nojekyll
+
+      - name: Publish the book
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4
+        with:
+          github_token: ${{ github.token }}
+          publish_branch: gh-pages
+          publish_dir: ./book
+          force_orphan: true

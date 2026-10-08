@@ -8,7 +8,7 @@ name: Web package (@worldcoin/walletkit-web)
 #   release version and publish that exact tarball to npm.
 #
 # Publishing uses npm trusted publishing (OIDC), so no npm token is stored in the
-# repository. See the "Releasing" section of web/walletkit/README.md.
+# repository. See docs/release.md.
 
 on:
   pull_request:

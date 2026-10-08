@@ -42,6 +42,13 @@
           };
 
           wasm = import ./nix/wasm.nix { inherit pkgs; };
+
+          docs = pkgs.mkShell {
+            packages = [
+              pkgs.mdbook
+              pkgs.mdbook-mermaid
+            ];
+          };
         } // pkgs.lib.optionalAttrs (!(pkgs.stdenv.isLinux && pkgs.stdenv.isAarch64)) {
           # The Android NDK has no aarch64-linux prebuilt toolchain
           # (on aarch64 Docker hosts, run the container as linux/amd64).

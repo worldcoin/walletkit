@@ -1,0 +1,17 @@
+[book]
+authors = ["World Contributors"]
+language = "en"
+src = "docs"
+title = "WalletKit"
+
+[build]
+build-dir = "book"
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]
+additional-js = ["docs/mermaid.min.js", "docs/mermaid-init.js"]
+git-repository-url = "https://github.com/worldcoin/walletkit"
+edit-url-template = "https://github.com/worldcoin/walletkit/edit/main/{path}"
+site-url = "/walletkit/"

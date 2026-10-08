@@ -2,7 +2,7 @@
 
 ## Build environment
 
-Dependency and build setup can be complex, especially for cross-compilation. Use the devshells provided by `flake.nix`: `default` for host development, `android` for Android, and `wasm` for WebAssembly. From the repository root:
+Dependency and build setup can be complex, especially for cross-compilation. Use the devshells provided by `flake.nix`: `default` for host development, `android` for Android, `wasm` for WebAssembly, and `docs` for the mdBook in `docs/`. From the repository root:
 
 ```bash
 nix develop .#wasm
@@ -18,6 +18,10 @@ nix/docker.sh develop .#wasm
 The Docker wrapper runs Linux/amd64, using emulation on ARM hosts.
 
 Swift/iOS builds require macOS and Xcode; use `cargo xtask swift` on the host. See [nix/README.md](nix/README.md) for platform support and build commands.
+
+Human-facing guides live in the mdBook under `docs/` (see `docs/SUMMARY.md`); update the page that owns a fact instead of repeating it elsewhere.
+
+For changes to the browser package (`crates/walletkit-web` or `web/walletkit`), follow [docs/web/development.md](docs/web/development.md). New functions need no TypeScript changes; a new class also needs a `RemoteObject` alias in `remote.ts` and an export from `index.ts`, and a new record or enum needs an export from `index.ts`. Add type tests for every new export.
 
 ## Compatibility pitfalls
 

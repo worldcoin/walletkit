@@ -1,138 +1,187 @@
 # `@worldcoin/walletkit-web`
 
-WalletKit's browser client. The package always runs Rust/WASM, cryptography,
-proof generation and SQLite in a dedicated Web Worker. Importing the package
-is safe during SSR; call `initializeWalletKit` in a browser.
+`@worldcoin/walletkit-web` brings WalletKit to web apps: a browser app can register
+a World ID account, keep credentials in encrypted browser storage, and generate
+World ID proofs. Each call to `initializeWalletKit` starts a dedicated Web Worker
+that runs WalletKit's Rust code, compiled to WebAssembly (WASM), off the main
+thread, and returns one WalletKit _instance_ that talks to it.
 
-```ts
-import { initializeWalletKit } from "@worldcoin/walletkit-web";
+## Requirements
 
-const walletkit = await initializeWalletKit();
+To run WalletKit, your app needs the following:
 
-// Open the account's encrypted storage, as the Swift and Kotlin bindings do.
-const keys = await walletkit.StorageKeys.fromBytes(databaseKey); // resolved 32-byte key
-const paths = await walletkit.StoragePaths.fromRoot("/walletkit/my-account");
-const store = await walletkit.CredentialStore.new(paths, keys);
-const artifacts = await walletkit.EmbeddedZkArtifacts.new();
+- A secure context: HTTPS, or `localhost` during development
+- A browser with module workers and the Origin Private File System (OPFS),
+  including `FileSystemSyncAccessHandle`
+- A bundler that emits assets referenced with `new URL(…, import.meta.url)`, such
+  as Vite or the Next.js bundler, or
+  [custom asset URLs](#serve-the-assets-from-custom-urls)
 
-// Register a new account...
-const registration =
-  await walletkit.InitializingAuthenticator.registerWithDefaults(
-    seed,
-    undefined,
-    "staging",
-    "eu",
-    undefined,
-  );
-const status = await registration.pollStatus(); // { state: "queued" | ... }
+Cross-origin isolation headers aren't required.
 
-// ...or open a registered one and prove.
-const authenticator = await walletkit.Authenticator.initWithDefaults(
-  seed,
-  undefined,
-  "staging",
-  "eu",
-  artifacts,
-  store,
-);
-await authenticator.initStorage(BigInt(Math.floor(Date.now() / 1000)));
-const request = await walletkit.ProofRequest.fromJson(requestJson);
-const response = await authenticator.generateProof(request);
-const proofJson = await response.toJson();
+## Get started
 
-await walletkit.close();
-```
+1. Install the package:
 
-The host supplies the resolved `databaseKey`, for example after obtaining passkey
-PRF output and deriving the database key. PRF acquisition/derivation happens before
-initialization; WalletKit does not call WebAuthn or wrap this key in an envelope.
-Both vault and cache use that key directly through sqlite3mc. Supply the same key
-and root path when reopening.
+   ```sh
+   npm install @worldcoin/walletkit-web
+   ```
 
-The authenticator seed and database key are separate inputs. The package does not
-persist the database key; the worker clears its copy of every byte array it receives,
-and the caller owns clearing its own. Rust keeps the resolved key in zeroizing memory
-until its last owner releases it.
+1. In browser code, initialize WalletKit, and close the instance in a `finally`
+   block. An open instance keeps the origin's storage, so closing it even when a
+   later step fails lets a new instance start. Run the remaining steps inside the
+   `try` block:
 
-`StorageKeys.fromBytes` and `CredentialStore.new(paths, keys)` are browser-only:
-the browser has no device keystore, so the host supplies the key and no key
-envelope is written. Mobile hosts keep opening the store from their keystore and
-blob store. With a supplied key there is no envelope to delete, so
-`destroyStorage()` rejects unless the database files are actually removed, and the
-store drops its key reference either way; discarding the host's own copy is up to
-the host.
+   ```ts
+   import { initializeWalletKit } from "@worldcoin/walletkit-web";
 
-## Browser API
+   const walletkit = await initializeWalletKit();
+   try {
+     // Steps 3 to 5 go here.
+   } finally {
+     await walletkit.close();
+   }
+   ```
 
-The classes, methods and arguments mirror the `walletkit-core` UniFFI objects that
-the Swift and Kotlin bindings expose, in `camelCase`: `Authenticator`,
-`InitializingAuthenticator`, `CredentialStore`, `ActivityQuery`, `StorageKeys`, `StoragePaths`,
-`EmbeddedZkArtifacts`, `FieldElement`, `Credential`, `ProofRequest` and
-`ProofResponse`, plus `recoveryDataFromSeed`, `validateAuthenticatorPubkey`,
-`checkCredentialsAgainstProofRequest`, `pohRecoveryAgentAddress` and
-`worldIdVerifierAddress`. Constructors and static functions live on the object
-returned by `initializeWalletKit()` (`walletkit.FieldElement.fromU64(1n)`,
-`walletkit.CredentialStore.new(paths, keys)`); instance methods are on the objects
-they return. Conventions that differ from native:
+1. Open the account's encrypted storage:
 
-- Every call returns a Promise, because it crosses to the worker.
-- `u64` is `bigint`, byte arrays are `Uint8Array`, `Environment` is
-  `"production" | "staging"` and `Region` is `"eu" | "us" | "ap"`.
-- `now` (unix seconds) is passed explicitly, as on native. Only `generateProof`
-  defaults it, to the browser clock, because core cannot read a clock on wasm.
-- 256-bit values, such as `packedAccountData()`, are 0x-prefixed hex strings.
-- Records (`RegistrationStatus`, `CredentialRecord`, `ActivityEntry`, …) are plain
-  objects. Their enum fields are lowercase strings, as in core's serialization.
-- Rust objects live in the worker until you call `free()` (they are also released
-  when garbage collected). Using a freed object rejects.
+   ```ts
+   declare const seed: Uint8Array; // The account's authenticator seed.
+   declare const databaseKey: Uint8Array; // See "Protect the database key".
 
-`store.mergeVaultFromBackup(backupBytes)` merges an authenticated plaintext SQLite
-vault backup into an initialized store and returns a `bigint` count of added
-credentials. Existing credentials are preserved, replay is a no-op, and invalid
-backups leave the vault unchanged. Authenticate the backup as belonging to the
-current account before calling. On native and web, incoming plaintext is loaded into a read-only SQLite
-in-memory database; merging writes no plaintext temporary files.
+   const keys = await walletkit.StorageKeys.fromBytes(databaseKey);
+   const paths = await walletkit.StoragePaths.fromRoot("/walletkit/my-account");
+   const store = await walletkit.CredentialStore.new(paths, keys);
+   ```
 
-Not available in the browser: `Logger`, `DeviceKeystore`, `AtomicBlobStore`,
-`StorageProvider` and the change listeners (foreign traits), vault backup
-export/replacement import and `proveCredentialSub` (native-only in core),
-`UserAgent`, `sanitizeHexSecrets`, and the issuer and Flamingo modules. Core's warnings and errors, for example a vault that
-could not be deleted, are written to the worker console with hex secrets redacted.
+1. If the account isn't registered, register it and wait until the registration
+   is final:
 
-Rust errors reject with their source as `name` (`WalletKitError`, `StorageError`,
-`CredentialConstraintsCheckError`), the variant name as `code` (for example
-`NullifierReplay`) and the variant details appended to `message`, with hex secrets
-redacted. Invalid arguments reject with a `TypeError`. A Rust panic traps the module:
-the failing call rejects (or the worker error stops the client) and every later call
-fails, so reinitialize.
-Issuer HTTP calls and relying-party request construction remain application code.
-See the Next.js demo in [`examples/web`](../../examples/web) for a complete
-registration, issuance and proof flow.
+   ```ts
+   const registration =
+     await walletkit.InitializingAuthenticator.registerWithDefaults(
+       seed,
+       undefined, // rpcUrl: use the default.
+       "staging",
+       "eu",
+       undefined, // recoveryAddress: none.
+     );
+   try {
+     for (;;) {
+       const status = await registration.pollStatus();
+       if (status.state === "finalized") break;
+       if (status.state === "failed") throw new Error(status.error);
+       await new Promise((resolve) => setTimeout(resolve, 2000));
+     }
+   } finally {
+     registration.free();
+   }
+   ```
 
-The worker runs the `walletkit-web` crate, a `wasm-bindgen` facade over
-`walletkit-core` with one wrapper class per UniFFI object. The page-side API is
-derived from the generated declarations by a generic proxy (`src/remote.ts`), so
-adding a core export to the browser only means adding its wrapper in the crate. The
-worker calls nothing but the functions and methods the module exports.
+1. To answer a relying party's proof request, open the registered account and
+   generate a proof:
 
-Operations run in order, including asynchronous work, and have no deadline of their
-own: a network call that never settles blocks the calls queued behind it. `close()`
-drains queued operations, frees every Rust object and terminates the worker; if the
-worker does not answer within 5 seconds it is terminated and `close()` rejects.
-`terminate()` interrupts immediately and rejects pending requests. `isStopped()`
-reports whether the instance can still serve calls: it turns `true` after `close()`,
-`terminate()`, a worker failure or a Rust panic, and the app should then initialize
-a new instance. Worker failures also reject
-pending requests. An optional `signal` cancels initialization only; after it
-resolves, use `close()` or `terminate()`.
+   ```ts
+   declare const requestJson: string; // The relying party's proof request.
 
-## Assets and deployment
+   const authenticator = await walletkit.Authenticator.initWithDefaults(
+     seed,
+     undefined, // rpcUrl: use the default.
+     "staging",
+     "eu",
+     await walletkit.EmbeddedZkArtifacts.new(),
+     store,
+   );
+   await authenticator.initStorage(BigInt(Math.floor(Date.now() / 1000)));
+   const request = await walletkit.ProofRequest.fromJson(requestJson);
+   const proofJson = await (
+     await authenticator.generateProof(request)
+   ).toJson();
+   ```
 
-Default URLs are resolved by the application's bundler. Both worker JavaScript
-and the roughly 40 MB WASM asset ship in `dist`. The worker is self-contained,
-including the generated glue and its runtime dependencies.
+Importing the package is safe during server-side rendering; call
+`initializeWalletKit` only in the browser. For a complete registration, issuance,
+and proof flow, see the
+[Next.js example](https://github.com/worldcoin/walletkit/tree/main/examples/web).
 
-Hosts with custom asset layouts can provide explicit URLs:
+## Protect the database key
+
+In the browser, your app supplies the 32-byte key that encrypts the credential
+store. On iOS and Android, WalletKit creates this key and seals it with the device
+keystore; browsers have none, so your app derives the key, for example from a
+passkey's PRF output, and passes it to `StorageKeys.fromBytes`.
+
+- **Never store the key in `localStorage`** or anywhere else that scripts can read.
+  The key is the stored credentials' only protection.
+- **Derive the key the same way every time, and keep a stable root path per
+  account.** Reopening a store needs both.
+- **Clear your own copies.** WalletKit clears the copy that it receives and never
+  persists the key, but it doesn't modify your array.
+
+## Store credentials
+
+WalletKit keeps its encrypted SQLite databases in OPFS, subject to the browser's
+storage quota and eviction policy. It never falls back to in-memory storage.
+
+Only one instance per origin can own the storage. If another tab or instance owns
+it, `initializeWalletKit` rejects, even for a different root path. Because a
+closed instance can hold the storage briefly, initialization retries for up to
+about three seconds first.
+
+To add credentials from an authenticated vault backup, call
+`store.mergeVaultFromBackup(backupBytes)`.
+
+## Use the API
+
+The classes, methods, and arguments mirror the Swift and Kotlin bindings, in
+`camelCase`. The TypeScript declarations in `dist/index.d.ts` are the complete API
+reference. Constructors and static functions are properties of the instance, for
+example `walletkit.FieldElement.fromU64(1n)`.
+
+The browser API differs from the Swift and Kotlin bindings in these ways:
+
+- Every WalletKit function and method returns a `Promise`, except `free()`,
+  `terminate()`, and `isStopped()`, which return immediately.
+- A `u64` is a `bigint`, a byte array is a `Uint8Array`, and a 256-bit value is a
+  0x-prefixed hex string.
+- `Environment`, `Region`, and other enums are lowercase strings, such as
+  `"staging"` and `"eu"`. Records are plain objects.
+- Only `generateProof` defaults its `now` argument, to the browser clock. Pass
+  Unix seconds everywhere else.
+- Objects stay in the worker until you call `free()` or they are garbage
+  collected.
+
+## Handle errors
+
+WalletKit reports failures in these ways:
+
+- A WalletKit error rejects with an `Error` whose `name` is the error type, such as
+  `StorageError`, and whose `code` is the variant, such as `NullifierReplay`. Hex
+  secrets in the `message` are redacted.
+- An invalid argument rejects with a `TypeError`.
+- If storage setup fails, `initializeWalletKit` rejects with a `StorageError`
+  whose `code` is `PersistentStorage`.
+- A crash in WalletKit's Rust code stops the instance, and every later call
+  rejects. To recover, initialize a new instance.
+
+WalletKit logs its own warnings and errors to the worker's console. To redact hex
+secrets from your own messages before you log them, call
+`walletkit.sanitizeHexSecrets(text)`.
+
+## Manage the instance
+
+The worker runs one call at a time, in order, and calls have no timeout. A network
+request that never settles blocks the calls queued after it.
+
+- `close()` waits for queued calls, frees every object, and stops the worker. After
+  five seconds without a response, it stops the worker anyway and rejects.
+- `terminate()` stops the worker immediately and rejects pending calls.
+- `isStopped()` returns `true` once the instance can no longer serve calls.
+
+## Serve the assets from custom URLs
+
+The package ships a worker script and a WASM module of about 40 MB. If your app
+serves them itself, pass their URLs:
 
 ```ts
 const walletkit = await initializeWalletKit({
@@ -141,69 +190,28 @@ const walletkit = await initializeWalletKit({
 });
 ```
 
-Relative overrides resolve against the page URL. These options change asset
-locations; they do not enable main-thread execution. Serve the worker from a
-permitted same-origin location and the WASM file as `application/wasm`.
+Relative URLs resolve against the page URL. Serve the worker from your page's
+origin, and serve the WASM module as `application/wasm`.
 
-## Persistent storage
+## Browser limitations
 
-Initialization acquires the OPFS sync-access-handle pool asynchronously. SQLite
-operations are synchronous afterward. The browser's direct-key path needs no envelope database. The encrypted credential
-vault/cache retain their existing format and use rollback journals on WASM.
+These parts of the Swift and Kotlin bindings aren't available in the browser:
 
-Closing a SQLite connection does not release the pool's OPFS handles: the pool
-remains alive until worker termination. Currently one worker owns the WalletKit
-pool per origin. A second tab/client receives an initialization error, even with
-a different root path. After shutdown, browser handle release may be asynchronous,
-so initialization retries the pool install with backoff for about 3 seconds before
-reporting it as owned. There is no silent memory fallback.
-Pool capacity is reserved at startup rather than expanded during synchronous SQL.
+| API                                                        | Reason                                                                                           |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `Logger` and `initLogging`                                 | Not implemented for the browser.                                                                 |
+| Vault and activity change listeners                        | Not implemented for the browser.                                                                 |
+| Vault backup export and replacement import                 | Supported only on iOS and Android. Use `mergeVaultFromBackup` to import.                         |
+| `proveCredentialSub`                                       | Credential ownership proofs aren't supported on WASM.                                            |
+| Flamingo                                                   | Browser WebSockets can't send its signed handshake headers, and it relies on device attestation. |
+| `DeviceKeystore`, `AtomicBlobStore`, and `StorageProvider` | They need synchronous host callbacks. Use `StorageKeys.fromBytes`.                               |
+| `CachingZkArtifacts`                                       | The WASM module embeds the proving keys. Use `EmbeddedZkArtifacts`.                              |
+| `UserAgent` and `UserAgentBuilder`                         | The browser controls the `User-Agent` header.                                                    |
+| Issuer clients (`TfhNfcIssuer`, `RecoveryBindingManager`)  | Not included.                                                                                    |
+| World ID v3 (`walletkit_core::v3`)                         | Not included.                                                                                    |
 
-Browser storage requires a supported secure context (localhost is suitable for
-development). The SAH pool does not require cross-origin-isolation headers.
-Browser quota and eviction policy still apply.
+## Get help
 
-## Build and verify
-
-```sh
-nix develop .#wasm --command bun install --cwd web/walletkit --frozen-lockfile
-nix develop .#wasm --command bun run --cwd web/walletkit build
-nix develop .#wasm --command bun run --cwd web/walletkit test:browser
-```
-
-Browser tests use installed Google Chrome and a production Vite fixture. They
-cover worker startup and lifecycle, URL overrides, exclusive pool ownership,
-wrong-key rejection, reopening storage with directly supplied keys, error
-mapping, and using Rust objects through handles. `bun run bundle` reuses the built
-module for TypeScript-only development. The build checks that the `wasm-bindgen` CLI
-matches the version in `Cargo.lock`.
-
-Do not persist the database key in `localStorage` or other script-readable storage:
-supplied-key stores have no envelope, so the key is the vault's only protection. A
-production host must implement key recovery/unlock (for example from a passkey PRF)
-and stable account namespace selection.
-
-## Releasing
-
-[`web.yml`](../../.github/workflows/web.yml) builds, tests and publishes the package.
-Pull requests and pushes to `main` build it with the pinned `nix develop .#wasm`
-toolchain, run `format:check` and the browser tests, and verify the tarball contents.
-Nothing is published from them.
-
-Publishing happens when release-plz publishes a GitHub release (tag `vX.Y.Z`): the
-same job stamps `X.Y.Z` into `package.json`, packs the tarball, and a second job in
-the `production` environment publishes that exact tarball with provenance. A
-pre-release version (`X.Y.Z-rc.1`) is published under the `next` dist-tag instead of
-`latest`, and re-running a release skips a version that is already on npm.
-
-Publishing uses npm [trusted publishing](https://docs.npmjs.com/trusted-publishers),
-so the repository holds no npm token. One-time setup on npmjs.com, under the
-`@worldcoin/walletkit-web` package settings: add a trusted publisher for GitHub
-repository `worldcoin/walletkit`, workflow `web.yml`, environment `production`. The
-scoped package does not exist yet, so its first version may have to be published by
-hand (or with a short-lived token) before a trusted publisher can be attached. After
-the first scoped release, point users of the old unscoped package at it with
-`npm deprecate walletkit-web "Moved to @worldcoin/walletkit-web"`.
-
-To roll back a bad release, `npm deprecate @worldcoin/walletkit-web@X.Y.Z "<reason>"`
-and publish a fixed version; do not rely on `npm unpublish`.
+To report a bug or ask a question, open an
+[issue](https://github.com/worldcoin/walletkit/issues). To contribute, see the
+[browser package docs](https://github.com/worldcoin/walletkit/blob/main/docs/web/README.md).
