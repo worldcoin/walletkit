@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.2](https://github.com/worldcoin/walletkit/compare/v0.27.1...v0.27.2) - 2026-10-08
+
+### Added
+
+- merge vault backups in memory on native and WASM ([#596](https://github.com/worldcoin/walletkit/pull/596))
+
+### Other
+
+- add an mdBook, slim the READMEs, and document the browser package ([#602](https://github.com/worldcoin/walletkit/pull/602))
+
 ## [0.27.1](https://github.com/worldcoin/walletkit/compare/v0.27.0...v0.27.1) - 2026-10-06
 
 ### Added
