@@ -588,3 +588,43 @@ test("vault backups merge additively, reject invalid data, and survive reopening
 
   expect(result.reopenedRecords).toEqual(result.mergedRecords);
 });
+
+test("enrollment rejects invalid policy and cross-origin admission before network access", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    try {
+      const policy = await wallet
+        .extractSelfieEmbedding("{}", new Uint8Array([1]), "/api/admission")
+        .catch((error: Error & { code?: string }) => ({
+          name: error.name,
+          code: error.code,
+        }));
+      const path = await wallet
+        .extractSelfieEmbedding(
+          "{}",
+          new Uint8Array([1]),
+          "//attacker.example/admission",
+        )
+        .catch((error: Error) => error.name);
+      const escaped = await wallet
+        .extractSelfieEmbedding(
+          "{}",
+          new Uint8Array([1]),
+          "/\\attacker.example/admission",
+        )
+        .catch((error: Error) => error.name);
+      return { policy, path, escaped, stopped: wallet.isStopped() };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result.policy).toEqual({
+    name: "SelfieEnrollmentError",
+    code: "Config",
+  });
+  expect(result.path).toBe("TypeError");
+  expect(result.escaped).toBe("TypeError");
+  expect(result.stopped).toBe(false);
+});

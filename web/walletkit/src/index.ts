@@ -34,6 +34,8 @@ export type {
   RecoveryUpdateSignature,
   Region,
   RegistrationStatus,
+  SelfieEmbedding,
+  SelfieEmbeddingResult,
 } from "./generated/walletkit.js";
 
 export interface InitializeOptions {
