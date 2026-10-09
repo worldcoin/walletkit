@@ -637,6 +637,7 @@ for (const largeChunk of [false, true]) {
       (large) => (window as any).enrollmentLimit(large),
       largeChunk,
     );
+    expect(result.requestValid).toBe(true);
     expect(result.code).toBe("Admission");
     expect(result.aborted).toBe(true);
     expect(result.imageSent).toBe(false);
@@ -644,3 +645,16 @@ for (const largeChunk of [false, true]) {
     expect(result.reads).toBeLessThanOrEqual(largeChunk ? 2 : 4);
   });
 }
+
+test("enrollment accepts a bounded admission response and still verifies the enclave", async ({
+  page,
+}) => {
+  const result = await page.evaluate(() =>
+    (window as any).enrollmentLimit(false, true),
+  );
+  expect(result.requestValid).toBe(true);
+  expect(result.code).toBe("Attestation");
+  expect(result.aborted).toBe(true);
+  expect(result.imageSent).toBe(false);
+  expect(result.alive).toBe("alive");
+});

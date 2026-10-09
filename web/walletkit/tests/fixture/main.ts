@@ -24,7 +24,7 @@ Object.assign(window, {
 });
 
 Object.assign(window, {
-  enrollmentLimit(largeChunk: boolean) {
+  enrollmentLimit(largeChunk: boolean, valid = false) {
     const worker = new Worker(
       new URL("./enrollment.worker.ts", import.meta.url),
       { type: "module" },
@@ -46,6 +46,7 @@ Object.assign(window, {
       };
       worker.postMessage({
         largeChunk,
+        valid,
         wasmUrl: new URL("../../src/generated/walletkit.wasm", import.meta.url)
           .href,
       });

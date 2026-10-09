@@ -9,14 +9,36 @@ self.onmessage = async ({ data }) => {
     let aborted = false;
     let imageSent = false;
     let reads = 0;
+    let requestValid = false;
+    const ticket = new TextEncoder().encode(
+      JSON.stringify({
+        expires_at: Math.floor(Date.now() / 1000) + 30,
+        signature: "1".repeat(128),
+      }).padEnd(2048, " "),
+    );
     const mockFetch = async (request: Request) => {
       request.signal.addEventListener("abort", () => {
         aborted = true;
       });
+      const challenge = await request.json();
+      requestValid =
+        request.method === "POST" &&
+        request.credentials === "same-origin" &&
+        request.mode === "same-origin" &&
+        request.headers.get("content-type") === "application/json" &&
+        Object.keys(challenge).sort().join(",") === "audience,nonce";
       return new Response(
         new ReadableStream({
           pull(controller) {
             reads++;
+            if (data.valid) {
+              if (reads <= 2)
+                controller.enqueue(
+                  ticket.slice((reads - 1) * 1024, reads * 1024),
+                );
+              else controller.close();
+              return;
+            }
             // Never close: the client must reject the first excess byte without waiting for EOF.
             if (reads <= 3)
               controller.enqueue(
@@ -52,6 +74,23 @@ self.onmessage = async ({ data }) => {
         }
         send(value: unknown) {
           if (typeof value !== "string") imageSent = true;
+          else
+            setTimeout(
+              () =>
+                this.onmessage?.(
+                  new MessageEvent("message", {
+                    data: JSON.stringify({
+                      type: "assignment",
+                      data: {
+                        attestation: "AQ==",
+                        public_key: "Ag==",
+                        nonce: Array(32).fill(3),
+                      },
+                    }),
+                  }),
+                ),
+              0,
+            );
         }
         close() {
           this.readyState = 3;
@@ -86,6 +125,7 @@ self.onmessage = async ({ data }) => {
         aborted,
         imageSent,
         reads,
+        requestValid,
         alive: sanitizeHexSecrets("alive"),
       },
     });
