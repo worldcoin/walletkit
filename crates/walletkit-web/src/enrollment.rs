@@ -113,6 +113,10 @@ impl Drop for AdmissionFetch {
     }
 }
 
+#[allow(
+    clippy::future_not_send,
+    reason = "Browser streams stay on the WalletKit worker"
+)]
 async fn read_admission(response: web_sys::Response) -> Result<Vec<u8>, Error> {
     if !response.ok() {
         return Err(Error::Admission);
