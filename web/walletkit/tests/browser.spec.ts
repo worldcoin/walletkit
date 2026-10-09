@@ -628,3 +628,14 @@ test("enrollment rejects invalid policy and cross-origin admission before networ
   expect(result.escaped).toBe("TypeError");
   expect(result.stopped).toBe(false);
 });
+
+for (const largeChunk of [false, true]) {
+  test(`enrollment bounds streamed admission before copying ${largeChunk ? "an oversized chunk" : "an extra byte"}`, async ({ page }) => {
+    const result = await page.evaluate((large) => (window as any).enrollmentLimit(large), largeChunk);
+    expect(result.code).toBe("Admission");
+    expect(result.aborted).toBe(true);
+    expect(result.imageSent).toBe(false);
+    expect(result.alive).toBe("alive");
+    expect(result.reads).toBeLessThanOrEqual(largeChunk ? 2 : 4);
+  });
+}

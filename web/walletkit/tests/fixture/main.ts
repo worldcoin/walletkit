@@ -22,3 +22,18 @@ Object.assign(window, {
     });
   },
 });
+
+Object.assign(window, {
+  enrollmentLimit(largeChunk: boolean) {
+    const worker = new Worker(new URL("./enrollment.worker.ts", import.meta.url), { type: "module" });
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { worker.terminate(); reject(new Error("Enrollment did not enforce the admission bound")); }, 5000);
+      worker.onmessage = ({ data }) => {
+        clearTimeout(timeout); worker.terminate();
+        data.error ? reject(new Error(data.error)) : resolve(data.result);
+      };
+      worker.onerror = (event) => { clearTimeout(timeout); worker.terminate(); reject(new Error(event.message)); };
+      worker.postMessage({ largeChunk, wasmUrl: new URL("../../src/generated/walletkit.wasm", import.meta.url).href });
+    });
+  },
+});

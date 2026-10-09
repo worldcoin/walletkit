@@ -26,9 +26,8 @@ walletkit-core = { workspace = true, features = ["embed-zkeys"] }
 zeroize = { workspace = true }
 selfie-enrollment-client = { git = "https://github.com/worldcoin/biometrics-tee", rev = "e790f5a1d9dbcbcd67ad802aa6e358216bcaa228", default-features = false }
 selfie-enrollment-sealed-types = { git = "https://github.com/worldcoin/biometrics-tee", rev = "e790f5a1d9dbcbcd67ad802aa6e358216bcaa228" }
-reqwest = { workspace = true, features = ["json"] }
 serde_json.workspace = true
-web-sys = { version = "0.3.103", features = ["WorkerGlobalScope", "WorkerLocation"] }
+web-sys = { version = "0.3.103", features = ["WorkerGlobalScope", "WorkerLocation", "Request", "RequestInit", "RequestMode", "RequestCredentials", "Headers", "Response", "ReadableStream", "ReadableStreamDefaultReader", "AbortController", "AbortSignal"] }
 
 [lints]
 workspace = true

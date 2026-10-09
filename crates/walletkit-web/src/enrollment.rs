@@ -1,8 +1,9 @@
 //! Embedding enrollment over the dedicated browser-compatible TEE channel.
-use js_sys::Promise;
+use js_sys::{Promise, Reflect, Uint8Array};
 use selfie_enrollment_client::{Config, Error};
 use selfie_enrollment_sealed_types::{EmbeddingResult, Failure};
 use wasm_bindgen::{prelude::*, JsCast};
+use wasm_bindgen_futures::JsFuture;
 use zeroize::Zeroizing;
 
 use crate::{
@@ -68,21 +69,33 @@ pub fn extract_selfie_embedding(
             &config,
             std::mem::take(&mut *image),
             move |challenge| async move {
-                let response = reqwest::Client::new()
-                    .post(issuer_url)
-                    .fetch_credentials_same_origin()
-                    .json(&challenge)
-                    .send()
-                    .await
+                let abort = AdmissionFetch(
+                    web_sys::AbortController::new().map_err(|_| Error::Admission)?,
+                );
+                let options = web_sys::RequestInit::new();
+                options.set_method("POST");
+                options.set_credentials(web_sys::RequestCredentials::SameOrigin);
+                options.set_mode(web_sys::RequestMode::SameOrigin);
+                options.set_signal(Some(&abort.0.signal()));
+                options.set_body(
+                    &serde_json::to_string(&challenge)
+                        .map_err(|_| Error::Admission)?
+                        .into(),
+                );
+                let request =
+                    web_sys::Request::new_with_str_and_init(&issuer_url, &options)
+                        .map_err(|_| Error::Admission)?;
+                request
+                    .headers()
+                    .set("Content-Type", "application/json")
                     .map_err(|_| Error::Admission)?;
-                if !response.status().is_success() {
-                    return Err(Error::Admission);
-                }
-                let body = response.text().await.map_err(|_| Error::Admission)?;
-                if body.len() > 2048 {
-                    return Err(Error::Admission);
-                }
-                serde_json::from_str(&body).map_err(|_| Error::Admission)
+                let response = JsFuture::from(scope.fetch_with_request(&request))
+                    .await
+                    .map_err(|_| Error::Admission)?
+                    .dyn_into::<web_sys::Response>()
+                    .map_err(|_| Error::Admission)?;
+                let body = read_admission(response).await?;
+                serde_json::from_slice(&body).map_err(|_| Error::Admission)
             },
             None,
         )
@@ -90,6 +103,47 @@ pub fn extract_selfie_embedding(
         .map_err(to_js)?;
         result_to_js(&result)
     })
+}
+
+// Aborting on drop also stops the fetch when the enclosing enrollment future times out.
+struct AdmissionFetch(web_sys::AbortController);
+impl Drop for AdmissionFetch {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+async fn read_admission(response: web_sys::Response) -> Result<Vec<u8>, Error> {
+    if !response.ok() {
+        return Err(Error::Admission);
+    }
+    let reader = response
+        .body()
+        .ok_or(Error::Admission)?
+        .get_reader()
+        .dyn_into::<web_sys::ReadableStreamDefaultReader>()
+        .map_err(|_| Error::Admission)?;
+    let mut body = Vec::with_capacity(2048);
+    loop {
+        let chunk = JsFuture::from(reader.read())
+            .await
+            .map_err(|_| Error::Admission)?;
+        let done = Reflect::get(&chunk, &"done".into())
+            .map_err(|_| Error::Admission)?
+            .as_bool()
+            .ok_or(Error::Admission)?;
+        if done {
+            return Ok(body);
+        }
+        let bytes = Reflect::get(&chunk, &"value".into())
+            .map_err(|_| Error::Admission)?
+            .dyn_into::<Uint8Array>()
+            .map_err(|_| Error::Admission)?;
+        if bytes.length() as usize > 2048 - body.len() {
+            return Err(Error::Admission);
+        }
+        body.extend_from_slice(&bytes.to_vec());
+    }
 }
 
 fn result_to_js(result: &EmbeddingResult) -> Result<JsValue, JsValue> {
