@@ -630,8 +630,13 @@ test("enrollment rejects invalid policy and cross-origin admission before networ
 });
 
 for (const largeChunk of [false, true]) {
-  test(`enrollment bounds streamed admission before copying ${largeChunk ? "an oversized chunk" : "an extra byte"}`, async ({ page }) => {
-    const result = await page.evaluate((large) => (window as any).enrollmentLimit(large), largeChunk);
+  test(`enrollment bounds streamed admission before copying ${largeChunk ? "an oversized chunk" : "an extra byte"}`, async ({
+    page,
+  }) => {
+    const result = await page.evaluate(
+      (large) => (window as any).enrollmentLimit(large),
+      largeChunk,
+    );
     expect(result.code).toBe("Admission");
     expect(result.aborted).toBe(true);
     expect(result.imageSent).toBe(false);
