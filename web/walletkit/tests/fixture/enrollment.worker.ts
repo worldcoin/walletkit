@@ -84,7 +84,6 @@ self.onmessage = async ({ data }) => {
                       data: {
                         attestation: "AQ==",
                         public_key: "Ag==",
-                        nonce: Array(32).fill(3),
                       },
                     }),
                   }),
