@@ -15,21 +15,17 @@ declare const walletkit: WalletKit;
 
 export async function consumer() {
   const enrollment: SelfieEmbeddingResult =
-    await walletkit.extractSelfieEmbedding(
-      "{}",
-      new Uint8Array(),
-      "/api/enrollment-admission",
-    );
+    await walletkit.extractSelfieEmbedding("{}", new Uint8Array());
   if (enrollment.status === "success") {
     const embedding: SelfieEmbedding = enrollment.embedding;
     const digest: string = embedding.worker.executableSha384;
     void digest;
   }
   // @ts-expect-error image bytes must be a Uint8Array
-  await walletkit.extractSelfieEmbedding("{}", "image", "/api/admission");
-  // @ts-expect-error callbacks cannot cross the worker boundary
+  await walletkit.extractSelfieEmbedding("{}", "image");
+  // @ts-expect-error enrollment takes only a policy and image
   await walletkit.extractSelfieEmbedding("{}", new Uint8Array(), () => ({}));
-  // @ts-expect-error the standalone client's callback API must not leak into this facade
+  // @ts-expect-error the standalone client export must not leak into this facade
   void walletkit.extractEmbedding;
   const now = 1n;
   const keys = await walletkit.StorageKeys.fromBytes(new Uint8Array(32));

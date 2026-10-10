@@ -24,7 +24,7 @@ Object.assign(window, {
 });
 
 Object.assign(window, {
-  enrollmentLimit(largeChunk: boolean, valid = false) {
+  enrollmentAssignment() {
     const worker = new Worker(
       new URL("./enrollment.worker.ts", import.meta.url),
       { type: "module" },
@@ -32,7 +32,7 @@ Object.assign(window, {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         worker.terminate();
-        reject(new Error("Enrollment did not enforce the admission bound"));
+        reject(new Error("Enrollment did not reject the untrusted assignment"));
       }, 5000);
       worker.onmessage = ({ data }) => {
         clearTimeout(timeout);
@@ -45,8 +45,6 @@ Object.assign(window, {
         reject(new Error(event.message));
       };
       worker.postMessage({
-        largeChunk,
-        valid,
         wasmUrl: new URL("../../src/generated/walletkit.wasm", import.meta.url)
           .href,
       });

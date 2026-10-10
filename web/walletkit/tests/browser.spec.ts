@@ -589,33 +589,19 @@ test("vault backups merge additively, reject invalid data, and survive reopening
   expect(result.reopenedRecords).toEqual(result.mergedRecords);
 });
 
-test("enrollment rejects invalid policy and cross-origin admission before network access", async ({
+test("enrollment rejects invalid policy without stopping the wallet worker", async ({
   page,
 }) => {
   const result = await page.evaluate(async () => {
     const wallet = await (window as any).initializeWalletKit();
     try {
       const policy = await wallet
-        .extractSelfieEmbedding("{}", new Uint8Array([1]), "/api/admission")
+        .extractSelfieEmbedding("{}", new Uint8Array([1]))
         .catch((error: Error & { code?: string }) => ({
           name: error.name,
           code: error.code,
         }));
-      const path = await wallet
-        .extractSelfieEmbedding(
-          "{}",
-          new Uint8Array([1]),
-          "//attacker.example/admission",
-        )
-        .catch((error: Error) => error.name);
-      const escaped = await wallet
-        .extractSelfieEmbedding(
-          "{}",
-          new Uint8Array([1]),
-          "/\\attacker.example/admission",
-        )
-        .catch((error: Error) => error.name);
-      return { policy, path, escaped, stopped: wallet.isStopped() };
+      return { policy, stopped: wallet.isStopped() };
     } finally {
       await wallet.close();
     }
@@ -624,37 +610,17 @@ test("enrollment rejects invalid policy and cross-origin admission before networ
     name: "SelfieEnrollmentError",
     code: "Config",
   });
-  expect(result.path).toBe("TypeError");
-  expect(result.escaped).toBe("TypeError");
   expect(result.stopped).toBe(false);
 });
 
-for (const largeChunk of [false, true]) {
-  test(`enrollment bounds streamed admission before copying ${largeChunk ? "an oversized chunk" : "an extra byte"}`, async ({
-    page,
-  }) => {
-    const result = await page.evaluate(
-      (large) => (window as any).enrollmentLimit(large),
-      largeChunk,
-    );
-    expect(result.requestValid).toBe(true);
-    expect(result.code).toBe("Admission");
-    expect(result.aborted).toBe(true);
-    expect(result.imageSent).toBe(false);
-    expect(result.alive).toBe("alive");
-    expect(result.reads).toBeLessThanOrEqual(largeChunk ? 2 : 4);
-  });
-}
-
-test("enrollment accepts a bounded admission response and still verifies the enclave", async ({
+test("enrollment requests an assignment and withholds the image if attestation fails", async ({
   page,
 }) => {
   const result = await page.evaluate(() =>
-    (window as any).enrollmentLimit(false, true),
+    (window as any).enrollmentAssignment(),
   );
-  expect(result.requestValid).toBe(true);
+  expect(result.sent).toEqual(["assignment_request"]);
   expect(result.code).toBe("Attestation");
-  expect(result.aborted).toBe(true);
-  expect(result.imageSent).toBe(false);
+  expect(result.closed).toBe(true);
   expect(result.alive).toBe("alive");
 });
