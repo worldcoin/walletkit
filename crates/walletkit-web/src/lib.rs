@@ -15,6 +15,7 @@
 #![cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 
 mod authenticator;
+mod enrollment;
 mod error;
 mod js;
 mod storage;

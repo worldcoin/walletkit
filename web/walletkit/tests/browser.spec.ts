@@ -588,3 +588,39 @@ test("vault backups merge additively, reject invalid data, and survive reopening
 
   expect(result.reopenedRecords).toEqual(result.mergedRecords);
 });
+
+test("enrollment rejects invalid policy without stopping the wallet worker", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    try {
+      const policy = await wallet
+        .extractSelfieEmbedding("{}", new Uint8Array([1]))
+        .catch((error: Error & { code?: string }) => ({
+          name: error.name,
+          code: error.code,
+        }));
+      return { policy, stopped: wallet.isStopped() };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result.policy).toEqual({
+    name: "SelfieEnrollmentError",
+    code: "Config",
+  });
+  expect(result.stopped).toBe(false);
+});
+
+test("enrollment requests an assignment and withholds the image if attestation fails", async ({
+  page,
+}) => {
+  const result = await page.evaluate(() =>
+    (window as any).enrollmentAssignment(),
+  );
+  expect(result.sent).toEqual(["assignment_request"]);
+  expect(result.code).toBe("Attestation");
+  expect(result.closed).toBe(true);
+  expect(result.alive).toBe("alive");
+});

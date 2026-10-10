@@ -7274,6 +7274,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "selfie-enrollment-api-types"
+version = "0.1.0"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=40410401a1e8df8cb9c2b9c953885696a0302a7b#40410401a1e8df8cb9c2b9c953885696a0302a7b"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "selfie-enrollment-client"
+version = "0.1.0"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=40410401a1e8df8cb9c2b9c953885696a0302a7b#40410401a1e8df8cb9c2b9c953885696a0302a7b"
+dependencies = [
+ "base64 0.22.1",
+ "futures-channel",
+ "futures-util",
+ "gloo-timers",
+ "hex",
+ "js-sys",
+ "pontifex",
+ "rustls",
+ "selfie-enrollment-api-types",
+ "selfie-enrollment-sealed-types",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite 0.29.0",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+ "webpki-roots 0.26.11",
+ "zeroize",
+]
+
+[[package]]
+name = "selfie-enrollment-sealed-types"
+version = "0.1.0"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=40410401a1e8df8cb9c2b9c953885696a0302a7b#40410401a1e8df8cb9c2b9c953885696a0302a7b"
+dependencies = [
+ "ciborium",
+ "selfie-enrollment-api-types",
+ "serde",
+ "serde_bytes",
+ "thiserror 2.0.21",
+ "zeroize",
+]
+
+[[package]]
 name = "semaphore-rs"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7544,6 +7596,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11fc7cc2c76d73e0f27ee52abbd64eec84d46f370c88371120433196934e4b7f"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -9451,6 +9514,9 @@ name = "walletkit-web"
 version = "0.27.1"
 dependencies = [
  "js-sys",
+ "selfie-enrollment-client",
+ "selfie-enrollment-sealed-types",
+ "serde_json",
  "walletkit-core",
  "wasm-bindgen",
  "wasm-bindgen-futures",
