@@ -10,19 +10,18 @@ use crate::{error::to_js, js};
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 export type SelfieEmbeddingResult =
-  | { status: "success"; embedding: SelfieEmbedding }
-  | { status: "failed"; reason: "invalid_image" | "quality_rejected" | "extraction_failed" | "busy" | "invalid_request" };
+  | { status: "success"; embedding: FaceEmbedding }
+  | { status: "failed"; reason: "invalid_image" | "quality_rejected" | "extraction_failed" | "invalid_request" };
 
-export interface SelfieEmbedding {
-  vector: string;
+export interface FaceEmbedding {
+  embedding: string;
   embeddingType: string;
-  version: string;
-  inferenceBackend: string;
-  worker: { profile: string; executableSha384: string };
+  embeddingVersion: string;
+  embeddingInferenceBackend: string;
 }
 "#;
 
-/// Extracts an embedding after verifying Nitro measurements and the worker identity.
+/// Extracts an embedding after verifying Nitro measurements.
 ///
 /// `configJson` is the trusted release policy from the enrollment deployment.
 /// The image is sealed inside this worker before upload and is never persisted.
@@ -57,22 +56,15 @@ fn result_to_js(result: &EmbeddingResult) -> Result<JsValue, JsValue> {
             (
                 "embedding",
                 js::object(&[
-                    ("vector", embedding.vector.as_str().into()),
+                    ("embedding", embedding.embedding.as_str().into()),
                     ("embeddingType", embedding.embedding_type.as_str().into()),
-                    ("version", embedding.version.as_str().into()),
                     (
-                        "inferenceBackend",
-                        embedding.inference_backend.as_str().into(),
+                        "embeddingVersion",
+                        embedding.embedding_version.as_str().into(),
                     ),
                     (
-                        "worker",
-                        js::object(&[
-                            ("profile", embedding.worker.profile.as_str().into()),
-                            (
-                                "executableSha384",
-                                embedding.worker.executable_sha384.as_str().into(),
-                            ),
-                        ])?,
+                        "embeddingInferenceBackend",
+                        embedding.embedding_inference_backend.as_str().into(),
                     ),
                 ])?,
             ),
@@ -82,7 +74,6 @@ fn result_to_js(result: &EmbeddingResult) -> Result<JsValue, JsValue> {
                 Failure::InvalidImage => "invalid_image",
                 Failure::QualityRejected => "quality_rejected",
                 Failure::ExtractionFailed => "extraction_failed",
-                Failure::Busy => "busy",
                 Failure::InvalidRequest => "invalid_request",
             };
             js::object(&[("status", "failed".into()), ("reason", reason.into())])

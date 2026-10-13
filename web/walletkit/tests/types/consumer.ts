@@ -6,7 +6,7 @@ import type {
   Authenticator,
   CredentialRecord,
   RegistrationStatus,
-  SelfieEmbedding,
+  FaceEmbedding,
   SelfieEmbeddingResult,
   WalletKit,
 } from "../../dist/index.js";
@@ -17,9 +17,11 @@ export async function consumer() {
   const enrollment: SelfieEmbeddingResult =
     await walletkit.extractSelfieEmbedding("{}", new Uint8Array());
   if (enrollment.status === "success") {
-    const embedding: SelfieEmbedding = enrollment.embedding;
-    const digest: string = embedding.worker.executableSha384;
-    void digest;
+    const embedding: FaceEmbedding = enrollment.embedding;
+    const vector: string = embedding.embedding;
+    const version: string = embedding.embeddingVersion;
+    const backend: string = embedding.embeddingInferenceBackend;
+    void [vector, version, backend];
   }
   // @ts-expect-error image bytes must be a Uint8Array
   await walletkit.extractSelfieEmbedding("{}", "image");
