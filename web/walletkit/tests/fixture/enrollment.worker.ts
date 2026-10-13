@@ -49,7 +49,6 @@ self.onmessage = async ({ data }) => {
           pcr0: "1".repeat(96),
           pcr1: "2".repeat(96),
           pcr2: "3".repeat(96),
-
         },
       ],
     };
