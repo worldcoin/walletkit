@@ -24,8 +24,8 @@ wasm-bindgen = "=0.2.126"
 wasm-bindgen-futures = "0.4.76"
 walletkit-core = { workspace = true, features = ["embed-zkeys"] }
 zeroize = { workspace = true }
-selfie-enrollment-client = { git = "https://github.com/worldcoin/biometrics-tee", rev = "72de61bf4a62522ca3d0dd66dc920820fb6291e9", default-features = false }
-selfie-enrollment-sealed-types = { git = "https://github.com/worldcoin/biometrics-tee", rev = "72de61bf4a62522ca3d0dd66dc920820fb6291e9" }
+selfie-enrollment-client = { git = "https://github.com/worldcoin/biometrics-tee", rev = "34e80bf1b51dbaebdaff0102bce04cda633e247d", default-features = false }
+selfie-enrollment-sealed-types = { git = "https://github.com/worldcoin/biometrics-tee", rev = "34e80bf1b51dbaebdaff0102bce04cda633e247d" }
 serde_json.workspace = true
 
 [lints]
