@@ -325,7 +325,12 @@ test("Rust objects stay in the worker and are used through handles", async ({
     const query = await wallet.ActivityQuery.new();
     const activities = await store.listActivities(query, 10, 0);
     const filtered = await store.listActivities(
-      await query.withIssuerSchemaId(3n),
+      await query.withIssuerSchemaIds([3n]),
+      10,
+      0,
+    );
+    const matchedAny = await store.listActivities(
+      await query.withIssuerSchemaIds([3n, 2n]),
       10,
       0,
     );
@@ -342,6 +347,7 @@ test("Rust objects stay in the worker and are used through handles", async ({
       activityId,
       activities,
       filtered,
+      matchedAny,
       metadata,
       sameRoot,
       released,
@@ -352,6 +358,7 @@ test("Rust objects stay in the worker and are used through handles", async ({
   expect(result.credentials).toEqual([]);
   expect(result.activities).toHaveLength(1);
   expect(result.filtered).toEqual([]);
+  expect(result.matchedAny).toHaveLength(1);
   expect(result.activities[0]).toMatchObject({
     id: result.activityId,
     appIdentifier: "app_test",
