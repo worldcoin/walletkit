@@ -130,6 +130,8 @@ pub use authenticator::{
 /// Default configuration values for each [`Environment`].
 pub mod defaults;
 
+pub mod registration;
+
 /// User agent for HTTP requests.
 pub mod user_agent;
 pub use user_agent::{UserAgent, UserAgentBuilder};
@@ -166,7 +168,6 @@ pub mod v3;
 // Private modules
 ////////////////////////////////////////////////////////////////////////////////
 
-#[cfg(any(feature = "issuers", feature = "v3"))]
 mod http_client;
 #[cfg(any(feature = "issuers", feature = "v3"))]
 mod http_request;

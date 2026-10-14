@@ -52,6 +52,7 @@ futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"
 hex = "0.4"
 hkdf = "0.12"
+httpdate = "1"
 log = "0.4"
 mockito = "1.6"
 rand = "0.8.6"
@@ -85,6 +86,7 @@ uniffi = { version = "0.32.0", features = [
 ] }
 uuid = "1.10"
 wasm-bindgen-test = "=0.3.76"
+web-time = "1"
 webpki-root-certs = "1"
 xshell = "0.2.7"
 zeroize = "1"

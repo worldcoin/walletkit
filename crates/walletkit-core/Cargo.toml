@@ -25,11 +25,13 @@ alloy-core = { workspace = true }
 backon = { workspace = true }
 base64 = { workspace = true }
 ciborium = { workspace = true }
+futures-util = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
+httpdate = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
+reqwest = { workspace = true, features = ["json", "stream"] }
 ruint = { workspace = true, features = ["alloc"] }
 ruint-uniffi = { workspace = true, features = ["serde"] }
 secrecy = { workspace = true }
@@ -48,6 +50,7 @@ uniffi = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 walletkit-db = { workspace = true }
 walletkit-sqlite = { workspace = true }
+web-time = { workspace = true }
 world-id-core = { workspace = true, features = ["authenticator"] }
 world-id-proof = { workspace = true }
 zeroize = { workspace = true }

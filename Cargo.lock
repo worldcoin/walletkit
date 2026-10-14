@@ -6555,12 +6555,14 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
+ "tokio-util",
  "tower",
  "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams",
  "web-sys",
 ]
 
@@ -9222,6 +9224,7 @@ dependencies = [
  "getrandom 0.3.4",
  "hex",
  "hkdf 0.12.4",
+ "httpdate",
  "log",
  "mockito",
  "rand 0.8.8",
@@ -9252,6 +9255,7 @@ dependencies = [
  "walletkit-db",
  "walletkit-sqlite",
  "walletkit-testkit",
+ "web-time",
  "webpki-root-certs 1.0.8",
  "world-id-core",
  "world-id-proof",
@@ -9437,6 +9441,19 @@ name = "wasm-bindgen-test-shared"
 version = "0.2.126"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c31d56021e873866c968588ed85ccdf56db5c426e44afdb4618c39895104b920"
+
+[[package]]
+name = "wasm-streams"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d1ec4f6517c9e11ae630e200b2b65d193279042e28edd4a2cda233e46670bbb"
+dependencies = [
+ "futures-util",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
 
 [[package]]
 name = "wasmtimer"
