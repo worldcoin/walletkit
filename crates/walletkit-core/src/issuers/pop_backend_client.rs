@@ -294,34 +294,29 @@ async fn json_response<T: serde::de::DeserializeOwned>(
     let status = response.status().as_u16();
     let context = response_context(&response);
     response.json().await.map_err(|error| {
-        let detail = if error.is_decode() {
-            // Decoder messages can contain values from a successful auth response.
-            let mut detail = String::from("invalid JSON response");
-            let mut source = error.source();
-            while let Some(cause) = source {
-                if let Some(json) = cause.downcast_ref::<serde_json::Error>() {
-                    write!(
-                        detail,
-                        "; JSON {:?} at line {} column {}",
-                        json.classify(),
-                        json.line(),
-                        json.column()
-                    )
-                    .expect("writing to a String cannot fail");
-                    break;
-                }
-                source = cause.source();
+        // Serde messages can echo successful authentication values.
+        let mut json_detail = None;
+        let mut source = error.source();
+        while let Some(cause) = source {
+            if let Some(json) = cause.downcast_ref::<serde_json::Error>() {
+                json_detail = Some(format!(
+                    "JSON {:?} at line {} column {}",
+                    json.classify(),
+                    json.line(),
+                    json.column()
+                ));
+                break;
             }
-            detail
-        } else {
-            request_cause(error)
+            source = cause.source();
+        }
+        let (failure, detail) = match json_detail {
+            Some(detail) => ("failed to decode JSON response", detail),
+            None => ("failed to read response body", request_cause(error)),
         };
         WalletKitError::NetworkError {
             url: endpoint.to_string(),
             status: Some(status),
-            error: format!(
-                "{method} failed to decode JSON response; {context}: {detail}"
-            ),
+            error: format!("{method} {failure}; {context}: {detail}"),
         }
     })
 }
@@ -953,6 +948,35 @@ mod tests {
         );
         let error = client.get_challenge().await.unwrap_err();
         assert!(error.to_string().contains("/proxy/api/v1/challenge"));
+        mock.assert_async().await;
+        drop(server);
+    }
+    #[tokio::test]
+    async fn failed_success_body_read_retains_the_transport_cause() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/v1/challenge")
+            .with_status(200)
+            .with_header("x-request-id", "success-read-request")
+            .with_chunked_body(|writer| {
+                writer.write_all(b"{\"challenge\":")?;
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::ConnectionReset,
+                    "fixture interrupted body",
+                ))
+            })
+            .create_async()
+            .await;
+        let client = PopBackendClient::new(server.url(), "test-agent".into());
+        let error = client.get_challenge().await.unwrap_err();
+        let displayed = error.to_string();
+        assert!(
+            displayed.contains("connection"),
+            "transport cause was discarded: {displayed}"
+        );
+        assert!(displayed.contains("failed to read response body"));
+        assert!(displayed.contains("200"));
+        assert!(displayed.contains("success-read-request"));
         mock.assert_async().await;
         drop(server);
     }
