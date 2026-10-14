@@ -141,7 +141,7 @@ fn ensure_nargo(sh: &Shell) -> Result<()> {
         .is_err()
     {
         bail!(
-            "nargo v1.0.0-beta.11 is required; install it with noirup or use the Nix default devshell"
+            "nargo v1.0.0-beta.26 is required; install it with noirup or use the Nix default devshell"
         );
     }
     Ok(())
