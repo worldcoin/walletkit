@@ -309,10 +309,10 @@ async fn json_response<T: serde::de::DeserializeOwned>(
             }
             source = cause.source();
         }
-        let (failure, detail) = match json_detail {
-            Some(detail) => ("failed to decode JSON response", detail),
-            None => ("failed to read response body", request_cause(error)),
-        };
+        let (failure, detail) = json_detail.map_or_else(
+            || ("failed to read response body", request_cause(error)),
+            |detail| ("failed to decode JSON response", detail),
+        );
         WalletKitError::NetworkError {
             url: endpoint.to_string(),
             status: Some(status),
