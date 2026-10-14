@@ -52,7 +52,6 @@ futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"
 hex = "0.4"
 hkdf = "0.12"
-httpdate = "1"
 log = "0.4"
 mockito = "1.6"
 rand = "0.8.6"
@@ -95,8 +94,8 @@ zip = { version = "2", default-features = false }
 # world-id-protocol crates
 # TODO: Temporary pin to the WIP-109 protocol branch; return to a crates.io release once the
 # registration API is published.
-world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "390249107aac5d5101962db9940f4aa1d270f653", default-features = false }
-world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", rev = "390249107aac5d5101962db9940f4aa1d270f653", default-features = false }
+world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "f159a86834aa9da17e9fc1351eb16a57932e4794", default-features = false }
+world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", rev = "f159a86834aa9da17e9fc1351eb16a57932e4794", default-features = false }
 
 # internal
 walletkit-core = { version = "0.27.1", path = "crates/walletkit-core", default-features = false }

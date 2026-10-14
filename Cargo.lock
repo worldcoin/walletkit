@@ -9224,7 +9224,6 @@ dependencies = [
  "getrandom 0.3.4",
  "hex",
  "hkdf 0.12.4",
- "httpdate",
  "log",
  "mockito",
  "rand 0.8.8",
@@ -9880,7 +9879,7 @@ dependencies = [
 [[package]]
 name = "world-id-authenticator"
 version = "0.15.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=390249107aac5d5101962db9940f4aa1d270f653#390249107aac5d5101962db9940f4aa1d270f653"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=f159a86834aa9da17e9fc1351eb16a57932e4794#f159a86834aa9da17e9fc1351eb16a57932e4794"
 dependencies = [
  "aes-gcm",
  "alloy",
@@ -9922,7 +9921,7 @@ dependencies = [
 [[package]]
 name = "world-id-core"
 version = "0.15.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=390249107aac5d5101962db9940f4aa1d270f653#390249107aac5d5101962db9940f4aa1d270f653"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=f159a86834aa9da17e9fc1351eb16a57932e4794#f159a86834aa9da17e9fc1351eb16a57932e4794"
 dependencies = [
  "taceo-eddsa-babyjubjub 0.6.1",
  "world-id-authenticator",
@@ -9934,7 +9933,7 @@ dependencies = [
 [[package]]
 name = "world-id-primitives"
 version = "0.15.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=390249107aac5d5101962db9940f4aa1d270f653#390249107aac5d5101962db9940f4aa1d270f653"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=f159a86834aa9da17e9fc1351eb16a57932e4794#f159a86834aa9da17e9fc1351eb16a57932e4794"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -9970,7 +9969,7 @@ dependencies = [
 [[package]]
 name = "world-id-proof"
 version = "0.15.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=390249107aac5d5101962db9940f4aa1d270f653#390249107aac5d5101962db9940f4aa1d270f653"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=f159a86834aa9da17e9fc1351eb16a57932e4794#f159a86834aa9da17e9fc1351eb16a57932e4794"
 dependencies = [
  "ark-bn254 0.6.0",
  "ark-ec 0.6.0",
@@ -10005,7 +10004,7 @@ dependencies = [
 [[package]]
 name = "world-id-registries"
 version = "0.15.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=390249107aac5d5101962db9940f4aa1d270f653#390249107aac5d5101962db9940f4aa1d270f653"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=f159a86834aa9da17e9fc1351eb16a57932e4794#f159a86834aa9da17e9fc1351eb16a57932e4794"
 dependencies = [
  "alloy",
  "anyhow",

@@ -29,8 +29,8 @@ mod with_storage;
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator {
-    inner: CoreAuthenticator,
-    store: Arc<CredentialStore>,
+    pub(crate) inner: CoreAuthenticator,
+    pub(crate) store: Arc<CredentialStore>,
 }
 
 impl Authenticator {
