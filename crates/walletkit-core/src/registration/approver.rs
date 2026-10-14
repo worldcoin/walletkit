@@ -29,7 +29,7 @@ use world_id_core::{
         RegistrationRequest, RegistrationResult, RequestId, ResponsePublicKey,
         TransportError, TransportKey, Vault, MAX_VAULT_SIZE, REGISTER_METHOD,
     },
-    AccountSnapshot, Authenticator, AuthenticatorError, EdDSAPublicKey,
+    AccountAuthenticators, Authenticator, AuthenticatorError, EdDSAPublicKey,
 };
 use zeroize::Zeroizing;
 
@@ -249,7 +249,7 @@ pub struct IncomingRegistration {
 #[derive(Debug)]
 pub struct CheckedRegistration {
     incoming: IncomingRegistration,
-    snapshot: AccountSnapshot,
+    authenticators: AccountAuthenticators,
     plan: RegistrationPlan,
 }
 
@@ -385,9 +385,9 @@ impl IncomingRegistration {
         approver: &Authenticator,
     ) -> Result<CheckedRegistration, ApproverError> {
         match self.plan(approver).await {
-            Ok((snapshot, plan)) => Ok(CheckedRegistration {
+            Ok((authenticators, plan)) => Ok(CheckedRegistration {
                 incoming: self,
-                snapshot,
+                authenticators,
                 plan,
             }),
             Err(refusal) => Err(self.refuse(refusal).await),
@@ -435,8 +435,8 @@ impl IncomingRegistration {
     async fn plan(
         &self,
         approver: &Authenticator,
-    ) -> Result<(AccountSnapshot, RegistrationPlan), Refusal> {
-        // Step 1: the registry, not the snapshot, decides whether the approver is still an Admin
+    ) -> Result<(AccountAuthenticators, RegistrationPlan), Refusal> {
+        // Step 1: the registry, not the indexed account, decides whether the approver is still an Admin
         // Authenticator of its account.
         match self
             .before_deadline(approver.fetch_leaf_index_of(approver.onchain_address()))
@@ -448,12 +448,12 @@ impl IncomingRegistration {
             }
             Err(error) => return Err(Refusal::internal_error(error)),
         }
-        let snapshot = self
-            .before_deadline(approver.fetch_account_snapshot())
+        let authenticators = self
+            .before_deadline(approver.fetch_authenticators())
             .await?
             .map_err(Refusal::internal_error)?;
         let plan = plan_registration(
-            &snapshot,
+            &authenticators,
             &approver.offchain_pubkey(),
             approver.onchain_address(),
             &self.request,
@@ -473,7 +473,7 @@ impl IncomingRegistration {
                 Err(error) => return Err(Refusal::internal_error(error)),
             }
         }
-        Ok((snapshot, plan))
+        Ok((authenticators, plan))
     }
 
     /// Runs `future` until the response is due, and refuses with `internal_error` after that.
@@ -558,7 +558,7 @@ impl CheckedRegistration {
     /// already registered authenticator too, because the vault is shared.
     ///
     /// Unless the authenticator is already registered, this signs and submits
-    /// `InsertAuthenticator` from the checked snapshot and tracks it until it is final on-chain
+    /// `InsertAuthenticator` into the checked key set and tracks it until it is final on-chain
     /// or has definitively failed. If its outcome is still unknown at
     /// [`respond_by`](Self::respond_by), the response is `outcome_unknown`. A failed or unknown
     /// outcome is never retried with a second insertion. If less than [`MIN_TRACKING_TIME`] is
@@ -580,7 +580,7 @@ impl CheckedRegistration {
             vault => (vault.map(Vault::from), false),
         };
         let shared = RegistrationResult {
-            leaf_index: self.snapshot.leaf_index,
+            leaf_index: approver.leaf_index(),
             // Every valid slot encodes to the same single CBOR byte, so the size check holds for
             // the slot that registration assigns.
             pubkey_id: 0,
@@ -637,7 +637,9 @@ impl CheckedRegistration {
                 Err(Refusal::from(RegistrationErrorReason::InternalError)
                     .with_detail("approved too close to the session expiry"))
             }
-            RegistrationPlan::Insert { .. } => self.insert(approver).await,
+            RegistrationPlan::Insert { pubkey_id } => {
+                self.insert(approver, pubkey_id).await
+            }
         }
     }
 
@@ -652,12 +654,17 @@ impl CheckedRegistration {
             .is_ok_and(|encoded| encoded.len() <= MAX_RESPONSE_SIZE)
     }
 
-    /// Submits `InsertAuthenticator` from the checked snapshot and tracks it until it is final,
-    /// has definitively failed, or the response is due (WIP-109 §3.7.4).
-    async fn insert(&self, approver: &Authenticator) -> Result<u32, Refusal> {
+    /// Submits `InsertAuthenticator` at `pubkey_id` of the checked key set and tracks it until it
+    /// is final, has definitively failed, or the response is due (WIP-109 §3.7.4).
+    async fn insert(
+        &self,
+        approver: &Authenticator,
+        pubkey_id: u32,
+    ) -> Result<u32, Refusal> {
         let respond_by = self.incoming.respond_by;
-        let submission = approver.insert_authenticator_from_snapshot(
-            &self.snapshot,
+        let submission = approver.insert_authenticator_at(
+            self.authenticators.key_set(),
+            pubkey_id,
             self.incoming.request.new_authenticator_pubkey.clone(),
             onchain_address(&self.incoming.request),
         );
@@ -716,16 +723,15 @@ impl CheckedRegistration {
         let respond_by = self.incoming.respond_by;
         let request = &self.incoming.request;
         for delay in polling_backoff().build() {
-            let Some(snapshot) =
-                before(respond_by, approver.fetch_account_snapshot()).await
+            let Some(authenticators) =
+                before(respond_by, approver.fetch_authenticators()).await
             else {
                 break;
             };
-            match snapshot {
-                Ok(snapshot) => {
-                    if let Some((slot, address)) = snapshot
-                        .authenticators
-                        .find(&request.new_authenticator_pubkey)
+            match authenticators {
+                Ok(authenticators) => {
+                    if let Some((slot, address)) =
+                        authenticators.find(&request.new_authenticator_pubkey)
                     {
                         return if address == onchain_address(request) {
                             Ok(slot)
@@ -1029,16 +1035,15 @@ fn check_pairing(
     Ok(())
 }
 
-/// Decides how to register the requested authenticator on the account `snapshot` shows, for
+/// Decides how to register the requested authenticator on the account's `authenticators`, for
 /// the approver with `approver_pubkey` and management key `approver_address` (WIP-109 §3.7.2
-/// steps 1, 3 and 5).
+/// steps 1, 3 and 5). The registry's slot limit is checked when inserting.
 fn plan_registration(
-    snapshot: &AccountSnapshot,
+    authenticators: &AccountAuthenticators,
     approver_pubkey: &EdDSAPublicKey,
     approver_address: Address,
     request: &RegistrationRequest,
 ) -> Result<RegistrationPlan, RegistrationErrorReason> {
-    let authenticators = &snapshot.authenticators;
     if authenticators
         .find(approver_pubkey)
         .map(|(_, address)| address)
@@ -1063,7 +1068,7 @@ fn plan_registration(
         return Err(RegistrationErrorReason::AuthenticatorConflict);
     }
 
-    snapshot
+    authenticators
         .lowest_free_pubkey_id()
         .map(|pubkey_id| RegistrationPlan::Insert { pubkey_id })
         .ok_or(RegistrationErrorReason::MaxAuthenticatorsReached)
@@ -1161,7 +1166,6 @@ fn log_tag(request_id: &RequestId) -> String {
 mod tests {
     use std::sync::{Arc, Mutex};
 
-    use alloy_core::primitives::U256;
     use secrecy::ExposeSecret as _;
     use test_case::test_case;
     use world_id_core::{
@@ -1550,16 +1554,15 @@ mod tests {
         }
     }
 
-    #[test_case(&[Slot::Other], 7, RequestedClass::Proving, Err(RegistrationErrorReason::NotAuthorized); "an approver not on the account")]
-    #[test_case(&[Slot::Approver(RequestedClass::Proving)], 7, RequestedClass::Proving, Err(RegistrationErrorReason::NotAuthorized); "a Proving approver")]
-    #[test_case(&[Slot::Approver(RequestedClass::Admin), Slot::Requested(RequestedClass::Proving)], 7, RequestedClass::Proving, Ok(RegistrationPlan::AlreadyRegistered { pubkey_id: 1 }); "the key already registered as requested")]
-    #[test_case(&[Slot::Approver(RequestedClass::Admin), Slot::Requested(RequestedClass::Admin)], 7, RequestedClass::Proving, Err(RegistrationErrorReason::AuthenticatorConflict); "the key registered as another class")]
-    #[test_case(&[Slot::Approver(RequestedClass::Admin), Slot::RequestedAddress], 7, RequestedClass::Admin, Err(RegistrationErrorReason::AuthenticatorConflict); "the address registered for another key")]
-    #[test_case(&[Slot::Approver(RequestedClass::Admin), Slot::Removed, Slot::Other], 7, RequestedClass::Admin, Ok(RegistrationPlan::Insert { pubkey_id: 1 }); "the lowest free slot")]
-    #[test_case(&[Slot::Approver(RequestedClass::Admin), Slot::Other], 2, RequestedClass::Proving, Err(RegistrationErrorReason::MaxAuthenticatorsReached); "no free slot below the registry maximum")]
+    #[test_case(&[Slot::Other], RequestedClass::Proving, Err(RegistrationErrorReason::NotAuthorized); "an approver not on the account")]
+    #[test_case(&[Slot::Approver(RequestedClass::Proving)], RequestedClass::Proving, Err(RegistrationErrorReason::NotAuthorized); "a Proving approver")]
+    #[test_case(&[Slot::Approver(RequestedClass::Admin), Slot::Requested(RequestedClass::Proving)], RequestedClass::Proving, Ok(RegistrationPlan::AlreadyRegistered { pubkey_id: 1 }); "the key already registered as requested")]
+    #[test_case(&[Slot::Approver(RequestedClass::Admin), Slot::Requested(RequestedClass::Admin)], RequestedClass::Proving, Err(RegistrationErrorReason::AuthenticatorConflict); "the key registered as another class")]
+    #[test_case(&[Slot::Approver(RequestedClass::Admin), Slot::RequestedAddress], RequestedClass::Admin, Err(RegistrationErrorReason::AuthenticatorConflict); "the address registered for another key")]
+    #[test_case(&[Slot::Approver(RequestedClass::Admin), Slot::Removed, Slot::Other], RequestedClass::Admin, Ok(RegistrationPlan::Insert { pubkey_id: 1 }); "the lowest free slot")]
+    #[test_case(&[Slot::Approver(RequestedClass::Admin), Slot::Other, Slot::Other, Slot::Other, Slot::Other, Slot::Other, Slot::Other], RequestedClass::Proving, Err(RegistrationErrorReason::MaxAuthenticatorsReached); "a full key set")]
     fn plan_registration_follows_the_account_state(
         slots: &[Slot],
-        max_authenticators: usize,
         requested_class: RequestedClass,
         expected: Result<RegistrationPlan, RegistrationErrorReason>,
     ) {
@@ -1587,12 +1590,8 @@ mod tests {
                 Slot::Removed => None,
             })
             .collect();
-        let snapshot = AccountSnapshot {
-            leaf_index: 42,
-            signature_nonce: U256::ZERO,
-            authenticators: indexed_account(&indexed).try_into().unwrap(),
-            max_authenticators: Some(max_authenticators),
-        };
+        let authenticators: AccountAuthenticators =
+            indexed_account(&indexed).try_into().unwrap();
         let request = RegistrationRequest {
             new_authenticator_address: match requested_class {
                 RequestedClass::Admin => Some(REQUESTED_ADDRESS),
@@ -1602,7 +1601,7 @@ mod tests {
         };
 
         let plan = plan_registration(
-            &snapshot,
+            &authenticators,
             &approver.offchain_signer_pubkey(),
             approver.onchain_signer_address(),
             &request,
