@@ -202,9 +202,9 @@ impl PopBackendClient {
     }
 
     fn diagnostic_endpoint(&self, route: &str) -> String {
-        reqwest::Url::parse(&self.base_url).map_or_else(
+        reqwest::Url::parse(&format!("{}{route}", self.base_url)).map_or_else(
             |_| route.to_string(),
-            |url| format!("{}{route}", url.origin().ascii_serialization()),
+            |url| format!("{}{}", url.origin().ascii_serialization(), url.path()),
         )
     }
 }
@@ -296,8 +296,7 @@ async fn json_response<T: serde::de::DeserializeOwned>(
     response.json().await.map_err(|error| {
         let detail = if error.is_decode() {
             // Decoder messages can contain values from a successful auth response.
-            let error = error.without_url();
-            let mut detail = error.to_string();
+            let mut detail = String::from("invalid JSON response");
             let mut source = error.source();
             while let Some(cause) = source {
                 if let Some(json) = cause.downcast_ref::<serde_json::Error>() {
@@ -796,6 +795,12 @@ mod tests {
     #[test_case("/api/v1/recovery-binding", "{", "Eof")]
     #[test_case("/api/v1/challenge", r#""PRIVATE_SUCCESS_CHALLENGE""#, "Data")]
     #[test_case("/api/v1/recovery-binding", r#""PRIVATE_SUCCESS_BINDING""#, "Data")]
+    #[test_case("/api/v1/challenge", r#"{"challenge":123456789101112}"#, "Data")]
+    #[test_case(
+        "/api/v1/recovery-binding",
+        r#"{"recoveryAgent":123456789101112}"#,
+        "Data"
+    )]
     #[tokio::test]
     async fn decode_failure_displays_context_without_successful_auth_data(
         route: &str,
@@ -837,7 +842,7 @@ mod tests {
                 "missing {expected}: {displayed}"
             );
         }
-        for private in ["PRIVATE_", "987654321"] {
+        for private in ["PRIVATE_", "987654321", "123456789101112"] {
             assert!(
                 !displayed.contains(private),
                 "successful response data leaked: {displayed}"
@@ -913,6 +918,41 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, WalletKitError::NotEligibleForRecovery));
+        mock.assert_async().await;
+        drop(server);
+    }
+    #[test]
+    fn diagnostic_endpoint_preserves_base_path_without_private_url_parts() {
+        let client = PopBackendClient::new(
+            "https://private-user:private-password@stage.invalid/proxy".into(),
+            "test-agent".into(),
+        );
+        assert_eq!(
+            client.diagnostic_endpoint("/api/v1/recovery-binding"),
+            "https://stage.invalid/proxy/api/v1/recovery-binding"
+        );
+        let client = PopBackendClient::new("https://private-user:private-password@stage.invalid/proxy?PRIVATE_QUERY#PRIVATE_FRAGMENT".into(), "test-agent".into());
+        assert_eq!(
+            client.diagnostic_endpoint("/api/v1/challenge"),
+            "https://stage.invalid/proxy"
+        );
+    }
+
+    #[tokio::test]
+    async fn rejection_reports_the_actual_prefixed_endpoint() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("GET", "/proxy/api/v1/challenge")
+            .with_status(503)
+            .with_body("upstream unavailable")
+            .create_async()
+            .await;
+        let client = PopBackendClient::new(
+            format!("{}/proxy", server.url()),
+            "test-agent".into(),
+        );
+        let error = client.get_challenge().await.unwrap_err();
+        assert!(error.to_string().contains("/proxy/api/v1/challenge"));
         mock.assert_async().await;
         drop(server);
     }
