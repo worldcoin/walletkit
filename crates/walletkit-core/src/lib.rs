@@ -167,6 +167,8 @@ pub mod v3;
 ////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(any(feature = "issuers", feature = "v3"))]
+mod http_client;
+#[cfg(any(feature = "issuers", feature = "v3"))]
 mod http_request;
 pub(crate) mod primitives;
 

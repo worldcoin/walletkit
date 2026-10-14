@@ -17,7 +17,9 @@ pub struct Request {
 impl Request {
     /// Initializes a new `Request` instance.
     pub(crate) fn new(user_agent: String) -> Self {
-        let client = http_client();
+        let client = crate::http_client::builder()
+            .build()
+            .expect("TLS backend must initialize");
         let timeout = Duration::from_secs(5);
         let max_retries = 3; // total attempts = 4
         Self {
@@ -79,24 +81,6 @@ impl Request {
         .await
         .map_err(Into::into)
     }
-}
-
-/// Trusts the bundled Mozilla roots instead of reqwest's platform verifier, which panics on
-/// Android unless initialized through JNI.
-#[cfg(not(target_arch = "wasm32"))]
-fn http_client() -> reqwest::Client {
-    let roots = webpki_root_certs::TLS_SERVER_ROOT_CERTS
-        .iter()
-        .map(|cert| reqwest::Certificate::from_der(cert).expect("bundled root is DER"));
-    reqwest::Client::builder()
-        .tls_certs_only(roots)
-        .build()
-        .expect("TLS backend must initialize")
-}
-
-#[cfg(target_arch = "wasm32")]
-fn http_client() -> reqwest::Client {
-    reqwest::Client::new()
 }
 
 #[derive(Debug)]
@@ -190,20 +174,5 @@ async fn execute_request_builder(
                 format!("request failed: {err}"),
             ))
         }
-    }
-}
-
-#[cfg(all(test, not(target_arch = "wasm32")))]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn bundled_roots_verify_public_tls() {
-        let response = http_client()
-            .get("https://rpc.worldchain-sepolia.worldcoin.org")
-            .send()
-            .await;
-
-        assert!(response.is_ok(), "{response:?}");
     }
 }
