@@ -80,3 +80,62 @@ fn result_to_js(result: &EmbeddingResult) -> Result<JsValue, JsValue> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use selfie_enrollment_sealed_types::FaceEmbedding;
+    use wasm_bindgen_test::wasm_bindgen_test;
+
+    wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_dedicated_worker);
+
+    #[wasm_bindgen(inline_js = "
+        export function messageRoundTrip(value) {
+            return new Promise((resolve, reject) => {
+                const { port1, port2 } = new MessageChannel();
+                const close = () => { port1.close(); port2.close(); };
+                port2.onmessage = ({ data }) => { close(); resolve(data); };
+                port2.onmessageerror = () => { close(); reject(new Error('Clone failed')); };
+                try { port1.postMessage(value); } catch (error) { close(); reject(error); }
+            });
+        }
+    ")]
+    extern "C" {
+        #[wasm_bindgen(js_name = messageRoundTrip)]
+        fn message_round_trip(value: JsValue) -> Promise;
+    }
+
+    #[wasm_bindgen_test]
+    #[expect(clippy::future_not_send, reason = "JavaScript values are worker-local")]
+    async fn success_preserves_face_pcp_fields_across_post_message() {
+        let result = EmbeddingResult::Success {
+            embedding: FaceEmbedding {
+                embedding: "synthetic-embedding".into(),
+                embedding_type: "ghostfacenet_flipped_mean".into(),
+                embedding_version: "2.0.0".into(),
+                embedding_inference_backend: "face-engine".into(),
+            },
+        };
+        let cloned = wasm_bindgen_futures::JsFuture::from(message_round_trip(
+            result_to_js(&result).unwrap(),
+        ))
+        .await
+        .unwrap();
+        let json = js_sys::JSON::stringify(&cloned)
+            .unwrap()
+            .as_string()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+            serde_json::json!({
+                "status": "success",
+                "embedding": {
+                    "embedding": "synthetic-embedding",
+                    "embeddingType": "ghostfacenet_flipped_mean",
+                    "embeddingVersion": "2.0.0",
+                    "embeddingInferenceBackend": "face-engine",
+                },
+            }),
+        );
+    }
+}

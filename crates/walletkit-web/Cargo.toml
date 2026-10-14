@@ -28,5 +28,8 @@ selfie-enrollment-client = { git = "https://github.com/worldcoin/biometrics-tee"
 selfie-enrollment-sealed-types = { git = "https://github.com/worldcoin/biometrics-tee", rev = "34e80bf1b51dbaebdaff0102bce04cda633e247d" }
 serde_json.workspace = true
 
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
+wasm-bindgen-test.workspace = true
+
 [lints]
 workspace = true
