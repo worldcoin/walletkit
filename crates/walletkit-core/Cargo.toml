@@ -64,9 +64,10 @@ flamingo-verifier-api-types = { workspace = true }
 flamingo-verifier-client = { workspace = true }
 flamingo-verifier-protocol = { workspace = true }
 flamingo-verifier-sealed-types = { workspace = true }
-reqwest = { workspace = true, features = ["brotli", "rustls-tls"] }
+reqwest = { workspace = true, features = ["brotli", "rustls"] }
 rustls = { workspace = true, features = ["ring"] }
 tokio-tungstenite = { workspace = true, features = ["handshake"] }
+webpki-root-certs = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 attested-request = { workspace = true, features = ["test-util"] }
