@@ -33,6 +33,7 @@ alloy-core = { version = "1", default-features = false, features = [
 ] }
 async-trait = "0.1"
 attested-request = "0.1.0"
+axum = "0.8"
 backon = "1.6"
 base64 = "0.22"
 cc = "1"
@@ -85,14 +86,17 @@ uniffi = { version = "0.32.0", features = [
 ] }
 uuid = "1.10"
 wasm-bindgen-test = "=0.3.76"
+web-time = "1"
 webpki-root-certs = "1"
 xshell = "0.2.7"
 zeroize = "1"
 zip = { version = "2", default-features = false }
 
 # world-id-protocol crates
-world-id-core = { version = "0.15", default-features = false }
-world-id-proof = { version = "0.15", default-features = false }
+# TODO: Temporary pin to the WIP-109 protocol branch; return to a crates.io release once the
+# registration API is published.
+world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "f159a86834aa9da17e9fc1351eb16a57932e4794", default-features = false }
+world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", rev = "f159a86834aa9da17e9fc1351eb16a57932e4794", default-features = false }
 
 # internal
 walletkit-core = { version = "0.27.1", path = "crates/walletkit-core", default-features = false }
