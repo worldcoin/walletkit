@@ -9,14 +9,16 @@ use super::RequestIntegrityError;
 /// A rejection reported inside encryption; not a signed statement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FlamingoMatchRejection {
-    /// Malformed encrypted request.
+    /// The request broke a WIP-201 bound.
     MalformedInputs,
-    /// Invalid PCP hashes file.
-    InvalidHashesJson,
-    /// Orb image did not match its PCP commitment.
-    ThumbnailHashMismatch,
-    /// Threshold was not a finite normalized cosine value.
-    InvalidThreshold,
+    /// The Verifier has not loaded the requested Engine.
+    UnsupportedEngine,
+    /// The Engine does not define the pipeline, or the entries do not fit its layout.
+    UnsupportedPipeline,
+    /// The Engine does not define the match strictness level.
+    UnsupportedMatchStrictness,
+    /// The Authenticator Assertion did not verify.
+    AatRejected,
     /// Exact malformed-input reason and the location/limit supplied by the service.
     InputRejected {
         /// Failed constraint.
@@ -26,7 +28,7 @@ pub enum FlamingoMatchRejection {
         /// Size limit, when supplied.
         limit_bytes: Option<u64>,
     },
-    /// A comparison did not meet the threshold.
+    /// A comparison did not meet the requested match strictness.
     MatchBelowThreshold {
         /// The comparison that failed.
         comparison: FlamingoComparison,
@@ -71,7 +73,7 @@ pub enum FlamingoImageRole {
 /// Failures while configuring or performing a match request.
 #[derive(Debug, Error, uniffi::Error)]
 pub enum FlamingoError {
-    /// A caller-supplied value cannot form a valid match request.
+    /// A caller-supplied value cannot form a valid WIP-201 request.
     #[error("invalid {attribute}: {reason}")]
     InvalidInput {
         /// Name of the invalid field.
@@ -83,9 +85,13 @@ pub enum FlamingoError {
         /// Byte limit when applicable.
         limit_bytes: Option<u64>,
     },
-    /// The verifier configuration was not valid.
+    /// The verifier or Engine Provider configuration was not valid.
     #[error("invalid Flamingo verifier configuration: {0}")]
     Configuration(String),
+    /// No offered Engine configuration is signed by the trusted Engine Provider, within the
+    /// accepted response slot count, and loaded on the assigned Verifier. Nothing was sent.
+    #[error("no offered Flamingo Engine configuration is available")]
+    NoSupportedEngine,
     /// Preparing the integrity token or signing the request failed.
     #[error("Flamingo request integrity failed: {0}")]
     RequestIntegrity(RequestIntegrityError),
@@ -127,21 +133,35 @@ pub enum FlamingoError {
     /// Attested signing key was invalid.
     #[error("invalid Flamingo signing key")]
     InvalidSigningKey,
-    /// Token signature or request commitments did not verify.
-    #[error("invalid Flamingo match statement")]
+    /// The Flamingo Token's signature did not verify, or its claims differ from the request.
+    #[error("invalid Flamingo Token")]
     StatementInvalid,
     /// The one internal reassignment retry was exhausted.
     #[error("Flamingo reassignment retry exhausted")]
     ReassignmentRequired,
 }
 
+impl FlamingoError {
+    pub(super) fn invalid_shape(attribute: &str, reason: &str) -> Self {
+        Self::InvalidInput {
+            attribute: attribute.to_string(),
+            reason: reason.to_string(),
+            kind: FlamingoInputFailureKind::InvalidShape,
+            limit_bytes: None,
+        }
+    }
+}
+
 impl From<FailureReason> for FlamingoMatchRejection {
     fn from(value: FailureReason) -> Self {
         match value {
             FailureReason::MalformedInputs => Self::MalformedInputs,
-            FailureReason::InvalidHashesJson => Self::InvalidHashesJson,
-            FailureReason::ThumbnailHashMismatch => Self::ThumbnailHashMismatch,
-            FailureReason::InvalidThreshold => Self::InvalidThreshold,
+            FailureReason::UnsupportedEngine => Self::UnsupportedEngine,
+            FailureReason::UnsupportedPipeline => Self::UnsupportedPipeline,
+            FailureReason::UnsupportedMatchStrictness => {
+                Self::UnsupportedMatchStrictness
+            }
+            FailureReason::AatRejected => Self::AatRejected,
             FailureReason::InputRejected {
                 reason,
                 image,
@@ -391,14 +411,12 @@ impl From<InputFailureReason> for FlamingoInputFailureReason {
 /// Local input constraints exported to mobile callers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum FlamingoInputFailureKind {
-    /// The field is empty.
-    Empty,
-    /// The field exceeded its size limit.
+    /// The field breaks a WIP-201 shape or bound other than an entry budget.
+    InvalidShape,
+    /// An entry exceeded its size limit.
     TooLarge,
-    /// The images exceeded the combined limit.
+    /// The entries exceeded the combined limit.
     TotalTooLarge,
-    /// The threshold is nonfinite or outside `[0, 1]`.
-    InvalidThreshold,
 }
 
 /// Response stages exported to mobile callers.

@@ -1,9 +1,12 @@
-//! Attested `Flamingo` matching in preparation for zero-knowledge proof generation.
+//! Attested `Flamingo` requests (WIP-201) in preparation for zero-knowledge proof generation.
 //!
-//! This module deliberately knows nothing about Orb PCP storage. Its caller supplies the live
-//! image and the credential material obtained through the platform's Oxide/OrbKit adapter. The
-//! module owns the WebSocket session, assignment, attestation verification, sealing, response
-//! opening, and match-token verification.
+//! This module deliberately knows nothing about Orb PCP storage. Its caller supplies the Engine
+//! entries, such as the Credential image obtained through the platform's Oxide/OrbKit adapter, the
+//! live capture and the challenge. The module owns the Authenticator's side of WIP-201 §3.8.2:
+//! it verifies the Verifier's channel attestation, chooses the first Engine configuration the
+//! Relying Party offered whose release manifest a trusted [`FlamingoEngineProvider`] signed, seals
+//! the request, and verifies the returned Flamingo Token. No entry is sent before every check
+//! passes.
 //!
 //! Legacy connections use [`FlamingoMatcher::new`] with app-token headers.
 //! Attested connections use [`FlamingoMatcher::new_attested`] with a host-supplied
@@ -11,17 +14,21 @@
 //! containing a token and its key-bound [`RequestDigestSigner`].
 //! The host owns token acquisition, refresh, audience selection, and
 //! hardware-key lifecycle; `WalletKit` owns request signing and the verifier connection.
-//! Request authentication is separate from enclave attestation and match-token verification.
+//! Request authentication is separate from enclave attestation and token verification.
 //!
 //! The shared `attested-request` implementation signs the final WebSocket handshake method,
 //! HTTP(S) scheme, authority, path, query, empty body, and prepared token. Every connection,
 //! including reassignment, gets a fresh timestamp, nonce, and signature even when the token
 //! is reused.
+//!
+//! Requests carry no Authenticator Assertion yet; the Flamingo Token has `has_aat = 0`.
 
+mod engine;
 mod errors;
 mod integrity;
 mod types;
 
+pub use engine::{FlamingoEngineConfiguration, FlamingoEngineProvider};
 pub use errors::{
     FlamingoComparison, FlamingoError, FlamingoImageFailureReason, FlamingoImageRole,
     FlamingoInputFailureKind, FlamingoInputFailureReason, FlamingoMatchRejection,
@@ -32,8 +39,8 @@ pub use integrity::{
     RequestIntegrityProvider, RequestIntegritySession,
 };
 pub use types::{
-    FlamingoDebugReport, FlamingoLiveCapture, FlamingoMatchOutcome,
-    FlamingoMatchRequest, FlamingoMatchingFrame, VerifiedMatchToken,
+    FlamingoDebugReport, FlamingoEntry, FlamingoMatchOutcome, FlamingoMatchRequest,
+    VerifiedFlamingoToken,
 };
 
 use std::{collections::HashMap, sync::Arc};
@@ -41,9 +48,9 @@ use std::{collections::HashMap, sync::Arc};
 use async_trait::async_trait;
 use flamingo_verifier_client::{
     Config, Error as ClientError, FlamingoVerifierClient, FlamingoVerifierSession,
-    PcrMeasurement, VerifiedMatchResult,
+    PcrMeasurement, RequestContext, VerifiedMatchResult,
 };
-use flamingo_verifier_sealed_types::MatchInputs;
+use flamingo_verifier_sealed_types::Payload;
 use reqwest::{
     header::{
         HeaderMap, HeaderName, HeaderValue, CONNECTION, COOKIE, HOST,
@@ -55,11 +62,13 @@ use reqwest::{
 use tokio::sync::OnceCell;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
-/// A simple wrapper around of `FlamingoVerifierClient`. Flamingo Verifier is a cloud TEE service for attested embedding generation and comparison.
+/// A client of the Flamingo Verifier, a cloud TEE service that compares images or embeddings and
+/// signs a Flamingo Token over the comparison.
 #[derive(uniffi::Object)]
 pub struct FlamingoMatcher {
     host_url: Url,
     config: Option<Config>,
+    engine_provider: Option<Arc<FlamingoEngineProvider>>,
     headers: HeaderMap,
     integrity_provider: Option<Arc<dyn RequestIntegrityProvider>>,
     client: OnceCell<SessionClient>,
@@ -83,10 +92,14 @@ trait MatchClient: Sync {
     /// Opens a session whose assignment has already been verified.
     async fn connect(&self) -> Result<Self::Session, FlamingoError>;
 
+    /// The Engine bundles the Verifier advertises for the session's assignment; not attested.
+    fn loaded_engines(session: &Self::Session) -> &[[u8; 32]];
+
     async fn request_match(
         &self,
         session: Self::Session,
-        inputs: &MatchInputs,
+        payload: &Payload,
+        context: &RequestContext,
     ) -> Result<VerifiedMatchResult, ClientError>;
 }
 
@@ -109,7 +122,8 @@ impl std::fmt::Debug for FlamingoMatcher {
 impl FlamingoMatcher {
     /// Creates a legacy matcher; supply app-token authentication with [`Self::with_headers`].
     ///
-    /// Configure enclave measurements with [`Self::with_measurements`].
+    /// Configure enclave measurements with [`Self::with_measurements`] and the trusted Engine
+    /// Provider with [`Self::with_engine_provider`].
     ///
     /// # Errors
     ///
@@ -132,6 +146,7 @@ impl FlamingoMatcher {
         Ok(Self {
             host_url,
             config: None,
+            engine_provider: None,
             headers: HeaderMap::new(),
             integrity_provider: None,
             client: OnceCell::new(),
@@ -141,7 +156,8 @@ impl FlamingoMatcher {
     /// Creates a matcher that signs every connection with a host-provided integrity session.
     ///
     /// Select this mode before connecting. Authentication failures never fall back to legacy.
-    /// Configure enclave measurements with [`Self::with_measurements`].
+    /// Configure enclave measurements with [`Self::with_measurements`] and the trusted Engine
+    /// Provider with [`Self::with_engine_provider`].
     ///
     /// # Errors
     /// Returns [`FlamingoError::Configuration`] unless the URL is HTTPS without credentials
@@ -174,11 +190,8 @@ impl FlamingoMatcher {
         measurements: HashMap<u32, Vec<u8>>,
     ) -> Result<Self, FlamingoError> {
         Ok(Self {
-            host_url: self.host_url.clone(),
             config: Some(matcher_config(self.host_url.as_str(), measurements)?),
-            headers: self.headers.clone(),
-            integrity_provider: self.integrity_provider.clone(),
-            client: OnceCell::new(),
+            ..self.unconnected()
         })
     }
 
@@ -198,12 +211,23 @@ impl FlamingoMatcher {
         let config = Config::dangerously_skip_measurements(self.host_url.as_str())
             .map_err(|error| FlamingoError::Configuration(error.to_string()))?;
         Ok(Self {
-            host_url: self.host_url.clone(),
             config: Some(config),
-            headers: self.headers.clone(),
-            integrity_provider: self.integrity_provider.clone(),
-            client: OnceCell::new(),
+            ..self.unconnected()
         })
+    }
+
+    /// Returns a new instance that trusts the release manifests of `engine_provider`.
+    ///
+    /// Every request runs an Engine configuration whose release manifest this provider signed.
+    #[must_use]
+    pub fn with_engine_provider(
+        &self,
+        engine_provider: Arc<FlamingoEngineProvider>,
+    ) -> Self {
+        Self {
+            engine_provider: Some(engine_provider),
+            ..self.unconnected()
+        }
     }
 
     /// Returns a new instance with these default headers, replacing any previously configured set.
@@ -221,40 +245,64 @@ impl FlamingoMatcher {
         headers: HashMap<String, String>,
     ) -> Result<Self, FlamingoError> {
         Ok(Self {
-            host_url: self.host_url.clone(),
-            config: self.config.clone(),
             headers: parse_headers(headers)?,
-            integrity_provider: self.integrity_provider.clone(),
-            client: OnceCell::new(),
+            ..self.unconnected()
         })
     }
 
-    /// Performs a attested 3-way embedding match and returns the outcome and optional worker diagnostics.
+    /// Sends a WIP-201 request to the Verifier and returns the outcome and optional Engine
+    /// diagnostics.
     ///
-    /// Prepares an integrity session and signs the WebSocket upgrade before the match flow:
+    /// Prepares an integrity session and signs the WebSocket upgrade before the request flow:
     ///
     /// - Opens a WebSocket session and verifies the enclave assignment delivered on it, including
     ///   PCRs unless explicitly bypassed.
-    /// - Encrypts and sends the match inputs over the same session using the enclave's attested
+    /// - Chooses the first offered Engine configuration that the trusted Engine Provider signed,
+    ///   that has at most 8 response slots, and that the Verifier has loaded.
+    /// - Encrypts and sends the request over the same session using the enclave's attested
     ///   public key.
-    /// - Decrypts the result and, on success, verifies the token's signature and signing-key attestation.
+    /// - Decrypts the result and, on success, verifies the Flamingo Token's signature, its
+    ///   signing-key attestation and that its claims match the request.
+    ///
+    /// If the Verifier asks for a fresh assignment, the request is sent once more over a new
+    /// session, choosing its configuration again.
     ///
     /// # Errors
     ///
     /// Returns [`FlamingoError::InvalidInput`] before making a network request when a caller value
-    /// is unusable, or [`FlamingoError::Configuration`] if neither trusted measurements
-    /// nor the explicit measurement bypass has been configured.
+    /// is unusable, or [`FlamingoError::Configuration`] if no Engine Provider, or neither trusted
+    /// measurements nor the explicit measurement bypass, has been configured.
+    /// Returns [`FlamingoError::NoSupportedEngine`] without sending the request when no offered
+    /// configuration is available on the assigned Verifier.
     /// Native authentication failures are returned as [`FlamingoError::RequestIntegrity`].
     /// Service, transport and verification failures are returned as typed [`FlamingoError`] variants.
     pub async fn perform_match(
         &self,
         request: FlamingoMatchRequest,
     ) -> Result<FlamingoMatchOutcome, FlamingoError> {
-        perform_match(self.client().await?, request).await
+        let engine_provider = self.engine_provider.as_deref().ok_or_else(|| {
+            FlamingoError::Configuration(
+                "a trusted Engine Provider must be supplied with with_engine_provider"
+                    .to_string(),
+            )
+        })?;
+        perform_match(self.client().await?, engine_provider, request).await
     }
 }
 
 impl FlamingoMatcher {
+    /// A copy of this configuration that has not opened a client yet.
+    fn unconnected(&self) -> Self {
+        Self {
+            host_url: self.host_url.clone(),
+            config: self.config.clone(),
+            engine_provider: self.engine_provider.clone(),
+            headers: self.headers.clone(),
+            integrity_provider: self.integrity_provider.clone(),
+            client: OnceCell::new(),
+        }
+    }
+
     async fn client(&self) -> Result<&SessionClient, FlamingoError> {
         self.client
             .get_or_try_init(|| async {
@@ -310,12 +358,17 @@ impl MatchClient for SessionClient {
             .map_err(|error| verifier_error(&error))
     }
 
+    fn loaded_engines(session: &Self::Session) -> &[[u8; 32]] {
+        session.assignment().engine_hashes()
+    }
+
     async fn request_match(
         &self,
         session: Self::Session,
-        inputs: &MatchInputs,
+        payload: &Payload,
+        context: &RequestContext,
     ) -> Result<VerifiedMatchResult, ClientError> {
-        session.request_match(inputs).await
+        session.request_match(payload, context).await
     }
 }
 
@@ -388,18 +441,23 @@ fn matcher_config(
 
 async fn perform_match<C: MatchClient>(
     client: &C,
+    engine_provider: &FlamingoEngineProvider,
     request: FlamingoMatchRequest,
 ) -> Result<FlamingoMatchOutcome, FlamingoError> {
-    request.validate()?;
-    let request = request.into_inputs();
+    let mut request = request.prepare()?;
     let mut reassigned = false;
 
     loop {
-        // A session carries exactly one match, so a reassignment opens a fresh one.
+        // A session carries exactly one request, so a reassignment opens a fresh one.
         let session = client.connect().await?;
+        let engine =
+            engine_provider.select(&request.offer, C::loaded_engines(&session))?;
+        let (payload, context) = request.bind(&engine);
 
-        match client.request_match(session, &request).await {
-            Ok(response) => return Ok(response.into()),
+        match client.request_match(session, payload, context).await {
+            Ok(result) => {
+                return Ok(FlamingoMatchOutcome::new(result, engine.configuration))
+            }
             Err(ClientError::ReassignRequired) if !reassigned => reassigned = true,
             Err(error) => return Err(verifier_error(&error)),
         }
@@ -411,6 +469,10 @@ fn verifier_error(error: &ClientError) -> FlamingoError {
         ClientError::InvalidConfig { .. } | ClientError::MalformedConfig(_) => {
             FlamingoError::Configuration(error.to_string())
         }
+        ClientError::MalformedRequest => FlamingoError::invalid_shape(
+            "request",
+            "cannot be encoded within the WIP-201 bounds",
+        ),
         ClientError::ApiFrame { code, allow_retry } => FlamingoError::Service {
             code: code.clone(),
             allow_retry: *allow_retry,
@@ -462,19 +524,26 @@ mod tests {
     };
 
     use flamingo_verifier_client::{
-        Error as ClientError, VerifiedMatch, VerifiedMatchResult as MatchResult,
+        Error as ClientError, RequestContext, VerifiedMatch,
+        VerifiedMatchResult as MatchResult,
     };
-    use flamingo_verifier_protocol::match_token::{MatchOperation, MatchToken};
+    use flamingo_verifier_protocol::{
+        flamingo_token::{FlamingoClaims, FlamingoToken},
+        Fq,
+    };
     use flamingo_verifier_sealed_types::{
-        AttestedStatement, DebugReport, FailureReason, MatchInputs,
+        AttestedStatement, DebugReport, FailureReason, Payload,
     };
 
+    use super::engine::tests::{provider, ENGINE_HASH};
     use super::{
-        perform_match, FlamingoError, FlamingoLiveCapture, FlamingoMatchOutcome,
-        FlamingoMatchRejection, FlamingoMatchRequest, FlamingoMatcher, MatchClient,
-        RequestDigestSigner, RequestIntegrityError, RequestIntegrityPlatform,
-        RequestIntegrityProvider, RequestIntegritySession,
+        perform_match, FlamingoEngineConfiguration, FlamingoEngineProvider,
+        FlamingoEntry, FlamingoError, FlamingoMatchOutcome, FlamingoMatchRejection,
+        FlamingoMatchRequest, FlamingoMatcher, MatchClient, RequestDigestSigner,
+        RequestIntegrityError, RequestIntegrityPlatform, RequestIntegrityProvider,
+        RequestIntegritySession,
     };
+    use crate::FieldElement;
 
     struct TestIntegrityProvider {
         prepared: AtomicUsize,
@@ -512,7 +581,7 @@ mod tests {
         }
     }
 
-    fn provider() -> Arc<TestIntegrityProvider> {
+    fn integrity_provider() -> Arc<TestIntegrityProvider> {
         Arc::new(TestIntegrityProvider {
             prepared: AtomicUsize::new(0),
             signer: Arc::new(TestDigestSigner(AtomicUsize::new(0))),
@@ -531,8 +600,13 @@ mod tests {
         Ok(matcher)
     }
 
+    /// The `(pipeline, match_strictness, engine_hash)` of a payload sent to the Verifier.
+    type SentEngine = (u16, u8, [u8; 32]);
+
     struct FakeClient {
         assignments: AtomicUsize,
+        loaded_engines: Vec<[u8; 32]>,
+        sent: Mutex<Vec<SentEngine>>,
         results: Mutex<VecDeque<Result<MatchResult, ClientError>>>,
     }
 
@@ -540,26 +614,50 @@ mod tests {
         fn new(
             results: impl IntoIterator<Item = Result<MatchResult, ClientError>>,
         ) -> Self {
+            Self::with_loaded_engines(vec![ENGINE_HASH], results)
+        }
+
+        fn with_loaded_engines(
+            loaded_engines: Vec<[u8; 32]>,
+            results: impl IntoIterator<Item = Result<MatchResult, ClientError>>,
+        ) -> Self {
             Self {
                 assignments: AtomicUsize::new(0),
+                loaded_engines,
+                sent: Mutex::new(Vec::new()),
                 results: Mutex::new(results.into_iter().collect()),
             }
+        }
+
+        fn sent(&self) -> Vec<SentEngine> {
+            self.sent.lock().unwrap().clone()
         }
     }
 
     #[async_trait::async_trait]
     impl MatchClient for FakeClient {
-        type Session = usize;
+        type Session = Vec<[u8; 32]>;
 
         async fn connect(&self) -> Result<Self::Session, FlamingoError> {
-            Ok(self.assignments.fetch_add(1, Ordering::Relaxed))
+            self.assignments.fetch_add(1, Ordering::Relaxed);
+            Ok(self.loaded_engines.clone())
+        }
+
+        fn loaded_engines(session: &Self::Session) -> &[[u8; 32]] {
+            session
         }
 
         async fn request_match(
             &self,
             _session: Self::Session,
-            _inputs: &MatchInputs,
+            payload: &Payload,
+            _context: &RequestContext,
         ) -> Result<MatchResult, ClientError> {
+            self.sent.lock().unwrap().push((
+                payload.pipeline,
+                payload.match_strictness,
+                *payload.engine_hash,
+            ));
             self.results
                 .lock()
                 .expect("fake result lock should not be poisoned")
@@ -568,15 +666,66 @@ mod tests {
         }
     }
 
+    /// A credential/live/challenge request offering an unknown release, then the test release.
+    fn request_for(release_hash: [u8; 32]) -> FlamingoMatchRequest {
+        let entry = |data: &[u8]| FlamingoEntry {
+            data: data.to_vec(),
+            meta: Vec::new(),
+        };
+        FlamingoMatchRequest {
+            aud: Arc::new(FieldElement::from(1_928_118)),
+            nonce: Arc::new(FieldElement::from(42)),
+            offered_configurations: vec![
+                FlamingoEngineConfiguration {
+                    release_hash: vec![0x33; 32],
+                    pipeline: 1,
+                    match_strictness: 1,
+                },
+                FlamingoEngineConfiguration {
+                    release_hash: release_hash.to_vec(),
+                    pipeline: 1,
+                    match_strictness: 2,
+                },
+            ],
+            entries: vec![
+                entry(b"credential image"),
+                entry(b"live image"),
+                entry(b"challenge image"),
+            ],
+            compare: vec![0, 1, 2],
+            hints: Vec::new(),
+        }
+    }
+
     fn request() -> FlamingoMatchRequest {
-        FlamingoMatchRequest::DeepFace {
-            orb_credential: b"credential".to_vec(),
-            live: FlamingoLiveCapture::Vanilla {
-                image: b"live".to_vec(),
-            },
-            hashes_json: br#"{"thumbnail.png":"00"}"#.to_vec(),
-            rtms_challenge: b"challenge".to_vec(),
-            match_threshold: 0.7,
+        request_for(provider().1)
+    }
+
+    fn engines() -> FlamingoEngineProvider {
+        provider().0
+    }
+
+    fn engine_provider() -> Arc<FlamingoEngineProvider> {
+        Arc::new(engines())
+    }
+
+    fn verified(debug_report: DebugReport) -> MatchResult {
+        let zero = Fq::from(0u64);
+        MatchResult::Success {
+            verified: Box::new(VerifiedMatch {
+                statement: AttestedStatement {
+                    token: FlamingoToken::from_bytes(b"signed-token".to_vec()),
+                    signing_key_attestation: b"signing-key-attestation".to_vec(),
+                },
+                claims: FlamingoClaims {
+                    compared_entry_hashes: [zero; 4],
+                    aud: zero,
+                    nonce: zero,
+                    aat: None,
+                    engine_config_hash: zero,
+                },
+            }),
+            debug_report,
         }
     }
 
@@ -592,62 +741,46 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn gray_badge_preserves_typed_validation_feedback() {
-        use flamingo_verifier_sealed_types::{ImageFailureReason, ImageRole};
-        let client = FakeClient::new([Ok(MatchResult::Failed {
-            reason: FailureReason::ImageRejected {
-                image: ImageRole::LiveSelfie,
-                reason: ImageFailureReason::EyesClosed,
-                target: Some(flamingo_verifier_sealed_types::ValidationTarget::Image),
-            },
-            debug_report: DebugReport::NotProduced,
-        })]);
-        let outcome = perform_match(
-            &client,
-            FlamingoMatchRequest::GrayBadge {
-                live: FlamingoLiveCapture::Vanilla { image: vec![1] },
-                rtms_challenge: vec![2],
-                match_threshold: 0.5,
-            },
-        )
-        .await
-        .unwrap();
-        assert!(matches!(
-            outcome,
-            FlamingoMatchOutcome::Rejected {
-                reason: FlamingoMatchRejection::ImageRejected {
+    async fn returns_typed_sealed_rejections() {
+        use flamingo_verifier_sealed_types::{
+            ImageFailureReason, ImageRole, ValidationTarget,
+        };
+
+        for (reason, expected) in [
+            (
+                FailureReason::ImageRejected {
+                    image: ImageRole::LiveSelfie,
+                    reason: ImageFailureReason::EyesClosed,
+                    target: Some(ValidationTarget::Image),
+                },
+                FlamingoMatchRejection::ImageRejected {
                     image: super::FlamingoImageRole::LiveSelfie,
                     reason: super::FlamingoImageFailureReason::EyesClosed,
                     target: Some(super::FlamingoValidationTarget::Image),
                 },
-                ..
-            }
-        ));
+            ),
+            (
+                FailureReason::UnsupportedPipeline,
+                FlamingoMatchRejection::UnsupportedPipeline,
+            ),
+            (FailureReason::Internal, FlamingoMatchRejection::Internal),
+        ] {
+            let client = FakeClient::new([Ok(MatchResult::Failed {
+                reason,
+                debug_report: DebugReport::NotProduced,
+            })]);
+
+            let outcome = perform_match(&client, &engines(), request())
+                .await
+                .expect("a sealed rejection is an outcome");
+
+            let FlamingoMatchOutcome::Rejected { reason, .. } = outcome else {
+                panic!("expected a rejection");
+            };
+            assert_eq!(reason, expected);
+        }
     }
-    #[tokio::test]
-    async fn gray_badge_preserves_infrastructure_rejection() {
-        let client = FakeClient::new([Ok(MatchResult::Failed {
-            reason: FailureReason::Internal,
-            debug_report: DebugReport::NotProduced,
-        })]);
-        let outcome = perform_match(
-            &client,
-            FlamingoMatchRequest::GrayBadge {
-                live: FlamingoLiveCapture::Vanilla { image: vec![1] },
-                rtms_challenge: vec![2],
-                match_threshold: 0.5,
-            },
-        )
-        .await
-        .unwrap();
-        assert!(matches!(
-            outcome,
-            FlamingoMatchOutcome::Rejected {
-                reason: FlamingoMatchRejection::Internal,
-                ..
-            }
-        ));
-    }
+
     #[test]
     fn custom_measurements_preserve_required_and_additional_pcrs() {
         let mut pins = measurements();
@@ -672,9 +805,11 @@ mod tests {
 
     #[test]
     fn rejects_zero_or_malformed_measurements() {
-        let matcher =
-            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
-                .unwrap();
+        let matcher = FlamingoMatcher::new_attested(
+            "https://verifier.example.com",
+            integrity_provider(),
+        )
+        .unwrap();
         for index in [0, 1, 2, 8] {
             for invalid in [vec![0; 48], vec![], vec![1; 47], vec![1; 49]] {
                 let mut pins = measurements();
@@ -689,11 +824,13 @@ mod tests {
 
     #[test]
     fn measurement_skip_needs_no_pins_and_preserves_headers() {
-        let matcher =
-            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
-                .unwrap()
-                .with_headers(headers())
-                .unwrap();
+        let matcher = FlamingoMatcher::new_attested(
+            "https://verifier.example.com",
+            integrity_provider(),
+        )
+        .unwrap()
+        .with_headers(headers())
+        .unwrap();
         let skip = matcher.dangerously_skip_measurements().unwrap();
         let json = serde_json::to_value(skip.config.as_ref().unwrap()).unwrap();
         assert_eq!(json["dangerously_skip_measurements"], true);
@@ -701,13 +838,15 @@ mod tests {
         assert_eq!(skip.headers, matcher.headers);
         assert!(matcher.config.is_none());
 
-        let skip_first =
-            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
-                .unwrap()
-                .dangerously_skip_measurements()
-                .unwrap()
-                .with_headers(headers())
-                .unwrap();
+        let skip_first = FlamingoMatcher::new_attested(
+            "https://verifier.example.com",
+            integrity_provider(),
+        )
+        .unwrap()
+        .dangerously_skip_measurements()
+        .unwrap()
+        .with_headers(headers())
+        .unwrap();
         assert_eq!(
             serde_json::to_value(&skip.config).unwrap(),
             serde_json::to_value(&skip_first.config).unwrap()
@@ -717,11 +856,13 @@ mod tests {
 
     #[tokio::test]
     async fn measurement_policy_changes_reset_client_and_restore_pins() {
-        let pinned =
-            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
-                .unwrap()
-                .with_measurements(measurements())
-                .unwrap();
+        let pinned = FlamingoMatcher::new_attested(
+            "https://verifier.example.com",
+            integrity_provider(),
+        )
+        .unwrap()
+        .with_measurements(measurements())
+        .unwrap();
         pinned.client().await.unwrap();
         let skip = pinned.dangerously_skip_measurements().unwrap();
         assert!(skip.client.get().is_none());
@@ -746,9 +887,11 @@ mod tests {
 
     #[test]
     fn rejects_missing_required_measurements() {
-        let matcher =
-            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
-                .unwrap();
+        let matcher = FlamingoMatcher::new_attested(
+            "https://verifier.example.com",
+            integrity_provider(),
+        )
+        .unwrap();
         assert!(matches!(
             matcher.with_measurements(HashMap::new()),
             Err(FlamingoError::Configuration(_))
@@ -771,7 +914,7 @@ mod tests {
             "http://[::1]",
         ] {
             assert!(matches!(
-                FlamingoMatcher::new_attested(url, provider()),
+                FlamingoMatcher::new_attested(url, integrity_provider()),
                 Err(FlamingoError::Configuration(_))
             ));
         }
@@ -785,6 +928,7 @@ mod tests {
             .unwrap()
             .with_measurements(measurements())
             .unwrap()
+            .with_engine_provider(engine_provider())
             .with_headers(headers())
             .unwrap();
         assert!(matches!(
@@ -808,7 +952,7 @@ mod tests {
             "https://verifier.example.com/#fragment",
         ] {
             assert!(matches!(
-                FlamingoMatcher::new_attested(url, provider()),
+                FlamingoMatcher::new_attested(url, integrity_provider()),
                 Err(FlamingoError::Configuration(_))
             ));
         }
@@ -817,9 +961,11 @@ mod tests {
     #[test]
     fn rejects_invalid_duplicate_cookie_and_handshake_headers_without_exposing_values()
     {
-        let matcher =
-            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
-                .unwrap();
+        let matcher = FlamingoMatcher::new_attested(
+            "https://verifier.example.com",
+            integrity_provider(),
+        )
+        .unwrap();
         for headers in [
             HashMap::from([("bad name".to_string(), "secret".to_string())]),
             HashMap::from([("authorization".to_string(), "secret\nvalue".to_string())]),
@@ -843,17 +989,22 @@ mod tests {
 
     #[tokio::test]
     async fn fluent_configuration_is_order_independent_and_preserves_originals() {
-        let original =
-            FlamingoMatcher::new_attested("https://verifier.example.com", provider())
-                .unwrap();
+        let original = FlamingoMatcher::new_attested(
+            "https://verifier.example.com",
+            integrity_provider(),
+        )
+        .unwrap();
+        let engines = engine_provider();
         let first = original
             .with_measurements(measurements())
             .unwrap()
+            .with_engine_provider(engines.clone())
             .with_headers(headers())
             .unwrap();
         let second = original
             .with_headers(headers())
             .unwrap()
+            .with_engine_provider(engines.clone())
             .with_measurements(measurements())
             .unwrap();
         assert_eq!(
@@ -861,7 +1012,16 @@ mod tests {
             serde_json::to_value(&second.config).unwrap()
         );
         assert_eq!(first.headers, second.headers);
+        assert!(Arc::ptr_eq(
+            first.engine_provider.as_ref().unwrap(),
+            &engines
+        ));
+        assert!(Arc::ptr_eq(
+            second.engine_provider.as_ref().unwrap(),
+            &engines
+        ));
         assert!(original.config.is_none());
+        assert!(original.engine_provider.is_none());
         assert!(original.headers.is_empty());
         assert!(first.client.get().is_none());
         assert!(second.client.get().is_none());
@@ -908,31 +1068,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_measurements_fail_before_any_request() {
+    async fn missing_measurements_or_engine_provider_fail_before_any_request() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let matcher = loopback_attested_matcher(
             &format!("http://{}", listener.local_addr().unwrap()),
-            provider(),
+            integrity_provider(),
         )
         .unwrap()
         .with_headers(headers())
         .unwrap();
-        assert!(matches!(
-            matcher.perform_match(request()).await,
-            Err(FlamingoError::Configuration(_))
-        ));
-        assert!(matcher.client.get().is_none());
+        for matcher in [
+            matcher.with_engine_provider(engine_provider()),
+            matcher.with_measurements(measurements()).unwrap(),
+        ] {
+            assert!(matches!(
+                matcher.perform_match(request()).await,
+                Err(FlamingoError::Configuration(_))
+            ));
+        }
         assert!(
             tokio::time::timeout(Duration::from_millis(50), listener.accept())
                 .await
                 .is_err(),
-            "no connection may be opened without measurements"
+            "no connection may be opened without measurements and an Engine Provider"
         );
     }
 
     #[tokio::test]
     async fn signs_each_connection_with_fresh_parameters() {
-        let integrity = provider();
+        let integrity = integrity_provider();
         let mut previous_input = None;
         for _ in 0..2 {
             let (base_url, seen) =
@@ -940,7 +1104,8 @@ mod tests {
             let matcher = loopback_attested_matcher(&base_url, integrity.clone())
                 .unwrap()
                 .with_measurements(measurements())
-                .unwrap();
+                .unwrap()
+                .with_engine_provider(engine_provider());
             assert!(matches!(
                 matcher.perform_match(request()).await,
                 Err(FlamingoError::Transport { .. })
@@ -970,7 +1135,8 @@ mod tests {
         )
         .unwrap()
         .with_measurements(measurements())
-        .unwrap();
+        .unwrap()
+        .with_engine_provider(engine_provider());
         assert!(matches!(
             matcher.perform_match(request()).await,
             Err(FlamingoError::RequestIntegrity(
@@ -990,11 +1156,12 @@ mod tests {
         let (base_url, seen) = serve_once(|socket| async move { drop(socket) }).await;
         let matcher = loopback_attested_matcher(
             &format!("{base_url}/v1/flamingo/?region=eu%2Fwest&region=us"),
-            provider(),
+            integrity_provider(),
         )
         .unwrap()
         .with_measurements(measurements())
         .unwrap()
+        .with_engine_provider(engine_provider())
         .with_headers(headers())
         .unwrap();
 
@@ -1024,8 +1191,10 @@ mod tests {
                 first,
                 Message::Text(r#"{"type":"assignment_request"}"#.into())
             );
-            let assignment =
-                r#"{"type":"assignment","attestation":"hEBAQEA=","public_key":"a2V5"}"#;
+            let assignment = format!(
+                r#"{{"type":"assignment","attestation":"hEBAQEA=","public_key":"a2V5","engine_hashes":["{}"]}}"#,
+                hex::encode(ENGINE_HASH)
+            );
             socket.send(Message::Text(assignment.into())).await.unwrap();
             let mut binary = 0;
             while let Some(Ok(frame)) = socket.next().await {
@@ -1034,10 +1203,11 @@ mod tests {
             let _ = sent.send(binary);
         })
         .await;
-        let matcher = loopback_attested_matcher(&base_url, provider())
+        let matcher = loopback_attested_matcher(&base_url, integrity_provider())
             .unwrap()
             .with_measurements(measurements())
             .unwrap()
+            .with_engine_provider(engine_provider())
             .with_headers(headers())
             .unwrap();
 
@@ -1049,56 +1219,57 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn returns_a_verified_token_after_the_client_verifies_success() {
-        let client = FakeClient::new([Ok(MatchResult::Success {
-            verified: Box::new(VerifiedMatch {
-                statement: AttestedStatement {
-                    token: MatchToken::from_bytes(b"signed-token".to_vec()),
-                    signing_key_attestation: b"signing-key-attestation".to_vec(),
-                },
-                claims: flamingo_verifier_protocol::match_token::MatchClaims {
-                    live_capture_hash: [1; 32],
-                    operation: MatchOperation::DeepFace {
-                        credential_claim: [2; 32],
-                    },
-                    challenger_image_hash: [3; 32],
-                    match_coefficient: 0.9,
-                },
-            }),
-            debug_report: DebugReport::NotProduced,
-        })]);
+    async fn runs_the_first_offered_configuration_the_verifier_loaded() {
+        let client = FakeClient::new([Ok(verified(DebugReport::NotProduced))]);
+        let (_, release_hash) = provider();
 
-        let outcome = perform_match(&client, request())
+        let outcome = perform_match(&client, &engines(), request())
             .await
             .expect("match should succeed");
 
-        let FlamingoMatchOutcome::Matched { token, .. } = outcome else {
+        let FlamingoMatchOutcome::Matched {
+            token,
+            configuration,
+            ..
+        } = outcome
+        else {
             panic!("expected a matched outcome");
         };
-        assert_eq!(token.match_coefficient().to_bits(), 0.9f32.to_bits());
         assert_eq!(token.as_bytes(), b"signed-token");
         assert_eq!(token.signing_key_attestation(), b"signing-key-attestation");
-        assert_eq!(client.assignments.load(Ordering::Relaxed), 1);
+        assert_eq!(configuration.release_hash, release_hash);
+        assert_eq!(configuration.match_strictness, 2);
+        assert_eq!(client.sent(), [(1, 2, ENGINE_HASH)]);
     }
 
     #[tokio::test]
-    async fn returns_a_typed_sealed_rejection() {
-        let client = FakeClient::new([Ok(MatchResult::Failed {
-            reason: FailureReason::ThumbnailHashMismatch,
-            debug_report: DebugReport::NotProduced,
-        })]);
+    async fn sends_nothing_when_the_verifier_loaded_no_offered_engine() {
+        let client = FakeClient::with_loaded_engines(
+            vec![[0x44; 32]],
+            [Ok(verified(DebugReport::NotProduced))],
+        );
 
-        let outcome = perform_match(&client, request())
+        let error = perform_match(&client, &engines(), request())
             .await
-            .expect("a sealed rejection is an outcome");
+            .expect_err("no offered engine is loaded");
 
-        assert!(matches!(
-            outcome,
-            FlamingoMatchOutcome::Rejected {
-                reason: FlamingoMatchRejection::ThumbnailHashMismatch,
-                ..
-            }
-        ));
+        assert!(matches!(error, FlamingoError::NoSupportedEngine));
+        assert_eq!(client.assignments.load(Ordering::Relaxed), 1);
+        assert!(client.sent().is_empty(), "no entry may be sent");
+    }
+
+    #[tokio::test]
+    async fn invalid_requests_fail_before_assignment() {
+        let client = FakeClient::new([]);
+        let mut request = request();
+        request.compare = vec![0, 3];
+
+        let error = perform_match(&client, &engines(), request)
+            .await
+            .expect_err("compare names a missing entry");
+
+        assert!(matches!(error, FlamingoError::InvalidInput { .. }));
+        assert_eq!(client.assignments.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
@@ -1113,7 +1284,7 @@ mod tests {
             }),
         ]);
 
-        let outcome = perform_match(&client, request())
+        let outcome = perform_match(&client, &engines(), request())
             .await
             .expect("fresh assignment should recover the match request");
 
@@ -1125,6 +1296,7 @@ mod tests {
             }
         ));
         assert_eq!(client.assignments.load(Ordering::Relaxed), 2);
+        assert_eq!(client.sent().len(), 2);
     }
 
     #[tokio::test]
@@ -1134,7 +1306,7 @@ mod tests {
             Err(ClientError::ReassignRequired),
         ]);
 
-        let error = perform_match(&client, request())
+        let error = perform_match(&client, &engines(), request())
             .await
             .expect_err("a second stale assignment should be surfaced");
 
@@ -1143,227 +1315,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_fields_fail_before_assignment() {
-        use flamingo_verifier_api_types::{MAX_HASHES_JSON_BYTES, MAX_IMAGE_BYTES};
-
-        for deep_face in [false, true] {
-            for (attribute, limit) in [
-                ("live.image", MAX_IMAGE_BYTES),
-                ("live.illuminated", MAX_IMAGE_BYTES),
-                ("live.unilluminated", MAX_IMAGE_BYTES),
-                ("rtms_challenge", MAX_IMAGE_BYTES),
-                ("orb_credential", MAX_IMAGE_BYTES),
-                ("hashes_json", MAX_HASHES_JSON_BYTES),
-            ] {
-                if !deep_face && matches!(attribute, "orb_credential" | "hashes_json") {
-                    continue;
-                }
-                for length in [0, limit + 1] {
-                    let bytes = |field| {
-                        if field == attribute {
-                            vec![1; length]
-                        } else {
-                            vec![1]
-                        }
-                    };
-                    let live = if attribute.starts_with("live.")
-                        && attribute != "live.image"
-                    {
-                        FlamingoLiveCapture::LightGuard {
-                            illuminated: bytes("live.illuminated"),
-                            unilluminated: bytes("live.unilluminated"),
-                            matching_frame: super::FlamingoMatchingFrame::Illuminated,
-                        }
-                    } else {
-                        FlamingoLiveCapture::Vanilla {
-                            image: bytes("live.image"),
-                        }
-                    };
-                    let request = if deep_face {
-                        FlamingoMatchRequest::DeepFace {
-                            live,
-                            orb_credential: bytes("orb_credential"),
-                            hashes_json: bytes("hashes_json"),
-                            rtms_challenge: bytes("rtms_challenge"),
-                            match_threshold: 0.5,
-                        }
-                    } else {
-                        FlamingoMatchRequest::GrayBadge {
-                            live,
-                            rtms_challenge: bytes("rtms_challenge"),
-                            match_threshold: 0.5,
-                        }
-                    };
-                    let client = FakeClient::new([]);
-                    let error = perform_match(&client, request).await.unwrap_err();
-                    let FlamingoError::InvalidInput {
-                        attribute: actual,
-                        reason,
-                        kind,
-                        limit_bytes,
-                    } = error
-                    else {
-                        panic!("expected an input error");
-                    };
-                    assert_eq!(actual, attribute);
-                    assert_eq!(
-                        kind,
-                        if length == 0 {
-                            super::FlamingoInputFailureKind::Empty
-                        } else {
-                            super::FlamingoInputFailureKind::TooLarge
-                        }
-                    );
-                    assert_eq!(limit_bytes, (length != 0).then_some(limit as u64));
-                    assert_eq!(
-                        reason,
-                        if length == 0 {
-                            "must not be empty".to_string()
-                        } else {
-                            format!("must not exceed {limit} bytes")
-                        }
-                    );
-                    assert_eq!(client.assignments.load(Ordering::Relaxed), 0);
-                }
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn validates_combined_image_budget_before_assignment() {
-        use flamingo_verifier_api_types::{MAX_IMAGE_BYTES, MAX_TOTAL_IMAGE_BYTES};
-
-        for deep_face in [false, true] {
-            let mut request = if deep_face {
-                FlamingoMatchRequest::DeepFace {
-                    live: FlamingoLiveCapture::Vanilla {
-                        image: vec![1; MAX_IMAGE_BYTES],
-                    },
-                    orb_credential: vec![1],
-                    hashes_json: vec![1],
-                    rtms_challenge: vec![
-                        1;
-                        MAX_TOTAL_IMAGE_BYTES - MAX_IMAGE_BYTES - 1
-                    ],
-                    match_threshold: 1.0,
-                }
-            } else {
-                FlamingoMatchRequest::GrayBadge {
-                    live: FlamingoLiveCapture::LightGuard {
-                        illuminated: vec![1; MAX_IMAGE_BYTES],
-                        unilluminated: vec![1],
-                        matching_frame: super::FlamingoMatchingFrame::Unilluminated,
-                    },
-                    rtms_challenge: vec![
-                        1;
-                        MAX_TOTAL_IMAGE_BYTES - MAX_IMAGE_BYTES - 1
-                    ],
-                    match_threshold: 0.0,
-                }
-            };
-            request.validate().expect("exact budget is valid");
-            match &mut request {
-                FlamingoMatchRequest::DeepFace { rtms_challenge, .. }
-                | FlamingoMatchRequest::GrayBadge { rtms_challenge, .. } => {
-                    rtms_challenge.push(1);
-                }
-            }
-            let client = FakeClient::new([]);
-            let error = perform_match(&client, request).await.unwrap_err();
-            assert!(
-                matches!(error, FlamingoError::InvalidInput { attribute, reason, .. }
-                if attribute == "request" && reason == format!("combined image size must not exceed {MAX_TOTAL_IMAGE_BYTES} bytes"))
-            );
-            assert_eq!(client.assignments.load(Ordering::Relaxed), 0);
-        }
-    }
-
-    #[tokio::test]
-    async fn rejects_a_non_finite_threshold_before_assignment() {
-        let client = FakeClient::new([]);
-        let mut request = request();
-        let FlamingoMatchRequest::DeepFace {
-            match_threshold, ..
-        } = &mut request
-        else {
-            unreachable!()
-        };
-        *match_threshold = f64::NAN;
-
-        let error = perform_match(&client, request).await.expect_err(
-            "NaN would bypass enclave comparisons and must be rejected locally",
-        );
-
-        assert!(matches!(
-            error,
-            FlamingoError::InvalidInput {
-                attribute,
-                ..
-            } if attribute == "match_threshold"
-        ));
-        assert_eq!(client.assignments.load(Ordering::Relaxed), 0);
-    }
-    #[tokio::test]
-    async fn reports_survive_success_and_rejection_for_both_operations() {
-        use flamingo_verifier_sealed_types::ComparisonRole;
-        for deep_face in [false, true] {
+    async fn reports_survive_success_and_rejection() {
+        for debug_report in [
+            DebugReport::Available {
+                json: "{ \"raw\": [1, 2] }\n".to_owned(),
+            },
+            DebugReport::NotProduced,
+            DebugReport::OmittedTooLarge {
+                original_size_bytes: 200_000,
+            },
+        ] {
             for rejected in [false, true] {
-                for debug_report in [
-                    DebugReport::Available {
-                        json: "{ \"raw\": [1, 2] }\n".to_owned(),
-                    },
-                    DebugReport::NotProduced,
-                    DebugReport::OmittedTooLarge {
-                        original_size_bytes: 200_000,
-                    },
-                ] {
-                    let outcome = if rejected {
-                        MatchResult::Failed {
-                            reason: FailureReason::MatchBelowThreshold(
-                                ComparisonRole::SelfieChallenge,
-                            ),
-                            debug_report: debug_report.clone(),
-                        }
-                    } else {
-                        MatchResult::Success {
-                            verified: Box::new(VerifiedMatch {
-                                statement: AttestedStatement {
-                                    token: MatchToken::from_bytes(b"token".to_vec()),
-                                    signing_key_attestation: b"attestation".to_vec(),
-                                },
-                                claims: flamingo_verifier_protocol::match_token::MatchClaims {
-                                    operation: if deep_face {
-                                        MatchOperation::DeepFace { credential_claim: [1; 32] }
-                                    } else { MatchOperation::GrayBadge },
-                                    live_capture_hash: [2; 32], challenger_image_hash: [3; 32], match_coefficient: 0.9,
-                                },
-                            }),
-                            debug_report: debug_report.clone(),
-                        }
-                    };
-                    let client = FakeClient::new([Ok(outcome)]);
-                    let request = if deep_face {
-                        request()
-                    } else {
-                        FlamingoMatchRequest::GrayBadge {
-                            live: FlamingoLiveCapture::Vanilla { image: vec![1] },
-                            rtms_challenge: vec![2],
-                            match_threshold: 0.7,
-                        }
-                    };
-                    let response = perform_match(&client, request).await.unwrap();
-                    let (report, is_rejected) = match response {
-                        FlamingoMatchOutcome::Matched { debug_report, .. } => {
-                            (debug_report, false)
-                        }
-                        FlamingoMatchOutcome::Rejected { debug_report, .. } => {
-                            (debug_report, true)
-                        }
-                    };
-                    assert_eq!(report, debug_report.into());
-                    assert_eq!(is_rejected, rejected);
-                    assert_eq!(client.assignments.load(Ordering::Relaxed), 1);
-                }
+                let result = if rejected {
+                    MatchResult::Failed {
+                        reason: FailureReason::Internal,
+                        debug_report: debug_report.clone(),
+                    }
+                } else {
+                    verified(debug_report.clone())
+                };
+                let client = FakeClient::new([Ok(result)]);
+
+                let report = match perform_match(&client, &engines(), request())
+                    .await
+                    .unwrap()
+                {
+                    FlamingoMatchOutcome::Matched { debug_report, .. } => {
+                        assert!(!rejected);
+                        debug_report
+                    }
+                    FlamingoMatchOutcome::Rejected { debug_report, .. } => {
+                        assert!(rejected);
+                        debug_report
+                    }
+                };
+                assert_eq!(report, debug_report.clone().into());
             }
         }
     }
@@ -1375,7 +1361,9 @@ mod tests {
                 code: "enclave_not_ready".to_owned(),
                 allow_retry,
             })]);
-            let error = perform_match(&client, request()).await.unwrap_err();
+            let error = perform_match(&client, &engines(), request())
+                .await
+                .unwrap_err();
             assert!(
                 matches!(error, FlamingoError::Service { code, allow_retry: actual } if code == "enclave_not_ready" && actual == allow_retry)
             );
@@ -1405,7 +1393,9 @@ mod tests {
             ),
         ] {
             let client = FakeClient::new([Err(error)]);
-            let error = perform_match(&client, request()).await.unwrap_err();
+            let error = perform_match(&client, &engines(), request())
+                .await
+                .unwrap_err();
             assert_eq!(
                 std::mem::discriminant(&error),
                 std::mem::discriminant(&expected)
