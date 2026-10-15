@@ -52,6 +52,33 @@ impl Authenticator {
             store,
         })
     }
+
+    /// Initializes the Authenticator for `seed` on the account at `leaf_index`.
+    ///
+    /// A Proving Authenticator (WIP-104) has no management key registered on-chain, so
+    /// [`Authenticator::init_with_config`] cannot find its account. The host keeps the
+    /// `leaf_index` it was registered on and initializes it with this on every start. An Admin
+    /// Authenticator whose `leaf_index` is known can use it too.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::init_with_leaf_index` for potential errors.
+    pub async fn init_with_leaf_index(
+        seed: &[u8],
+        leaf_index: u64,
+        config: Config,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let authenticator = CoreAuthenticator::init_with_leaf_index(
+            seed, leaf_index, config, artifacts,
+        )
+        .await?;
+
+        Ok(Self {
+            inner: authenticator,
+            store,
+        })
+    }
 }
 
 fn parse_authenticator_pubkey(

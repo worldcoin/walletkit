@@ -103,7 +103,7 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     ));
     let requesting = tokio::spawn(requesting_device(
         requester_seed,
-        config,
+        config.clone(),
         bridge,
         uri_tx,
         code_tx,
@@ -121,6 +121,17 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     let result = approval.result.unwrap();
     assert_eq!((result.leaf_index, result.pubkey_id), (leaf_index, 1));
     assert_eq!(registered.leaf_index(), leaf_index);
+
+    let restarted = Authenticator::init_with_leaf_index(
+        &requester_seed,
+        leaf_index,
+        config,
+        Arc::new(DummyZkArtifactSource),
+        common::create_test_credential_store(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(restarted.leaf_index(), leaf_index);
 }
 
 /// Takes the request from the scanned QR code, checks it with the code the user typed, and

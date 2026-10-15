@@ -319,7 +319,7 @@ impl IncomingRegistration {
     ///
     /// Returns [`ApproverError::Refused`] after answering with the reason if `approver` is not an
     /// Admin Authenticator of its account (`not_authorized`), the key or address is registered
-    /// differently (`authenticator_conflict`), there is no free slot
+    /// differently on the account (`authenticator_conflict`), there is no free slot
     /// (`max_authenticators_reached`), or the account state cannot be read in time
     /// (`internal_error`).
     pub async fn check(
@@ -363,43 +363,20 @@ impl IncomingRegistration {
         approver: &Authenticator,
     ) -> Result<(AccountAuthenticators, RegistrationPlan), Refusal> {
         let core = &approver.inner;
-        // Step 1: the registry, not the indexer, decides whether the approver is still an Admin
-        // Authenticator of its account.
-        match self
-            .before_deadline(core.fetch_leaf_index_of(core.onchain_address()))
-            .await?
-        {
-            Ok(leaf_index) if leaf_index == core.leaf_index() => {}
-            Ok(_) | Err(AuthenticatorError::AccountDoesNotExist) => {
-                return Err(RegistrationErrorReason::NotAuthorized.into());
-            }
-            Err(error) => return Err(Refusal::internal_error(error)),
-        }
-        let authenticators = self
-            .before_deadline(core.fetch_authenticators())
-            .await?
-            .map_err(Refusal::internal_error)?;
+        let authenticators =
+            match self.before_deadline(core.fetch_authenticators()).await? {
+                Ok(authenticators) => authenticators,
+                Err(AuthenticatorError::AccountDoesNotExist) => {
+                    return Err(RegistrationErrorReason::NotAuthorized.into());
+                }
+                Err(error) => return Err(Refusal::internal_error(error)),
+            };
         let plan = plan_registration(
             &authenticators,
             &core.offchain_pubkey(),
             core.onchain_address(),
             &self.request,
         )?;
-        // Step 4: a new management key must not be registered to any account yet.
-        if let (RegistrationPlan::Insert { .. }, Some(address)) =
-            (plan, self.request.new_authenticator_address)
-        {
-            match self
-                .before_deadline(core.fetch_leaf_index_of(address))
-                .await?
-            {
-                Err(AuthenticatorError::AccountDoesNotExist) => {}
-                Ok(_) => {
-                    return Err(RegistrationErrorReason::AuthenticatorConflict.into())
-                }
-                Err(error) => return Err(Refusal::internal_error(error)),
-            }
-        }
         Ok((authenticators, plan))
     }
 
@@ -823,7 +800,7 @@ fn unique_field<'a>(map: &'a Value, key: &str) -> Option<&'a Value> {
 }
 
 /// Decides how to register the requested authenticator on the account, for the approver with
-/// `approver_pubkey` and management key `approver_address` (WIP-109 §3.7.2 steps 1, 3 and 5).
+/// `approver_pubkey` and management key `approver_address` (WIP-109 §3.7.2 steps 2 to 5).
 fn plan_registration(
     authenticators: &AccountAuthenticators,
     approver_pubkey: &world_id_core::EdDSAPublicKey,
