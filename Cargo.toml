@@ -43,10 +43,11 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-flamingo-verifier-api-types = "0.8.0"
-flamingo-verifier-client = "0.8.0"
-flamingo-verifier-protocol = "0.8.0"
-flamingo-verifier-sealed-types = "0.8.0"
+# TODO: Move to the crates.io release of the WIP-201 stack (https://github.com/worldcoin/flamingo/pull/142).
+flamingo-verifier-api-types = { git = "https://github.com/worldcoin/flamingo", rev = "35ec9ca741dd7ec14d538844e17e9b1332283905" }
+flamingo-verifier-client = { git = "https://github.com/worldcoin/flamingo", rev = "35ec9ca741dd7ec14d538844e17e9b1332283905" }
+flamingo-verifier-protocol = { git = "https://github.com/worldcoin/flamingo", rev = "35ec9ca741dd7ec14d538844e17e9b1332283905" }
+flamingo-verifier-sealed-types = { git = "https://github.com/worldcoin/flamingo", rev = "35ec9ca741dd7ec14d538844e17e9b1332283905" }
 eyre = "0.6"
 futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"
@@ -54,6 +55,7 @@ hex = "0.4"
 hkdf = "0.12"
 log = "0.4"
 mockito = "1.6"
+p256 = { version = "0.13.2", default-features = false }
 rand = "0.8.6"
 regex = "1.11"
 reqwest = { version = "0.13", default-features = false }
@@ -93,6 +95,8 @@ zip = { version = "2", default-features = false }
 # world-id-protocol crates
 world-id-core = { version = "0.15", default-features = false }
 world-id-proof = { version = "0.15", default-features = false }
+# TODO: Move to crates.io once https://github.com/worldcoin/world-id-protocol/pull/1079 is published.
+world-id-flamingo = { git = "https://github.com/worldcoin/world-id-protocol", rev = "a47b68a254bd3e42a0cb49c85e9d36550122883f" }
 
 # internal
 walletkit-core = { version = "0.27.1", path = "crates/walletkit-core", default-features = false }
@@ -129,3 +133,8 @@ debug-assertions = false
 
 [profile.dev.package.provekit-prover]
 debug-assertions = false
+
+# TODO: Remove once the WIP-201 crates depend on world-id-primitives from crates.io
+# (https://github.com/worldcoin/flamingo/pull/140, https://github.com/worldcoin/world-id-protocol/pull/1079).
+[patch."https://github.com/worldcoin/world-id-protocol"]
+world-id-primitives = "0.15.0"
