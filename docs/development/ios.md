@@ -9,7 +9,7 @@ Building for iOS requires macOS with the following:
 
 - Xcode
 - The iOS Rust targets. `rustup` installs them from `rust-toolchain.toml`.
-- `nargo` v1.0.0-beta.11, installed with
+- `nargo` v1.0.0-beta.26, installed with
   [`noirup`](https://noir-lang.org/docs/getting_started/noir_installation)
 
 The Swift build doesn't use a Nix shell; it runs with the host's Xcode setup.
