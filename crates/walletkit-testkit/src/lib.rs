@@ -7,13 +7,7 @@ pub mod proof;
 pub mod storage;
 pub mod utils;
 
-use std::{
-    future::Future,
-    path::Path,
-    pin::Pin,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{future::Future, path::Path, pin::Pin, sync::Arc};
 
 use alloy::primitives::Address;
 pub use env::TestEnv;
@@ -49,7 +43,7 @@ pub async fn init_and_register_account(
     root: &Path,
     recovery_address: Option<Address>,
 ) -> eyre::Result<(Authenticator, Arc<CredentialStore>)> {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+    let now = now_secs();
     register_account(env, seed, recovery_address, root)
         .await
         .wrap_err("account registration failed")?;
