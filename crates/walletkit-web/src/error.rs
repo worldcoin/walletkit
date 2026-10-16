@@ -25,6 +25,10 @@ impl JsReportable for WalletKitError {
     const NAME: &'static str = "WalletKitError";
 }
 
+impl JsReportable for selfie_enrollment_client::Error {
+    const NAME: &'static str = "SelfieEnrollmentError";
+}
+
 impl JsReportable for StorageError {
     const NAME: &'static str = "StorageError";
 }

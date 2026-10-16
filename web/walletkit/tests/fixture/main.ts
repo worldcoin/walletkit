@@ -22,3 +22,32 @@ Object.assign(window, {
     });
   },
 });
+
+Object.assign(window, {
+  enrollmentAssignment() {
+    const worker = new Worker(
+      new URL("./enrollment.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        worker.terminate();
+        reject(new Error("Enrollment did not reject the untrusted assignment"));
+      }, 5000);
+      worker.onmessage = ({ data }) => {
+        clearTimeout(timeout);
+        worker.terminate();
+        data.error ? reject(new Error(data.error)) : resolve(data.result);
+      };
+      worker.onerror = (event) => {
+        clearTimeout(timeout);
+        worker.terminate();
+        reject(new Error(event.message));
+      };
+      worker.postMessage({
+        wasmUrl: new URL("../../src/generated/walletkit.wasm", import.meta.url)
+          .href,
+      });
+    });
+  },
+});
