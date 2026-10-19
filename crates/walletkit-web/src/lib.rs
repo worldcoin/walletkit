@@ -17,6 +17,7 @@
 mod authenticator;
 mod error;
 mod js;
+mod registration;
 mod storage;
 mod values;
 
@@ -113,6 +114,63 @@ export interface CredentialConstraintsCheckItem {
 export interface CredentialConstraintsCheckResult {
   isSatisfied: boolean;
   checkResults: CredentialConstraintsCheckItem[];
+}
+
+export type RequestedClass = "admin" | "proving";
+
+/** The WIP-109 `error.code` of a failed registration. */
+export type RegistrationErrorReason =
+  | "parse_error"
+  | "invalid_request"
+  | "method_not_found"
+  | "invalid_params"
+  | "invalid_name"
+  | "internal_error"
+  | "user_rejected"
+  | "not_authorized"
+  | "authenticator_conflict"
+  | "max_authenticators_reached"
+  | "operation_failed"
+  | "outcome_unknown";
+
+export interface KnownAuthenticator {
+  pubkeyId: number;
+  name: string;
+}
+
+export interface RegistrationError {
+  /** Absent for an unrecognized `code`. */
+  reason?: RegistrationErrorReason;
+  code: string;
+  message: string;
+  detail?: string;
+}
+
+export type RequesterStatus =
+  | { state: "waiting" | "retrieved" | "expired" }
+  | { state: "approved"; result: RegistrationResult }
+  | { state: "refused"; error: RegistrationError };
+
+export interface Registered {
+  /** The new authenticator. Its storage is not initialized yet. */
+  authenticator: Authenticator;
+  /** Import with `CredentialStore.mergeVaultFromBackup` once storage is initialized. */
+  vaultBackup?: Uint8Array;
+}
+
+export interface RegistrationPlan {
+  kind: "insert" | "alreadyRegistered";
+  pubkeyId: number;
+}
+
+export type ApprovalResult =
+  | { state: "registered"; leafIndex: bigint; pubkeyId: number }
+  | { state: "failed"; reason: RegistrationErrorReason };
+
+export interface ApprovalOutcome {
+  result: ApprovalResult;
+  vaultOmitted: boolean;
+  delivered: boolean;
 }
 "#;
 

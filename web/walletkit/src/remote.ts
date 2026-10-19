@@ -90,6 +90,16 @@ export type WalletKit = {
 
 export type ActivityQuery = RemoteObject<Wasm.ActivityQuery>;
 export type Authenticator = RemoteObject<Wasm.Authenticator>;
+export type BridgeClient = RemoteObject<Wasm.BridgeClient>;
+export type CheckedRegistration = RemoteObject<Wasm.CheckedRegistration>;
+export type IncomingRegistration = RemoteObject<Wasm.IncomingRegistration>;
+export type PendingRegistration = RemoteObject<Wasm.PendingRegistration>;
+export type RegistrationRequester = RemoteObject<Wasm.RegistrationRequester>;
+export type RegistrationResult = RemoteObject<Wasm.RegistrationResult>;
+
+// Records that hold Rust objects, which the page receives as proxies.
+export type RequesterStatus = Remote<Wasm.RequesterStatus>;
+export type Registered = Remote<Wasm.Registered>;
 export type InitializingAuthenticator =
   RemoteObject<Wasm.InitializingAuthenticator>;
 export type CredentialStore = RemoteObject<Wasm.CredentialStore>;
