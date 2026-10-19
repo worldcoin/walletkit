@@ -28,8 +28,8 @@ use zeroize::Zeroizing;
 use super::{
     before,
     bridge::{BridgeClient, BridgeError, ResponseState},
-    polling_backoff, RegistrationResult, RequestedClass, PLAINTEXT_VAULT_FORMAT,
-    SESSION_TTL,
+    log_tag, polling_backoff, RegistrationResult, RequestedClass,
+    PLAINTEXT_VAULT_FORMAT, SESSION_TTL,
 };
 use crate::{
     authenticator::artifacts::WalletKitZkArtifactSource, defaults,
@@ -156,7 +156,6 @@ pub struct RegistrationRequester {
 }
 
 /// The secrets and state of a live session (WIP-109 §3.3).
-#[derive(Debug)]
 struct Session {
     pairing_secret: PairingSecret,
     code: PairingCode,
@@ -164,6 +163,17 @@ struct Session {
     response_key: ResponseSecretKey,
     retrieved: bool,
     expires_at: Instant,
+}
+
+impl std::fmt::Debug for Session {
+    /// Formats [`Session`] with [`log_tag`] instead of the session secrets or [`RequestId`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Session")
+            .field("request", &log_tag(&self.pairing_secret.request_id()))
+            .field("retrieved", &self.retrieved)
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]

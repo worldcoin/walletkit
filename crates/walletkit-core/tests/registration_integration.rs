@@ -333,6 +333,12 @@ fn gateway(registry: WorldIdRegistryInstance<DynProvider>, account: Account) -> 
             .get_receipt()
             .await
             .map_err(|error| (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()))?;
+        if !receipt.status() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "insertAuthenticator transaction reverted".to_string(),
+            ));
+        }
         let mut account = account.lock().unwrap();
         let slot = request.pubkey_id as usize;
         account.authenticator_pubkeys.resize(slot + 1, None);
