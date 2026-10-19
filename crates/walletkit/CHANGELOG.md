@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.2](https://github.com/worldcoin/walletkit/compare/v0.27.1...v0.27.2) - 2026-10-14
+
+### Added
+
+- merge vault backups in memory on native and WASM ([#596](https://github.com/worldcoin/walletkit/pull/596))
+
+### Fixed
+
+- *(core)* preserve recovery HTTP failure evidence ([#605](https://github.com/worldcoin/walletkit/pull/605))
+
+### Other
+
+- add an mdBook, slim the READMEs, and document the browser package ([#602](https://github.com/worldcoin/walletkit/pull/602))
+- Add support for deleting specific activity entries ([#599](https://github.com/worldcoin/walletkit/pull/599))
+- Alter issuer schema filtering to support multiple ([#603](https://github.com/worldcoin/walletkit/pull/603))
+
 ## [0.27.1](https://github.com/worldcoin/walletkit/compare/v0.27.0...v0.27.1) - 2026-10-06
 
 ### Added
