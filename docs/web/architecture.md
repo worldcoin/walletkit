@@ -43,8 +43,9 @@ module-level function, a static function of a class, or a method of an object
 handle.
 
 Rust objects can't cross `postMessage`, so the worker keeps them in a handle table.
-When a call returns a Rust object, the worker stores it and returns `{ $ref:
-handle }`, and the page wraps the handle in a proxy. When the page passes a proxy
+When a call returns a Rust object, also inside an array or a plain-object record,
+the worker stores it and returns `{ $ref: handle }`, and the page wraps the handle
+in a proxy. When the page passes a proxy
 as an argument, the page sends its handle, and the worker swaps it back for the
 object. Every other value crosses as structured-clone data.
 

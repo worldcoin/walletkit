@@ -32,3 +32,22 @@ export type Response = { id: number } & (
       error: { name: string; message: string; code?: string; fatal?: boolean };
     }
 );
+
+/** A plain object built by the Rust module or revived by `postMessage`. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+/** Copies `record`, applying `map` to each field. */
+export function mapRecord(
+  record: Record<string, unknown>,
+  map: (value: unknown) => unknown,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [key, map(value)]),
+  );
+}
