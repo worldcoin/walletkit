@@ -48,7 +48,7 @@ export async function consumer() {
   );
   const query = await (
     await walletkit.ActivityQuery.new()
-  ).withIssuerSchemaId(1n);
+  ).withIssuerSchemaIds([1n, 2n]);
   const activity = await store.listActivities(query, 10, 0);
   const registration =
     await walletkit.InitializingAuthenticator.registerWithDefaults(
