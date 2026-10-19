@@ -3,17 +3,20 @@
 use std::{str::FromStr, sync::Arc};
 
 use js_sys::BigInt;
-use walletkit_core::storage::{
-    initialize_persistent_storage, ActivityEntry, ActivityFailureReason,
-    ActivityOutcome, ActivityQuery, CredentialRecord, CredentialStore, ProtocolVersion,
-    StorageKeys, StoragePaths,
+use walletkit_core::{
+    storage::{
+        initialize_persistent_storage, ActivityEntry, ActivityFailureReason,
+        ActivityOutcome, ActivityQuery, CredentialRecord, CredentialStore,
+        ProtocolVersion, StorageKeys, StoragePaths,
+    },
+    CredentialFilter, SelectedCredential,
 };
 use wasm_bindgen::prelude::*;
 
 use crate::{
     error::{invalid_argument, to_js},
     js,
-    values::{JsCredential, JsFieldElement},
+    values::{JsCredential, JsFieldElement, JsProofRequest},
 };
 
 /// Acquires the OPFS storage pool for this worker.
@@ -160,6 +163,78 @@ impl Default for JsActivityQuery {
     }
 }
 
+/// Restricts which stored credentials answer a proof request, built like the native
+/// builder. Pass it to [`JsCredentialStore::select_credentials`] and to
+/// `Authenticator.generateProof`.
+#[wasm_bindgen(js_name = CredentialFilter)]
+pub struct JsCredentialFilter(pub(crate) CredentialFilter);
+
+#[wasm_bindgen(js_class = CredentialFilter)]
+impl JsCredentialFilter {
+    /// A filter that allows every credential.
+    #[wasm_bindgen(js_name = new)]
+    #[must_use]
+    pub fn new() -> Self {
+        Self(CredentialFilter::new())
+    }
+
+    /// Never answers a request with `credential_ids`, replacing any previously
+    /// excluded ids.
+    ///
+    /// # Errors
+    /// Throws a `TypeError` when `credential_ids` is not an array of bigints in the
+    /// `u64` range.
+    #[wasm_bindgen(js_name = excludingCredentialIds)]
+    pub fn excluding_credential_ids(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "bigint[]")] credential_ids: &JsValue,
+    ) -> Result<Self, JsValue> {
+        let credential_ids = js::u64_array_arg("credentialIds", credential_ids)?;
+        Ok(Self(self.0.excluding_credential_ids(
+            credential_ids.into_iter().collect(),
+        )))
+    }
+
+    /// Only accepts selections that contain at least one of `credential_ids`. An
+    /// empty array accepts no selection.
+    ///
+    /// # Errors
+    /// Throws a `TypeError` when `credential_ids` is not an array of bigints in the
+    /// `u64` range.
+    #[wasm_bindgen(js_name = requiringAnyOf)]
+    pub fn requiring_any_of(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "bigint[]")] credential_ids: &JsValue,
+    ) -> Result<Self, JsValue> {
+        let credential_ids = js::u64_array_arg("credentialIds", credential_ids)?;
+        Ok(Self(
+            self.0
+                .requiring_any_of(credential_ids.into_iter().collect()),
+        ))
+    }
+
+    /// Only accepts a selection made of exactly `credential_ids`. An empty array
+    /// accepts no selection.
+    ///
+    /// # Errors
+    /// Throws a `TypeError` when `credential_ids` is not an array of bigints in the
+    /// `u64` range.
+    #[wasm_bindgen(js_name = pinnedTo)]
+    pub fn pinned_to(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "bigint[]")] credential_ids: &JsValue,
+    ) -> Result<Self, JsValue> {
+        let credential_ids = js::u64_array_arg("credentialIds", credential_ids)?;
+        Ok(Self(self.0.pinned_to(credential_ids.into_iter().collect())))
+    }
+}
+
+impl Default for JsCredentialFilter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// The encrypted store of credentials and activity.
 #[wasm_bindgen(js_name = CredentialStore)]
 pub struct JsCredentialStore(pub(crate) Arc<CredentialStore>);
@@ -248,6 +323,30 @@ impl JsCredentialStore {
             .fetch_credential(issuer_schema_id, now)
             .map_err(to_js)?;
         Ok(credential.map(|credential| JsCredential((*credential).clone())))
+    }
+
+    /// Selects the stored credentials that answer `request`, in request order.
+    ///
+    /// # Errors
+    /// Rejects with `UnfulfillableRequest` when no selection satisfies both the
+    /// request and `filter`, or with a `WalletKitError` when the vault cannot be read.
+    #[wasm_bindgen(js_name = selectCredentials, unchecked_return_type = "SelectedCredential[]")]
+    pub fn select_credentials(
+        &self,
+        request: &JsProofRequest,
+        filter: &JsCredentialFilter,
+        now: BigInt,
+    ) -> Result<JsValue, JsValue> {
+        let now = js::u64_arg("now", now)?;
+        let selection = self
+            .0
+            .select_credentials(&request.0, &filter.0, now)
+            .map_err(to_js)?;
+        let selection = selection
+            .iter()
+            .map(selected_credential)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(js::array(selection))
     }
 
     /// # Errors
@@ -373,6 +472,16 @@ fn credential_record(record: &CredentialRecord) -> Result<JsValue, JsValue> {
         ("genesisIssuedAt", record.genesis_issued_at.into()),
         ("expiresAt", record.expires_at.into()),
         ("isExpired", record.is_expired.into()),
+    ])
+}
+
+fn selected_credential(selected: &SelectedCredential) -> Result<JsValue, JsValue> {
+    js::object(&[
+        ("identifier", selected.identifier.as_str().into()),
+        ("credentialId", selected.credential_id.into()),
+        ("issuerSchemaId", selected.issuer_schema_id.into()),
+        ("genesisIssuedAt", selected.genesis_issued_at.into()),
+        ("expiresAt", selected.expires_at.into()),
     ])
 }
 

@@ -87,6 +87,7 @@ export type ActivityQuery = RemoteObject<Wasm.ActivityQuery>;
 export type Authenticator = RemoteObject<Wasm.Authenticator>;
 export type InitializingAuthenticator =
   RemoteObject<Wasm.InitializingAuthenticator>;
+export type CredentialFilter = RemoteObject<Wasm.CredentialFilter>;
 export type CredentialStore = RemoteObject<Wasm.CredentialStore>;
 export type StorageKeys = RemoteObject<Wasm.StorageKeys>;
 export type StoragePaths = RemoteObject<Wasm.StoragePaths>;

@@ -327,14 +327,19 @@ export default function Home() {
         const request = await client.ProofRequest.fromJson(
           await createStagingProofRequest("walletkit-web-example"),
         );
+        const filter = await client.CredentialFilter.new();
         try {
-          const response = await session.authenticator.generateProof(request);
+          const response = await session.authenticator.generateProof(
+            request,
+            filter,
+          );
           try {
             setStatus(await response.toJson());
           } finally {
             response.free();
           }
         } finally {
+          filter.free();
           request.free();
         }
         break;

@@ -13,7 +13,7 @@ use alloy::primitives::Address;
 pub use env::TestEnv;
 use eyre::Context;
 use walletkit_core::{
-    storage::CredentialStore, Authenticator, Credential, FieldElement,
+    storage::CredentialStore, Authenticator, Credential, CredentialFilter, FieldElement,
 };
 pub use world_id_core::primitives::{SessionId, SessionRef};
 pub use world_id_core::requests::ProofType;
@@ -196,7 +196,11 @@ pub async fn generate_and_verify_test_proof(
     let walletkit_request: walletkit_core::requests::ProofRequest =
         core_request.clone().into();
     let proof_response = authenticator
-        .generate_proof(&walletkit_request, Some(now_secs()))
+        .generate_proof(
+            &walletkit_request,
+            &CredentialFilter::new(),
+            Some(now_secs()),
+        )
         .await
         .wrap_err("proof generation failed")?;
     let response = proof_response.into_inner();

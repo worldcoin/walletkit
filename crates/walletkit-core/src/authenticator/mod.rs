@@ -12,6 +12,7 @@ use std::sync::Arc;
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestId, GatewayRequestState},
     primitives::{AuthenticatorPublicKeySet, Config, MAX_AUTHENTICATOR_KEYS},
+    requests::ProofRequest as CoreProofRequest,
     Authenticator as CoreAuthenticator, AuthenticatorError,
     Credential as CoreCredential, CredentialInput, EdDSAPublicKey,
     InitializingAuthenticator as CoreInitializingAuthenticator,
@@ -19,6 +20,7 @@ use world_id_core::{
 };
 use zeroize::Zeroizing;
 
+use crate::credential_selection::CredentialFilter;
 use crate::requests::{ProofRequest, ProofResponse};
 use crate::storage::CredentialStore;
 use crate::OwnershipProof;
@@ -567,44 +569,65 @@ impl Authenticator {
         Self::init_with_config(&seed, config, artifacts, store).await
     }
 
-    /// Generates a proof for the given proof request.
+    /// Generates a proof for `proof_request` from the stored credentials that
+    /// [`CredentialStore::select_credentials`] selects with the same `filter`.
+    ///
+    /// Pass [`CredentialFilter::new`] to prove the first selection in the
+    /// relying party's order. To prove a selection the app has already acted
+    /// on, pass its credential IDs to [`CredentialFilter::pinned_to`].
+    ///
+    /// The response is checked against the full request before it is
+    /// returned, and the nullifier is recorded so the request cannot be
+    /// answered twice.
     ///
     /// # Errors
-    /// Returns an error if proof generation fails.
+    ///
+    /// - [`WalletKitError::UnfulfillableRequest`] if no selection satisfies
+    ///   both the request and `filter`.
+    /// - [`WalletKitError::NullifierReplay`] if the request was already answered.
+    /// - [`WalletKitError::ResponseValidation`] if the generated response does
+    ///   not satisfy the request.
+    /// - Other errors if a selected credential cannot be loaded, a service
+    ///   call fails, or proof generation fails.
     pub async fn generate_proof(
         &self,
         proof_request: &ProofRequest,
+        filter: &CredentialFilter,
         now: Option<u64>,
     ) -> Result<ProofResponse, WalletKitError> {
         let now = resolve_now(now)?;
 
-        // Build CredentialInput list from storage
-        // Note: We simply load all non-expired credentials. Filtering for the requested schema IDs is done in `generate_proof`.
-        // We could avoid unnecessary loading by filtering via `world_id_primitives::ProofRequest::credentials_to_prove`. We consider this an
-        // unnecessary optimization for now.
-        let credentials: Vec<_> = self
-            .store
-            .list_credentials(None, now)?
+        let selection = self.store.select_credentials(proof_request, filter, now)?;
+        let credentials = selection
             .iter()
-            .filter(|c| !c.is_expired)
-            .filter_map(|cred| {
-                if let Ok(Some((credential, blinding_factor))) =
-                    self.store.get_credential(cred.issuer_schema_id, now)
-                {
-                    Some(CredentialInput {
-                        credential: credential.into(),
-                        blinding_factor: blinding_factor.into(),
-                    })
-                } else {
-                    tracing::warn!(
-                        issuer_schema_id = %cred.issuer_schema_id,
-                        credential_id = %cred.credential_id,
-                        "credential listed but not loadable, skipping"
-                    );
-                    None
-                }
+            .map(|selected| {
+                let (credential, blinding_factor) =
+                    self.store.get_credential_by_id(selected.credential_id)?;
+                Ok(CredentialInput {
+                    credential: credential.into(),
+                    blinding_factor: blinding_factor.into(),
+                })
             })
-            .collect();
+            .collect::<Result<Vec<_>, WalletKitError>>()?;
+
+        // world-id-core picks the items to prove itself. Handing it only the selected
+        // items, without constraints, makes it prove exactly the selection; the
+        // response is validated against the full request below.
+        let selected_request = CoreProofRequest {
+            requests: proof_request
+                .0
+                .requests
+                .iter()
+                .filter(|item| {
+                    selection
+                        .iter()
+                        .any(|selected| selected.identifier == item.identifier)
+                })
+                .cloned()
+                .collect(),
+            constraints: None,
+            ..proof_request.0.clone()
+        };
 
         let account_inclusion_proof =
             self.fetch_inclusion_proof_with_cache(now).await?;
@@ -644,15 +667,19 @@ impl Authenticator {
                     }
                 });
 
-        // Handles credential selection, session resolution, per-credential proofs, response assembly, and validation
+        // Handles session resolution, per-credential proofs and response assembly
         let result = Box::pin(self.inner.generate_proof(
-            &proof_request.0,
+            &selected_request,
             nullifier.clone(),
             &credentials,
             Some(account_inclusion_proof),
             session_id_r_seed,
         ))
         .await?;
+        proof_request
+            .0
+            .validate_response(&result.proof_response)
+            .map_err(|err| WalletKitError::ResponseValidation(err.to_string()))?;
 
         // Cache session seed if returned. Create-session requests do not carry a
         // session_id, so use the session_id generated in the proof response.

@@ -6,6 +6,7 @@ use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine as _};
 use clap::Subcommand;
 use eyre::WrapErr as _;
 use walletkit_core::requests::ProofRequest;
+use walletkit_core::CredentialFilter;
 use walletkit_testkit::env::TestEnv;
 use walletkit_testkit::issuer::issue_faux_credential;
 use walletkit_testkit::proof::{
@@ -154,7 +155,7 @@ async fn run_generate(cli: &Cli, request: &str, now: Option<u64>) -> eyre::Resul
         ProofRequest::from_json(&json_str).wrap_err("invalid proof request")?;
 
     let response = authenticator
-        .generate_proof(&proof_request, Some(ts))
+        .generate_proof(&proof_request, &CredentialFilter::new(), Some(ts))
         .await
         .wrap_err("proof generation failed")?;
 
@@ -318,7 +319,7 @@ async fn run_test(
         ProofRequest::from_json(&serde_json::to_string(&proof_request)?)
             .wrap_err("invalid proof request")?;
     let proof_response = authenticator
-        .generate_proof(&walletkit_request, Some(ts))
+        .generate_proof(&walletkit_request, &CredentialFilter::new(), Some(ts))
         .await
         .wrap_err("proof generation failed")?;
 

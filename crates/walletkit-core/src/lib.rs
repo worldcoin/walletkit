@@ -10,7 +10,7 @@
 //! use walletkit_core::authenticator::artifacts::embedded::EmbeddedZkArtifacts;
 //! use walletkit_core::requests::ProofRequest;
 //! use walletkit_core::storage::CredentialStore;
-//! use walletkit_core::{Authenticator, Environment};
+//! use walletkit_core::{Authenticator, CredentialFilter, Environment};
 //!
 //! async fn generate_world_id_proof(
 //!     store: Arc<CredentialStore>,
@@ -34,7 +34,9 @@
 //!     let request = ProofRequest::from_json(json)?;
 //!
 //!     // Generate a zero-knowledge proof and serialise the response.
-//!     let response = authenticator.generate_proof(&request, None).await?;
+//!     let response = authenticator
+//!         .generate_proof(&request, &CredentialFilter::new(), None)
+//!         .await?;
 //!     println!("{}", response.to_json()?);
 //!     Ok(())
 //! }
