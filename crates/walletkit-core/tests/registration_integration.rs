@@ -122,7 +122,7 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     assert_eq!((result.leaf_index, result.pubkey_id), (leaf_index, 1));
     assert_eq!(registered.leaf_index(), leaf_index);
 
-    let restarted = Authenticator::init_with_leaf_index(
+    let restarted = Authenticator::init_with_leaf_index_and_config(
         &requester_seed,
         leaf_index,
         config,
