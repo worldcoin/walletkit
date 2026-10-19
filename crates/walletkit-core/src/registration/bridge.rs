@@ -2,14 +2,14 @@
 
 use std::{future::Future, time::Duration};
 
-use backon::{ExponentialBuilder, Retryable as _};
+use backon::{BackoffBuilder as _, ExponentialBuilder};
 use futures_util::StreamExt as _;
-use reqwest::{RequestBuilder, Response, StatusCode, Url};
+use reqwest::{header::RETRY_AFTER, RequestBuilder, Response, StatusCode, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use web_time::Instant;
 use world_id_core::registration::{BridgeDomain, EncryptedPayload, RequestId};
 
-use super::before;
+use super::{before, sleep};
 
 /// The message-bridge's body limit, which the largest WIP-109 response fits within.
 const MAX_BODY_SIZE: usize = 5 * 1024 * 1024;
@@ -127,6 +127,7 @@ impl BridgeClient {
 }
 
 impl BridgeClient {
+    /// Returns the parsed bridge domain.
     pub(super) const fn bridge_domain(&self) -> &BridgeDomain {
         &self.domain
     }
@@ -174,8 +175,8 @@ impl BridgeClient {
             .await
     }
 
-    /// Stores the encrypted response (`PUT /response/:id`). The bridge answers `201` once it
-    /// stored it; a `400` or `409` after a failed attempt can mean that attempt was stored.
+    /// Stores the encrypted response (`PUT /response/:id`). A `409` means that an earlier
+    /// attempt, whose `201` reply was lost, already stored the response for this session.
     pub(super) async fn put_response(
         &self,
         request_id: &RequestId,
@@ -185,13 +186,14 @@ impl BridgeClient {
         bounded(async {
             let reply = self.send(self.http.put(url).json(response)).await?;
             match reply.status() {
-                StatusCode::CREATED => Ok(()),
+                StatusCode::CREATED | StatusCode::CONFLICT => Ok(()),
                 status => Err(BridgeError::from(status)),
             }
         })
         .await
     }
 
+    /// Reads and deserializes a single-use bridge resource, returning `None` on `404`.
     async fn read<T: DeserializeOwned>(
         &self,
         url: Url,
@@ -207,32 +209,39 @@ impl BridgeClient {
         .await
     }
 
-    /// Sends `request`, retrying transient failures.
-    ///
-    /// Each attempt owns what it uses, so that the operations stay `Send` for `UniFFI`'s async
-    /// exports.
+    /// Sends `request`, retrying transient failures while honoring `Retry-After`.
     async fn send(&self, request: RequestBuilder) -> Result<Response, BridgeError> {
         let request = request.build()?;
-        let attempt = || {
-            let http = self.http.clone();
-            let request = request
+        let mut delays = retry_backoff().build();
+        loop {
+            let attempt = request
                 .try_clone()
                 .expect("bridge requests have buffered bodies");
-            async move {
-                let response = http.execute(request).await?;
-                let status = response.status();
-                if status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS {
-                    return Err(BridgeError::from(status));
+            match self.http.execute(attempt).await {
+                Ok(response) => {
+                    let status = response.status();
+                    if !status.is_server_error()
+                        && status != StatusCode::TOO_MANY_REQUESTS
+                    {
+                        return Ok(response);
+                    }
+                    let retry_after = retry_after(&response);
+                    let Some(backoff) = delays.next() else {
+                        return Err(BridgeError::from(status));
+                    };
+                    sleep(retry_after.unwrap_or(backoff).max(backoff)).await;
                 }
-                Ok(response)
+                Err(error) => {
+                    let Some(backoff) = delays.next() else {
+                        return Err(BridgeError::from(error));
+                    };
+                    sleep(backoff).await;
+                }
             }
-        };
-        attempt
-            .retry(retry_backoff())
-            .when(BridgeError::is_transient)
-            .await
+        }
     }
 
+    /// Builds a bridge endpoint URL by appending `segments` to `self.base_url`.
     fn url(&self, segments: &[&str]) -> Url {
         let mut url = self.base_url.clone();
         url.path_segments_mut()
@@ -243,24 +252,8 @@ impl BridgeClient {
     }
 }
 
-impl BridgeError {
-    const fn is_transient(&self) -> bool {
-        match self {
-            Self::Transport(_) => true,
-            Self::UnexpectedStatus { status } => {
-                (*status >= 500 && *status < 600)
-                    || *status == StatusCode::TOO_MANY_REQUESTS.as_u16()
-            }
-            Self::InvalidDomain(_)
-            | Self::InvalidUrl(_)
-            | Self::Json(_)
-            | Self::TooLarge
-            | Self::Timeout => false,
-        }
-    }
-}
-
 impl From<StatusCode> for BridgeError {
+    /// Converts an unexpected HTTP status code into [`BridgeError::UnexpectedStatus`].
     fn from(status: StatusCode) -> Self {
         Self::UnexpectedStatus {
             status: status.as_u16(),
@@ -269,15 +262,30 @@ impl From<StatusCode> for BridgeError {
 }
 
 impl From<reqwest::Error> for BridgeError {
+    /// Converts a reqwest transport error into [`BridgeError::Transport`] with the URL stripped.
     fn from(error: reqwest::Error) -> Self {
         Self::Transport(error.without_url().to_string())
     }
 }
 
 impl From<serde_json::Error> for BridgeError {
+    /// Converts a JSON deserialization error into [`BridgeError::Json`].
     fn from(error: serde_json::Error) -> Self {
         Self::Json(error.to_string())
     }
+}
+
+/// Parses a `Retry-After` delay-seconds header from a throttled or unavailable response.
+fn retry_after(response: &Response) -> Option<Duration> {
+    response
+        .headers()
+        .get(RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(Duration::from_secs)
 }
 
 /// Builds the HTTP client for the bridge. Browsers decide connection and request timeouts
@@ -300,6 +308,7 @@ async fn bounded<T>(
         .unwrap_or(Err(BridgeError::Timeout))
 }
 
+/// Builds the exponential backoff policy for transient bridge errors.
 fn retry_backoff() -> ExponentialBuilder {
     ExponentialBuilder::default()
         .with_min_delay(Duration::from_millis(500))
@@ -308,6 +317,7 @@ fn retry_backoff() -> ExponentialBuilder {
         .with_jitter()
 }
 
+/// Reads a JSON response body up to [`MAX_BODY_SIZE`].
 async fn read_json<T: DeserializeOwned>(response: Response) -> Result<T, BridgeError> {
     let mut chunks = std::pin::pin!(response.bytes_stream());
     let mut body = Vec::new();
@@ -319,4 +329,81 @@ async fn read_json<T: DeserializeOwned>(response: Response) -> Result<T, BridgeE
         body.extend_from_slice(&chunk);
     }
     Ok(serde_json::from_slice(&body)?)
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
+
+    use axum::{
+        extract::State,
+        http::{header::RETRY_AFTER, StatusCode},
+        routing::put,
+        Router,
+    };
+    use tokio::net::TcpListener;
+    use world_id_core::registration::PairingSecret;
+
+    use super::*;
+
+    fn sample_payload() -> EncryptedPayload {
+        EncryptedPayload {
+            iv: "aXY=".to_string(),
+            payload: "cGF5bG9hZA==".to_string(),
+        }
+    }
+
+    async fn serve(app: Router) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        url
+    }
+
+    #[tokio::test]
+    async fn put_response_accepts_conflict_from_prior_stored_attempt() {
+        let url = serve(
+            Router::new()
+                .route("/response/{id}", put(|| async { StatusCode::CONFLICT })),
+        )
+        .await;
+        let client = BridgeClient::with_base_url("bridge.example", &url).unwrap();
+        let request_id = PairingSecret::generate().unwrap().request_id();
+
+        client
+            .put_response(&request_id, &sample_payload())
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn send_honors_retry_after_on_throttled_response() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let app = Router::new()
+            .route(
+                "/response/{id}",
+                put(|State(attempts): State<Arc<AtomicUsize>>| async move {
+                    if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                        (StatusCode::TOO_MANY_REQUESTS, [(RETRY_AFTER, "1")])
+                    } else {
+                        (StatusCode::CREATED, [(RETRY_AFTER, "0")])
+                    }
+                }),
+            )
+            .with_state(attempts.clone());
+        let url = serve(app).await;
+        let client = BridgeClient::with_base_url("bridge.example", &url).unwrap();
+        let request_id = PairingSecret::generate().unwrap().request_id();
+
+        let started = Instant::now();
+        client
+            .put_response(&request_id, &sample_payload())
+            .await
+            .unwrap();
+        assert!(started.elapsed() >= Duration::from_secs(1));
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+    }
 }
