@@ -213,7 +213,7 @@ impl BridgeClient {
 
     /// Sends `request`, retrying transient failures while honoring `Retry-After`.
     async fn send(&self, request: RequestBuilder) -> Result<Response, BridgeError> {
-        let request = request.build()?;
+        let request = request.timeout(Duration::from_secs(30)).build()?;
         let mut delays = retry_backoff().build();
         loop {
             let attempt = request

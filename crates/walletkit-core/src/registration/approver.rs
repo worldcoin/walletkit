@@ -1498,4 +1498,73 @@ mod tests {
         );
         assert!(outcome.delivered);
     }
+
+    #[test]
+    fn parse_request_validates_envelope_method_digest_signature_and_reply_key() {
+        let signer = Signer::from_seed_bytes(&[71u8; 32]).unwrap();
+        let other = Signer::from_seed_bytes(&[72u8; 32]).unwrap();
+        let request_id = PairingSecret::generate().unwrap().request_id();
+        let other_id = PairingSecret::generate().unwrap().request_id();
+        let response_pk = ResponseSecretKey::generate().unwrap().public_key();
+        let (valid_req, valid_digest) = RegistrationRequest::new_signed(
+            signer.offchain_signer_private_key().expose_secret(),
+            None,
+            response_pk,
+            None,
+            &request_id,
+        )
+        .unwrap();
+
+        let valid_bytes = RegisterRequestMessage::new(
+            Some(request_id.message_id()),
+            REGISTER_METHOD,
+            Some(valid_req.clone()),
+        )
+        .encode()
+        .unwrap();
+        assert_eq!(
+            parse_request(&valid_bytes, &request_id, &valid_digest).ok(),
+            Some(valid_req.clone())
+        );
+
+        // Malformed CBOR: ParseError with no reply.
+        let err = parse_request(&[0xff, 0x00], &request_id, &valid_digest).unwrap_err();
+        assert_eq!(err.reason, RegistrationErrorReason::ParseError);
+        assert!(err.reply.is_none());
+
+        // Notification (id: None): InvalidRequest with no reply.
+        let notif_bytes =
+            RegisterRequestMessage::new(None, REGISTER_METHOD, Some(valid_req.clone()))
+                .encode()
+                .unwrap();
+        let err = parse_request(&notif_bytes, &request_id, &valid_digest).unwrap_err();
+        assert_eq!(err.reason, RegistrationErrorReason::InvalidRequest);
+        assert!(err.reply.is_none());
+
+        // Mismatched request id: InvalidRequest with reply key extracted.
+        let wrong_id_bytes = RegisterRequestMessage::new(
+            Some(other_id.message_id()),
+            REGISTER_METHOD,
+            Some(valid_req),
+        )
+        .encode()
+        .unwrap();
+        let err =
+            parse_request(&wrong_id_bytes, &request_id, &valid_digest).unwrap_err();
+        assert_eq!(err.reason, RegistrationErrorReason::InvalidRequest);
+        assert!(err.reply.is_some());
+
+        // Mismatched URI digest: InvalidParams with reply key extracted.
+        let (_, other_digest) = RegistrationRequest::new_signed(
+            other.offchain_signer_private_key().expose_secret(),
+            None,
+            ResponseSecretKey::generate().unwrap().public_key(),
+            None,
+            &request_id,
+        )
+        .unwrap();
+        let err = parse_request(&valid_bytes, &request_id, &other_digest).unwrap_err();
+        assert_eq!(err.reason, RegistrationErrorReason::InvalidParams);
+        assert!(err.reply.is_some());
+    }
 }
