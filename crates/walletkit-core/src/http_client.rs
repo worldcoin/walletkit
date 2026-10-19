@@ -7,7 +7,13 @@ pub fn builder() -> reqwest::ClientBuilder {
     let roots = webpki_root_certs::TLS_SERVER_ROOT_CERTS
         .iter()
         .map(|cert| reqwest::Certificate::from_der(cert).expect("bundled root is DER"));
-    reqwest::Client::builder().tls_certs_only(roots)
+    reqwest::Client::builder()
+        .tls_certs_only(roots)
+        .user_agent(concat!(
+            env!("CARGO_PKG_NAME"),
+            "/",
+            env!("CARGO_PKG_VERSION")
+        ))
 }
 
 /// Starts building an HTTP client. Browsers verify TLS themselves.
