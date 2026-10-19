@@ -24,12 +24,16 @@ use crate::storage::CredentialStore;
 use crate::OwnershipProof;
 
 pub mod artifacts;
+mod ownership;
 mod with_storage;
+
+pub use ownership::OwnershipProofInput;
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator {
     inner: CoreAuthenticator,
+    signer: Signer,
     store: Arc<CredentialStore>,
 }
 
@@ -49,6 +53,7 @@ impl Authenticator {
 
         Ok(Self {
             inner: authenticator,
+            signer: Signer::from_seed_bytes(seed)?,
             store,
         })
     }
