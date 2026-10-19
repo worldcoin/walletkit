@@ -113,7 +113,7 @@ impl BridgeClient {
             return Err(BridgeError::InvalidUrl(base_url.to_string()));
         }
         Ok(Self {
-            http: http_client()?,
+            http: http_client(&base_url)?,
             domain,
             base_url,
         })
@@ -175,8 +175,10 @@ impl BridgeClient {
             .await
     }
 
-    /// Stores the encrypted response (`PUT /response/:id`). A `409` means that an earlier
-    /// attempt, whose `201` reply was lost, already stored the response for this session.
+    /// Stores the encrypted response (`PUT /response/:id`). The bridge answers `201` once it
+    /// stored it; a `400` or `409` after a failed attempt can mean that attempt was stored,
+    /// but remains an error because anyone who saw the Pairing URI knows `request_id` and
+    /// could have filled the response slot first (WIP-109 §3.7.5).
     pub(super) async fn put_response(
         &self,
         request_id: &RequestId,
@@ -186,7 +188,7 @@ impl BridgeClient {
         bounded(async {
             let reply = self.send(self.http.put(url).json(response)).await?;
             match reply.status() {
-                StatusCode::CREATED | StatusCode::CONFLICT => Ok(()),
+                StatusCode::CREATED => Ok(()),
                 status => Err(BridgeError::from(status)),
             }
         })
@@ -288,14 +290,35 @@ fn retry_after(response: &Response) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
-/// Builds the HTTP client for the bridge. Browsers decide connection and request timeouts
-/// themselves.
-fn http_client() -> Result<reqwest::Client, BridgeError> {
+/// Builds the HTTP client for the bridge. Native clients follow redirects only within
+/// `base_url`'s origin; browsers decide connection and request timeouts themselves.
+fn http_client(base_url: &Url) -> Result<reqwest::Client, BridgeError> {
     let builder = crate::http_client::builder();
     #[cfg(not(target_arch = "wasm32"))]
-    let builder = builder
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(30));
+    let builder = {
+        let scheme = base_url.scheme().to_string();
+        let host = base_url.host_str().map(str::to_string);
+        let port = base_url.port_or_known_default();
+        builder
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+                if attempt.previous().len() >= 10 {
+                    return attempt.error("too many redirects");
+                }
+                let next = attempt.url();
+                if next.scheme() == scheme
+                    && next.host_str() == host.as_deref()
+                    && next.port_or_known_default() == port
+                {
+                    attempt.follow()
+                } else {
+                    attempt.stop()
+                }
+            }))
+    };
+    #[cfg(target_arch = "wasm32")]
+    let _ = base_url;
     Ok(builder.build()?)
 }
 
@@ -341,8 +364,9 @@ mod tests {
     use axum::{
         extract::State,
         http::{header::RETRY_AFTER, StatusCode},
-        routing::put,
-        Router,
+        response::Redirect,
+        routing::{get, put},
+        Json, Router,
     };
     use tokio::net::TcpListener;
     use world_id_core::registration::PairingSecret;
@@ -364,7 +388,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn put_response_accepts_conflict_from_prior_stored_attempt() {
+    async fn put_response_treats_conflict_as_unconfirmed_delivery() {
         let url = serve(
             Router::new()
                 .route("/response/{id}", put(|| async { StatusCode::CONFLICT })),
@@ -373,10 +397,60 @@ mod tests {
         let client = BridgeClient::with_base_url("bridge.example", &url).unwrap();
         let request_id = PairingSecret::generate().unwrap().request_id();
 
-        client
+        let err = client
             .put_response(&request_id, &sample_payload())
             .await
-            .unwrap();
+            .unwrap_err();
+        assert_eq!(err, BridgeError::UnexpectedStatus { status: 409 });
+    }
+
+    #[tokio::test]
+    async fn redirect_policy_follows_same_origin_and_stops_cross_origin() {
+        let other_hits = Arc::new(AtomicUsize::new(0));
+        let other_url = serve(
+            Router::new()
+                .route(
+                    "/request/{id}",
+                    get(|State(hits): State<Arc<AtomicUsize>>| async move {
+                        hits.fetch_add(1, Ordering::SeqCst);
+                        Json(sample_payload())
+                    }),
+                )
+                .with_state(other_hits.clone()),
+        )
+        .await;
+
+        let cross_origin_target = format!("{other_url}/request/1");
+        let cross_url = serve(Router::new().route(
+            "/request/{id}",
+            get(move || {
+                let target = cross_origin_target.clone();
+                async move { Redirect::temporary(&target) }
+            }),
+        ))
+        .await;
+        let client = BridgeClient::with_base_url("bridge.example", &cross_url).unwrap();
+        let request_id = PairingSecret::generate().unwrap().request_id();
+        let err = client.take_request(&request_id).await.unwrap_err();
+        assert_eq!(err, BridgeError::UnexpectedStatus { status: 307 });
+        assert_eq!(other_hits.load(Ordering::SeqCst), 0);
+
+        let same_url = serve(
+            Router::new()
+                .route(
+                    "/request/{id}",
+                    get(|| async { Redirect::temporary("/v2/request") }),
+                )
+                .route("/v2/request", get(|| async { Json(sample_payload()) })),
+        )
+        .await;
+        let same_client =
+            BridgeClient::with_base_url("bridge.example", &same_url).unwrap();
+        assert!(same_client
+            .take_request(&request_id)
+            .await
+            .unwrap()
+            .is_some());
     }
 
     #[tokio::test]
