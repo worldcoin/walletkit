@@ -1,21 +1,25 @@
 //! The Requesting Authenticator's side of a registration (WIP-109 §3.8).
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex, PoisonError},
+    time::Duration,
+};
 
 use alloy_core::primitives::Address;
 use backon::Retryable as _;
 use secrecy::ExposeSecret as _;
+use tokio::sync::Mutex as AsyncMutex;
 use web_time::Instant;
 use world_id_core::{
     primitives::{
-        authenticator_message::{ErrorObject, MessageError, Response},
+        authenticator_message::{ErrorObject, Response},
         Config,
     },
     registration::{
         decode_response, AuthenticatorName, EncryptedPayload, PairingCode,
         PairingSecret, PairingUri, RegisterRequestMessage, RegistrationDigest,
-        RegistrationErrorData, RegistrationRequest, RegistrationResult,
-        ResponseSecretKey, TransportError, TransportKey, REGISTER_METHOD,
+        RegistrationErrorData, RegistrationErrorReason, RegistrationRequest,
+        ResponseSecretKey, TransportError, TransportKey, MAX_NAME_LEN, REGISTER_METHOD,
     },
     Authenticator as CoreAuthenticator, AuthenticatorError, Signer,
 };
@@ -24,65 +28,83 @@ use zeroize::Zeroizing;
 use super::{
     before,
     bridge::{BridgeClient, BridgeError, ResponseState},
-    polling_backoff, PLAINTEXT_VAULT_FORMAT, SESSION_TTL,
+    polling_backoff, RegistrationResult, RequestedClass, PLAINTEXT_VAULT_FORMAT,
+    SESSION_TTL,
 };
 use crate::{
-    authenticator::artifacts::WalletKitZkArtifactSource, storage::CredentialStore,
-    Authenticator,
+    authenticator::artifacts::WalletKitZkArtifactSource, defaults,
+    error::WalletKitError, storage::CredentialStore, Authenticator, Environment,
+    Region,
 };
 
 /// How long [`RegistrationRequester::verify`] waits for the indexer to show the registration.
 const VERIFY_TIMEOUT: Duration = Duration::from_mins(1);
 
-/// The class a Requesting Authenticator asks for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RequestedClass {
-    /// An Admin Authenticator, which registers the management key derived from its seed.
-    Admin,
-    /// A Proving Authenticator.
-    Proving,
+/// An error response from the Approving Authenticator (WIP-109 §3.6.3).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct RegistrationError {
+    /// The parsed WIP-109 reason, or `None` for an unrecognized error code.
+    pub reason: Option<RegistrationErrorReason>,
+    /// The raw `error.code`.
+    pub code: String,
+    /// The human-readable `error.message`.
+    pub message: String,
+    /// Optional implementation-specific detail from `error.data.detail`, e.g. a gateway error
+    /// code.
+    pub detail: Option<String>,
 }
 
 /// What [`RegistrationRequester::poll`] found on the bridge.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum RequesterStatus {
     /// The Approving Authenticator has not opened the Pairing URI yet.
     Waiting,
     /// The Approving Authenticator took the request. Show the pairing code.
     Retrieved,
-    /// The Approving Authenticator answered. A successful result must be checked with
+    /// The Approving Authenticator approved the registration. The result must be checked with
     /// [`RegistrationRequester::verify`] before it is used.
-    Completed(Result<RegistrationResult, ErrorObject<RegistrationErrorData>>),
+    Approved {
+        /// The unverified registration result.
+        result: Arc<RegistrationResult>,
+    },
+    /// The Approving Authenticator refused or could not complete the registration.
+    Refused {
+        /// The error reported by the Approving Authenticator.
+        error: RegistrationError,
+    },
     /// The session expired, was cancelled, or its response was lost. Start a new session with
     /// the same seed.
     Expired,
 }
 
 /// A verified registration.
-#[derive(Debug)]
+#[derive(Debug, uniffi::Record)]
 pub struct Registered {
     /// The new authenticator. Its storage is not initialized yet.
-    pub authenticator: Authenticator,
+    pub authenticator: Arc<Authenticator>,
     /// The shared `CredentialStore::export_vault_for_backup` output, to import with
     /// `CredentialStore::merge_vault_from_backup` once storage is initialized.
-    pub vault_backup: Option<Zeroizing<Vec<u8>>>,
+    pub vault_backup: Option<Vec<u8>>,
 }
 
 /// Errors on the Requesting Authenticator's side of a registration. Each one ends the session.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum RequesterError {
+    /// The requested authenticator name exceeds [`MAX_NAME_LEN`].
+    #[error("authenticator name must be at most {MAX_NAME_LEN} bytes")]
+    NameTooLong,
     /// The bridge could not be reached or rejected an operation.
     #[error(transparent)]
     Bridge(#[from] BridgeError),
     /// Encrypting the request or opening the response failed.
     #[error(transparent)]
     Transport(#[from] TransportError),
-    /// The seed is invalid, or reading the account state failed.
+    /// The seed or configuration is invalid, or reading the account state failed.
     #[error(transparent)]
-    Authenticator(#[from] AuthenticatorError),
+    Authenticator(#[from] WalletKitError),
     /// The request could not be encoded.
     #[error("failed to encode the registration request: {0}")]
-    Encoding(#[source] MessageError),
+    Encoding(String),
     /// The response is not a valid answer to this session's request.
     #[error("malformed registration response: {0}")]
     MalformedResponse(String),
@@ -107,13 +129,14 @@ pub enum RequesterError {
 ///
 /// A new session after an expired or failed one must use the **same seed**, so that an
 /// insertion that already happened is found instead of repeated.
-#[derive(Debug)]
+#[derive(Debug, uniffi::Object)]
 pub struct RegistrationRequester {
     request: RegistrationRequest,
     digest: RegistrationDigest,
-    bridge: BridgeClient,
+    bridge: Arc<BridgeClient>,
+    poll_lock: AsyncMutex<()>,
     /// The live session, or `None` once it completed, failed, expired or was cancelled.
-    session: Option<Session>,
+    session: Mutex<Option<Session>>,
 }
 
 /// The secrets and state of a live session (WIP-109 §3.3).
@@ -127,6 +150,7 @@ struct Session {
     expires_at: Instant,
 }
 
+#[uniffi::export(async_runtime = "tokio")]
 impl RegistrationRequester {
     /// Starts a session for the authenticator derived from `seed` and publishes its request on
     /// `bridge`, whose domain goes into the Pairing URI.
@@ -136,15 +160,22 @@ impl RegistrationRequester {
     ///
     /// # Errors
     ///
-    /// Returns an error if the seed is invalid, the CSPRNG is unavailable, the request cannot be
-    /// encoded or encrypted, or the bridge does not store it.
+    /// Returns an error if the seed or name is invalid, the CSPRNG is unavailable, the request
+    /// cannot be encoded or encrypted, or the bridge does not store it.
+    #[uniffi::constructor]
     pub async fn start(
-        seed: &[u8],
+        seed: Vec<u8>,
         class: RequestedClass,
-        name: Option<AuthenticatorName>,
-        bridge: BridgeClient,
+        name: Option<String>,
+        bridge: Arc<BridgeClient>,
     ) -> Result<Self, RequesterError> {
-        let signer = Signer::from_seed_bytes(seed).map_err(AuthenticatorError::from)?;
+        let seed = Zeroizing::new(seed);
+        let name = name
+            .map(AuthenticatorName::try_from)
+            .transpose()
+            .map_err(|_| RequesterError::NameTooLong)?;
+        let signer =
+            Signer::from_seed_bytes(&seed).map_err(AuthenticatorError::from)?;
         let pairing_secret = PairingSecret::generate()?;
         let code = PairingCode::generate();
         let transport_key = pairing_secret.transport_key(&code)?;
@@ -164,7 +195,9 @@ impl RegistrationRequester {
             REGISTER_METHOD,
             Some(request.clone()),
         );
-        let plaintext = message.encode().map_err(RequesterError::Encoding)?;
+        let plaintext = message
+            .encode()
+            .map_err(|error| RequesterError::Encoding(error.to_string()))?;
         let encrypted_request = transport_key.encrypt_request(&plaintext)?;
         bridge
             .publish_request(&request_id, &encrypted_request)
@@ -173,42 +206,46 @@ impl RegistrationRequester {
             request,
             digest,
             bridge,
-            session: Some(Session {
+            poll_lock: AsyncMutex::new(()),
+            session: Mutex::new(Some(Session {
                 pairing_secret,
                 code,
                 transport_key,
                 response_key,
                 retrieved: false,
                 expires_at: Instant::now() + SESSION_TTL,
-            }),
+            })),
         })
     }
 
     /// Returns the Pairing URI until the Approving Authenticator takes the request or the
     /// session ends. Never log it.
     #[must_use]
-    pub fn pairing_uri(&self) -> Option<PairingUri> {
-        self.live_session()
-            .filter(|session| !session.retrieved)
-            .map(|session| PairingUri {
-                secret: session.pairing_secret.clone(),
-                digest: self.digest,
-                bridge: self.bridge.domain().clone(),
+    pub fn pairing_uri(&self) -> Option<String> {
+        self.live_session(|live| {
+            (!live.retrieved).then(|| {
+                PairingUri {
+                    secret: live.pairing_secret.clone(),
+                    digest: self.digest,
+                    bridge: self.bridge.bridge_domain().clone(),
+                }
+                .to_string()
             })
+        })
+        .flatten()
     }
 
     /// Returns the pairing code once the Approving Authenticator took the request, until the
     /// session ends. Show it only on this device. Never log it.
     #[must_use]
-    pub fn pairing_code(&self) -> Option<&PairingCode> {
-        self.live_session()
-            .filter(|session| session.retrieved)
-            .map(|session| &session.code)
+    pub fn pairing_code(&self) -> Option<String> {
+        self.live_session(|live| live.retrieved.then(|| live.code.as_str().to_string()))
+            .flatten()
     }
 
     /// Ends the session and discards its secrets.
-    pub fn cancel(&mut self) {
-        self.session = None;
+    pub fn cancel(&self) {
+        drop(self.take_live_session());
     }
 
     /// Checks the bridge once for the response. A completed response ends the session.
@@ -217,38 +254,134 @@ impl RegistrationRequester {
     ///
     /// Returns an error if the bridge cannot be reached, or the response cannot be opened or
     /// does not answer this session's request. Errors end the session.
-    pub async fn poll(&mut self) -> Result<RequesterStatus, RequesterError> {
-        let Some(session) = self
-            .session
-            .as_mut()
-            .filter(|session| Instant::now() < session.expires_at)
+    pub async fn poll(&self) -> Result<RequesterStatus, RequesterError> {
+        let _polling = self.poll_lock.lock().await;
+        let Some((request_id, expires_at)) = self
+            .live_session(|live| (live.pairing_secret.request_id(), live.expires_at))
         else {
-            self.session = None;
             return Ok(RequesterStatus::Expired);
         };
-        let request_id = session.pairing_secret.request_id();
-        let state =
-            before(session.expires_at, self.bridge.fetch_response(&request_id)).await;
-        let status = match state {
+        let state = before(expires_at, self.bridge.fetch_response(&request_id)).await;
+        // The session may have been cancelled during the fetch.
+        let Some(mut live) = self.take_live_session() else {
+            return Ok(RequesterStatus::Expired);
+        };
+        match state {
             Some(Ok(Some(ResponseState::Initialized))) => {
-                return Ok(RequesterStatus::Waiting)
+                self.restore_session(live);
+                Ok(RequesterStatus::Waiting)
             }
             Some(Ok(Some(ResponseState::Retrieved))) => {
                 // Taking the request restarts the bridge session (WIP-109 §3.5).
-                if !session.retrieved {
-                    session.retrieved = true;
-                    session.expires_at = Instant::now() + SESSION_TTL;
+                if !live.retrieved {
+                    live.retrieved = true;
+                    live.expires_at = Instant::now() + SESSION_TTL;
                 }
-                return Ok(RequesterStatus::Retrieved);
+                self.restore_session(live);
+                Ok(RequesterStatus::Retrieved)
             }
-            Some(Ok(Some(ResponseState::Completed(sealed)))) => {
-                session.open(&sealed).map(RequesterStatus::Completed)
-            }
+            Some(Ok(Some(ResponseState::Completed(sealed)))) => live.open(&sealed),
             Some(Err(error)) => Err(error.into()),
             None | Some(Ok(None)) => Ok(RequesterStatus::Expired),
-        };
-        self.session = None;
-        status
+        }
+    }
+
+    /// Checks a successful `result` against the registry using SDK defaults, and returns the new
+    /// authenticator.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::verify_with_config`] for potential errors.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors the `Authenticator` constructors with SDK defaults"
+    )]
+    pub async fn verify_with_defaults(
+        &self,
+        seed: Vec<u8>,
+        result: &RegistrationResult,
+        rpc_url: Option<String>,
+        environment: &Environment,
+        region: Option<Region>,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Registered, RequesterError> {
+        let seed = Zeroizing::new(seed);
+        let config = defaults::default_config(environment, rpc_url, region)?;
+        self.verify_with_config(&seed, result, config, artifacts, store)
+            .await
+    }
+
+    /// Checks a successful `result` against the registry using SDK defaults routed through the
+    /// OHTTP relay, and returns the new authenticator.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::verify_with_config`] for potential errors.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors the `Authenticator` constructors with SDK defaults"
+    )]
+    pub async fn verify_with_ohttp_defaults(
+        &self,
+        seed: Vec<u8>,
+        result: &RegistrationResult,
+        rpc_url: Option<String>,
+        environment: &Environment,
+        region: Option<Region>,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Registered, RequesterError> {
+        let seed = Zeroizing::new(seed);
+        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
+        self.verify_with_config(&seed, result, config, artifacts, store)
+            .await
+    }
+
+    /// Checks a successful `result` against the registry with a JSON `config`, and returns the
+    /// new authenticator.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::verify_with_config`] for potential errors.
+    pub async fn verify(
+        &self,
+        seed: Vec<u8>,
+        result: &RegistrationResult,
+        config: &str,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Registered, RequesterError> {
+        let seed = Zeroizing::new(seed);
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+                attribute: "config".to_string(),
+                reason: "Invalid config".to_string(),
+            })?;
+        self.verify_with_config(&seed, result, config, artifacts, store)
+            .await
+    }
+}
+
+impl RegistrationRequester {
+    /// Runs `read` on the live session, discarding an expired one.
+    fn live_session<T>(&self, read: impl FnOnce(&Session) -> T) -> Option<T> {
+        let mut session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
+        session.take_if(|live| Instant::now() >= live.expires_at);
+        session.as_ref().map(read)
+    }
+
+    /// Takes the live session out, ending it unless it is restored.
+    fn take_live_session(&self) -> Option<Session> {
+        self.session
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+            .filter(|live| Instant::now() < live.expires_at)
+    }
+
+    fn restore_session(&self, live: Session) {
+        *self.session.lock().unwrap_or_else(PoisonError::into_inner) = Some(live);
     }
 
     /// Checks a successful `result` against the registry and returns the new authenticator.
@@ -265,10 +398,10 @@ impl RegistrationRequester {
     /// - [`RequesterError::VerificationTimeout`] if the key is still not found when the deadline
     ///   passes. A wrong `leaf_index` cannot be told apart from indexer lag.
     /// - [`RequesterError::Authenticator`] if an account lookup fails permanently.
-    pub async fn verify(
+    pub async fn verify_with_config(
         &self,
         seed: &[u8],
-        result: RegistrationResult,
+        result: &RegistrationResult,
         config: Config,
         artifacts: Arc<dyn WalletKitZkArtifactSource>,
         store: Arc<CredentialStore>,
@@ -280,13 +413,13 @@ impl RegistrationRequester {
             return Err(RequesterError::SeedMismatch);
         }
         drop(signer);
+        let leaf_index = result.leaf_index;
         let lookup = || {
             let config = config.clone();
             let pubkey = self.request.new_authenticator_pubkey.clone();
             async move {
                 let authenticators = CoreAuthenticator::fetch_account_authenticators(
-                    result.leaf_index,
-                    &config,
+                    leaf_index, &config,
                 )
                 .await?;
                 let registered = authenticators
@@ -318,21 +451,15 @@ impl RegistrationRequester {
         }
         let inner = CoreAuthenticator::from_account_authenticators(
             seed,
-            result.leaf_index,
+            leaf_index,
             &authenticators,
             config,
             artifacts,
         )?;
         Ok(Registered {
-            authenticator: Authenticator { inner, store },
-            vault_backup: result.vault.map(|vault| vault.data),
+            authenticator: Arc::new(Authenticator { inner, store }),
+            vault_backup: result.0.vault.as_ref().map(|vault| vault.data.to_vec()),
         })
-    }
-
-    fn live_session(&self) -> Option<&Session> {
-        self.session
-            .as_ref()
-            .filter(|session| Instant::now() < session.expires_at)
     }
 }
 
@@ -342,10 +469,7 @@ impl Session {
     fn open(
         &self,
         sealed: &EncryptedPayload,
-    ) -> Result<
-        Result<RegistrationResult, ErrorObject<RegistrationErrorData>>,
-        RequesterError,
-    > {
+    ) -> Result<RequesterStatus, RequesterError> {
         let malformed = |problem: &dyn std::fmt::Display| {
             RequesterError::MalformedResponse(problem.to_string())
         };
@@ -364,17 +488,38 @@ impl Session {
                 {
                     return Err(malformed(&"unsupported vault format"));
                 }
-                Ok(Ok(result))
+                Ok(RequesterStatus::Approved {
+                    result: Arc::new(RegistrationResult(result)),
+                })
             }
             // The outer envelope binds the response to this session, so an error with a null id
             // is accepted too.
             Response::Error { id, error, .. }
                 if id.as_ref().is_none_or(|id| *id == expected_id) =>
             {
-                Ok(Err(error))
+                Ok(RequesterStatus::Refused {
+                    error: error.into(),
+                })
             }
             _ => Err(malformed(&"the response answers another request")),
         }
+    }
+}
+
+impl From<ErrorObject<RegistrationErrorData>> for RegistrationError {
+    fn from(error: ErrorObject<RegistrationErrorData>) -> Self {
+        Self {
+            reason: RegistrationErrorReason::from_code(&error.code),
+            code: error.code,
+            message: error.message,
+            detail: error.data.and_then(|data| data.detail),
+        }
+    }
+}
+
+impl From<AuthenticatorError> for RequesterError {
+    fn from(error: AuthenticatorError) -> Self {
+        Self::Authenticator(error.into())
     }
 }
 

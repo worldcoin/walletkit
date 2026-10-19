@@ -35,7 +35,7 @@ use tokio::{net::TcpListener, sync::oneshot};
 use walletkit_core::{
     defaults::STAGING_WORLD_ID_REGISTRY,
     registration::{
-        ApprovalOutcome, BridgeClient, KnownAuthenticator, PairingCode, PairingUri,
+        ApprovalOutcome, ApprovalResult, BridgeClient, KnownAuthenticator,
         PendingRegistration, RegistrationPlan, RegistrationRequester, RequestedClass,
         RequesterStatus,
     },
@@ -72,11 +72,9 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
         0,
     )
     .unwrap();
-    let bridge = BridgeClient::with_base_url(
-        "bridge.example".parse().unwrap(),
-        serve(bridge()).await.parse().unwrap(),
-    )
-    .unwrap();
+    let bridge = Arc::new(
+        BridgeClient::with_base_url("bridge.example", &serve(bridge()).await).unwrap(),
+    );
 
     let approver_store = common::create_test_credential_store();
     let approver = Authenticator::init_with_config(
@@ -118,8 +116,13 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     let registered = registered.unwrap();
     assert!(approval.delivered);
     assert!(!approval.vault_omitted);
-    let result = approval.result.unwrap();
-    assert_eq!((result.leaf_index, result.pubkey_id), (leaf_index, 1));
+    assert_eq!(
+        approval.result,
+        ApprovalResult::Registered {
+            leaf_index,
+            pubkey_id: 1
+        }
+    );
     assert_eq!(registered.leaf_index(), leaf_index);
 
     let restarted = Authenticator::init_with_leaf_index_and_config(
@@ -139,62 +142,63 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
 async fn approving_device(
     approver: Authenticator,
     vault: Vec<u8>,
-    bridge: BridgeClient,
+    bridge: Arc<BridgeClient>,
     uri: oneshot::Receiver<String>,
     code: oneshot::Receiver<String>,
 ) -> ApprovalOutcome {
-    let uri: PairingUri = uri.await.unwrap().parse().unwrap();
-    let mut pending = PendingRegistration::receive(&uri, &[bridge]).await.unwrap();
-    let code: PairingCode = code.await.unwrap().parse().unwrap();
-    let incoming = pending.authenticate(&code).await.unwrap();
-    assert_eq!(
-        incoming.request().name.as_ref().unwrap().as_str(),
-        "Chrome on MacBook"
-    );
+    let pending = PendingRegistration::receive(&uri.await.unwrap(), vec![bridge])
+        .await
+        .unwrap();
+    let incoming = pending.authenticate(&code.await.unwrap()).await.unwrap();
+    assert_eq!(incoming.class(), RequestedClass::Proving);
+    assert_eq!(incoming.name().as_deref(), Some("Chrome on MacBook"));
     let checked = incoming.check(&approver).await.unwrap();
     assert_eq!(checked.plan(), RegistrationPlan::Insert { pubkey_id: 1 });
     let others = vec![KnownAuthenticator {
         pubkey_id: 0,
         name: "iPhone".to_string(),
     }];
-    checked.approve(&approver, Some(vault.into()), others).await
+    checked
+        .approve(&approver, Some(vault), others)
+        .await
+        .unwrap()
 }
 
 /// Shows the QR code, then the pairing code, verifies the result and imports the vault.
 async fn requesting_device(
     seed: [u8; 32],
     config: Config,
-    bridge: BridgeClient,
+    bridge: Arc<BridgeClient>,
     uri: oneshot::Sender<String>,
     code: oneshot::Sender<String>,
-) -> Authenticator {
-    let mut requester = RegistrationRequester::start(
-        &seed,
+) -> Arc<Authenticator> {
+    let requester = RegistrationRequester::start(
+        seed.to_vec(),
         RequestedClass::Proving,
-        Some("Chrome on MacBook".to_string().try_into().unwrap()),
+        Some("Chrome on MacBook".to_string()),
         bridge,
     )
     .await
     .unwrap();
-    uri.send(requester.pairing_uri().unwrap().to_string())
-        .unwrap();
+    uri.send(requester.pairing_uri().unwrap()).unwrap();
     assert_eq!(
-        poll_past(&mut requester, &RequesterStatus::Waiting).await,
+        poll_past(&requester, &RequesterStatus::Waiting).await,
         RequesterStatus::Retrieved
     );
-    code.send(requester.pairing_code().unwrap().as_str().to_string())
-        .unwrap();
-    let RequesterStatus::Completed(Ok(result)) =
-        poll_past(&mut requester, &RequesterStatus::Retrieved).await
+    assert_eq!(requester.pairing_uri(), None);
+    code.send(requester.pairing_code().unwrap()).unwrap();
+    let RequesterStatus::Approved { result } =
+        poll_past(&requester, &RequesterStatus::Retrieved).await
     else {
         panic!("the registration did not succeed");
     };
-    assert_eq!(result.authenticators[0].name, "iPhone");
+    assert_eq!(result.authenticators()[0].name, "iPhone");
+    assert!(result.has_vault());
     let store = common::create_test_credential_store();
     let registered = requester
-        .verify(
+        .verify_with_config(
             &seed,
-            result,
+            &result,
             config,
             Arc::new(DummyZkArtifactSource),
             store.clone(),
@@ -210,7 +214,7 @@ async fn requesting_device(
 
 /// Polls until the status is no longer `current`.
 async fn poll_past(
-    requester: &mut RegistrationRequester,
+    requester: &RegistrationRequester,
     current: &RequesterStatus,
 ) -> RequesterStatus {
     loop {

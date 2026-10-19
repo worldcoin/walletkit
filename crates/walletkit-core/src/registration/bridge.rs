@@ -22,7 +22,7 @@ const OPERATION_TIMEOUT: Duration = Duration::from_mins(1);
 /// Transport failures, `429` and server errors are retried with bounded backoff and jitter.
 /// Reading a request or a response is single-use, so a retry after a lost reply can find the
 /// message gone.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, uniffi::Object)]
 pub struct BridgeClient {
     http: reqwest::Client,
     domain: BridgeDomain,
@@ -30,27 +30,33 @@ pub struct BridgeClient {
 }
 
 /// Errors from talking to the bridge.
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error, uniffi::Error)]
 pub enum BridgeError {
+    /// The bridge domain is not a valid DNS name with a named top-level label.
+    #[error("invalid bridge domain: {0}")]
+    InvalidDomain(String),
+    /// The bridge URL cannot be built.
+    #[error("invalid bridge URL: {0}")]
+    InvalidUrl(String),
     /// The request failed in transit. The error carries no URL: the bridge routes contain the
     /// request id, which is the only key to the session.
     #[error("bridge request failed: {0}")]
-    Transport(#[source] reqwest::Error),
+    Transport(String),
     /// The bridge answered with a status the operation does not expect.
-    #[error("bridge returned unexpected status {0}")]
-    UnexpectedStatus(StatusCode),
+    #[error("bridge returned unexpected status {status}")]
+    UnexpectedStatus {
+        /// The HTTP status code.
+        status: u16,
+    },
     /// The bridge returned malformed JSON.
     #[error("invalid bridge response: {0}")]
-    Json(#[from] serde_json::Error),
+    Json(String),
     /// The bridge response exceeded the bridge's body limit.
     #[error("bridge response exceeds the 5 MiB body limit")]
     TooLarge,
     /// The operation exhausted its time budget.
     #[error("bridge operation timed out")]
     Timeout,
-    /// The bridge URL cannot be built.
-    #[error("invalid bridge URL: {0}")]
-    InvalidUrl(String),
 }
 
 /// The state of a response on the bridge (`GET /response/:id`).
@@ -73,17 +79,20 @@ struct PublishBody<'a> {
     request: &'a EncryptedPayload,
 }
 
+#[uniffi::export]
 impl BridgeClient {
     /// Creates a client for the bridge at `https://{domain}`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the domain does not form a valid URL or the TLS backend cannot be
+    /// Returns an error if `domain` is not a valid bridge domain or the TLS backend cannot be
     /// initialized.
-    pub fn new(domain: BridgeDomain) -> Result<Self, BridgeError> {
-        let base_url = Url::parse(&format!("https://{domain}"))
-            .map_err(|error| BridgeError::InvalidUrl(error.to_string()))?;
-        Self::with_base_url(domain, base_url)
+    #[uniffi::constructor]
+    pub fn new(domain: &str) -> Result<Self, BridgeError> {
+        let parsed: BridgeDomain = domain
+            .parse()
+            .map_err(|_| BridgeError::InvalidDomain(domain.to_string()))?;
+        Self::with_base_url(parsed.as_str(), &format!("https://{parsed}"))
     }
 
     /// Creates a client that reaches the bridge named `domain` at `base_url`, e.g. a local
@@ -91,12 +100,15 @@ impl BridgeClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if `base_url` cannot be a base for the bridge routes or the TLS backend
-    /// cannot be initialized.
-    pub fn with_base_url(
-        domain: BridgeDomain,
-        base_url: Url,
-    ) -> Result<Self, BridgeError> {
+    /// Returns an error if `domain` is not a valid bridge domain, `base_url` cannot be a base
+    /// for the bridge routes, or the TLS backend cannot be initialized.
+    #[uniffi::constructor]
+    pub fn with_base_url(domain: &str, base_url: &str) -> Result<Self, BridgeError> {
+        let domain: BridgeDomain = domain
+            .parse()
+            .map_err(|_| BridgeError::InvalidDomain(domain.to_string()))?;
+        let base_url = Url::parse(base_url)
+            .map_err(|error| BridgeError::InvalidUrl(error.to_string()))?;
         if base_url.cannot_be_a_base() {
             return Err(BridgeError::InvalidUrl(base_url.to_string()));
         }
@@ -109,7 +121,13 @@ impl BridgeClient {
 
     /// Returns the domain of the bridge deployment, as written into a Pairing URI.
     #[must_use]
-    pub const fn domain(&self) -> &BridgeDomain {
+    pub fn domain(&self) -> String {
+        self.domain.to_string()
+    }
+}
+
+impl BridgeClient {
+    pub(super) const fn bridge_domain(&self) -> &BridgeDomain {
         &self.domain
     }
 
@@ -130,7 +148,7 @@ impl BridgeClient {
                 .await?;
             match response.status() {
                 StatusCode::OK | StatusCode::CONFLICT => Ok(()),
-                status => Err(BridgeError::UnexpectedStatus(status)),
+                status => Err(BridgeError::from(status)),
             }
         })
         .await
@@ -168,7 +186,7 @@ impl BridgeClient {
             let reply = self.send(self.http.put(url).json(response)).await?;
             match reply.status() {
                 StatusCode::CREATED => Ok(()),
-                status => Err(BridgeError::UnexpectedStatus(status)),
+                status => Err(BridgeError::from(status)),
             }
         })
         .await
@@ -183,7 +201,7 @@ impl BridgeClient {
             match response.status() {
                 StatusCode::OK => read_json(response).await.map(Some),
                 StatusCode::NOT_FOUND => Ok(None),
-                status => Err(BridgeError::UnexpectedStatus(status)),
+                status => Err(BridgeError::from(status)),
             }
         })
         .await
@@ -204,7 +222,7 @@ impl BridgeClient {
                 let response = http.execute(request).await?;
                 let status = response.status();
                 if status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS {
-                    return Err(BridgeError::UnexpectedStatus(status));
+                    return Err(BridgeError::from(status));
                 }
                 Ok(response)
             }
@@ -226,22 +244,39 @@ impl BridgeClient {
 }
 
 impl BridgeError {
-    fn is_transient(&self) -> bool {
+    const fn is_transient(&self) -> bool {
         match self {
-            Self::Transport(error) => !error.is_builder(),
-            Self::UnexpectedStatus(status) => {
-                status.is_server_error() || *status == StatusCode::TOO_MANY_REQUESTS
+            Self::Transport(_) => true,
+            Self::UnexpectedStatus { status } => {
+                (*status >= 500 && *status < 600)
+                    || *status == StatusCode::TOO_MANY_REQUESTS.as_u16()
             }
-            Self::Json(_) | Self::TooLarge | Self::Timeout | Self::InvalidUrl(_) => {
-                false
-            }
+            Self::InvalidDomain(_)
+            | Self::InvalidUrl(_)
+            | Self::Json(_)
+            | Self::TooLarge
+            | Self::Timeout => false,
+        }
+    }
+}
+
+impl From<StatusCode> for BridgeError {
+    fn from(status: StatusCode) -> Self {
+        Self::UnexpectedStatus {
+            status: status.as_u16(),
         }
     }
 }
 
 impl From<reqwest::Error> for BridgeError {
     fn from(error: reqwest::Error) -> Self {
-        Self::Transport(error.without_url())
+        Self::Transport(error.without_url().to_string())
+    }
+}
+
+impl From<serde_json::Error> for BridgeError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Json(error.to_string())
     }
 }
 
