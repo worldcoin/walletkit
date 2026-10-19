@@ -140,6 +140,9 @@ pub mod requests;
 /// Pre-flight check of whether stored credentials can satisfy a [`requests::ProofRequest`].
 pub mod proof_request_credential_constraints_check;
 
+pub mod credential_selection;
+pub use credential_selection::{CredentialFilter, SelectedCredential};
+
 mod proof;
 pub use proof::OwnershipProof;
 
