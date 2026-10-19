@@ -587,8 +587,8 @@ fn is_transient(error: &AuthenticatorError) -> bool {
                 || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
         }
         AuthenticatorError::ContractError(error) => {
-            std::error::Error::source(error)
-                .is_some_and(<dyn std::error::Error + 'static>::is::<reqwest::Error>)
+            std::iter::successors(std::error::Error::source(error), |err| err.source())
+                .any(<dyn std::error::Error + 'static>::is::<reqwest::Error>)
                 || error.to_string().starts_with("HTTP error 429 ")
                 || error.to_string().starts_with("HTTP error 5")
         }
@@ -711,8 +711,8 @@ mod tests {
         assert_eq!(requester.poll().await.unwrap(), RequesterStatus::Expired);
     }
 
-    #[test]
-    fn is_transient_includes_retryable_ohttp_relay_errors() {
+    #[tokio::test]
+    async fn is_transient_includes_retryable_ohttp_relay_and_rpc_transport_errors() {
         assert!(is_transient(&AuthenticatorError::OhttpRelayError {
             status: reqwest::StatusCode::TOO_MANY_REQUESTS,
             body: String::new(),
@@ -725,6 +725,22 @@ mod tests {
             status: reqwest::StatusCode::BAD_REQUEST,
             body: String::new(),
         }));
+
+        let reqwest_err = reqwest::Client::new()
+            .get("http://127.0.0.1:1")
+            .send()
+            .await
+            .unwrap_err();
+        let contract_transport_err =
+            AuthenticatorError::ContractError(alloy::contract::Error::TransportError(
+                alloy::transports::TransportErrorKind::custom(reqwest_err),
+            ));
+        assert!(is_transient(&contract_transport_err));
+
+        let non_retryable_contract_err = AuthenticatorError::ContractError(
+            alloy::contract::Error::ContractNotDeployed,
+        );
+        assert!(!is_transient(&non_retryable_contract_err));
     }
 
     fn authenticators_response(
