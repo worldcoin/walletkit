@@ -174,7 +174,7 @@ pub enum ApprovalResult {
 }
 
 /// An encrypted request taken from the bridge, waiting for code entry (WIP-109 §3.7.1).
-#[derive(Debug, uniffi::Object)]
+#[derive(uniffi::Object)]
 pub struct PendingRegistration {
     uri: PairingUri,
     encrypted: EncryptedPayload,
@@ -182,6 +182,17 @@ pub struct PendingRegistration {
     /// Estimated from when the request was taken (WIP-109 §3.5).
     expires_at: Instant,
     attempts_remaining: AsyncMutex<u8>,
+}
+
+impl std::fmt::Debug for PendingRegistration {
+    /// Formats [`PendingRegistration`] with [`log_tag`] instead of the bearer [`PairingUri`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingRegistration")
+            .field("request", &log_tag(&self.uri.secret.request_id()))
+            .field("bridge", &self.bridge)
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
 }
 
 /// An authenticated, valid registration request.
@@ -208,13 +219,24 @@ pub struct CheckedRegistration {
 }
 
 /// Where and how to answer one request.
-#[derive(Debug)]
 struct ResponseChannel {
     request_id: RequestId,
     response_pubkey: ResponsePublicKey,
     transport_key: TransportKey,
     bridge: Arc<BridgeClient>,
     expires_at: Instant,
+}
+
+impl std::fmt::Debug for ResponseChannel {
+    /// Formats [`ResponseChannel`] with [`log_tag`] instead of the bearer [`RequestId`].
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResponseChannel")
+            .field("request", &log_tag(&self.request_id))
+            .field("response_pubkey", &self.response_pubkey)
+            .field("bridge", &self.bridge)
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
 }
 
 /// An authenticated request that fails validation (WIP-109 §3.7.1 step 4).
@@ -1264,11 +1286,17 @@ mod tests {
     #[tokio::test]
     async fn approve_rejects_mismatched_approver_without_consuming_channel() {
         let (pending, code, _) = make_pending_registration().await;
+        let request_id = pending.uri.secret.request_id().to_string();
+        assert!(!format!("{pending:?}").contains(&request_id));
+
         let incoming = pending.authenticate(&code).await.unwrap();
+        assert!(!format!("{incoming:?}").contains(&request_id));
+
         let approver_a = make_test_authenticator([21u8; 32], 1).await;
         let approver_b = make_test_authenticator([22u8; 32], 2).await;
 
         let checked = incoming.check(&approver_a).await.unwrap();
+        assert!(!format!("{checked:?}").contains(&request_id));
         let err = checked
             .approve(&approver_b, Some(vec![1, 2, 3]), Vec::new())
             .await
