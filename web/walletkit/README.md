@@ -202,7 +202,7 @@ These parts of the Swift and Kotlin bindings aren't available in the browser:
 | `Logger` and `initLogging`                                 | Not implemented for the browser.                                                                 |
 | Vault and activity change listeners                        | Not implemented for the browser.                                                                 |
 | Vault backup export and replacement import                 | Supported only on iOS and Android. Use `mergeVaultFromBackup` to import.                         |
-| `proveCredentialSub`                                       | Credential ownership proofs aren't supported on WASM.                                            |
+| `proveCredentialSub`                                       | The ownership prover doesn't run on WASM. `dangerOwnershipProofInput` builds its input instead.  |
 | Flamingo                                                   | Browser WebSockets can't send its signed handshake headers, and it relies on device attestation. |
 | `DeviceKeystore`, `AtomicBlobStore`, and `StorageProvider` | They need synchronous host callbacks. Use `StorageKeys.fromBytes`.                               |
 | `CachingZkArtifacts`                                       | The WASM module embeds the proving keys. Use `EmbeddedZkArtifacts`.                              |

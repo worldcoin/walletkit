@@ -62,6 +62,13 @@ export async function consumer() {
   const request = await walletkit.ProofRequest.fromJson("{}");
   const response = await authenticator.generateProof(request);
   const responseJson: string = await response.toJson();
+  const ownershipProofInput: Uint8Array =
+    await authenticator.dangerOwnershipProofInput(
+      factor,
+      factor,
+      factor,
+      factor,
+    );
   const recovery = await walletkit.recoveryDataFromSeed(new Uint8Array(32));
   const address: string = recovery.authenticatorAddress;
   const redacted: string = await walletkit.sanitizeHexSecrets("0x00");
@@ -97,6 +104,7 @@ export async function consumer() {
     activity,
     status,
     responseJson,
+    ownershipProofInput,
     address,
     redacted,
     stopped,

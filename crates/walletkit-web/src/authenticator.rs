@@ -460,6 +460,54 @@ impl JsAuthenticator {
             Ok(JsProofResponse(response).into())
         })
     }
+
+    /// Builds the CBOR-encoded input of a WIP-103 Ownership Proof for `sub`, for an
+    /// attested prover to prove on the user's behalf, since the browser can't run the
+    /// ownership prover.
+    ///
+    /// The input links `sub` to this account. Send it only end-to-end encrypted to the
+    /// prover, never to the issuer, and only from a direct user action.
+    ///
+    /// `now` is the current unix time in seconds and defaults to the browser clock.
+    ///
+    /// # Errors
+    /// Rejects when `nonce` or `context` is zero, `sub` doesn't match this account and
+    /// `blindingFactor`, or the inclusion proof can't be fetched.
+    #[wasm_bindgen(js_name = dangerOwnershipProofInput, unchecked_return_type = "Promise<Uint8Array>")]
+    pub fn danger_ownership_proof_input(
+        &self,
+        nonce: &JsFieldElement,
+        context: &JsFieldElement,
+        blinding_factor: &JsFieldElement,
+        sub: &JsFieldElement,
+        now: Option<BigInt>,
+    ) -> Promise {
+        let authenticator = Arc::clone(&self.0);
+        let (nonce, context, blinding_factor, sub) = (
+            nonce.0.clone(),
+            context.0.clone(),
+            blinding_factor.0.clone(),
+            sub.0.clone(),
+        );
+        let now = js::optional_u64_arg("now", now);
+        js::promise(async move {
+            let now = now?;
+            let input = authenticator
+                .danger_ownership_proof_input(
+                    &nonce,
+                    &context,
+                    &blinding_factor,
+                    &sub,
+                    Some(now.unwrap_or_else(js::now_seconds)),
+                )
+                .await
+                .map_err(to_js)?;
+            Ok(
+                js_sys::Uint8Array::from(input.encode().map_err(to_js)?.as_slice())
+                    .into(),
+            )
+        })
+    }
 }
 
 /// A World ID registration that has been submitted but not yet finalized.
