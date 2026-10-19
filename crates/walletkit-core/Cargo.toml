@@ -50,6 +50,7 @@ uuid = { workspace = true, features = ["v4"] }
 walletkit-db = { workspace = true }
 walletkit-sqlite = { workspace = true }
 web-time = { workspace = true }
+world-id-bridge-client = { workspace = true }
 world-id-core = { workspace = true, features = ["authenticator"] }
 world-id-proof = { workspace = true }
 zeroize = { workspace = true }
@@ -73,6 +74,7 @@ webpki-root-certs = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 attested-request = { workspace = true, features = ["test-util"] }
+world-id-bridge = { workspace = true, features = ["test-util"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 sha2 = { workspace = true, features = ["force-soft"] }

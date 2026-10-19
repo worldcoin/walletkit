@@ -4,8 +4,11 @@ all-features = true
 
 [sources]
 unknown-registry = "deny"
-# TODO: Remove once world-id-core and world-id-proof are back on a crates.io release.
-allow-git = ["https://github.com/worldcoin/world-id-protocol"]
+# TODO: Remove these sources once the protocol and bridge dependencies are released.
+allow-git = [
+  "https://github.com/worldcoin/world-id-protocol",
+  "https://github.com/worldcoin/message-bridge",
+]
 
 [bans]
 deny = [
