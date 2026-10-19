@@ -331,6 +331,49 @@ impl CredentialVault {
         }
     }
 
+    /// Retrieves the credential bytes and blinding factor of one credential
+    /// version by its credential ID.
+    ///
+    /// Unlike [`Self::fetch_credential_and_blinding_factor`], this does not
+    /// pick a version and does not check expiry: the caller has already chosen
+    /// the credential.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::CredentialIdNotFound`] if no credential has this
+    /// ID, or an error if the query fails.
+    pub fn fetch_credential_and_blinding_factor_by_id(
+        &self,
+        credential_id: u64,
+    ) -> StorageResult<(Vec<u8>, Vec<u8>)> {
+        let credential_id_i64 = to_i64(credential_id, "credential_id")?;
+
+        let mut stmt = self
+            .vault
+            .connection()
+            .prepare(
+                "SELECT
+                    cr.subject_blinding_factor,
+                    blob.bytes as credential_blob
+                 FROM credential_records cr
+                 INNER JOIN blob_objects blob ON cr.credential_blob_cid = blob.content_id
+                 WHERE cr.credential_id = ?1",
+            )
+            .map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![credential_id_i64])
+            .map_err(|err| map_db_err(&err))?;
+        match stmt.step().map_err(|err| map_db_err(&err))? {
+            StepResult::Row(row) => {
+                let blinding_factor = row.column_blob(0);
+                let credential_blob = row.column_blob(1);
+                Ok((credential_blob, blinding_factor))
+            }
+            StepResult::Done => {
+                Err(StorageError::CredentialIdNotFound { credential_id })
+            }
+        }
+    }
+
     /// **Development only.** Permanently deletes all credentials and their
     /// associated blob data from the vault.
     ///
