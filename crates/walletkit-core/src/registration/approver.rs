@@ -13,7 +13,15 @@
 //! whether the answer was delivered. If it was not, the host must tell the user that the new
 //! device may not have received it, and to check it and retry from it if needed.
 
-use std::{fmt::Display, future::Future, time::Duration};
+use std::{
+    fmt::Display,
+    future::Future,
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc, Mutex, PoisonError,
+    },
+    time::Duration,
+};
 
 use alloy_core::primitives::Address;
 use backon::BackoffBuilder as _;
@@ -26,7 +34,7 @@ use world_id_core::{
         },
     },
     registration::{
-        BridgeDomain, EncryptedPayload, KnownAuthenticator, PairingCode, PairingUri,
+        EncryptedPayload, KnownAuthenticator, PairingCode, PairingUri,
         RegistrationDigest, RegistrationErrorData, RegistrationErrorReason,
         RegistrationRequest, RegistrationResult, RequestId, ResponsePublicKey,
         TransportError, TransportKey, Vault, MAX_VAULT_SIZE, REGISTER_METHOD,
@@ -38,9 +46,10 @@ use zeroize::Zeroizing;
 use super::{
     before,
     bridge::{BridgeClient, BridgeError},
-    log_tag, polling_backoff, sleep, PLAINTEXT_VAULT_FORMAT, SESSION_TTL,
+    log_tag, polling_backoff, sleep, RequestedClass, PLAINTEXT_VAULT_FORMAT,
+    SESSION_TTL,
 };
-use crate::Authenticator;
+use crate::{error::WalletKitError, Authenticator};
 
 /// The largest encoded request (WIP-109 §3.5).
 const MAX_REQUEST_SIZE: usize = 4 * 1024;
@@ -62,16 +71,25 @@ const RESPONSE_MARGIN: Duration = Duration::from_mins(1);
 const MIN_TRACKING_TIME: Duration = Duration::from_mins(2);
 
 /// Errors on the Approving Authenticator's side of a registration.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum ApproverError {
+    /// The scanned text is not a WIP-109 Pairing URI.
+    #[error("not a registration pairing link")]
+    InvalidPairingUri,
     /// The Pairing URI names a bridge the host does not allow. The host may ask the user to
     /// confirm it, then retry with a client for it (WIP-109 §3.4).
-    #[error("bridge {0} is not allowed")]
-    BridgeNotAllowed(BridgeDomain),
+    #[error("bridge {domain} is not allowed")]
+    BridgeNotAllowed {
+        /// The bridge domain named by the Pairing URI.
+        domain: String,
+    },
     /// The request expired or was already used. The user should create a new QR code or link
     /// on the new device.
     #[error("the registration request expired or was already used")]
     Expired,
+    /// The entered code is not six letters. No attempt was used.
+    #[error("the pairing code must be six letters")]
+    MalformedCode,
     /// The code did not authenticate the request.
     #[error("pairing code did not authenticate the request ({attempts_remaining} attempts remain)")]
     IncorrectCode {
@@ -92,9 +110,8 @@ pub enum ApproverError {
     Refused {
         /// The reason, which was sent to the Requesting Authenticator.
         reason: RegistrationErrorReason,
-        /// The failure behind the refusal, if there was one.
-        #[source]
-        cause: Option<Box<AuthenticatorError>>,
+        /// The failure behind the refusal, if there was one. It was not sent.
+        failure: Option<WalletKitError>,
         /// Whether the reason was delivered.
         delivered: bool,
     },
@@ -104,10 +121,13 @@ pub enum ApproverError {
     /// Decrypting the request failed for a reason other than a wrong code.
     #[error(transparent)]
     Transport(#[from] TransportError),
+    /// This step was already taken, so the registration has moved on or ended.
+    #[error("this registration step was already taken")]
+    AlreadyHandled,
 }
 
 /// How a checked registration will be carried out.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum RegistrationPlan {
     /// Insert the authenticator at `pubkey_id`.
     Insert {
@@ -123,11 +143,10 @@ pub enum RegistrationPlan {
 }
 
 /// The result of [`CheckedRegistration::approve`].
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ApprovalOutcome {
-    /// The registration result, or the reason it failed. A successful result means that the
-    /// authenticator is registered on-chain, even if the response was not delivered.
-    pub result: Result<RegistrationResult, RegistrationErrorReason>,
+    /// Whether the authenticator was registered.
+    pub result: ApprovalResult,
     /// Whether the vault was left out because it exceeds [`MAX_VAULT_SIZE`]. The host must tell
     /// the user that the vault was not shared.
     pub vault_omitted: bool,
@@ -135,31 +154,52 @@ pub struct ApprovalOutcome {
     pub delivered: bool,
 }
 
+/// Whether [`CheckedRegistration::approve`] registered the authenticator.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ApprovalResult {
+    /// The authenticator is registered on-chain, even if the response was not delivered.
+    Registered {
+        /// The index of the account.
+        leaf_index: u64,
+        /// The slot the authenticator is registered at.
+        pubkey_id: u32,
+    },
+    /// The registration did not succeed. `OutcomeUnknown` means that it may still land.
+    Failed {
+        /// The reason, which was sent to the Requesting Authenticator.
+        reason: RegistrationErrorReason,
+    },
+}
+
 /// An encrypted request taken from the bridge, waiting for code entry (WIP-109 §3.7.1).
-#[derive(Debug)]
+#[derive(Debug, uniffi::Object)]
 pub struct PendingRegistration {
     uri: PairingUri,
     encrypted: EncryptedPayload,
-    bridge: BridgeClient,
+    bridge: Arc<BridgeClient>,
     /// Estimated from when the request was taken (WIP-109 §3.5).
     expires_at: Instant,
-    attempts_remaining: u8,
+    attempts_remaining: AtomicU8,
 }
 
 /// An authenticated, valid registration request.
-#[derive(Debug)]
+#[derive(Debug, uniffi::Object)]
 pub struct IncomingRegistration {
     request: RegistrationRequest,
-    channel: ResponseChannel,
     respond_by: Instant,
+    /// Taken by the step that moves the registration on.
+    channel: Mutex<Option<ResponseChannel>>,
 }
 
 /// A registration request whose account state was checked, waiting for the user's decision.
-#[derive(Debug)]
+#[derive(Debug, uniffi::Object)]
 pub struct CheckedRegistration {
-    incoming: IncomingRegistration,
+    request: RegistrationRequest,
+    respond_by: Instant,
     authenticators: AccountAuthenticators,
     plan: RegistrationPlan,
+    /// Taken by the decision.
+    channel: Mutex<Option<ResponseChannel>>,
 }
 
 /// Where and how to answer one request.
@@ -168,7 +208,7 @@ struct ResponseChannel {
     request_id: RequestId,
     response_pubkey: ResponsePublicKey,
     transport_key: TransportKey,
-    bridge: BridgeClient,
+    bridge: Arc<BridgeClient>,
     expires_at: Instant,
 }
 
@@ -191,36 +231,42 @@ struct Refusal {
     cause: Option<Box<AuthenticatorError>>,
 }
 
+#[uniffi::export(async_runtime = "tokio")]
 impl PendingRegistration {
-    /// Takes the encrypted request from the URI's bridge, before the host prompts for the code.
+    /// Takes the encrypted request named by the scanned Pairing URI from its bridge, before the
+    /// host prompts for the code. Never log the URI.
     ///
     /// The URI's bridge must be one of `allowed_bridges`. To contact another bridge, the host
     /// must first get the user's confirmation, then pass a client for it (WIP-109 §3.4).
     ///
     /// # Errors
     ///
-    /// Returns [`ApproverError::BridgeNotAllowed`], [`ApproverError::Expired`] for a used or
-    /// expired URI, or a bridge error.
+    /// Returns [`ApproverError::InvalidPairingUri`], [`ApproverError::BridgeNotAllowed`],
+    /// [`ApproverError::Expired`] for a used or expired URI, or a bridge error.
+    #[uniffi::constructor]
     pub async fn receive(
-        uri: &PairingUri,
-        allowed_bridges: &[BridgeClient],
+        uri: &str,
+        allowed_bridges: Vec<Arc<BridgeClient>>,
     ) -> Result<Self, ApproverError> {
+        let uri: PairingUri =
+            uri.parse().map_err(|_| ApproverError::InvalidPairingUri)?;
         let bridge = allowed_bridges
-            .iter()
-            .find(|bridge| *bridge.domain() == uri.bridge)
-            .ok_or_else(|| ApproverError::BridgeNotAllowed(uri.bridge.clone()))?
-            .clone();
+            .into_iter()
+            .find(|bridge| *bridge.bridge_domain() == uri.bridge)
+            .ok_or_else(|| ApproverError::BridgeNotAllowed {
+                domain: uri.bridge.to_string(),
+            })?;
         let taken_at = Instant::now();
         let encrypted = bridge
             .take_request(&uri.secret.request_id())
             .await?
             .ok_or(ApproverError::Expired)?;
         Ok(Self {
-            uri: uri.clone(),
+            uri,
             encrypted,
             bridge,
             expires_at: taken_at + SESSION_TTL,
-            attempts_remaining: MAX_CODE_ATTEMPTS,
+            attempts_remaining: AtomicU8::new(MAX_CODE_ATTEMPTS),
         })
     }
 
@@ -231,40 +277,51 @@ impl PendingRegistration {
     ///
     /// # Errors
     ///
-    /// [`ApproverError::IncorrectCode`] lets the user enter the code again, up to three attempts
-    /// in total. Every other error ends the session.
+    /// [`ApproverError::MalformedCode`] and [`ApproverError::IncorrectCode`] let the user enter
+    /// the code again; only an incorrect code uses one of the three attempts. Every other error
+    /// ends the session.
     pub async fn authenticate(
-        &mut self,
-        code: &PairingCode,
-    ) -> Result<IncomingRegistration, ApproverError> {
-        if self.attempts_remaining == 0 || Instant::now() >= self.expires_at {
+        &self,
+        code: &str,
+    ) -> Result<Arc<IncomingRegistration>, ApproverError> {
+        let code: PairingCode =
+            code.parse().map_err(|_| ApproverError::MalformedCode)?;
+        if Instant::now() >= self.expires_at {
             return Err(ApproverError::Expired);
         }
-        self.attempts_remaining -= 1;
-        let transport_key = self.uri.secret.transport_key(code)?;
+        let attempts_remaining = self
+            .attempts_remaining
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                left.checked_sub(1)
+            })
+            .map_err(|_| ApproverError::Expired)?
+            - 1;
+        let transport_key = self.uri.secret.transport_key(&code).inspect_err(|_| {
+            self.attempts_remaining.store(0, Ordering::SeqCst);
+        })?;
         let plaintext = match transport_key.decrypt_request(&self.encrypted) {
             Ok(plaintext) => plaintext,
             Err(TransportError::Decrypt) => {
-                return Err(ApproverError::IncorrectCode {
-                    attempts_remaining: self.attempts_remaining,
-                })
+                return Err(ApproverError::IncorrectCode { attempts_remaining })
             }
             Err(error) => {
-                self.attempts_remaining = 0;
+                self.attempts_remaining.store(0, Ordering::SeqCst);
                 return Err(error.into());
             }
         };
-        self.attempts_remaining = 0;
+        self.attempts_remaining.store(0, Ordering::SeqCst);
         let request_id = self.uri.secret.request_id();
         match parse_request(&plaintext, &request_id, &self.uri.digest) {
-            Ok(request) => Ok(IncomingRegistration {
-                channel: self.channel(transport_key, request.response_pubkey.clone()),
+            Ok(request) => Ok(Arc::new(IncomingRegistration {
+                channel: Mutex::new(Some(
+                    self.channel(transport_key, request.response_pubkey.clone()),
+                )),
                 respond_by: self
                     .expires_at
                     .checked_sub(RESPONSE_MARGIN)
                     .unwrap_or(self.expires_at),
                 request,
-            }),
+            })),
             Err(invalid) => {
                 let delivered = match invalid.reply {
                     Some((id, response_pubkey)) => {
@@ -290,7 +347,9 @@ impl PendingRegistration {
             }
         }
     }
+}
 
+impl PendingRegistration {
     fn channel(
         &self,
         transport_key: TransportKey,
@@ -306,11 +365,25 @@ impl PendingRegistration {
     }
 }
 
+#[uniffi::export(async_runtime = "tokio")]
 impl IncomingRegistration {
-    /// Returns the request. Its `name` is untrusted and must be displayed as such.
+    /// Returns the class the new authenticator asks for.
     #[must_use]
-    pub const fn request(&self) -> &RegistrationRequest {
-        &self.request
+    pub const fn class(&self) -> RequestedClass {
+        requested_class(&self.request)
+    }
+
+    /// Returns the name the new authenticator asks for. It is untrusted and must be displayed as
+    /// such.
+    #[must_use]
+    pub fn name(&self) -> Option<String> {
+        requested_name(&self.request)
+    }
+
+    /// Returns how many seconds are left until the response is due.
+    #[must_use]
+    pub fn time_remaining_secs(&self) -> u64 {
+        secs_until(self.respond_by)
     }
 
     /// Reads the account state of `approver` and plans the registration (WIP-109 §3.7.2).
@@ -321,28 +394,32 @@ impl IncomingRegistration {
     /// Admin Authenticator of its account (`not_authorized`), the key or address is registered
     /// differently on the account (`authenticator_conflict`), there is no free slot
     /// (`max_authenticators_reached`), or the account state cannot be read in time
-    /// (`internal_error`).
+    /// (`internal_error`), and [`ApproverError::AlreadyHandled`] if the request was already
+    /// checked or rejected.
     pub async fn check(
-        self,
+        &self,
         approver: &Authenticator,
-    ) -> Result<CheckedRegistration, ApproverError> {
+    ) -> Result<Arc<CheckedRegistration>, ApproverError> {
+        let channel = take(&self.channel)?;
         match self.plan(approver).await {
-            Ok((authenticators, plan)) => Ok(CheckedRegistration {
-                incoming: self,
+            Ok((authenticators, plan)) => Ok(Arc::new(CheckedRegistration {
+                request: self.request.clone(),
+                respond_by: self.respond_by,
                 authenticators,
                 plan,
-            }),
+                channel: Mutex::new(Some(channel)),
+            })),
             Err(refusal) => {
                 tracing::warn!(
-                    request = %log_tag(&self.channel.request_id),
+                    request = %log_tag(&channel.request_id),
                     reason = ?refusal.reason,
                     error = refusal.cause.as_ref().map(tracing::field::display),
                     "refusing authenticator registration"
                 );
-                let delivered = self.channel.answer(Err(refusal.to_error())).await;
+                let delivered = channel.answer(Err(refusal.to_error())).await;
                 Err(ApproverError::Refused {
                     reason: refusal.reason,
-                    cause: refusal.cause,
+                    failure: refusal.cause.map(|cause| (*cause).into()),
                     delivered,
                 })
             }
@@ -351,11 +428,23 @@ impl IncomingRegistration {
 
     /// Refuses a request whose `name` the host does not accept, with `invalid_name`. Returns
     /// whether the answer was delivered.
-    #[must_use = "the host must tell the user if the answer was not delivered"]
-    pub async fn reject_name(self) -> bool {
-        self.channel
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApproverError::AlreadyHandled`] if the request was already checked or rejected.
+    pub async fn reject_name(&self) -> Result<bool, ApproverError> {
+        let channel = take(&self.channel)?;
+        Ok(channel
             .answer(Err(RegistrationErrorReason::InvalidName.into_error(None)))
-            .await
+            .await)
+    }
+}
+
+impl IncomingRegistration {
+    /// Returns the request. Its `name` is untrusted and must be displayed as such.
+    #[must_use]
+    pub const fn request(&self) -> &RegistrationRequest {
+        &self.request
     }
 
     async fn plan(
@@ -391,11 +480,19 @@ impl IncomingRegistration {
     }
 }
 
+#[uniffi::export(async_runtime = "tokio")]
 impl CheckedRegistration {
-    /// Returns the request.
+    /// Returns the class the new authenticator asks for.
     #[must_use]
-    pub const fn request(&self) -> &RegistrationRequest {
-        &self.incoming.request
+    pub const fn class(&self) -> RequestedClass {
+        requested_class(&self.request)
+    }
+
+    /// Returns the name the new authenticator asks for. It is untrusted and must be displayed as
+    /// such.
+    #[must_use]
+    pub fn name(&self) -> Option<String> {
+        requested_name(&self.request)
     }
 
     /// Returns how the registration will be carried out.
@@ -404,24 +501,31 @@ impl CheckedRegistration {
         self.plan
     }
 
-    /// Returns when the response is due, e.g. to show how long the user has to decide.
+    /// Returns how many seconds are left until the response is due, e.g. to show how long the
+    /// user has to decide.
     #[must_use]
-    pub const fn respond_by(&self) -> Instant {
-        self.incoming.respond_by
+    pub fn time_remaining_secs(&self) -> u64 {
+        secs_until(self.respond_by)
     }
 
     /// Declines with `user_rejected`, because the user rejected the request or cancelled the
     /// platform's user verification (WIP-109 §3.7.3). Returns whether the answer was delivered.
-    #[must_use = "the host must tell the user if the answer was not delivered"]
-    pub async fn reject(self) -> bool {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApproverError::AlreadyHandled`] if the registration was already decided.
+    pub async fn reject(&self) -> Result<bool, ApproverError> {
         self.decline(RegistrationErrorReason::UserRejected).await
     }
 
     /// Ends the registration with `internal_error`, e.g. because the platform's user
     /// verification failed or is unavailable (WIP-109 §3.7.3). Returns whether the answer was
     /// delivered.
-    #[must_use = "the host must tell the user if the answer was not delivered"]
-    pub async fn abort(self) -> bool {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApproverError::AlreadyHandled`] if the registration was already decided.
+    pub async fn abort(&self) -> Result<bool, ApproverError> {
         self.decline(RegistrationErrorReason::InternalError).await
     }
 
@@ -438,12 +542,18 @@ impl CheckedRegistration {
     /// retried. If its outcome is still unknown when the response is due, the answer is
     /// `outcome_unknown`. If less than two minutes are left, nothing is submitted and the answer
     /// is `internal_error`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ApproverError::AlreadyHandled`] if the registration was already decided.
     pub async fn approve(
-        self,
+        &self,
         approver: &Authenticator,
-        vault: Option<Zeroizing<Vec<u8>>>,
+        vault: Option<Vec<u8>>,
         authenticators: Vec<KnownAuthenticator>,
-    ) -> ApprovalOutcome {
+    ) -> Result<ApprovalOutcome, ApproverError> {
+        let vault = vault.map(Zeroizing::new);
+        let channel = take(&self.channel)?;
         let vault_omitted = vault
             .as_ref()
             .is_some_and(|data| data.len() > MAX_VAULT_SIZE);
@@ -458,47 +568,65 @@ impl CheckedRegistration {
                 data,
             }),
         };
-        let registered = self.register(approver, &result).await;
+        let registered = self.register(approver, &channel, &result).await;
         let delivered = match &registered {
             Ok(pubkey_id) => {
                 result.pubkey_id = *pubkey_id;
-                self.incoming.channel.answer(Ok(&result)).await
+                channel.answer(Ok(&result)).await
             }
             Err(refusal) => {
                 tracing::warn!(
-                    request = %log_tag(&self.incoming.channel.request_id),
+                    request = %log_tag(&channel.request_id),
                     reason = ?refusal.reason,
                     detail = refusal.detail,
                     error = refusal.cause.as_ref().map(tracing::field::display),
                     "authenticator registration did not succeed"
                 );
-                self.incoming.channel.answer(Err(refusal.to_error())).await
+                channel.answer(Err(refusal.to_error())).await
             }
         };
-        ApprovalOutcome {
-            result: registered.map(|_| result).map_err(|refusal| refusal.reason),
+        Ok(ApprovalOutcome {
+            result: match registered {
+                Ok(pubkey_id) => ApprovalResult::Registered {
+                    leaf_index: result.leaf_index,
+                    pubkey_id,
+                },
+                Err(refusal) => ApprovalResult::Failed {
+                    reason: refusal.reason,
+                },
+            },
             vault_omitted,
             delivered,
-        }
+        })
+    }
+}
+
+impl CheckedRegistration {
+    /// Returns the request.
+    #[must_use]
+    pub const fn request(&self) -> &RegistrationRequest {
+        &self.request
     }
 
-    async fn decline(self, reason: RegistrationErrorReason) -> bool {
-        self.incoming
-            .channel
-            .answer(Err(reason.into_error(None)))
-            .await
+    async fn decline(
+        &self,
+        reason: RegistrationErrorReason,
+    ) -> Result<bool, ApproverError> {
+        let channel = take(&self.channel)?;
+        Ok(channel.answer(Err(reason.into_error(None))).await)
     }
 
     /// Registers the authenticator as planned and returns its slot.
     async fn register(
         &self,
         approver: &Authenticator,
+        channel: &ResponseChannel,
         result: &RegistrationResult,
     ) -> Result<u32, Refusal> {
         // Checked before submitting, so that an oversized response cannot leave a registered
         // authenticator that never learns its result.
         let response: Response<_, RegistrationErrorData> =
-            Response::success(self.incoming.channel.request_id.message_id(), result);
+            Response::success(channel.request_id.message_id(), result);
         if !response
             .encode()
             .map(Zeroizing::new)
@@ -510,14 +638,14 @@ impl CheckedRegistration {
         match self.plan {
             RegistrationPlan::AlreadyRegistered { pubkey_id } => Ok(pubkey_id),
             RegistrationPlan::Insert { .. }
-                if self.respond_by().saturating_duration_since(Instant::now())
+                if self.respond_by.saturating_duration_since(Instant::now())
                     < MIN_TRACKING_TIME =>
             {
                 Err(Refusal::from(RegistrationErrorReason::InternalError)
                     .with_detail("approved too close to the session expiry"))
             }
             RegistrationPlan::Insert { pubkey_id } => {
-                self.insert(approver, pubkey_id).await
+                self.insert(approver, channel, pubkey_id).await
             }
         }
     }
@@ -527,11 +655,12 @@ impl CheckedRegistration {
     async fn insert(
         &self,
         approver: &Authenticator,
+        channel: &ResponseChannel,
         pubkey_id: u32,
     ) -> Result<u32, Refusal> {
         let core = &approver.inner;
-        let respond_by = self.respond_by();
-        let request = &self.incoming.request;
+        let respond_by = self.respond_by;
+        let request = &self.request;
         let submission = core.insert_authenticator_at(
             self.authenticators.key_set(),
             pubkey_id,
@@ -551,7 +680,7 @@ impl CheckedRegistration {
             };
             match status {
                 Ok(GatewayRequestState::Finalized { .. }) => {
-                    return self.confirm_registration(approver).await;
+                    return self.confirm_registration(approver, channel).await;
                 }
                 Ok(GatewayRequestState::Failed { error_code, .. }) => {
                     return Err(classify_failure(error_code.as_ref(), submitted));
@@ -559,7 +688,7 @@ impl CheckedRegistration {
                 Ok(GatewayRequestState::Submitted { .. }) => submitted = true,
                 Ok(GatewayRequestState::Queued | GatewayRequestState::Batching) => {}
                 Err(error) => tracing::warn!(
-                    request = %log_tag(&self.incoming.channel.request_id),
+                    request = %log_tag(&channel.request_id),
                     %error,
                     "failed to poll the gateway request"
                 ),
@@ -569,7 +698,7 @@ impl CheckedRegistration {
             }
         }
         tracing::warn!(
-            request = %log_tag(&self.incoming.channel.request_id),
+            request = %log_tag(&channel.request_id),
             gateway_request_id = %insertion,
             submitted,
             "insertion outcome unknown at the response deadline"
@@ -582,11 +711,12 @@ impl CheckedRegistration {
     async fn confirm_registration(
         &self,
         approver: &Authenticator,
+        channel: &ResponseChannel,
     ) -> Result<u32, Refusal> {
-        let request = &self.incoming.request;
+        let request = &self.request;
         for delay in polling_backoff().build() {
             let Some(authenticators) =
-                before(self.respond_by(), approver.inner.fetch_authenticators()).await
+                before(self.respond_by, approver.inner.fetch_authenticators()).await
             else {
                 break;
             };
@@ -603,17 +733,17 @@ impl CheckedRegistration {
                     }
                 }
                 Err(error) => tracing::warn!(
-                    request = %log_tag(&self.incoming.channel.request_id),
+                    request = %log_tag(&channel.request_id),
                     %error,
                     "failed to refresh the account state after the insertion"
                 ),
             }
-            if before(self.respond_by(), sleep(delay)).await.is_none() {
+            if before(self.respond_by, sleep(delay)).await.is_none() {
                 break;
             }
         }
         tracing::warn!(
-            request = %log_tag(&self.incoming.channel.request_id),
+            request = %log_tag(&channel.request_id),
             "finalized registration not visible before the response deadline"
         );
         Err(RegistrationErrorReason::OutcomeUnknown.into())
@@ -694,6 +824,33 @@ impl From<RegistrationErrorReason> for Refusal {
             cause: None,
         }
     }
+}
+
+/// Takes the response channel for the step that moves the registration on.
+fn take(
+    channel: &Mutex<Option<ResponseChannel>>,
+) -> Result<ResponseChannel, ApproverError> {
+    channel
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
+        .ok_or(ApproverError::AlreadyHandled)
+}
+
+const fn requested_class(request: &RegistrationRequest) -> RequestedClass {
+    if request.new_authenticator_address.is_some() {
+        RequestedClass::Admin
+    } else {
+        RequestedClass::Proving
+    }
+}
+
+fn requested_name(request: &RegistrationRequest) -> Option<String> {
+    request.name.as_ref().map(|name| name.as_str().to_string())
+}
+
+fn secs_until(deadline: Instant) -> u64 {
+    deadline.saturating_duration_since(Instant::now()).as_secs()
 }
 
 /// Decodes and validates a decrypted request in the order of WIP-109 §3.7.1 step 4: CBOR
