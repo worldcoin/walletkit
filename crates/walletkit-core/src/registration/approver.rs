@@ -16,15 +16,13 @@
 use std::{
     fmt::Display,
     future::Future,
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc, Mutex, PoisonError,
-    },
+    sync::{Arc, Mutex, PoisonError},
     time::Duration,
 };
 
 use alloy_core::primitives::Address;
 use backon::BackoffBuilder as _;
+use tokio::sync::Mutex as AsyncMutex;
 use web_time::Instant;
 use world_id_core::{
     primitives::{
@@ -121,6 +119,10 @@ pub enum ApproverError {
     /// Decrypting the request failed for a reason other than a wrong code.
     #[error(transparent)]
     Transport(#[from] TransportError),
+    /// The authenticator passed to [`CheckedRegistration::approve`] is not the one that
+    /// [`IncomingRegistration::check`] checked.
+    #[error("the approver does not match the checked account")]
+    ApproverMismatch,
     /// This step was already taken, so the registration has moved on or ended.
     #[error("this registration step was already taken")]
     AlreadyHandled,
@@ -179,7 +181,7 @@ pub struct PendingRegistration {
     bridge: Arc<BridgeClient>,
     /// Estimated from when the request was taken (WIP-109 §3.5).
     expires_at: Instant,
-    attempts_remaining: AtomicU8,
+    attempts_remaining: AsyncMutex<u8>,
 }
 
 /// An authenticated, valid registration request.
@@ -196,6 +198,9 @@ pub struct IncomingRegistration {
 pub struct CheckedRegistration {
     request: RegistrationRequest,
     respond_by: Instant,
+    approver_leaf_index: u64,
+    approver_pubkey: world_id_core::EdDSAPublicKey,
+    approver_address: Address,
     authenticators: AccountAuthenticators,
     plan: RegistrationPlan,
     /// Taken by the decision.
@@ -266,7 +271,7 @@ impl PendingRegistration {
             encrypted,
             bridge,
             expires_at: taken_at + SESSION_TTL,
-            attempts_remaining: AtomicU8::new(MAX_CODE_ATTEMPTS),
+            attempts_remaining: AsyncMutex::new(MAX_CODE_ATTEMPTS),
         })
     }
 
@@ -286,18 +291,17 @@ impl PendingRegistration {
     ) -> Result<Arc<IncomingRegistration>, ApproverError> {
         let code: PairingCode =
             code.parse().map_err(|_| ApproverError::MalformedCode)?;
+        let mut attempts = self.attempts_remaining.lock().await;
         if Instant::now() >= self.expires_at {
+            *attempts = 0;
             return Err(ApproverError::Expired);
         }
-        let attempts_remaining = self
-            .attempts_remaining
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
-                left.checked_sub(1)
-            })
-            .map_err(|_| ApproverError::Expired)?
-            - 1;
+        let Some(attempts_remaining) = attempts.checked_sub(1) else {
+            return Err(ApproverError::Expired);
+        };
+        *attempts = attempts_remaining;
         let transport_key = self.uri.secret.transport_key(&code).inspect_err(|_| {
-            self.attempts_remaining.store(0, Ordering::SeqCst);
+            *attempts = 0;
         })?;
         let plaintext = match transport_key.decrypt_request(&self.encrypted) {
             Ok(plaintext) => plaintext,
@@ -305,11 +309,12 @@ impl PendingRegistration {
                 return Err(ApproverError::IncorrectCode { attempts_remaining })
             }
             Err(error) => {
-                self.attempts_remaining.store(0, Ordering::SeqCst);
+                *attempts = 0;
                 return Err(error.into());
             }
         };
-        self.attempts_remaining.store(0, Ordering::SeqCst);
+        *attempts = 0;
+        drop(attempts);
         let request_id = self.uri.secret.request_id();
         match parse_request(&plaintext, &request_id, &self.uri.digest) {
             Ok(request) => Ok(Arc::new(IncomingRegistration {
@@ -350,6 +355,7 @@ impl PendingRegistration {
 }
 
 impl PendingRegistration {
+    /// Builds the single-use response channel for this request.
     fn channel(
         &self,
         transport_key: TransportKey,
@@ -401,10 +407,14 @@ impl IncomingRegistration {
         approver: &Authenticator,
     ) -> Result<Arc<CheckedRegistration>, ApproverError> {
         let channel = take(&self.channel)?;
+        let core = &approver.inner;
         match self.plan(approver).await {
             Ok((authenticators, plan)) => Ok(Arc::new(CheckedRegistration {
                 request: self.request.clone(),
                 respond_by: self.respond_by,
+                approver_leaf_index: core.leaf_index(),
+                approver_pubkey: core.offchain_pubkey(),
+                approver_address: core.onchain_address(),
                 authenticators,
                 plan,
                 channel: Mutex::new(Some(channel)),
@@ -447,6 +457,7 @@ impl IncomingRegistration {
         &self.request
     }
 
+    /// Fetches the approver's account authenticators and computes the registration plan.
     async fn plan(
         &self,
         approver: &Authenticator,
@@ -545,7 +556,9 @@ impl CheckedRegistration {
     ///
     /// # Errors
     ///
-    /// Returns [`ApproverError::AlreadyHandled`] if the registration was already decided.
+    /// Returns [`ApproverError::ApproverMismatch`] if `approver` is not the authenticator that
+    /// [`IncomingRegistration::check`] checked, or [`ApproverError::AlreadyHandled`] if the
+    /// registration was already decided.
     pub async fn approve(
         &self,
         approver: &Authenticator,
@@ -553,12 +566,19 @@ impl CheckedRegistration {
         authenticators: Vec<KnownAuthenticator>,
     ) -> Result<ApprovalOutcome, ApproverError> {
         let vault = vault.map(Zeroizing::new);
+        let core = &approver.inner;
+        if core.leaf_index() != self.approver_leaf_index
+            || core.offchain_pubkey().pk != self.approver_pubkey.pk
+            || core.onchain_address() != self.approver_address
+        {
+            return Err(ApproverError::ApproverMismatch);
+        }
         let channel = take(&self.channel)?;
         let vault_omitted = vault
             .as_ref()
             .is_some_and(|data| data.len() > MAX_VAULT_SIZE);
         let mut result = RegistrationResult {
-            leaf_index: approver.inner.leaf_index(),
+            leaf_index: self.approver_leaf_index,
             // Every valid slot encodes to the same single CBOR byte, so checking the size with
             // this placeholder holds for the slot that registration assigns.
             pubkey_id: 0,
@@ -608,6 +628,7 @@ impl CheckedRegistration {
         &self.request
     }
 
+    /// Declines the registration with `reason` and delivers the error response.
     async fn decline(
         &self,
         reason: RegistrationErrorReason,
@@ -804,6 +825,7 @@ impl Refusal {
         }
     }
 
+    /// Attaches an implementation-specific detail message to the refusal.
     fn with_detail(self, detail: impl Into<String>) -> Self {
         Self {
             detail: Some(detail.into()),
@@ -811,12 +833,14 @@ impl Refusal {
         }
     }
 
+    /// Converts this refusal into a WIP-109 error object.
     fn to_error(&self) -> ErrorObject<RegistrationErrorData> {
         self.reason.into_error(self.detail.clone())
     }
 }
 
 impl From<RegistrationErrorReason> for Refusal {
+    /// Builds a [`Refusal`] with no detail or underlying cause.
     fn from(reason: RegistrationErrorReason) -> Self {
         Self {
             reason,
@@ -837,6 +861,7 @@ fn take(
         .ok_or(ApproverError::AlreadyHandled)
 }
 
+/// Returns the authenticator class requested by `request`.
 const fn requested_class(request: &RegistrationRequest) -> RequestedClass {
     if request.new_authenticator_address.is_some() {
         RequestedClass::Admin
@@ -845,10 +870,12 @@ const fn requested_class(request: &RegistrationRequest) -> RequestedClass {
     }
 }
 
+/// Extracts the requested display name as a `String`, if present.
 fn requested_name(request: &RegistrationRequest) -> Option<String> {
     request.name.as_ref().map(|name| name.as_str().to_string())
 }
 
+/// Returns the whole seconds remaining before `deadline`, or zero if it has passed.
 fn secs_until(deadline: Instant) -> u64 {
     deadline.saturating_duration_since(Instant::now()).as_secs()
 }
@@ -1070,9 +1097,28 @@ fn classify_failure(error_code: Option<&GatewayErrorCode>, submitted: bool) -> R
 
 #[cfg(test)]
 mod tests {
+    use axum::{
+        http::StatusCode,
+        routing::{get, post, put},
+        Json, Router,
+    };
+    use secrecy::ExposeSecret as _;
+    use serde_json::Value;
     use test_case::test_case;
+    use tokio::net::TcpListener;
+    use world_id_core::{
+        api_types::IndexerAuthenticatorsResponse,
+        artifacts::dummy::DummyZkArtifactSource,
+        primitives::{AuthenticatorPublicKeySet, Config, ServiceEndpoint},
+        registration::{PairingSecret, RegisterRequestMessage, ResponseSecretKey},
+        OnchainKeyRepresentable as _, Signer,
+    };
 
     use super::*;
+    use crate::storage::{
+        tests_utils::{temp_root_path, InMemoryStorageProvider},
+        CredentialStore,
+    };
 
     #[test_case(Some(&GatewayErrorCode::TransactionReverted), true => RegistrationErrorReason::OperationFailed; "a revert is definitive")]
     #[test_case(Some(&GatewayErrorCode::PubkeyIdInUse), true => RegistrationErrorReason::OutcomeUnknown; "a broadcast transaction may still land")]
@@ -1085,5 +1131,151 @@ mod tests {
         submitted: bool,
     ) -> RegistrationErrorReason {
         classify_failure(error_code, submitted).reason
+    }
+
+    async fn serve(app: Router) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        url
+    }
+
+    async fn make_pending_registration() -> (Arc<PendingRegistration>, String, [u8; 32])
+    {
+        let requester_seed = [11u8; 32];
+        let signer = Signer::from_seed_bytes(&requester_seed).unwrap();
+        let pairing_secret = PairingSecret::generate().unwrap();
+        let code = PairingCode::generate();
+        let transport_key = pairing_secret.transport_key(&code).unwrap();
+        let response_key = ResponseSecretKey::generate().unwrap();
+        let request_id = pairing_secret.request_id();
+        let (request, digest) = RegistrationRequest::new_signed(
+            signer.offchain_signer_private_key().expose_secret(),
+            None,
+            response_key.public_key(),
+            None,
+            &request_id,
+        )
+        .unwrap();
+        let plaintext = RegisterRequestMessage::new(
+            Some(request_id.message_id()),
+            REGISTER_METHOD,
+            Some(request),
+        )
+        .encode()
+        .unwrap();
+        let encrypted = transport_key.encrypt_request(&plaintext).unwrap();
+        let body = serde_json::to_value(&encrypted).unwrap();
+        let app = Router::new()
+            .route(
+                "/request/{id}",
+                get(move || {
+                    let body = body.clone();
+                    async move { Json::<Value>(body) }
+                }),
+            )
+            .route("/response/{id}", put(|| async { StatusCode::CREATED }));
+        let url = serve(app).await;
+        let bridge =
+            Arc::new(BridgeClient::with_base_url("bridge.example", &url).unwrap());
+        let uri = PairingUri {
+            secret: pairing_secret,
+            digest,
+            bridge: "bridge.example".parse().unwrap(),
+        }
+        .to_string();
+        let pending = PendingRegistration::receive(&uri, vec![bridge])
+            .await
+            .unwrap();
+        (Arc::new(pending), code.as_str().to_string(), requester_seed)
+    }
+
+    async fn make_test_authenticator(seed: [u8; 32], leaf_index: u64) -> Authenticator {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let signer = Signer::from_seed_bytes(&seed).unwrap();
+        let pubkey = signer.offchain_signer_pubkey();
+        let encoded = pubkey.to_ethereum_representation().unwrap();
+        let commitment = AuthenticatorPublicKeySet::new(vec![pubkey])
+            .unwrap()
+            .leaf_hash()
+            .into();
+        let address = signer.onchain_signer_address();
+        let indexer_url = serve(Router::new().route(
+            "/authenticators",
+            post(move || async move {
+                Json(IndexerAuthenticatorsResponse {
+                    authenticator_pubkeys: vec![Some(encoded)],
+                    authenticator_addresses: vec![Some(address)],
+                    offchain_signer_commitment: commitment,
+                    recovery_counter: 0,
+                })
+            }),
+        ))
+        .await;
+        let config = Config::new(
+            None,
+            480,
+            Address::with_last_byte(1),
+            ServiceEndpoint::direct(indexer_url.clone()),
+            ServiceEndpoint::direct(indexer_url),
+            Vec::new(),
+            0,
+        )
+        .unwrap();
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = Arc::new(CredentialStore::from_provider(&provider).unwrap());
+        let authenticator = Authenticator::init_with_leaf_index_and_config(
+            &seed,
+            leaf_index,
+            config,
+            Arc::new(DummyZkArtifactSource),
+            store,
+        )
+        .await
+        .unwrap();
+        let _ = std::fs::remove_dir_all(root);
+        authenticator
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_authenticate_calls_only_advance_once() {
+        let (pending, code, _) = make_pending_registration().await;
+        let first = {
+            let pending = pending.clone();
+            let code = code.clone();
+            tokio::spawn(async move { pending.authenticate(&code).await })
+        };
+        let second = {
+            let pending = pending.clone();
+            tokio::spawn(async move { pending.authenticate(&code).await })
+        };
+        let (res_a, res_b) = tokio::join!(first, second);
+        let (res_a, res_b) = (res_a.unwrap(), res_b.unwrap());
+        assert_eq!(
+            usize::from(res_a.is_ok()) + usize::from(res_b.is_ok()),
+            1,
+            "exactly one concurrent authenticate call may succeed: {res_a:?}, {res_b:?}"
+        );
+        let err = res_a.err().or_else(|| res_b.err()).unwrap();
+        assert!(matches!(err, ApproverError::Expired), "{err:?}");
+    }
+
+    #[tokio::test]
+    async fn approve_rejects_mismatched_approver_without_consuming_channel() {
+        let (pending, code, _) = make_pending_registration().await;
+        let incoming = pending.authenticate(&code).await.unwrap();
+        let approver_a = make_test_authenticator([21u8; 32], 1).await;
+        let approver_b = make_test_authenticator([22u8; 32], 2).await;
+
+        let checked = incoming.check(&approver_a).await.unwrap();
+        let err = checked
+            .approve(&approver_b, Some(vec![1, 2, 3]), Vec::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ApproverError::ApproverMismatch), "{err:?}");
+
+        // Channel was not consumed by the rejected call, so declining still delivers.
+        assert!(checked.reject().await.unwrap());
     }
 }

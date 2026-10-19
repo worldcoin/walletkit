@@ -87,7 +87,10 @@ pub struct Registered {
     pub vault_backup: Option<Vec<u8>>,
 }
 
-/// Errors on the Requesting Authenticator's side of a registration. Each one ends the session.
+/// Errors on the Requesting Authenticator's side of a registration.
+///
+/// Decrypt and malformed-response errors in [`RegistrationRequester::poll`] end the session;
+/// bridge errors leave the session open until it expires so the caller can poll again.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum RequesterError {
     /// The requested authenticator name exceeds [`MAX_NAME_LEN`].
@@ -245,15 +248,22 @@ impl RegistrationRequester {
 
     /// Ends the session and discards its secrets.
     pub fn cancel(&self) {
-        drop(self.take_live_session());
+        drop(
+            self.session
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take(),
+        );
     }
 
     /// Checks the bridge once for the response. A completed response ends the session.
     ///
     /// # Errors
     ///
-    /// Returns an error if the bridge cannot be reached, or the response cannot be opened or
-    /// does not answer this session's request. Errors end the session.
+    /// Returns [`RequesterError::Bridge`] if the bridge cannot be reached (leaving the session
+    /// open until it expires so a later poll can retry), or [`RequesterError::Transport`] /
+    /// [`RequesterError::MalformedResponse`] if the completed response cannot be opened or does
+    /// not answer this session's request (which ends the session).
     pub async fn poll(&self) -> Result<RequesterStatus, RequesterError> {
         let _polling = self.poll_lock.lock().await;
         let Some((request_id, expires_at)) = self
@@ -262,33 +272,42 @@ impl RegistrationRequester {
             return Ok(RequesterStatus::Expired);
         };
         let state = before(expires_at, self.bridge.fetch_response(&request_id)).await;
-        // The session may have been cancelled during the fetch.
-        let Some(mut live) = self.take_live_session() else {
-            return Ok(RequesterStatus::Expired);
-        };
         match state {
-            Some(Ok(Some(ResponseState::Initialized))) => {
-                self.restore_session(live);
-                Ok(RequesterStatus::Waiting)
-            }
-            Some(Ok(Some(ResponseState::Retrieved))) => {
-                // Taking the request restarts the bridge session (WIP-109 §3.5).
-                if !live.retrieved {
-                    live.retrieved = true;
-                    live.expires_at = Instant::now() + SESSION_TTL;
-                }
-                self.restore_session(live);
-                Ok(RequesterStatus::Retrieved)
-            }
+            Some(Ok(Some(ResponseState::Initialized))) => self
+                .with_live_session(|_| RequesterStatus::Waiting)
+                .ok_or(())
+                .or(Ok(RequesterStatus::Expired)),
+            Some(Ok(Some(ResponseState::Retrieved))) => self
+                .with_live_session(|live| {
+                    // Taking the request restarts the bridge session (WIP-109 §3.5).
+                    if !live.retrieved {
+                        live.retrieved = true;
+                        live.expires_at = Instant::now() + SESSION_TTL;
+                    }
+                    RequesterStatus::Retrieved
+                })
+                .ok_or(())
+                .or(Ok(RequesterStatus::Expired)),
             Some(Ok(Some(ResponseState::Completed(sealed)))) => {
+                let Some(live) = self.take_live_session() else {
+                    return Ok(RequesterStatus::Expired);
+                };
                 let sealed = world_id_core::registration::EncryptedPayload {
                     iv: sealed.iv,
                     payload: sealed.payload,
                 };
                 live.open(&sealed)
             }
-            Some(Err(error)) => Err(error.into()),
-            None | Some(Ok(None)) => Ok(RequesterStatus::Expired),
+            Some(Err(error)) => {
+                if self.live_session(|_| ()).is_none() {
+                    return Ok(RequesterStatus::Expired);
+                }
+                Err(error.into())
+            }
+            None | Some(Ok(None)) => {
+                drop(self.take_live_session());
+                Ok(RequesterStatus::Expired)
+            }
         }
     }
 
@@ -377,17 +396,23 @@ impl RegistrationRequester {
         session.as_ref().map(read)
     }
 
-    /// Takes the live session out, ending it unless it is restored.
+    /// Mutates the live session in place under the mutex, discarding an expired one.
+    fn with_live_session<T>(
+        &self,
+        update: impl FnOnce(&mut Session) -> T,
+    ) -> Option<T> {
+        let mut session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
+        session.take_if(|live| Instant::now() >= live.expires_at);
+        session.as_mut().map(update)
+    }
+
+    /// Takes the live session out when it ends.
     fn take_live_session(&self) -> Option<Session> {
         self.session
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take()
             .filter(|live| Instant::now() < live.expires_at)
-    }
-
-    fn restore_session(&self, live: Session) {
-        *self.session.lock().unwrap_or_else(PoisonError::into_inner) = Some(live);
     }
 
     /// Checks a successful `result` against the registry and returns the new authenticator.
@@ -419,7 +444,7 @@ impl RegistrationRequester {
             return Err(RequesterError::SeedMismatch);
         }
         drop(signer);
-        let leaf_index = result.leaf_index;
+        let leaf_index = result.leaf_index();
         let lookup = || {
             let config = config.clone();
             let pubkey = self.request.new_authenticator_pubkey.clone();
@@ -452,7 +477,7 @@ impl RegistrationRequester {
             .request
             .new_authenticator_address
             .unwrap_or(Address::ZERO);
-        if registered != (result.pubkey_id, address) {
+        if registered != (result.pubkey_id(), address) {
             return Err(RequesterError::RegistrationMismatch);
         }
         let inner = CoreAuthenticator::from_account_authenticators(
@@ -513,6 +538,7 @@ impl Session {
 }
 
 impl From<ErrorObject<RegistrationErrorData>> for RegistrationError {
+    /// Converts a WIP-109 error object into [`RegistrationError`].
     fn from(error: ErrorObject<RegistrationErrorData>) -> Self {
         Self {
             reason: RegistrationErrorReason::from_code(&error.code),
@@ -524,6 +550,7 @@ impl From<ErrorObject<RegistrationErrorData>> for RegistrationError {
 }
 
 impl From<AuthenticatorError> for RequesterError {
+    /// Converts an [`AuthenticatorError`] into [`RequesterError::Authenticator`].
     fn from(error: AuthenticatorError) -> Self {
         Self::Authenticator(error.into())
     }
@@ -540,5 +567,113 @@ fn is_transient(error: &AuthenticatorError) -> bool {
                 || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
         }
         _ => false,
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use axum::{
+        extract::State,
+        http::StatusCode,
+        routing::{get, post},
+        Json, Router,
+    };
+    use serde_json::json;
+    use tokio::{net::TcpListener, sync::Notify};
+
+    use super::*;
+
+    async fn serve(app: Router) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        url
+    }
+
+    #[tokio::test]
+    async fn poll_preserves_session_after_bridge_error() {
+        let should_fail = Arc::new(AtomicBool::new(true));
+        let app = Router::new()
+            .route("/request", post(|| async { StatusCode::OK }))
+            .route(
+                "/response/{id}",
+                get(|State(should_fail): State<Arc<AtomicBool>>| async move {
+                    if should_fail.swap(false, Ordering::SeqCst) {
+                        Err(StatusCode::BAD_REQUEST)
+                    } else {
+                        Ok(Json(json!({ "status": "retrieved", "response": null })))
+                    }
+                }),
+            )
+            .with_state(should_fail);
+        let url = serve(app).await;
+        let bridge =
+            Arc::new(BridgeClient::with_base_url("bridge.example", &url).unwrap());
+        let requester = RegistrationRequester::start(
+            vec![7u8; 32],
+            RequestedClass::Proving,
+            None,
+            bridge,
+        )
+        .await
+        .unwrap();
+
+        let err = requester.poll().await.unwrap_err();
+        assert!(matches!(err, RequesterError::Bridge(_)));
+        assert!(requester.pairing_uri().is_some());
+
+        assert_eq!(requester.poll().await.unwrap(), RequesterStatus::Retrieved);
+        assert!(requester.pairing_code().is_some());
+    }
+
+    #[tokio::test]
+    async fn cancel_during_in_flight_poll_is_not_undone() {
+        let entered = Arc::new(Notify::new());
+        let release = Arc::new(Notify::new());
+        let app =
+            Router::new()
+                .route("/request", post(|| async { StatusCode::OK }))
+                .route(
+                    "/response/{id}",
+                    get(
+                        |State((entered, release)): State<(
+                            Arc<Notify>,
+                            Arc<Notify>,
+                        )>| async move {
+                            entered.notify_one();
+                            release.notified().await;
+                            Json(json!({ "status": "retrieved", "response": null }))
+                        },
+                    ),
+                )
+                .with_state((entered.clone(), release.clone()));
+        let url = serve(app).await;
+        let bridge =
+            Arc::new(BridgeClient::with_base_url("bridge.example", &url).unwrap());
+        let requester = Arc::new(
+            RegistrationRequester::start(
+                vec![9u8; 32],
+                RequestedClass::Proving,
+                None,
+                bridge,
+            )
+            .await
+            .unwrap(),
+        );
+
+        let polling = {
+            let requester = requester.clone();
+            tokio::spawn(async move { requester.poll().await.unwrap() })
+        };
+        entered.notified().await;
+        requester.cancel();
+        release.notify_one();
+
+        assert_eq!(polling.await.unwrap(), RequesterStatus::Expired);
+        assert_eq!(requester.pairing_uri(), None);
+        assert_eq!(requester.pairing_code(), None);
+        assert_eq!(requester.poll().await.unwrap(), RequesterStatus::Expired);
     }
 }
