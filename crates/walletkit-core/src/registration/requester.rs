@@ -78,13 +78,26 @@ pub enum RequesterStatus {
 }
 
 /// A verified registration.
-#[derive(Debug, uniffi::Record)]
+#[derive(uniffi::Record)]
 pub struct Registered {
     /// The new authenticator. Its storage is not initialized yet.
     pub authenticator: Arc<Authenticator>,
     /// The shared `CredentialStore::export_vault_for_backup` output, to import with
     /// `CredentialStore::merge_vault_from_backup` once storage is initialized.
     pub vault_backup: Option<Vec<u8>>,
+}
+
+impl std::fmt::Debug for Registered {
+    /// Formats [`Registered`] without printing the plaintext `vault_backup` bytes.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Registered")
+            .field("authenticator", &self.authenticator)
+            .field(
+                "vault_backup",
+                &self.vault_backup.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 /// Errors on the Requesting Authenticator's side of a registration.
@@ -558,7 +571,8 @@ fn is_transient(error: &AuthenticatorError) -> bool {
         AuthenticatorError::PublicKeyNotFound
         | AuthenticatorError::AccountDoesNotExist
         | AuthenticatorError::NetworkError(_) => true,
-        AuthenticatorError::IndexerError { status, .. } => {
+        AuthenticatorError::IndexerError { status, .. }
+        | AuthenticatorError::OhttpRelayError { status, .. } => {
             status.is_server_error()
                 || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
         }
@@ -568,7 +582,7 @@ fn is_transient(error: &AuthenticatorError) -> bool {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     use axum::{
         extract::State,
@@ -578,8 +592,16 @@ mod tests {
     };
     use serde_json::json;
     use tokio::{net::TcpListener, sync::Notify};
+    use world_id_core::{
+        api_types::IndexerAuthenticatorsResponse,
+        artifacts::dummy::DummyZkArtifactSource,
+        primitives::{AuthenticatorPublicKeySet, ServiceEndpoint},
+        registration::{RegistrationResult as CoreRegistrationResult, Vault},
+        OnchainKeyRepresentable as _,
+    };
 
     use super::*;
+    use crate::storage::tests_utils::{temp_root_path, InMemoryStorageProvider};
 
     async fn serve(app: Router) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -671,5 +693,172 @@ mod tests {
         assert_eq!(requester.pairing_uri(), None);
         assert_eq!(requester.pairing_code(), None);
         assert_eq!(requester.poll().await.unwrap(), RequesterStatus::Expired);
+    }
+
+    #[test]
+    fn is_transient_includes_retryable_ohttp_relay_errors() {
+        assert!(is_transient(&AuthenticatorError::OhttpRelayError {
+            status: reqwest::StatusCode::TOO_MANY_REQUESTS,
+            body: String::new(),
+        }));
+        assert!(is_transient(&AuthenticatorError::OhttpRelayError {
+            status: reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            body: String::new(),
+        }));
+        assert!(!is_transient(&AuthenticatorError::OhttpRelayError {
+            status: reqwest::StatusCode::BAD_REQUEST,
+            body: String::new(),
+        }));
+    }
+
+    fn authenticators_response(
+        pubkeys: [ruint::aliases::U256; 2],
+        addresses: [Address; 2],
+        commitment: ruint::aliases::U256,
+    ) -> Json<IndexerAuthenticatorsResponse> {
+        Json(IndexerAuthenticatorsResponse {
+            authenticator_pubkeys: pubkeys.map(Some).to_vec(),
+            authenticator_addresses: addresses.map(Some).to_vec(),
+            offchain_signer_commitment: commitment,
+            recovery_counter: 0,
+        })
+    }
+
+    async fn mock_verify_indexer(seed: [u8; 32], wrong_seed: [u8; 32]) -> String {
+        let (signer, other_signer) = (
+            Signer::from_seed_bytes(&seed).unwrap(),
+            Signer::from_seed_bytes(&wrong_seed).unwrap(),
+        );
+        let (pubkey, other_pubkey) = (
+            signer.offchain_signer_pubkey(),
+            other_signer.offchain_signer_pubkey(),
+        );
+        let (encoded, other_encoded) = (
+            pubkey.to_ethereum_representation().unwrap(),
+            other_pubkey.to_ethereum_representation().unwrap(),
+        );
+        let wrong_slot_commitment =
+            AuthenticatorPublicKeySet::new(vec![pubkey.clone(), other_pubkey.clone()])
+                .unwrap()
+                .leaf_hash()
+                .into();
+        let commitment = AuthenticatorPublicKeySet::new(vec![other_pubkey, pubkey])
+            .unwrap()
+            .leaf_hash()
+            .into();
+        let (admin_addr, other_addr) = (
+            signer.onchain_signer_address(),
+            other_signer.onchain_signer_address(),
+        );
+        let step = Arc::new(AtomicUsize::new(0));
+        serve(
+            Router::new()
+                .route(
+                    "/authenticators",
+                    post(move |State(step): State<Arc<AtomicUsize>>| async move {
+                        match step.fetch_add(1, Ordering::SeqCst) {
+                            0 => Ok(authenticators_response(
+                                [encoded, other_encoded],
+                                [Address::ZERO, other_addr],
+                                wrong_slot_commitment,
+                            )),
+                            1 => Ok(authenticators_response(
+                                [other_encoded, encoded],
+                                [other_addr, admin_addr],
+                                commitment,
+                            )),
+                            2 => Err(StatusCode::SERVICE_UNAVAILABLE),
+                            _ => Ok(authenticators_response(
+                                [other_encoded, encoded],
+                                [other_addr, Address::ZERO],
+                                commitment,
+                            )),
+                        }
+                    }),
+                )
+                .with_state(step),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn verify_with_config_enforces_seed_slot_class_and_recovers_from_lag() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let (seed, wrong_seed) = ([31u8; 32], [32u8; 32]);
+        let bridge_url =
+            serve(Router::new().route("/request", post(|| async { StatusCode::OK })))
+                .await;
+        let bridge = Arc::new(
+            BridgeClient::with_base_url("bridge.example", &bridge_url).unwrap(),
+        );
+        let requester = RegistrationRequester::start(
+            seed.to_vec(),
+            RequestedClass::Proving,
+            None,
+            bridge,
+        )
+        .await
+        .unwrap();
+
+        let indexer_url = mock_verify_indexer(seed, wrong_seed).await;
+        let config = Config::new(
+            None,
+            480,
+            Address::with_last_byte(1),
+            ServiceEndpoint::direct(indexer_url.clone()),
+            ServiceEndpoint::direct(indexer_url),
+            Vec::new(),
+            0,
+        )
+        .unwrap();
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = Arc::new(CredentialStore::from_provider(&provider).unwrap());
+        let result = RegistrationResult(CoreRegistrationResult {
+            leaf_index: 7,
+            pubkey_id: 1,
+            authenticators: Vec::new(),
+            vault: Some(Vault {
+                format: PLAINTEXT_VAULT_FORMAT.to_string(),
+                data: Zeroizing::new(b"secret-vault-bytes".to_vec()),
+            }),
+        });
+        let verify = |s: [u8; 32]| {
+            let (config, store, result) = (config.clone(), store.clone(), &result);
+            let requester = &requester;
+            async move {
+                requester
+                    .verify_with_config(
+                        &s,
+                        result,
+                        config,
+                        Arc::new(DummyZkArtifactSource),
+                        store,
+                    )
+                    .await
+            }
+        };
+
+        assert!(matches!(
+            verify(wrong_seed).await.unwrap_err(),
+            RequesterError::SeedMismatch
+        ));
+        assert!(matches!(
+            verify(seed).await.unwrap_err(),
+            RequesterError::RegistrationMismatch
+        ));
+        assert!(matches!(
+            verify(seed).await.unwrap_err(),
+            RequesterError::RegistrationMismatch
+        ));
+
+        let registered = verify(seed).await.unwrap();
+        let debug = format!("{registered:?}");
+        assert!(debug.contains("<redacted>") && !debug.contains("secret-vault-bytes"));
+        assert_eq!(
+            registered.vault_backup.as_deref(),
+            Some(b"secret-vault-bytes".as_slice())
+        );
+        let _ = std::fs::remove_dir_all(root);
     }
 }
