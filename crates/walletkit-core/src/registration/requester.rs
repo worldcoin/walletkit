@@ -242,10 +242,6 @@ impl RegistrationRequester {
                 return Ok(RequesterStatus::Retrieved);
             }
             Some(Ok(Some(ResponseState::Completed(sealed)))) => {
-                let sealed = world_id_core::registration::EncryptedPayload {
-                    iv: sealed.iv,
-                    payload: sealed.payload,
-                };
                 session.open(&sealed).map(RequesterStatus::Completed)
             }
             Some(Err(error)) => Err(error.into()),

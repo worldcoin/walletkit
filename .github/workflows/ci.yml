@@ -287,17 +287,6 @@ jobs:
           - nightly
           - 1.98.1 # MSRV
 
-    services:
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -328,7 +317,6 @@ jobs:
 
       - name: Run tests
         env:
-          REDIS_URL: redis://127.0.0.1:6379
           WORLDCHAIN_SEPOLIA_RPC_URL: ${{ secrets.WORLDCHAIN_SEPOLIA_RPC_URL || 'https://rpc.worldchain-sepolia.worldcoin.org' }}
           WORLDCHAIN_RPC_URL: ${{ secrets.WORLDCHAIN_RPC_URL || 'https://rpc.worldchain.worldcoin.org' }}
         run: |
