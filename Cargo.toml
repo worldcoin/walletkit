@@ -95,8 +95,8 @@ zip = { version = "2", default-features = false }
 # world-id-protocol crates
 # TODO: Temporary pin to the WIP-109 protocol branch; return to a crates.io release once the
 # registration API is published.
-world-id-bridge = { git = "https://github.com/worldcoin/message-bridge", rev = "ed19963eafb84bfff244aee0f519b920d810ace6" }
-world-id-bridge-client = { git = "https://github.com/worldcoin/message-bridge", rev = "ed19963eafb84bfff244aee0f519b920d810ace6" }
+world-id-bridge = { git = "https://github.com/worldcoin/message-bridge", rev = "9f21bc386ffcf199a6ac437e8c2cae4e33b05d72" }
+message-bridge-client = { git = "https://github.com/worldcoin/message-bridge", rev = "9f21bc386ffcf199a6ac437e8c2cae4e33b05d72" }
 world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "f159a86834aa9da17e9fc1351eb16a57932e4794", default-features = false }
 world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", rev = "f159a86834aa9da17e9fc1351eb16a57932e4794", default-features = false }
 

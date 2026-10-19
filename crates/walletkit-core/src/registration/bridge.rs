@@ -1,10 +1,10 @@
 //! Associates the shared bridge client with a WIP-109 Pairing URI domain.
 
+use message_bridge_client::{BridgeClient as Client, EncryptedPayload as Payload};
 use reqwest::Url;
-use world_id_bridge_client::{BridgeClient as Client, EncryptedPayload as Payload};
 use world_id_core::registration::{BridgeDomain, EncryptedPayload, RequestId};
 
-pub use world_id_bridge_client::BridgeError;
+pub use message_bridge_client::BridgeError;
 
 /// A client for an allowed bridge deployment, as named in a Pairing URI.
 #[derive(Clone, Debug)]
@@ -13,7 +13,7 @@ pub struct BridgeClient {
     domain: BridgeDomain,
 }
 
-pub(super) type ResponseState = world_id_bridge_client::ResponseState;
+pub(super) type ResponseState = message_bridge_client::ResponseState;
 
 impl BridgeClient {
     /// Creates a client for the bridge at `https://{domain}`.

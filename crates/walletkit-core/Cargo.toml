@@ -50,7 +50,7 @@ uuid = { workspace = true, features = ["v4"] }
 walletkit-db = { workspace = true }
 walletkit-sqlite = { workspace = true }
 web-time = { workspace = true }
-world-id-bridge-client = { workspace = true }
+message-bridge-client = { workspace = true }
 world-id-core = { workspace = true, features = ["authenticator"] }
 world-id-proof = { workspace = true }
 zeroize = { workspace = true }
