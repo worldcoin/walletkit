@@ -15,10 +15,6 @@ that CI runs. For platform bindings, see [iOS and Swift](ios.md),
   tests use Anvil to fork World Chain from the RPC endpoint in
   `WORLDCHAIN_RPC_URL`, which defaults to the public World Chain RPC. You can set
   it in a `.env` file.
-- The registration integration test also needs Redis. It starts the real message
-  bridge in-process against `REDIS_URL` (default `redis://127.0.0.1:6379`). For
-  example, run `nix shell nixpkgs#redis --command redis-server --save '' --appendonly no`
-  in another terminal. Use a dedicated instance; the test does not flush data.
 
 Run every command on this page from the repository root.
 

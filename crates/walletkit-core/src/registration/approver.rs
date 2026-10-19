@@ -185,7 +185,7 @@ pub struct PendingRegistration {
 }
 
 impl std::fmt::Debug for PendingRegistration {
-    /// Formats [`PendingRegistration`] with [`log_tag`] instead of the bearer [`PairingUri`].
+    /// Formats [`PendingRegistration`] with a short request tag instead of the bearer [`PairingUri`].
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PendingRegistration")
             .field("request", &log_tag(&self.uri.secret.request_id()))
@@ -1305,5 +1305,197 @@ mod tests {
 
         // Channel was not consumed by the rejected call, so declining still delivers.
         assert!(checked.reject().await.unwrap());
+    }
+
+    fn make_account(
+        slots: &[(world_id_core::EdDSAPublicKey, Address)],
+    ) -> AccountAuthenticators {
+        let pks = slots.iter().map(|(pk, _)| pk.clone()).collect();
+        let encs = slots
+            .iter()
+            .map(|(pk, _)| Some(pk.to_ethereum_representation().unwrap()))
+            .collect();
+        let addrs = slots.iter().map(|(_, addr)| Some(*addr)).collect();
+        let commitment = AuthenticatorPublicKeySet::new(pks)
+            .unwrap()
+            .leaf_hash()
+            .into();
+        AccountAuthenticators::try_from(IndexerAuthenticatorsResponse {
+            authenticator_pubkeys: encs,
+            authenticator_addresses: addrs,
+            offchain_signer_commitment: commitment,
+            recovery_counter: 0,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn plan_registration_checks_authorization_conflicts_capacity_and_idempotency() {
+        let admin = Signer::from_seed_bytes(&[41u8; 32]).unwrap();
+        let other = Signer::from_seed_bytes(&[42u8; 32]).unwrap();
+        let candidate = Signer::from_seed_bytes(&[43u8; 32]).unwrap();
+        let (admin_pk, other_pk, candidate_pk) = (
+            admin.offchain_signer_pubkey(),
+            other.offchain_signer_pubkey(),
+            candidate.offchain_signer_pubkey(),
+        );
+        let (admin_addr, other_addr, candidate_addr) = (
+            admin.onchain_signer_address(),
+            other.onchain_signer_address(),
+            candidate.onchain_signer_address(),
+        );
+
+        let request_id = PairingSecret::generate().unwrap().request_id();
+        let make_req = |signer: &Signer, addr: Option<Address>| {
+            RegistrationRequest::new_signed(
+                signer.offchain_signer_private_key().expose_secret(),
+                addr,
+                ResponseSecretKey::generate().unwrap().public_key(),
+                None,
+                &request_id,
+            )
+            .unwrap()
+            .0
+        };
+        let proving_req = make_req(&candidate, None);
+        let admin_req = make_req(&candidate, Some(candidate_addr));
+        let colliding_addr_req = make_req(&candidate, Some(other_addr));
+
+        let two_slot =
+            make_account(&[(admin_pk.clone(), admin_addr), (other_pk, other_addr)]);
+        assert_eq!(
+            plan_registration(&two_slot, &candidate_pk, candidate_addr, &proving_req),
+            Err(RegistrationErrorReason::NotAuthorized)
+        );
+        assert_eq!(
+            plan_registration(&two_slot, &admin_pk, Address::ZERO, &proving_req),
+            Err(RegistrationErrorReason::NotAuthorized)
+        );
+        assert_eq!(
+            plan_registration(&two_slot, &admin_pk, admin_addr, &colliding_addr_req),
+            Err(RegistrationErrorReason::AuthenticatorConflict)
+        );
+
+        let with_candidate = make_account(&[
+            (admin_pk.clone(), admin_addr),
+            (candidate_pk, Address::ZERO),
+        ]);
+        assert_eq!(
+            plan_registration(&with_candidate, &admin_pk, admin_addr, &proving_req),
+            Ok(RegistrationPlan::AlreadyRegistered { pubkey_id: 1 })
+        );
+        assert_eq!(
+            plan_registration(&with_candidate, &admin_pk, admin_addr, &admin_req),
+            Err(RegistrationErrorReason::AuthenticatorConflict)
+        );
+
+        let mut full_slots = vec![(admin_pk.clone(), admin_addr)];
+        for i in 1..7u8 {
+            let s = Signer::from_seed_bytes(&[50 + i; 32]).unwrap();
+            full_slots.push((s.offchain_signer_pubkey(), Address::ZERO));
+        }
+        let full = make_account(&full_slots);
+        assert_eq!(
+            plan_registration(&full, &admin_pk, admin_addr, &proving_req),
+            Err(RegistrationErrorReason::MaxAuthenticatorsReached)
+        );
+        let existing_sixth = Signer::from_seed_bytes(&[56u8; 32]).unwrap();
+        let existing_req = make_req(&existing_sixth, None);
+        assert_eq!(
+            plan_registration(&full, &admin_pk, admin_addr, &existing_req),
+            Ok(RegistrationPlan::AlreadyRegistered { pubkey_id: 6 })
+        );
+    }
+
+    #[tokio::test]
+    async fn approve_reports_outcome_unknown_without_retrying_ambiguous_submission() {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let (pending, code, _) = make_pending_registration().await;
+        let incoming = pending.authenticate(&code).await.unwrap();
+
+        let seed = [61u8; 32];
+        let signer = Signer::from_seed_bytes(&seed).unwrap();
+        let pubkey = signer.offchain_signer_pubkey();
+        let encoded = pubkey.to_ethereum_representation().unwrap();
+        let commitment = AuthenticatorPublicKeySet::new(vec![pubkey])
+            .unwrap()
+            .leaf_hash()
+            .into();
+        let address = signer.onchain_signer_address();
+        let submissions = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let submissions_clone = submissions.clone();
+        let service_url = serve(
+            Router::new()
+                .route(
+                    "/authenticators",
+                    post(move || async move {
+                        Json(IndexerAuthenticatorsResponse {
+                            authenticator_pubkeys: vec![Some(encoded)],
+                            authenticator_addresses: vec![Some(address)],
+                            offchain_signer_commitment: commitment,
+                            recovery_counter: 0,
+                        })
+                    }),
+                )
+                .route(
+                    "/signature-nonce",
+                    post(|| async {
+                        Json(serde_json::json!({ "signature_nonce": "0x0" }))
+                    }),
+                )
+                .route(
+                    "/insert-authenticator",
+                    post(move || {
+                        let submissions = submissions_clone.clone();
+                        async move {
+                            submissions
+                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                            StatusCode::SERVICE_UNAVAILABLE
+                        }
+                    }),
+                ),
+        )
+        .await;
+        let config = Config::new(
+            None,
+            480,
+            Address::with_last_byte(1),
+            ServiceEndpoint::direct(service_url.clone()),
+            ServiceEndpoint::direct(service_url),
+            Vec::new(),
+            0,
+        )
+        .unwrap();
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = Arc::new(CredentialStore::from_provider(&provider).unwrap());
+        let approver = Authenticator::init_with_leaf_index_and_config(
+            &seed,
+            1,
+            config,
+            Arc::new(DummyZkArtifactSource),
+            store,
+        )
+        .await
+        .unwrap();
+        let _ = std::fs::remove_dir_all(root);
+
+        let checked = incoming.check(&approver).await.unwrap();
+        let outcome = checked
+            .approve(&approver, Some(vec![1, 2, 3]), Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            submissions.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "an ambiguous submission must never be retried"
+        );
+        assert_eq!(
+            outcome.result,
+            ApprovalResult::Failed {
+                reason: RegistrationErrorReason::OutcomeUnknown
+            }
+        );
+        assert!(outcome.delivered);
     }
 }

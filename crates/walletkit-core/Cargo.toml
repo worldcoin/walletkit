@@ -74,7 +74,6 @@ webpki-root-certs = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 attested-request = { workspace = true, features = ["test-util"] }
-message-bridge = { workspace = true, features = ["test-util"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 sha2 = { workspace = true, features = ["force-soft"] }
@@ -148,6 +147,10 @@ required-features = ["embed-zkeys"]
 
 [[test]]
 name = "proof_generation_integration"
+required-features = ["embed-zkeys"]
+
+[[test]]
+name = "registration_integration"
 required-features = ["embed-zkeys"]
 
 [lints]
