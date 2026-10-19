@@ -92,6 +92,10 @@ xshell = "0.2.7"
 zeroize = "1"
 zip = { version = "2", default-features = false }
 
+# message-bridge crates
+message-bridge = "0.1.0"
+message-bridge-client = "0.1.0"
+
 # world-id-protocol crates
 # TODO: Temporary pin to the WIP-109 protocol branch; return to a crates.io release once the
 # registration API is published.

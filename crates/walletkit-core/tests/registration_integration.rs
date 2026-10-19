@@ -1,5 +1,5 @@
 //! An end-to-end WIP-109 registration. A Requesting and an Approving Authenticator, each in its
-//! own task, pair through a message-bridge stub, and the approver inserts the new authenticator
+//! own task, pair through a message-bridge server, and the approver inserts the new authenticator
 //! into the staging `WorldIDRegistry` on a fork of World Chain. The gateway stub submits the
 //! insertion to the fork, and the indexer stub serves the account it built.
 
@@ -13,7 +13,6 @@
 mod common;
 
 use std::{
-    collections::HashMap,
     sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -30,7 +29,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde_json::{json, Value};
 use tokio::{net::TcpListener, sync::oneshot};
 use walletkit_core::{
     defaults::STAGING_WORLD_ID_REGISTRY,
@@ -72,9 +70,14 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
         0,
     )
     .unwrap();
+    let redis_url = std::env::var("REDIS_URL")
+        .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_owned());
+    let bridge_server = message_bridge::test_util::TestServer::start(&redis_url)
+        .await
+        .expect("registration integration needs Redis (set REDIS_URL)");
     let bridge = BridgeClient::with_base_url(
         "bridge.example".parse().unwrap(),
-        serve(bridge()).await.parse().unwrap(),
+        bridge_server.base_url().parse().unwrap(),
     )
     .unwrap();
 
@@ -132,6 +135,7 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     .await
     .unwrap();
     assert_eq!(restarted.leaf_index(), leaf_index);
+    bridge_server.shutdown().await.unwrap();
 }
 
 /// Takes the request from the scanned QR code, checks it with the code the user typed, and
@@ -350,85 +354,6 @@ fn status(tx_hash: String) -> GatewayStatusResponse {
         request_id: GatewayRequestId::new(tx_hash.clone()),
         kind: GatewayRequestKind::InsertAuthenticator,
         status: GatewayRequestState::Finalized { tx_hash },
-    }
-}
-
-/// A session on the bridge stub, keyed by its request id.
-enum Session {
-    Initialized(Value),
-    Retrieved,
-    Completed(Value),
-}
-
-type Sessions = Arc<Mutex<HashMap<String, Session>>>;
-
-/// The message-bridge routes, with single-use reads and a session that ends once its response
-/// is read.
-fn bridge() -> Router {
-    Router::new()
-        .route("/request", post(publish_request))
-        .route("/request/{id}", get(take_request))
-        .route("/response/{id}", get(fetch_response).put(put_response))
-        .with_state(Sessions::default())
-}
-
-async fn publish_request(
-    State(sessions): State<Sessions>,
-    Json(mut body): Json<Value>,
-) -> StatusCode {
-    let id = body["request_id"].as_str().unwrap().to_string();
-    body.as_object_mut().unwrap().remove("request_id");
-    sessions
-        .lock()
-        .unwrap()
-        .insert(id, Session::Initialized(body));
-    StatusCode::OK
-}
-
-async fn take_request(
-    State(sessions): State<Sessions>,
-    Path(id): Path<String>,
-) -> Result<Json<Value>, StatusCode> {
-    let mut sessions = sessions.lock().unwrap();
-    match sessions.remove(&id) {
-        Some(Session::Initialized(request)) => {
-            sessions.insert(id, Session::Retrieved);
-            Ok(Json(request))
-        }
-        _ => Err(StatusCode::NOT_FOUND),
-    }
-}
-
-async fn fetch_response(
-    State(sessions): State<Sessions>,
-    Path(id): Path<String>,
-) -> Result<Json<Value>, StatusCode> {
-    let mut sessions = sessions.lock().unwrap();
-    let body = match sessions.get(&id).ok_or(StatusCode::NOT_FOUND)? {
-        Session::Initialized(_) => json!({ "status": "initialized", "response": null }),
-        Session::Retrieved => json!({ "status": "retrieved", "response": null }),
-        Session::Completed(response) => {
-            let body = json!({ "status": "completed", "response": response });
-            sessions.remove(&id);
-            body
-        }
-    };
-    Ok(Json(body))
-}
-
-async fn put_response(
-    State(sessions): State<Sessions>,
-    Path(id): Path<String>,
-    Json(response): Json<Value>,
-) -> StatusCode {
-    let mut sessions = sessions.lock().unwrap();
-    match sessions.get(&id) {
-        Some(Session::Initialized(_) | Session::Retrieved) => {
-            sessions.insert(id, Session::Completed(response));
-            StatusCode::CREATED
-        }
-        Some(Session::Completed(_)) => StatusCode::CONFLICT,
-        None => StatusCode::BAD_REQUEST,
     }
 }
 
