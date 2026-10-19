@@ -135,17 +135,22 @@ impl JsActivityQuery {
         Self(ActivityQuery::new())
     }
 
-    /// Restricts the query to activity that disclosed `issuer_schema_id`.
+    /// Restricts the query to activity that disclosed any of `issuer_schema_ids`,
+    /// replacing any previously set ids. An empty array matches no activity.
     ///
     /// # Errors
-    /// Throws a `TypeError` when `issuer_schema_id` is not a bigint in the `u64` range.
-    #[wasm_bindgen(js_name = withIssuerSchemaId)]
-    pub fn with_issuer_schema_id(
+    /// Throws a `TypeError` when `issuer_schema_ids` is not an array of bigints in the
+    /// `u64` range.
+    #[wasm_bindgen(js_name = withIssuerSchemaIds)]
+    pub fn with_issuer_schema_ids(
         &self,
-        issuer_schema_id: BigInt,
+        #[wasm_bindgen(unchecked_param_type = "bigint[]")] issuer_schema_ids: &JsValue,
     ) -> Result<Self, JsValue> {
-        let issuer_schema_id = js::u64_arg("issuerSchemaId", issuer_schema_id)?;
-        Ok(Self(self.0.with_issuer_schema_id(issuer_schema_id)))
+        let issuer_schema_ids =
+            js::u64_array_arg("issuerSchemaIds", issuer_schema_ids)?;
+        Ok(Self(self.0.with_issuer_schema_ids(
+            issuer_schema_ids.into_iter().collect(),
+        )))
     }
 }
 
@@ -329,6 +334,19 @@ impl JsCredentialStore {
     pub fn activity_metadata(&self) -> Result<JsValue, JsValue> {
         let metadata = self.0.activity_metadata().map_err(to_js)?;
         js::object(&[("totalCount", metadata.total_count.into())])
+    }
+
+    /// Deletes the given activity entries and returns how many were removed.
+    ///
+    /// # Errors
+    /// Throws a `TypeError` for malformed ids, or a `StorageError` when the write fails.
+    #[wasm_bindgen(js_name = deleteActivities)]
+    pub fn delete_activities(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "bigint[]")] entry_ids: &JsValue,
+    ) -> Result<u64, JsValue> {
+        let entry_ids = js::u64_array_arg("entryIds", entry_ids)?;
+        self.0.delete_activities(entry_ids).map_err(to_js)
     }
 
     /// # Errors
