@@ -586,6 +586,12 @@ fn is_transient(error: &AuthenticatorError) -> bool {
             status.is_server_error()
                 || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
         }
+        AuthenticatorError::ContractError(error) => {
+            std::error::Error::source(error)
+                .is_some_and(<dyn std::error::Error + 'static>::is::<reqwest::Error>)
+                || error.to_string().starts_with("HTTP error 429 ")
+                || error.to_string().starts_with("HTTP error 5")
+        }
         _ => false,
     }
 }
@@ -761,6 +767,7 @@ mod tests {
             other_signer.onchain_signer_address(),
         );
         let step = Arc::new(AtomicUsize::new(0));
+        let rpc_step = Arc::new(AtomicUsize::new(0));
         serve(
             Router::new()
                 .route(
@@ -786,7 +793,21 @@ mod tests {
                         }
                     }),
                 )
-                .with_state(step),
+                .with_state(step)
+                .route(
+                    "/rpc",
+                    post(move |State(rpc_step): State<Arc<AtomicUsize>>| async move {
+                        if rpc_step.fetch_add(1, Ordering::SeqCst) == 2 {
+                            return Err(StatusCode::SERVICE_UNAVAILABLE);
+                        }
+                        Ok(Json(json!({
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "result": format!("0x{:064x}", 0)
+                        })))
+                    }),
+                )
+                .with_state(rpc_step),
         )
         .await
     }
@@ -812,7 +833,7 @@ mod tests {
 
         let indexer_url = mock_verify_indexer(seed, wrong_seed).await;
         let config = Config::new(
-            None,
+            Some(format!("{indexer_url}/rpc")),
             480,
             Address::with_last_byte(1),
             ServiceEndpoint::direct(indexer_url.clone()),
