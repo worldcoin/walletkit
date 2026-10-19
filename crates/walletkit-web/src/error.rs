@@ -9,8 +9,10 @@ use std::fmt::{Debug, Display};
 
 use js_sys::{Error, Reflect, TypeError};
 use walletkit_core::{
-    error::WalletKitError, logger::sanitize_hex_secrets,
+    error::WalletKitError,
+    logger::sanitize_hex_secrets,
     proof_request_credential_constraints_check::CredentialConstraintsCheckError,
+    registration::{ApproverError, BridgeError, RequesterError},
     storage::StorageError,
 };
 use wasm_bindgen::JsValue;
@@ -31,6 +33,18 @@ impl JsReportable for StorageError {
 
 impl JsReportable for CredentialConstraintsCheckError {
     const NAME: &'static str = "CredentialConstraintsCheckError";
+}
+
+impl JsReportable for BridgeError {
+    const NAME: &'static str = "BridgeError";
+}
+
+impl JsReportable for RequesterError {
+    const NAME: &'static str = "RequesterError";
+}
+
+impl JsReportable for ApproverError {
+    const NAME: &'static str = "ApproverError";
 }
 
 /// Converts a `WalletKit` error into a JavaScript `Error`.

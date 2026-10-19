@@ -149,7 +149,13 @@ The browser API differs from the Swift and Kotlin bindings in these ways:
 - Only `generateProof` defaults its `now` argument, to the browser clock. Pass
   Unix seconds everywhere else.
 - Objects stay in the worker until you call `free()` or they are garbage
-  collected.
+  collected. An object inside a record, such as the `result` of an approved
+  `RequesterStatus`, is a proxy too.
+- `PendingRegistration.receive` takes the one `BridgeClient` you allow instead of
+  a list. On a `BridgeNotAllowed` error, retry with a client for the named bridge
+  once the user confirms it.
+- The worker runs one call at a time. `CheckedRegistration.approve` holds it until
+  the insertion is final, which can take minutes.
 
 ## Handle errors
 
