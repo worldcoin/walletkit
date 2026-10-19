@@ -20,7 +20,7 @@
 //! transport key from the pairing code with Argon2id (64 MiB), synchronously. In a browser, call
 //! them from a Web Worker rather than the main thread.
 
-use std::{future::Future, ops::Deref, time::Duration};
+use std::{future::Future, time::Duration};
 
 use backon::{ExponentialBuilder, Sleeper as _};
 use futures_util::future::{select, Either};
@@ -67,7 +67,7 @@ pub enum RequestedClass {
 /// The result of a successful registration: where the new authenticator was inserted, and the
 /// credentials it needs to generate proofs.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Object)]
-pub struct RegistrationResult(pub(crate) CoreRegistrationResult);
+pub struct RegistrationResult(pub(super) CoreRegistrationResult);
 
 #[uniffi::export]
 impl RegistrationResult {
@@ -100,15 +100,8 @@ impl RegistrationResult {
     }
 }
 
-impl Deref for RegistrationResult {
-    type Target = CoreRegistrationResult;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
 impl From<CoreRegistrationResult> for RegistrationResult {
+    /// Wraps a protocol registration result so the vault backup stays crate-private until verified.
     fn from(result: CoreRegistrationResult) -> Self {
         Self(result)
     }
