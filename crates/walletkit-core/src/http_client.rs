@@ -18,6 +18,8 @@ pub fn builder() -> reqwest::ClientBuilder {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
 
     #[tokio::test]
@@ -26,6 +28,7 @@ mod tests {
             .build()
             .unwrap()
             .get("https://rpc.worldchain-sepolia.worldcoin.org")
+            .timeout(Duration::from_secs(5))
             .send()
             .await;
 
