@@ -5154,9 +5154,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "message-bridge"
+version = "0.1.0"
+source = "git+https://github.com/worldcoin/message-bridge?rev=565e7a7d84382ee5ca06bf00134d917ce748cecd#565e7a7d84382ee5ca06bf00134d917ce748cecd"
+dependencies = [
+ "aide",
+ "axum 0.7.9",
+ "axum-jsonschema",
+ "chrono",
+ "dotenvy",
+ "redis",
+ "reqwest 0.12.28",
+ "rustls",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "telemetry-batteries",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "message-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/message-bridge?rev=9f21bc386ffcf199a6ac437e8c2cae4e33b05d72#9f21bc386ffcf199a6ac437e8c2cae4e33b05d72"
+source = "git+https://github.com/worldcoin/message-bridge?rev=565e7a7d84382ee5ca06bf00134d917ce748cecd#565e7a7d84382ee5ca06bf00134d917ce748cecd"
 dependencies = [
  "backon",
  "futures-util",
@@ -10048,6 +10071,7 @@ dependencies = [
  "hex",
  "hkdf 0.12.4",
  "log",
+ "message-bridge",
  "message-bridge-client",
  "mockito",
  "rand 0.8.8",
@@ -10080,7 +10104,6 @@ dependencies = [
  "walletkit-testkit",
  "web-time",
  "webpki-root-certs 1.0.8",
- "world-id-bridge",
  "world-id-core",
  "world-id-proof",
  "zeroize",
@@ -10750,29 +10773,6 @@ dependencies = [
  "world-id-proof",
  "world-id-registries",
  "zeroize",
-]
-
-[[package]]
-name = "world-id-bridge"
-version = "0.1.0"
-source = "git+https://github.com/worldcoin/message-bridge?rev=9f21bc386ffcf199a6ac437e8c2cae4e33b05d72#9f21bc386ffcf199a6ac437e8c2cae4e33b05d72"
-dependencies = [
- "aide",
- "axum 0.7.9",
- "axum-jsonschema",
- "chrono",
- "dotenvy",
- "redis",
- "reqwest 0.12.28",
- "rustls",
- "schemars 0.8.22",
- "serde",
- "serde_json",
- "telemetry-batteries",
- "tokio",
- "tower-http",
- "tracing",
- "uuid",
 ]
 
 [[package]]

@@ -72,7 +72,7 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     .unwrap();
     let redis_url = std::env::var("REDIS_URL")
         .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_owned());
-    let bridge_server = world_id_bridge::test_util::TestServer::start(&redis_url)
+    let bridge_server = message_bridge::test_util::TestServer::start(&redis_url)
         .await
         .expect("registration integration needs Redis (set REDIS_URL)");
     let bridge = BridgeClient::with_base_url(
