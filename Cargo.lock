@@ -881,15 +881,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arbitrary"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
-dependencies = [
- "derive_arbitrary",
-]
-
-[[package]]
 name = "argon2"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2823,17 +2814,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "derive_arbitrary"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.118",
-]
-
-[[package]]
 name = "derive_more"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3302,6 +3282,7 @@ checksum = "843fba2746e448b37e26a819579957415c8cef339bf08564fe8b7ddbd959573c"
 dependencies = [
  "crc32fast",
  "miniz_oxide",
+ "zlib-rs",
 ]
 
 [[package]]
@@ -4828,7 +4809,7 @@ dependencies = [
  "combine",
  "libc",
  "mach2",
- "nix",
+ "nix 0.26.4",
  "sysctl",
  "thiserror 1.0.69",
  "widestring",
@@ -4907,6 +4888,18 @@ dependencies = [
  "libc",
  "memoffset",
  "pin-utils",
+]
+
+[[package]]
+name = "nix"
+version = "0.31.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf20d2fde8ff38632c426f1165ed7436270b44f199fc55284c38276f9db47c3d"
+dependencies = [
+ "bitflags 2.13.0",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
 ]
 
 [[package]]
@@ -8887,6 +8880,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-path"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8964,7 +8963,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "uniffi",
 ]
@@ -9168,7 +9167,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "uniffi",
  "walletkit-core",
@@ -9176,7 +9175,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-cli"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "alloy-core",
  "base64 0.22.1",
@@ -9200,7 +9199,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-core"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -9260,7 +9259,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-db"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "ciborium",
  "getrandom 0.3.4",
@@ -9276,7 +9275,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-sqlite"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "cc",
  "hex",
@@ -9292,7 +9291,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-testkit"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -9311,7 +9310,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-web"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "js-sys",
  "walletkit-core",
@@ -10080,7 +10079,7 @@ checksum = "32ac00cd3f8ec9c1d33fb3e7958a82df6989c42d747bd326c822b1d625283547"
 
 [[package]]
 name = "xtask"
-version = "0.27.1"
+version = "0.27.2"
 dependencies = [
  "clap",
  "eyre",
@@ -10215,20 +10214,24 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "2.4.2"
+version = "9.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50"
+checksum = "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
 dependencies = [
- "arbitrary",
  "crc32fast",
- "crossbeam-utils",
- "displaydoc",
  "flate2",
  "indexmap 2.14.0",
  "memchr",
- "thiserror 2.0.21",
+ "nix 0.31.3",
+ "typed-path",
  "zopfli",
 ]
+
+[[package]]
+name = "zlib-rs"
+version = "0.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b268e58e7c693d7c271f93ffc4ba3b380412554231c85bf61ca7af91042a4112"
 
 [[package]]
 name = "zmij"

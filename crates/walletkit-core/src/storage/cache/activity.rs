@@ -1,9 +1,11 @@
+use std::collections::BTreeSet;
+
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{
     ActivityEntry, ActivityMetadata, ActivityOutcome, ActivityQuery, ProtocolVersion,
 };
 use crate::storage::ActivityFailureReason;
-use walletkit_sqlite::{params, Connection, Row, StepResult};
+use walletkit_sqlite::{params, Connection, Row, StepResult, Value};
 
 use super::util::{map_db_err, to_i64, to_u64};
 
@@ -69,9 +71,6 @@ pub(super) fn record(
 }
 
 /// Lists activity entries, most recent first.
-///
-/// When [`ActivityQuery::with_issuer_schema_id`] is used, only entries that
-/// include that issuer schema id are returned.
 pub(super) fn list(
     conn: &Connection,
     query: &ActivityQuery,
@@ -80,14 +79,17 @@ pub(super) fn list(
 ) -> StorageResult<Vec<ActivityEntry>> {
     let limit_i64 = i64::from(limit);
     let offset_i64 = i64::from(offset);
-    let issuer_schema_id = query.issuer_schema_id.map(u64::cast_signed);
+    let issuer_schema_ids = query
+        .issuer_schema_ids
+        .as_ref()
+        .map(encode_issuer_schema_ids);
 
-    let sql = if issuer_schema_id.is_some() {
+    let sql = if issuer_schema_ids.is_some() {
         format!(
             "{SELECT_ACTIVITY_ENTRIES}
              WHERE e.entry_id IN (
                  SELECT entry_id FROM activity_issuer_schema_ids
-                 WHERE issuer_schema_id = ?1
+                 WHERE issuer_schema_id IN (SELECT value FROM json_each(?1))
              )
              ORDER BY e.created_at DESC, e.entry_id DESC
              LIMIT ?2 OFFSET ?3"
@@ -104,8 +106,8 @@ pub(super) fn list(
 
     let mut stmt = conn.prepare(&sql).map_err(|err| map_db_err(&err))?;
 
-    if let Some(issuer_schema_id) = issuer_schema_id {
-        stmt.bind_values(params![issuer_schema_id, limit_i64, offset_i64])
+    if let Some(issuer_schema_ids) = issuer_schema_ids {
+        stmt.bind_values(params![issuer_schema_ids, limit_i64, offset_i64])
             .map_err(|err| map_db_err(&err))?;
     } else {
         stmt.bind_values(params![limit_i64, offset_i64])
@@ -132,6 +134,36 @@ pub(super) fn metadata(conn: &Connection) -> StorageResult<ActivityMetadata> {
     })
 }
 
+/// Deletes the provided `entry_ids` and returns the count of the deleted entries.
+pub(super) fn delete(conn: &Connection, entry_ids: &[u64]) -> StorageResult<u64> {
+    if entry_ids.is_empty() {
+        return Ok(0);
+    }
+
+    let values = entry_ids
+        .iter()
+        .copied()
+        .map(|id| to_i64(id, "entry_id").map(Value::Integer))
+        .collect::<StorageResult<Vec<_>>>()?;
+
+    let tx = conn
+        .transaction_immediate()
+        .map_err(|err| map_db_err(&err))?;
+
+    let mut deleted = 0;
+    for batch in values.chunks(MAX_IDS_PER_DELETE) {
+        let placeholders = vec!["?"; batch.len()].join(", ");
+        let sql =
+            format!("DELETE FROM activity_entries WHERE entry_id IN ({placeholders})");
+
+        deleted += tx.execute(&sql, batch).map_err(|err| map_db_err(&err))?;
+    }
+
+    tx.commit().map_err(|err| map_db_err(&err))?;
+
+    Ok(deleted as u64)
+}
+
 pub(super) fn clear(conn: &Connection) -> StorageResult<u64> {
     let deleted = conn
         .execute("DELETE FROM activity_entries", &[])
@@ -139,6 +171,8 @@ pub(super) fn clear(conn: &Connection) -> StorageResult<u64> {
 
     Ok(deleted as u64)
 }
+
+const MAX_IDS_PER_DELETE: usize = 1000;
 
 /// The columns of an activity entry, with its issuer schema ids reassembled in
 /// a normalized order.
@@ -149,6 +183,15 @@ const SELECT_ACTIVITY_ENTRIES: &str =
              FROM activity_issuer_schema_ids s
              WHERE s.entry_id = e.entry_id)
      FROM activity_entries e";
+
+fn encode_issuer_schema_ids(issuer_schema_ids: &BTreeSet<u64>) -> String {
+    let ids = issuer_schema_ids
+        .iter()
+        .map(|id| id.cast_signed().to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!("[{ids}]")
+}
 
 /// Parses the reassembled issuer schema ids.
 ///
@@ -217,6 +260,7 @@ mod tests {
     use super::*;
     use crate::storage::cache::CacheDb;
     use secrecy::SecretBox;
+    use std::collections::HashSet;
     use std::fs;
     use std::path::{Path, PathBuf};
     use uuid::Uuid;
@@ -322,18 +366,30 @@ mod tests {
             .expect("record");
 
         let schema_10 = db
-            .list_activities(&ActivityQuery::new().with_issuer_schema_id(10), 10, 0)
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([10])),
+                10,
+                0,
+            )
             .expect("list filtered");
         assert_eq!(schema_10.len(), 2);
         assert!(schema_10.iter().all(|e| e.issuer_schema_ids.contains(&10)));
 
         let schema_20 = db
-            .list_activities(&ActivityQuery::new().with_issuer_schema_id(20), 10, 0)
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([20])),
+                10,
+                0,
+            )
             .expect("list filtered");
         assert_eq!(schema_20.len(), 2);
 
         let schema_30 = db
-            .list_activities(&ActivityQuery::new().with_issuer_schema_id(30), 10, 0)
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([30])),
+                10,
+                0,
+            )
             .expect("list filtered");
         assert!(schema_30.is_empty());
 
@@ -341,6 +397,83 @@ mod tests {
             .list_activities(&ActivityQuery::new(), 10, 0)
             .expect("list all");
         assert_eq!(all.len(), 4, "an unset filter returns every entry");
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_list_activities_filters_by_multiple_issuer_schema_ids() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Bu8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let with_schemas = |ids: Vec<u64>| ActivityEntry {
+            issuer_schema_ids: ids,
+            ..sample_entry()
+        };
+
+        let only_10 = db
+            .record_activity(&with_schemas(vec![10]), 1000)
+            .expect("record");
+        let only_20 = db
+            .record_activity(&with_schemas(vec![20]), 1001)
+            .expect("record");
+        let both = db
+            .record_activity(&with_schemas(vec![10, 20]), 1002)
+            .expect("record");
+
+        db.record_activity(&with_schemas(vec![30]), 1003)
+            .expect("record");
+
+        db.record_activity(&with_schemas(vec![]), 1004)
+            .expect("record");
+
+        let ids = |entries: Vec<ActivityEntry>| {
+            entries.into_iter().map(|e| e.id).collect::<Vec<_>>()
+        };
+
+        let filtered = db
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([20, 10])),
+                10,
+                0,
+            )
+            .expect("list filtered");
+
+        assert_eq!(
+            ids(filtered),
+            vec![Some(both), Some(only_20), Some(only_10)],
+            "an entry matching several ids is returned once, most recent first"
+        );
+
+        let first_page = db
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([10, 20])),
+                2,
+                0,
+            )
+            .expect("list first page");
+
+        let second_page = db
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([10, 20])),
+                2,
+                2,
+            )
+            .expect("list second page");
+
+        assert_eq!(ids(first_page), vec![Some(both), Some(only_20)]);
+        assert_eq!(ids(second_page), vec![Some(only_10)]);
+
+        let none = db
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::new()),
+                10,
+                0,
+            )
+            .expect("list empty filter");
+
+        assert!(none.is_empty(), "an empty id set matches no entries");
 
         cleanup_cache_files(&path);
     }
@@ -363,7 +496,11 @@ mod tests {
         assert_eq!(entries[0].issuer_schema_ids, vec![10, 20]);
 
         let filtered = db
-            .list_activities(&ActivityQuery::new().with_issuer_schema_id(10), 10, 0)
+            .list_activities(
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([10])),
+                10,
+                0,
+            )
             .expect("list filtered");
         assert_eq!(filtered.len(), 1);
 
@@ -384,7 +521,7 @@ mod tests {
 
         let entries = db
             .list_activities(
-                &ActivityQuery::new().with_issuer_schema_id(u64::MAX),
+                &ActivityQuery::new().with_issuer_schema_ids(HashSet::from([u64::MAX])),
                 10,
                 0,
             )
@@ -485,6 +622,158 @@ mod tests {
             .expect("record activity");
 
         assert_eq!(db.activity_metadata().expect("metadata").total_count, 2);
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_activity_delete_empty_ids() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x06u8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        db.record_activity(&sample_entry(), 1000)
+            .expect("record activity");
+
+        assert_eq!(db.delete_activities(&[]).expect("delete activities"), 0);
+        assert_eq!(db.activity_metadata().expect("metadata").total_count, 1);
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_delete_activities_removes_only_given_ids() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Bu8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let first = db
+            .record_activity(&sample_entry(), 1000)
+            .expect("record activity");
+        let second = db
+            .record_activity(&sample_entry(), 1001)
+            .expect("record activity");
+        let third = db
+            .record_activity(&sample_entry(), 1002)
+            .expect("record activity");
+        let deleted = db
+            .delete_activities(&[first, third, third + 100])
+            .expect("delete activities");
+
+        assert_eq!(deleted, 2, "unknown ids are not counted");
+
+        let remaining = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("list activities");
+
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, Some(second));
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_delete_activities_spans_multiple_batches() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Eu8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let mut entry_ids = (0..=MAX_IDS_PER_DELETE as u64)
+            .map(|i| {
+                db.record_activity(&sample_entry(), 1000 + i)
+                    .expect("record activity")
+            })
+            .collect::<Vec<_>>();
+        let kept = entry_ids.pop().expect("at least one entry");
+        let unknown = kept + 1;
+        entry_ids.push(unknown);
+
+        let deleted = db.delete_activities(&entry_ids).expect("delete activities");
+        assert_eq!(deleted, MAX_IDS_PER_DELETE as u64);
+
+        let remaining = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("list activities");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, Some(kept));
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_delete_activities_removes_issuer_schema_associations() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Cu8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let with_schemas = |ids: Vec<u64>| ActivityEntry {
+            issuer_schema_ids: ids,
+            ..sample_entry()
+        };
+
+        let deleted_id = db
+            .record_activity(&with_schemas(vec![10, 20]), 1000)
+            .expect("record activity");
+
+        let retained_id = db
+            .record_activity(&with_schemas(vec![30]), 1001)
+            .expect("record activity");
+
+        db.delete_activities(&[deleted_id])
+            .expect("delete activities");
+
+        drop(db);
+
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key)
+            .expect("open raw connection");
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT entry_id, issuer_schema_id FROM activity_issuer_schema_ids",
+            )
+            .expect("prepare associations query");
+
+        let mut associations = Vec::new();
+
+        while let StepResult::Row(row) = stmt.step().expect("step associations") {
+            associations.push((row.column_i64(0), row.column_i64(1)));
+        }
+
+        drop(stmt);
+        drop(conn);
+
+        assert_eq!(
+            associations,
+            vec![(
+                i64::try_from(retained_id).expect("retained id fits in i64"),
+                30
+            )],
+            "deleting an activity must cascade to only its issuer-schema associations"
+        );
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_delete_activities_rejects_id_above_i64_max_without_deleting() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Du8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let entry_id = db
+            .record_activity(&sample_entry(), 1000)
+            .expect("record activity");
+
+        let err = db
+            .delete_activities(&[entry_id, u64::MAX])
+            .expect_err("an id above i64::MAX should be rejected");
+
+        assert!(matches!(err, StorageError::CacheDb(_)));
+        assert_eq!(
+            db.activity_metadata().expect("metadata").total_count,
+            1,
+            "a rejected batch must not delete any entries"
+        );
 
         cleanup_cache_files(&path);
     }
