@@ -221,6 +221,11 @@ impl BridgeClient {
                 .expect("bridge requests have buffered bodies");
             match self.http.execute(attempt).await {
                 Ok(response) => {
+                    if !same_origin(&self.base_url, response.url()) {
+                        return Err(BridgeError::InvalidUrl(
+                            "bridge redirected across origins".to_string(),
+                        ));
+                    }
                     let status = response.status();
                     if !status.is_server_error()
                         && status != StatusCode::TOO_MANY_REQUESTS
@@ -290,15 +295,25 @@ fn retry_after(response: &Response) -> Option<Duration> {
         .map(Duration::from_secs)
 }
 
-/// Builds the HTTP client for the bridge. Native clients follow redirects only within
-/// `base_url`'s origin; browsers decide connection and request timeouts themselves.
+/// Returns whether `a` and `b` share the same scheme, host and port.
+fn same_origin(a: &Url, b: &Url) -> bool {
+    a.scheme() == b.scheme()
+        && a.host_str() == b.host_str()
+        && a.port_or_known_default() == b.port_or_known_default()
+}
+
+/// Builds the HTTP client for the bridge.
+///
+/// Native clients stop cross-origin redirects before contacting the target. On `wasm32`,
+/// `reqwest`'s Fetch backend does not expose `RequestInit.redirect` (`reqwest::redirect::Policy`
+/// is native-only); the allowlisted bridge already receives `request_id` on the initial request
+/// (and payloads are end-to-end encrypted), and [`BridgeClient::send`] rejects any response whose
+/// final URL left `base_url`'s origin.
 fn http_client(base_url: &Url) -> Result<reqwest::Client, BridgeError> {
     let builder = crate::http_client::builder();
     #[cfg(not(target_arch = "wasm32"))]
     let builder = {
-        let scheme = base_url.scheme().to_string();
-        let host = base_url.host_str().map(str::to_string);
-        let port = base_url.port_or_known_default();
+        let origin = base_url.clone();
         builder
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
@@ -306,11 +321,7 @@ fn http_client(base_url: &Url) -> Result<reqwest::Client, BridgeError> {
                 if attempt.previous().len() >= 10 {
                     return attempt.error("too many redirects");
                 }
-                let next = attempt.url();
-                if next.scheme() == scheme
-                    && next.host_str() == host.as_deref()
-                    && next.port_or_known_default() == port
-                {
+                if same_origin(&origin, attempt.url()) {
                     attempt.follow()
                 } else {
                     attempt.stop()
