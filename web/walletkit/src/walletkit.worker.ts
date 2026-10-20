@@ -1,4 +1,5 @@
 import init, * as wasm from "./generated/walletkit.js";
+import { isRecord, mapRecord } from "./protocol";
 import type { Handle, Ref, Request, Response, Target } from "./protocol";
 
 const scope = globalThis as unknown as {
@@ -183,7 +184,10 @@ function resolve(value: unknown): unknown {
   return value;
 }
 
-/** Keeps Rust objects in the worker and returns handles for the page. */
+/**
+ * Keeps Rust objects in the worker and returns handles for the page, including
+ * objects inside records such as a status with its result.
+ */
 function reveal(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(reveal);
   if (classes.some((cls) => value instanceof (cls as unknown as Function))) {
@@ -191,6 +195,7 @@ function reveal(value: unknown): unknown {
     objects.set(handle, value as RustObject);
     return { $ref: handle } satisfies Ref;
   }
+  if (isRecord(value)) return mapRecord(value, reveal);
   return value;
 }
 

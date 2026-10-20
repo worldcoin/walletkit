@@ -8,6 +8,7 @@
  * released when garbage collected).
  */
 import type * as Wasm from "./generated/walletkit.js";
+import { isRecord, mapRecord } from "./protocol";
 import type { Handle, Ref, Target } from "./protocol";
 
 type Exports = typeof Wasm;
@@ -57,12 +58,16 @@ export type RemoteClass<C> = {
 type RemoteFunction<F> = F extends (...args: infer A) => infer R
   ? (...args: { [I in keyof A]: Local<A[I]> }) => Promise<Remote<Awaited<R>>>
   : never;
-/** Values returned by the worker: Rust objects become proxies. */
+/** Values returned by the worker: Rust objects, also inside records, become proxies. */
 type Remote<T> = T extends RustObject
   ? RemoteObject<T>
   : T extends readonly (infer U)[]
     ? Remote<U>[]
-    : T;
+    : T extends Uint8Array
+      ? T
+      : T extends object
+        ? { [K in keyof T]: Remote<T[K]> }
+        : T;
 /** Arguments sent to the worker: Rust objects are passed as their proxies. */
 type Local<T> = T extends RustObject ? RemoteObject<T> : T;
 
@@ -85,6 +90,16 @@ export type WalletKit = {
 
 export type ActivityQuery = RemoteObject<Wasm.ActivityQuery>;
 export type Authenticator = RemoteObject<Wasm.Authenticator>;
+export type BridgeClient = RemoteObject<Wasm.BridgeClient>;
+export type CheckedRegistration = RemoteObject<Wasm.CheckedRegistration>;
+export type IncomingRegistration = RemoteObject<Wasm.IncomingRegistration>;
+export type PendingRegistration = RemoteObject<Wasm.PendingRegistration>;
+export type RegistrationRequester = RemoteObject<Wasm.RegistrationRequester>;
+export type RegistrationResult = RemoteObject<Wasm.RegistrationResult>;
+
+// Records that hold Rust objects, which the page receives as proxies.
+export type RequesterStatus = Remote<Wasm.RequesterStatus>;
+export type Registered = Remote<Wasm.Registered>;
 export type InitializingAuthenticator =
   RemoteObject<Wasm.InitializingAuthenticator>;
 export type CredentialStore = RemoteObject<Wasm.CredentialStore>;
@@ -162,11 +177,18 @@ export function encode(
   return value;
 }
 
-/** @internal Revives handles returned by the worker as proxies. */
+/** @internal Revives handles returned by the worker, also inside records, as proxies. */
 export function decode(rpc: Rpc, value: unknown): unknown {
   if (Array.isArray(value)) return value.map((item) => decode(rpc, item));
-  if (typeof value === "object" && value !== null && "$ref" in value) {
-    return remoteObject({ rpc, handle: (value as Ref).$ref, released: false });
+  if (isRecord(value)) {
+    if ("$ref" in value) {
+      return remoteObject({
+        rpc,
+        handle: value.$ref as Handle,
+        released: false,
+      });
+    }
+    return mapRecord(value, (field) => decode(rpc, field));
   }
   return value;
 }
