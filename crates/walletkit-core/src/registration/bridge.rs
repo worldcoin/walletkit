@@ -6,7 +6,7 @@ use backon::{BackoffBuilder as _, ExponentialBuilder};
 use futures_util::StreamExt as _;
 use reqwest::{header::RETRY_AFTER, RequestBuilder, Response, StatusCode, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use web_time::Instant;
+use web_time::{Instant, SystemTime, UNIX_EPOCH};
 use world_id_core::registration::{BridgeDomain, EncryptedPayload, RequestId};
 
 use super::{before, sleep};
@@ -282,17 +282,66 @@ impl From<serde_json::Error> for BridgeError {
     }
 }
 
-/// Parses a `Retry-After` delay-seconds header from a throttled or unavailable response.
+/// Parses a `Retry-After` header (`delay-seconds` or `IMF-fixdate` HTTP-date) from a throttled
+/// or unavailable response.
 fn retry_after(response: &Response) -> Option<Duration> {
-    response
-        .headers()
-        .get(RETRY_AFTER)?
-        .to_str()
+    let raw = response.headers().get(RETRY_AFTER)?.to_str().ok()?.trim();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    parse_retry_after(raw, now)
+}
+
+/// Parses a `Retry-After` header value relative to `now_epoch_secs` (RFC 9110 §10.2.3).
+fn parse_retry_after(value: &str, now_epoch_secs: u64) -> Option<Duration> {
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    let target = parse_http_date(value)?;
+    Some(Duration::from_secs(target.saturating_sub(now_epoch_secs)))
+}
+
+/// Parses an RFC 9110 §5.6.7 `IMF-fixdate` (`Day, DD Mon YYYY HH:MM:SS GMT`) into a UNIX
+/// timestamp in seconds.
+fn parse_http_date(value: &str) -> Option<u64> {
+    let (_, rest) = value.split_once(", ")?;
+    let mut parts = rest.split_ascii_whitespace();
+    let day: u64 = parts.next()?.parse().ok()?;
+    let month: u64 = match parts.next()? {
+        "Jan" => 1,
+        "Feb" => 2,
+        "Mar" => 3,
+        "Apr" => 4,
+        "May" => 5,
+        "Jun" => 6,
+        "Jul" => 7,
+        "Aug" => 8,
+        "Sep" => 9,
+        "Oct" => 10,
+        "Nov" => 11,
+        "Dec" => 12,
+        _ => return None,
+    };
+    let year: i64 = parts.next()?.parse().ok()?;
+    let mut hms = parts.next()?.split(':');
+    let hour: u64 = hms.next()?.parse().ok()?;
+    let minute: u64 = hms.next()?.parse().ok()?;
+    let second: u64 = hms.next()?.parse().ok()?;
+    if hms.next().is_some() || parts.next()? != "GMT" || parts.next().is_some() {
+        return None;
+    }
+    if !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+    let y = year - i64::from(month <= 2);
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400) as u64;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + i64::try_from(doe).ok()? - 719_468;
+    u64::try_from(days)
         .ok()?
-        .trim()
-        .parse::<u64>()
-        .ok()
-        .map(Duration::from_secs)
+        .checked_mul(86_400)?
+        .checked_add(hour * 3_600 + minute * 60 + second.min(59))
 }
 
 /// Returns whether `a` and `b` share the same scheme, host and port.
@@ -490,5 +539,15 @@ mod tests {
             .unwrap();
         assert!(started.elapsed() >= Duration::from_secs(1));
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
+
+        // RFC 9110 §5.6.7 IMF-fixdate (Sun, 06 Nov 1994 08:49:37 GMT = 784111777).
+        assert_eq!(
+            parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT", 784_111_747),
+            Some(Duration::from_secs(30))
+        );
+        assert_eq!(
+            parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT", 784_111_800),
+            Some(Duration::ZERO)
+        );
     }
 }
