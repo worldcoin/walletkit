@@ -54,4 +54,10 @@ ignore = [
   "RUSTSEC-2026-0247", # Unmaintained `bitmaps` (transitive via `im` / `provekit` / `world-id-proof`)
   "RUSTSEC-2026-0248", # Unmaintained `im` (transitive via `provekit` / `world-id-proof`)
   "RUSTSEC-2026-0251", # Unmaintained `sized-chunks` (transitive via `im` / `provekit` / `world-id-proof`)
+  # webpki-roots / webpki-root-certs 0.26.11 are shims that re-export the 1.x crates (locked
+  # at 1.0.10, which removes the emSign root), but the advisories still match them. webpki-roots
+  # 0.26 comes from flamingo-verifier-client and tokio-tungstenite; webpki-root-certs 0.26 from
+  # rustls-platform-verifier 0.5 via jsonrpsee. Drop these once none of them depends on 0.26.
+  { id = "RUSTSEC-2026-0381", reason = "only matches the webpki-roots 0.26.11 shim over 1.0.10" },
+  { id = "RUSTSEC-2026-0383", reason = "only matches the webpki-root-certs 0.26.11 shim over 1.0.10" },
 ]
