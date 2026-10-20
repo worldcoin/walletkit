@@ -1212,8 +1212,39 @@ mod tests {
         (Arc::new(pending), code.as_str().to_string(), requester_seed)
     }
 
-    async fn make_test_authenticator(seed: [u8; 32], leaf_index: u64) -> Authenticator {
+    async fn make_authenticator_at_url(
+        seed: [u8; 32],
+        leaf_index: u64,
+        service_url: String,
+    ) -> Authenticator {
         let _ = rustls::crypto::ring::default_provider().install_default();
+        let config = Config::new(
+            None,
+            480,
+            Address::with_last_byte(1),
+            ServiceEndpoint::direct(service_url.clone()),
+            ServiceEndpoint::direct(service_url),
+            Vec::new(),
+            0,
+        )
+        .unwrap();
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let store = Arc::new(CredentialStore::from_provider(&provider).unwrap());
+        let authenticator = Authenticator::init_with_leaf_index_and_config(
+            &seed,
+            leaf_index,
+            config,
+            Arc::new(DummyZkArtifactSource),
+            store,
+        )
+        .await
+        .unwrap();
+        let _ = std::fs::remove_dir_all(root);
+        authenticator
+    }
+
+    async fn make_test_authenticator(seed: [u8; 32], leaf_index: u64) -> Authenticator {
         let signer = Signer::from_seed_bytes(&seed).unwrap();
         let pubkey = signer.offchain_signer_pubkey();
         let encoded = pubkey.to_ethereum_representation().unwrap();
@@ -1234,30 +1265,7 @@ mod tests {
             }),
         ))
         .await;
-        let config = Config::new(
-            None,
-            480,
-            Address::with_last_byte(1),
-            ServiceEndpoint::direct(indexer_url.clone()),
-            ServiceEndpoint::direct(indexer_url),
-            Vec::new(),
-            0,
-        )
-        .unwrap();
-        let root = temp_root_path();
-        let provider = InMemoryStorageProvider::new(&root);
-        let store = Arc::new(CredentialStore::from_provider(&provider).unwrap());
-        let authenticator = Authenticator::init_with_leaf_index_and_config(
-            &seed,
-            leaf_index,
-            config,
-            Arc::new(DummyZkArtifactSource),
-            store,
-        )
-        .await
-        .unwrap();
-        let _ = std::fs::remove_dir_all(root);
-        authenticator
+        make_authenticator_at_url(seed, leaf_index, indexer_url).await
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1566,5 +1574,128 @@ mod tests {
         let err = parse_request(&valid_bytes, &request_id, &other_digest).unwrap_err();
         assert_eq!(err.reason, RegistrationErrorReason::InvalidParams);
         assert!(err.reply.is_some());
+    }
+
+    async fn lagging_insert_service(
+        seed: [u8; 32],
+        requester_seed: [u8; 32],
+    ) -> String {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use world_id_core::api_types::{
+            GatewayRequestId, GatewayRequestKind, GatewayStatusResponse,
+        };
+
+        let signer = Signer::from_seed_bytes(&seed).unwrap();
+        let req_signer = Signer::from_seed_bytes(&requester_seed).unwrap();
+        let pk = signer.offchain_signer_pubkey();
+        let req_pk = req_signer.offchain_signer_pubkey();
+        let (enc, req_enc) = (
+            pk.to_ethereum_representation().unwrap(),
+            req_pk.to_ethereum_representation().unwrap(),
+        );
+        let before_commit = AuthenticatorPublicKeySet::new(vec![pk.clone()])
+            .unwrap()
+            .leaf_hash()
+            .into();
+        let after_commit = AuthenticatorPublicKeySet::new(vec![pk, req_pk])
+            .unwrap()
+            .leaf_hash()
+            .into();
+        let address = signer.onchain_signer_address();
+
+        let idx_step = Arc::new(AtomicUsize::new(0));
+        let status_step = Arc::new(AtomicUsize::new(0));
+        serve(
+            Router::new()
+                .route(
+                    "/authenticators",
+                    post(move || {
+                        let idx_step = idx_step.clone();
+                        async move {
+                            match idx_step.fetch_add(1, Ordering::SeqCst) {
+                                0 | 1 => Ok(Json(IndexerAuthenticatorsResponse {
+                                    authenticator_pubkeys: vec![Some(enc)],
+                                    authenticator_addresses: vec![Some(address)],
+                                    offchain_signer_commitment: before_commit,
+                                    recovery_counter: 0,
+                                })),
+                                2 => Err(StatusCode::SERVICE_UNAVAILABLE),
+                                _ => Ok(Json(IndexerAuthenticatorsResponse {
+                                    authenticator_pubkeys: vec![
+                                        Some(enc),
+                                        Some(req_enc),
+                                    ],
+                                    authenticator_addresses: vec![
+                                        Some(address),
+                                        Some(Address::ZERO),
+                                    ],
+                                    offchain_signer_commitment: after_commit,
+                                    recovery_counter: 0,
+                                })),
+                            }
+                        }
+                    }),
+                )
+                .route(
+                    "/signature-nonce",
+                    post(|| async {
+                        Json(serde_json::json!({ "signature_nonce": "0x0" }))
+                    }),
+                )
+                .route(
+                    "/insert-authenticator",
+                    post(|| async {
+                        Json(GatewayStatusResponse {
+                            request_id: GatewayRequestId::new("req-1".to_string()),
+                            kind: GatewayRequestKind::InsertAuthenticator,
+                            status: GatewayRequestState::Submitted {
+                                tx_hash: "0x01".to_string(),
+                            },
+                        })
+                    }),
+                )
+                .route(
+                    "/status/{id}",
+                    get(move || {
+                        let status_step = status_step.clone();
+                        async move {
+                            if status_step.fetch_add(1, Ordering::SeqCst) == 0 {
+                                return Err(StatusCode::SERVICE_UNAVAILABLE);
+                            }
+                            Ok(Json(GatewayStatusResponse {
+                                request_id: GatewayRequestId::new("req-1".to_string()),
+                                kind: GatewayRequestKind::InsertAuthenticator,
+                                status: GatewayRequestState::Finalized {
+                                    tx_hash: "0x01".to_string(),
+                                },
+                            }))
+                        }
+                    }),
+                ),
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn approve_recovers_from_status_and_indexer_lag_after_finalization() {
+        let (pending, code, requester_seed) = make_pending_registration().await;
+        let incoming = pending.authenticate(&code).await.unwrap();
+        let seed = [62u8; 32];
+        let service_url = lagging_insert_service(seed, requester_seed).await;
+        let approver = make_authenticator_at_url(seed, 1, service_url).await;
+
+        let checked = incoming.check(&approver).await.unwrap();
+        let outcome = checked
+            .approve(&approver, Some(vec![1, 2, 3]), Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            outcome.result,
+            ApprovalResult::Registered {
+                leaf_index: 1,
+                pubkey_id: 1
+            }
+        );
+        assert!(outcome.delivered);
     }
 }
