@@ -576,28 +576,7 @@ impl Authenticator {
         proof_request: &ProofRequest,
         now: Option<u64>,
     ) -> Result<ProofResponse, WalletKitError> {
-        let now = if let Some(n) = now {
-            n
-        } else {
-            #[cfg(target_arch = "wasm32")]
-            {
-                return Err(WalletKitError::InvalidInput {
-                    attribute: "now".to_string(),
-                    reason: "`now` must be provided on wasm32 targets".to_string(),
-                });
-            }
-
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                let start = std::time::SystemTime::now();
-                start
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_err(|e| WalletKitError::Generic {
-                        error: format!("Critical. Unable to determine SystemTime: {e}"),
-                    })?
-                    .as_secs()
-            }
-        };
+        let now = resolve_now(now)?;
 
         // Build CredentialInput list from storage
         // Note: We simply load all non-expired credentials. Filtering for the requested schema IDs is done in `generate_proof`.
@@ -739,12 +718,7 @@ impl Authenticator {
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| WalletKitError::Generic {
-                    error: format!("Critical. Unable to determine SystemTime: {e}"),
-                })?
-                .as_secs();
+            let now = resolve_now(None)?;
 
             let inclusion_proof = self.fetch_inclusion_proof_with_cache(now).await?;
             let proof = self
@@ -760,6 +734,30 @@ impl Authenticator {
 
             Ok(OwnershipProof(proof))
         }
+    }
+}
+
+fn resolve_now(now: Option<u64>) -> Result<u64, WalletKitError> {
+    if let Some(now) = now {
+        return Ok(now);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        Err(WalletKitError::InvalidInput {
+            attribute: "now".to_string(),
+            reason: "`now` must be provided on wasm32 targets".to_string(),
+        })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| WalletKitError::Generic {
+                error: format!("Critical. Unable to determine SystemTime: {e}"),
+            })
+            .map(|d| d.as_secs())
     }
 }
 

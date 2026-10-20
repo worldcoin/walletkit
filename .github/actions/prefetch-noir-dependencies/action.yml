@@ -4,42 +4,57 @@ description: Load Nargo's Git dependencies without exposing credentials to Cargo
 runs:
   using: composite
   steps:
-    # Nargo 1.0.0-beta.11 shells out to unauthenticated `git clone` when these
+    # Nargo 1.0.0-beta.26 shells out to unauthenticated `git clone` when these
     # directories are absent. Keep authentication inside pinned checkout actions
     # and do not persist it for the later Cargo build.
-    - name: Fetch oprf-service
-      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-      with:
-        repository: TaceoLabs/oprf-service
-        ref: 1ee7e0439c88e6c9c5468017ece602ad7a7ce94e # taceo-oprf-v0.12.0
-        path: .noir-dependencies/oprf-service
-        persist-credentials: false
-        lfs: false
-        sparse-checkout: |
-          noir/eddsa_poseidon2
-          noir/babyjubjub
-
-    - name: Fetch noir-poseidon
+    - name: Fetch noir-poseidon v0.8.0
       uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
       with:
         repository: TaceoLabs/noir-poseidon
-        ref: 399574197066cdba30da969426b2cf50a232feb2 # v0.5.0-beta.0
-        path: .noir-dependencies/noir-poseidon
+        ref: 137ff8aa083077f24f676eb24975ca4ce48e57ce # v0.8.0
+        path: .noir-dependencies/noir-poseidon-v0.8.0
+        persist-credentials: false
+        lfs: false
+        sparse-checkout: |
+          poseidon2
+          eddsa_poseidon2
+          hash_utils
+
+    - name: Fetch noir-poseidon v0.6.1
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      with:
+        repository: TaceoLabs/noir-poseidon
+        ref: 23cf1f05cbebb78538c8e321ab3da306e3529923 # v0.6.1
+        path: .noir-dependencies/noir-poseidon-v0.6.1
         persist-credentials: false
         lfs: false
         sparse-checkout: |
           poseidon2
           hash_utils
 
+    - name: Fetch oprf-nr
+      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      with:
+        repository: TaceoLabs/oprf-nr
+        ref: fd37726215b59d3d4823ea7b1967b1da3525ed9d # v2.0.0
+        path: .noir-dependencies/oprf-nr
+        persist-credentials: false
+        lfs: false
+        sparse-checkout: |
+          babyjubjub
+
     - name: Make dependencies available to Nargo
       shell: bash
       run: |
         set -euo pipefail
         nargo_dependency_root="$HOME/nargo/github.com/TaceoLabs"
-        mkdir -p "$nargo_dependency_root/oprf-service.git" "$nargo_dependency_root/noir-poseidon"
+        mkdir -p "$nargo_dependency_root/noir-poseidon" "$nargo_dependency_root/oprf-nr"
         ln -s \
-          "$GITHUB_WORKSPACE/.noir-dependencies/oprf-service" \
-          "$nargo_dependency_root/oprf-service.git/taceo-oprf-v0.12.0"
+          "$GITHUB_WORKSPACE/.noir-dependencies/noir-poseidon-v0.8.0" \
+          "$nargo_dependency_root/noir-poseidon/v0.8.0"
         ln -s \
-          "$GITHUB_WORKSPACE/.noir-dependencies/noir-poseidon" \
-          "$nargo_dependency_root/noir-poseidon/v0.5.0-beta.0"
+          "$GITHUB_WORKSPACE/.noir-dependencies/noir-poseidon-v0.6.1" \
+          "$nargo_dependency_root/noir-poseidon/v0.6.1"
+        ln -s \
+          "$GITHUB_WORKSPACE/.noir-dependencies/oprf-nr" \
+          "$nargo_dependency_root/oprf-nr/v2.0.0"

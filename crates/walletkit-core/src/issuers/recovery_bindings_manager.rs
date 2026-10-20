@@ -183,8 +183,8 @@ impl RecoveryBindingManager {
     /// * `leaf_index` — The authenticator's leaf index in the World ID Merkle tree.
     /// # Errors
     ///
-    /// * [`WalletKitError::NetworkError`] — non-success HTTP status.
-    /// * [`WalletKitError::SerializationError`] — response body is not valid JSON.
+    /// * [`WalletKitError::NetworkError`] — non-success HTTP status, request failure,
+    ///   response-body read failure, or JSON decode failure.
     /// * [`WalletKitError::RecoveryBindingDoesNotExist`] — HTTP 404 (no binding found).
     pub async fn get_recovery_binding(
         &self,
