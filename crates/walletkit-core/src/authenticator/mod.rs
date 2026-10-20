@@ -29,8 +29,8 @@ mod with_storage;
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
 pub struct Authenticator {
-    inner: CoreAuthenticator,
-    store: Arc<CredentialStore>,
+    pub(crate) inner: CoreAuthenticator,
+    pub(crate) store: Arc<CredentialStore>,
 }
 
 impl Authenticator {
@@ -46,6 +46,33 @@ impl Authenticator {
         store: Arc<CredentialStore>,
     ) -> Result<Self, WalletKitError> {
         let authenticator = CoreAuthenticator::init(seed, config, artifacts).await?;
+
+        Ok(Self {
+            inner: authenticator,
+            store,
+        })
+    }
+
+    /// Initializes the Authenticator for `seed` on the account at `leaf_index`.
+    ///
+    /// A Proving Authenticator (WIP-104) has no management key registered on-chain, so
+    /// [`Authenticator::init_with_config`] cannot find its account. The host keeps the
+    /// `leaf_index` it was registered on and initializes it with this on every start. An Admin
+    /// Authenticator whose `leaf_index` is known can use it too.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::init_with_leaf_index` for potential errors.
+    pub async fn init_with_leaf_index_and_config(
+        seed: &[u8],
+        leaf_index: u64,
+        config: Config,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let authenticator = CoreAuthenticator::init_with_leaf_index(
+            seed, leaf_index, config, artifacts,
+        )
+        .await?;
 
         Ok(Self {
             inner: authenticator,
@@ -565,6 +592,85 @@ impl Authenticator {
                 reason: "Invalid config".to_string(),
             })?;
         Self::init_with_config(&seed, config, artifacts, store).await
+    }
+
+    /// Initializes the Authenticator for `seed` on the account at `leaf_index`, with SDK defaults.
+    ///
+    /// A Proving Authenticator (WIP-104) has no management key registered on-chain, so
+    /// [`Authenticator::init_with_defaults`] cannot find its account. The host keeps the
+    /// `leaf_index` it was registered on and initializes it with this on every start. An Admin
+    /// Authenticator whose `leaf_index` is known can use it too.
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::init_with_leaf_index` for potential errors.
+    #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    pub async fn init_with_leaf_index_and_defaults(
+        seed: Vec<u8>,
+        leaf_index: u64,
+        rpc_url: Option<String>,
+        environment: &Environment,
+        region: Option<Region>,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let seed = Zeroizing::new(seed);
+        let config = defaults::default_config(environment, rpc_url, region)?;
+        Self::init_with_leaf_index_and_config(
+            &seed, leaf_index, config, artifacts, store,
+        )
+        .await
+    }
+
+    /// Initializes the Authenticator for `seed` on the account at `leaf_index`, using SDK defaults
+    /// routed through the OHTTP relay. Opt-in alternative to
+    /// [`Authenticator::init_with_leaf_index_and_defaults`].
+    ///
+    /// # Errors
+    /// See `CoreAuthenticator::init_with_leaf_index` for potential errors.
+    #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    pub async fn init_with_leaf_index_and_ohttp_defaults(
+        seed: Vec<u8>,
+        leaf_index: u64,
+        rpc_url: Option<String>,
+        environment: &Environment,
+        region: Option<Region>,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let seed = Zeroizing::new(seed);
+        let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
+        Self::init_with_leaf_index_and_config(
+            &seed, leaf_index, config, artifacts, store,
+        )
+        .await
+    }
+
+    /// Initializes the Authenticator for `seed` on the account at `leaf_index`, with a JSON
+    /// config.
+    ///
+    /// # Errors
+    /// Will error if the provided seed is not valid or if the config is not valid.
+    #[uniffi::constructor]
+    #[tracing::instrument(target = "walletkit_latency", name = "rpc_init", skip_all)]
+    pub async fn init_with_leaf_index(
+        seed: Vec<u8>,
+        leaf_index: u64,
+        config: &str,
+        artifacts: Arc<dyn WalletKitZkArtifactSource>,
+        store: Arc<CredentialStore>,
+    ) -> Result<Self, WalletKitError> {
+        let seed = Zeroizing::new(seed);
+        let config =
+            Config::from_json(config).map_err(|_| WalletKitError::InvalidInput {
+                attribute: "config".to_string(),
+                reason: "Invalid config".to_string(),
+            })?;
+        Self::init_with_leaf_index_and_config(
+            &seed, leaf_index, config, artifacts, store,
+        )
+        .await
     }
 
     /// Generates a proof for the given proof request.
