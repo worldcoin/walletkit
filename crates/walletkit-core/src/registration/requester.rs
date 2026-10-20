@@ -5,21 +5,16 @@ use std::{
     time::Duration,
 };
 
-use alloy_core::primitives::Address;
 use backon::Retryable as _;
 use secrecy::ExposeSecret as _;
 use tokio::sync::Mutex as AsyncMutex;
 use web_time::Instant;
 use world_id_core::{
-    primitives::{
-        authenticator_message::{ErrorObject, Response},
-        Config,
-    },
+    primitives::{authenticator_message::Response, Config},
     registration::{
         decode_response, AuthenticatorName, EncryptedPayload, PairingCode,
         PairingSecret, PairingUri, RegisterRequestMessage, RegistrationDigest,
-        RegistrationErrorData, RegistrationErrorReason, RegistrationRequest,
-        ResponseSecretKey, TransportError, TransportKey, MAX_NAME_LEN, REGISTER_METHOD,
+        RegistrationRequest, ResponseSecretKey, TransportKey, REGISTER_METHOD,
     },
     Authenticator as CoreAuthenticator, AuthenticatorError, Signer,
 };
@@ -27,8 +22,13 @@ use zeroize::Zeroizing;
 
 use super::{
     before,
-    bridge::{BridgeClient, BridgeError, ResponseState},
-    log_tag, polling_backoff, RegistrationResult, RequestedClass,
+    bridge::{BridgeClient, ResponseState},
+    errors::RequesterError,
+    log_tag, polling_backoff,
+    types::{
+        onchain_address, Registered, RegistrationResult, RequestedClass,
+        RequesterStatus,
+    },
     PLAINTEXT_VAULT_FORMAT, SESSION_TTL,
 };
 use crate::{
@@ -39,102 +39,6 @@ use crate::{
 
 /// How long [`RegistrationRequester::verify`] waits for the indexer to show the registration.
 const VERIFY_TIMEOUT: Duration = Duration::from_mins(1);
-
-/// An error response from the Approving Authenticator (WIP-109 §3.6.3).
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
-pub struct RegistrationError {
-    /// The parsed WIP-109 reason, or `None` for an unrecognized error code.
-    pub reason: Option<RegistrationErrorReason>,
-    /// The raw `error.code`.
-    pub code: String,
-    /// The human-readable `error.message`.
-    pub message: String,
-    /// Optional implementation-specific detail from `error.data.detail`, e.g. a gateway error
-    /// code.
-    pub detail: Option<String>,
-}
-
-/// What [`RegistrationRequester::poll`] found on the bridge.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum RequesterStatus {
-    /// The Approving Authenticator has not opened the Pairing URI yet.
-    Waiting,
-    /// The Approving Authenticator took the request. Show the pairing code.
-    Retrieved,
-    /// The Approving Authenticator approved the registration. The result must be checked with
-    /// [`RegistrationRequester::verify`] before it is used.
-    Approved {
-        /// The unverified registration result.
-        result: Arc<RegistrationResult>,
-    },
-    /// The Approving Authenticator refused or could not complete the registration.
-    Refused {
-        /// The error reported by the Approving Authenticator.
-        error: RegistrationError,
-    },
-    /// The session expired, was cancelled, or its response was lost. Start a new session with
-    /// the same seed.
-    Expired,
-}
-
-/// A verified registration.
-#[derive(uniffi::Record)]
-pub struct Registered {
-    /// The new authenticator. Its storage is not initialized yet.
-    pub authenticator: Arc<Authenticator>,
-    /// The shared `CredentialStore::export_vault_for_backup` output, to import with
-    /// `CredentialStore::merge_vault_from_backup` once storage is initialized.
-    pub vault_backup: Option<Vec<u8>>,
-}
-
-impl std::fmt::Debug for Registered {
-    /// Formats [`Registered`] without printing the plaintext `vault_backup` bytes.
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Registered")
-            .field("authenticator", &self.authenticator)
-            .field(
-                "vault_backup",
-                &self.vault_backup.as_ref().map(|_| "<redacted>"),
-            )
-            .finish()
-    }
-}
-
-/// Errors on the Requesting Authenticator's side of a registration.
-///
-/// Decrypt and malformed-response errors in [`RegistrationRequester::poll`] end the session;
-/// bridge errors leave the session open until it expires so the caller can poll again.
-#[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum RequesterError {
-    /// The requested authenticator name exceeds [`MAX_NAME_LEN`].
-    #[error("authenticator name must be at most {MAX_NAME_LEN} bytes")]
-    NameTooLong,
-    /// The bridge could not be reached or rejected an operation.
-    #[error(transparent)]
-    Bridge(#[from] BridgeError),
-    /// Encrypting the request or opening the response failed.
-    #[error(transparent)]
-    Transport(#[from] TransportError),
-    /// The seed or configuration is invalid, or reading the account state failed.
-    #[error(transparent)]
-    Authenticator(#[from] WalletKitError),
-    /// The request could not be encoded.
-    #[error("failed to encode the registration request: {0}")]
-    Encoding(String),
-    /// The response is not a valid answer to this session's request.
-    #[error("malformed registration response: {0}")]
-    MalformedResponse(String),
-    /// The seed passed to [`RegistrationRequester::verify`] is not the one this session asked to
-    /// register.
-    #[error("the seed does not belong to this registration session")]
-    SeedMismatch,
-    /// The registry does not show the authenticator where and how the result says it is.
-    #[error("the registration result does not match the registry")]
-    RegistrationMismatch,
-    /// The registration could not be verified before the deadline.
-    #[error("registration verification timed out")]
-    VerificationTimeout,
-}
 
 /// The Requesting Authenticator's side of one registration session.
 ///
@@ -153,27 +57,6 @@ pub struct RegistrationRequester {
     poll_lock: AsyncMutex<()>,
     /// The live session, or `None` once it completed, failed, expired or was cancelled.
     session: Mutex<Option<Session>>,
-}
-
-/// The secrets and state of a live session (WIP-109 §3.3).
-struct Session {
-    pairing_secret: PairingSecret,
-    code: PairingCode,
-    transport_key: TransportKey,
-    response_key: ResponseSecretKey,
-    retrieved: bool,
-    expires_at: Instant,
-}
-
-impl std::fmt::Debug for Session {
-    /// Formats [`Session`] with [`log_tag`] instead of the session secrets or [`RequestId`].
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Session")
-            .field("request", &log_tag(&self.pairing_secret.request_id()))
-            .field("retrieved", &self.retrieved)
-            .field("expires_at", &self.expires_at)
-            .finish_non_exhaustive()
-    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]
@@ -408,32 +291,6 @@ impl RegistrationRequester {
 }
 
 impl RegistrationRequester {
-    /// Runs `read` on the live session, discarding an expired one.
-    fn live_session<T>(&self, read: impl FnOnce(&Session) -> T) -> Option<T> {
-        let mut session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
-        session.take_if(|live| Instant::now() >= live.expires_at);
-        session.as_ref().map(read)
-    }
-
-    /// Mutates the live session in place under the mutex, discarding an expired one.
-    fn with_live_session<T>(
-        &self,
-        update: impl FnOnce(&mut Session) -> T,
-    ) -> Option<T> {
-        let mut session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
-        session.take_if(|live| Instant::now() >= live.expires_at);
-        session.as_mut().map(update)
-    }
-
-    /// Takes the live session out when it ends.
-    fn take_live_session(&self) -> Option<Session> {
-        self.session
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            .filter(|live| Instant::now() < live.expires_at)
-    }
-
     /// Checks a successful `result` against the registry and returns the new authenticator.
     ///
     /// The indexer must show this session's key at `result.pubkey_id` on `result.leaf_index`,
@@ -492,11 +349,7 @@ impl RegistrationRequester {
                         error.into()
                     }
                 })?;
-        let address = self
-            .request
-            .new_authenticator_address
-            .unwrap_or(Address::ZERO);
-        if registered != (result.pubkey_id(), address) {
+        if registered != (result.pubkey_id(), onchain_address(&self.request)) {
             return Err(RequesterError::RegistrationMismatch);
         }
         let inner = CoreAuthenticator::from_account_authenticators(
@@ -510,6 +363,74 @@ impl RegistrationRequester {
             authenticator: Arc::new(Authenticator { inner, store }),
             vault_backup: result.0.vault.as_ref().map(|vault| vault.data.to_vec()),
         })
+    }
+
+    /// Runs `read` on the live session, discarding an expired one.
+    fn live_session<T>(&self, read: impl FnOnce(&Session) -> T) -> Option<T> {
+        let mut session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
+        session.take_if(|live| Instant::now() >= live.expires_at);
+        session.as_ref().map(read)
+    }
+
+    /// Mutates the live session in place under the mutex, discarding an expired one.
+    fn with_live_session<T>(
+        &self,
+        update: impl FnOnce(&mut Session) -> T,
+    ) -> Option<T> {
+        let mut session = self.session.lock().unwrap_or_else(PoisonError::into_inner);
+        session.take_if(|live| Instant::now() >= live.expires_at);
+        session.as_mut().map(update)
+    }
+
+    /// Takes the live session out when it ends.
+    fn take_live_session(&self) -> Option<Session> {
+        self.session
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+            .filter(|live| Instant::now() < live.expires_at)
+    }
+}
+
+/// Errors that may clear up while the indexer catches up with the registry or recovers.
+fn is_transient(error: &AuthenticatorError) -> bool {
+    match error {
+        AuthenticatorError::PublicKeyNotFound
+        | AuthenticatorError::AccountDoesNotExist
+        | AuthenticatorError::NetworkError(_) => true,
+        AuthenticatorError::IndexerError { status, .. }
+        | AuthenticatorError::OhttpRelayError { status, .. } => {
+            status.is_server_error()
+                || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
+        }
+        AuthenticatorError::ContractError(error) => {
+            std::iter::successors(std::error::Error::source(error), |err| err.source())
+                .any(<dyn std::error::Error + 'static>::is::<reqwest::Error>)
+                || error.to_string().starts_with("HTTP error 429 ")
+                || error.to_string().starts_with("HTTP error 5")
+        }
+        _ => false,
+    }
+}
+
+/// The secrets and state of a live session (WIP-109 §3.3).
+struct Session {
+    pairing_secret: PairingSecret,
+    code: PairingCode,
+    transport_key: TransportKey,
+    response_key: ResponseSecretKey,
+    retrieved: bool,
+    expires_at: Instant,
+}
+
+impl std::fmt::Debug for Session {
+    /// Formats [`Session`] with [`log_tag`] instead of the session secrets or `RequestId`.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Session")
+            .field("request", &log_tag(&self.pairing_secret.request_id()))
+            .field("retrieved", &self.retrieved)
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
     }
 }
 
@@ -556,50 +477,11 @@ impl Session {
     }
 }
 
-impl From<ErrorObject<RegistrationErrorData>> for RegistrationError {
-    /// Converts a WIP-109 error object into [`RegistrationError`].
-    fn from(error: ErrorObject<RegistrationErrorData>) -> Self {
-        Self {
-            reason: RegistrationErrorReason::from_code(&error.code),
-            code: error.code,
-            message: error.message,
-            detail: error.data.and_then(|data| data.detail),
-        }
-    }
-}
-
-impl From<AuthenticatorError> for RequesterError {
-    /// Converts an [`AuthenticatorError`] into [`RequesterError::Authenticator`].
-    fn from(error: AuthenticatorError) -> Self {
-        Self::Authenticator(error.into())
-    }
-}
-
-/// Errors that may clear up while the indexer catches up with the registry or recovers.
-fn is_transient(error: &AuthenticatorError) -> bool {
-    match error {
-        AuthenticatorError::PublicKeyNotFound
-        | AuthenticatorError::AccountDoesNotExist
-        | AuthenticatorError::NetworkError(_) => true,
-        AuthenticatorError::IndexerError { status, .. }
-        | AuthenticatorError::OhttpRelayError { status, .. } => {
-            status.is_server_error()
-                || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
-        }
-        AuthenticatorError::ContractError(error) => {
-            std::iter::successors(std::error::Error::source(error), |err| err.source())
-                .any(<dyn std::error::Error + 'static>::is::<reqwest::Error>)
-                || error.to_string().starts_with("HTTP error 429 ")
-                || error.to_string().starts_with("HTTP error 5")
-        }
-        _ => false,
-    }
-}
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+    use alloy_core::primitives::Address;
     use axum::{
         extract::State,
         http::StatusCode,

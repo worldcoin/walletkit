@@ -25,22 +25,21 @@ use std::{future::Future, time::Duration};
 use backon::{ExponentialBuilder, Sleeper as _};
 use futures_util::future::{select, Either};
 use web_time::Instant;
-use world_id_core::registration::{
-    RegistrationResult as CoreRegistrationResult, RequestId,
-};
+use world_id_core::registration::RequestId;
 
 mod approver;
 mod bridge;
+mod errors;
 mod requester;
+mod types;
 
-pub use approver::{
-    ApprovalOutcome, ApprovalResult, ApproverError, CheckedRegistration,
-    IncomingRegistration, PendingRegistration, RegistrationPlan,
-};
-pub use bridge::{BridgeClient, BridgeError};
-pub use requester::{
-    Registered, RegistrationError, RegistrationRequester, RequesterError,
-    RequesterStatus,
+pub use approver::{CheckedRegistration, IncomingRegistration, PendingRegistration};
+pub use bridge::BridgeClient;
+pub use errors::{ApproverError, BridgeError, RegistrationError, RequesterError};
+pub use requester::RegistrationRequester;
+pub use types::{
+    ApprovalOutcome, ApprovalResult, Registered, RegistrationPlan, RegistrationResult,
+    RequestedClass, RequesterStatus,
 };
 pub use world_id_core::registration::{
     AuthenticatorName, BridgeDomain, KnownAuthenticator, PairingCode, PairingUri,
@@ -54,58 +53,6 @@ const PLAINTEXT_VAULT_FORMAT: &str = "walletkit_plaintext_v1";
 /// The message-bridge session lifetime, from which both sides estimate the session expiry
 /// (WIP-109 §3.5).
 const SESSION_TTL: Duration = Duration::from_mins(15);
-
-/// The class an authenticator registers with.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum RequestedClass {
-    /// An Admin Authenticator, which registers the management key derived from its seed.
-    Admin,
-    /// A Proving Authenticator.
-    Proving,
-}
-
-/// The result of a successful registration: where the new authenticator was inserted, and the
-/// credentials it needs to generate proofs.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Object)]
-pub struct RegistrationResult(pub(super) CoreRegistrationResult);
-
-#[uniffi::export]
-impl RegistrationResult {
-    /// Returns the index of the account the authenticator was registered on.
-    #[must_use]
-    pub const fn leaf_index(&self) -> u64 {
-        self.0.leaf_index
-    }
-
-    /// Returns the slot the authenticator was inserted at.
-    #[must_use]
-    pub const fn pubkey_id(&self) -> u32 {
-        self.0.pubkey_id
-    }
-
-    /// Returns the names of the account's other authenticators known to the Approving
-    /// Authenticator.
-    #[must_use]
-    pub fn authenticators(&self) -> Vec<KnownAuthenticator> {
-        self.0.authenticators.clone()
-    }
-
-    /// Returns whether the Approving Authenticator included a credential vault backup.
-    ///
-    /// The vault bytes themselves are returned in [`Registered::vault_backup`] only after
-    /// [`RegistrationRequester::verify`] confirms the on-chain registration.
-    #[must_use]
-    pub const fn has_vault(&self) -> bool {
-        self.0.vault.is_some()
-    }
-}
-
-impl From<CoreRegistrationResult> for RegistrationResult {
-    /// Wraps a protocol registration result so the vault backup stays crate-private until verified.
-    fn from(result: CoreRegistrationResult) -> Self {
-        Self(result)
-    }
-}
 
 /// The name of one of the account's other authenticators.
 #[uniffi::remote(Record)]

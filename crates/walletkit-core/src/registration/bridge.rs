@@ -9,7 +9,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use web_time::{Instant, SystemTime, UNIX_EPOCH};
 use world_id_core::registration::{BridgeDomain, EncryptedPayload, RequestId};
 
-use super::{before, sleep};
+use super::{before, errors::BridgeError, sleep};
 
 /// The message-bridge's body limit, which the largest WIP-109 response fits within.
 const MAX_BODY_SIZE: usize = 5 * 1024 * 1024;
@@ -27,36 +27,6 @@ pub struct BridgeClient {
     http: reqwest::Client,
     domain: BridgeDomain,
     base_url: Url,
-}
-
-/// Errors from talking to the bridge.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error, uniffi::Error)]
-pub enum BridgeError {
-    /// The bridge domain is not a valid DNS name with a named top-level label.
-    #[error("invalid bridge domain: {0}")]
-    InvalidDomain(String),
-    /// The bridge URL cannot be built.
-    #[error("invalid bridge URL: {0}")]
-    InvalidUrl(String),
-    /// The request failed in transit. The error carries no URL: the bridge routes contain the
-    /// request id, which is the only key to the session.
-    #[error("bridge request failed: {0}")]
-    Transport(String),
-    /// The bridge answered with a status the operation does not expect.
-    #[error("bridge returned unexpected status {status}")]
-    UnexpectedStatus {
-        /// The HTTP status code.
-        status: u16,
-    },
-    /// The bridge returned malformed JSON.
-    #[error("invalid bridge response: {0}")]
-    Json(String),
-    /// The bridge response exceeded the bridge's body limit.
-    #[error("bridge response exceeds the 5 MiB body limit")]
-    TooLarge,
-    /// The operation exhausted its time budget.
-    #[error("bridge operation timed out")]
-    Timeout,
 }
 
 /// The state of a response on the bridge (`GET /response/:id`).
@@ -259,27 +229,42 @@ impl BridgeClient {
     }
 }
 
-impl From<StatusCode> for BridgeError {
-    /// Converts an unexpected HTTP status code into [`BridgeError::UnexpectedStatus`].
-    fn from(status: StatusCode) -> Self {
-        Self::UnexpectedStatus {
-            status: status.as_u16(),
-        }
-    }
+/// Builds the HTTP client for the bridge.
+///
+/// Native clients stop cross-origin redirects before contacting the target. On `wasm32`,
+/// `reqwest`'s Fetch backend does not expose `RequestInit.redirect` (`reqwest::redirect::Policy`
+/// is native-only); the allowlisted bridge already receives `request_id` on the initial request
+/// (and payloads are end-to-end encrypted), and [`BridgeClient::send`] rejects any response whose
+/// final URL left `base_url`'s origin.
+fn http_client(base_url: &Url) -> Result<reqwest::Client, BridgeError> {
+    let builder = crate::http_client::builder();
+    #[cfg(not(target_arch = "wasm32"))]
+    let builder = {
+        let origin = base_url.clone();
+        builder
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
+                if attempt.previous().len() >= 10 {
+                    return attempt.error("too many redirects");
+                }
+                if same_origin(&origin, attempt.url()) {
+                    attempt.follow()
+                } else {
+                    attempt.stop()
+                }
+            }))
+    };
+    #[cfg(target_arch = "wasm32")]
+    let _ = base_url;
+    Ok(builder.build()?)
 }
 
-impl From<reqwest::Error> for BridgeError {
-    /// Converts a reqwest transport error into [`BridgeError::Transport`] with the URL stripped.
-    fn from(error: reqwest::Error) -> Self {
-        Self::Transport(error.without_url().to_string())
-    }
-}
-
-impl From<serde_json::Error> for BridgeError {
-    /// Converts a JSON deserialization error into [`BridgeError::Json`].
-    fn from(error: serde_json::Error) -> Self {
-        Self::Json(error.to_string())
-    }
+/// Returns whether `a` and `b` share the same scheme, host and port.
+fn same_origin(a: &Url, b: &Url) -> bool {
+    a.scheme() == b.scheme()
+        && a.host_str() == b.host_str()
+        && a.port_or_known_default() == b.port_or_known_default()
 }
 
 /// Parses a `Retry-After` header (`delay-seconds` or `IMF-fixdate` HTTP-date) from a throttled
@@ -342,44 +327,6 @@ fn parse_http_date(value: &str) -> Option<u64> {
         .ok()?
         .checked_mul(86_400)?
         .checked_add(hour * 3_600 + minute * 60 + second.min(59))
-}
-
-/// Returns whether `a` and `b` share the same scheme, host and port.
-fn same_origin(a: &Url, b: &Url) -> bool {
-    a.scheme() == b.scheme()
-        && a.host_str() == b.host_str()
-        && a.port_or_known_default() == b.port_or_known_default()
-}
-
-/// Builds the HTTP client for the bridge.
-///
-/// Native clients stop cross-origin redirects before contacting the target. On `wasm32`,
-/// `reqwest`'s Fetch backend does not expose `RequestInit.redirect` (`reqwest::redirect::Policy`
-/// is native-only); the allowlisted bridge already receives `request_id` on the initial request
-/// (and payloads are end-to-end encrypted), and [`BridgeClient::send`] rejects any response whose
-/// final URL left `base_url`'s origin.
-fn http_client(base_url: &Url) -> Result<reqwest::Client, BridgeError> {
-    let builder = crate::http_client::builder();
-    #[cfg(not(target_arch = "wasm32"))]
-    let builder = {
-        let origin = base_url.clone();
-        builder
-            .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
-            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
-                if attempt.previous().len() >= 10 {
-                    return attempt.error("too many redirects");
-                }
-                if same_origin(&origin, attempt.url()) {
-                    attempt.follow()
-                } else {
-                    attempt.stop()
-                }
-            }))
-    };
-    #[cfg(target_arch = "wasm32")]
-    let _ = base_url;
-    Ok(builder.build()?)
 }
 
 /// Runs a bridge operation within [`OPERATION_TIMEOUT`].
