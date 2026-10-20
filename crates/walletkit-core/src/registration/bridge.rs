@@ -62,6 +62,7 @@ impl BridgeClient {
         let parsed: BridgeDomain = domain
             .parse()
             .map_err(|_| BridgeError::InvalidDomain(domain.to_string()))?;
+
         Self::with_base_url(parsed.as_str(), &format!("https://{parsed}"))
     }
 
@@ -77,11 +78,13 @@ impl BridgeClient {
         let domain: BridgeDomain = domain
             .parse()
             .map_err(|_| BridgeError::InvalidDomain(domain.to_string()))?;
+
         let base_url = Url::parse(base_url)
             .map_err(|error| BridgeError::InvalidUrl(error.to_string()))?;
         if base_url.cannot_be_a_base() {
             return Err(BridgeError::InvalidUrl(base_url.to_string()));
         }
+
         Ok(Self {
             http: http_client(&base_url)?,
             domain,
@@ -113,10 +116,12 @@ impl BridgeClient {
             request_id: request_id.to_string(),
             request,
         };
+
         bounded(async {
             let response = self
                 .send(self.http.post(self.url(&["request"])).json(&body))
                 .await?;
+
             match response.status() {
                 StatusCode::OK | StatusCode::CONFLICT => Ok(()),
                 status => Err(BridgeError::from(status)),
@@ -155,8 +160,10 @@ impl BridgeClient {
         response: &EncryptedPayload,
     ) -> Result<(), BridgeError> {
         let url = self.url(&["response", &request_id.to_string()]);
+
         bounded(async {
             let reply = self.send(self.http.put(url).json(response)).await?;
+
             match reply.status() {
                 StatusCode::CREATED => Ok(()),
                 status => Err(BridgeError::from(status)),
@@ -172,6 +179,7 @@ impl BridgeClient {
     ) -> Result<Option<T>, BridgeError> {
         bounded(async {
             let response = self.send(self.http.get(url)).await?;
+
             match response.status() {
                 StatusCode::OK => read_json(response).await.map(Some),
                 StatusCode::NOT_FOUND => Ok(None),
@@ -185,10 +193,12 @@ impl BridgeClient {
     async fn send(&self, request: RequestBuilder) -> Result<Response, BridgeError> {
         let request = request.timeout(Duration::from_secs(30)).build()?;
         let mut delays = retry_backoff().build();
+
         loop {
             let attempt = request
                 .try_clone()
                 .expect("bridge requests have buffered bodies");
+
             match self.http.execute(attempt).await {
                 Ok(response) => {
                     if !same_origin(&self.base_url, response.url()) {
@@ -196,12 +206,14 @@ impl BridgeClient {
                             "bridge redirected across origins".to_string(),
                         ));
                     }
+
                     let status = response.status();
                     if !status.is_server_error()
                         && status != StatusCode::TOO_MANY_REQUESTS
                     {
                         return Ok(response);
                     }
+
                     let retry_after = retry_after(&response);
                     let Some(backoff) = delays.next() else {
                         return Err(BridgeError::from(status));
@@ -225,6 +237,7 @@ impl BridgeClient {
             .expect("`with_base_url` accepts only URLs that can be a base")
             .pop_if_empty()
             .extend(segments);
+
         url
     }
 }
@@ -255,8 +268,10 @@ fn http_client(base_url: &Url) -> Result<reqwest::Client, BridgeError> {
                 }
             }))
     };
+
     #[cfg(target_arch = "wasm32")]
     let _ = base_url;
+
     Ok(builder.build()?)
 }
 
@@ -272,6 +287,7 @@ fn same_origin(a: &Url, b: &Url) -> bool {
 fn retry_after(response: &Response) -> Option<Duration> {
     let raw = response.headers().get(RETRY_AFTER)?.to_str().ok()?.trim();
     let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+
     parse_retry_after(raw, now)
 }
 
@@ -280,6 +296,7 @@ fn parse_retry_after(value: &str, now_epoch_secs: u64) -> Option<Duration> {
     if let Ok(seconds) = value.parse::<u64>() {
         return Some(Duration::from_secs(seconds));
     }
+
     let target = parse_http_date(value)?;
     Some(Duration::from_secs(target.saturating_sub(now_epoch_secs)))
 }
@@ -305,17 +322,20 @@ fn parse_http_date(value: &str) -> Option<u64> {
         "Dec" => 12,
         _ => return None,
     };
+
     let year: i64 = parts.next()?.parse().ok()?;
     let mut hms = parts.next()?.split(':');
     let hour: u64 = hms.next()?.parse().ok()?;
     let minute: u64 = hms.next()?.parse().ok()?;
     let second: u64 = hms.next()?.parse().ok()?;
+
     if hms.next().is_some() || parts.next()? != "GMT" || parts.next().is_some() {
         return None;
     }
     if !(1..=31).contains(&day) || hour > 23 || minute > 59 || second > 60 {
         return None;
     }
+
     let y = year - i64::from(month <= 2);
     let era = y.div_euclid(400);
     let yoe = y.rem_euclid(400) as u64;
@@ -323,6 +343,7 @@ fn parse_http_date(value: &str) -> Option<u64> {
     let doy = (153 * mp + 2) / 5 + day - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     let days = era * 146_097 + i64::try_from(doe).ok()? - 719_468;
+
     u64::try_from(days)
         .ok()?
         .checked_mul(86_400)?
@@ -351,6 +372,7 @@ fn retry_backoff() -> ExponentialBuilder {
 async fn read_json<T: DeserializeOwned>(response: Response) -> Result<T, BridgeError> {
     let mut chunks = std::pin::pin!(response.bytes_stream());
     let mut body = Vec::new();
+
     while let Some(chunk) = chunks.next().await {
         let chunk = chunk?;
         if body.len() + chunk.len() > MAX_BODY_SIZE {
@@ -358,6 +380,7 @@ async fn read_json<T: DeserializeOwned>(response: Response) -> Result<T, BridgeE
         }
         body.extend_from_slice(&chunk);
     }
+
     Ok(serde_json::from_slice(&body)?)
 }
 

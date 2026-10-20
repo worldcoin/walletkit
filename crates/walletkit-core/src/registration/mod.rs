@@ -121,6 +121,7 @@ async fn before<F: Future>(deadline: Instant, future: F) -> Option<F::Output> {
     if now >= deadline {
         return None;
     }
+
     let timeout = sleep(deadline - now);
     match select(std::pin::pin!(future), std::pin::pin!(timeout)).await {
         Either::Left((output, _)) => Some(output),

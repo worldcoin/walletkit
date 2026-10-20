@@ -83,13 +83,16 @@ impl RegistrationRequester {
             .map(AuthenticatorName::try_from)
             .transpose()
             .map_err(|_| RequesterError::NameTooLong)?;
+
         let signer =
             Signer::from_seed_bytes(&seed).map_err(AuthenticatorError::from)?;
+
         let pairing_secret = PairingSecret::generate()?;
         let code = PairingCode::generate();
         let transport_key = pairing_secret.transport_key(&code)?;
         let response_key = ResponseSecretKey::generate()?;
         let request_id = pairing_secret.request_id();
+
         let (request, digest) = RegistrationRequest::new_signed(
             signer.offchain_signer_private_key().expose_secret(),
             (class == RequestedClass::Admin).then(|| signer.onchain_signer_address()),
@@ -99,6 +102,7 @@ impl RegistrationRequester {
         )
         .map_err(AuthenticatorError::from)?;
         drop(signer);
+
         let message = RegisterRequestMessage::new(
             Some(request_id.message_id()),
             REGISTER_METHOD,
@@ -107,10 +111,12 @@ impl RegistrationRequester {
         let plaintext = message
             .encode()
             .map_err(|error| RequesterError::Encoding(error.to_string()))?;
+
         let encrypted_request = transport_key.encrypt_request(&plaintext)?;
         bridge
             .publish_request(&request_id, &encrypted_request)
             .await?;
+
         Ok(Self {
             request,
             digest,
@@ -172,11 +178,13 @@ impl RegistrationRequester {
     /// not answer this session's request (which ends the session).
     pub async fn poll(&self) -> Result<RequesterStatus, RequesterError> {
         let _polling = self.poll_lock.lock().await;
+
         let Some((request_id, expires_at)) = self
             .live_session(|live| (live.pairing_secret.request_id(), live.expires_at))
         else {
             return Ok(RequesterStatus::Expired);
         };
+
         let state = before(expires_at, self.bridge.fetch_response(&request_id)).await;
         match state {
             Some(Ok(Some(ResponseState::Initialized))) => self
@@ -235,6 +243,7 @@ impl RegistrationRequester {
     ) -> Result<Registered, RequesterError> {
         let seed = Zeroizing::new(seed);
         let config = defaults::default_config(environment, rpc_url, region)?;
+
         self.verify_with_config(&seed, result, config, artifacts, store)
             .await
     }
@@ -261,6 +270,7 @@ impl RegistrationRequester {
     ) -> Result<Registered, RequesterError> {
         let seed = Zeroizing::new(seed);
         let config = defaults::default_config_with_ohttp(environment, rpc_url, region)?;
+
         self.verify_with_config(&seed, result, config, artifacts, store)
             .await
     }
@@ -285,6 +295,7 @@ impl RegistrationRequester {
                 attribute: "config".to_string(),
                 reason: "Invalid config".to_string(),
             })?;
+
         self.verify_with_config(&seed, result, config, artifacts, store)
             .await
     }
@@ -320,6 +331,7 @@ impl RegistrationRequester {
             return Err(RequesterError::SeedMismatch);
         }
         drop(signer);
+
         let leaf_index = result.leaf_index();
         let lookup = || {
             let config = config.clone();
@@ -338,6 +350,7 @@ impl RegistrationRequester {
         let lookup = lookup
             .retry(polling_backoff().with_total_delay(Some(VERIFY_TIMEOUT)))
             .when(is_transient);
+
         let (authenticators, registered) =
             before(Instant::now() + VERIFY_TIMEOUT, lookup)
                 .await
@@ -349,9 +362,11 @@ impl RegistrationRequester {
                         error.into()
                     }
                 })?;
+
         if registered != (result.pubkey_id(), onchain_address(&self.request)) {
             return Err(RequesterError::RegistrationMismatch);
         }
+
         let inner = CoreAuthenticator::from_account_authenticators(
             seed,
             leaf_index,
@@ -359,6 +374,7 @@ impl RegistrationRequester {
             config,
             artifacts,
         )?;
+
         Ok(Registered {
             authenticator: Arc::new(Authenticator { inner, store }),
             vault_backup: result.0.vault.as_ref().map(|vault| vault.data.to_vec()),
@@ -444,11 +460,13 @@ impl Session {
         let malformed = |problem: &dyn std::fmt::Display| {
             RequesterError::MalformedResponse(problem.to_string())
         };
+
         let plaintext = self
             .transport_key
             .decrypt_response(&self.response_key, sealed)?;
         let response =
             decode_response(&plaintext).map_err(|error| malformed(&error))?;
+
         let expected_id = self.pairing_secret.request_id().message_id();
         match response {
             Response::Success { id, result, .. } if id == expected_id => {
