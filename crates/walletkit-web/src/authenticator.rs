@@ -129,7 +129,7 @@ impl JsAuthenticator {
     ) -> Promise {
         let environment = parse_environment(environment);
         let region = parse_region(region);
-        let artifacts = Arc::clone(&artifacts.0).as_zk_artifact_source();
+        let artifacts = artifacts.source();
         let store = Arc::clone(&store.0);
         // The seed only reaches core's zeroizing guard once validation passed.
         let mut seed = Zeroizing::new(seed);
@@ -166,7 +166,7 @@ impl JsAuthenticator {
     ) -> Promise {
         let environment = parse_environment(environment);
         let region = parse_region(region);
-        let artifacts = Arc::clone(&artifacts.0).as_zk_artifact_source();
+        let artifacts = artifacts.source();
         let store = Arc::clone(&store.0);
         // The seed only reaches core's zeroizing guard once validation passed.
         let mut seed = Zeroizing::new(seed);
@@ -197,7 +197,7 @@ impl JsAuthenticator {
         artifacts: &JsEmbeddedZkArtifacts,
         store: &JsCredentialStore,
     ) -> Promise {
-        let artifacts = Arc::clone(&artifacts.0).as_zk_artifact_source();
+        let artifacts = artifacts.source();
         let store = Arc::clone(&store.0);
         js::promise(async move {
             let authenticator = Authenticator::init(seed, &config, artifacts, store)
@@ -310,10 +310,13 @@ impl JsAuthenticator {
         let leaf_index = js::u64_arg("leafIndex", leaf_index);
         let artifacts = artifacts.source();
         let store = Arc::clone(&store.0);
+        // The seed only reaches core's zeroizing guard once validation passed.
+        let mut seed = Zeroizing::new(seed);
         js::promise(async move {
+            let leaf_index = leaf_index?;
             let authenticator = Authenticator::init_with_leaf_index(
-                seed,
-                leaf_index?,
+                std::mem::take(&mut *seed),
+                leaf_index,
                 &config,
                 artifacts,
                 store,

@@ -76,18 +76,19 @@ impl JsRegistrationRequester {
     #[wasm_bindgen(js_name = start, unchecked_return_type = "Promise<RegistrationRequester>")]
     pub fn start(
         seed: Vec<u8>,
-        #[wasm_bindgen(unchecked_param_type = "RequestedClass")] class: &str,
+        #[wasm_bindgen(unchecked_param_type = "RequestedClass")] requested_class: &str,
         name: Option<String>,
         bridge: &JsBridgeClient,
     ) -> Promise {
-        let class = parse_class(class);
+        let class = parse_class(requested_class);
         let bridge = Arc::clone(&bridge.0);
         // The seed only reaches core's zeroizing guard once validation passed.
         let mut seed = Zeroizing::new(seed);
         js::promise(async move {
+            let class = class?;
             let requester = RegistrationRequester::start(
                 std::mem::take(&mut *seed),
-                class?,
+                class,
                 name,
                 bridge,
             )
@@ -121,8 +122,8 @@ impl JsRegistrationRequester {
     /// Checks the bridge once for the response. A completed response ends the session.
     ///
     /// # Errors
-    /// Rejects with a `RequesterError` when the bridge cannot be reached or the response is
-    /// invalid. Errors end the session.
+    /// Rejects with a `RequesterError`. After a `Bridge` error the session stays open, so poll
+    /// again; any other error ends the session.
     #[wasm_bindgen(js_name = poll, unchecked_return_type = "Promise<RequesterStatus>")]
     pub fn poll(&self) -> Promise {
         let requester = Arc::clone(&self.0);
@@ -139,7 +140,7 @@ impl JsRegistrationRequester {
     /// registration is not found on-chain in time.
     #[allow(
         clippy::too_many_arguments,
-        reason = "mirrors the `Authenticator` constructors with environment defaults"
+        reason = "mirrors the arguments of the core method"
     )]
     #[wasm_bindgen(js_name = verifyWithDefaults, unchecked_return_type = "Promise<Registered>")]
     pub fn verify_with_defaults(
@@ -186,7 +187,7 @@ impl JsRegistrationRequester {
     /// registration is not found on-chain in time.
     #[allow(
         clippy::too_many_arguments,
-        reason = "mirrors the `Authenticator` constructors with environment defaults"
+        reason = "mirrors the arguments of the core method"
     )]
     #[wasm_bindgen(js_name = verifyWithOhttpDefaults, unchecked_return_type = "Promise<Registered>")]
     pub fn verify_with_ohttp_defaults(
@@ -313,7 +314,8 @@ impl JsPendingRegistration {
     ///
     /// Unlike the Swift and Kotlin bindings, this takes the one bridge the host allows: a
     /// client in a list would be moved out of the page's reach. On `BridgeNotAllowed`, the
-    /// host may ask the user to confirm the named bridge, then retry with a client for it.
+    /// host may ask the user to confirm the bridge in the error's `domain`, then retry with a
+    /// client for it.
     ///
     /// # Errors
     /// Rejects with an `ApproverError` for an invalid or expired URI, a URI naming another
@@ -469,7 +471,8 @@ impl JsCheckedRegistration {
     /// is busy until the insertion is final, which can take minutes.
     ///
     /// # Errors
-    /// Rejects with a `TypeError` for a malformed `authenticators` entry, or
+    /// Rejects with a `TypeError` for a malformed `authenticators` entry, or an
+    /// `ApproverError`: `ApproverMismatch` if `approver` is not the checked account, or
     /// `AlreadyHandled` if the registration was already decided.
     #[wasm_bindgen(js_name = approve, unchecked_return_type = "Promise<ApprovalOutcome>")]
     pub fn approve(
@@ -482,13 +485,15 @@ impl JsCheckedRegistration {
         let checked = Arc::clone(&self.0);
         let approver = approver.inner();
         let authenticators = known_authenticators(authenticators);
+        // The vault only reaches core's zeroizing guard once validation passed.
         let mut vault = vault.map(Zeroizing::new);
         js::promise(async move {
+            let authenticators = authenticators?;
             let outcome = checked
                 .approve(
                     &approver,
                     vault.as_mut().map(|vault| std::mem::take(&mut **vault)),
-                    authenticators?,
+                    authenticators,
                 )
                 .await
                 .map_err(to_js)?;
