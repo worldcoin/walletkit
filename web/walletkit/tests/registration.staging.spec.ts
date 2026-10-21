@@ -4,11 +4,7 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 
 // WIP-109 end to end against staging: two browsers pair through the staging message-bridge,
 // and the approver inserts the new authenticator through the staging gateway on World Chain.
-// It needs the network, so it only runs with `WALLETKIT_STAGING=1`.
-test.skip(
-  !process.env.WALLETKIT_STAGING,
-  "set WALLETKIT_STAGING=1 to run against staging",
-);
+// Like the Rust registration integration test, it always runs and needs the network.
 
 const BRIDGE_DOMAIN = "staging-bridge.worldcoin.org";
 const RPC_URL =
