@@ -113,6 +113,17 @@ jobs:
           google-chrome --version
           nix develop .#wasm --command bun run --cwd web/walletkit test:browser
 
+      # Registers an authenticator between two browsers against staging: the
+      # message-bridge, the gateway, the indexer and World Chain.
+      - name: Run staging registration test
+        if: github.event_name != 'release'
+        env:
+          WALLETKIT_STAGING: "1"
+          WORLDCHAIN_RPC_URL: ${{ secrets.WORLDCHAIN_RPC_URL }}
+        run: |
+          nix develop .#wasm --command bash -c \
+            'cd web/walletkit && bunx playwright test registration.staging'
+
       # The Next.js demo is the package's integration consumer: it must keep
       # type-checking, testing and bundling against the package just built.
       - name: Check the Next.js demo against the package

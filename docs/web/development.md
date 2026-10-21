@@ -49,8 +49,20 @@ nix develop .#wasm --command bun run --cwd web/walletkit test:browser
 The tests are in [`web/walletkit/tests`](https://github.com/worldcoin/walletkit/tree/main/web/walletkit/tests):
 
 - `browser.spec.ts` drives the built package in a page.
+- `registration.staging.spec.ts` registers an authenticator between two browsers
+  against staging: the message-bridge, the gateway, the indexer and World Chain.
+  It is skipped unless `WALLETKIT_STAGING=1` is set. `WORLDCHAIN_RPC_URL`
+  overrides the public RPC.
 - `types/consumer.ts` checks the public TypeScript API at compile time. To check
   that an invalid call doesn't compile, mark it with `// @ts-expect-error`.
+
+To run only the staging test after a `test:browser` run, run the following
+command:
+
+```sh
+WALLETKIT_STAGING=1 nix develop .#wasm --command bash -c \
+  'cd web/walletkit && bunx playwright test registration.staging'
+```
 
 CI also lints the crate and checks the TypeScript formatting. To run the same
 checks, run these commands:
