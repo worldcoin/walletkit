@@ -682,6 +682,18 @@ test("two authenticators pair through the bridge and the refusal reaches the req
       );
       const uri: string = await requester.pairingUri();
       const waiting = await requester.poll();
+      // Another bridge is refused before the request is taken, so the host can retry.
+      const otherBridge = await wallet.BridgeClient.withBaseUrl(
+        "other.example",
+        "https://bridge.test",
+      );
+      const notAllowed = await wallet.PendingRegistration.receive(
+        uri,
+        otherBridge,
+      ).catch((e: Error & { code?: string; domain?: string }) => ({
+        code: e.code,
+        domain: e.domain,
+      }));
       const pending = await wallet.PendingRegistration.receive(uri, bridge);
       const reused = await wallet.PendingRegistration.receive(
         uri,
@@ -693,7 +705,10 @@ test("two authenticators pair through the bridge and the refusal reaches the req
       const malformed = await pending.authenticate("12").catch(failure);
       const incorrect = await pending
         .authenticate(code === "AAAAAA" ? "BBBBBB" : "AAAAAA")
-        .catch(failure);
+        .catch((e: Error & { code?: string; attemptsRemaining?: number }) => ({
+          code: e.code,
+          attemptsRemaining: e.attemptsRemaining,
+        }));
       const incoming = await pending.authenticate(code);
       const requested = {
         class: await incoming.class(),
@@ -706,8 +721,9 @@ test("two authenticators pair through the bridge and the refusal reaches the req
       const afterRefusal = await requester.poll();
       return {
         invalidDomain,
-        uriPrefix: uri.slice(0, uri.indexOf(":")),
+        uri,
         waiting,
+        notAllowed,
         reused,
         retrieved,
         uriAfterRetrieval,
@@ -724,13 +740,20 @@ test("two authenticators pair through the bridge and the refusal reaches the req
     }
   });
   expect(result.invalidDomain).toBe("BridgeError: InvalidDomain");
-  expect(result.uriPrefix).not.toBe("");
+  expect(result.uri).toMatch(/^worldid:\/\/auth\/v1\/register\?/);
   expect(result.waiting).toEqual({ state: "waiting" });
+  expect(result.notAllowed).toEqual({
+    code: "BridgeNotAllowed",
+    domain: "bridge.example",
+  });
   expect(result.reused).toBe("ApproverError: Expired");
   expect(result.retrieved).toEqual({ state: "retrieved" });
   expect(result.uriAfterRetrieval).toBeUndefined();
   expect(result.malformed).toBe("ApproverError: MalformedCode");
-  expect(result.incorrect).toBe("ApproverError: IncorrectCode");
+  expect(result.incorrect).toEqual({
+    code: "IncorrectCode",
+    attemptsRemaining: 2,
+  });
   expect(result.requested.class).toBe("proving");
   expect(result.requested.name).toBe("Chrome on MacBook");
   expect(result.requested.timeRemaining).toBeGreaterThan(0n);

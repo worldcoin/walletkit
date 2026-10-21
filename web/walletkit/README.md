@@ -152,8 +152,8 @@ The browser API differs from the Swift and Kotlin bindings in these ways:
   collected. An object inside a record, such as the `result` of an approved
   `RequesterStatus`, is a proxy too.
 - `PendingRegistration.receive` takes the one `BridgeClient` you allow instead of
-  a list. On a `BridgeNotAllowed` error, retry with a client for the named bridge
-  once the user confirms it.
+  a list. On a `BridgeNotAllowed` error, retry with a client for the bridge named
+  by the error's `domain` once the user confirms it.
 - The worker runs one call at a time. `CheckedRegistration.approve` holds it until
   the insertion is final, which can take minutes.
 
@@ -164,6 +164,9 @@ WalletKit reports failures in these ways:
 - A WalletKit error rejects with an `Error` whose `name` is the error type, such as
   `StorageError`, and whose `code` is the variant, such as `NullifierReplay`. Hex
   secrets in the `message` are redacted.
+- An `ApproverError` also carries the fields to act on: `domain` for
+  `BridgeNotAllowed`, `attemptsRemaining` for `IncorrectCode`, `delivered` for
+  `InvalidRequest`, and `reason` and `delivered` for `Refused`.
 - An invalid argument rejects with a `TypeError`.
 - If storage setup fails, `initializeWalletKit` rejects with a `StorageError`
   whose `code` is `PersistentStorage`.

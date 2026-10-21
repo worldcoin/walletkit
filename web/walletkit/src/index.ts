@@ -179,12 +179,11 @@ class WorkerClient implements Rpc {
     this.pending.delete(response.id);
     if (response.ok) pending.resolve(response.result);
     else {
-      const { name, message } = response.error;
+      const { name, message, code, fields } = response.error;
       const error =
         name === "TypeError" ? new TypeError(message) : new Error(message);
+      Object.assign(error, fields, code && { code });
       error.name = name;
-      if (response.error.code)
-        Object.assign(error, { code: response.error.code });
       pending.reject(error);
       // A trapped module cannot recover: stop, so every later call fails fast with
       // this error and `isStopped()` tells the app to reinitialize.

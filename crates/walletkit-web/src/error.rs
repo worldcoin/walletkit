@@ -2,8 +2,9 @@
 //!
 //! Every error carries a `name` naming its source, a human-readable `message`,
 //! a `code` with the variant name, and a `detail` string with the variant and its
-//! fields so failures can be triaged without a debugger. Hex values that may be
-//! secrets are redacted.
+//! fields so failures can be triaged without a debugger. Variant fields a host acts
+//! on are also set as properties, such as the `domain` of `BridgeNotAllowed`. Hex
+//! values that may be secrets are redacted.
 
 use std::fmt::{Debug, Display};
 
@@ -21,6 +22,11 @@ use wasm_bindgen::JsValue;
 pub trait JsReportable: Display + Debug {
     /// The `name` of the resulting JavaScript error.
     const NAME: &'static str;
+
+    /// Variant fields a host acts on, set as properties of the JavaScript error.
+    fn fields(&self) -> Vec<(&'static str, JsValue)> {
+        Vec::new()
+    }
 }
 
 impl JsReportable for WalletKitError {
@@ -45,13 +51,34 @@ impl JsReportable for RequesterError {
 
 impl JsReportable for ApproverError {
     const NAME: &'static str = "ApproverError";
+
+    fn fields(&self) -> Vec<(&'static str, JsValue)> {
+        match self {
+            Self::BridgeNotAllowed { domain } => {
+                vec![("domain", domain.as_str().into())]
+            }
+            Self::IncorrectCode { attempts_remaining } => {
+                vec![("attemptsRemaining", (*attempts_remaining).into())]
+            }
+            Self::InvalidRequest { delivered, .. } => {
+                vec![("delivered", (*delivered).into())]
+            }
+            Self::Refused {
+                reason, delivered, ..
+            } => vec![
+                ("reason", reason.code().into()),
+                ("delivered", (*delivered).into()),
+            ],
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// Converts a `WalletKit` error into a JavaScript `Error`.
 ///
 /// Besides the `name` of the source, the error carries a stable `code` (the variant
-/// name, for example `NullifierReplay`) to branch on, and a `detail` string with the
-/// variant and its fields.
+/// name, for example `NullifierReplay`) to branch on, a `detail` string with the
+/// variant and its fields, and the variant fields from [`JsReportable::fields`].
 #[allow(clippy::needless_pass_by_value)] // Used as `map_err(to_js)`.
 pub fn to_js<E: JsReportable>(error: E) -> JsValue {
     let debug = format!("{error:?}");
@@ -68,6 +95,9 @@ pub fn to_js<E: JsReportable>(error: E) -> JsValue {
         &"detail".into(),
         &sanitize_hex_secrets(debug.clone()).into(),
     );
+    for (key, value) in error.fields() {
+        let _ = Reflect::set(&error_object, &key.into(), &value);
+    }
     error_object.into()
 }
 
