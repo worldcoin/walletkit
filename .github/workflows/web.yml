@@ -109,10 +109,12 @@ jobs:
 
       # The tests drive the installed Google Chrome (`channel: "chrome"`).
       # `registration.staging.spec.ts` also runs against staging: the message-bridge,
-      # the gateway, the indexer and World Chain.
+      # the gateway, the indexer and World Chain. A release skips it, so a staging outage
+      # cannot block publishing a commit that already passed it on its pull request and main.
       - name: Run browser tests
         env:
           WORLDCHAIN_RPC_URL: ${{ secrets.WORLDCHAIN_RPC_URL || 'https://rpc.worldchain.worldcoin.org' }}
+          SKIP_STAGING_TESTS: ${{ github.event_name == 'release' && '1' || '' }}
         run: |
           google-chrome --version
           nix develop .#wasm --command bun run --cwd web/walletkit test:browser

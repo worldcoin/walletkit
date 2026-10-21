@@ -9,6 +9,9 @@ import { expect, test, type Browser, type Page } from "@playwright/test";
 const BRIDGE_DOMAIN = "staging-bridge.worldcoin.org";
 const RPC_URL =
   process.env.WORLDCHAIN_RPC_URL || "https://rpc.worldchain.worldcoin.org";
+// Each wait is bounded so a slow staging dependency fails with the step that stalled.
+const FINALIZATION_TIMEOUT_MS = 2 * 60_000;
+const POLL_TIMEOUT_MS = 3 * 60_000;
 
 /** Opens a page in its own context, so each device has its own WalletKit storage. */
 async function openDevice(browser: Browser, baseURL: string | undefined) {
@@ -45,71 +48,98 @@ async function closeDevice(page: Page) {
 
 /** Registers a new account for the device's seed and opens its Admin Authenticator. */
 async function registerAccount(page: Page) {
-  return page.evaluate(async (rpcUrl) => {
-    const w = window as any;
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-    const registration =
-      await w.wallet.InitializingAuthenticator.registerWithDefaults(
-        w.seed(),
-        rpcUrl,
-        "staging",
-        "us",
-        "0x0000000000000000000000000000000000000000",
-      );
-
-    for (;;) {
-      const status = await registration.pollStatus();
-      if (status.state === "finalized") break;
-      if (status.state === "failed") {
-        throw new Error(`account registration failed: ${status.error}`);
-      }
-      await sleep(1000);
-    }
-
-    // The RPC node may lag the finalized block.
-    for (let attempt = 1; ; attempt += 1) {
-      try {
-        w.authenticator = await w.wallet.Authenticator.initWithDefaults(
+  return page.evaluate(
+    async ({ rpcUrl, timeoutMs }) => {
+      const w = window as any;
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const registration =
+        await w.wallet.InitializingAuthenticator.registerWithDefaults(
           w.seed(),
           rpcUrl,
           "staging",
           "us",
-          w.artifacts,
-          w.store,
+          "0x0000000000000000000000000000000000000000",
         );
-        break;
-      } catch (e: any) {
-        if (e.code !== "AccountDoesNotExist" || attempt === 10) throw e;
-        await sleep(2000);
-      }
-    }
 
-    const leafIndex: bigint = await w.authenticator.leafIndex();
-    await w.store.init(leafIndex, BigInt(Math.floor(Date.now() / 1000)));
-    return leafIndex;
-  }, RPC_URL);
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        const status = await registration.pollStatus();
+        if (status.state === "finalized") break;
+        if (status.state === "failed") {
+          throw new Error(`account registration failed: ${status.error}`);
+        }
+        if (Date.now() > deadline) {
+          throw new Error(
+            `account registration not finalized in ${timeoutMs} ms: ${status.state}`,
+          );
+        }
+        await sleep(1000);
+      }
+
+      // The RPC node may lag the finalized block.
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          w.authenticator = await w.wallet.Authenticator.initWithDefaults(
+            w.seed(),
+            rpcUrl,
+            "staging",
+            "us",
+            w.artifacts,
+            w.store,
+          );
+          break;
+        } catch (e: any) {
+          if (e.code !== "AccountDoesNotExist" || attempt === 10) throw e;
+          await sleep(2000);
+        }
+      }
+
+      const leafIndex: bigint = await w.authenticator.leafIndex();
+      await w.store.init(leafIndex, BigInt(Math.floor(Date.now() / 1000)));
+      return leafIndex;
+    },
+    { rpcUrl: RPC_URL, timeoutMs: FINALIZATION_TIMEOUT_MS },
+  );
 }
 
-/** Polls the requester until its status is no longer `current`. */
+/**
+ * Polls the requester until its status is no longer `current`. A `Bridge` error leaves
+ * the session open, so it is retried like any host would.
+ */
 async function pollPast(page: Page, current: string) {
-  return page.evaluate(async (current) => {
-    const w = window as any;
-    for (;;) {
-      const status = await w.requester.poll();
-      if (status.state !== current) {
-        w.lastStatus = status;
-        return { state: status.state as string, error: status.error };
+  return page.evaluate(
+    async ({ current, timeoutMs }) => {
+      const w = window as any;
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        try {
+          const status = await w.requester.poll();
+          if (status.state !== current) {
+            w.lastStatus = status;
+            return { state: status.state as string, error: status.error };
+          }
+        } catch (e: any) {
+          if (e.code !== "Bridge" || Date.now() > deadline) throw e;
+        }
+        if (Date.now() > deadline) {
+          throw new Error(`requester still ${current} after ${timeoutMs} ms`);
+        }
+        await new Promise((r) => setTimeout(r, 500));
       }
-      await new Promise((r) => setTimeout(r, 500));
-    }
-  }, current);
+    },
+    { current, timeoutMs: POLL_TIMEOUT_MS },
+  );
 }
 
 test("an admin authenticator in one browser registers a proving authenticator in another", async ({
   browser,
   baseURL,
 }) => {
-  test.setTimeout(3 * 60_000);
+  test.skip(
+    process.env.SKIP_STAGING_TESTS === "1",
+    "staging tests are skipped on release",
+  );
+  test.setTimeout(8 * 60_000);
 
   const approving = await openDevice(browser, baseURL);
   const requesting = await openDevice(browser, baseURL);
