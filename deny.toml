@@ -48,10 +48,16 @@ ignore = [
   "RUSTSEC-2024-0388", # Unmaintained `derivative` (2024-11-22)
   "RUSTSEC-2024-0436", # Unmaintained `paste` (2025-04-04)
   "RUSTSEC-2023-0089", # Unmaintained `atomic-polyfill` (2025-06-03)
-  "RUSTSEC-2025-0055", # `tracing-subscriber` < 0.3.20, requires bumps on `semaphore-rs` (and Ark deps) (2025-09-09)
-  "RUSTSEC-2025-0141", # Unmaintained `bincode`, feature complete for now (2026-01-15)
-  "RUSTSEC-2025-0057", # Unmaintained `fxhash` (2025-09-05)
   "RUSTSEC-2026-0247", # Unmaintained `bitmaps` (transitive via `im` / `provekit` / `world-id-proof`)
   "RUSTSEC-2026-0248", # Unmaintained `im` (transitive via `provekit` / `world-id-proof`)
   "RUSTSEC-2026-0251", # Unmaintained `sized-chunks` (transitive via `im` / `provekit` / `world-id-proof`)
+  # Askama still requires basic-toml for config parsing through uniffi_bindgen and
+  # taceo-groth16-sol. Remove once both dependency paths stop enabling it.
+  { id = "RUSTSEC-2026-0374", reason = "unmaintained basic-toml required by Askama; no patched release" },
+  # webpki-roots / webpki-root-certs 0.26.11 are shims that re-export the 1.x crates (locked
+  # at 1.0.10, which removes the emSign root), but the advisories still match them. webpki-roots
+  # 0.26 comes from flamingo-verifier-client and tokio-tungstenite; webpki-root-certs 0.26 from
+  # rustls-platform-verifier 0.5 via jsonrpsee. Drop these once none of them depends on 0.26.
+  { id = "RUSTSEC-2026-0381", reason = "only matches the webpki-roots 0.26.11 shim over 1.0.10" },
+  { id = "RUSTSEC-2026-0383", reason = "only matches the webpki-root-certs 0.26.11 shim over 1.0.10" },
 ]
