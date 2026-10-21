@@ -323,7 +323,7 @@ fn parse_http_date(value: &str) -> Option<u64> {
         _ => return None,
     };
 
-    let year: i64 = parts.next()?.parse().ok()?;
+    let year = i64::from(parts.next()?.parse::<u16>().ok()?);
     let mut hms = parts.next()?.split(':');
     let hour: u64 = hms.next()?.parse().ok()?;
     let minute: u64 = hms.next()?.parse().ok()?;
@@ -519,5 +519,10 @@ mod tests {
             parse_retry_after("Sun, 06 Nov 1994 08:49:37 GMT", 784_111_800),
             Some(Duration::ZERO)
         );
+        assert_eq!(
+            parse_retry_after("Sun, 06 Nov 9223372036854775807 08:49:37 GMT", 0),
+            None
+        );
+        assert_eq!(parse_retry_after("Sun, 06 Nov 65536 08:49:37 GMT", 0), None);
     }
 }
