@@ -13,7 +13,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.27.1"
+version = "0.27.3"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -43,11 +43,10 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-# TODO: Move to the crates.io release of the WIP-201 stack (https://github.com/worldcoin/flamingo/pull/142).
-flamingo-verifier-api-types = { git = "https://github.com/worldcoin/flamingo", rev = "35ec9ca741dd7ec14d538844e17e9b1332283905" }
-flamingo-verifier-client = { git = "https://github.com/worldcoin/flamingo", rev = "35ec9ca741dd7ec14d538844e17e9b1332283905" }
-flamingo-verifier-protocol = { git = "https://github.com/worldcoin/flamingo", rev = "35ec9ca741dd7ec14d538844e17e9b1332283905" }
-flamingo-verifier-sealed-types = { git = "https://github.com/worldcoin/flamingo", rev = "35ec9ca741dd7ec14d538844e17e9b1332283905" }
+# TODO: Move to the crates.io release of the WIP-201 stack (https://github.com/worldcoin/flamingo/pull/148).
+flamingo-verifier-api-types = { git = "https://github.com/worldcoin/flamingo", rev = "9476569e79058b92e6f2e86bc06a9060c0c5836f" }
+flamingo-verifier-client = { git = "https://github.com/worldcoin/flamingo", rev = "9476569e79058b92e6f2e86bc06a9060c0c5836f" }
+flamingo-verifier-sealed-types = { git = "https://github.com/worldcoin/flamingo", rev = "9476569e79058b92e6f2e86bc06a9060c0c5836f" }
 eyre = "0.6"
 futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"
@@ -90,18 +89,20 @@ wasm-bindgen-test = "=0.3.76"
 webpki-root-certs = "1"
 xshell = "0.2.7"
 zeroize = "1"
-zip = { version = "2", default-features = false }
+zip = { version = "9", default-features = false }
 
 # world-id-protocol crates
-world-id-core = { version = "0.15", default-features = false }
-world-id-proof = { version = "0.15", default-features = false }
+world-id-core = { version = "0.16", default-features = false }
+world-id-proof = { version = "0.16", default-features = false }
 # TODO: Move to crates.io once https://github.com/worldcoin/world-id-protocol/pull/1079 is published.
-world-id-flamingo = { git = "https://github.com/worldcoin/world-id-protocol", rev = "a47b68a254bd3e42a0cb49c85e9d36550122883f" }
+# The pinned Flamingo wire crate still uses protocol 0.15; WalletKit uses 0.16.
+world-id-flamingo-primitives = { package = "world-id-primitives", git = "https://github.com/worldcoin/world-id-protocol", rev = "2854c89a91093bcb875264df366407ea346356c5", default-features = false }
+world-id-flamingo = { git = "https://github.com/worldcoin/world-id-protocol", rev = "2854c89a91093bcb875264df366407ea346356c5" }
 
 # internal
-walletkit-core = { version = "0.27.1", path = "crates/walletkit-core", default-features = false }
-walletkit-db = { version = "0.27.1", path = "crates/walletkit-db" }
-walletkit-sqlite = { version = "0.27.1", path = "crates/walletkit-sqlite" }
+walletkit-core = { version = "0.27.3", path = "crates/walletkit-core", default-features = false }
+walletkit-db = { version = "0.27.3", path = "crates/walletkit-db" }
+walletkit-sqlite = { version = "0.27.3", path = "crates/walletkit-sqlite" }
 # Unpublished test helpers
 walletkit-testkit = { path = "crates/walletkit-testkit" }
 
@@ -133,8 +134,3 @@ debug-assertions = false
 
 [profile.dev.package.provekit-prover]
 debug-assertions = false
-
-# TODO: Remove once the WIP-201 crates depend on world-id-primitives from crates.io
-# (https://github.com/worldcoin/flamingo/pull/140, https://github.com/worldcoin/world-id-protocol/pull/1079).
-[patch."https://github.com/worldcoin/world-id-protocol"]
-world-id-primitives = "0.15.0"

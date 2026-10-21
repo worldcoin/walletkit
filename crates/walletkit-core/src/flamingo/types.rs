@@ -1,13 +1,22 @@
 use std::sync::Arc;
 
-use flamingo_verifier_client::{RequestContext, VerifiedMatch, VerifiedMatchResult};
+use flamingo_verifier_api_types::{
+    MAX_ENTRY_BYTES, MAX_MATCH_BODY_BYTES, MAX_MATCH_PLAINTEXT_BYTES,
+    MAX_TOTAL_ENTRY_BYTES,
+};
+
+use flamingo_verifier_client::{VerifiedMatch, VerifiedMatchResult};
 use flamingo_verifier_sealed_types::{
-    DebugReport, Entry, FailureReason, InputFailureReason, Payload,
+    DebugReport, Entry, Payload, Request, RequestError,
 };
 
 use super::engine::{EngineConfiguration, FlamingoEngineConfiguration, SelectedEngine};
 use super::errors::{FlamingoError, FlamingoInputFailureKind, FlamingoMatchRejection};
 use crate::FieldElement;
+
+/// Conservative envelope allowance shared with the verifier's transport budget.
+const CHANNEL_ENVELOPE_ALLOWANCE: usize =
+    MAX_MATCH_BODY_BYTES - MAX_MATCH_PLAINTEXT_BYTES;
 
 /// A WIP-201 request: the Relying Party's binding and offer, and the Engine inputs.
 ///
@@ -16,7 +25,7 @@ use crate::FieldElement;
 /// Similarity (WIP-202) requires the Credential image, the live capture and the challenge at
 /// `compare` positions 0, 1 and 2.
 ///
-/// Entry buffers move into the request without being copied.
+/// Entry buffers move into preparation; the selected payload is then encoded as canonical CBOR.
 #[derive(uniffi::Record)]
 pub struct FlamingoMatchRequest {
     /// The RP's `rpId`.
@@ -45,7 +54,8 @@ pub struct FlamingoEntry {
 /// A request whose fields passed every WIP-201 bound, ready to be bound to a session's Engine.
 pub(super) struct PreparedRequest {
     pub offer: Vec<EngineConfiguration>,
-    context: RequestContext,
+    aud: world_id_flamingo_primitives::FieldElement,
+    nonce: world_id_flamingo_primitives::FieldElement,
     payload: Payload,
 }
 
@@ -68,30 +78,64 @@ impl FlamingoMatchRequest {
             return Err(FlamingoError::invalid_shape("nonce", "must be nonzero"));
         }
 
+        let total = self.entries.iter().fold(0usize, |total, entry| {
+            total.saturating_add(entry.data.len())
+        });
+        let exceeded = if self
+            .entries
+            .iter()
+            .any(|entry| entry.data.len() > MAX_ENTRY_BYTES)
+        {
+            Some((FlamingoInputFailureKind::TooLarge, MAX_ENTRY_BYTES))
+        } else if total > MAX_TOTAL_ENTRY_BYTES {
+            Some((
+                FlamingoInputFailureKind::TotalTooLarge,
+                MAX_TOTAL_ENTRY_BYTES,
+            ))
+        } else {
+            None
+        };
+        if let Some((kind, limit)) = exceeded {
+            return Err(FlamingoError::InvalidInput {
+                attribute: "entries".to_string(),
+                reason: format!("must not exceed {limit} bytes"),
+                kind,
+                limit_bytes: Some(limit as u64),
+            });
+        }
         let payload = Payload {
-            hints: self.hints.into(),
+            hints: self.hints,
             compare: self.compare,
             entries: self
                 .entries
                 .into_iter()
                 .map(|entry| Entry {
-                    data: entry.data.into(),
-                    meta: entry.meta.into(),
+                    data: entry.data,
+                    meta: entry.meta,
                 })
                 .collect(),
             pipeline: first.pipeline,
-            engine_hash: [0; 32].into(),
+            release_hash: first.release_hash,
             match_strictness: first.match_strictness,
         };
         payload.validate().map_err(payload_error)?;
 
+        // TODO: Remove this byte bridge when Flamingo and WalletKit share the released primitives.
         Ok(PreparedRequest {
             offer,
-            context: RequestContext {
-                aud: self.aud.to_be_bytes(),
-                nonce,
-                aat_inputs: None,
-            },
+            aud: world_id_flamingo_primitives::FieldElement::from_be_bytes(
+                &self.aud.to_be_bytes(),
+            )
+            .map_err(|_| {
+                FlamingoError::invalid_shape("aud", "must be a canonical field element")
+            })?,
+            nonce: world_id_flamingo_primitives::FieldElement::from_be_bytes(&nonce)
+                .map_err(|_| {
+                    FlamingoError::invalid_shape(
+                        "nonce",
+                        "must be a canonical field element",
+                    )
+                })?,
             payload,
         })
     }
@@ -102,39 +146,36 @@ impl PreparedRequest {
     pub(super) fn bind(
         &mut self,
         engine: &SelectedEngine,
-    ) -> (&Payload, &RequestContext) {
+    ) -> Result<Request, FlamingoError> {
         self.payload.pipeline = engine.configuration.pipeline;
         self.payload.match_strictness = engine.configuration.match_strictness;
-        self.payload.engine_hash = engine.engine_hash.into();
-        (&self.payload, &self.context)
+        self.payload.release_hash = engine.configuration.release_hash;
+        // TODO: Generate the WIP-106 AAT over the selected payload's cdh and supply its inputs.
+        // Reassignment can select a different release, so its AAT must be bound again here.
+        let request = Request::new(self.aud, self.nonce, &self.payload, None)
+            .map_err(payload_error)?;
+        let sealed_budget = request
+            .encode()
+            .len()
+            .saturating_add(CHANNEL_ENVELOPE_ALLOWANCE);
+        let limit = engine.max_request_bytes.min(MAX_MATCH_BODY_BYTES as u64);
+        if sealed_budget as u64 > limit {
+            return Err(FlamingoError::InvalidInput {
+                attribute: "request".to_string(),
+                reason: format!("encoded request plus channel envelope allowance must not exceed {limit} bytes"),
+                kind: FlamingoInputFailureKind::TotalTooLarge,
+                limit_bytes: Some(limit),
+            });
+        }
+        Ok(request)
     }
 }
 
-fn payload_error(reason: FailureReason) -> FlamingoError {
-    let (kind, limit_bytes) = match reason {
-        FailureReason::InputRejected {
-            reason: InputFailureReason::ImageTooLarge,
-            limit_bytes,
-            ..
-        } => (FlamingoInputFailureKind::TooLarge, limit_bytes),
-        FailureReason::InputRejected {
-            reason: InputFailureReason::TotalImagesTooLarge,
-            limit_bytes,
-            ..
-        } => (FlamingoInputFailureKind::TotalTooLarge, limit_bytes),
-        _ => {
-            return FlamingoError::invalid_shape(
-                "payload",
-                "entries, compare, meta or hints violate a WIP-201 bound",
-            )
-        }
-    };
-    FlamingoError::InvalidInput {
-        attribute: "entries".to_string(),
-        reason: format!("must not exceed {} bytes", limit_bytes.unwrap_or_default()),
-        kind,
-        limit_bytes,
-    }
+fn payload_error(_reason: RequestError) -> FlamingoError {
+    FlamingoError::invalid_shape(
+        "payload",
+        "entries, compare, meta or hints violate a WIP-201 bound",
+    )
 }
 
 /// A Flamingo Token whose signing-key attestation, signature and claims were verified.
@@ -319,16 +360,18 @@ mod tests {
                 pipeline: 3,
                 match_strictness: 1,
             },
-            engine_hash: [0x11; 32],
+            max_request_bytes: 8_000_000,
         };
-        let (payload, context) = prepared.bind(&engine);
-        assert_eq!(context.aud[29..], [0x1d, 0x6b, 0xb6]);
-        assert_eq!(context.nonce[31], 42);
-        assert!(context.aat_inputs.is_none());
+        assert_eq!(prepared.payload.entries[0].data.as_ptr(), pointer);
+        let request = prepared.bind(&engine).unwrap();
+        assert_eq!(request.aud.to_be_bytes()[29..], [0x1d, 0x6b, 0xb6]);
+        assert_eq!(request.nonce.to_be_bytes()[31], 42);
+        assert!(request.aat_inputs.is_none());
+        let payload = request.payload().unwrap();
         assert_eq!(payload.pipeline, 3);
         assert_eq!(payload.match_strictness, 1);
-        assert_eq!(*payload.engine_hash, [0x11; 32]);
-        assert_eq!(payload.entries[0].data.as_ptr(), pointer);
+        assert_eq!(payload.release_hash, [0x2a; 32]);
+        assert_eq!(payload.entries[0].data, vec![1; 1024]);
     }
 
     #[test]
@@ -375,6 +418,32 @@ mod tests {
         }
     }
 
+    #[test]
+    fn enforces_the_selected_pipeline_request_budget() {
+        let mut prepared =
+            request(vec![entry(vec![1; 1024]), entry(vec![2])], vec![0, 1])
+                .prepare()
+                .unwrap();
+        let mut engine = SelectedEngine {
+            configuration: EngineConfiguration {
+                release_hash: [0x2a; 32],
+                pipeline: 1,
+                match_strictness: 2,
+            },
+            max_request_bytes: 8_000_000,
+        };
+        let length = (prepared.bind(&engine).unwrap().encode().len()
+            + super::CHANNEL_ENVELOPE_ALLOWANCE) as u64;
+        engine.max_request_bytes = length;
+        assert!(prepared.bind(&engine).is_ok());
+        engine.max_request_bytes -= 1;
+        assert!(
+            matches!(prepared.bind(&engine), Err(FlamingoError::InvalidInput {
+            kind: FlamingoInputFailureKind::TotalTooLarge,
+            limit_bytes: Some(limit), ..
+        }) if limit == length - 1)
+        );
+    }
     #[test]
     fn reports_the_exceeded_entry_budget() {
         use flamingo_verifier_api_types::{MAX_ENTRY_BYTES, MAX_TOTAL_ENTRY_BYTES};

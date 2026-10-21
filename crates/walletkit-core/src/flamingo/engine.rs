@@ -1,5 +1,7 @@
 //! Engine Provider trust and Engine selection (WIP-201 §3.5.2, §3.5.3 and §3.5.4).
 
+use std::time::Duration;
+
 use world_id_flamingo::{EngineMetadata, ReleaseManifest};
 
 use super::FlamingoError;
@@ -71,11 +73,31 @@ impl FlamingoEngineProvider {
 }
 
 impl FlamingoEngineProvider {
+    /// Bounds an exchange using the latest response slot among trusted, eligible offers.
+    /// The client fixes its timeout when connecting, before the host lists its loaded releases.
+    pub(super) fn request_timeout(&self, offer: &[EngineConfiguration]) -> Duration {
+        let latest_slot = offer
+            .iter()
+            .filter_map(|configuration| {
+                let manifest = self.manifests.iter().find(|manifest| {
+                    manifest.release_hash() == configuration.release_hash
+                })?;
+                let pipeline = manifest.pipeline(configuration.pipeline)?;
+                (manifest.defines_strictness(configuration.match_strictness)
+                    && pipeline.response_slots.count <= MAX_RESPONSE_SLOTS)
+                    .then_some(pipeline.response_slots.max)
+            })
+            .max()
+            .unwrap_or_default();
+        // Cover the host's five-second margin plus client-to-host transport.
+        Duration::from_millis(latest_slot.saturating_add(10_000).max(60_000))
+    }
+
     /// Chooses the first offered configuration this provider signed and the Verifier loaded.
     ///
     /// A configuration qualifies when a verified release manifest has its `release_hash`, defines
     /// its `pipeline` and `match_strictness`, has at most [`MAX_RESPONSE_SLOTS`] response slots for
-    /// that pipeline, and names an Engine bundle among `loaded_engines`. The Verifier's list is not
+    /// that pipeline, and names a release among `loaded_releases`. The Verifier's list is not
     /// attested: a wrong list only makes the request fail.
     ///
     /// # Errors
@@ -84,7 +106,7 @@ impl FlamingoEngineProvider {
     pub(super) fn select(
         &self,
         offer: &[EngineConfiguration],
-        loaded_engines: &[[u8; 32]],
+        loaded_releases: &[[u8; 32]],
     ) -> Result<SelectedEngine, FlamingoError> {
         offer
             .iter()
@@ -93,13 +115,12 @@ impl FlamingoEngineProvider {
                     manifest.release_hash() == configuration.release_hash
                 })?;
                 let pipeline = manifest.pipeline(configuration.pipeline)?;
-                let engine_hash = manifest.payload().engine_hash()?;
                 (manifest.defines_strictness(configuration.match_strictness)
                     && pipeline.response_slots.count <= MAX_RESPONSE_SLOTS
-                    && loaded_engines.contains(&engine_hash))
+                    && loaded_releases.contains(&configuration.release_hash))
                 .then_some(SelectedEngine {
                     configuration: *configuration,
-                    engine_hash,
+                    max_request_bytes: pipeline.max_request_bytes,
                 })
             })
             .ok_or(FlamingoError::NoSupportedEngine)
@@ -143,13 +164,11 @@ impl From<EngineConfiguration> for FlamingoEngineConfiguration {
     }
 }
 
-/// The configuration chosen for one session, with the Engine bundle that runs it.
+/// The configuration and request limit chosen for one session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SelectedEngine {
     pub configuration: EngineConfiguration,
-    // TODO: Select by `release_hash` alone once the Verifier names loaded releases and requests
-    // carry `release_hash` (https://github.com/worldcoin/flamingo/pull/139).
-    pub engine_hash: [u8; 32],
+    pub max_request_bytes: u64,
 }
 
 #[cfg(test)]
@@ -170,7 +189,7 @@ pub(super) mod tests {
         SigningKey::from_bytes(&[7; 32].into()).unwrap()
     }
 
-    fn jwk(kid: &str, status: &str) -> serde_json::Value {
+    pub fn jwk(kid: &str, status: &str) -> serde_json::Value {
         let point = signing_key().verifying_key().to_encoded_point(false);
         json!({
             "jwk": {
@@ -191,6 +210,16 @@ pub(super) mod tests {
         slots: u32,
         kid: &str,
     ) -> (String, [u8; 32]) {
+        manifest_with_limits(engine_hash, slots, kid, 800, 8_000_000)
+    }
+
+    pub fn manifest_with_limits(
+        engine_hash: [u8; 32],
+        slots: u32,
+        kid: &str,
+        max_slot: u64,
+        max_request_bytes: u64,
+    ) -> (String, [u8; 32]) {
         let header =
             json!({ "alg": "ES256", "kid": kid, "typ": "world-id-engine-manifest" });
         let payload = json!({
@@ -199,8 +228,8 @@ pub(super) mod tests {
             "pipelines": [{
                 "pipeline": 1,
                 "description": "credential image, live capture, challenge",
-                "response_slots": { "min": 100, "max": 800, "count": slots },
-                "max_request_bytes": 8_000_000,
+                "response_slots": { "min": 100, "max": max_slot, "count": slots },
+                "max_request_bytes": max_request_bytes,
             }],
             "match_strictness_levels": [
                 { "match_strictness": 1, "description": "low" },
@@ -268,15 +297,66 @@ pub(super) mod tests {
         .unwrap();
         let offer = [configuration(release_a, 2), configuration(release_b, 1)];
 
-        let both = provider
-            .select(&offer, &[OTHER_ENGINE_HASH, ENGINE_HASH])
-            .unwrap();
+        let both = provider.select(&offer, &[release_b, release_a]).unwrap();
         assert_eq!(both.configuration, offer[0]);
-        assert_eq!(both.engine_hash, ENGINE_HASH);
+        assert_eq!(both.max_request_bytes, 8_000_000);
 
-        let fallback = provider.select(&offer, &[OTHER_ENGINE_HASH]).unwrap();
+        let fallback = provider.select(&offer, &[release_b]).unwrap();
         assert_eq!(fallback.configuration, offer[1]);
-        assert_eq!(fallback.engine_hash, OTHER_ENGINE_HASH);
+    }
+
+    #[test]
+    fn distinguishes_releases_of_the_same_engine() {
+        let (a, release_a) = manifest(ENGINE_HASH, 4, "release-1");
+        let (b, release_b) = manifest(ENGINE_HASH, 2, "release-1");
+        let provider = FlamingoEngineProvider::from_metadata(&metadata(
+            &[(&a, "active"), (&b, "active")],
+            &[jwk("release-1", "active")],
+        ))
+        .unwrap();
+        assert_ne!(release_a, release_b);
+        let offer = [configuration(release_a, 1), configuration(release_b, 2)];
+        assert_eq!(
+            provider.select(&offer, &[release_b]).unwrap().configuration,
+            offer[1]
+        );
+        assert!(provider.select(&offer[..1], &[release_b]).is_err());
+        assert!(provider.select(&offer, &[ENGINE_HASH]).is_err());
+    }
+
+    #[test]
+    fn deadline_covers_trusted_offered_slots_and_transport() {
+        let (a, release_a) = manifest(ENGINE_HASH, 4, "release-1");
+        let (b, release_b) =
+            manifest_with_limits(ENGINE_HASH, 4, "release-1", 120_000, 8_000_000);
+        let (c, release_c) =
+            manifest_with_limits(ENGINE_HASH, 9, "release-1", 240_000, 8_000_000);
+        let provider = FlamingoEngineProvider::from_metadata(&metadata(
+            &[(&a, "active"), (&b, "active"), (&c, "active")],
+            &[jwk("release-1", "active")],
+        ))
+        .unwrap();
+        assert_eq!(
+            provider.request_timeout(&[configuration(release_a, 1)]),
+            std::time::Duration::from_secs(60)
+        );
+        assert_eq!(
+            provider.request_timeout(&[
+                configuration(release_a, 1),
+                configuration(release_b, 1)
+            ]),
+            std::time::Duration::from_secs(130)
+        );
+        for invalid in [
+            configuration(release_c, 1),
+            configuration(release_b, 3),
+            configuration([0xff; 32], 1),
+        ] {
+            assert_eq!(
+                provider.request_timeout(&[invalid]),
+                std::time::Duration::from_secs(60)
+            );
+        }
     }
 
     #[test]
@@ -291,7 +371,7 @@ pub(super) mod tests {
             },
         ] {
             assert!(matches!(
-                provider.select(&[offered], &[ENGINE_HASH]),
+                provider.select(&[offered], &[release_hash]),
                 Err(FlamingoError::NoSupportedEngine)
             ));
         }
@@ -309,7 +389,7 @@ pub(super) mod tests {
             ))
             .unwrap();
             let selected =
-                provider.select(&[configuration(release_hash, 1)], &[ENGINE_HASH]);
+                provider.select(&[configuration(release_hash, 1)], &[release_hash]);
             assert_eq!(selected.is_ok(), accepted, "{slots} slots");
         }
     }
@@ -329,7 +409,7 @@ pub(super) mod tests {
             &[jwk("release-1", "active"), jwk("release-0", "retired")],
         ))
         .unwrap();
-        let loaded = [ENGINE_HASH, OTHER_ENGINE_HASH];
+        let loaded = [release_active, release_revoked, release_retired_key];
 
         assert!(provider
             .select(&[configuration(release_active, 1)], &loaded)

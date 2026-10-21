@@ -11,8 +11,14 @@ use super::RequestIntegrityError;
 pub enum FlamingoMatchRejection {
     /// The request broke a WIP-201 bound.
     MalformedInputs,
-    /// The Verifier has not loaded the requested Engine.
-    UnsupportedEngine,
+    /// The Verifier has not loaded the requested release.
+    UnsupportedRelease,
+    /// The request exceeds the selected pipeline's byte limit.
+    RequestTooLarge,
+    /// This audience and nonce have already been used.
+    Replayed,
+    /// The Engine missed its final response slot; this is an infrastructure failure.
+    EngineTimeout,
     /// The Engine does not define the pipeline, or the entries do not fit its layout.
     UnsupportedPipeline,
     /// The Engine does not define the match strictness level.
@@ -156,7 +162,10 @@ impl From<FailureReason> for FlamingoMatchRejection {
     fn from(value: FailureReason) -> Self {
         match value {
             FailureReason::MalformedInputs => Self::MalformedInputs,
-            FailureReason::UnsupportedEngine => Self::UnsupportedEngine,
+            FailureReason::RequestTooLarge => Self::RequestTooLarge,
+            FailureReason::Replayed => Self::Replayed,
+            FailureReason::EngineTimeout => Self::EngineTimeout,
+            FailureReason::UnsupportedRelease => Self::UnsupportedRelease,
             FailureReason::UnsupportedPipeline => Self::UnsupportedPipeline,
             FailureReason::UnsupportedMatchStrictness => {
                 Self::UnsupportedMatchStrictness

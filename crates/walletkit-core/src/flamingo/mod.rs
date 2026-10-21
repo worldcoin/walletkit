@@ -43,14 +43,14 @@ pub use types::{
     VerifiedFlamingoToken,
 };
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use flamingo_verifier_client::{
     Config, Error as ClientError, FlamingoVerifierClient, FlamingoVerifierSession,
-    PcrMeasurement, RequestContext, VerifiedMatchResult,
+    PcrMeasurement, VerifiedMatchResult,
 };
-use flamingo_verifier_sealed_types::Payload;
+use flamingo_verifier_sealed_types::Request;
 use reqwest::{
     header::{
         HeaderMap, HeaderName, HeaderValue, CONNECTION, COOKIE, HOST,
@@ -90,22 +90,24 @@ trait MatchClient: Sync {
     type Session: Send;
 
     /// Opens a session whose assignment has already been verified.
-    async fn connect(&self) -> Result<Self::Session, FlamingoError>;
+    async fn connect(
+        &self,
+        request_timeout: Duration,
+    ) -> Result<Self::Session, FlamingoError>;
 
-    /// The Engine bundles the Verifier advertises for the session's assignment; not attested.
-    fn loaded_engines(session: &Self::Session) -> &[[u8; 32]];
+    /// The releases the Verifier advertises for the session's assignment; not attested.
+    fn loaded_releases(session: &Self::Session) -> &[[u8; 32]];
 
     async fn request_match(
         &self,
         session: Self::Session,
-        payload: &Payload,
-        context: &RequestContext,
+        request: &Request,
     ) -> Result<VerifiedMatchResult, ClientError>;
 }
 
 /// The verifier client plus the headers sent on every WebSocket upgrade.
 struct SessionClient {
-    client: FlamingoVerifierClient,
+    config: Config,
     headers: HeaderMap,
     integrity_provider: Option<Arc<dyn RequestIntegrityProvider>>,
 }
@@ -312,10 +314,8 @@ impl FlamingoMatcher {
                             .to_string(),
                     )
                 })?;
-                let client = FlamingoVerifierClient::new(config)
-                    .map_err(|error| verifier_error(&error))?;
                 Ok(SessionClient {
-                    client,
+                    config,
                     headers: self.headers.clone(),
                     integrity_provider: self.integrity_provider.clone(),
                 })
@@ -328,9 +328,15 @@ impl FlamingoMatcher {
 impl MatchClient for SessionClient {
     type Session = FlamingoVerifierSession;
 
-    async fn connect(&self) -> Result<Self::Session, FlamingoError> {
-        let mut request = self
-            .client
+    async fn connect(
+        &self,
+        request_timeout: Duration,
+    ) -> Result<Self::Session, FlamingoError> {
+        let client = FlamingoVerifierClient::new(
+            self.config.clone().with_request_timeout(request_timeout),
+        )
+        .map_err(|error| verifier_error(&error))?;
+        let mut request = client
             .build_request()
             .map_err(|error| verifier_error(&error))?;
         for (name, value) in &self.headers {
@@ -352,23 +358,22 @@ impl MatchClient for SessionClient {
                 request = request.with_header(name, value);
             }
         }
-        self.client
+        client
             .connect_with(request)
             .await
             .map_err(|error| verifier_error(&error))
     }
 
-    fn loaded_engines(session: &Self::Session) -> &[[u8; 32]] {
-        session.assignment().engine_hashes()
+    fn loaded_releases(session: &Self::Session) -> &[[u8; 32]] {
+        session.assignment().release_hashes()
     }
 
     async fn request_match(
         &self,
         session: Self::Session,
-        payload: &Payload,
-        context: &RequestContext,
+        request: &Request,
     ) -> Result<VerifiedMatchResult, ClientError> {
-        session.request_match(payload, context).await
+        session.request_match(request).await
     }
 }
 
@@ -445,16 +450,17 @@ async fn perform_match<C: MatchClient>(
     request: FlamingoMatchRequest,
 ) -> Result<FlamingoMatchOutcome, FlamingoError> {
     let mut request = request.prepare()?;
+    let request_timeout = engine_provider.request_timeout(&request.offer);
     let mut reassigned = false;
 
     loop {
         // A session carries exactly one request, so a reassignment opens a fresh one.
-        let session = client.connect().await?;
+        let session = client.connect(request_timeout).await?;
         let engine =
-            engine_provider.select(&request.offer, C::loaded_engines(&session))?;
-        let (payload, context) = request.bind(&engine);
+            engine_provider.select(&request.offer, C::loaded_releases(&session))?;
+        let bound = request.bind(&engine)?;
 
-        match client.request_match(session, payload, context).await {
+        match client.request_match(session, &bound).await {
             Ok(result) => {
                 return Ok(FlamingoMatchOutcome::new(result, engine.configuration))
             }
@@ -469,6 +475,7 @@ fn verifier_error(error: &ClientError) -> FlamingoError {
         ClientError::InvalidConfig { .. } | ClientError::MalformedConfig(_) => {
             FlamingoError::Configuration(error.to_string())
         }
+        ClientError::ReleaseUnavailable => FlamingoError::NoSupportedEngine,
         ClientError::MalformedRequest => FlamingoError::invalid_shape(
             "request",
             "cannot be encoded within the WIP-201 bounds",
@@ -524,16 +531,12 @@ mod tests {
     };
 
     use flamingo_verifier_client::{
-        Error as ClientError, RequestContext, VerifiedMatch,
-        VerifiedMatchResult as MatchResult,
-    };
-    use flamingo_verifier_protocol::{
-        flamingo_token::{FlamingoClaims, FlamingoToken},
-        Fq,
+        Error as ClientError, VerifiedMatch, VerifiedMatchResult as MatchResult,
     };
     use flamingo_verifier_sealed_types::{
-        AttestedStatement, DebugReport, FailureReason, Payload,
+        AttestedStatement, DebugReport, FailureReason, Request as MatchRequest,
     };
+    use world_id_flamingo::{FlamingoClaims, FlamingoToken};
 
     use super::engine::tests::{provider, ENGINE_HASH};
     use super::{
@@ -600,12 +603,13 @@ mod tests {
         Ok(matcher)
     }
 
-    /// The `(pipeline, match_strictness, engine_hash)` of a payload sent to the Verifier.
+    /// The `(pipeline, match_strictness, release_hash)` of a payload sent to the Verifier.
     type SentEngine = (u16, u8, [u8; 32]);
 
     struct FakeClient {
         assignments: AtomicUsize,
-        loaded_engines: Vec<[u8; 32]>,
+        loaded_releases: Vec<[u8; 32]>,
+        reassigned_releases: Option<Vec<[u8; 32]>>,
         sent: Mutex<Vec<SentEngine>>,
         results: Mutex<VecDeque<Result<MatchResult, ClientError>>>,
     }
@@ -614,16 +618,17 @@ mod tests {
         fn new(
             results: impl IntoIterator<Item = Result<MatchResult, ClientError>>,
         ) -> Self {
-            Self::with_loaded_engines(vec![ENGINE_HASH], results)
+            Self::with_loaded_releases(vec![provider().1], results)
         }
 
-        fn with_loaded_engines(
-            loaded_engines: Vec<[u8; 32]>,
+        fn with_loaded_releases(
+            loaded_releases: Vec<[u8; 32]>,
             results: impl IntoIterator<Item = Result<MatchResult, ClientError>>,
         ) -> Self {
             Self {
                 assignments: AtomicUsize::new(0),
-                loaded_engines,
+                loaded_releases,
+                reassigned_releases: None,
                 sent: Mutex::new(Vec::new()),
                 results: Mutex::new(results.into_iter().collect()),
             }
@@ -638,25 +643,35 @@ mod tests {
     impl MatchClient for FakeClient {
         type Session = Vec<[u8; 32]>;
 
-        async fn connect(&self) -> Result<Self::Session, FlamingoError> {
-            self.assignments.fetch_add(1, Ordering::Relaxed);
-            Ok(self.loaded_engines.clone())
+        async fn connect(
+            &self,
+            _request_timeout: Duration,
+        ) -> Result<Self::Session, FlamingoError> {
+            let attempt = self.assignments.fetch_add(1, Ordering::Relaxed);
+            Ok(if attempt > 0 {
+                self.reassigned_releases
+                    .as_ref()
+                    .unwrap_or(&self.loaded_releases)
+                    .clone()
+            } else {
+                self.loaded_releases.clone()
+            })
         }
 
-        fn loaded_engines(session: &Self::Session) -> &[[u8; 32]] {
+        fn loaded_releases(session: &Self::Session) -> &[[u8; 32]] {
             session
         }
 
         async fn request_match(
             &self,
             _session: Self::Session,
-            payload: &Payload,
-            _context: &RequestContext,
+            request: &MatchRequest,
         ) -> Result<MatchResult, ClientError> {
+            let payload = request.payload().unwrap();
             self.sent.lock().unwrap().push((
                 payload.pipeline,
                 payload.match_strictness,
-                *payload.engine_hash,
+                payload.release_hash,
             ));
             self.results
                 .lock()
@@ -710,7 +725,7 @@ mod tests {
     }
 
     fn verified(debug_report: DebugReport) -> MatchResult {
-        let zero = Fq::from(0u64);
+        let zero = world_id_flamingo_primitives::FieldElement::ZERO;
         MatchResult::Success {
             verified: Box::new(VerifiedMatch {
                 statement: AttestedStatement {
@@ -763,6 +778,23 @@ mod tests {
                 FailureReason::UnsupportedPipeline,
                 FlamingoMatchRejection::UnsupportedPipeline,
             ),
+            (
+                FailureReason::UnsupportedRelease,
+                FlamingoMatchRejection::UnsupportedRelease,
+            ),
+            (
+                FailureReason::RequestTooLarge,
+                FlamingoMatchRejection::RequestTooLarge,
+            ),
+            (FailureReason::Replayed, FlamingoMatchRejection::Replayed),
+            (
+                FailureReason::EngineTimeout,
+                FlamingoMatchRejection::EngineTimeout,
+            ),
+            (
+                FailureReason::AatRejected,
+                FlamingoMatchRejection::AatRejected,
+            ),
             (FailureReason::Internal, FlamingoMatchRejection::Internal),
         ] {
             let client = FakeClient::new([Ok(MatchResult::Failed {
@@ -779,6 +811,44 @@ mod tests {
             };
             assert_eq!(reason, expected);
         }
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_busy_or_ambiguous_transport_failures() {
+        for error in [
+            ClientError::ApiFrame {
+                code: "busy".to_string(),
+                allow_retry: true,
+            },
+            ClientError::Timeout,
+            ClientError::ConnectionClosed,
+        ] {
+            let client = FakeClient::new([Err(error)]);
+            assert!(perform_match(&client, &engines(), request()).await.is_err());
+            assert_eq!(client.assignments.load(Ordering::Relaxed), 1);
+            assert_eq!(client.sent().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn oversized_request_never_reaches_the_match_transport() {
+        use super::engine::tests::{jwk, manifest_with_limits, metadata};
+        let (manifest, release) =
+            manifest_with_limits(ENGINE_HASH, 4, "release-1", 800, 100);
+        let provider = FlamingoEngineProvider::from_metadata(&metadata(
+            &[(&manifest, "active")],
+            &[jwk("release-1", "active")],
+        ))
+        .unwrap();
+        let client = FakeClient::with_loaded_releases(vec![release], []);
+        assert!(matches!(
+            perform_match(&client, &provider, request_for(release)).await,
+            Err(FlamingoError::InvalidInput {
+                limit_bytes: Some(100),
+                ..
+            })
+        ));
+        assert!(client.sent().is_empty());
     }
 
     #[test]
@@ -1192,7 +1262,7 @@ mod tests {
                 Message::Text(r#"{"type":"assignment_request"}"#.into())
             );
             let assignment = format!(
-                r#"{{"type":"assignment","attestation":"hEBAQEA=","public_key":"a2V5","engine_hashes":["{}"]}}"#,
+                r#"{{"type":"assignment","attestation":"hEBAQEA=","public_key":"a2V5","release_hashes":["{}"]}}"#,
                 hex::encode(ENGINE_HASH)
             );
             socket.send(Message::Text(assignment.into())).await.unwrap();
@@ -1239,12 +1309,12 @@ mod tests {
         assert_eq!(token.signing_key_attestation(), b"signing-key-attestation");
         assert_eq!(configuration.release_hash, release_hash);
         assert_eq!(configuration.match_strictness, 2);
-        assert_eq!(client.sent(), [(1, 2, ENGINE_HASH)]);
+        assert_eq!(client.sent(), [(1, 2, provider().1)]);
     }
 
     #[tokio::test]
     async fn sends_nothing_when_the_verifier_loaded_no_offered_engine() {
-        let client = FakeClient::with_loaded_engines(
+        let client = FakeClient::with_loaded_releases(
             vec![[0x44; 32]],
             [Ok(verified(DebugReport::NotProduced))],
         );
@@ -1297,6 +1367,34 @@ mod tests {
         ));
         assert_eq!(client.assignments.load(Ordering::Relaxed), 2);
         assert_eq!(client.sent().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn reassignment_selects_and_binds_the_new_release() {
+        use super::engine::tests::{jwk, manifest, metadata};
+        let (a, release_a) = manifest(ENGINE_HASH, 4, "release-1");
+        let (b, release_b) = manifest(ENGINE_HASH, 2, "release-1");
+        let provider = FlamingoEngineProvider::from_metadata(&metadata(
+            &[(&a, "active"), (&b, "active")],
+            &[jwk("release-1", "active")],
+        ))
+        .unwrap();
+        let mut client = FakeClient::with_loaded_releases(
+            vec![release_a],
+            [
+                Err(ClientError::ReassignRequired),
+                Ok(verified(DebugReport::NotProduced)),
+            ],
+        );
+        client.reassigned_releases = Some(vec![release_b]);
+        let mut request = request_for(release_b);
+        request.offered_configurations[0].release_hash = release_a.to_vec();
+        let outcome = perform_match(&client, &provider, request).await.unwrap();
+        assert_eq!(client.sent(), [(1, 1, release_a), (1, 2, release_b)]);
+        assert!(
+            matches!(outcome, FlamingoMatchOutcome::Matched { configuration, .. }
+            if configuration.release_hash == release_b)
+        );
     }
 
     #[tokio::test]

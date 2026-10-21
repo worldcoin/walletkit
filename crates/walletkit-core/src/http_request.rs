@@ -201,6 +201,7 @@ mod tests {
     async fn bundled_roots_verify_public_tls() {
         let response = http_client()
             .get("https://rpc.worldchain-sepolia.worldcoin.org")
+            .timeout(Duration::from_secs(5))
             .send()
             .await;
 
