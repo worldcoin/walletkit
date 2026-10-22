@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use world_id_flamingo::{EngineMetadata, ReleaseManifest};
+use world_id_flamingo::{manifest::Pipeline, EngineMetadata, ReleaseManifest};
 
 use super::FlamingoError;
 
@@ -79,13 +79,8 @@ impl FlamingoEngineProvider {
         let latest_slot = offer
             .iter()
             .filter_map(|configuration| {
-                let manifest = self.manifests.iter().find(|manifest| {
-                    manifest.release_hash() == configuration.release_hash
-                })?;
-                let pipeline = manifest.pipeline(configuration.pipeline)?;
-                (manifest.defines_strictness(configuration.match_strictness)
-                    && pipeline.response_slots.count <= MAX_RESPONSE_SLOTS)
-                    .then_some(pipeline.response_slots.max)
+                self.eligible_pipeline(configuration)
+                    .map(|pipeline| pipeline.response_slots.max)
             })
             .max()
             .unwrap_or_default();
@@ -111,19 +106,29 @@ impl FlamingoEngineProvider {
         offer
             .iter()
             .find_map(|configuration| {
-                let manifest = self.manifests.iter().find(|manifest| {
-                    manifest.release_hash() == configuration.release_hash
-                })?;
-                let pipeline = manifest.pipeline(configuration.pipeline)?;
-                (manifest.defines_strictness(configuration.match_strictness)
-                    && pipeline.response_slots.count <= MAX_RESPONSE_SLOTS
-                    && loaded_releases.contains(&configuration.release_hash))
-                .then_some(SelectedEngine {
-                    configuration: *configuration,
-                    max_request_bytes: pipeline.max_request_bytes,
-                })
+                let pipeline = self.eligible_pipeline(configuration)?;
+                loaded_releases
+                    .contains(&configuration.release_hash)
+                    .then_some(SelectedEngine {
+                        configuration: *configuration,
+                        max_request_bytes: pipeline.max_request_bytes,
+                    })
             })
             .ok_or(FlamingoError::NoSupportedEngine)
+    }
+
+    fn eligible_pipeline(
+        &self,
+        configuration: &EngineConfiguration,
+    ) -> Option<&Pipeline> {
+        let manifest = self
+            .manifests
+            .iter()
+            .find(|manifest| manifest.release_hash() == configuration.release_hash)?;
+        let pipeline = manifest.pipeline(configuration.pipeline)?;
+        (manifest.defines_strictness(configuration.match_strictness)
+            && pipeline.response_slots.count <= MAX_RESPONSE_SLOTS)
+            .then_some(pipeline)
     }
 }
 
