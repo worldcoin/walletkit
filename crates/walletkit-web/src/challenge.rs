@@ -16,6 +16,8 @@ export interface ChallengeTranscript {
   /** Lowercase hexadecimal encoding of the 16-byte challenge ID. */
   challengeId: string;
   targetOptions: readonly [ChallengeOption, ChallengeOption, ChallengeOption];
+  /** UTC milliseconds for the countdown UI; expiry must be enforced by the TEE. */
+  expiresAtUnixMs: number;
 }
 "#;
 
@@ -56,12 +58,23 @@ async fn request_transcript(_config: Config) -> Result<ChallengeTranscript, JsVa
 }
 
 fn transcript_to_js(transcript: &ChallengeTranscript) -> Result<JsValue, JsValue> {
+    if transcript.expires_at_unix_ms > 9_007_199_254_740_991 {
+        return Err(invalid_argument(
+            "Challenge expiry exceeds JavaScript's safe integer range",
+        ));
+    }
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "The safe-integer bound above guarantees an exact conversion"
+    )]
+    let expires_at_unix_ms = transcript.expires_at_unix_ms as f64;
     js::object(&[
         ("challengeId", hex::encode(transcript.challenge_id).into()),
         (
             "targetOptions",
             js::array(transcript.target_options.encode().map(JsValue::from)),
         ),
+        ("expiresAtUnixMs", expires_at_unix_ms.into()),
     ])
 }
 
@@ -90,13 +103,14 @@ mod tests {
 
     #[wasm_bindgen_test]
     #[expect(clippy::future_not_send, reason = "JavaScript values are worker-local")]
-    async fn transcript_preserves_id_and_order_across_post_message() {
-        let mut bytes = [0; 19];
+    async fn transcript_preserves_id_order_and_expiry_across_post_message() {
+        let mut bytes = [0; 27];
         bytes[..16].copy_from_slice(&[
             0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b,
             0x0c, 0x0d, 0x0e, 0x0f,
         ]);
-        bytes[16..].copy_from_slice(&[0x02, 0x00, 0x01]);
+        bytes[16..19].copy_from_slice(&[0x02, 0x00, 0x01]);
+        bytes[19..].copy_from_slice(&1_800_000_090_000_u64.to_be_bytes());
         let transcript = ChallengeTranscript::decode(&bytes).unwrap();
         let cloned = wasm_bindgen_futures::JsFuture::from(message_round_trip(
             transcript_to_js(&transcript).unwrap(),
@@ -112,7 +126,17 @@ mod tests {
             serde_json::json!({
                 "challengeId": "000102030405060708090a0b0c0d0e0f",
                 "targetOptions": [2, 0, 1],
+                "expiresAtUnixMs": 1_800_000_090_000_u64,
             }),
         );
+
+        let mut transcript = transcript;
+        transcript.expires_at_unix_ms = 9_007_199_254_740_991;
+        let value = transcript_to_js(&transcript).unwrap();
+        let expiry = js_sys::Reflect::get(&value, &"expiresAtUnixMs".into()).unwrap();
+        assert_eq!(expiry.as_f64(), Some(9_007_199_254_740_991.0));
+        transcript.expires_at_unix_ms += 1;
+        let error = transcript_to_js(&transcript).unwrap_err();
+        assert!(error.is_instance_of::<js_sys::TypeError>());
     }
 }

@@ -71,6 +71,7 @@ export async function consumer() {
     walletkit.prepareSelfieChallenge("{}");
   const challenge = await challengePending;
   const challengeId: string = challenge.challengeId;
+  const challengeExpiresAtUnixMs: number = challenge.expiresAtUnixMs;
   const targetOptions: readonly [
     ChallengeOption,
     ChallengeOption,
@@ -123,6 +124,7 @@ export async function consumer() {
     address,
     redacted,
     challengeId,
+    challengeExpiresAtUnixMs,
     targetOptions,
     firstOption,
     options,

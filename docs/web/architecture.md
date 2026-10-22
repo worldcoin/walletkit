@@ -154,6 +154,7 @@ type ChallengeOption = 0x00 | 0x01 | 0x02;
 type ChallengeTranscript = {
   challengeId: string;
   targetOptions: readonly [ChallengeOption, ChallengeOption, ChallengeOption];
+  expiresAtUnixMs: number;
 };
 
 declare function prepareSelfieChallenge(
@@ -167,10 +168,12 @@ pose appears exactly once. The tuple alone does not validate data at runtime.
 `configJson` supplies the enrollment endpoint and enclave measurement policy.
 
 `crates/walletkit-web/src/challenge.rs` converts the shared Rust
-`ChallengeTranscript` into plain JavaScript data: a hexadecimal 16-byte ID and
-three numeric option codes. The shared transcript encoding is 19 bytes: the ID
-followed by the options. WalletKit exposes no separate seed-generation or
-sequence-decoding service call.
+`ChallengeTranscript` into plain JavaScript data: a hexadecimal 16-byte ID, three
+numeric option codes and an expiry in UTC milliseconds. The shared transcript
+encoding is 27 bytes: the ID, the three options, then an eight-byte unsigned
+big-endian expiry. The facade rejects expiries outside JavaScript's safe integer
+range. WalletKit exposes no separate seed-generation or sequence-decoding
+service call.
 
 The shared types and enrollment client are pinned to
 [biometrics-tee #91](https://github.com/worldcoin/biometrics-tee/pull/91).
@@ -189,9 +192,9 @@ sequenceDiagram
   participant TEE as Biometrics TEE
   App->>WK: prepareSelfieChallenge(configJson)
   WK->>TEE: Verify assignment, then request a transcript
-  TEE->>TEE: Generate ID, private seed and complete pose sequence
+  TEE->>TEE: Generate ID, private seed, pose sequence and expiry
   TEE-->>WK: Encoded ChallengeTranscript
-  WK-->>App: Decoded challengeId and targetOptions
+  WK-->>App: Decoded challengeId, targetOptions and expiresAtUnixMs
   App->>App: Select targetOptions[activeStep] and render its SVG
 ```
 
@@ -207,9 +210,18 @@ executes them sequentially, including awaited work. A connection retained after
 a call resolves would not itself block the queue. This draft needs no worker
 scheduling changes or one-active-challenge restriction.
 
-Run ownership, expiry, evidence submission and TEE evaluation are separate work.
-They are not prerequisites for generating and displaying a transcript, but must
-be implemented before the TEE can authenticate challenge completion.
+The generator currently gives transcripts a 90-second prototype TTL, measured
+from generation. `expiresAtUnixMs` supports the browser countdown; the browser's
+clock and capture timestamps cannot establish timely submission. The enclave
+must timestamp receipt of the complete evidence and reject it at or after the
+deadline. Receipt before the deadline may still be evaluated afterwards.
+
+The generated timestamp currently uses the enclave's OS clock; it is not an
+attested time value. The eventual run registry must retain its own deadline,
+enforce it with an appropriate monotonic clock, bind ownership and remove expired
+runs. That enforcement, evidence submission and TEE evaluation remain separate
+work. The transcript field and expiry comparison helper do not implement a live
+run or authenticate challenge completion.
 
 ## Build output
 
