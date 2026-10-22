@@ -1308,6 +1308,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_check_replay_guard_skips_exempt_rps() {
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        authenticator.init_storage(1000).expect("init storage");
+        let nullifier = world_id_core::FieldElement::from(123_456_789u64);
+        authenticator
+            .store
+            .replay_guard_set(nullifier, 1000)
+            .expect("set replay guard");
+        let after_grace = 1601;
+
+        assert!(matches!(
+            authenticator.check_replay_guard(0x2a, nullifier, after_grace),
+            Err(WalletKitError::NullifierReplay)
+        ));
+
+        authenticator
+            .set_replay_exempt_rp_ids(vec!["rp_000000000000002a".to_string()])
+            .expect("valid RP IDs");
+        authenticator
+            .check_replay_guard(0x2a, nullifier, after_grace)
+            .expect("exempt RP may reuse the nullifier");
+        assert!(matches!(
+            authenticator.check_replay_guard(0x2b, nullifier, after_grace),
+            Err(WalletKitError::NullifierReplay)
+        ));
+
+        authenticator
+            .set_replay_exempt_rp_ids(vec![])
+            .expect("empty set is valid");
+        assert!(matches!(
+            authenticator.check_replay_guard(0x2a, nullifier, after_grace),
+            Err(WalletKitError::NullifierReplay)
+        ));
+
+        drop(server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
     async fn test_poll_status_normalizes_request_id() {
         use crate::storage::tests_utils::cleanup_test_storage;
 
