@@ -8,10 +8,11 @@ use crate::{
 use alloy_core::primitives::Address;
 use ruint::aliases::U256;
 use ruint_uniffi::Uint256;
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, PoisonError, RwLock};
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestId, GatewayRequestState},
-    primitives::{AuthenticatorPublicKeySet, Config, MAX_AUTHENTICATOR_KEYS},
+    primitives::{rp::RpId, AuthenticatorPublicKeySet, Config, MAX_AUTHENTICATOR_KEYS},
     Authenticator as CoreAuthenticator, AuthenticatorError,
     Credential as CoreCredential, CredentialInput, EdDSAPublicKey,
     InitializingAuthenticator as CoreInitializingAuthenticator,
@@ -31,6 +32,7 @@ mod with_storage;
 pub struct Authenticator {
     inner: CoreAuthenticator,
     store: Arc<CredentialStore>,
+    nullifier_reuse_whitelist: RwLock<HashSet<u64>>,
 }
 
 impl Authenticator {
@@ -50,7 +52,29 @@ impl Authenticator {
         Ok(Self {
             inner: authenticator,
             store,
+            nullifier_reuse_whitelist: RwLock::default(),
         })
+    }
+
+    fn check_replay_guard(
+        &self,
+        rp_id: u64,
+        nullifier: world_id_core::FieldElement,
+        now: u64,
+    ) -> Result<(), WalletKitError> {
+        if !self.allows_nullifier_reuse(rp_id)
+            && self.store.is_nullifier_replay(nullifier, now)?
+        {
+            return Err(WalletKitError::NullifierReplay);
+        }
+        Ok(())
+    }
+
+    fn allows_nullifier_reuse(&self, rp_id: u64) -> bool {
+        self.nullifier_reuse_whitelist
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(&rp_id)
     }
 }
 
@@ -567,7 +591,44 @@ impl Authenticator {
         Self::init_with_config(&seed, config, artifacts, store).await
     }
 
+    /// Replaces the set of RPs allowed to reuse a nullifier (WIP-116 RP whitelist).
+    ///
+    /// Proofs for these RPs may reuse a nullifier any number of times. The set is
+    /// empty by default and is not persisted.
+    ///
+    /// # Arguments
+    /// * `rp_ids` — RP IDs in their `rp_<16 hex chars>` form.
+    ///
+    /// # Errors
+    /// Returns [`WalletKitError::InvalidInput`] if any RP ID is malformed; the
+    /// current set is then left unchanged.
+    pub fn set_nullifier_reuse_whitelist(
+        &self,
+        rp_ids: Vec<String>,
+    ) -> Result<(), WalletKitError> {
+        let rp_ids = rp_ids
+            .into_iter()
+            .map(|rp_id| {
+                rp_id
+                    .parse::<RpId>()
+                    .map(RpId::into_inner)
+                    .map_err(|reason| WalletKitError::InvalidInput {
+                        attribute: "rp_ids".to_string(),
+                        reason,
+                    })
+            })
+            .collect::<Result<HashSet<_>, _>>()?;
+        *self
+            .nullifier_reuse_whitelist
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = rp_ids;
+        Ok(())
+    }
+
     /// Generates a proof for the given proof request.
+    ///
+    /// The nullifier replay guard rejects a reused nullifier unless the request's
+    /// RP is listed via [`Self::set_nullifier_reuse_whitelist`].
     ///
     /// # Errors
     /// Returns an error if proof generation fails.
@@ -618,15 +679,14 @@ impl Authenticator {
         ))
         .await?;
 
-        if self
-            .store
-            .is_nullifier_replay(nullifier.verifiable_oprf_output.output.into(), now)?
-        {
-            return Err(WalletKitError::NullifierReplay);
-        }
+        let rp_id = proof_request.0.rp_id.into_inner();
+        self.check_replay_guard(
+            rp_id,
+            nullifier.verifiable_oprf_output.output.into(),
+            now,
+        )?;
 
         // Get cached `session_id_r_seed` if session ID is provided in the proof request
-        let rp_id = proof_request.0.rp_id.into_inner();
         let session_id_r_seed =
             proof_request
                 .0
@@ -1212,6 +1272,81 @@ mod tests {
             Err(WalletKitError::InvalidInput { attribute, reason })
                 if attribute == "authenticator_pubkey" && reason.contains("canonical")
         ));
+    }
+
+    #[tokio::test]
+    async fn test_set_nullifier_reuse_whitelist() {
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        assert!(!authenticator.allows_nullifier_reuse(0x2a));
+
+        authenticator
+            .set_nullifier_reuse_whitelist(vec!["rp_000000000000002a".to_string()])
+            .expect("valid RP IDs");
+        assert!(authenticator.allows_nullifier_reuse(0x2a));
+        assert!(!authenticator.allows_nullifier_reuse(0x2b));
+
+        assert!(matches!(
+            authenticator.set_nullifier_reuse_whitelist(vec![
+                "rp_000000000000002b".to_string(),
+                "000000000000002b".to_string(),
+            ]),
+            Err(WalletKitError::InvalidInput { attribute, .. }) if attribute == "rp_ids"
+        ));
+        assert!(authenticator.allows_nullifier_reuse(0x2a));
+        assert!(!authenticator.allows_nullifier_reuse(0x2b));
+
+        authenticator
+            .set_nullifier_reuse_whitelist(vec![])
+            .expect("empty set is valid");
+        assert!(!authenticator.allows_nullifier_reuse(0x2a));
+
+        drop(server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_check_replay_guard_allows_whitelisted_reuse() {
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        authenticator.init_storage(1000).expect("init storage");
+        let nullifier = world_id_core::FieldElement::from(123_456_789u64);
+        authenticator
+            .store
+            .replay_guard_set(nullifier, 1000)
+            .expect("set replay guard");
+        let after_grace = 1601;
+
+        assert!(matches!(
+            authenticator.check_replay_guard(0x2a, nullifier, after_grace),
+            Err(WalletKitError::NullifierReplay)
+        ));
+
+        authenticator
+            .set_nullifier_reuse_whitelist(vec!["rp_000000000000002a".to_string()])
+            .expect("valid RP IDs");
+        authenticator
+            .check_replay_guard(0x2a, nullifier, after_grace)
+            .expect("whitelisted RP may reuse the nullifier");
+        assert!(matches!(
+            authenticator.check_replay_guard(0x2b, nullifier, after_grace),
+            Err(WalletKitError::NullifierReplay)
+        ));
+
+        authenticator
+            .set_nullifier_reuse_whitelist(vec![])
+            .expect("empty set is valid");
+        assert!(matches!(
+            authenticator.check_replay_guard(0x2a, nullifier, after_grace),
+            Err(WalletKitError::NullifierReplay)
+        ));
+
+        drop(server);
+        cleanup_test_storage(&root);
     }
 
     #[tokio::test]
