@@ -213,15 +213,24 @@ scheduling changes or one-active-challenge restriction.
 The generator currently gives transcripts a 90-second prototype TTL, measured
 from generation. `expiresAtUnixMs` supports the browser countdown; the browser's
 clock and capture timestamps cannot establish timely submission. The enclave
-must timestamp receipt of the complete evidence and reject it at or after the
-deadline. Receipt before the deadline may still be evaluated afterwards.
+must timestamp receipt of the complete evidence before queueing evaluation. The
+planned submission handler uses that receipt time to check the stored run's
+deadline, verifies ownership and unused status, and atomically reserves the run
+before biometric evaluation. It rejects submissions received at or after the
+deadline; timely submissions may finish evaluation later.
+
+These are internal steps of the same submission call. WalletKit needs no separate
+timestamp-check, completion-check or per-picture embedding call. The intended
+flow is preparation, client capture, then one evidence submission whose result
+covers challenge evaluation and embedding extraction from accepted evidence.
+Submission acknowledgement alone must not be presented as successful completion.
 
 The generated timestamp currently uses the enclave's OS clock; it is not an
 attested time value. The eventual run registry must retain its own deadline,
 enforce it with an appropriate monotonic clock, bind ownership and remove expired
-runs. That enforcement, evidence submission and TEE evaluation remain separate
-work. The transcript field and expiry comparison helper do not implement a live
-run or authenticate challenge completion.
+runs. The submission handler and these internal checks remain unimplemented in
+this draft. The transcript field and expiry comparison helper do not implement a
+live run or authenticate challenge completion.
 
 ## Build output
 
