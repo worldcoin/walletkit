@@ -432,13 +432,16 @@ impl JsAuthenticator {
         })
     }
 
-    /// Replaces the set of RPs (as `rp_<16 hex chars>`) exempt from the nullifier replay guard.
+    /// Replaces the set of RPs (as `rp_<16 hex chars>`) allowed to reuse a nullifier.
     ///
     /// # Errors
     /// Throws a `WalletKitError` when an RP ID is malformed.
-    #[wasm_bindgen(js_name = setReplayExemptRpIds)]
-    pub fn set_replay_exempt_rp_ids(&self, rp_ids: Vec<String>) -> Result<(), JsValue> {
-        self.0.set_replay_exempt_rp_ids(rp_ids).map_err(to_js)
+    #[wasm_bindgen(js_name = setNullifierReuseWhitelist)]
+    pub fn set_nullifier_reuse_whitelist(
+        &self,
+        rp_ids: Vec<String>,
+    ) -> Result<(), JsValue> {
+        self.0.set_nullifier_reuse_whitelist(rp_ids).map_err(to_js)
     }
 
     /// Generates a proof for `proof_request` from the stored credentials.
