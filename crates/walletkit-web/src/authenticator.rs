@@ -432,6 +432,15 @@ impl JsAuthenticator {
         })
     }
 
+    /// Replaces the set of RPs (as `rp_<16 hex chars>`) exempt from the nullifier replay guard.
+    ///
+    /// # Errors
+    /// Throws a `WalletKitError` when an RP ID is malformed.
+    #[wasm_bindgen(js_name = setReplayExemptRpIds)]
+    pub fn set_replay_exempt_rp_ids(&self, rp_ids: Vec<String>) -> Result<(), JsValue> {
+        self.0.set_replay_exempt_rp_ids(rp_ids).map_err(to_js)
+    }
+
     /// Generates a proof for `proof_request` from the stored credentials.
     ///
     /// `now` is the current unix time in seconds and defaults to the browser clock, which
