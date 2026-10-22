@@ -536,7 +536,7 @@ mod tests {
     use flamingo_verifier_sealed_types::{
         AttestedStatement, DebugReport, FailureReason, Request as MatchRequest,
     };
-    use world_id_flamingo::{FlamingoClaims, FlamingoToken};
+    use world_id_flamingo::FlamingoClaims;
 
     use super::engine::tests::{provider, ENGINE_HASH};
     use super::{
@@ -725,11 +725,11 @@ mod tests {
     }
 
     fn verified(debug_report: DebugReport) -> MatchResult {
-        let zero = world_id_flamingo_primitives::FieldElement::ZERO;
+        let zero = world_id_core::FieldElement::ZERO;
         MatchResult::Success {
             verified: Box::new(VerifiedMatch {
                 statement: AttestedStatement {
-                    token: FlamingoToken::from_bytes(b"signed-token".to_vec()),
+                    token: b"signed-token".to_vec(),
                     signing_key_attestation: b"signing-key-attestation".to_vec(),
                 },
                 claims: FlamingoClaims {
@@ -836,7 +836,7 @@ mod tests {
         let (manifest, release) =
             manifest_with_limits(ENGINE_HASH, 4, "release-1", 800, 100);
         let provider = FlamingoEngineProvider::from_metadata(&metadata(
-            &[(&manifest, "active")],
+            &[&manifest],
             &[jwk("release-1", "active")],
         ))
         .unwrap();
@@ -1375,7 +1375,7 @@ mod tests {
         let (a, release_a) = manifest(ENGINE_HASH, 4, "release-1");
         let (b, release_b) = manifest(ENGINE_HASH, 2, "release-1");
         let provider = FlamingoEngineProvider::from_metadata(&metadata(
-            &[(&a, "active"), (&b, "active")],
+            &[&a, &b],
             &[jwk("release-1", "active")],
         ))
         .unwrap();

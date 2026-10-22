@@ -44,9 +44,9 @@ ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
 # TODO: Move to the crates.io release of the WIP-201 stack (https://github.com/worldcoin/flamingo/pull/148).
-flamingo-verifier-api-types = { git = "https://github.com/worldcoin/flamingo", rev = "9476569e79058b92e6f2e86bc06a9060c0c5836f" }
-flamingo-verifier-client = { git = "https://github.com/worldcoin/flamingo", rev = "9476569e79058b92e6f2e86bc06a9060c0c5836f" }
-flamingo-verifier-sealed-types = { git = "https://github.com/worldcoin/flamingo", rev = "9476569e79058b92e6f2e86bc06a9060c0c5836f" }
+flamingo-verifier-api-types = { git = "https://github.com/worldcoin/flamingo", rev = "10b5732ccaf80c1ef2d631978eebb65316fea4a2" }
+flamingo-verifier-client = { git = "https://github.com/worldcoin/flamingo", rev = "10b5732ccaf80c1ef2d631978eebb65316fea4a2" }
+flamingo-verifier-sealed-types = { git = "https://github.com/worldcoin/flamingo", rev = "10b5732ccaf80c1ef2d631978eebb65316fea4a2" }
 eyre = "0.6"
 futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"
@@ -92,12 +92,10 @@ zeroize = "1"
 zip = { version = "9", default-features = false }
 
 # world-id-protocol crates
-world-id-core = { version = "0.16", default-features = false }
-world-id-proof = { version = "0.16", default-features = false }
-# TODO: Move to crates.io once https://github.com/worldcoin/world-id-protocol/pull/1079 is published.
-# The pinned Flamingo wire crate still uses protocol 0.15; WalletKit uses 0.16.
-world-id-flamingo-primitives = { package = "world-id-primitives", git = "https://github.com/worldcoin/world-id-protocol", rev = "2854c89a91093bcb875264df366407ea346356c5", default-features = false }
-world-id-flamingo = { git = "https://github.com/worldcoin/world-id-protocol", rev = "2854c89a91093bcb875264df366407ea346356c5" }
+# TODO: Use crates.io after worldcoin/world-id-protocol#1130 and #1131 are published.
+world-id-core = { version = "0.17", git = "https://github.com/worldcoin/world-id-protocol", rev = "ef6e21e9f5816e2026f6d0a5314d0d765b92ca25", default-features = false }
+world-id-proof = { version = "0.17", git = "https://github.com/worldcoin/world-id-protocol", rev = "ef6e21e9f5816e2026f6d0a5314d0d765b92ca25", default-features = false }
+world-id-flamingo = { version = "0.17", git = "https://github.com/worldcoin/world-id-protocol", rev = "ef6e21e9f5816e2026f6d0a5314d0d765b92ca25" }
 
 # internal
 walletkit-core = { version = "0.27.3", path = "crates/walletkit-core", default-features = false }

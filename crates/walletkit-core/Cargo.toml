@@ -68,7 +68,6 @@ rustls = { workspace = true, features = ["ring"] }
 tokio-tungstenite = { workspace = true, features = ["handshake"] }
 webpki-root-certs = { workspace = true }
 world-id-flamingo = { workspace = true }
-world-id-flamingo-primitives = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 attested-request = { workspace = true, features = ["test-util"] }

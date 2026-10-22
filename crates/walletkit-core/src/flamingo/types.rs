@@ -54,8 +54,8 @@ pub struct FlamingoEntry {
 /// A request whose fields passed every WIP-201 bound, ready to be bound to a session's Engine.
 pub(super) struct PreparedRequest {
     pub offer: Vec<EngineConfiguration>,
-    aud: world_id_flamingo_primitives::FieldElement,
-    nonce: world_id_flamingo_primitives::FieldElement,
+    aud: world_id_core::FieldElement,
+    nonce: world_id_core::FieldElement,
     payload: Payload,
 }
 
@@ -120,22 +120,10 @@ impl FlamingoMatchRequest {
         };
         payload.validate().map_err(payload_error)?;
 
-        // TODO: Remove this byte bridge when Flamingo and WalletKit share the released primitives.
         Ok(PreparedRequest {
             offer,
-            aud: world_id_flamingo_primitives::FieldElement::from_be_bytes(
-                &self.aud.to_be_bytes(),
-            )
-            .map_err(|_| {
-                FlamingoError::invalid_shape("aud", "must be a canonical field element")
-            })?,
-            nonce: world_id_flamingo_primitives::FieldElement::from_be_bytes(&nonce)
-                .map_err(|_| {
-                    FlamingoError::invalid_shape(
-                        "nonce",
-                        "must be a canonical field element",
-                    )
-                })?,
+            aud: self.aud.0,
+            nonce: self.nonce.0,
             payload,
         })
     }
@@ -207,7 +195,7 @@ impl VerifiedFlamingoToken {
 impl From<VerifiedMatch> for VerifiedFlamingoToken {
     fn from(value: VerifiedMatch) -> Self {
         Self {
-            token: value.statement.token.into_bytes(),
+            token: value.statement.token,
             signing_key_attestation: value.statement.signing_key_attestation,
         }
     }

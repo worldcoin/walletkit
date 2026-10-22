@@ -2,7 +2,9 @@
 
 use std::time::Duration;
 
-use world_id_flamingo::{manifest::Pipeline, EngineMetadata, ReleaseManifest};
+use world_id_flamingo::{
+    release_manifest::Pipeline, EngineProviderMetadata, ReleaseManifest,
+};
 
 use super::FlamingoError;
 
@@ -10,7 +12,7 @@ use super::FlamingoError;
 ///
 /// A response reveals at most `log2(count)` bits about the Engine's run time; WIP-201 §3.5.4
 /// recommends Authenticators accept at most 8 slots.
-pub const MAX_RESPONSE_SLOTS: u32 = 8;
+pub const MAX_RESPONSE_SLOTS: usize = 8;
 
 /// One Engine configuration a Relying Party accepts.
 ///
@@ -30,9 +32,9 @@ pub struct FlamingoEngineConfiguration {
 ///
 /// Built from the provider's metadata file (`/.well-known/world-id-engine.json`). The host decides
 /// which provider to trust and how to obtain its metadata, for example by fetching it from a
-/// pinned domain or bundling it with the app. Only manifests marked `active` whose signature
-/// verifies under an `active` release key of the same metadata are kept, so marking a key or a
-/// manifest `revoked` takes effect with the next metadata the host supplies.
+/// pinned domain or bundling it with the app. Only listed manifests whose signature verifies
+/// under an `active` release key of the same metadata are kept. Removing a manifest or retiring
+/// or revoking its key takes effect with the next metadata the host supplies.
 #[derive(Debug, uniffi::Object)]
 pub struct FlamingoEngineProvider {
     provider_id: String,
@@ -41,21 +43,24 @@ pub struct FlamingoEngineProvider {
 
 #[uniffi::export]
 impl FlamingoEngineProvider {
-    /// Parses an Engine Provider metadata file and verifies its active release manifests.
+    /// Parses an Engine Provider metadata file and verifies its listed release manifests.
     ///
     /// # Errors
     ///
     /// Returns [`FlamingoError::Configuration`] if the metadata is not a version 1 metadata file,
-    /// or if none of its active manifests verifies under one of its active release keys.
+    /// or if none of its listed manifests verifies under one of its active release keys.
     #[uniffi::constructor]
     pub fn from_metadata(metadata_json: &[u8]) -> Result<Self, FlamingoError> {
-        let metadata = EngineMetadata::parse(metadata_json).map_err(|error| {
-            FlamingoError::Configuration(format!("Engine Provider metadata: {error}"))
-        })?;
-        let manifests = metadata.active_manifests();
+        let metadata =
+            EngineProviderMetadata::parse(metadata_json).map_err(|error| {
+                FlamingoError::Configuration(format!(
+                    "Engine Provider metadata: {error}"
+                ))
+            })?;
+        let manifests = metadata.verified_manifests();
         if manifests.is_empty() {
             return Err(FlamingoError::Configuration(format!(
-                "Engine Provider {} has no active release manifest that verifies",
+                "Engine Provider {} has no release manifest that verifies under an active key",
                 metadata.provider_id
             )));
         }
@@ -80,7 +85,7 @@ impl FlamingoEngineProvider {
             .iter()
             .filter_map(|configuration| {
                 self.eligible_pipeline(configuration)
-                    .map(|pipeline| pipeline.response_slots.max)
+                    .and_then(|pipeline| pipeline.response_slots.last())
             })
             .max()
             .unwrap_or_default();
@@ -126,8 +131,10 @@ impl FlamingoEngineProvider {
             .iter()
             .find(|manifest| manifest.release_hash() == configuration.release_hash)?;
         let pipeline = manifest.pipeline(configuration.pipeline)?;
-        (manifest.defines_strictness(configuration.match_strictness)
-            && pipeline.response_slots.count <= MAX_RESPONSE_SLOTS)
+        (manifest
+            .match_strictness_level(configuration.match_strictness)
+            .is_some()
+            && pipeline.response_slots.0.len() <= MAX_RESPONSE_SLOTS)
             .then_some(pipeline)
     }
 }
@@ -212,7 +219,7 @@ pub(super) mod tests {
     /// `kid`, and its `release_hash`.
     pub fn manifest(
         engine_hash: [u8; 32],
-        slots: u32,
+        slots: usize,
         kid: &str,
     ) -> (String, [u8; 32]) {
         manifest_with_limits(engine_hash, slots, kid, 800, 8_000_000)
@@ -220,7 +227,7 @@ pub(super) mod tests {
 
     pub fn manifest_with_limits(
         engine_hash: [u8; 32],
-        slots: u32,
+        slots: usize,
         kid: &str,
         max_slot: u64,
         max_request_bytes: u64,
@@ -233,7 +240,9 @@ pub(super) mod tests {
             "pipelines": [{
                 "pipeline": 1,
                 "description": "credential image, live capture, challenge",
-                "response_slots": { "min": 100, "max": max_slot, "count": slots },
+                "response_slots": (1..=slots)
+                    .map(|slot| max_slot * u64::try_from(slot).unwrap() / u64::try_from(slots).unwrap())
+                    .collect::<Vec<_>>(),
                 "max_request_bytes": max_request_bytes,
             }],
             "match_strictness_levels": [
@@ -255,25 +264,22 @@ pub(super) mod tests {
         (compact, Sha256::digest(payload).into())
     }
 
-    pub fn metadata(manifests: &[(&str, &str)], keys: &[serde_json::Value]) -> Vec<u8> {
+    pub fn metadata(manifests: &[&str], keys: &[serde_json::Value]) -> Vec<u8> {
         json!({
             "version": 1,
             "provider_id": "test-provider",
             "release_keys": keys,
-            "manifests": manifests
-                .iter()
-                .map(|(manifest, status)| json!({ "manifest": manifest, "status": status }))
-                .collect::<Vec<_>>(),
+            "manifests": manifests,
         })
         .to_string()
         .into_bytes()
     }
 
-    /// A provider with one active manifest for [`ENGINE_HASH`], and its `release_hash`.
+    /// A provider with one verified manifest for [`ENGINE_HASH`], and its `release_hash`.
     pub fn provider() -> (FlamingoEngineProvider, [u8; 32]) {
         let (manifest, release_hash) = manifest(ENGINE_HASH, 4, "release-1");
         let provider = FlamingoEngineProvider::from_metadata(&metadata(
-            &[(&manifest, "active")],
+            &[&manifest],
             &[jwk("release-1", "active")],
         ))
         .unwrap();
@@ -296,7 +302,7 @@ pub(super) mod tests {
         let (manifest_a, release_a) = manifest(ENGINE_HASH, 4, "release-1");
         let (manifest_b, release_b) = manifest(OTHER_ENGINE_HASH, 4, "release-1");
         let provider = FlamingoEngineProvider::from_metadata(&metadata(
-            &[(&manifest_a, "active"), (&manifest_b, "active")],
+            &[&manifest_a, &manifest_b],
             &[jwk("release-1", "active")],
         ))
         .unwrap();
@@ -315,7 +321,7 @@ pub(super) mod tests {
         let (a, release_a) = manifest(ENGINE_HASH, 4, "release-1");
         let (b, release_b) = manifest(ENGINE_HASH, 2, "release-1");
         let provider = FlamingoEngineProvider::from_metadata(&metadata(
-            &[(&a, "active"), (&b, "active")],
+            &[&a, &b],
             &[jwk("release-1", "active")],
         ))
         .unwrap();
@@ -337,7 +343,7 @@ pub(super) mod tests {
         let (c, release_c) =
             manifest_with_limits(ENGINE_HASH, 9, "release-1", 240_000, 8_000_000);
         let provider = FlamingoEngineProvider::from_metadata(&metadata(
-            &[(&a, "active"), (&b, "active"), (&c, "active")],
+            &[&a, &b, &c],
             &[jwk("release-1", "active")],
         ))
         .unwrap();
@@ -389,7 +395,7 @@ pub(super) mod tests {
         {
             let (manifest, release_hash) = manifest(ENGINE_HASH, slots, "release-1");
             let provider = FlamingoEngineProvider::from_metadata(&metadata(
-                &[(&manifest, "active")],
+                &[&manifest],
                 &[jwk("release-1", "active")],
             ))
             .unwrap();
@@ -400,26 +406,34 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn keeps_only_active_manifests_signed_by_an_active_key() {
+    fn keeps_only_listed_manifests_signed_by_an_active_key() {
         let (active, release_active) = manifest(ENGINE_HASH, 4, "release-1");
-        let (revoked, release_revoked) = manifest(OTHER_ENGINE_HASH, 4, "release-1");
+        let (_, release_removed) = manifest(OTHER_ENGINE_HASH, 4, "release-1");
         let (retired_key, release_retired_key) =
             manifest(OTHER_ENGINE_HASH, 2, "release-0");
+        let (revoked_key, release_revoked_key) =
+            manifest(OTHER_ENGINE_HASH, 3, "release-revoked");
         let provider = FlamingoEngineProvider::from_metadata(&metadata(
+            &[&active, &retired_key, &revoked_key],
             &[
-                (&active, "active"),
-                (&revoked, "revoked"),
-                (&retired_key, "active"),
+                jwk("release-1", "active"),
+                jwk("release-0", "retired"),
+                jwk("release-revoked", "revoked"),
             ],
-            &[jwk("release-1", "active"), jwk("release-0", "retired")],
         ))
         .unwrap();
-        let loaded = [release_active, release_revoked, release_retired_key];
+        let loaded = [
+            release_active,
+            release_removed,
+            release_retired_key,
+            release_revoked_key,
+        ];
 
         assert!(provider
             .select(&[configuration(release_active, 1)], &loaded)
             .is_ok());
-        for release_hash in [release_revoked, release_retired_key] {
+        for release_hash in [release_removed, release_retired_key, release_revoked_key]
+        {
             assert!(matches!(
                 provider.select(&[configuration(release_hash, 1)], &loaded),
                 Err(FlamingoError::NoSupportedEngine)
@@ -432,9 +446,9 @@ pub(super) mod tests {
         let (manifest, _) = manifest(ENGINE_HASH, 4, "release-1");
         for metadata in [
             b"not json".to_vec(),
-            metadata(&[(&manifest, "active")], &[]),
-            metadata(&[(&manifest, "revoked")], &[jwk("release-1", "active")]),
-            metadata(&[(&manifest, "active")], &[jwk("release-2", "active")]),
+            metadata(&[&manifest], &[]),
+            metadata(&[], &[jwk("release-1", "active")]),
+            metadata(&[&manifest], &[jwk("release-2", "active")]),
         ] {
             assert!(matches!(
                 FlamingoEngineProvider::from_metadata(&metadata),
