@@ -133,139 +133,94 @@ opens. The storage design has these parts:
   key through `StorageKeys.fromBytes`. No key envelope is written, so there is no
   envelope to delete in `destroyStorage()`.
 
-## Proposed selfie challenge calls (draft)
+## Proposed selfie challenge generation (draft)
 
-This is an API proposal, not an exported API. Implementation depends on
-[biometrics-tee #91](https://github.com/worldcoin/biometrics-tee/pull/91) for pose
-definitions and generation, and
-[WalletKit #604](https://github.com/worldcoin/walletkit/pull/604) for the browser
-enrollment client integration. **Merging #91 alone does not enable these calls:**
-it adds generation helpers, without a challenge RPC, run registry or evaluator.
+This proposal is **not an exported API**. It depends on
+[biometrics-tee #91](https://github.com/worldcoin/biometrics-tee/pull/91) for shared
+challenge types and generation, and
+[WalletKit #604](https://github.com/worldcoin/walletkit/pull/604) for browser
+enrollment client integration. #91 does not provide a generation RPC yet.
 
-### Two service calls
+### One call returns the transcript
 
-Both functions would be available on the existing `WalletKit` instance. These
-TypeScript declarations describe the proposed interface; the eventual Rust
-facade owns the exports and generates their declarations.
+The proposed function is available through the existing `WalletKit` instance.
+The Rust facade owns the export and its generated TypeScript declarations:
 
 ```ts
-type SelfieChallengeOption = 0x00 | 0x01 | 0x02;
+type ChallengeOption = 0x00 | 0x01 | 0x02;
 
-type SelfieChallengeStep = {
+type ChallengeTranscript = {
   challengeId: string;
-  stepIndex: number;
-  targetResponse: SelfieChallengeOption;
-  expiresAtUnixMs: number;
+  targetOptions: readonly [ChallengeOption, ChallengeOption, ChallengeOption];
 };
-
-type SelfieChallengeUpdate =
-  | { status: "next" | "retry"; step: SelfieChallengeStep }
-  | { status: "completed"; challengeId: string; result: Uint8Array }
-  | { status: "failed"; challengeId: string; reason: string };
 
 declare function prepareSelfieChallenge(
   configJson: string,
-  requestBinding: Uint8Array,
-): Promise<SelfieChallengeStep>;
-
-declare function submitSelfieChallengeEvidence(
-  challengeId: string,
-  stepIndex: number,
-  evidence: Uint8Array,
-): Promise<SelfieChallengeUpdate>;
+): Promise<ChallengeTranscript>;
 ```
 
-The pose codes match #91's `TargetResponse`: forward `0x00`, anatomical left
-`0x01`, right `0x02`. `stepIndex` starts at zero. The enclave keeps the full
-three-pose sequence; the page receives only the current instruction.
+The option codes mean forward `0x00`, anatomical left `0x01` and right `0x02`.
+TypeScript uses arrays for variable-length collections; this readonly tuple
+expresses the current fixed length of three. Each pose appears exactly once, as
+validated by the shared Rust decoder. The tuple alone does not enforce uniqueness
+or validate data at runtime.
 
-`configJson` is the trusted endpoint and enclave measurement policy, following
-#604. `requestBinding` identifies the intended authentication request and
-recipient. Its canonical encoding must be agreed with the TEE and final verifier;
-the verifier must check it against its own pending request. A caller-supplied
-binding or public challenge ID does not establish ownership.
+`configJson` supplies the endpoint and enclave measurement policy, following #604.
+The enclave generates a random 16-byte ID and private seed, derives the complete
+pose sequence, and erases the seed. `ChallengeTranscript` is the generated request,
+not a record of captured evidence or proof of completion.
 
-`evidence` is a direct byte argument so it follows the existing worker transfer
-and clearing path. Its bounded encoding must come from the TEE evaluator's
-protocol: a still image can show a pose, while movement and hold checks need
-temporal evidence. Do not freeze a JPEG-only format before that decision. The
-terminal `result` is the encoded authenticated TEE outcome; its format and the
-typed rejection reasons also depend on that protocol.
+The proposed shared Rust types are `ChallengeOption`,
+`TargetOptions([ChallengeOption; 3])`, and `ChallengeTranscript` containing
+`challenge_id` and `target_options`. Its encoding is 19 bytes: the 16-byte ID,
+followed by three option codes. The enrollment client uses that decoder; the
+facade returns the ID as a hexadecimal string and the options as plain data.
+WalletKit exposes no separate seed-generation or sequence-decoding service call.
 
-### From Start to completion
+### From Start to an instruction
 
 ```mermaid
 sequenceDiagram
   participant App as Web authenticator
   participant WK as WalletKit worker
   participant TEE as Biometrics TEE
-  App->>WK: prepareSelfieChallenge(configJson, requestBinding)
-  WK->>TEE: Verify assignment, then start the run
-  TEE-->>WK: Challenge ID, private run credential, first instruction
-  WK-->>App: First instruction
-  loop Each requested step
-    App->>App: Estimate pose and automatically capture evidence
-    App->>WK: submitSelfieChallengeEvidence(id, stepIndex, evidence)
-    WK->>TEE: Submit evidence with the retained run credential
-    TEE->>TEE: Check run, evaluate evidence, update state
-    TEE-->>WK: Next instruction, retry or terminal outcome
-    WK-->>App: Public update
-  end
+  App->>WK: prepareSelfieChallenge(configJson)
+  WK->>TEE: Verify assignment, then request a transcript
+  TEE->>TEE: Generate ID, seed and complete pose sequence
+  TEE-->>WK: Encoded ChallengeTranscript
+  WK-->>App: Decoded challengeId and targetOptions
+  App->>App: Select targetOptions[activeStep] and render its SVG
 ```
 
-`prepareSelfieChallenge` resolves after receiving the first instruction. It must
-not wait for camera input or completion: the worker awaits each call before
-dispatching the next one. Camera access, pose estimation and evidence capture
-belong to the web authenticator and run between WalletKit calls.
+The web authenticator owns the option-to-component mapping and keeps `activeStep`
+separate from the transcript. TypeScript never derives or shuffles the sequence.
+**All three poses are revealed upfront**, replacing the earlier proposal to return
+only the current instruction. Local preview progression demonstrates rendering;
+it does not establish that a user has completed a challenge.
 
-WalletKit privately retains the connection and run credential, with one active
-challenge per instance initially. A second prepare call rejects while that run
-is active. Reuse the existing instance; another worker competes for the origin's
-OPFS ownership. The enclave generates and erases the seed; the run credential
-stays in the worker. Neither is returned to the page, persisted or logged.
+The call resolves when the transcript arrives, without waiting for camera input.
+The page can have multiple pending calls, but the worker executes requests
+sequentially, including their awaited network work. A connection retained after
+a call resolves would not itself block the queue. Worker ordering does not impose
+one active challenge per instance, and this generation milestone needs no worker
+scheduling changes.
 
-The TEE obtains the expected pose from its own run state, checks ownership,
-expiry and step order, and evaluates submitted media. Only its decision can
-advance the step or complete the run. A browser's pose estimate, timestamp or
-`challenge_completed` flag cannot establish completion. `retry` requests new
-evidence for the same step; `next` advances to the returned instruction. Invalid
-arguments, policy/attestation failures and transport failures reject the promise.
+### Implementation boundary
 
-Terminal outcomes and expiry release the worker's session and private state.
-For v0, a disconnect or ambiguous submission timeout invalidates the local run:
-close the connection and start a fresh attempt, without reconnecting or replaying
-the submission. The enclave must bound and expire abandoned runs. Existing
-`terminate()` cancels immediately by stopping the entire WalletKit instance;
-`close()` is queued and has a termination deadline. Abandoning a still-active run
-therefore requires waiting for expiry or stopping the whole instance. This
-proposal adds no separate cancel, seed-generation, sequence-decoding or
-completion service call.
+To ship this call, biometrics-tee must add a generation RPC and enrollment-client
+method. WalletKit then adds `crates/walletkit-web/src/challenge.rs`, registers it
+in `lib.rs`, and exports the generated record/option types from
+`web/walletkit/src/index.ts`. The existing page/worker dispatcher needs no special
+handling. Consumer type checks and a browser call check belong with that runtime
+implementation; this proposal changes no exports or dependency pins.
 
-### Upstream work and implementation boundary
-
-Before these exports can ship, biometrics-tee needs:
-
-- A bounded enclave run registry, ownership checks, expiry and atomic step
-  transitions, plus start and evidence-submission RPCs.
-- A persistent client/host exchange that keeps the run on its owning enclave.
-  The existing extraction session is consumed after one request and closes its
-  socket; opening a new extraction connection for each step cannot preserve an
-  in-memory run across replicas.
-- An evidence format, size/frame limits, evaluation policy and response types.
-  Embedding extraction alone does not evaluate the challenge.
-- Response authentication and replay handling. The current encrypted channel
-  does not attest its replies or provide request replay protection. A verifier
-  accepting a relayed terminal outcome must authenticate it and check its request
-  binding, freshness and single use.
-
-The WalletKit implementation would add a small `challenge.rs` Rust facade under
-`crates/walletkit-web/src`, register it in `lib.rs`, and export the generated
-record/option types from `web/walletkit/src/index.ts`. Its two functions delegate
-to the shared enrollment client; generation and evaluation stay in the enclave.
-The page/worker dispatcher needs no new service methods. Add consumer type checks
-for the exported types and browser checks for lifecycle, rejected submissions and
-cleanup when that implementation is available. This proposal changes no runtime
-exports, dependency pins or existing extraction behavior.
+Generating and rendering a transcript does not require a run registry, expiry,
+request binding or evaluator. Those become necessary when the TEE must evaluate
+submissions and establish completion. A later `submitSelfieChallengeEvidence`
+service can be the second independent call; its ownership, evidence and result
+formats remain undecided. Rendering the returned options does not authenticate a
+completion outcome, and the current encrypted transport does not independently
+attest its replies or provide request replay protection.
 
 ## Build output
 
