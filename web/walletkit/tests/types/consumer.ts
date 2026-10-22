@@ -4,6 +4,8 @@
 // worker internals must stay out of reach.
 import type {
   Authenticator,
+  ChallengeOption,
+  ChallengeTranscript,
   CredentialRecord,
   RegistrationStatus,
   WalletKit,
@@ -65,6 +67,17 @@ export async function consumer() {
   const recovery = await walletkit.recoveryDataFromSeed(new Uint8Array(32));
   const address: string = recovery.authenticatorAddress;
   const redacted: string = await walletkit.sanitizeHexSecrets("0x00");
+  const challengePending: Promise<ChallengeTranscript> =
+    walletkit.prepareSelfieChallenge("{}");
+  const challenge = await challengePending;
+  const challengeId: string = challenge.challengeId;
+  const targetOptions: readonly [
+    ChallengeOption,
+    ChallengeOption,
+    ChallengeOption,
+  ] = challenge.targetOptions;
+  const firstOption: ChallengeOption = targetOptions[0];
+  const options: ChallengeOption[] = [0x00, 0x01, 0x02];
   await walletkit.emitLog("warn", "logging works");
   factor.free();
   const stopped: boolean = walletkit.isStopped();
@@ -85,6 +98,16 @@ export async function consumer() {
   await factor.free().then(() => {});
   // @ts-expect-error records are plain data, not proxies
   recovery.free();
+  // @ts-expect-error challenge transcripts are plain data, not proxies
+  challenge.free();
+  // @ts-expect-error challenge configuration is serialized JSON
+  await walletkit.prepareSelfieChallenge({});
+  // @ts-expect-error unknown challenge option
+  const unknownOption: ChallengeOption = 0x03;
+  // @ts-expect-error every transcript has exactly three options
+  const shortOptions: ChallengeTranscript["targetOptions"] = [0x00, 0x01];
+  // @ts-expect-error options are readonly
+  challenge.targetOptions[0] = 0x01;
 
   return {
     added,
@@ -99,6 +122,12 @@ export async function consumer() {
     responseJson,
     address,
     redacted,
+    challengeId,
+    targetOptions,
+    firstOption,
+    options,
+    unknownOption,
+    shortOptions,
     stopped,
   };
 }
