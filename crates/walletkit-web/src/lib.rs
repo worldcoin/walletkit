@@ -114,6 +114,14 @@ export interface CredentialConstraintsCheckResult {
   isSatisfied: boolean;
   checkResults: CredentialConstraintsCheckItem[];
 }
+
+export interface SelectedCredential {
+  identifier: string;
+  credentialId: bigint;
+  issuerSchemaId: bigint;
+  genesisIssuedAt: bigint;
+  expiresAt: bigint;
+}
 "#;
 
 /// Forwards Rust panics to the console before the module traps.

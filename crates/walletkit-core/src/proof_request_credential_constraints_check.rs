@@ -72,6 +72,7 @@ use std::collections::HashMap;
 
 use world_id_core::requests::MAX_CONSTRAINT_NODES;
 
+use crate::credential_selection::is_usable_for;
 use crate::requests::ProofRequest;
 use crate::storage::{CredentialRecord, CredentialStore, StorageError};
 
@@ -133,20 +134,17 @@ pub fn check_credentials_against_proof_request(
     let records = store.list_credentials(None, now)?;
 
     let mut by_schema: HashMap<u64, Vec<&CredentialRecord>> = HashMap::new();
-    for r in records.iter().filter(|r| !r.is_expired) {
+    for r in &records {
         by_schema.entry(r.issuer_schema_id).or_default().push(r);
     }
 
     let mut check_results: Vec<CredentialConstraintsCheckItem> = Vec::new();
     for item in &request.0.requests {
-        let expires_min = item.expires_at_min.unwrap_or(request.0.created_at);
-        let genesis_min = item.genesis_issued_at_min.unwrap_or(0);
-
         let has_credential =
             by_schema.get(&item.issuer_schema_id).is_some_and(|creds| {
-                creds.iter().any(|r| {
-                    r.expires_at > expires_min && r.genesis_issued_at >= genesis_min
-                })
+                creds
+                    .iter()
+                    .any(|r| is_usable_for(r, item, request.0.created_at))
             });
 
         check_results.push(CredentialConstraintsCheckItem {

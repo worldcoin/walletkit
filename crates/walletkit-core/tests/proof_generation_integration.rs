@@ -16,6 +16,7 @@
 use alloy::primitives::Address;
 use rand::rngs::OsRng;
 use tempfile::TempDir;
+use walletkit_core::CredentialFilter;
 use walletkit_testkit::issuer::issue_local_credential;
 use walletkit_testkit::proof::build_test_request;
 use walletkit_testkit::utils::now_secs;
@@ -127,7 +128,11 @@ async fn e2e_session_proof() -> Result<()> {
     )
     .wrap_err("failed to build create-session request")?;
     let create_response = authenticator
-        .generate_proof(&create_request.clone().into(), Some(now_secs()))
+        .generate_proof(
+            &create_request.clone().into(),
+            &CredentialFilter::new(),
+            Some(now_secs()),
+        )
         .await
         .wrap_err("generate_proof (create session) failed")?
         .into_inner();
@@ -168,7 +173,11 @@ async fn e2e_session_proof() -> Result<()> {
     )
     .wrap_err("failed to build session request")?;
     let session_response = authenticator
-        .generate_proof(&session_request.clone().into(), Some(now_secs()))
+        .generate_proof(
+            &session_request.clone().into(),
+            &CredentialFilter::new(),
+            Some(now_secs()),
+        )
         .await
         .wrap_err("generate_proof (session) failed")?
         .into_inner();

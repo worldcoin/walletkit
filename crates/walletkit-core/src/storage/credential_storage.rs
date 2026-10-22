@@ -674,6 +674,21 @@ impl CredentialStore {
         self.lock_inner()?.get_credential(issuer_schema_id, now)
     }
 
+    /// Retrieves a full credential including raw bytes by credential ID.
+    ///
+    /// Returns the given credential version regardless of its expiry.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::CredentialIdNotFound`] if no credential has this
+    /// ID, or an error if the credential query fails.
+    pub fn get_credential_by_id(
+        &self,
+        credential_id: u64,
+    ) -> StorageResult<(Credential, FieldElement)> {
+        self.lock_inner()?.get_credential_by_id(credential_id)
+    }
+
     /// Checks whether a replay guard entry exists for the given nullifier.
     ///
     /// # Returns
@@ -762,32 +777,24 @@ impl CredentialStoreInner {
         issuer_schema_id: u64,
         now: u64,
     ) -> StorageResult<Option<(Credential, FieldElement)>> {
-        let state = self.state()?;
-        if let Some((credential_bytes, blinding_factor_bytes)) = state
+        self.state()?
             .vault
             .fetch_credential_and_blinding_factor(issuer_schema_id, now)?
-        {
-            let credential = Credential::from_bytes(credential_bytes).map_err(|e| {
-                StorageError::Serialization(format!(
-                    "Critical. Failed to deserialize credential: {e}"
-                ))
-            })?;
+            .map(|(credential_bytes, blinding_factor_bytes)| {
+                decode_credential(credential_bytes, blinding_factor_bytes)
+            })
+            .transpose()
+    }
 
-            let blinding_factor = CoreFieldElement::from_be_bytes(
-                &blinding_factor_bytes.try_into().map_err(|_| {
-                    StorageError::Serialization(
-                        "Critical. Blinding factor has invalid length".to_string(),
-                    )
-                })?,
-            )
-            .map_err(|e| {
-                StorageError::Serialization(format!(
-                    "Critical. Failed to deserialize blinding factor: {e}"
-                ))
-            })?;
-            return Ok(Some((credential, blinding_factor.into())));
-        }
-        Ok(None)
+    fn get_credential_by_id(
+        &self,
+        credential_id: u64,
+    ) -> StorageResult<(Credential, FieldElement)> {
+        let (credential_bytes, blinding_factor_bytes) = self
+            .state()?
+            .vault
+            .fetch_credential_and_blinding_factor_by_id(credential_id)?;
+        decode_credential(credential_bytes, blinding_factor_bytes)
     }
 
     fn store_credential(
@@ -1147,6 +1154,32 @@ impl CredentialStore {
     pub fn paths(&self) -> StorageResult<StoragePaths> {
         self.lock_inner().map(|inner| inner.paths.clone())
     }
+}
+
+fn decode_credential(
+    credential_bytes: Vec<u8>,
+    blinding_factor_bytes: Vec<u8>,
+) -> StorageResult<(Credential, FieldElement)> {
+    let credential = Credential::from_bytes(credential_bytes).map_err(|e| {
+        StorageError::Serialization(format!(
+            "Critical. Failed to deserialize credential: {e}"
+        ))
+    })?;
+
+    let blinding_factor = CoreFieldElement::from_be_bytes(
+        &blinding_factor_bytes.try_into().map_err(|_| {
+            StorageError::Serialization(
+                "Critical. Blinding factor has invalid length".to_string(),
+            )
+        })?,
+    )
+    .map_err(|e| {
+        StorageError::Serialization(format!(
+            "Critical. Failed to deserialize blinding factor: {e}"
+        ))
+    })?;
+
+    Ok((credential, blinding_factor.into()))
 }
 
 #[cfg(test)]

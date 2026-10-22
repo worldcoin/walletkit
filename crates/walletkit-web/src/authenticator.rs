@@ -16,7 +16,7 @@ use zeroize::Zeroizing;
 use crate::{
     error::{invalid_argument, to_js},
     js,
-    storage::JsCredentialStore,
+    storage::{JsCredentialFilter, JsCredentialStore},
     values::{JsFieldElement, JsProofRequest, JsProofResponse},
 };
 
@@ -432,27 +432,32 @@ impl JsAuthenticator {
         })
     }
 
-    /// Generates a proof for `proof_request` from the stored credentials.
+    /// Generates a proof for `proof_request` from the stored credentials that
+    /// `CredentialStore.selectCredentials` selects with the same `filter`.
     ///
     /// `now` is the current unix time in seconds and defaults to the browser clock, which
     /// core cannot read on wasm.
     ///
     /// # Errors
-    /// Rejects when no credential satisfies the request, the request is a replay, or proving fails.
+    /// Rejects when no selection satisfies the request and `filter`, the request is a
+    /// replay, or proving fails.
     #[wasm_bindgen(js_name = generateProof, unchecked_return_type = "Promise<ProofResponse>")]
     pub fn generate_proof(
         &self,
         proof_request: &JsProofRequest,
+        filter: &JsCredentialFilter,
         now: Option<BigInt>,
     ) -> Promise {
         let authenticator = Arc::clone(&self.0);
         let proof_request = proof_request.0.clone();
+        let filter = filter.0.clone();
         let now = js::optional_u64_arg("now", now);
         js::promise(async move {
             let now = now?;
             let response = authenticator
                 .generate_proof(
                     &proof_request,
+                    &filter,
                     Some(now.unwrap_or_else(js::now_seconds)),
                 )
                 .await

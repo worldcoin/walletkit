@@ -274,6 +274,8 @@ test("Rust errors keep their name and variant detail across the worker", async (
     const query = await wallet.ActivityQuery.new();
     const negativeLimit = await capture(store.listActivities(query, -1, 0));
     const negativeEntryId = await capture(store.deleteActivities([-1n]));
+    const filter = await wallet.CredentialFilter.new();
+    const negativeCredentialId = await capture(filter.requiringAnyOf([-1n]));
     await wallet.close();
     return {
       invalidSeed,
@@ -283,6 +285,7 @@ test("Rust errors keep their name and variant detail across the worker", async (
       code,
       negativeLimit,
       negativeEntryId,
+      negativeCredentialId,
     };
   });
   expect(result.invalidSeed.name).toBe("WalletKitError");
@@ -292,11 +295,68 @@ test("Rust errors keep their name and variant detail across the worker", async (
   expect(result.negativeLimit.message).toContain("limit");
   expect(result.negativeEntryId.name).toBe("TypeError");
   expect(result.negativeEntryId.message).toContain("entryIds");
+  expect(result.negativeCredentialId.name).toBe("TypeError");
+  expect(result.negativeCredentialId.message).toContain("credentialIds");
   expect(result.invalidKey.name).toBe("StorageError");
   expect(result.invalidCredential.name).toBe("WalletKitError");
   expect(result.unknownEnvironment).toEqual({
     name: "TypeError",
     message: "Unknown environment: moon",
+  });
+});
+
+test("selectCredentials rejects a request the store cannot answer", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const w = window as any;
+    const wallet = await w.initializeWalletKit();
+    try {
+      const keys = await wallet.StorageKeys.fromBytes(
+        new Uint8Array(32).fill(4),
+      );
+      const paths = await wallet.StoragePaths.fromRoot("/walletkit/select");
+      const store = await wallet.CredentialStore.new(paths, keys);
+      await store.init(42n, 1000n);
+      const request = await wallet.ProofRequest.fromJson(
+        JSON.stringify({
+          id: "test_request",
+          version: 1,
+          proof_type: "uniqueness",
+          created_at: 1700000000,
+          expires_at: 4000000000,
+          rp_id: "rp_0000000000000001",
+          oprf_key_id: "0x1",
+          session_id: null,
+          action:
+            "0x0000000000000000000000000000000000000000000000000000000000000001",
+          signature:
+            "0xa1fd06f0d8ceb541f6096fe2e865063eac1ff085c9d2bac2eedcc9ed03804bfc18d956b38c5ac3a8f7e71fde43deff3bda254d369c699f3c7a3f8e6b8477a5f51c",
+          nonce:
+            "0x0000000000000000000000000000000000000000000000000000000000000002",
+          proof_requests: [
+            { identifier: "passport", issuer_schema_id: 1 },
+            { identifier: "orb", issuer_schema_id: 2 },
+          ],
+          constraints: { any: ["passport", "orb"] },
+        }),
+      );
+      const filter = await (
+        await wallet.CredentialFilter.new()
+      ).requiringAnyOf([20n]);
+      return await store
+        .selectCredentials(request, filter, 1000n)
+        .catch((e: Error & { code?: string }) => ({
+          name: e.name,
+          code: e.code,
+        }));
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result).toEqual({
+    name: "WalletKitError",
+    code: "UnfulfillableRequest",
   });
 });
 

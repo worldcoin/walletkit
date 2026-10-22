@@ -95,9 +95,16 @@ Cross-origin isolation headers aren't required.
    await authenticator.initStorage(BigInt(Math.floor(Date.now() / 1000)));
    const request = await walletkit.ProofRequest.fromJson(requestJson);
    const proofJson = await (
-     await authenticator.generateProof(request)
+     await authenticator.generateProof(
+       request,
+       await walletkit.CredentialFilter.new(), // Allow every stored credential.
+     )
    ).toJson();
    ```
+
+   To see which credentials a proof will use before generating it, call
+   `store.selectCredentials(request, filter, now)`. To prove that exact selection,
+   pass its credential IDs to `CredentialFilter.pinnedTo`.
 
 Importing the package is safe during server-side rendering; call
 `initializeWalletKit` only in the browser. For a complete registration, issuance,

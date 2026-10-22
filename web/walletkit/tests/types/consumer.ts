@@ -6,6 +6,7 @@ import type {
   Authenticator,
   CredentialRecord,
   RegistrationStatus,
+  SelectedCredential,
   WalletKit,
 } from "../../dist/index.js";
 
@@ -60,7 +61,18 @@ export async function consumer() {
     );
   const status: RegistrationStatus = await registration.pollStatus();
   const request = await walletkit.ProofRequest.fromJson("{}");
-  const response = await authenticator.generateProof(request);
+  const filter = await (
+    await walletkit.CredentialFilter.new()
+  ).requiringAnyOf([1n]);
+  const selection: SelectedCredential[] = await store.selectCredentials(
+    request,
+    filter,
+    now,
+  );
+  const pinned = await (
+    await walletkit.CredentialFilter.new()
+  ).pinnedTo(selection.map((selected) => selected.credentialId));
+  const response = await authenticator.generateProof(request, pinned);
   const responseJson: string = await response.toJson();
   const recovery = await walletkit.recoveryDataFromSeed(new Uint8Array(32));
   const address: string = recovery.authenticatorAddress;
@@ -75,6 +87,8 @@ export async function consumer() {
   void walletkit.Authenticator.missing;
   // @ts-expect-error not an `Environment`
   await walletkit.pohRecoveryAgentAddress("moon");
+  // @ts-expect-error a filter is required
+  await authenticator.generateProof(request);
   // @ts-expect-error not a `LogLevel`
   await walletkit.emitLog("loud", "message");
   // @ts-expect-error wasm-bindgen internals are not part of the API

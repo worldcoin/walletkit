@@ -10,7 +10,7 @@
 //! use walletkit_core::authenticator::artifacts::embedded::EmbeddedZkArtifacts;
 //! use walletkit_core::requests::ProofRequest;
 //! use walletkit_core::storage::CredentialStore;
-//! use walletkit_core::{Authenticator, Environment};
+//! use walletkit_core::{Authenticator, CredentialFilter, Environment};
 //!
 //! async fn generate_world_id_proof(
 //!     store: Arc<CredentialStore>,
@@ -34,7 +34,9 @@
 //!     let request = ProofRequest::from_json(json)?;
 //!
 //!     // Generate a zero-knowledge proof and serialise the response.
-//!     let response = authenticator.generate_proof(&request, None).await?;
+//!     let response = authenticator
+//!         .generate_proof(&request, &CredentialFilter::new(), None)
+//!         .await?;
 //!     println!("{}", response.to_json()?);
 //!     Ok(())
 //! }
@@ -139,6 +141,9 @@ pub mod requests;
 
 /// Pre-flight check of whether stored credentials can satisfy a [`requests::ProofRequest`].
 pub mod proof_request_credential_constraints_check;
+
+pub mod credential_selection;
+pub use credential_selection::{CredentialFilter, SelectedCredential};
 
 mod proof;
 pub use proof::OwnershipProof;

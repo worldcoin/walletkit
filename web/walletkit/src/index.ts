@@ -6,6 +6,7 @@ export type {
   ActivityQuery,
   Authenticator,
   Credential,
+  CredentialFilter,
   CredentialStore,
   EmbeddedZkArtifacts,
   FieldElement,
@@ -34,6 +35,7 @@ export type {
   RecoveryUpdateSignature,
   Region,
   RegistrationStatus,
+  SelectedCredential,
 } from "./generated/walletkit.js";
 
 export interface InitializeOptions {
