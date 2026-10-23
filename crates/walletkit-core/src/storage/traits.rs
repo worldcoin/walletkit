@@ -116,13 +116,12 @@ pub trait VaultChangedListener: Send + Sync {
     fn on_vault_changed(&self);
 }
 
-/// Listener notified when credential-activity history changes.
+/// Conform to `ActivityChangedListener` to be notified via `on_activity_changed`
+/// when the contents of the activity history dataset has changed.
 ///
 /// Register via [`super::CredentialStore::set_activity_changed_listener`]. The
 /// callback is delivered on a dedicated background thread to avoid re-entering
 /// the `UniFFI` call stack (see `logger.rs` for rationale).
-///
-/// This is only called when an activity entry is recorded.
 ///
 /// # Expected usage
 ///
