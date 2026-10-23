@@ -3,9 +3,24 @@
 // statics, instance methods, records and free functions must keep their types, and
 // worker internals must stay out of reach.
 import type {
+  ApprovalOutcome,
+  ApprovalResult,
   Authenticator,
+  BridgeClient,
+  CheckedRegistration,
   CredentialRecord,
+  IncomingRegistration,
+  KnownAuthenticator,
+  PendingRegistration,
+  Registered,
+  RegistrationError,
+  RegistrationErrorReason,
+  RegistrationPlan,
+  RegistrationRequester,
+  RegistrationResult,
   RegistrationStatus,
+  RequestedClass,
+  RequesterStatus,
   WalletKit,
 } from "../../dist/index.js";
 
@@ -62,6 +77,64 @@ export async function consumer() {
   const request = await walletkit.ProofRequest.fromJson("{}");
   const response = await authenticator.generateProof(request);
   const responseJson: string = await response.toJson();
+  const restarted: Authenticator =
+    await walletkit.Authenticator.initWithLeafIndexAndDefaults(
+      new Uint8Array(32),
+      leafIndex,
+      undefined,
+      "staging",
+      undefined,
+      artifacts,
+      store,
+    );
+  const bridge: BridgeClient =
+    await walletkit.BridgeClient.new("bridge.example");
+  const requester: RegistrationRequester =
+    await walletkit.RegistrationRequester.start(
+      new Uint8Array(32),
+      "proving",
+      "Chrome on MacBook",
+      bridge,
+    );
+  const pairingUri: string | undefined = await requester.pairingUri();
+  const requesterStatus: RequesterStatus = await requester.poll();
+  let verifiedVault: Uint8Array | undefined;
+  if (requesterStatus.state === "refused") {
+    const error: RegistrationError = requesterStatus.error;
+    const reason: RegistrationErrorReason | undefined = error.reason;
+    void reason;
+  }
+  if (requesterStatus.state === "approved") {
+    // A Rust object inside a record arrives as a proxy.
+    const result: RegistrationResult = requesterStatus.result;
+    const others: KnownAuthenticator[] = await result.authenticators();
+    const registered: Registered = await requester.verifyWithDefaults(
+      new Uint8Array(32),
+      result,
+      undefined,
+      "staging",
+      undefined,
+      artifacts,
+      store,
+    );
+    const registeredLeaf: bigint = await registered.authenticator.leafIndex();
+    verifiedVault = registered.vaultBackup;
+    void [others, registeredLeaf];
+  }
+  const pending: PendingRegistration =
+    await walletkit.PendingRegistration.receive(pairingUri ?? "", bridge);
+  const incoming: IncomingRegistration = await pending.authenticate("ABCDEF");
+  const requestedClass: RequestedClass = await incoming.class();
+  const requestedName: string | undefined = await incoming.name();
+  const checked: CheckedRegistration = await incoming.check(authenticator);
+  const plan: RegistrationPlan = await checked.plan();
+  const outcome: ApprovalOutcome = await checked.approve(
+    authenticator,
+    undefined,
+    [{ pubkeyId: 0, name: "iPhone" }],
+  );
+  const approval: ApprovalResult = outcome.result;
+  const declined: boolean = await checked.reject();
   const recovery = await walletkit.recoveryDataFromSeed(new Uint8Array(32));
   const address: string = recovery.authenticatorAddress;
   const redacted: string = await walletkit.sanitizeHexSecrets("0x00");
@@ -85,6 +158,18 @@ export async function consumer() {
   await factor.free().then(() => {});
   // @ts-expect-error records are plain data, not proxies
   recovery.free();
+  await walletkit.RegistrationRequester.start(
+    new Uint8Array(32),
+    // @ts-expect-error not a `RequestedClass`
+    "root",
+    undefined,
+    bridge,
+  );
+  if (requesterStatus.state === "approved") {
+    // @ts-expect-error a proxied result has asynchronous methods
+    const syncLeaf: bigint = requesterStatus.result.leafIndex();
+    void syncLeaf;
+  }
 
   return {
     added,
@@ -100,5 +185,13 @@ export async function consumer() {
     address,
     redacted,
     stopped,
+    restarted,
+    verifiedVault,
+    requestedClass,
+    requestedName,
+    plan,
+    outcome,
+    approval,
+    declined,
   };
 }

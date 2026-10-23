@@ -608,3 +608,160 @@ test("vault backups merge additively, reject invalid data, and survive reopening
 
   expect(result.reopenedRecords).toEqual(result.mergedRecords);
 });
+
+/** A message-bridge on `https://bridge.test`, with single-use reads like the real one. */
+async function stubBridge(page: import("@playwright/test").Page) {
+  type Session =
+    | { state: "initialized"; request: unknown }
+    | { state: "retrieved" }
+    | { state: "completed"; response: unknown };
+  const sessions = new Map<string, Session>();
+  const cors = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, POST, PUT",
+    "access-control-allow-headers": "content-type",
+  };
+  await page.context().route("https://bridge.test/**", async (route) => {
+    const request = route.request();
+    if (request.method() === "OPTIONS")
+      return route.fulfill({ status: 204, headers: cors });
+    const [, kind, id] = new URL(request.url()).pathname.split("/");
+    const reply = (status: number, body?: unknown) =>
+      route.fulfill({ status, headers: cors, json: body });
+    const session = id === undefined ? undefined : sessions.get(id);
+    if (kind === "request" && request.method() === "POST") {
+      const { request_id, ...stored } = request.postDataJSON();
+      sessions.set(request_id, { state: "initialized", request: stored });
+      return reply(200);
+    }
+    if (kind === "request" && request.method() === "GET") {
+      if (session?.state !== "initialized") return reply(404);
+      sessions.set(id, { state: "retrieved" });
+      return reply(200, session.request);
+    }
+    if (kind === "response" && request.method() === "GET") {
+      if (!session) return reply(404);
+      if (session.state === "completed") {
+        sessions.delete(id);
+        return reply(200, { status: "completed", response: session.response });
+      }
+      return reply(200, { status: session.state, response: null });
+    }
+    if (kind === "response" && request.method() === "PUT") {
+      if (!session) return reply(400);
+      if (session.state === "completed") return reply(409);
+      sessions.set(id, {
+        state: "completed",
+        response: request.postDataJSON(),
+      });
+      return reply(201);
+    }
+    return reply(404);
+  });
+}
+
+test("two authenticators pair through the bridge and the refusal reaches the requester", async ({
+  page,
+}) => {
+  await stubBridge(page);
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    const failure = (e: Error & { code?: string }) => `${e.name}: ${e.code}`;
+    try {
+      const bridge = await wallet.BridgeClient.withBaseUrl(
+        "bridge.example",
+        "https://bridge.test",
+      );
+      const invalidDomain =
+        await wallet.BridgeClient.new("not a domain").catch(failure);
+      const requester = await wallet.RegistrationRequester.start(
+        new Uint8Array(32).fill(7),
+        "proving",
+        "Chrome on MacBook",
+        bridge,
+      );
+      const uri: string = await requester.pairingUri();
+      const waiting = await requester.poll();
+      // Another bridge is refused before the request is taken, so the host can retry.
+      const otherBridge = await wallet.BridgeClient.withBaseUrl(
+        "other.example",
+        "https://bridge.test",
+      );
+      const notAllowed = await wallet.PendingRegistration.receive(
+        uri,
+        otherBridge,
+      ).catch((e: Error & { code?: string; domain?: string }) => ({
+        code: e.code,
+        domain: e.domain,
+      }));
+      const pending = await wallet.PendingRegistration.receive(uri, bridge);
+      const reused = await wallet.PendingRegistration.receive(
+        uri,
+        bridge,
+      ).catch(failure);
+      const retrieved = await requester.poll();
+      const uriAfterRetrieval = await requester.pairingUri();
+      const code: string = await requester.pairingCode();
+      const malformed = await pending.authenticate("12").catch(failure);
+      const incorrect = await pending
+        .authenticate(code === "AAAAAA" ? "BBBBBB" : "AAAAAA")
+        .catch((e: Error & { code?: string; attemptsRemaining?: number }) => ({
+          code: e.code,
+          attemptsRemaining: e.attemptsRemaining,
+        }));
+      const incoming = await pending.authenticate(code);
+      const requested = {
+        class: await incoming.class(),
+        name: await incoming.name(),
+        timeRemaining: await incoming.timeRemainingSecs(),
+      };
+      const delivered = await incoming.rejectName();
+      const again = await incoming.rejectName().catch(failure);
+      const refused = await requester.poll();
+      const afterRefusal = await requester.poll();
+      return {
+        invalidDomain,
+        uri,
+        waiting,
+        notAllowed,
+        reused,
+        retrieved,
+        uriAfterRetrieval,
+        malformed,
+        incorrect,
+        requested,
+        delivered,
+        again,
+        refused,
+        afterRefusal,
+      };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result.invalidDomain).toBe("BridgeError: InvalidDomain");
+  expect(result.uri).toMatch(/^worldid:\/\/auth\/v1\/register\?/);
+  expect(result.waiting).toEqual({ state: "waiting" });
+  expect(result.notAllowed).toEqual({
+    code: "BridgeNotAllowed",
+    domain: "bridge.example",
+  });
+  expect(result.reused).toBe("ApproverError: Expired");
+  expect(result.retrieved).toEqual({ state: "retrieved" });
+  expect(result.uriAfterRetrieval).toBeUndefined();
+  expect(result.malformed).toBe("ApproverError: MalformedCode");
+  expect(result.incorrect).toEqual({
+    code: "IncorrectCode",
+    attemptsRemaining: 2,
+  });
+  expect(result.requested.class).toBe("proving");
+  expect(result.requested.name).toBe("Chrome on MacBook");
+  expect(result.requested.timeRemaining).toBeGreaterThan(0n);
+  expect(result.delivered).toBe(true);
+  expect(result.again).toBe("ApproverError: AlreadyHandled");
+  expect(result.refused).toMatchObject({
+    state: "refused",
+    error: { reason: "invalid_name", code: "invalid_name" },
+  });
+  expect(result.afterRefusal).toEqual({ state: "expired" });
+});
