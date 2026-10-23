@@ -9,8 +9,7 @@
 //! opaque handles. Records, such as registration status or credential records, are
 //! returned as plain structured-clone data. Only the surface the browser can serve is
 //! exported: there are no foreign traits or callbacks. Vault backup export and
-//! replacement import, change listeners and credential ownership proofs are
-//! native-only in core.
+//! replacement import and change listeners are native-only in core.
 
 #![cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 

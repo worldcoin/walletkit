@@ -460,6 +460,49 @@ impl JsAuthenticator {
             Ok(JsProofResponse(response).into())
         })
     }
+
+    /// Generates a WIP-103 ownership proof for the credential `sub` and returns it CBOR-encoded,
+    /// the format issuers expect.
+    ///
+    /// Call this only from a direct user action. `now` is the current unix time in seconds and
+    /// defaults to the browser clock.
+    ///
+    /// # Errors
+    /// Rejects when `sub` doesn't match this account and `blindingFactor`, the inclusion proof
+    /// can't be fetched, or proving fails.
+    #[wasm_bindgen(js_name = proveCredentialSub, unchecked_return_type = "Promise<Uint8Array>")]
+    pub fn prove_credential_sub(
+        &self,
+        nonce: &JsFieldElement,
+        context: &JsFieldElement,
+        blinding_factor: &JsFieldElement,
+        sub: &JsFieldElement,
+        now: Option<BigInt>,
+    ) -> Promise {
+        let authenticator = Arc::clone(&self.0);
+        let (nonce, context, blinding_factor, sub) = (
+            nonce.0.clone(),
+            context.0.clone(),
+            blinding_factor.0.clone(),
+            sub.0.clone(),
+        );
+        let now = js::optional_u64_arg("now", now);
+        js::promise(async move {
+            let now = now?;
+            let proof = authenticator
+                .prove_credential_sub_at(
+                    &nonce,
+                    &context,
+                    &blinding_factor,
+                    &sub,
+                    now.unwrap_or_else(js::now_seconds),
+                )
+                .await
+                .map_err(to_js)?;
+            let encoded = proof.encode().map_err(to_js)?;
+            Ok(js_sys::Uint8Array::from(encoded.as_slice()).into())
+        })
+    }
 }
 
 /// A World ID registration that has been submitted but not yet finalized.
