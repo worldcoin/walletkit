@@ -52,6 +52,88 @@ test("packaged worker initializes, correlates calls, reports errors and closes",
   expect(result.closed).toContain("closed");
 });
 
+test("draft challenge calls validate configuration and leave queued calls usable", async ({
+  page,
+}) => {
+  const workerCreated = page.waitForEvent("worker");
+  await page.evaluate(async () => {
+    (window as any).wallet = await (window as any).initializeWalletKit();
+  });
+  const worker = await workerCreated;
+  await worker.evaluate(() => {
+    (self as any).challengeConnections = 0;
+    self.WebSocket = new Proxy(WebSocket, {
+      construct() {
+        (self as any).challengeConnections += 1;
+        throw new Error("Unexpected challenge connection");
+      },
+    });
+  });
+  try {
+    const result = await page.evaluate(async () => {
+      const wallet = (window as any).wallet;
+      const config = {
+        endpoint: "ws://127.0.0.1:1/v1/challenges",
+        releases: [
+          {
+            pcr0: "1".repeat(96),
+            pcr1: "2".repeat(96),
+            pcr2: "3".repeat(96),
+          },
+        ],
+      };
+      const capture = (configJson: string) =>
+        wallet.prepareSelfieChallenge(configJson).then(
+          () => ({ name: "none", message: "unexpected success" }),
+          (e: Error & { code?: string }) => ({
+            name: e.name,
+            message: e.message,
+            code: e.code,
+            typeError: e instanceof TypeError,
+          }),
+        );
+      const [invalidJson, invalidConfig, unavailable, recovery] =
+        await Promise.all([
+          capture("{"),
+          capture(JSON.stringify({ ...config, releases: [] })),
+          capture(JSON.stringify(config)),
+          wallet.recoveryDataFromSeed(new Uint8Array(32).fill(1)),
+        ]);
+      const followUp = await wallet.sanitizeHexSecrets("still usable");
+      return {
+        invalidJson,
+        invalidConfig,
+        unavailable,
+        address: recovery.authenticatorAddress,
+        followUp,
+        stopped: wallet.isStopped(),
+      };
+    });
+    for (const rejection of [result.invalidJson, result.invalidConfig]) {
+      expect(rejection).toMatchObject({
+        name: "TypeError",
+        message: "Invalid selfie challenge configuration",
+        typeError: true,
+      });
+    }
+    expect(result.unavailable).toMatchObject({
+      name: "SelfieChallengeError",
+      code: "Unavailable",
+      message:
+        "TEE challenge generation is not available in the enrollment client yet",
+      typeError: false,
+    });
+    expect(result.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(result.followUp).toBe("still usable");
+    expect(result.stopped).toBe(false);
+    expect(
+      await worker.evaluate(() => (self as any).challengeConnections),
+    ).toBe(0);
+  } finally {
+    await page.evaluate(async () => (window as any).wallet.close());
+  }
+});
+
 test("second owner fails and storage can reopen after close", async ({
   page,
 }) => {

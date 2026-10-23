@@ -24,6 +24,8 @@ export type {
   ActivityFailureReason,
   ActivityMetadata,
   ActivityOutcome,
+  ChallengeOption,
+  ChallengeTranscript,
   CredentialConstraintsCheckItem,
   CredentialConstraintsCheckResult,
   CredentialRecord,

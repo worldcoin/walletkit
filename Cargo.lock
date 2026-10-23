@@ -3820,7 +3820,7 @@ dependencies = [
  "hybrid-array",
  "ml-kem",
  "p256 0.14.0",
- "p384 0.14.0",
+ "p384",
  "p521",
  "rand_core 0.10.1",
  "sha2 0.11.0",
@@ -5332,26 +5332,16 @@ dependencies = [
 
 [[package]]
 name = "p384"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe42f1670a52a47d448f14b6a5c61dd78fce51856e68edaa38f7ae3a46b8d6b6"
-dependencies = [
- "ecdsa 0.16.9",
- "elliptic-curve 0.13.8",
- "primeorder 0.13.6",
- "sha2 0.10.9",
-]
-
-[[package]]
-name = "p384"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d17b851e6b3e378ab4ecb07fa2ed23f4d15f075735f8fec9fa1e7bdce5f8301f"
 dependencies = [
+ "ecdsa 0.17.0",
  "elliptic-curve 0.14.1",
  "fiat-crypto",
  "primefield",
  "primeorder 0.14.0",
+ "sha2 0.11.0",
 ]
 
 [[package]]
@@ -5585,19 +5575,20 @@ dependencies = [
 
 [[package]]
 name = "pontifex"
-version = "3.0.0"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61e0b647584ea9fc77a705a58c05c46f4ef4c1d7ee1bc3c7d4d83a75c3c5da5e"
+checksum = "320dd12cc1221137d8548da7acc0f2fd34e3276377a4c25ac64eadc183e2398e"
 dependencies = [
  "ciborium",
  "const-fnv1a-hash",
  "coset",
- "getrandom 0.2.17",
- "p384 0.13.1",
+ "getrandom 0.4.3",
+ "p384",
  "quantum-box",
+ "ring",
  "serde",
  "serde_bytes",
- "sha2 0.10.9",
+ "sha2 0.11.0",
  "thiserror 2.0.21",
  "tokio",
  "tracing",
@@ -7182,6 +7173,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "selfie-enrollment-api-types"
+version = "0.1.0"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=fa3a5e0f52ab595cdcf7403a89087500b2242afd#fa3a5e0f52ab595cdcf7403a89087500b2242afd"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "selfie-enrollment-client"
+version = "0.1.0"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=fa3a5e0f52ab595cdcf7403a89087500b2242afd#fa3a5e0f52ab595cdcf7403a89087500b2242afd"
+dependencies = [
+ "base64 0.22.1",
+ "futures-channel",
+ "futures-util",
+ "gloo-timers",
+ "hex",
+ "js-sys",
+ "pontifex",
+ "rustls",
+ "selfie-enrollment-api-types",
+ "selfie-enrollment-sealed-types",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "url",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+ "webpki-roots 0.26.11",
+ "zeroize",
+]
+
+[[package]]
+name = "selfie-enrollment-sealed-types"
+version = "0.1.0"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=fa3a5e0f52ab595cdcf7403a89087500b2242afd#fa3a5e0f52ab595cdcf7403a89087500b2242afd"
+dependencies = [
+ "ciborium",
+ "selfie-enrollment-api-types",
+ "serde",
+ "serde_bytes",
+ "thiserror 2.0.21",
+ "zeroize",
+]
+
+[[package]]
 name = "semaphore-rs"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7452,6 +7495,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "11fc7cc2c76d73e0f27ee52abbd64eec84d46f370c88371120433196934e4b7f"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -9387,10 +9441,15 @@ dependencies = [
 name = "walletkit-web"
 version = "0.27.3"
 dependencies = [
+ "hex",
  "js-sys",
+ "selfie-enrollment-client",
+ "selfie-enrollment-sealed-types",
+ "serde_json",
  "walletkit-core",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-bindgen-test",
  "zeroize",
 ]
 

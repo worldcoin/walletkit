@@ -133,6 +133,105 @@ opens. The storage design has these parts:
   key through `StorageKeys.fromBytes`. No key envelope is written, so there is no
   envelope to delete in `destroyStorage()`.
 
+## Selfie challenge generation (code draft)
+
+The browser facade exports `prepareSelfieChallenge` through the existing
+`WalletKit` instance. **The draft cannot return a generated challenge yet**:
+invalid `configJson` rejects with `TypeError`, and valid configuration rejects
+with `SelfieChallengeError`, code `Unavailable`. The private `request_transcript`
+function is the integration point for the missing enrollment-client method and
+TEE generation RPC. The draft makes no network request and generates no browser
+randomness or substitute transcript.
+
+### One call returns the transcript
+
+The Rust facade supplies the export and generated TypeScript declarations. The
+package exports the record and option types:
+
+```ts
+type ChallengeOption = 0x00 | 0x01 | 0x02;
+
+type ChallengeTranscript = {
+  challengeId: string;
+  targetOptions: readonly [ChallengeOption, ChallengeOption, ChallengeOption];
+  expiresAtUnixMs: number;
+};
+
+declare function prepareSelfieChallenge(
+  configJson: string,
+): Promise<ChallengeTranscript>;
+```
+
+The option codes mean forward `0x00`, anatomical left `0x01` and right `0x02`.
+The tuple fixes the length at three; the shared Rust decoder validates that each
+pose appears exactly once. The tuple alone does not validate data at runtime.
+`configJson` supplies the enrollment endpoint and enclave measurement policy.
+
+`crates/walletkit-web/src/challenge.rs` converts the shared Rust
+`ChallengeTranscript` into plain JavaScript data: a hexadecimal 16-byte ID, three
+numeric option codes and an expiry in UTC milliseconds. The shared transcript
+encoding is 27 bytes: the ID, the three options, then an eight-byte unsigned
+big-endian expiry. The facade rejects expiries outside JavaScript's safe integer
+range. WalletKit exposes no separate seed-generation or sequence-decoding
+service call.
+
+The shared types and enrollment client are pinned to
+[biometrics-tee #91](https://github.com/worldcoin/biometrics-tee/pull/91).
+[WalletKit #604](https://github.com/worldcoin/walletkit/pull/604) is related selfie
+extraction integration using the same client configuration; this draft does not
+require that WalletKit branch to build. #91 provides the shared types and enclave
+generation helper, but still needs a generation RPC and client method before
+`request_transcript` can return a real result.
+
+### Successful flow after the upstream RPC is added
+
+```mermaid
+sequenceDiagram
+  participant App as Web authenticator
+  participant WK as WalletKit worker
+  participant TEE as Biometrics TEE
+  App->>WK: prepareSelfieChallenge(configJson)
+  WK->>TEE: Verify assignment, then request a transcript
+  TEE->>TEE: Generate ID, private seed, pose sequence and expiry
+  TEE-->>WK: Encoded ChallengeTranscript
+  WK-->>App: Decoded challengeId, targetOptions and expiresAtUnixMs
+  App->>App: Select targetOptions[activeStep] and render its SVG
+```
+
+The enclave erases the seed after deriving the sequence. The web authenticator
+owns the option-to-component mapping and keeps `activeStep` separate from the
+transcript. TypeScript never derives or shuffles the sequence. **All three poses
+are revealed upfront**. A transcript describes the requested poses; it contains
+no captured evidence and does not establish completion.
+
+The eventual call resolves when the transcript arrives, without waiting for
+camera input. The page can queue multiple pending calls, but the existing worker
+executes them sequentially, including awaited work. A connection retained after
+a call resolves would not itself block the queue. This draft needs no worker
+scheduling changes or one-active-challenge restriction.
+
+The generator currently gives transcripts a 90-second prototype TTL, measured
+from generation. `expiresAtUnixMs` supports the browser countdown; the browser's
+clock and capture timestamps cannot establish timely submission. The enclave
+must timestamp receipt of the complete evidence before queueing evaluation. The
+planned submission handler uses that receipt time to check the stored run's
+deadline, verifies ownership and unused status, and atomically reserves the run
+before biometric evaluation. It rejects submissions received at or after the
+deadline; timely submissions may finish evaluation later.
+
+These are internal steps of the same submission call. WalletKit needs no separate
+timestamp-check, completion-check or per-picture embedding call. The intended
+flow is preparation, client capture, then one evidence submission whose result
+covers challenge evaluation and embedding extraction from accepted evidence.
+Submission acknowledgement alone must not be presented as successful completion.
+
+The generated timestamp currently uses the enclave's OS clock; it is not an
+attested time value. The eventual run registry must retain its own deadline,
+enforce it with an appropriate monotonic clock, bind ownership and remove expired
+runs. The submission handler and these internal checks remain unimplemented in
+this draft. The transcript field and expiry comparison helper do not implement a
+live run or authenticate challenge completion.
+
 ## Build output
 
 `bun run build` in `web/walletkit` produces the published `dist` directory:
