@@ -146,8 +146,8 @@ The browser API differs from the Swift and Kotlin bindings in these ways:
   0x-prefixed hex string.
 - `Environment`, `Region`, and other enums are lowercase strings, such as
   `"staging"` and `"eu"`. Records are plain objects.
-- Only `generateProof` defaults its `now` argument, to the browser clock. Pass
-  Unix seconds everywhere else.
+- Only `generateProof` and `proveCredentialSub` default their `now` argument, to
+  the browser clock. Pass Unix seconds everywhere else.
 - Objects stay in the worker until you call `free()` or they are garbage
   collected.
 
@@ -167,6 +167,16 @@ WalletKit reports failures in these ways:
 WalletKit logs its own warnings and errors to the worker's console. To redact hex
 secrets from your own messages before you log them, call
 `walletkit.sanitizeHexSecrets(text)`.
+
+## Prove credential ownership
+
+`authenticator.proveCredentialSub(nonce, context, blindingFactor, sub)` generates a
+WIP-103 ownership proof in the worker and resolves with its CBOR encoding, the
+format issuers accept. Call it only from a direct user action, never from an
+issuer, backend, or unauthenticated request flow.
+
+Proving runs in the worker and blocks the calls queued after it. To cancel, call
+`terminate()` and initialize a new instance.
 
 ## Manage the instance
 
@@ -202,7 +212,6 @@ These parts of the Swift and Kotlin bindings aren't available in the browser:
 | `Logger` and `initLogging`                                 | Not implemented for the browser.                                                                 |
 | Vault and activity change listeners                        | Not implemented for the browser.                                                                 |
 | Vault backup export and replacement import                 | Supported only on iOS and Android. Use `mergeVaultFromBackup` to import.                         |
-| `proveCredentialSub`                                       | Credential ownership proofs aren't supported on WASM.                                            |
 | Flamingo                                                   | Browser WebSockets can't send its signed handshake headers, and it relies on device attestation. |
 | `DeviceKeystore`, `AtomicBlobStore`, and `StorageProvider` | They need synchronous host callbacks. Use `StorageKeys.fromBytes`.                               |
 | `CachingZkArtifacts`                                       | The WASM module embeds the proving keys. Use `EmbeddedZkArtifacts`.                              |

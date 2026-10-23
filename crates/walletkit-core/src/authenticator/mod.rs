@@ -79,6 +79,34 @@ impl Authenticator {
             store,
         })
     }
+
+    /// Like [`Self::prove_credential_sub`], with the current unix time in seconds
+    /// supplied by the caller, as wasm32 targets must.
+    ///
+    /// # Errors
+    /// See [`Self::prove_credential_sub`].
+    pub async fn prove_credential_sub_at(
+        &self,
+        nonce: &FieldElement,
+        context: &FieldElement,
+        blinding_factor: &FieldElement,
+        sub: &FieldElement,
+        now: u64,
+    ) -> Result<OwnershipProof, WalletKitError> {
+        let inclusion_proof = self.fetch_inclusion_proof_with_cache(now).await?;
+        let proof = self
+            .inner
+            .prove_credential_sub(
+                nonce.0,
+                context.0,
+                blinding_factor.0,
+                sub.0,
+                Some(inclusion_proof),
+            )
+            .await?;
+
+        Ok(OwnershipProof(proof))
+    }
 }
 
 fn parse_authenticator_pubkey(
@@ -813,33 +841,14 @@ impl Authenticator {
         blinding_factor: &FieldElement,
         sub: &FieldElement,
     ) -> Result<OwnershipProof, WalletKitError> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = (nonce, context, blinding_factor, sub);
-            return Err(WalletKitError::Generic {
-                error: "credential ownership proofs are not supported on wasm32"
-                    .to_string(),
-            });
-        }
-
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let now = resolve_now(None)?;
-
-            let inclusion_proof = self.fetch_inclusion_proof_with_cache(now).await?;
-            let proof = self
-                .inner
-                .prove_credential_sub(
-                    nonce.0,
-                    context.0,
-                    blinding_factor.0,
-                    sub.0,
-                    Some(inclusion_proof),
-                )
-                .await?;
-
-            Ok(OwnershipProof(proof))
-        }
+        self.prove_credential_sub_at(
+            nonce,
+            context,
+            blinding_factor,
+            sub,
+            resolve_now(None)?,
+        )
+        .await
     }
 }
 

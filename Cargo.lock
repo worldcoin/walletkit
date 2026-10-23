@@ -2345,7 +2345,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2881,7 +2881,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3075,7 +3075,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4575,6 +4575,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
+name = "lzma-rs"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
+dependencies = [
+ "byteorder",
+ "crc",
+]
+
+[[package]]
 name = "lzma-sys"
 version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4938,7 +4948,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5780,9 +5790,9 @@ dependencies = [
 
 [[package]]
 name = "provekit-spongefish"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36fae7879976a7da05091f70da9652465b0dbba51adb8ae8e71731b1d47d047d"
+checksum = "041f618ad7143f0fd2485c96ce492bbfd740e91b2b2cfe9ba61f742468988838"
 dependencies = [
  "ark-ff 0.6.0",
  "ark-serialize 0.6.0",
@@ -5798,9 +5808,9 @@ dependencies = [
 
 [[package]]
 name = "provekit-spongefish-pow"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2482a98b65f7545992cc59f92d0e439c9ec0fcbc53e262c3be81d57bf9b33c0"
+checksum = "7384b4cf746f295cd570ad42586ef09d3e992dbe7a713ca259ecc9c0067ac510"
 dependencies = [
  "blake3",
  "bytemuck",
@@ -6279,7 +6289,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6776,7 +6786,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6856,7 +6866,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 1.0.10",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -8273,10 +8283,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9521,7 +9531,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -9844,9 +9854,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-authenticator"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d8dc06bc0d6dc3ff2fd0ab7eea4b0c790265e66c6c5ca762fcfe9de7cb0f2a4"
+checksum = "1eb8e3dad7a2d47f16a70fde7a524f8d18845fd5eb694ee48b1f37e8547fc275"
 dependencies = [
  "aes-gcm",
  "alloy",
@@ -9889,9 +9899,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-core"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27180e4b263b0a7f434c9f9b04e84f159b87237d97d020b6aeb73f9088eecacf"
+checksum = "51616fd48dedf1cdfddb4145a1018248c7aca261dc6db3af29ec2699887fcb99"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -9921,9 +9931,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-primitives"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a252c542f969b5a49b52d21e2899e8192a7bae5e64e612c9961aa6bb74e739d0"
+checksum = "f2d93a9fb4c168ece66fb892cc1e554498a92b6a22aadda2b18e585eeaf02e5e"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -9960,9 +9970,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-proof"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d7fe194d9bbc51b179a1ac9a1dd9c9b596a6c5034729d17d657f6de87f93bad"
+checksum = "4e4a8897e295db6ce4571f5ff151d947043b7ffa8be4a244cbe7f7f646eeeceb"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -9970,11 +9980,16 @@ dependencies = [
  "ark-groth16",
  "ark-serialize 0.6.0",
  "eyre",
+ "lzma-rs",
  "once_cell",
+ "postcard",
  "provekit-common",
  "provekit-prover",
  "provekit-r1cs-compiler",
+ "provekit-spongefish",
  "provekit-verifier",
+ "provekit_acvm",
+ "provekit_bn254_blackbox_solver",
  "rand 0.8.8",
  "rayon",
  "reqwest",
@@ -9996,9 +10011,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-registries"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8efb8fe8f431400c93a0d28f06187c5a65289f38758daa8bdc0c93ede931545a"
+checksum = "818cf3a3df2b2252be67d165944509bd0a19e40806ae1f94a28a7d446f874aef"
 dependencies = [
  "alloy",
  "anyhow",
