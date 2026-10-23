@@ -107,6 +107,9 @@ jobs:
       - name: Check formatting
         run: nix develop .#wasm --command bun run --cwd web/walletkit format:check
 
+      - name: Test WASM facade in a dedicated worker
+        run: nix develop .#wasm --command cargo test --locked --release -p walletkit-web --target wasm32-unknown-unknown --lib
+
       # The tests drive the installed Google Chrome (`channel: "chrome"`).
       - name: Run browser tests
         run: |
@@ -165,7 +168,7 @@ jobs:
           done
 
       - name: Upload package
-        if: steps.version.outputs.version
+        if: steps.version.outputs.version || github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: walletkit-web-package
