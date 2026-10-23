@@ -64,15 +64,16 @@ attested-request = { workspace = true }
 ctor = { workspace = true }
 flamingo-verifier-api-types = { workspace = true }
 flamingo-verifier-client = { workspace = true }
-flamingo-verifier-protocol = { workspace = true }
 flamingo-verifier-sealed-types = { workspace = true }
 reqwest = { workspace = true, features = ["brotli", "rustls"] }
 rustls = { workspace = true, features = ["ring"] }
 tokio-tungstenite = { workspace = true, features = ["handshake"] }
 webpki-root-certs = { workspace = true }
+world-id-flamingo = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 attested-request = { workspace = true, features = ["test-util"] }
+p256 = { workspace = true, features = ["ecdsa"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 sha2 = { workspace = true, features = ["force-soft"] }
