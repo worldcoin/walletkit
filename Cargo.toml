@@ -13,7 +13,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.27.3"
+version = "0.28.0"
 license = "MIT"
 edition = "2021"
 authors = ["World Contributors"]
@@ -33,6 +33,7 @@ alloy-core = { version = "1", default-features = false, features = [
 ] }
 async-trait = "0.1"
 attested-request = "0.1.0"
+axum = "0.8"
 backon = "1.6"
 base64 = "0.22"
 cc = "1"
@@ -43,10 +44,9 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-flamingo-verifier-api-types = "0.8.0"
-flamingo-verifier-client = "0.8.0"
-flamingo-verifier-protocol = "0.8.0"
-flamingo-verifier-sealed-types = "0.8.0"
+flamingo-verifier-api-types = "0.9.0"
+flamingo-verifier-client = "0.9.0"
+flamingo-verifier-sealed-types = "0.9.0"
 eyre = "0.6"
 futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"
@@ -54,6 +54,7 @@ hex = "0.4"
 hkdf = "0.12"
 log = "0.4"
 mockito = "1.6"
+p256 = { version = "0.13.2", default-features = false }
 rand = "0.8.6"
 regex = "1.11"
 reqwest = { version = "0.13", default-features = false }
@@ -85,19 +86,21 @@ uniffi = { version = "0.32.0", features = [
 ] }
 uuid = "1.10"
 wasm-bindgen-test = "=0.3.76"
+web-time = "1"
 webpki-root-certs = "1"
 xshell = "0.2.7"
 zeroize = "1"
 zip = { version = "9", default-features = false }
 
 # world-id-protocol crates
-world-id-core = { version = "0.16", default-features = false }
-world-id-proof = { version = "0.16", default-features = false }
+world-id-core = { version = "0.17", default-features = false }
+world-id-proof = { version = "0.17", default-features = false }
+world-id-flamingo = "0.17"
 
 # internal
-walletkit-core = { version = "0.27.3", path = "crates/walletkit-core", default-features = false }
-walletkit-db = { version = "0.27.3", path = "crates/walletkit-db" }
-walletkit-sqlite = { version = "0.27.3", path = "crates/walletkit-sqlite" }
+walletkit-core = { version = "0.28.0", path = "crates/walletkit-core", default-features = false }
+walletkit-db = { version = "0.28.0", path = "crates/walletkit-db" }
+walletkit-sqlite = { version = "0.28.0", path = "crates/walletkit-sqlite" }
 # Unpublished test helpers
 walletkit-testkit = { path = "crates/walletkit-testkit" }
 

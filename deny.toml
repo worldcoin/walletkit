@@ -56,7 +56,8 @@ ignore = [
   { id = "RUSTSEC-2026-0374", reason = "unmaintained basic-toml required by Askama; no patched release" },
   # webpki-roots / webpki-root-certs 0.26.11 are shims that re-export the 1.x crates (locked
   # at 1.0.10, which removes the emSign root), but the advisories still match them. webpki-roots
-  # 0.26 comes from flamingo-verifier-client and tokio-tungstenite; webpki-root-certs 0.26 from
+  # 0.26 remains through taceo-oprf-client enabling tokio-tungstenite's roots feature;
+  # webpki-root-certs 0.26 comes from
   # rustls-platform-verifier 0.5 via jsonrpsee. Drop these once none of them depends on 0.26.
   { id = "RUSTSEC-2026-0381", reason = "only matches the webpki-roots 0.26.11 shim over 1.0.10" },
   { id = "RUSTSEC-2026-0383", reason = "only matches the webpki-root-certs 0.26.11 shim over 1.0.10" },
