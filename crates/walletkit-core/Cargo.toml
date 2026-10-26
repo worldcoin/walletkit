@@ -25,11 +25,12 @@ alloy-core = { workspace = true }
 backon = { workspace = true }
 base64 = { workspace = true }
 ciborium = { workspace = true }
+futures-util = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
 log = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true, features = ["json"] }
+reqwest = { workspace = true, features = ["json", "stream"] }
 ruint = { workspace = true, features = ["alloc"] }
 ruint-uniffi = { workspace = true, features = ["serde"] }
 secrecy = { workspace = true }
@@ -48,6 +49,7 @@ uniffi = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 walletkit-db = { workspace = true }
 walletkit-sqlite = { workspace = true }
+web-time = { workspace = true }
 world-id-core = { workspace = true, features = ["authenticator"] }
 world-id-proof = { workspace = true }
 zeroize = { workspace = true }
@@ -62,15 +64,16 @@ attested-request = { workspace = true }
 ctor = { workspace = true }
 flamingo-verifier-api-types = { workspace = true }
 flamingo-verifier-client = { workspace = true }
-flamingo-verifier-protocol = { workspace = true }
 flamingo-verifier-sealed-types = { workspace = true }
 reqwest = { workspace = true, features = ["brotli", "rustls"] }
 rustls = { workspace = true, features = ["ring"] }
 tokio-tungstenite = { workspace = true, features = ["handshake"] }
 webpki-root-certs = { workspace = true }
+world-id-flamingo = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 attested-request = { workspace = true, features = ["test-util"] }
+p256 = { workspace = true, features = ["ecdsa"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 sha2 = { workspace = true, features = ["force-soft"] }
@@ -85,6 +88,7 @@ alloy = { workspace = true, features = [
   "node-bindings",
   "signer-local",
 ] }
+axum = { workspace = true }
 chacha20poly1305 = { workspace = true }
 chrono = { workspace = true }
 dotenvy = { workspace = true }
@@ -143,6 +147,10 @@ required-features = ["embed-zkeys"]
 
 [[test]]
 name = "proof_generation_integration"
+required-features = ["embed-zkeys"]
+
+[[test]]
+name = "registration_integration"
 required-features = ["embed-zkeys"]
 
 [lints]

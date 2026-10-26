@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0](https://github.com/worldcoin/walletkit/compare/v0.27.3...v0.28.0) - 2026-10-23
+
+### Added
+
+- *(flamingo)* [**breaking**] adopt the WIP-201 request and Flamingo Token ([#609](https://github.com/worldcoin/walletkit/pull/609))
+- *(core)* add the WIP-109 authenticator registration flows ([#608](https://github.com/worldcoin/walletkit/pull/608))
+
+## [0.27.3](https://github.com/worldcoin/walletkit/compare/v0.27.2...v0.27.3) - 2026-10-20
+
+### Other
+
+- *(deps)* bump world-id crates to 0.16 ([#607](https://github.com/worldcoin/walletkit/pull/607))
+- *(core)* extract resolve_now helper in authenticator ([#610](https://github.com/worldcoin/walletkit/pull/610))
+- update Cargo.toml dependencies
+
 ## [0.27.2](https://github.com/worldcoin/walletkit/compare/v0.27.1...v0.27.2) - 2026-10-14
 
 ### Added
