@@ -7163,7 +7163,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
- "tokio-tungstenite 0.29.0",
+ "tokio-tungstenite",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -9346,6 +9346,7 @@ name = "walletkit-web"
 version = "0.28.0"
 dependencies = [
  "js-sys",
+ "selfie-enrollment-api-types",
  "selfie-enrollment-client",
  "selfie-enrollment-sealed-types",
  "serde_json",

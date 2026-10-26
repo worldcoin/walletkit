@@ -633,6 +633,38 @@ test("enrollment rejects invalid policy without stopping the wallet worker", asy
   expect(result.stopped).toBe(false);
 });
 
+test("enrollment rejects empty and oversized images before connecting", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    const config = JSON.stringify({
+      endpoint: "wss://enrollment.invalid/v1/embeddings",
+      releases: [
+        { pcr0: "1".repeat(96), pcr1: "2".repeat(96), pcr2: "3".repeat(96) },
+      ],
+    });
+    const errorName = (image: Uint8Array) =>
+      wallet
+        .extractSelfieEmbedding(config, image)
+        .catch((error: Error) => error.name);
+    try {
+      return {
+        empty: await errorName(new Uint8Array(0)),
+        oversized: await errorName(new Uint8Array(8 * 1024 * 1024 + 1)),
+        stopped: wallet.isStopped(),
+      };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result).toEqual({
+    empty: "TypeError",
+    oversized: "TypeError",
+    stopped: false,
+  });
+});
+
 test("enrollment requests an assignment and withholds the image if attestation fails", async ({
   page,
 }) => {

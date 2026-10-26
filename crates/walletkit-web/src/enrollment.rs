@@ -1,11 +1,14 @@
 //! Embedding enrollment over the dedicated browser-compatible TEE channel.
-use js_sys::Promise;
+use js_sys::{Promise, Uint8Array};
+use selfie_enrollment_api_types::MAX_IMAGE_BYTES;
 use selfie_enrollment_client::{Config, Error};
 use selfie_enrollment_sealed_types::{EmbeddingResult, Failure};
 use wasm_bindgen::prelude::*;
-use zeroize::Zeroizing;
 
-use crate::{error::to_js, js};
+use crate::{
+    error::{invalid_argument, to_js},
+    js,
+};
 
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
@@ -30,21 +33,21 @@ export interface FaceEmbedding {
 /// in-flight enrollment immediately. This operation does not issue a credential.
 ///
 /// # Errors
+/// Throws a `TypeError` before connecting if `image` is empty or exceeds 8 MiB.
 /// Throws a `SelfieEnrollmentError` for invalid policy, rejected attestation, or
 /// transport failures. Image/quality rejections return a typed failed result.
 #[wasm_bindgen(js_name = extractSelfieEmbedding, unchecked_return_type = "Promise<SelfieEmbeddingResult>")]
-pub fn extract_selfie_embedding(config_json: String, image: Vec<u8>) -> Promise {
-    let mut image = Zeroizing::new(image);
+pub fn extract_selfie_embedding(config_json: String, image: Uint8Array) -> Promise {
     js::promise(async move {
+        if image.length() == 0 || image.length() as usize > MAX_IMAGE_BYTES {
+            return Err(invalid_argument("`image` must be between 1 byte and 8 MiB"));
+        }
         let config: Config =
             serde_json::from_str(&config_json).map_err(|_| to_js(Error::Config))?;
-        let result = selfie_enrollment_client::browser::extract(
-            config,
-            std::mem::take(&mut *image),
-            None,
-        )
-        .await
-        .map_err(to_js)?;
+        let result =
+            selfie_enrollment_client::browser::extract(config, image.to_vec(), None)
+                .await
+                .map_err(to_js)?;
         result_to_js(&result)
     })
 }
