@@ -38,10 +38,10 @@ export interface FaceEmbedding {
 /// Throws a `SelfieEnrollmentError` for invalid policy, rejected attestation, or
 /// transport failures. Image/quality rejections return a typed failed result.
 #[wasm_bindgen(js_name = extractSelfieEmbedding, unchecked_return_type = "Promise<SelfieEmbeddingResult>")]
-pub fn extract_selfie_embedding(config_json: String, image: Uint8Array) -> Promise {
+pub fn extract_selfie_embedding(config_json: String, image: &Uint8Array) -> Promise {
     // The worker zero-fills `image` as soon as this call returns, so copy it before
     // the deferred future runs.
-    let mut image = match owned_image(&image) {
+    let mut image = match owned_image(image) {
         Ok(image) => image,
         Err(error) => return Promise::reject(&error),
     };
