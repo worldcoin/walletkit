@@ -101,6 +101,7 @@ impl Authenticator {
         Ok(Self {
             inner: authenticator,
             store,
+            nullifier_reuse_whitelist: RwLock::default(),
         })
     }
 }

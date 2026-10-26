@@ -1,7 +1,7 @@
 //! The Requesting Authenticator's side of a registration (WIP-109 §3.8).
 
 use std::{
-    sync::{Arc, Mutex, PoisonError},
+    sync::{Arc, Mutex, PoisonError, RwLock},
     time::Duration,
 };
 
@@ -376,7 +376,11 @@ impl RegistrationRequester {
         )?;
 
         Ok(Registered {
-            authenticator: Arc::new(Authenticator { inner, store }),
+            authenticator: Arc::new(Authenticator {
+                inner,
+                store,
+                nullifier_reuse_whitelist: RwLock::default(),
+            }),
             vault_backup: result.0.vault.as_ref().map(|vault| vault.data.to_vec()),
         })
     }
