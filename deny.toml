@@ -54,12 +54,13 @@ ignore = [
   # Askama still requires basic-toml for config parsing through uniffi_bindgen and
   # taceo-groth16-sol. Remove once both dependency paths stop enabling it.
   { id = "RUSTSEC-2026-0374", reason = "unmaintained basic-toml required by Askama; no patched release" },
-  # elliptic-curve 0.13 (through alloy-signer, k256 and p256) pins crypto-bigint 0.5, which has
-  # no patched release. Remove once alloy moves to elliptic-curve 0.14 and crypto-bigint 0.7.
+  # elliptic-curve 0.13 pins crypto-bigint 0.5, which has no patched release. It is reached through
+  # alloy's k256 0.13 and through p256 0.13 (attested-request, jose-jwk, world-id-flamingo,
+  # world-id-primitives). Remove once no package in Cargo.lock resolves crypto-bigint 0.5.
   { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 via elliptic-curve 0.13; fix is only in 0.7.6+" },
   # world-id-proof requires zstd 0.13 only to decode its own embedded circuit archive with a
   # single `decode_all`, so reused contexts, `Seekable` and legacy frames are never reached.
-  # Remove once world-id-proof moves to zstd 0.14.
+  # Remove once world-id-proof moves to zstd >= 0.14.3 and zstd-safe >= 8.2.0.
   { id = "RUSTSEC-2026-0391", reason = "zstd 0.13 via world-id-proof; contexts are never reused" },
   { id = "RUSTSEC-2026-0398", reason = "zstd-safe 7 via world-id-proof; `Seekable` is not used" },
   { id = "RUSTSEC-2026-0403", reason = "zstd-safe 7 via world-id-proof; only trusted embedded frames are decoded" },
