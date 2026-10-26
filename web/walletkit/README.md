@@ -154,7 +154,7 @@ The browser API differs from the Swift and Kotlin bindings in these ways:
 ## Extract a Selfie Check embedding
 
 ```ts
-const result = await wallet.extractSelfieEmbedding(
+const result = await walletkit.extractSelfieEmbedding(
   JSON.stringify(trustedEnrollmentRelease),
   imageBytes,
 );
