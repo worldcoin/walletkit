@@ -4,6 +4,7 @@ use selfie_enrollment_api_types::MAX_IMAGE_BYTES;
 use selfie_enrollment_client::{Config, Error};
 use selfie_enrollment_sealed_types::{EmbeddingResult, Failure};
 use wasm_bindgen::prelude::*;
+use zeroize::Zeroizing;
 
 use crate::{
     error::{invalid_argument, to_js},
@@ -38,18 +39,33 @@ export interface FaceEmbedding {
 /// transport failures. Image/quality rejections return a typed failed result.
 #[wasm_bindgen(js_name = extractSelfieEmbedding, unchecked_return_type = "Promise<SelfieEmbeddingResult>")]
 pub fn extract_selfie_embedding(config_json: String, image: Uint8Array) -> Promise {
+    // The worker zero-fills `image` as soon as this call returns, so copy it before
+    // the deferred future runs.
+    let mut image = match owned_image(&image) {
+        Ok(image) => image,
+        Err(error) => return Promise::reject(&error),
+    };
     js::promise(async move {
-        if image.length() == 0 || image.length() as usize > MAX_IMAGE_BYTES {
-            return Err(invalid_argument("`image` must be between 1 byte and 8 MiB"));
-        }
         let config: Config =
             serde_json::from_str(&config_json).map_err(|_| to_js(Error::Config))?;
-        let result =
-            selfie_enrollment_client::browser::extract(config, image.to_vec(), None)
-                .await
-                .map_err(to_js)?;
+        let result = selfie_enrollment_client::browser::extract(
+            config,
+            std::mem::take(&mut *image),
+            None,
+        )
+        .await
+        .map_err(to_js)?;
         result_to_js(&result)
     })
+}
+
+/// Copies `image` into WASM memory after checking it against the service limit.
+fn owned_image(image: &Uint8Array) -> Result<Zeroizing<Vec<u8>>, JsValue> {
+    let length = image.length() as usize;
+    if length == 0 || length > MAX_IMAGE_BYTES {
+        return Err(invalid_argument("`image` must be between 1 byte and 8 MiB"));
+    }
+    Ok(Zeroizing::new(image.to_vec()))
 }
 
 fn result_to_js(result: &EmbeddingResult) -> Result<JsValue, JsValue> {
@@ -106,6 +122,14 @@ mod tests {
     extern "C" {
         #[wasm_bindgen(js_name = messageRoundTrip)]
         fn message_round_trip(value: JsValue) -> Promise;
+    }
+
+    #[wasm_bindgen_test]
+    fn image_copy_survives_the_worker_clearing_its_argument() {
+        let image = Uint8Array::from([1, 2, 3].as_slice());
+        let copy = owned_image(&image).unwrap();
+        image.fill(0, 0, image.length());
+        assert_eq!(*copy, [1, 2, 3]);
     }
 
     #[wasm_bindgen_test]
