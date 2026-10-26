@@ -7137,7 +7137,7 @@ dependencies = [
 [[package]]
 name = "selfie-enrollment-api-types"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/biometrics-tee?rev=34e80bf1b51dbaebdaff0102bce04cda633e247d#34e80bf1b51dbaebdaff0102bce04cda633e247d"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=551f25b21e92e68fa3c28c60704413a49dca635e#551f25b21e92e68fa3c28c60704413a49dca635e"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -7146,7 +7146,7 @@ dependencies = [
 [[package]]
 name = "selfie-enrollment-client"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/biometrics-tee?rev=34e80bf1b51dbaebdaff0102bce04cda633e247d#34e80bf1b51dbaebdaff0102bce04cda633e247d"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=551f25b21e92e68fa3c28c60704413a49dca635e#551f25b21e92e68fa3c28c60704413a49dca635e"
 dependencies = [
  "base64 0.22.1",
  "futures-channel",
@@ -7176,7 +7176,7 @@ dependencies = [
 [[package]]
 name = "selfie-enrollment-sealed-types"
 version = "0.1.0"
-source = "git+https://github.com/worldcoin/biometrics-tee?rev=34e80bf1b51dbaebdaff0102bce04cda633e247d#34e80bf1b51dbaebdaff0102bce04cda633e247d"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=551f25b21e92e68fa3c28c60704413a49dca635e#551f25b21e92e68fa3c28c60704413a49dca635e"
 dependencies = [
  "ciborium",
  "selfie-enrollment-api-types",
