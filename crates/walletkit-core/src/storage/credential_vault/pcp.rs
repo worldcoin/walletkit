@@ -14,16 +14,25 @@ impl CredentialVault {
     ) -> StorageResult<Vec<u8>> {
         let now = to_i64(now, "now")?;
         let checksum = blake3::hash(data);
-        self.vault.connection().query_row_optional(
-            "INSERT INTO pcp_records (path, kind, data, checksum, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5)
-             ON CONFLICT(path) DO UPDATE SET
-                 data = excluded.data, checksum = excluded.checksum, updated_at = excluded.updated_at
-             WHERE pcp_records.kind = excluded.kind
-             RETURNING checksum",
-            params![path, kind as i64, data, checksum.as_bytes().as_slice(), now],
-            |row| Ok(row.column_blob(0)),
-        ).map_err(|err| map_db_err(&err))?.ok_or(StorageError::PcpKindMismatch)
+        // An autocommit `RETURNING` commits when the statement is finalized, and that
+        // result is not observable. The explicit commit surfaces write failures.
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
+        let stored = tx
+            .query_row_optional(
+                "INSERT INTO pcp_records (path, kind, data, checksum, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+                 ON CONFLICT(path) DO UPDATE SET
+                     data = excluded.data, checksum = excluded.checksum, updated_at = excluded.updated_at
+                 WHERE pcp_records.kind = excluded.kind
+                 RETURNING checksum",
+                params![path, kind as i64, data, checksum.as_bytes().as_slice(), now],
+                |row| Ok(row.column_blob(0)),
+            )
+            .map_err(|err| map_db_err(&err))?
+            .ok_or(StorageError::PcpKindMismatch)?;
+        tx.commit().map_err(|err| map_db_err(&err))?;
+        Ok(stored)
     }
 
     pub(crate) fn get_pcp(&self, path: &str) -> StorageResult<Option<PcpRecord>> {
@@ -136,6 +145,29 @@ mod tests {
         assert!(!vault.delete_pcp(path).unwrap());
         assert_eq!(vault.get_pcp(path).unwrap(), None);
         assert!(vault.list_pcps(None).unwrap().is_empty());
+    }
+
+    #[test]
+    fn put_reports_failures_that_only_surface_at_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = new_vault(dir.path(), "vault.db");
+        // A deferred foreign key is checked at commit, after the `RETURNING` row.
+        vault
+            .vault
+            .connection()
+            .execute_batch(
+                "CREATE TABLE commit_guard (
+                     missing TEXT REFERENCES pcp_records (path) DEFERRABLE INITIALLY DEFERRED
+                 );
+                 CREATE TRIGGER fail_at_commit AFTER INSERT ON pcp_records BEGIN
+                     INSERT INTO commit_guard VALUES ('not-stored');
+                 END;",
+            )
+            .unwrap();
+        assert!(vault
+            .put_pcp("package", PcpKind::Orb, b"data", 100)
+            .is_err());
+        assert_eq!(vault.get_pcp("package").unwrap(), None);
     }
 
     #[test]
