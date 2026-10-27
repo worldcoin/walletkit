@@ -14,7 +14,7 @@ use std::path::Path;
 
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{BlobKind, CredentialRecord};
-use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
+use schema::{ensure_schema, VAULT_META_KEY};
 use secrecy::SecretBox;
 use walletkit_db::{blobs, Vault};
 use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value};
@@ -26,7 +26,8 @@ use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value}
 /// `init_leaf_index`) with the authoritative `leaf_index` from the
 /// authenticator.
 ///
-/// **Note:** New tables added to the vault schema must be added here too.
+/// Only credential backup tables belong here. Local-only tables must remain excluded.
+/// The database schema version (`PRAGMA user_version`) is local as well.
 pub(crate) const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
 
 // A version's content, never a device-local row ID, breaks equal-timestamp ties.
@@ -52,10 +53,7 @@ impl CredentialVault {
         path: &Path,
         k_intermediate: &SecretBox<[u8; 32]>,
     ) -> StorageResult<Self> {
-        let vault = Vault::open(path, k_intermediate, |conn| {
-            blobs::ensure_schema(conn)?;
-            ensure_schema(conn)
-        })?;
+        let vault = Vault::open(path, k_intermediate, ensure_schema)?;
         Ok(Self { vault })
     }
 
@@ -84,7 +82,7 @@ impl CredentialVault {
                          ELSE vault_meta.leaf_index
                      END
                  RETURNING leaf_index",
-                params![VAULT_SCHEMA_VERSION, leaf_index_i64, now_i64],
+                params![VAULT_META_KEY, leaf_index_i64, now_i64],
                 |stmt| Ok(stmt.column_i64(0)),
             )
             .map_err(|err| map_db_err(&err))?;
