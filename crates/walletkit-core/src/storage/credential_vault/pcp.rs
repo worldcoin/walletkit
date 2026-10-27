@@ -12,6 +12,11 @@ impl CredentialVault {
         data: &[u8],
         now: u64,
     ) -> StorageResult<Vec<u8>> {
+        // Text columns are read back up to the first NUL, so such a path could not be
+        // listed or fetched again.
+        if path.contains('\0') {
+            return Err(StorageError::InvalidPcpPath);
+        }
         let now = to_i64(now, "now")?;
         let checksum = blake3::hash(data);
         // An autocommit `RETURNING` commits when the statement is finalized, and that
@@ -168,6 +173,17 @@ mod tests {
             .put_pcp("package", PcpKind::Orb, b"data", 100)
             .is_err());
         assert_eq!(vault.get_pcp("package").unwrap(), None);
+    }
+
+    #[test]
+    fn put_rejects_paths_that_cannot_be_read_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = new_vault(dir.path(), "vault.db");
+        assert!(matches!(
+            vault.put_pcp("a\0b", PcpKind::Orb, b"data", 100),
+            Err(StorageError::InvalidPcpPath)
+        ));
+        assert!(vault.list_pcps(None).unwrap().is_empty());
     }
 
     #[test]

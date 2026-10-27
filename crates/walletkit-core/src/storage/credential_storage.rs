@@ -453,8 +453,9 @@ impl CredentialStore {
     /// not notify the credential vault-change listener or affect vault backups.
     ///
     /// # Errors
-    /// Returns an error if storage is uninitialized, the kind conflicts with an
-    /// existing entry, the timestamp is out of range, or the database write fails.
+    /// Returns an error if storage is uninitialized, the path contains a NUL
+    /// character, the kind conflicts with an existing entry, the timestamp is out
+    /// of range, or the database write fails.
     pub fn put_pcp(
         &self,
         path: &str,

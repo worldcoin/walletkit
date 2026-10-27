@@ -88,6 +88,10 @@ pub enum StorageError {
     #[error("PCP kind does not match the existing entry")]
     PcpKindMismatch,
 
+    /// A PCP path contains a NUL character, which stored text cannot round-trip.
+    #[error("PCP path contains a NUL character")]
+    InvalidPcpPath,
+
     /// A stored PCP has invalid metadata or does not match its checksum.
     #[error("corrupted PCP: {0}")]
     CorruptedPcp(String),
