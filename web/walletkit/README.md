@@ -201,6 +201,7 @@ These parts of the Swift and Kotlin bindings aren't available in the browser:
 | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `Logger` and `initLogging`                                 | Not implemented for the browser.                                                                 |
 | Vault and activity change listeners                        | Not implemented for the browser.                                                                 |
+| Sealed PCP storage                                        | Available in Rust on wasm and in Swift/Kotlin; no browser bindings.                              |
 | Vault backup export and replacement import                 | Supported only on iOS and Android. Use `mergeVaultFromBackup` to import.                         |
 | `proveCredentialSub`                                       | Credential ownership proofs aren't supported on WASM.                                            |
 | Flamingo                                                   | Browser WebSockets can't send its signed handshake headers, and it relies on device attestation. |

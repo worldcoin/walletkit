@@ -14,7 +14,7 @@
 //!
 //! 1. **Vault database (`account.vault.sqlite`)** — authoritative storage for
 //!    credentials, associated data blobs, issuer subject blinding factors, and the account
-//!    leaf index, plus sealed PCPs on native platforms. PCPs are excluded from
+//!    leaf index, plus sealed PCPs. PCPs are excluded from
 //!    credential backups and their change notifications. Corruption is a hard failure. See [`crate::storage::CredentialVault`].
 //! 2. **Cache database (`account.cache.sqlite`)** — non-authoritative, regenerable
 //!    entries: Merkle inclusion proof cache, per-account session seed, and nullifier

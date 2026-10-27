@@ -415,7 +415,7 @@ impl CredentialStore {
         Ok(added)
     }
 
-    /// Permanently destroys all credential storage data.
+    /// Permanently destroys all credential storage data, including sealed PCPs.
     ///
     /// Intended for use when the user logs out or deletes their account.
     ///
@@ -451,6 +451,9 @@ impl CredentialStore {
     /// typically use the backup designator, such as `orb_pkg`, as the kind. PCP
     /// changes do not notify the credential vault-change listener or affect vault
     /// backups.
+    ///
+    /// Requires [`Self::init`] with the account's leaf index. Like credentials,
+    /// PCPs are permanently removed by [`Self::destroy_storage`].
     ///
     /// # Errors
     /// Returns an error if storage is uninitialized, the id contains a NUL
