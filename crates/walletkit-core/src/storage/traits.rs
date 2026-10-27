@@ -97,7 +97,8 @@ pub trait StorageProvider: Send + Sync {
 /// callback is delivered on a dedicated background thread to avoid re-entering
 /// the `UniFFI` call stack (see `logger.rs` for rationale).
 ///
-/// This is only called when individual credentials are added or removed.
+/// This is only called when individual credentials are added or removed. PCP
+/// changes do not affect credential backups and do not trigger this listener.
 ///
 /// # Expected usage
 ///

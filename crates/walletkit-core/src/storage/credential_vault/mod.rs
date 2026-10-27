@@ -6,6 +6,8 @@
 //! [`walletkit_db`].
 
 mod merge;
+#[cfg(not(target_arch = "wasm32"))]
+mod pcp;
 mod schema;
 #[cfg(test)]
 mod tests;

@@ -209,3 +209,60 @@ impl ActivityQuery {
         next
     }
 }
+
+/// Kind of sealed Personal Custody Package. Paths are unique across all kinds.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[repr(i64)]
+pub enum PcpKind {
+    /// Orb package (`orb_pkg` in Bedrock).
+    Orb = 1,
+    /// Face package (`face_pkg` in Bedrock).
+    Face = 2,
+    /// Document package (`document_pkg` in Bedrock).
+    Document = 3,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl TryFrom<i64> for PcpKind {
+    type Error = StorageError;
+
+    fn try_from(value: i64) -> StorageResult<Self> {
+        match value {
+            1 => Ok(Self::Orb),
+            2 => Ok(Self::Face),
+            3 => Ok(Self::Document),
+            _ => Err(StorageError::CorruptedPcp("invalid stored kind".to_owned())),
+        }
+    }
+}
+
+/// Sealed PCP bytes and their verified BLAKE3 checksum.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PcpRecord {
+    /// Exact logical identifier supplied by the host; never interpreted as a filesystem path.
+    pub path: String,
+    /// Package kind.
+    pub kind: PcpKind,
+    /// Opaque sealed package bytes, unchanged by `WalletKit`.
+    pub data: Vec<u8>,
+    /// BLAKE3 of `data`, exactly 32 bytes.
+    pub checksum: Vec<u8>,
+}
+
+/// PCP metadata returned without loading package data.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PcpMetadata {
+    /// Exact logical identifier supplied by the host.
+    pub path: String,
+    /// Package kind.
+    pub kind: PcpKind,
+    /// Stored BLAKE3 checksum, exactly 32 bytes. Verified against data by `get_pcp`.
+    pub checksum: Vec<u8>,
+    /// First insertion time in Unix seconds.
+    pub created_at: u64,
+    /// Most recent put time in Unix seconds.
+    pub updated_at: u64,
+}

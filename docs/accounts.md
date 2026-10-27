@@ -22,6 +22,14 @@ database key in the device keystore; for the types involved, see the
 In the browser, the app supplies the key itself; see
 [Protect the database key](web/package.md#protect-the-database-key).
 
+On native platforms, `CredentialStore` also stores sealed Personal Custody Packages
+with `put_pcp`, `get_pcp`, `list_pcps`, and `delete_pcp`. Paths are opaque logical
+identifiers shared across Orb, Face, and Document packages; the host supplies the
+normalized path. Reads verify BLAKE3 checksums, and an existing path cannot change
+kind. PCPs are excluded from credential vault backups and remain intact during
+credential import or merge. PCP writes do not trigger the credential vault-change
+listener; hosts must schedule their PCP backups separately.
+
 ## From registration to stored credential
 
 The following diagram shows the calls between the app, WalletKit, and the World ID

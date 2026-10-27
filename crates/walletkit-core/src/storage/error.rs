@@ -84,6 +84,14 @@ pub enum StorageError {
         credential_id: u64,
     },
 
+    /// An existing PCP path cannot be reassigned to another kind.
+    #[error("PCP kind does not match the existing entry")]
+    PcpKindMismatch,
+
+    /// A stored PCP has invalid metadata or does not match its checksum.
+    #[error("corrupted PCP: {0}")]
+    CorruptedPcp(String),
+
     /// Corrupted cache entry
     #[error("corrupted cache entry at {key_prefix}")]
     CorruptedCacheEntry {

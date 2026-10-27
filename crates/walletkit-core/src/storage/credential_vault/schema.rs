@@ -8,7 +8,7 @@ pub(super) const VAULT_META_KEY: i64 = 1;
 
 /// Append migrations here; `PRAGMA user_version` counts the applied migrations.
 /// Migrations must not start transactions or modify the shared blob schema.
-const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] = &[migration_v1];
+const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] = &[migration_v1, migration_v2];
 
 /// Applies pending migrations atomically, without ever resetting vault data.
 ///
@@ -113,6 +113,20 @@ fn migration_v1(conn: &Connection) -> DbResult<()> {
     )
 }
 
+/// Version 2: local PCP storage, deliberately excluded from credential backups.
+fn migration_v2(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS pcp_records (
+            path        TEXT PRIMARY KEY NOT NULL,
+            kind        INTEGER NOT NULL CHECK (kind IN (1, 2, 3)),
+            data        BLOB NOT NULL,
+            checksum    BLOB NOT NULL CHECK (typeof(checksum) = 'blob' AND length(checksum) = 32),
+            created_at  INTEGER NOT NULL CHECK (created_at >= 0),
+            updated_at  INTEGER NOT NULL CHECK (updated_at >= 0)
+        );",
+    )
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
@@ -126,7 +140,7 @@ mod tests {
             .unwrap()
     }
 
-    fn migration_v2(conn: &Connection) -> DbResult<()> {
+    fn migration_test_local(conn: &Connection) -> DbResult<()> {
         conn.execute_batch("CREATE TABLE local_only (value INTEGER);")
     }
 
@@ -136,7 +150,7 @@ mod tests {
         let path = dir.path().join("vault.db");
         let key = SecretBox::init_with(|| [42; 32]);
         let vault = CredentialVault::new(&path, &key).unwrap();
-        assert_eq!(version(vault.vault.connection()), 1);
+        assert_eq!(version(vault.vault.connection()), 2);
         vault.init_leaf_index(7, 100).unwrap();
         drop(vault);
         let vault = CredentialVault::new(&path, &key).unwrap();
@@ -183,7 +197,7 @@ mod tests {
         drop(old);
         let vault = CredentialVault::new(&path, &key).unwrap();
         let conn = vault.vault.connection();
-        assert_eq!(version(conn), 1);
+        assert_eq!(version(conn), 2);
         assert_eq!(blobs::get(conn, &cid).unwrap().unwrap(), b"credential");
         assert_eq!(
             vault
@@ -210,7 +224,7 @@ mod tests {
     #[test]
     fn unsupported_versions_fail_without_modifying_the_vault() {
         for marker in [
-            "PRAGMA user_version = 2",
+            "PRAGMA user_version = 2147483647",
             "PRAGMA user_version = -1",
             "UPDATE vault_meta SET schema_version = 2; PRAGMA user_version = 0",
         ] {
@@ -245,17 +259,17 @@ mod tests {
     #[test]
     fn failed_migration_rolls_back_ddl_and_version_then_retries() {
         fn fail(conn: &Connection) -> DbResult<()> {
-            migration_v2(conn)?;
+            migration_test_local(conn)?;
             conn.execute_batch("INSERT INTO missing_table VALUES (1)")
         }
         let conn = Connection::open(":memory:", false).unwrap();
-        ensure_schema(&conn).unwrap();
+        migrate(&conn, &[migration_v1]).unwrap();
         assert!(migrate(&conn, &[migration_v1, fail]).is_err());
         assert_eq!(version(&conn), 1);
         assert!(conn.prepare("SELECT * FROM local_only").is_err());
-        migrate(&conn, &[migration_v1, migration_v2]).unwrap();
+        migrate(&conn, &[migration_v1, migration_test_local]).unwrap();
         assert_eq!(version(&conn), 2);
-        migrate(&conn, &[migration_v1, migration_v2]).unwrap();
+        migrate(&conn, &[migration_v1, migration_test_local]).unwrap();
     }
 
     #[test]
@@ -264,15 +278,16 @@ mod tests {
         let path = dir.path().join("vault.db");
         let key = SecretBox::init_with(|| [42; 32]);
         let first = cipher::open_encrypted(&path, &key).unwrap();
-        ensure_schema(&first).unwrap();
+        migrate(&first, &[migration_v1]).unwrap();
         let second = cipher::open_encrypted(&path, &key).unwrap();
         let tx = first.transaction_immediate().unwrap();
-        migration_v2(&first).unwrap();
+        migration_test_local(&first).unwrap();
         tx.execute_batch("PRAGMA user_version = 2").unwrap();
-        let error = migrate(&second, &[migration_v1, migration_v2]).unwrap_err();
+        let error =
+            migrate(&second, &[migration_v1, migration_test_local]).unwrap_err();
         assert_eq!(error.code.0 & 0xff, 5); // SQLITE_BUSY
         tx.commit().unwrap();
-        migrate(&second, &[migration_v1, migration_v2]).unwrap();
+        migrate(&second, &[migration_v1, migration_test_local]).unwrap();
         assert_eq!(version(&second), 2);
     }
 
@@ -296,7 +311,7 @@ mod tests {
         assert!(conn.prepare("SELECT * FROM vault_meta").is_err());
         drop(conn);
         let vault = CredentialVault::new(&path, &key).unwrap();
-        assert_eq!(version(vault.vault.connection()), 1);
+        assert_eq!(version(vault.vault.connection()), 2);
         vault.init_leaf_index(8, 200).unwrap();
     }
 
@@ -346,11 +361,6 @@ mod tests {
             let destination =
                 CredentialVault::new(&dir.path().join(format!("new-{merge}.db")), &key)
                     .unwrap();
-            migrate(
-                destination.vault.connection(),
-                &[migration_v1, migration_v2],
-            )
-            .unwrap();
             destination.init_leaf_index(7, 100).unwrap();
             if merge {
                 assert_eq!(destination.merge_plaintext_bytes(&bytes).unwrap(), 1);
