@@ -119,10 +119,11 @@ fn migration_v2(conn: &Connection) -> DbResult<()> {
         "CREATE TABLE IF NOT EXISTS pcp_records (
             path        TEXT PRIMARY KEY NOT NULL,
             kind        INTEGER NOT NULL CHECK (kind IN (1, 2, 3)),
-            data        BLOB NOT NULL,
             checksum    BLOB NOT NULL CHECK (typeof(checksum) = 'blob' AND length(checksum) = 32),
             created_at  INTEGER NOT NULL CHECK (created_at >= 0),
-            updated_at  INTEGER NOT NULL CHECK (updated_at >= 0)
+            updated_at  INTEGER NOT NULL CHECK (updated_at >= 0),
+            -- Last, so reading metadata does not walk the package's overflow pages.
+            data        BLOB NOT NULL
         );",
     )
 }
@@ -142,6 +143,23 @@ mod tests {
 
     fn migration_test_local(conn: &Connection) -> DbResult<()> {
         conn.execute_batch("CREATE TABLE local_only (value INTEGER);")
+    }
+
+    #[test]
+    fn pcp_data_is_stored_after_its_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = SecretBox::init_with(|| [42; 32]);
+        let vault = CredentialVault::new(&dir.path().join("vault.db"), &key).unwrap();
+        let last_column = vault
+            .vault
+            .connection()
+            .query_row(
+                "SELECT name FROM pragma_table_info('pcp_records') ORDER BY cid DESC LIMIT 1",
+                &[],
+                |row| Ok(row.column_text(0)),
+            )
+            .unwrap();
+        assert_eq!(last_column, "data");
     }
 
     #[test]
