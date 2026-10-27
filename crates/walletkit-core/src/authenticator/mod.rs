@@ -62,7 +62,7 @@ impl Authenticator {
         nullifier: world_id_core::FieldElement,
         now: u64,
     ) -> Result<(), WalletKitError> {
-        if !self.allows_nullifier_reuse(rp_id)
+        if !self.allows_nullifier_reuse_for_rp(rp_id)
             && self.store.is_nullifier_replay(nullifier, now)?
         {
             return Err(WalletKitError::NullifierReplay);
@@ -70,7 +70,7 @@ impl Authenticator {
         Ok(())
     }
 
-    fn allows_nullifier_reuse(&self, rp_id: u64) -> bool {
+    fn allows_nullifier_reuse_for_rp(&self, rp_id: u64) -> bool {
         self.nullifier_reuse_whitelist
             .read()
             .unwrap_or_else(PoisonError::into_inner)
@@ -1387,13 +1387,13 @@ mod tests {
 
         let mut server = mockito::Server::new_async().await;
         let (authenticator, root) = test_authenticator(&mut server).await;
-        assert!(!authenticator.allows_nullifier_reuse(0x2a));
+        assert!(!authenticator.allows_nullifier_reuse_for_rp(0x2a));
 
         authenticator
             .set_nullifier_reuse_whitelist(vec!["rp_000000000000002a".to_string()])
             .expect("valid RP IDs");
-        assert!(authenticator.allows_nullifier_reuse(0x2a));
-        assert!(!authenticator.allows_nullifier_reuse(0x2b));
+        assert!(authenticator.allows_nullifier_reuse_for_rp(0x2a));
+        assert!(!authenticator.allows_nullifier_reuse_for_rp(0x2b));
 
         assert!(matches!(
             authenticator.set_nullifier_reuse_whitelist(vec![
@@ -1402,13 +1402,13 @@ mod tests {
             ]),
             Err(WalletKitError::InvalidInput { attribute, .. }) if attribute == "rp_ids"
         ));
-        assert!(authenticator.allows_nullifier_reuse(0x2a));
-        assert!(!authenticator.allows_nullifier_reuse(0x2b));
+        assert!(authenticator.allows_nullifier_reuse_for_rp(0x2a));
+        assert!(!authenticator.allows_nullifier_reuse_for_rp(0x2b));
 
         authenticator
             .set_nullifier_reuse_whitelist(vec![])
             .expect("empty set is valid");
-        assert!(!authenticator.allows_nullifier_reuse(0x2a));
+        assert!(!authenticator.allows_nullifier_reuse_for_rp(0x2a));
 
         drop(server);
         cleanup_test_storage(&root);
