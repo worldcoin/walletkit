@@ -68,8 +68,7 @@ pub use types::{
     ActivityQuery, BlobKind, ContentId, CredentialRecord, Nullifier, ProtocolVersion,
     ReplayGuardKind, ReplayGuardResult, RequestId,
 };
-#[cfg(not(target_arch = "wasm32"))]
-pub use types::{PcpKind, PcpMetadata, PcpRecord};
+pub use types::{PcpMetadata, PcpRecord};
 pub use walletkit_db::{Lock as StorageLock, LockGuard as StorageLockGuard};
 
 /// Deletes a closed `SQLite` database and its journal sidecars.

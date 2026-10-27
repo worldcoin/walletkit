@@ -16,8 +16,7 @@ use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{ActivityEntry, ActivityMetadata, ActivityQuery, CredentialRecord};
 use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, CredentialVault};
-#[cfg(not(target_arch = "wasm32"))]
-use super::{PcpKind, PcpMetadata, PcpRecord};
+use super::{PcpMetadata, PcpRecord};
 use super::{StorageLock, StorageLockGuard};
 use crate::{Credential, FieldElement};
 use world_id_core::primitives::merkle::AccountInclusionProof;
@@ -442,50 +441,55 @@ impl CredentialStore {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 #[uniffi::export]
 impl CredentialStore {
-    /// Stores sealed PCP bytes under the host's exact logical path and returns
-    /// their 32-byte BLAKE3 checksum. Replaces data at an existing path only when
-    /// the kind matches, preserving its creation time.
+    /// Stores sealed PCP bytes under the host's exact id and returns their
+    /// 32-byte BLAKE3 checksum. Replaces data at an existing id only when the
+    /// kind matches, preserving its creation time.
     ///
-    /// Paths are opaque identifiers; hosts own normalization. PCP changes do
-    /// not notify the credential vault-change listener or affect vault backups.
+    /// The id and kind are opaque to `WalletKit`. Hosts own id normalization and
+    /// typically use the backup designator, such as `orb_pkg`, as the kind. PCP
+    /// changes do not notify the credential vault-change listener or affect vault
+    /// backups.
     ///
     /// # Errors
-    /// Returns an error if storage is uninitialized, the path contains a NUL
-    /// character, the kind conflicts with an existing entry, the timestamp is out
-    /// of range, or the database write fails.
+    /// Returns an error if storage is uninitialized, the id contains a NUL
+    /// character, the kind is not a short lowercase label, the kind conflicts with
+    /// an existing entry, the timestamp is out of range, or the database write fails.
     pub fn put_pcp(
         &self,
-        path: &str,
-        kind: PcpKind,
+        id: &str,
+        kind: &str,
         data: &[u8],
         now: u64,
     ) -> StorageResult<Vec<u8>> {
         self.lock_inner()?
             .state()?
             .vault
-            .put_pcp(path, kind, data, now)
+            .put_pcp(id, kind, data, now)
     }
 
     /// Retrieves a PCP, verifying its BLAKE3 checksum. Returns `None` if absent.
     ///
     /// # Errors
     /// Returns an error if storage is uninitialized, stored data is corrupt,
-    /// or the database read fails. Errors never include the logical path.
-    pub fn get_pcp(&self, path: &str) -> StorageResult<Option<PcpRecord>> {
-        self.lock_inner()?.state()?.vault.get_pcp(path)
+    /// or the database read fails. Errors never include the id.
+    pub fn get_pcp(&self, id: &str) -> StorageResult<Option<PcpRecord>> {
+        self.lock_inner()?.state()?.vault.get_pcp(id)
     }
 
-    /// Lists PCP metadata in path order, optionally restricted to one kind.
+    /// Lists PCP metadata in id order, optionally restricted to one kind.
     /// Does not load package data; use [`Self::get_pcp`] to verify its checksum.
     ///
     /// # Errors
     /// Returns an error if storage is uninitialized, stored metadata is corrupt,
     /// or the database query fails.
-    pub fn list_pcps(&self, kind: Option<PcpKind>) -> StorageResult<Vec<PcpMetadata>> {
-        self.lock_inner()?.state()?.vault.list_pcps(kind)
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI passes optional strings by value"
+    )]
+    pub fn list_pcps(&self, kind: Option<String>) -> StorageResult<Vec<PcpMetadata>> {
+        self.lock_inner()?.state()?.vault.list_pcps(kind.as_deref())
     }
 
     /// Deletes a PCP, returning whether it existed. Does not notify the
@@ -493,8 +497,8 @@ impl CredentialStore {
     ///
     /// # Errors
     /// Returns an error if storage is uninitialized or the database write fails.
-    pub fn delete_pcp(&self, path: &str) -> StorageResult<bool> {
-        self.lock_inner()?.state()?.vault.delete_pcp(path)
+    pub fn delete_pcp(&self, id: &str) -> StorageResult<bool> {
+        self.lock_inner()?.state()?.vault.delete_pcp(id)
     }
 }
 
@@ -1226,7 +1230,7 @@ mod tests {
             CredentialStore::from_provider(&InMemoryStorageProvider::new(dir.path()))
                 .unwrap();
         assert!(matches!(
-            store.put_pcp("package", PcpKind::Orb, b"sealed", 100),
+            store.put_pcp("package", "orb_pkg", b"sealed", 100),
             Err(StorageError::NotInitialized)
         ));
         assert!(matches!(
@@ -1246,16 +1250,17 @@ mod tests {
         *store.vault_changed_tx.lock().unwrap() = Some(tx);
         let before = store.export_vault_for_backup().unwrap();
         assert_eq!(
-            store
-                .put_pcp("package", PcpKind::Orb, b"sealed", 100)
-                .unwrap(),
+            store.put_pcp("package", "orb_pkg", b"sealed", 100).unwrap(),
             blake3::hash(b"sealed").as_bytes()
         );
         assert!(store.get_pcp("missing").unwrap().is_none());
         assert_eq!(store.get_pcp("package").unwrap().unwrap().data, b"sealed");
-        assert_eq!(store.list_pcps(Some(PcpKind::Orb)).unwrap().len(), 1);
+        assert_eq!(
+            store.list_pcps(Some("orb_pkg".to_owned())).unwrap().len(),
+            1
+        );
         assert!(matches!(
-            store.put_pcp("package", PcpKind::Face, b"wrong", 100),
+            store.put_pcp("package", "face_pkg", b"wrong", 100),
             Err(StorageError::PcpKindMismatch)
         ));
         assert_eq!(store.export_vault_for_backup().unwrap(), before);

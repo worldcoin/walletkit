@@ -117,8 +117,8 @@ fn migration_v1(conn: &Connection) -> DbResult<()> {
 fn migration_v2(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS pcp_records (
-            path        TEXT PRIMARY KEY NOT NULL,
-            kind        INTEGER NOT NULL CHECK (kind IN (1, 2, 3)),
+            id          TEXT PRIMARY KEY NOT NULL,
+            kind        TEXT NOT NULL CHECK (length(kind) BETWEEN 1 AND 32),
             checksum    BLOB NOT NULL CHECK (typeof(checksum) = 'blob' AND length(checksum) = 32),
             created_at  INTEGER NOT NULL CHECK (created_at >= 0),
             updated_at  INTEGER NOT NULL CHECK (updated_at >= 0),

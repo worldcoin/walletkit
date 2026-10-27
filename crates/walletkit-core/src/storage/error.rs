@@ -84,13 +84,17 @@ pub enum StorageError {
         credential_id: u64,
     },
 
-    /// An existing PCP path cannot be reassigned to another kind.
+    /// An existing PCP id cannot be reassigned to another kind.
     #[error("PCP kind does not match the existing entry")]
     PcpKindMismatch,
 
-    /// A PCP path contains a NUL character, which stored text cannot round-trip.
-    #[error("PCP path contains a NUL character")]
-    InvalidPcpPath,
+    /// A PCP id contains a NUL character, which stored text cannot round-trip.
+    #[error("PCP id contains a NUL character")]
+    InvalidPcpId,
+
+    /// A PCP kind is not 1 to 32 bytes of lowercase ASCII letters, digits or `_`.
+    #[error("PCP kind must be 1 to 32 lowercase ASCII letters, digits or underscores")]
+    InvalidPcpKind,
 
     /// A stored PCP has invalid metadata or does not match its checksum.
     #[error("corrupted PCP: {0}")]
