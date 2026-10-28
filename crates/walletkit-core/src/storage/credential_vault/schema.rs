@@ -1,13 +1,10 @@
 //! Versioned credential-vault schema. The shared blob schema is owned by `walletkit-db`.
 
 use walletkit_db::blobs;
-use walletkit_sqlite::{error::ErrorCode, Connection, DbResult, Error};
-
-// This column is a fixed metadata key, independent of the database schema version.
-pub(super) const VAULT_META_KEY: i64 = 1;
+use walletkit_sqlite::{error::ErrorCode, params, Connection, DbResult, Error};
 
 /// The vault migrations, in order. Append new versions; never change shipped migrations.
-/// `PRAGMA user_version` counts the applied migrations.
+/// `vault_meta.schema_version` counts the applied migrations.
 /// Migrations must not start transactions or modify the shared blob schema.
 const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] = &[migration_v1, migration_v2];
 
@@ -15,24 +12,28 @@ const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] = &[migration_v1, migration
     clippy::cast_possible_wrap,
     reason = "the migration list cannot approach i64::MAX"
 )]
-const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
+pub(super) const VAULT_SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
 
 /// Ensures the vault schema is present and at the expected version.
 ///
-/// Current vaults are checked without a write transaction. Pending migrations
-/// and their version marker commit together; interrupted migrations roll back.
+/// Current vaults with singleton metadata are checked without a write transaction.
+/// Legacy metadata is adopted once. Pending migrations and their version marker
+/// commit together; interrupted migrations roll back.
 /// A newer or incomplete vault returns an error without resetting its data.
 ///
-/// Plaintext backups contain only [`super::BACKUP_TABLES`], not `user_version`.
+/// Plaintext backups contain only [`super::BACKUP_TABLES`], not `vault_meta`.
 /// New credential columns require backward-compatible import and merge queries.
 pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
     match read_version(conn)? {
-        version if version == SCHEMA_VERSION => {
+        version if version == VAULT_SCHEMA_VERSION => {
             if !schema_is_intact(conn)? {
                 return Err(schema_error("vault schema is incomplete"));
             }
+            if !has_singleton_constraint(conn)? {
+                migrate(conn, MIGRATIONS)?;
+            }
         }
-        version if version < SCHEMA_VERSION => {
+        version if version < VAULT_SCHEMA_VERSION => {
             migrate(conn, MIGRATIONS)?;
         }
         version => {
@@ -55,29 +56,63 @@ fn migrate(
     if applied > migrations.len() {
         return Err(newer_schema_error(version, migrations.len()));
     }
-    if applied == migrations.len() {
+    if applied == migrations.len() && has_singleton_constraint(conn)? {
         return tx.commit();
-    }
-
-    if version == 0 {
-        validate_legacy_schema(conn)?;
     }
 
     blobs::ensure_schema(conn)?;
     for migration in migrations.iter().skip(applied) {
         migration(conn)?;
     }
-    record_version(conn, migrations.len())?;
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS idx_vault_meta_schema_version;
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_meta_singleton
+         ON vault_meta ((1));",
+    )?;
+    if applied != migrations.len() {
+        record_version(conn, migrations.len())?;
+    }
     tx.commit()
 }
 
 fn read_version(conn: &Connection) -> DbResult<i64> {
-    let version =
-        conn.query_row("PRAGMA user_version", &[], |row| Ok(row.column_i64(0)))?;
-    if version < 0 {
-        return Err(schema_error("invalid vault schema version"));
+    let (has_meta, has_data) = conn.query_row(
+        "SELECT
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'vault_meta'),
+            EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table'
+                   AND name IN ('credential_records', 'blob_objects', 'pcp_records'))",
+        &[],
+        |row| Ok((row.column_i64(0) != 0, row.column_i64(1) != 0)),
+    )?;
+    if !has_meta {
+        return if has_data {
+            Err(schema_error("vault schema is incomplete"))
+        } else {
+            Ok(0)
+        };
     }
-    Ok(version)
+    let (count, version, is_integer) = conn.query_row(
+        "SELECT COUNT(*), MIN(schema_version), MIN(typeof(schema_version) = 'integer')
+         FROM vault_meta",
+        &[],
+        |row| Ok((row.column_i64(0), row.column_i64(1), row.column_i64(2) != 0)),
+    )?;
+    match count {
+        0 if !has_singleton_constraint(conn)? => Ok(0),
+        1 if is_integer && version > 0 => Ok(version),
+        _ => Err(schema_error(
+            "invalid vault schema version or metadata row count",
+        )),
+    }
+}
+
+fn has_singleton_constraint(conn: &Connection) -> DbResult<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master
+         WHERE type = 'index' AND name = 'idx_vault_meta_singleton')",
+        &[],
+        |row| Ok(row.column_i64(0) != 0),
+    )
 }
 
 /// Checks that the tables a current vault must have are present.
@@ -92,33 +127,22 @@ fn schema_is_intact(conn: &Connection) -> DbResult<bool> {
     Ok(present == 4)
 }
 
-fn validate_legacy_schema(conn: &Connection) -> DbResult<()> {
-    let has_meta = conn
-        .query_row_optional(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'vault_meta'",
-            &[],
-            |_| Ok(()),
-        )?
-        .is_some();
-    if !has_meta {
-        return Ok(());
-    }
-    let invalid = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM vault_meta
-         WHERE schema_version != 1 OR typeof(schema_version) != 'integer')",
-        &[],
-        |row| Ok(row.column_i64(0) != 0),
+/// Records the schema version without replacing account metadata.
+fn record_version(conn: &Connection, version: usize) -> DbResult<()> {
+    let version = i64::try_from(version)
+        .map_err(|_| schema_error("invalid vault schema version"))?;
+    let updated = conn.execute(
+        "UPDATE vault_meta SET schema_version = ?1",
+        params![version],
     )?;
-    if invalid {
-        return Err(schema_error(
-            "unsupported legacy vault schema version; upgrade WalletKit",
-        ));
+    if updated == 0 {
+        conn.execute(
+            "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
+             VALUES (?1, NULL, strftime('%s','now'), strftime('%s','now'))",
+            params![version],
+        )?;
     }
     Ok(())
-}
-
-fn record_version(conn: &Connection, version: usize) -> DbResult<()> {
-    conn.execute_batch(&format!("PRAGMA user_version = {version}"))
 }
 
 fn newer_schema_error(version: i64, supported: usize) -> Error {
@@ -134,7 +158,7 @@ fn schema_error(message: impl Into<String>) -> Error {
     }
 }
 
-/// Version 1: the credential tables and fixed-key account metadata.
+/// Version 1: the credential tables and account metadata.
 fn migration_v1(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS vault_meta (
@@ -143,9 +167,6 @@ fn migration_v1(conn: &Connection) -> DbResult<()> {
             created_at      INTEGER NOT NULL,
             updated_at      INTEGER NOT NULL
         );
-
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_meta_schema_version
-        ON vault_meta (schema_version);
 
         CREATE TRIGGER IF NOT EXISTS vault_meta_set_updated_at
         AFTER UPDATE ON vault_meta
@@ -200,8 +221,7 @@ mod tests {
     use walletkit_sqlite::cipher;
 
     fn version(conn: &Connection) -> i64 {
-        conn.query_row("PRAGMA user_version", &[], |row| Ok(row.column_i64(0)))
-            .unwrap()
+        read_version(conn).unwrap()
     }
 
     fn migration_test_local(conn: &Connection) -> DbResult<()> {
@@ -251,6 +271,120 @@ mod tests {
     }
 
     #[test]
+    fn account_initialization_preserves_migrated_schema_and_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = SecretBox::init_with(|| [42; 32]);
+        let vault = CredentialVault {
+            vault: Vault::open(&dir.path().join("vault.db"), &key, |conn| {
+                migrate(conn, &[migration_v1])
+            })
+            .unwrap(),
+        };
+        let conn = vault.vault.connection();
+        vault.init_leaf_index(7, 100).unwrap();
+        let created_at = conn
+            .query_row("SELECT created_at FROM vault_meta", &[], |row| {
+                Ok(row.column_i64(0))
+            })
+            .unwrap();
+        migrate(conn, &[migration_v1, migration_test_local]).unwrap();
+
+        vault.init_leaf_index(7, 200).unwrap();
+        assert!(matches!(
+            vault.init_leaf_index(8, 300),
+            Err(StorageError::InvalidLeafIndex { .. })
+        ));
+        assert_eq!(conn.query_row(
+            "SELECT COUNT(*), schema_version, leaf_index, created_at FROM vault_meta", &[],
+            |row| Ok((row.column_i64(0), row.column_i64(1), row.column_i64(2), row.column_i64(3))),
+        ).unwrap(), (1, 2, 7, created_at));
+    }
+
+    #[test]
+    fn metadata_constraint_rejects_a_second_row_with_a_different_version() {
+        let conn = Connection::open(":memory:", false).unwrap();
+        ensure_schema(&conn).unwrap();
+        assert!(conn
+            .execute(
+                "INSERT INTO vault_meta VALUES (?1, 8, 100, 100)",
+                params![VAULT_SCHEMA_VERSION + 1]
+            )
+            .is_err());
+        assert_eq!(version(&conn), VAULT_SCHEMA_VERSION);
+        assert_eq!(conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name = 'idx_vault_meta_schema_version'",
+            &[], |row| Ok(row.column_i64(0)),
+        ).unwrap(), 0);
+    }
+
+    #[test]
+    fn uninitialized_legacy_metadata_is_adopted_before_account_initialization() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault.db");
+        let key = SecretBox::init_with(|| [42; 32]);
+        let old = Vault::open(&path, &key, |conn| {
+            blobs::ensure_schema(conn)?;
+            conn.execute_batch(include_str!("fixtures/v1.sql"))
+        })
+        .unwrap();
+        drop(old);
+        let vault = CredentialVault::new(&path, &key).unwrap();
+        assert_eq!(version(vault.vault.connection()), VAULT_SCHEMA_VERSION);
+        vault.init_leaf_index(7, 100).unwrap();
+        assert!(matches!(
+            vault.init_leaf_index(8, 200),
+            Err(StorageError::InvalidLeafIndex { .. })
+        ));
+        assert!(vault
+            .vault
+            .connection()
+            .execute(
+                "INSERT INTO vault_meta VALUES (?1, 8, 100, 100)",
+                params![VAULT_SCHEMA_VERSION + 1]
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn duplicate_legacy_metadata_fails_without_modifying_rows_or_indexes() {
+        let conn = Connection::open(":memory:", false).unwrap();
+        blobs::ensure_schema(&conn).unwrap();
+        conn.execute_batch(include_str!("fixtures/v1.sql")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO vault_meta VALUES (1, 7, 100, 100), (2, 8, 200, 200)",
+        )
+        .unwrap();
+        assert!(ensure_schema(&conn).is_err());
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM vault_meta", &[], |row| Ok(
+                row.column_i64(0)
+            ))
+            .unwrap(),
+            2
+        );
+        assert!(!has_singleton_constraint(&conn).unwrap());
+        assert_eq!(conn.query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name = 'idx_vault_meta_schema_version'",
+            &[], |row| Ok(row.column_i64(0)),
+        ).unwrap(), 1);
+    }
+
+    #[test]
+    fn missing_metadata_row_fails_without_reinitializing_an_existing_vault() {
+        let conn = Connection::open(":memory:", false).unwrap();
+        ensure_schema(&conn).unwrap();
+        conn.execute_batch("DELETE FROM vault_meta").unwrap();
+        assert!(ensure_schema(&conn).is_err());
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM vault_meta", &[], |row| Ok(
+                row.column_i64(0)
+            ))
+            .unwrap(),
+            0
+        );
+    }
+
+    #[test]
     fn current_schema_needs_no_write_lock() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("vault.db");
@@ -262,7 +396,7 @@ mod tests {
         ensure_schema(&second).unwrap();
         second.execute_batch("PRAGMA query_only = ON").unwrap();
         ensure_schema(&second).unwrap();
-        assert_eq!(version(&second), SCHEMA_VERSION);
+        assert_eq!(version(&second), VAULT_SCHEMA_VERSION);
     }
 
     #[test]
@@ -281,7 +415,9 @@ mod tests {
             conn.execute_batch(&format!("DROP TABLE {table}")).unwrap();
 
             assert!(ensure_schema(conn).is_err(), "missing {table}");
-            assert_eq!(version(conn), SCHEMA_VERSION);
+            if table != "vault_meta" {
+                assert_eq!(version(conn), VAULT_SCHEMA_VERSION);
+            }
             assert!(conn.prepare(&format!("SELECT * FROM {table}")).is_err());
         }
     }
@@ -310,7 +446,7 @@ mod tests {
                 |row| Ok(row.column_text(0)),
             )
             .unwrap();
-        assert_eq!(version(old.connection()), 0);
+        assert_eq!(version(old.connection()), 1);
         drop(old);
         let vault = CredentialVault::new(&path, &key).unwrap();
         let conn = vault.vault.connection();
@@ -323,10 +459,15 @@ mod tests {
                 .unwrap(),
             (b"credential".to_vec(), vec![7; 32])
         );
-        assert_eq!(conn.query_row(
-            "SELECT leaf_index = 7 AND created_at = 100 AND updated_at = 100 FROM vault_meta",
-            &[], |row| Ok(row.column_i64(0)),
-        ).unwrap(), 1);
+        assert_eq!(
+            conn.query_row(
+                "SELECT leaf_index = 7 AND created_at = 100 FROM vault_meta",
+                &[],
+                |row| Ok(row.column_i64(0)),
+            )
+            .unwrap(),
+            1
+        );
         assert_eq!(
             conn.query_row(
                 "SELECT sql FROM sqlite_master WHERE name = 'blob_objects'",
@@ -341,9 +482,9 @@ mod tests {
     #[test]
     fn unsupported_versions_fail_without_modifying_the_vault() {
         for marker in [
-            "PRAGMA user_version = 2147483647",
-            "PRAGMA user_version = -1",
-            "UPDATE vault_meta SET schema_version = 2; PRAGMA user_version = 0",
+            "UPDATE vault_meta SET schema_version = 2147483647",
+            "UPDATE vault_meta SET schema_version = -1",
+            "UPDATE vault_meta SET schema_version = 'invalid'",
         ] {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("vault.db");
@@ -352,14 +493,24 @@ mod tests {
             vault.init_leaf_index(7, 100).unwrap();
             let conn = vault.vault.connection();
             conn.execute_batch(marker).unwrap();
-            let before = version(conn);
+            let before = conn
+                .query_row("SELECT schema_version FROM vault_meta", &[], |row| {
+                    Ok(row.column_text(0))
+                })
+                .unwrap();
             conn.execute_batch("DROP TABLE blob_objects").unwrap();
             drop(vault);
             let err = CredentialVault::new(&path, &key).unwrap_err();
             assert!(matches!(err, StorageError::VaultDb(_)));
             assert!(err.to_string().contains("vault schema version"));
             let conn = cipher::open_encrypted(&path, &key).unwrap();
-            assert_eq!(version(&conn), before);
+            assert_eq!(
+                conn.query_row("SELECT schema_version FROM vault_meta", &[], |row| Ok(
+                    row.column_text(0)
+                ),)
+                    .unwrap(),
+                before
+            );
             assert_eq!(
                 conn.query_row(
                     "SELECT COUNT(*) FROM vault_meta WHERE leaf_index = 7",
@@ -390,6 +541,35 @@ mod tests {
     }
 
     #[test]
+    fn failed_version_update_rolls_back_migration_and_preserves_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = SecretBox::init_with(|| [42; 32]);
+        let vault = CredentialVault {
+            vault: Vault::open(&dir.path().join("vault.db"), &key, |conn| {
+                migrate(conn, &[migration_v1])
+            })
+            .unwrap(),
+        };
+        vault.init_leaf_index(7, 100).unwrap();
+        let conn = vault.vault.connection();
+        conn.execute_batch(
+            "CREATE TRIGGER reject_version BEFORE UPDATE OF schema_version ON vault_meta
+             BEGIN SELECT RAISE(ABORT, 'injected'); END;",
+        ).unwrap();
+        assert!(migrate(conn, &[migration_v1, migration_test_local]).is_err());
+        assert_eq!(version(conn), 1);
+        assert!(conn.prepare("SELECT * FROM local_only").is_err());
+        vault.init_leaf_index(7, 200).unwrap();
+        conn.execute_batch("DROP TRIGGER reject_version").unwrap();
+        migrate(conn, &[migration_v1, migration_test_local]).unwrap();
+        assert_eq!(version(conn), 2);
+        assert!(matches!(
+            vault.init_leaf_index(8, 300),
+            Err(StorageError::InvalidLeafIndex { .. })
+        ));
+    }
+
+    #[test]
     fn concurrent_migrator_fails_busy_then_rechecks_committed_version() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("vault.db");
@@ -399,7 +579,7 @@ mod tests {
         let second = cipher::open_encrypted(&path, &key).unwrap();
         let tx = first.transaction_immediate().unwrap();
         migration_test_local(&first).unwrap();
-        tx.execute_batch("PRAGMA user_version = 2").unwrap();
+        record_version(&first, 2).unwrap();
         let error =
             migrate(&second, &[migration_v1, migration_test_local]).unwrap_err();
         assert_eq!(error.code.0 & 0xff, 5); // SQLITE_BUSY
@@ -442,10 +622,8 @@ mod tests {
         let _tx = conn.transaction_immediate().unwrap();
         blobs::ensure_schema(&conn).unwrap();
         migration_v1(&conn).unwrap();
-        conn.execute_batch(
-            "INSERT INTO vault_meta VALUES (1, 7, 100, 100); PRAGMA user_version = 1",
-        )
-        .unwrap();
+        conn.execute_batch("INSERT INTO vault_meta VALUES (1, 7, 100, 100)")
+            .unwrap();
         std::process::exit(0);
     }
 

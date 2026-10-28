@@ -498,7 +498,7 @@ mod tests {
         let old = walletkit_db::Vault::open(&path, &key, |conn| {
             walletkit_db::blobs::ensure_schema(conn)?;
             conn.execute_batch(include_str!("fixtures/v1.sql"))?;
-            conn.execute_batch("PRAGMA user_version = 1")
+            conn.execute_batch("INSERT INTO vault_meta VALUES (1, NULL, 100, 100)")
         })
         .unwrap();
         let source = CredentialVault { vault: old };

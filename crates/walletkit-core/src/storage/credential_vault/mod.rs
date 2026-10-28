@@ -15,7 +15,7 @@ use std::path::Path;
 
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{BlobKind, CredentialRecord};
-use schema::{ensure_schema, VAULT_META_KEY};
+use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
 use secrecy::SecretBox;
 use walletkit_db::{blobs, Vault};
 use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value};
@@ -28,7 +28,7 @@ use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value}
 /// authenticator.
 ///
 /// Only credential backup tables belong here. Local-only tables must remain excluded.
-/// The database schema version (`PRAGMA user_version`) is local as well.
+/// The database schema version in `vault_meta` is local as well.
 pub(crate) const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
 
 // A version's content, never a device-local row ID, breaks equal-timestamp ties.
@@ -71,28 +71,49 @@ impl CredentialVault {
         let leaf_index_i64 = to_i64(leaf_index, "leaf_index")?;
         let now_i64 = to_i64(now, "now")?;
         let conn = self.vault.connection();
-        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
-        let stored = tx
+        let tx = conn
+            .transaction_immediate()
+            .map_err(|err| map_db_err(&err))?;
+        let (count, stored) = tx
             .query_row(
-                "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?3)
-                 ON CONFLICT(schema_version) DO UPDATE SET
-                     leaf_index = CASE
-                         WHEN vault_meta.leaf_index IS NULL
-                         THEN excluded.leaf_index
-                         ELSE vault_meta.leaf_index
-                     END
-                 RETURNING leaf_index",
-                params![VAULT_META_KEY, leaf_index_i64, now_i64],
-                |stmt| Ok(stmt.column_i64(0)),
+                "SELECT COUNT(*), MAX(leaf_index) FROM vault_meta",
+                &[],
+                |row| {
+                    Ok((
+                        row.column_i64(0),
+                        (!row.is_column_null(1)).then(|| row.column_i64(1)),
+                    ))
+                },
             )
             .map_err(|err| map_db_err(&err))?;
-        if stored != leaf_index_i64 {
-            let expected = to_u64(stored, "leaf_index")?;
-            return Err(StorageError::InvalidLeafIndex {
-                expected,
-                provided: leaf_index,
-            });
+        match (count, stored) {
+            (0, _) => {
+                tx.execute(
+                    "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?3)",
+                    params![VAULT_SCHEMA_VERSION, leaf_index_i64, now_i64],
+                ).map_err(|err| map_db_err(&err))?;
+            }
+            (1, None) => {
+                tx.execute(
+                    "UPDATE vault_meta SET leaf_index = ?1, updated_at = ?2",
+                    params![leaf_index_i64, now_i64],
+                )
+                .map_err(|err| map_db_err(&err))?;
+            }
+            (1, Some(stored)) => {
+                if stored != leaf_index_i64 {
+                    return Err(StorageError::InvalidLeafIndex {
+                        expected: to_u64(stored, "leaf_index")?,
+                        provided: leaf_index,
+                    });
+                }
+            }
+            _ => {
+                return Err(StorageError::VaultDb(
+                    "invalid vault metadata row count".into(),
+                ))
+            }
         }
         tx.commit().map_err(|err| map_db_err(&err))?;
         Ok(())
