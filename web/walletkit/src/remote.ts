@@ -96,10 +96,6 @@ export type IncomingRegistration = RemoteObject<Wasm.IncomingRegistration>;
 export type PendingRegistration = RemoteObject<Wasm.PendingRegistration>;
 export type RegistrationRequester = RemoteObject<Wasm.RegistrationRequester>;
 export type RegistrationResult = RemoteObject<Wasm.RegistrationResult>;
-
-// Records that hold Rust objects, which the page receives as proxies.
-export type RequesterStatus = Remote<Wasm.RequesterStatus>;
-export type Registered = Remote<Wasm.Registered>;
 export type InitializingAuthenticator =
   RemoteObject<Wasm.InitializingAuthenticator>;
 export type CredentialStore = RemoteObject<Wasm.CredentialStore>;
@@ -110,6 +106,10 @@ export type FieldElement = RemoteObject<Wasm.FieldElement>;
 export type Credential = RemoteObject<Wasm.Credential>;
 export type ProofRequest = RemoteObject<Wasm.ProofRequest>;
 export type ProofResponse = RemoteObject<Wasm.ProofResponse>;
+
+// Records that hold Rust objects, which the page receives as proxies.
+export type RequesterStatus = Remote<Wasm.RequesterStatus>;
+export type Registered = Remote<Wasm.Registered>;
 
 /** @internal The transport the proxies use to reach the worker. */
 export interface Rpc {
