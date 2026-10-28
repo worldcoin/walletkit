@@ -7,7 +7,6 @@ use super::{map_db_err, to_i64, to_u64, CredentialVault};
 use crate::storage::{PcpMetadata, PcpRecord, StorageError, StorageResult};
 use walletkit_sqlite::{params, StepResult, Value};
 
-/// Longest accepted kind, in bytes. Kinds are short labels such as `orb_pkg`.
 const MAX_KIND_LEN: usize = 32;
 
 impl CredentialVault {
@@ -18,8 +17,8 @@ impl CredentialVault {
         data: &[u8],
         now: u64,
     ) -> StorageResult<()> {
-        // Text columns are read back up to the first NUL, so such an id could not be
-        // listed or fetched again.
+        // Text columns are read back up to the first NUL, so the id would not
+        // round-trip.
         if id.contains('\0') {
             return Err(StorageError::InvalidPcpId);
         }

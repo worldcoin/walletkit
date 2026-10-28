@@ -213,11 +213,11 @@ impl ActivityQuery {
 /// Sealed PCP bytes stored under a host-chosen id.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PcpRecord {
-    /// Exact identifier supplied by the host; never interpreted.
+    /// Exact identifier supplied by the host.
     pub id: String,
     /// Host-defined kind label, such as `orb_pkg`.
     pub kind: String,
-    /// Opaque sealed package bytes, unchanged by `WalletKit`.
+    /// Opaque sealed package bytes.
     pub data: Vec<u8>,
 }
 
@@ -228,8 +228,8 @@ pub struct PcpMetadata {
     pub id: String,
     /// Host-defined kind label, such as `orb_pkg`.
     pub kind: String,
-    /// First insertion time in Unix seconds.
+    /// Creation time in Unix seconds.
     pub created_at: u64,
-    /// Most recent put time in Unix seconds.
+    /// Last update time in Unix seconds.
     pub updated_at: u64,
 }

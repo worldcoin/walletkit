@@ -98,7 +98,7 @@ pub trait StorageProvider: Send + Sync {
 /// the `UniFFI` call stack (see `logger.rs` for rationale).
 ///
 /// This is only called when individual credentials are added or removed. PCP
-/// changes do not affect credential backups and do not trigger this listener.
+/// changes do not affect credential backups or trigger this listener.
 ///
 /// # Expected usage
 ///

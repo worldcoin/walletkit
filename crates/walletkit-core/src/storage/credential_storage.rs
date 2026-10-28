@@ -443,29 +443,44 @@ impl CredentialStore {
 
 #[uniffi::export]
 impl CredentialStore {
-    /// Stores sealed PCP bytes under the host's exact id. Replaces data at an
-    /// existing id only when the kind matches, preserving its creation time.
-    ///
-    /// The id and kind are opaque to `WalletKit`. Hosts own id normalization and
-    /// typically use the backup designator, such as `orb_pkg`, as the kind. PCP
-    /// changes do not notify the credential vault-change listener or affect vault
-    /// backups.
-    ///
-    /// Requires [`Self::init`] with the account's leaf index. Like credentials,
-    /// PCPs are permanently removed by [`Self::destroy_storage`].
+    /// Returns a handle to this store's sealed PCPs.
+    #[must_use]
+    pub fn pcp_vault(self: Arc<Self>) -> Arc<PcpVault> {
+        Arc::new(PcpVault { store: self })
+    }
+}
+
+/// Sealed PCP storage in the account vault.
+///
+/// Ids and kinds are opaque to `WalletKit`; hosts own id normalization and
+/// typically use the backup designator (such as `orb_pkg`) as the kind. PCPs are
+/// excluded from credential backups and do not notify the vault-changed listener.
+///
+/// Operations require [`CredentialStore::init`] with the account's leaf index.
+/// [`CredentialStore::destroy_storage`] permanently removes PCPs.
+#[derive(Debug, uniffi::Object)]
+pub struct PcpVault {
+    store: Arc<CredentialStore>,
+}
+
+#[uniffi::export]
+impl PcpVault {
+    /// Stores sealed PCP bytes under the host's exact id. Replaces an existing
+    /// entry only when `kind` matches, preserving its creation time.
     ///
     /// # Errors
-    /// Returns an error if storage is uninitialized, the id contains a NUL
-    /// character, the kind is not a short lowercase label, the kind conflicts with
-    /// an existing entry, the timestamp is out of range, or the database write fails.
-    pub fn put_pcp(
+    /// Returns an error if storage is uninitialized, `id` contains a NUL
+    /// character, `kind` is invalid or conflicts with an existing entry, `now` is
+    /// out of range, or the database write fails.
+    pub fn put(
         &self,
         id: &str,
         kind: &str,
         data: &[u8],
         now: u64,
     ) -> StorageResult<()> {
-        self.lock_inner()?
+        self.store
+            .lock_inner()?
             .state()?
             .vault
             .put_pcp(id, kind, data, now)
@@ -476,12 +491,12 @@ impl CredentialStore {
     /// # Errors
     /// Returns an error if storage is uninitialized or the database read fails.
     /// Errors never include the id.
-    pub fn get_pcp(&self, id: &str) -> StorageResult<Option<PcpRecord>> {
-        self.lock_inner()?.state()?.vault.get_pcp(id)
+    pub fn get(&self, id: &str) -> StorageResult<Option<PcpRecord>> {
+        self.store.lock_inner()?.state()?.vault.get_pcp(id)
     }
 
     /// Lists PCP metadata in id order, optionally restricted to one kind.
-    /// Does not load package data; use [`Self::get_pcp`] to read it.
+    /// Does not load package data; use [`Self::get`] to read it.
     ///
     /// # Errors
     /// Returns an error if storage is uninitialized, stored metadata is corrupt,
@@ -490,17 +505,20 @@ impl CredentialStore {
         clippy::needless_pass_by_value,
         reason = "UniFFI passes optional strings by value"
     )]
-    pub fn list_pcps(&self, kind: Option<String>) -> StorageResult<Vec<PcpMetadata>> {
-        self.lock_inner()?.state()?.vault.list_pcps(kind.as_deref())
+    pub fn list(&self, kind: Option<String>) -> StorageResult<Vec<PcpMetadata>> {
+        self.store
+            .lock_inner()?
+            .state()?
+            .vault
+            .list_pcps(kind.as_deref())
     }
 
-    /// Deletes a PCP, returning whether it existed. Does not notify the
-    /// credential vault-change listener or affect credential backups.
+    /// Deletes a PCP, returning whether it existed.
     ///
     /// # Errors
     /// Returns an error if storage is uninitialized or the database write fails.
-    pub fn delete_pcp(&self, id: &str) -> StorageResult<bool> {
-        self.lock_inner()?.state()?.vault.delete_pcp(id)
+    pub fn delete(&self, id: &str) -> StorageResult<bool> {
+        self.store.lock_inner()?.state()?.vault.delete_pcp(id)
     }
 }
 
@@ -551,8 +569,8 @@ impl CredentialStore {
     }
 
     /// Registers a listener for successful credential mutations (store, delete,
-    /// purge, merge). PCP changes do not affect credential backups and do not
-    /// notify this listener.
+    /// merge). PCP changes do not affect credential backups or notify this
+    /// listener.
     ///
     /// Only one listener can be active at a time — calling this replaces any
     /// previously registered listener. The previous delivery thread shuts down
@@ -1226,48 +1244,45 @@ mod tests {
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
-    fn pcp_api_requires_initialization_and_never_notifies_credential_backup_listener() {
+    fn pcp_vault_requires_initialization_and_never_notifies_credential_backup_listener()
+    {
         let dir = tempfile::tempdir().unwrap();
-        let store =
+        let store = Arc::new(
             CredentialStore::from_provider(&InMemoryStorageProvider::new(dir.path()))
-                .unwrap();
+                .unwrap(),
+        );
+        let pcps = Arc::clone(&store).pcp_vault();
         assert!(matches!(
-            store.put_pcp("package", "orb_pkg", b"sealed", 100),
+            pcps.put("package", "orb_pkg", b"sealed", 100),
             Err(StorageError::NotInitialized)
         ));
         assert!(matches!(
-            store.get_pcp("package"),
+            pcps.get("package"),
             Err(StorageError::NotInitialized)
         ));
+        assert!(matches!(pcps.list(None), Err(StorageError::NotInitialized)));
         assert!(matches!(
-            store.list_pcps(None),
-            Err(StorageError::NotInitialized)
-        ));
-        assert!(matches!(
-            store.delete_pcp("package"),
+            pcps.delete("package"),
             Err(StorageError::NotInitialized)
         ));
         store.init(42, 100).unwrap();
         let (tx, rx) = mpsc::sync_channel(1);
         *store.vault_changed_tx.lock().unwrap() = Some(tx);
         let before = store.export_vault_for_backup().unwrap();
-        store.put_pcp("package", "orb_pkg", b"sealed", 100).unwrap();
-        assert!(store.get_pcp("missing").unwrap().is_none());
-        assert_eq!(store.get_pcp("package").unwrap().unwrap().data, b"sealed");
-        assert_eq!(
-            store.list_pcps(Some("orb_pkg".to_owned())).unwrap().len(),
-            1
-        );
+        pcps.put("package", "orb_pkg", b"sealed", 100).unwrap();
+        assert!(pcps.get("missing").unwrap().is_none());
+        assert_eq!(pcps.get("package").unwrap().unwrap().data, b"sealed");
+        assert_eq!(pcps.list(Some("orb_pkg".to_owned())).unwrap().len(), 1);
         assert!(matches!(
-            store.put_pcp("package", "face_pkg", b"wrong", 100),
+            pcps.put("package", "face_pkg", b"wrong", 100),
             Err(StorageError::PcpKindMismatch)
         ));
         assert_eq!(store.export_vault_for_backup().unwrap(), before);
         store.import_vault_from_backup(&before).unwrap();
         assert_eq!(store.merge_vault_from_backup(&before).unwrap(), 0);
-        assert_eq!(store.get_pcp("package").unwrap().unwrap().data, b"sealed");
-        assert!(store.delete_pcp("package").unwrap());
-        assert!(!store.delete_pcp("package").unwrap());
+        assert_eq!(pcps.get("package").unwrap().unwrap().data, b"sealed");
+        assert!(pcps.delete("package").unwrap());
+        assert!(!pcps.delete("package").unwrap());
         assert!(matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
         let credential: Credential = world_id_core::Credential::new()
             .issuer_schema_id(10)
@@ -1279,7 +1294,7 @@ mod tests {
         rx.try_recv().unwrap();
         store.destroy_storage().unwrap();
         assert!(matches!(
-            store.get_pcp("package"),
+            pcps.get("package"),
             Err(StorageError::NotInitialized)
         ));
     }
