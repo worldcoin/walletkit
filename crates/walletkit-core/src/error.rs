@@ -317,13 +317,23 @@ impl From<AuthenticatorError> for WalletKitError {
                 error: body,
                 status: Some(status.as_u16()),
             },
+            AuthenticatorError::ServiceUnavailable {
+                status,
+                ref service,
+            } => Self::NetworkError {
+                url: service.clone(),
+                error: error.to_string(),
+                status: Some(status.as_u16()),
+            },
             AuthenticatorError::UnfullfilableRequest => Self::UnfulfillableRequest,
             AuthenticatorError::ResponseValidationError(err) => {
                 Self::ResponseValidation(err.to_string())
             }
             AuthenticatorError::OhttpEncapsulationError(_)
+            | AuthenticatorError::OhttpDecapsulationError(_)
             | AuthenticatorError::BhttpError(_)
             | AuthenticatorError::OhttpRelayError { .. }
+            | AuthenticatorError::OhttpRelayInvalidResponse { .. }
             | AuthenticatorError::InvalidServiceResponse(_) => Self::OhttpError {
                 error: error.to_string(),
             },
@@ -413,6 +423,41 @@ mod tests {
                 assert_eq!(error, "invalid_merkle_root");
             }
             other => panic!("expected proof generation error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_unavailable_services_to_network_errors() {
+        let error = AuthenticatorError::ServiceUnavailable {
+            service: "indexer".to_string(),
+            status: reqwest::StatusCode::SERVICE_UNAVAILABLE,
+        };
+        let expected_message = error.to_string();
+
+        match WalletKitError::from(error) {
+            WalletKitError::NetworkError { url, error, status } => {
+                assert_eq!(url, "indexer");
+                assert_eq!(error, expected_message);
+                assert_eq!(status, Some(503));
+            }
+            other => panic!("expected network error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn maps_invalid_relay_responses_to_ohttp_errors() {
+        let error = AuthenticatorError::OhttpRelayInvalidResponse {
+            service: "ohttp_gateway".to_string(),
+            relay_url: "https://relay.example".to_string(),
+            content_type: Some("text/html".to_string()),
+        };
+        let expected_message = error.to_string();
+
+        match WalletKitError::from(error) {
+            WalletKitError::OhttpError { error } => {
+                assert_eq!(error, expected_message);
+            }
+            other => panic!("expected OHTTP error, got {other:?}"),
         }
     }
 

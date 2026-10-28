@@ -44,9 +44,9 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-flamingo-verifier-api-types = "0.9.0"
-flamingo-verifier-client = "0.9.0"
-flamingo-verifier-sealed-types = "0.9.0"
+flamingo-verifier-api-types = "0.10.0"
+flamingo-verifier-client = "0.10.0"
+flamingo-verifier-sealed-types = "0.10.0"
 eyre = "0.6"
 futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"
@@ -93,9 +93,9 @@ zeroize = "1"
 zip = { version = "9", default-features = false }
 
 # world-id-protocol crates
-world-id-core = { version = "0.17", default-features = false }
-world-id-proof = { version = "0.17", default-features = false }
-world-id-flamingo = "0.17"
+world-id-core = { version = "0.18.0", default-features = false }
+world-id-proof = { version = "0.18.0", default-features = false }
+world-id-flamingo = "0.18.0"
 
 # internal
 walletkit-core = { version = "0.28.0", path = "crates/walletkit-core", default-features = false }

@@ -47,8 +47,8 @@ sol!(
 
 /// Builds a proof [`ProofRequest`] signed by the RP key configured in `env`.
 ///
-/// The request expires at `created_at + expires_in`. For uniqueness proofs an `action` of `1` is set and
-/// included in the RP signature. Use [`SessionRef::Create`] to create a session
+/// The request expires at `created_at + expires_in`. For uniqueness proofs the action carried by
+/// `proof_type` is included in the RP signature. Use [`SessionRef::Create`] to create a session
 /// or [`SessionRef::Existing`] to prove an existing session.
 ///
 /// # Errors
@@ -70,13 +70,11 @@ pub fn build_test_request(
     let signer = PrivateKeySigner::from_bytes(&env.rp_signing_key.into())
         .wrap_err("failed to create RP signer")?;
 
-    let action =
-        (proof_type == ProofType::Uniqueness).then(|| FieldElement::from(1u64));
     let msg = world_id_core::primitives::rp::compute_rp_signature_msg(
         *nonce,
         created_at,
         expires_at,
-        action.map(|action| *action),
+        proof_type.action().map(|action| *action),
     );
     let signature = signer.sign_message_sync(&msg).wrap_err("signing failed")?;
 
@@ -101,7 +99,6 @@ pub fn build_test_request(
         rp_id: RpId::new(env.rp_id),
         oprf_key_id: OprfKeyId::new(U160::from(env.rp_id)),
         session_id: session_ref,
-        action,
         signature,
         nonce,
         requests: vec![request_item],
@@ -132,7 +129,7 @@ pub struct VerifyItemResult {
 ///
 /// Returns an error if the response carries an error, if the response does not
 /// match the request, if the RPC URL is invalid, or if a required field
-/// (action, session id, nullifier, session nullifier) is missing for the
+/// (session id, nullifier, session nullifier) is missing for the
 /// proof type.
 pub async fn verify_proof_onchain(
     env: &TestEnv,
@@ -168,19 +165,15 @@ pub async fn verify_proof_onchain(
             .unwrap_or_default()
             .try_into()?;
 
-        let result = match proof_request.proof_type {
-            ProofType::Uniqueness => {
+        let result = match &proof_request.proof_type {
+            ProofType::Uniqueness { action } => {
                 let nullifier = response_item
                     .nullifier
                     .ok_or_else(|| eyre::eyre!("response item missing nullifier"))?;
-                let action = proof_request
-                    .action
-                    .ok_or_else(|| eyre::eyre!("proof request has no action"))?;
-
                 verifier_contract
                     .verify(
                         nullifier.into(),
-                        action.into(),
+                        (*action).into(),
                         rp_id,
                         nonce.into(),
                         request_item.signal_hash().into(),
@@ -227,4 +220,37 @@ pub async fn verify_proof_onchain(
         });
     }
     Ok(results)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn uniqueness_request_preserves_and_signs_the_action() {
+        let env = TestEnv::default_staging();
+        let action = FieldElement::from(42u64);
+        let request = build_test_request(
+            &env,
+            env.local_issuer_schema_id,
+            "test_signal",
+            300,
+            ProofType::Uniqueness { action },
+            SessionRef::None,
+        )
+        .unwrap();
+        assert_eq!(request.proof_type.action(), Some(action));
+
+        let message = world_id_core::primitives::rp::compute_rp_signature_msg(
+            *request.nonce,
+            request.created_at,
+            request.expires_at,
+            Some(*action),
+        );
+        let signer = PrivateKeySigner::from_bytes(&env.rp_signing_key.into()).unwrap();
+        assert_eq!(
+            request.signature.recover_address_from_msg(message).unwrap(),
+            signer.address()
+        );
+    }
 }
