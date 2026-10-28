@@ -8,7 +8,7 @@ use walletkit_sqlite::{error::ErrorCode, params, Connection, DbResult, Error};
 /// Migrations must not start transactions or modify the shared blob schema.
 const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] = &[migration_v1];
 
-#[allow(
+#[expect(
     clippy::cast_possible_wrap,
     reason = "the migration list cannot approach i64::MAX"
 )]
