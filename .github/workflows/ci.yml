@@ -99,6 +99,13 @@ jobs:
           toolchain: 1.98.1
           targets: wasm32-unknown-unknown
 
+      - name: Install Nargo
+        uses: noir-lang/noirup@7dbe69ccc78877f0200ffa5a40836c953d2cfd8f # v0.1.4
+        with:
+          toolchain: v1.0.0-beta.26
+
+      - uses: ./.github/actions/prefetch-noir-dependencies
+
       # clang-18 (LLVM 18) is the minimum version that supports the C23
       # [[noreturn]] attribute syntax used in sqlite-wasm-rs's wasm-shim.h.
       # The system clang on Ubuntu (clang-14) predates C23 attribute support
