@@ -133,7 +133,9 @@ fn read_file_or_stdin(path: &str) -> eyre::Result<String> {
 
 fn parse_proof_type_arg(value: &str) -> Result<ProofType, String> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "uniqueness" => Ok(ProofType::Uniqueness),
+        "uniqueness" => Ok(ProofType::Uniqueness {
+            action: FieldElement::from(1u64),
+        }),
         "session" => Ok(ProofType::Session),
         _ => Err("expected one of: uniqueness, session".to_string()),
     }
@@ -253,15 +255,13 @@ fn run_generate_test_request(
     proof_type: ProofType,
     session_id: Option<SessionId>,
 ) -> eyre::Result<()> {
-    let (proof_type, session_ref) = match (proof_type, session_id) {
-        (ProofType::Uniqueness, Some(_)) => {
+    let session_ref = match (&proof_type, session_id) {
+        (ProofType::Uniqueness { .. }, Some(_)) => {
             eyre::bail!("--session-id is only valid with --proof-type session");
         }
-        (ProofType::Uniqueness, None) => (ProofType::Uniqueness, SessionRef::None),
-        (ProofType::Session, None) => (ProofType::Session, SessionRef::Create),
-        (ProofType::Session, Some(session_id)) => {
-            (ProofType::Session, SessionRef::Existing(session_id))
-        }
+        (ProofType::Uniqueness { .. }, None) => SessionRef::None,
+        (ProofType::Session, None) => SessionRef::Create,
+        (ProofType::Session, Some(session_id)) => SessionRef::Existing(session_id),
     };
     let request = build_test_request(
         &TestEnv::default_staging(),
@@ -306,7 +306,9 @@ async fn run_test(
         issuer_schema_id,
         signal,
         300,
-        ProofType::Uniqueness,
+        ProofType::Uniqueness {
+            action: FieldElement::from(1u64),
+        },
         SessionRef::None,
     )?;
 
@@ -430,7 +432,7 @@ pub async fn run(cli: &Cli, action: &ProofCommand) -> eyre::Result<()> {
             *issuer_schema_id,
             signal,
             *expires_in,
-            *proof_type,
+            proof_type.clone(),
             *session_id,
         ),
         ProofCommand::Verify {
