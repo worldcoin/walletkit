@@ -6,62 +6,125 @@ use walletkit_sqlite::{error::ErrorCode, Connection, DbResult, Error};
 // This column is a fixed metadata key, independent of the database schema version.
 pub(super) const VAULT_META_KEY: i64 = 1;
 
-/// Append migrations here; `PRAGMA user_version` counts the applied migrations.
+/// The vault migrations, in order. Append new versions; never change shipped migrations.
+/// `PRAGMA user_version` counts the applied migrations.
 /// Migrations must not start transactions or modify the shared blob schema.
 const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] = &[migration_v1];
 
-/// Applies pending migrations atomically, without ever resetting vault data.
+#[allow(
+    clippy::cast_possible_wrap,
+    reason = "the migration list cannot approach i64::MAX"
+)]
+const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
+
+/// Ensures the vault schema is present and at the expected version.
 ///
-/// The immediate transaction serializes concurrent openers before reading the
-/// version. DDL and the version marker commit together; interrupted migrations
-/// are rolled back and retried on the next open.
+/// Current vaults are checked without a write transaction. Pending migrations
+/// and their version marker commit together; interrupted migrations roll back.
+/// A newer or incomplete vault returns an error without resetting its data.
 ///
 /// Plaintext backups contain only [`super::BACKUP_TABLES`], not `user_version`.
 /// New credential columns require backward-compatible import and merge queries.
 pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
-    migrate(conn, MIGRATIONS)
+    match read_version(conn)? {
+        version if version == SCHEMA_VERSION => {
+            if !schema_is_intact(conn)? {
+                return Err(schema_error("vault schema is incomplete"));
+            }
+        }
+        version if version < SCHEMA_VERSION => {
+            migrate(conn, MIGRATIONS)?;
+        }
+        version => {
+            return Err(newer_schema_error(version, MIGRATIONS.len()));
+        }
+    }
+    Ok(())
 }
 
+/// Applies pending migrations and records the version in the same transaction.
 fn migrate(
     conn: &Connection,
     migrations: &[fn(&Connection) -> DbResult<()>],
 ) -> DbResult<()> {
     let tx = conn.transaction_immediate()?;
-    let version =
-        tx.query_row("PRAGMA user_version", &[], |row| Ok(row.column_i64(0)))?;
+    // Recheck after taking the write lock: another opener may have migrated first.
+    let version = read_version(conn)?;
     let applied = usize::try_from(version)
         .map_err(|_| schema_error("invalid vault schema version"))?;
     if applied > migrations.len() {
-        return Err(schema_error(format!(
-            "vault schema version {version} is newer than supported version {}; upgrade WalletKit",
-            migrations.len()
-        )));
+        return Err(newer_schema_error(version, migrations.len()));
+    }
+    if applied == migrations.len() {
+        return tx.commit();
     }
 
     if version == 0 {
-        let has_meta = tx.query_row_optional(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'vault_meta'",
-            &[], |_| Ok(()),
-        )?.is_some();
-        if has_meta {
-            let invalid = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM vault_meta WHERE schema_version != 1 OR typeof(schema_version) != 'integer')",
-                &[], |row| Ok(row.column_i64(0) != 0),
-            )?;
-            if invalid {
-                return Err(schema_error(
-                    "unsupported legacy vault schema version; upgrade WalletKit",
-                ));
-            }
-        }
+        validate_legacy_schema(conn)?;
     }
 
     blobs::ensure_schema(conn)?;
     for migration in migrations.iter().skip(applied) {
         migration(conn)?;
     }
-    tx.execute_batch(&format!("PRAGMA user_version = {}", migrations.len()))?;
+    record_version(conn, migrations.len())?;
     tx.commit()
+}
+
+fn read_version(conn: &Connection) -> DbResult<i64> {
+    let version =
+        conn.query_row("PRAGMA user_version", &[], |row| Ok(row.column_i64(0)))?;
+    if version < 0 {
+        return Err(schema_error("invalid vault schema version"));
+    }
+    Ok(version)
+}
+
+/// Checks that the tables a current vault must have are present.
+fn schema_is_intact(conn: &Connection) -> DbResult<bool> {
+    let present = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master
+         WHERE type = 'table'
+           AND name IN ('vault_meta', 'credential_records', 'blob_objects');",
+        &[],
+        |row| Ok(row.column_i64(0)),
+    )?;
+    Ok(present == 3)
+}
+
+fn validate_legacy_schema(conn: &Connection) -> DbResult<()> {
+    let has_meta = conn
+        .query_row_optional(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'vault_meta'",
+            &[],
+            |_| Ok(()),
+        )?
+        .is_some();
+    if !has_meta {
+        return Ok(());
+    }
+    let invalid = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM vault_meta
+         WHERE schema_version != 1 OR typeof(schema_version) != 'integer')",
+        &[],
+        |row| Ok(row.column_i64(0) != 0),
+    )?;
+    if invalid {
+        return Err(schema_error(
+            "unsupported legacy vault schema version; upgrade WalletKit",
+        ));
+    }
+    Ok(())
+}
+
+fn record_version(conn: &Connection, version: usize) -> DbResult<()> {
+    conn.execute_batch(&format!("PRAGMA user_version = {version}"))
+}
+
+fn newer_schema_error(version: i64, supported: usize) -> Error {
+    schema_error(format!(
+        "vault schema version {version} is newer than supported version {supported}; upgrade WalletKit"
+    ))
 }
 
 fn schema_error(message: impl Into<String>) -> Error {
@@ -153,6 +216,37 @@ mod tests {
             vault.init_leaf_index(8, 300),
             Err(StorageError::InvalidLeafIndex { .. })
         ));
+    }
+
+    #[test]
+    fn current_schema_needs_no_write_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault.db");
+        let key = SecretBox::init_with(|| [42; 32]);
+        let vault = CredentialVault::new(&path, &key).unwrap();
+        let second = cipher::open_encrypted(&path, &key).unwrap();
+        let _writer = vault.vault.connection().transaction_immediate().unwrap();
+
+        ensure_schema(&second).unwrap();
+        second.execute_batch("PRAGMA query_only = ON").unwrap();
+        ensure_schema(&second).unwrap();
+        assert_eq!(version(&second), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn current_schema_with_missing_tables_fails_without_rebuilding() {
+        for table in ["vault_meta", "credential_records", "blob_objects"] {
+            let dir = tempfile::tempdir().unwrap();
+            let key = SecretBox::init_with(|| [42; 32]);
+            let vault =
+                CredentialVault::new(&dir.path().join("vault.db"), &key).unwrap();
+            let conn = vault.vault.connection();
+            conn.execute_batch(&format!("DROP TABLE {table}")).unwrap();
+
+            assert!(ensure_schema(conn).is_err(), "missing {table}");
+            assert_eq!(version(conn), SCHEMA_VERSION);
+            assert!(conn.prepare(&format!("SELECT * FROM {table}")).is_err());
+        }
     }
 
     #[test]
