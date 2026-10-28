@@ -239,7 +239,8 @@ fn migration_v2(conn: &Connection) -> DbResult<()> {
     )
 }
 
-/// Version 3: local PCP storage, deliberately excluded from credential backups.
+/// Version 3: local PCP storage. PCPs are backed up separately under their own
+/// designators, such as `orb_pkg`, so credential backups exclude them.
 fn migration_v3(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS pcp_records (
