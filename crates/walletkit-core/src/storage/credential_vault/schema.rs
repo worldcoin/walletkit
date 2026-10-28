@@ -14,15 +14,14 @@ const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] = &[migration_v1, migration
 )]
 pub(super) const VAULT_SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;
 
-/// Ensures the vault schema is present and at the expected version.
+/// Initializes the vault schema or applies pending migrations.
 ///
-/// Current vaults with singleton metadata are checked without a write transaction.
-/// Legacy metadata is adopted once. Pending migrations and their version marker
-/// commit together; interrupted migrations roll back.
-/// A newer or incomplete vault returns an error without resetting its data.
+/// Existing vaults need no writes unless a schema or metadata upgrade is needed.
+/// Upgrades run in one transaction and roll back if interrupted or unsuccessful.
+/// Newer or incomplete schemas return an error without resetting the vault.
 ///
-/// Plaintext backups contain only [`super::BACKUP_TABLES`], not `vault_meta`.
-/// New credential columns require backward-compatible import and merge queries.
+/// Plaintext backups contain only [`super::BACKUP_TABLES`], excluding `vault_meta`.
+/// Credential schema changes must preserve compatibility with older backups.
 pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
     match read_version(conn)? {
         version if version == VAULT_SCHEMA_VERSION => {
