@@ -85,11 +85,11 @@ fn schema_is_intact(conn: &Connection) -> DbResult<bool> {
     let present = conn.query_row(
         "SELECT COUNT(*) FROM sqlite_master
          WHERE type = 'table'
-           AND name IN ('vault_meta', 'credential_records', 'blob_objects');",
+           AND name IN ('vault_meta', 'credential_records', 'blob_objects', 'pcp_records');",
         &[],
         |row| Ok(row.column_i64(0)),
     )?;
-    Ok(present == 3)
+    Ok(present == 4)
 }
 
 fn validate_legacy_schema(conn: &Connection) -> DbResult<()> {
@@ -267,7 +267,12 @@ mod tests {
 
     #[test]
     fn current_schema_with_missing_tables_fails_without_rebuilding() {
-        for table in ["vault_meta", "credential_records", "blob_objects"] {
+        for table in [
+            "vault_meta",
+            "credential_records",
+            "blob_objects",
+            "pcp_records",
+        ] {
             let dir = tempfile::tempdir().unwrap();
             let key = SecretBox::init_with(|| [42; 32]);
             let vault =
