@@ -303,7 +303,7 @@ mod tests {
         assert!(conn.prepare("SELECT * FROM pcp_records").is_err());
         ensure_schema(conn).unwrap();
         assert_eq!(version(conn), 3);
-        assert!(vault.list_pcps(None).unwrap().is_empty());
+        assert!(vault.pcps().list(None).unwrap().is_empty());
         vault.init_leaf_index(7, 200).unwrap();
         assert!(matches!(
             vault.init_leaf_index(8, 300),

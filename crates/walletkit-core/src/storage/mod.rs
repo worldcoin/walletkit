@@ -51,15 +51,17 @@ pub mod credential_vault;
 pub mod error;
 pub mod keys;
 pub mod paths;
+pub mod pcp_vault;
 pub mod traits;
 pub mod types;
 
 pub use cache::CacheDb;
-pub use credential_storage::{CredentialStore, PcpVault};
+pub use credential_storage::CredentialStore;
 pub use credential_vault::CredentialVault;
 pub use error::{StorageError, StorageResult};
 pub use keys::StorageKeys;
 pub use paths::StoragePaths;
+pub use pcp_vault::PcpVault;
 pub use traits::{
     ActivityChangedListener, AtomicBlobStore, DeviceKeystore, StorageProvider,
     VaultChangedListener,

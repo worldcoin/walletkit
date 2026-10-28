@@ -5,12 +5,25 @@
 
 use super::{map_db_err, to_i64, to_u64, CredentialVault};
 use crate::storage::{PcpMetadata, PcpRecord, StorageError, StorageResult};
-use walletkit_sqlite::{params, StepResult, Value};
+use walletkit_sqlite::{params, Connection, StepResult, Value};
 
 const MAX_KIND_LEN: usize = 32;
 
 impl CredentialVault {
-    pub(crate) fn put_pcp(
+    pub(crate) const fn pcps(&self) -> PcpTable<'_> {
+        PcpTable {
+            conn: self.vault.connection(),
+        }
+    }
+}
+
+/// The vault's `pcp_records` table.
+pub struct PcpTable<'a> {
+    conn: &'a Connection,
+}
+
+impl PcpTable<'_> {
+    pub(crate) fn put(
         &self,
         id: &str,
         kind: &str,
@@ -26,8 +39,7 @@ impl CredentialVault {
         let now = to_i64(now, "now")?;
         // A kind mismatch skips the update, so no row changes.
         let changed = self
-            .vault
-            .connection()
+            .conn
             .execute(
                 "INSERT INTO pcp_records (id, kind, data, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?4)
@@ -43,10 +55,9 @@ impl CredentialVault {
         Ok(())
     }
 
-    pub(crate) fn get_pcp(&self, id: &str) -> StorageResult<Option<PcpRecord>> {
+    pub(crate) fn get(&self, id: &str) -> StorageResult<Option<PcpRecord>> {
         let row = self
-            .vault
-            .connection()
+            .conn
             .query_row_optional(
                 "SELECT id, kind, data FROM pcp_records WHERE id = ?1",
                 params![id],
@@ -62,13 +73,9 @@ impl CredentialVault {
         Ok(row)
     }
 
-    pub(crate) fn list_pcps(
-        &self,
-        kind: Option<&str>,
-    ) -> StorageResult<Vec<PcpMetadata>> {
+    pub(crate) fn list(&self, kind: Option<&str>) -> StorageResult<Vec<PcpMetadata>> {
         let mut stmt = self
-            .vault
-            .connection()
+            .conn
             .prepare(
                 "SELECT id, kind, created_at, updated_at FROM pcp_records
                  WHERE (?1 IS NULL OR kind = ?1) ORDER BY id",
@@ -90,9 +97,8 @@ impl CredentialVault {
         Ok(entries)
     }
 
-    pub(crate) fn delete_pcp(&self, id: &str) -> StorageResult<bool> {
-        self.vault
-            .connection()
+    pub(crate) fn delete(&self, id: &str) -> StorageResult<bool> {
+        self.conn
             .execute("DELETE FROM pcp_records WHERE id = ?1", params![id])
             .map(|count| count != 0)
             .map_err(|err| map_db_err(&err))
@@ -118,7 +124,6 @@ fn validate_kind(kind: &str) -> StorageResult<()> {
 mod tests {
     use super::*;
     use secrecy::SecretBox;
-    use walletkit_sqlite::Connection;
 
     fn new_vault(dir: &std::path::Path, name: &str) -> CredentialVault {
         CredentialVault::new(&dir.join(name), &SecretBox::init_with(|| [42; 32]))
@@ -131,21 +136,21 @@ mod tests {
         let vault = new_vault(dir.path(), "vault.db");
         let data = vec![0xA5; 5 * 1024 * 1024];
         let id = "./opaque/../identifier/🦉";
-        vault.put_pcp(id, "orb_pkg", &data, 100).unwrap();
+        vault.pcps().put(id, "orb_pkg", &data, 100).unwrap();
         let expected = PcpRecord {
             id: id.to_owned(),
             kind: "orb_pkg".to_owned(),
             data,
         };
-        assert_eq!(vault.get_pcp(id).unwrap(), Some(expected.clone()));
-        assert_eq!(vault.get_pcp("opaque/../identifier/🦉").unwrap(), None);
+        assert_eq!(vault.pcps().get(id).unwrap(), Some(expected.clone()));
+        assert_eq!(vault.pcps().get("opaque/../identifier/🦉").unwrap(), None);
         drop(vault);
         let vault = new_vault(dir.path(), "vault.db");
-        assert_eq!(vault.get_pcp(id).unwrap(), Some(expected));
-        assert!(vault.delete_pcp(id).unwrap());
-        assert!(!vault.delete_pcp(id).unwrap());
-        assert_eq!(vault.get_pcp(id).unwrap(), None);
-        assert!(vault.list_pcps(None).unwrap().is_empty());
+        assert_eq!(vault.pcps().get(id).unwrap(), Some(expected));
+        assert!(vault.pcps().delete(id).unwrap());
+        assert!(!vault.pcps().delete(id).unwrap());
+        assert_eq!(vault.pcps().get(id).unwrap(), None);
+        assert!(vault.pcps().list(None).unwrap().is_empty());
     }
 
     #[test]
@@ -165,8 +170,11 @@ mod tests {
                  END;",
             )
             .unwrap();
-        assert!(vault.put_pcp("package", "orb_pkg", b"data", 100).is_err());
-        assert_eq!(vault.get_pcp("package").unwrap(), None);
+        assert!(vault
+            .pcps()
+            .put("package", "orb_pkg", b"data", 100)
+            .is_err());
+        assert_eq!(vault.pcps().get("package").unwrap(), None);
     }
 
     #[test]
@@ -174,7 +182,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let vault = new_vault(dir.path(), "vault.db");
         assert!(matches!(
-            vault.put_pcp("a\0b", "orb_pkg", b"data", 100),
+            vault.pcps().put("a\0b", "orb_pkg", b"data", 100),
             Err(StorageError::InvalidPcpId)
         ));
         for kind in [
@@ -186,24 +194,34 @@ mod tests {
             &"k".repeat(33),
         ] {
             assert!(matches!(
-                vault.put_pcp("package", kind, b"data", 100),
+                vault.pcps().put("package", kind, b"data", 100),
                 Err(StorageError::InvalidPcpKind)
             ));
         }
         vault
-            .put_pcp("package", &"k".repeat(32), b"data", 100)
+            .pcps()
+            .put("package", &"k".repeat(32), b"data", 100)
             .unwrap();
-        assert_eq!(vault.list_pcps(None).unwrap().len(), 1);
+        assert_eq!(vault.pcps().list(None).unwrap().len(), 1);
     }
 
     #[test]
     fn put_updates_bytes_and_timestamp_but_preserves_kind_and_creation_time() {
         let dir = tempfile::tempdir().unwrap();
         let vault = new_vault(dir.path(), "vault.db");
-        vault.put_pcp("package", "face_pkg", b"one", 100).unwrap();
-        vault.put_pcp("package", "face_pkg", b"one", 200).unwrap();
-        vault.put_pcp("package", "face_pkg", b"two", 300).unwrap();
-        let before = vault.list_pcps(None).unwrap();
+        vault
+            .pcps()
+            .put("package", "face_pkg", b"one", 100)
+            .unwrap();
+        vault
+            .pcps()
+            .put("package", "face_pkg", b"one", 200)
+            .unwrap();
+        vault
+            .pcps()
+            .put("package", "face_pkg", b"two", 300)
+            .unwrap();
+        let before = vault.pcps().list(None).unwrap();
         assert_eq!(
             before,
             vec![PcpMetadata {
@@ -214,12 +232,13 @@ mod tests {
             }]
         );
         let error = vault
-            .put_pcp("package", "document_pkg", b"wrong kind", 400)
+            .pcps()
+            .put("package", "document_pkg", b"wrong kind", 400)
             .unwrap_err();
         assert!(matches!(error, StorageError::PcpKindMismatch));
         assert!(!error.to_string().contains("package"));
-        assert_eq!(vault.list_pcps(None).unwrap(), before);
-        assert_eq!(vault.get_pcp("package").unwrap().unwrap().data, b"two");
+        assert_eq!(vault.pcps().list(None).unwrap(), before);
+        assert_eq!(vault.pcps().get("package").unwrap().unwrap().data, b"two");
     }
 
     #[test]
@@ -227,12 +246,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let vault = new_vault(dir.path(), "vault.db");
         for (kind, id) in [("orb_pkg", "a"), ("face_pkg", "b"), ("document_pkg", "c")] {
-            vault.put_pcp(id, kind, b"", 100).unwrap();
-            assert_eq!(vault.get_pcp(id).unwrap().unwrap().data, b"");
-            assert_eq!(vault.list_pcps(Some(kind)).unwrap()[0].id, id);
+            vault.pcps().put(id, kind, b"", 100).unwrap();
+            assert_eq!(vault.pcps().get(id).unwrap().unwrap().data, b"");
+            assert_eq!(vault.pcps().list(Some(kind)).unwrap()[0].id, id);
         }
-        assert!(vault.list_pcps(Some("unknown_pkg")).unwrap().is_empty());
-        assert_eq!(vault.list_pcps(None).unwrap().len(), 3);
+        assert!(vault.pcps().list(Some("unknown_pkg")).unwrap().is_empty());
+        assert_eq!(vault.pcps().list(None).unwrap().len(), 3);
     }
 
     #[test]
@@ -240,7 +259,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let vault = new_vault(dir.path(), "vault.db");
         vault
-            .put_pcp("package", "face_pkg", b"sealed", 100)
+            .pcps()
+            .put("package", "face_pkg", b"sealed", 100)
             .unwrap();
         let conn = vault.vault.connection();
         conn.execute_batch(
@@ -248,13 +268,13 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(
-            vault.list_pcps(None),
+            vault.pcps().list(None),
             Err(StorageError::VaultDb(_))
         ));
         conn.execute_batch("UPDATE pcp_records SET created_at = 100, updated_at = -1")
             .unwrap();
         assert!(matches!(
-            vault.list_pcps(None),
+            vault.pcps().list(None),
             Err(StorageError::VaultDb(_))
         ));
     }
@@ -264,10 +284,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let vault = new_vault(dir.path(), "vault.db");
         vault
-            .put_pcp("package", "orb_pkg", b"original", 100)
+            .pcps()
+            .put("package", "orb_pkg", b"original", 100)
             .unwrap();
         assert!(matches!(
-            vault.put_pcp("package", "orb_pkg", b"new", u64::MAX),
+            vault.pcps().put("package", "orb_pkg", b"new", u64::MAX),
             Err(StorageError::VaultDb(_))
         ));
         let conn = vault.vault.connection();
@@ -275,7 +296,7 @@ mod tests {
             "CREATE TRIGGER reject_pcp_insert BEFORE INSERT ON pcp_records BEGIN SELECT RAISE(ABORT, 'injected'); END;",
         ).unwrap();
         assert!(matches!(
-            vault.put_pcp("another", "face_pkg", b"new", 200),
+            vault.pcps().put("another", "face_pkg", b"new", 200),
             Err(StorageError::VaultDb(_))
         ));
         conn.execute_batch(
@@ -283,24 +304,30 @@ mod tests {
              CREATE TRIGGER reject_pcp_update BEFORE UPDATE ON pcp_records BEGIN SELECT RAISE(ABORT, 'injected'); END;",
         ).unwrap();
         assert!(matches!(
-            vault.put_pcp("package", "orb_pkg", b"new", 200),
+            vault.pcps().put("package", "orb_pkg", b"new", 200),
             Err(StorageError::VaultDb(_))
         ));
         conn.execute_batch(
             "CREATE TRIGGER reject_pcp_delete BEFORE DELETE ON pcp_records BEGIN SELECT RAISE(ABORT, 'injected'); END;",
         ).unwrap();
         assert!(matches!(
-            vault.delete_pcp("package"),
+            vault.pcps().delete("package"),
             Err(StorageError::VaultDb(_))
         ));
-        assert_eq!(vault.get_pcp("package").unwrap().unwrap().data, b"original");
-        assert_eq!(vault.list_pcps(None).unwrap().len(), 1);
+        assert_eq!(
+            vault.pcps().get("package").unwrap().unwrap().data,
+            b"original"
+        );
+        assert_eq!(vault.pcps().list(None).unwrap().len(), 1);
         conn.execute_batch(
             "DROP TRIGGER reject_pcp_update; DROP TRIGGER reject_pcp_delete",
         )
         .unwrap();
-        vault.put_pcp("package", "orb_pkg", b"retry", 200).unwrap();
-        assert!(vault.delete_pcp("package").unwrap());
+        vault
+            .pcps()
+            .put("package", "orb_pkg", b"retry", 200)
+            .unwrap();
+        assert!(vault.pcps().delete("package").unwrap());
     }
 
     #[test]
@@ -313,19 +340,19 @@ mod tests {
             .execute_batch("DROP TABLE pcp_records")
             .unwrap();
         assert!(matches!(
-            vault.put_pcp("package", "orb_pkg", b"data", 100),
+            vault.pcps().put("package", "orb_pkg", b"data", 100),
             Err(StorageError::VaultDb(_))
         ));
         assert!(matches!(
-            vault.get_pcp("package"),
+            vault.pcps().get("package"),
             Err(StorageError::VaultDb(_))
         ));
         assert!(matches!(
-            vault.list_pcps(None),
+            vault.pcps().list(None),
             Err(StorageError::VaultDb(_))
         ));
         assert!(matches!(
-            vault.delete_pcp("package"),
+            vault.pcps().delete("package"),
             Err(StorageError::VaultDb(_))
         ));
     }
@@ -349,7 +376,8 @@ mod tests {
         source.export_plaintext(&backup).unwrap();
         let before = std::fs::read(&backup).unwrap();
         source
-            .put_pcp("package", "orb_pkg", b"remote", 100)
+            .pcps()
+            .put("package", "orb_pkg", b"remote", 100)
             .unwrap();
         source.export_plaintext(&backup).unwrap();
         assert_eq!(std::fs::read(&backup).unwrap(), before);
@@ -366,9 +394,12 @@ mod tests {
         drop(incoming);
         for merge in [false, true] {
             let local = new_vault(dir.path(), &format!("local-{merge}.db"));
-            local.put_pcp("package", "face_pkg", b"local", 50).unwrap();
-            let expected = local.get_pcp("package").unwrap();
-            let metadata = local.list_pcps(None).unwrap();
+            local
+                .pcps()
+                .put("package", "face_pkg", b"local", 50)
+                .unwrap();
+            let expected = local.pcps().get("package").unwrap();
+            let metadata = local.pcps().list(None).unwrap();
             if merge {
                 assert_eq!(
                     local
@@ -385,9 +416,9 @@ mod tests {
             } else {
                 local.import_plaintext(&backup).unwrap();
             }
-            assert_eq!(local.get_pcp("package").unwrap(), expected);
-            assert_eq!(local.list_pcps(None).unwrap(), metadata);
-            assert!(local.get_pcp("incoming-only").unwrap().is_none());
+            assert_eq!(local.pcps().get("package").unwrap(), expected);
+            assert_eq!(local.pcps().list(None).unwrap(), metadata);
+            assert!(local.pcps().get("incoming-only").unwrap().is_none());
             assert_eq!(
                 local
                     .fetch_credential_and_blinding_factor(10, 100)
@@ -417,17 +448,20 @@ mod tests {
         let backup = dir.path().join("backup.db");
         source.export_plaintext(&backup).unwrap();
         let local = new_vault(dir.path(), "local.db");
-        local.put_pcp("package", "face_pkg", b"keep", 50).unwrap();
-        let before = local.get_pcp("package").unwrap();
+        local
+            .pcps()
+            .put("package", "face_pkg", b"keep", 50)
+            .unwrap();
+        let before = local.pcps().get("package").unwrap();
         local.vault.connection().execute_batch(
             "CREATE TRIGGER reject_credential BEFORE INSERT ON credential_records BEGIN SELECT RAISE(ABORT, 'injected'); END;",
         ).unwrap();
         assert!(local.import_plaintext(&backup).is_err());
-        assert_eq!(local.get_pcp("package").unwrap(), before);
+        assert_eq!(local.pcps().get("package").unwrap(), before);
         assert!(local
             .merge_plaintext_bytes(&std::fs::read(&backup).unwrap())
             .is_err());
-        assert_eq!(local.get_pcp("package").unwrap(), before);
+        assert_eq!(local.pcps().get("package").unwrap(), before);
         assert!(local.list_credentials(None, 100).unwrap().is_empty());
         local
             .vault
@@ -435,7 +469,7 @@ mod tests {
             .execute_batch("DROP TRIGGER reject_credential")
             .unwrap();
         local.import_plaintext(&backup).unwrap();
-        assert_eq!(local.get_pcp("package").unwrap(), before);
+        assert_eq!(local.pcps().get("package").unwrap(), before);
     }
 
     #[test]
@@ -473,20 +507,28 @@ mod tests {
         ));
         assert_eq!(upgraded.list_credentials(None, 100).unwrap().len(), 1);
         upgraded
-            .put_pcp("package", "orb_pkg", b"local", 100)
+            .pcps()
+            .put("package", "orb_pkg", b"local", 100)
             .unwrap();
         let receiver = new_vault(dir.path(), "receiver.db");
         receiver
-            .put_pcp("package", "document_pkg", b"keep", 100)
+            .pcps()
+            .put("package", "document_pkg", b"keep", 100)
             .unwrap();
         receiver.import_plaintext(&backup).unwrap();
-        assert_eq!(receiver.get_pcp("package").unwrap().unwrap().data, b"keep");
+        assert_eq!(
+            receiver.pcps().get("package").unwrap().unwrap().data,
+            b"keep"
+        );
         assert_eq!(
             receiver
                 .merge_plaintext_bytes(&std::fs::read(&backup).unwrap())
                 .unwrap(),
             0
         );
-        assert_eq!(receiver.get_pcp("package").unwrap().unwrap().data, b"keep");
+        assert_eq!(
+            receiver.pcps().get("package").unwrap().unwrap().data,
+            b"keep"
+        );
     }
 }

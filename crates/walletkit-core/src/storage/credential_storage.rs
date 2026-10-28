@@ -16,7 +16,6 @@ use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{ActivityEntry, ActivityMetadata, ActivityQuery, CredentialRecord};
 use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, CredentialVault};
-use super::{PcpMetadata, PcpRecord};
 use super::{StorageLock, StorageLockGuard};
 use crate::{Credential, FieldElement};
 use world_id_core::primitives::merkle::AccountInclusionProof;
@@ -441,87 +440,6 @@ impl CredentialStore {
     }
 }
 
-#[uniffi::export]
-impl CredentialStore {
-    /// Returns a handle to this store's sealed PCPs.
-    #[must_use]
-    pub fn pcp_vault(self: Arc<Self>) -> Arc<PcpVault> {
-        Arc::new(PcpVault { store: self })
-    }
-}
-
-/// Sealed PCP storage in the account vault.
-///
-/// Ids and kinds are opaque to `WalletKit`; hosts own id normalization and
-/// typically use the backup designator (such as `orb_pkg`) as the kind. PCPs are
-/// excluded from credential backups and do not notify the vault-changed listener.
-///
-/// Operations require [`CredentialStore::init`] with the account's leaf index.
-/// [`CredentialStore::destroy_storage`] permanently removes PCPs.
-#[derive(Debug, uniffi::Object)]
-pub struct PcpVault {
-    store: Arc<CredentialStore>,
-}
-
-#[uniffi::export]
-impl PcpVault {
-    /// Stores sealed PCP bytes under the host's exact id. Replaces an existing
-    /// entry only when `kind` matches, preserving its creation time.
-    ///
-    /// # Errors
-    /// Returns an error if storage is uninitialized, `id` contains a NUL
-    /// character, `kind` is invalid or conflicts with an existing entry, `now` is
-    /// out of range, or the database write fails.
-    pub fn put(
-        &self,
-        id: &str,
-        kind: &str,
-        data: &[u8],
-        now: u64,
-    ) -> StorageResult<()> {
-        self.store
-            .lock_inner()?
-            .state()?
-            .vault
-            .put_pcp(id, kind, data, now)
-    }
-
-    /// Retrieves a PCP. Returns `None` if absent.
-    ///
-    /// # Errors
-    /// Returns an error if storage is uninitialized or the database read fails.
-    /// Errors never include the id.
-    pub fn get(&self, id: &str) -> StorageResult<Option<PcpRecord>> {
-        self.store.lock_inner()?.state()?.vault.get_pcp(id)
-    }
-
-    /// Lists PCP metadata in id order, optionally restricted to one kind.
-    /// Does not load package data; use [`Self::get`] to read it.
-    ///
-    /// # Errors
-    /// Returns an error if storage is uninitialized, stored metadata is corrupt,
-    /// or the database query fails.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "UniFFI passes optional strings by value"
-    )]
-    pub fn list(&self, kind: Option<String>) -> StorageResult<Vec<PcpMetadata>> {
-        self.store
-            .lock_inner()?
-            .state()?
-            .vault
-            .list_pcps(kind.as_deref())
-    }
-
-    /// Deletes a PCP, returning whether it existed.
-    ///
-    /// # Errors
-    /// Returns an error if storage is uninitialized or the database write fails.
-    pub fn delete(&self, id: &str) -> StorageResult<bool> {
-        self.store.lock_inner()?.state()?.vault.delete_pcp(id)
-    }
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 #[uniffi::export]
 impl CredentialStore {
@@ -740,6 +658,14 @@ impl CredentialStore {
         self.inner
             .lock()
             .map_err(|_| StorageError::Lock("storage mutex poisoned".to_string()))
+    }
+
+    /// Runs `f` on the initialized vault while holding the storage mutex.
+    pub(super) fn with_vault<T>(
+        &self,
+        f: impl FnOnce(&CredentialVault) -> StorageResult<T>,
+    ) -> StorageResult<T> {
+        f(&self.lock_inner()?.state()?.vault)
     }
 
     /// Retrieves a full credential including raw bytes by issuer schema ID.
