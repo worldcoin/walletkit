@@ -609,57 +609,6 @@ test("vault backups merge additively, reject invalid data, and survive reopening
   expect(result.reopenedRecords).toEqual(result.mergedRecords);
 });
 
-/** A message-bridge on `https://bridge.test`, with single-use reads like the real one. */
-async function stubBridge(page: import("@playwright/test").Page) {
-  type Session =
-    | { state: "initialized"; request: unknown }
-    | { state: "retrieved" }
-    | { state: "completed"; response: unknown };
-  const sessions = new Map<string, Session>();
-  const cors = {
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET, POST, PUT",
-    "access-control-allow-headers": "content-type",
-  };
-  await page.context().route("https://bridge.test/**", async (route) => {
-    const request = route.request();
-    if (request.method() === "OPTIONS")
-      return route.fulfill({ status: 204, headers: cors });
-    const [, kind, id] = new URL(request.url()).pathname.split("/");
-    const reply = (status: number, body?: unknown) =>
-      route.fulfill({ status, headers: cors, json: body });
-    const session = id === undefined ? undefined : sessions.get(id);
-    if (kind === "request" && request.method() === "POST") {
-      const { request_id, ...stored } = request.postDataJSON();
-      sessions.set(request_id, { state: "initialized", request: stored });
-      return reply(200);
-    }
-    if (kind === "request" && request.method() === "GET") {
-      if (session?.state !== "initialized") return reply(404);
-      sessions.set(id, { state: "retrieved" });
-      return reply(200, session.request);
-    }
-    if (kind === "response" && request.method() === "GET") {
-      if (!session) return reply(404);
-      if (session.state === "completed") {
-        sessions.delete(id);
-        return reply(200, { status: "completed", response: session.response });
-      }
-      return reply(200, { status: session.state, response: null });
-    }
-    if (kind === "response" && request.method() === "PUT") {
-      if (!session) return reply(400);
-      if (session.state === "completed") return reply(409);
-      sessions.set(id, {
-        state: "completed",
-        response: request.postDataJSON(),
-      });
-      return reply(201);
-    }
-    return reply(404);
-  });
-}
-
 test("two authenticators pair through the bridge and the refusal reaches the requester", async ({
   page,
 }) => {
@@ -765,3 +714,54 @@ test("two authenticators pair through the bridge and the refusal reaches the req
   });
   expect(result.afterRefusal).toEqual({ state: "expired" });
 });
+
+/** A message-bridge on `https://bridge.test`, with single-use reads like the real one. */
+async function stubBridge(page: import("@playwright/test").Page) {
+  type Session =
+    | { state: "initialized"; request: unknown }
+    | { state: "retrieved" }
+    | { state: "completed"; response: unknown };
+  const sessions = new Map<string, Session>();
+  const cors = {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, POST, PUT",
+    "access-control-allow-headers": "content-type",
+  };
+  await page.context().route("https://bridge.test/**", async (route) => {
+    const request = route.request();
+    if (request.method() === "OPTIONS")
+      return route.fulfill({ status: 204, headers: cors });
+    const [, kind, id] = new URL(request.url()).pathname.split("/");
+    const reply = (status: number, body?: unknown) =>
+      route.fulfill({ status, headers: cors, json: body });
+    const session = id === undefined ? undefined : sessions.get(id);
+    if (kind === "request" && request.method() === "POST") {
+      const { request_id, ...stored } = request.postDataJSON();
+      sessions.set(request_id, { state: "initialized", request: stored });
+      return reply(200);
+    }
+    if (kind === "request" && request.method() === "GET") {
+      if (session?.state !== "initialized") return reply(404);
+      sessions.set(id, { state: "retrieved" });
+      return reply(200, session.request);
+    }
+    if (kind === "response" && request.method() === "GET") {
+      if (!session) return reply(404);
+      if (session.state === "completed") {
+        sessions.delete(id);
+        return reply(200, { status: "completed", response: session.response });
+      }
+      return reply(200, { status: session.state, response: null });
+    }
+    if (kind === "response" && request.method() === "PUT") {
+      if (!session) return reply(400);
+      if (session.state === "completed") return reply(409);
+      sessions.set(id, {
+        state: "completed",
+        response: request.postDataJSON(),
+      });
+      return reply(201);
+    }
+    return reply(404);
+  });
+}
