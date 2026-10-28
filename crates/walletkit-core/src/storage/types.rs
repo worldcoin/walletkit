@@ -210,7 +210,7 @@ impl ActivityQuery {
     }
 }
 
-/// Sealed PCP bytes and their verified BLAKE3 checksum.
+/// Sealed PCP bytes stored under a host-chosen id.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PcpRecord {
     /// Exact identifier supplied by the host; never interpreted.
@@ -219,8 +219,6 @@ pub struct PcpRecord {
     pub kind: String,
     /// Opaque sealed package bytes, unchanged by `WalletKit`.
     pub data: Vec<u8>,
-    /// BLAKE3 of `data`, exactly 32 bytes.
-    pub checksum: Vec<u8>,
 }
 
 /// PCP metadata returned without loading package data.
@@ -230,8 +228,6 @@ pub struct PcpMetadata {
     pub id: String,
     /// Host-defined kind label, such as `orb_pkg`.
     pub kind: String,
-    /// Stored BLAKE3 checksum, exactly 32 bytes. Verified against data by `get_pcp`.
-    pub checksum: Vec<u8>,
     /// First insertion time in Unix seconds.
     pub created_at: u64,
     /// Most recent put time in Unix seconds.

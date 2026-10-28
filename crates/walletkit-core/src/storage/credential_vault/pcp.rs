@@ -17,7 +17,7 @@ impl CredentialVault {
         kind: &str,
         data: &[u8],
         now: u64,
-    ) -> StorageResult<Vec<u8>> {
+    ) -> StorageResult<()> {
         // Text columns are read back up to the first NUL, so such an id could not be
         // listed or fetched again.
         if id.contains('\0') {
@@ -25,26 +25,23 @@ impl CredentialVault {
         }
         validate_kind(kind)?;
         let now = to_i64(now, "now")?;
-        let checksum = blake3::hash(data);
-        // An autocommit `RETURNING` commits when the statement is finalized, and that
-        // result is not observable. The explicit commit surfaces write failures.
-        let conn = self.vault.connection();
-        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
-        let stored = tx
-            .query_row_optional(
-                "INSERT INTO pcp_records (id, kind, data, checksum, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+        // A kind mismatch skips the update, so no row changes.
+        let changed = self
+            .vault
+            .connection()
+            .execute(
+                "INSERT INTO pcp_records (id, kind, data, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?4)
                  ON CONFLICT(id) DO UPDATE SET
-                     data = excluded.data, checksum = excluded.checksum, updated_at = excluded.updated_at
-                 WHERE pcp_records.kind = excluded.kind
-                 RETURNING checksum",
-                params![id, kind, data, checksum.as_bytes().as_slice(), now],
-                |row| Ok(row.column_blob(0)),
+                     data = excluded.data, updated_at = excluded.updated_at
+                 WHERE pcp_records.kind = excluded.kind",
+                params![id, kind, data, now],
             )
-            .map_err(|err| map_db_err(&err))?
-            .ok_or(StorageError::PcpKindMismatch)?;
-        tx.commit().map_err(|err| map_db_err(&err))?;
-        Ok(stored)
+            .map_err(|err| map_db_err(&err))?;
+        if changed == 0 {
+            return Err(StorageError::PcpKindMismatch);
+        }
+        Ok(())
     }
 
     pub(crate) fn get_pcp(&self, id: &str) -> StorageResult<Option<PcpRecord>> {
@@ -52,30 +49,18 @@ impl CredentialVault {
             .vault
             .connection()
             .query_row_optional(
-                "SELECT id, kind, data, checksum FROM pcp_records WHERE id = ?1",
+                "SELECT id, kind, data FROM pcp_records WHERE id = ?1",
                 params![id],
                 |row| {
-                    Ok((
-                        row.column_text(0),
-                        row.column_text(1),
-                        row.column_blob(2),
-                        row.column_blob(3),
-                    ))
+                    Ok(PcpRecord {
+                        id: row.column_text(0),
+                        kind: row.column_text(1),
+                        data: row.column_blob(2),
+                    })
                 },
             )
             .map_err(|err| map_db_err(&err))?;
-        let Some((id, kind, data, checksum)) = row else {
-            return Ok(None);
-        };
-        if blake3::hash(&data).as_bytes().as_slice() != checksum {
-            return Err(StorageError::CorruptedPcp("checksum mismatch".to_owned()));
-        }
-        Ok(Some(PcpRecord {
-            id,
-            kind,
-            data,
-            checksum,
-        }))
+        Ok(row)
     }
 
     pub(crate) fn list_pcps(
@@ -86,7 +71,7 @@ impl CredentialVault {
             .vault
             .connection()
             .prepare(
-                "SELECT id, kind, checksum, created_at, updated_at FROM pcp_records
+                "SELECT id, kind, created_at, updated_at FROM pcp_records
                  WHERE (?1 IS NULL OR kind = ?1) ORDER BY id",
             )
             .map_err(|err| map_db_err(&err))?;
@@ -96,18 +81,11 @@ impl CredentialVault {
         .map_err(|err| map_db_err(&err))?;
         let mut entries = Vec::new();
         while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
-            let checksum = row.column_blob(2);
-            if checksum.len() != 32 {
-                return Err(StorageError::CorruptedPcp(
-                    "invalid checksum length".to_owned(),
-                ));
-            }
             entries.push(PcpMetadata {
                 id: row.column_text(0),
                 kind: row.column_text(1),
-                checksum,
-                created_at: to_u64(row.column_i64(3), "PCP created_at")?,
-                updated_at: to_u64(row.column_i64(4), "PCP updated_at")?,
+                created_at: to_u64(row.column_i64(2), "PCP created_at")?,
+                updated_at: to_u64(row.column_i64(3), "PCP updated_at")?,
             });
         }
         Ok(entries)
@@ -149,18 +127,16 @@ mod tests {
     }
 
     #[test]
-    fn opaque_ids_and_bytes_round_trip_across_reopen_with_stable_checksums() {
+    fn opaque_ids_and_bytes_round_trip_across_reopen() {
         let dir = tempfile::tempdir().unwrap();
         let vault = new_vault(dir.path(), "vault.db");
         let data = vec![0xA5; 5 * 1024 * 1024];
         let id = "./opaque/../identifier/🦉";
-        let checksum = vault.put_pcp(id, "orb_pkg", &data, 100).unwrap();
-        assert_eq!(checksum, blake3::hash(&data).as_bytes());
+        vault.put_pcp(id, "orb_pkg", &data, 100).unwrap();
         let expected = PcpRecord {
             id: id.to_owned(),
             kind: "orb_pkg".to_owned(),
             data,
-            checksum,
         };
         assert_eq!(vault.get_pcp(id).unwrap(), Some(expected.clone()));
         assert_eq!(vault.get_pcp("opaque/../identifier/🦉").unwrap(), None);
@@ -177,7 +153,7 @@ mod tests {
     fn put_reports_failures_that_only_surface_at_commit() {
         let dir = tempfile::tempdir().unwrap();
         let vault = new_vault(dir.path(), "vault.db");
-        // A deferred foreign key is checked at commit, after the `RETURNING` row.
+        // A deferred foreign key is checked at commit, after the row is written.
         vault
             .vault
             .connection()
@@ -225,20 +201,15 @@ mod tests {
     fn put_updates_bytes_and_timestamp_but_preserves_kind_and_creation_time() {
         let dir = tempfile::tempdir().unwrap();
         let vault = new_vault(dir.path(), "vault.db");
-        let first = vault.put_pcp("package", "face_pkg", b"one", 100).unwrap();
-        assert_eq!(
-            vault.put_pcp("package", "face_pkg", b"one", 200).unwrap(),
-            first
-        );
-        let next = vault.put_pcp("package", "face_pkg", b"two", 300).unwrap();
-        assert_ne!(first, next);
+        vault.put_pcp("package", "face_pkg", b"one", 100).unwrap();
+        vault.put_pcp("package", "face_pkg", b"one", 200).unwrap();
+        vault.put_pcp("package", "face_pkg", b"two", 300).unwrap();
         let before = vault.list_pcps(None).unwrap();
         assert_eq!(
             before,
             vec![PcpMetadata {
                 id: "package".to_owned(),
                 kind: "face_pkg".to_owned(),
-                checksum: next,
                 created_at: 100,
                 updated_at: 300,
             }]
@@ -253,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn list_filters_by_kind_and_returns_metadata_for_empty_or_corrupt_data() {
+    fn list_filters_by_kind_and_returns_metadata_for_empty_data() {
         let dir = tempfile::tempdir().unwrap();
         let vault = new_vault(dir.path(), "vault.db");
         for (kind, id) in [("orb_pkg", "a"), ("face_pkg", "b"), ("document_pkg", "c")] {
@@ -263,40 +234,18 @@ mod tests {
         }
         assert!(vault.list_pcps(Some("unknown_pkg")).unwrap().is_empty());
         assert_eq!(vault.list_pcps(None).unwrap().len(), 3);
-        vault
-            .vault
-            .connection()
-            .execute_batch("UPDATE pcp_records SET data = X'FF'")
-            .unwrap();
-        assert_eq!(vault.list_pcps(None).unwrap().len(), 3);
-        assert!(matches!(
-            vault.get_pcp("a"),
-            Err(StorageError::CorruptedPcp(_))
-        ));
     }
 
     #[test]
-    fn corrupt_checksums_fail_without_exposing_ids() {
+    fn list_rejects_negative_timestamps() {
         let dir = tempfile::tempdir().unwrap();
         let vault = new_vault(dir.path(), "vault.db");
-        let id = "private-face-identifier";
-        vault.put_pcp(id, "face_pkg", b"sealed", 100).unwrap();
+        vault
+            .put_pcp("package", "face_pkg", b"sealed", 100)
+            .unwrap();
         let conn = vault.vault.connection();
-        for sql in [
-            "UPDATE pcp_records SET checksum = zeroblob(32)",
-            "PRAGMA ignore_check_constraints = ON; UPDATE pcp_records SET checksum = X'FF'",
-        ] {
-            conn.execute_batch(sql).unwrap();
-            let error = vault.get_pcp(id).unwrap_err();
-            assert!(matches!(error, StorageError::CorruptedPcp(_)));
-            assert!(!error.to_string().contains(id));
-        }
-        assert!(matches!(
-            vault.list_pcps(None),
-            Err(StorageError::CorruptedPcp(_))
-        ));
         conn.execute_batch(
-            "UPDATE pcp_records SET checksum = zeroblob(32), created_at = -1",
+            "PRAGMA ignore_check_constraints = ON; UPDATE pcp_records SET created_at = -1",
         )
         .unwrap();
         assert!(matches!(

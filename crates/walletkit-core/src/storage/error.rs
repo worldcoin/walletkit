@@ -96,10 +96,6 @@ pub enum StorageError {
     #[error("PCP kind must be 1 to 32 lowercase ASCII letters, digits or underscores")]
     InvalidPcpKind,
 
-    /// A stored PCP has invalid metadata or does not match its checksum.
-    #[error("corrupted PCP: {0}")]
-    CorruptedPcp(String),
-
     /// Corrupted cache entry
     #[error("corrupted cache entry at {key_prefix}")]
     CorruptedCacheEntry {

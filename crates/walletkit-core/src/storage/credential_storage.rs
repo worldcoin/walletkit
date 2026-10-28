@@ -443,9 +443,8 @@ impl CredentialStore {
 
 #[uniffi::export]
 impl CredentialStore {
-    /// Stores sealed PCP bytes under the host's exact id and returns their
-    /// 32-byte BLAKE3 checksum. Replaces data at an existing id only when the
-    /// kind matches, preserving its creation time.
+    /// Stores sealed PCP bytes under the host's exact id. Replaces data at an
+    /// existing id only when the kind matches, preserving its creation time.
     ///
     /// The id and kind are opaque to `WalletKit`. Hosts own id normalization and
     /// typically use the backup designator, such as `orb_pkg`, as the kind. PCP
@@ -465,24 +464,24 @@ impl CredentialStore {
         kind: &str,
         data: &[u8],
         now: u64,
-    ) -> StorageResult<Vec<u8>> {
+    ) -> StorageResult<()> {
         self.lock_inner()?
             .state()?
             .vault
             .put_pcp(id, kind, data, now)
     }
 
-    /// Retrieves a PCP, verifying its BLAKE3 checksum. Returns `None` if absent.
+    /// Retrieves a PCP. Returns `None` if absent.
     ///
     /// # Errors
-    /// Returns an error if storage is uninitialized, stored data is corrupt,
-    /// or the database read fails. Errors never include the id.
+    /// Returns an error if storage is uninitialized or the database read fails.
+    /// Errors never include the id.
     pub fn get_pcp(&self, id: &str) -> StorageResult<Option<PcpRecord>> {
         self.lock_inner()?.state()?.vault.get_pcp(id)
     }
 
     /// Lists PCP metadata in id order, optionally restricted to one kind.
-    /// Does not load package data; use [`Self::get_pcp`] to verify its checksum.
+    /// Does not load package data; use [`Self::get_pcp`] to read it.
     ///
     /// # Errors
     /// Returns an error if storage is uninitialized, stored metadata is corrupt,
@@ -1252,10 +1251,7 @@ mod tests {
         let (tx, rx) = mpsc::sync_channel(1);
         *store.vault_changed_tx.lock().unwrap() = Some(tx);
         let before = store.export_vault_for_backup().unwrap();
-        assert_eq!(
-            store.put_pcp("package", "orb_pkg", b"sealed", 100).unwrap(),
-            blake3::hash(b"sealed").as_bytes()
-        );
+        store.put_pcp("package", "orb_pkg", b"sealed", 100).unwrap();
         assert!(store.get_pcp("missing").unwrap().is_none());
         assert_eq!(store.get_pcp("package").unwrap().unwrap().data, b"sealed");
         assert_eq!(

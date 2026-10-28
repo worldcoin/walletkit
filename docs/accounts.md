@@ -25,8 +25,7 @@ In the browser, the app supplies the key itself; see
 `CredentialStore` also stores sealed Personal Custody Packages with `put_pcp`,
 `get_pcp`, `list_pcps`, and `delete_pcp`. Each entry has an opaque id and a short
 kind label chosen by the host, such as the backup designator `orb_pkg`; WalletKit
-interprets neither. Reads verify BLAKE3 checksums, and an existing id cannot change
-kind. PCPs are excluded from credential vault backups and remain intact during
+interprets neither. An existing id cannot change kind. PCPs are excluded from credential vault backups and remain intact during
 credential import or merge. PCP writes do not trigger the credential vault-change
 listener; hosts must schedule their PCP backups separately.
 
