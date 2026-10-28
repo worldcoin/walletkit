@@ -619,7 +619,7 @@ impl Authenticator {
         Self::init_with_config(&seed, config, artifacts, store).await
     }
 
-    /// Replaces the set of RPs allowed to reuse a nullifier (WIP-116 RP whitelist).
+    /// Replaces the set of RPs allowed to reuse a nullifier (WIP-113 RP whitelist).
     ///
     /// Proofs for these RPs may reuse a nullifier any number of times. The set is
     /// empty by default and is not persisted.
