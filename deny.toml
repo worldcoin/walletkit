@@ -54,10 +54,8 @@ ignore = [
   # Askama still requires basic-toml for config parsing through uniffi_bindgen and
   # taceo-groth16-sol. Remove once both dependency paths stop enabling it.
   { id = "RUSTSEC-2026-0374", reason = "unmaintained basic-toml required by Askama; no patched release" },
-  # webpki-roots / webpki-root-certs 0.26.11 are shims that re-export the 1.x crates (locked
-  # at 1.0.10, which removes the emSign root), but the advisories still match them. webpki-roots
-  # 0.26 comes from flamingo-verifier-client and tokio-tungstenite; webpki-root-certs 0.26 from
-  # rustls-platform-verifier 0.5 via jsonrpsee. Drop these once none of them depends on 0.26.
-  { id = "RUSTSEC-2026-0381", reason = "only matches the webpki-roots 0.26.11 shim over 1.0.10" },
-  { id = "RUSTSEC-2026-0383", reason = "only matches the webpki-root-certs 0.26.11 shim over 1.0.10" },
+  # elliptic-curve 0.13 pins crypto-bigint 0.5, which has no patched release. It is reached through
+  # alloy's k256 0.13 and through p256 0.13 (attested-request, jose-jwk, world-id-flamingo,
+  # world-id-primitives). Remove once no package in Cargo.lock resolves crypto-bigint 0.5.
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 via elliptic-curve 0.13; fix is only in 0.7.6+" },
 ]
