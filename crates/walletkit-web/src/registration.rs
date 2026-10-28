@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use js_sys::{Array, BigInt, Promise, Uint8Array};
+use js_sys::{Array, Promise, Uint8Array};
 use walletkit_core::registration::{
     ApprovalOutcome, ApprovalResult, BridgeClient, CheckedRegistration,
     IncomingRegistration, KnownAuthenticator, PendingRegistration, Registered,
@@ -381,7 +381,7 @@ impl JsIncomingRegistration {
     #[wasm_bindgen(js_name = check, unchecked_return_type = "Promise<CheckedRegistration>")]
     pub fn check(&self, approver: &JsAuthenticator) -> Promise {
         let incoming = Arc::clone(&self.0);
-        let approver = approver.inner();
+        let approver = Arc::clone(&approver.0);
         js::promise(async move {
             let checked = incoming.check(&approver).await.map_err(to_js)?;
             Ok(JsCheckedRegistration(checked).into())
@@ -483,7 +483,7 @@ impl JsCheckedRegistration {
         authenticators: &JsValue,
     ) -> Promise {
         let checked = Arc::clone(&self.0);
-        let approver = approver.inner();
+        let approver = Arc::clone(&approver.0);
         let authenticators = known_authenticators(authenticators);
         // The vault only reaches core's zeroizing guard once validation passed.
         let mut vault = vault.map(Zeroizing::new);
@@ -492,7 +492,7 @@ impl JsCheckedRegistration {
             let outcome = checked
                 .approve(
                     &approver,
-                    vault.as_mut().map(|vault| std::mem::take(&mut **vault)),
+                    vault.as_deref_mut().map(std::mem::take),
                     authenticators,
                 )
                 .await
@@ -508,31 +508,6 @@ fn parse_class(class: &str) -> Result<RequestedClass, JsValue> {
         "proving" => Ok(RequestedClass::Proving),
         _ => Err(invalid_argument(&format!("Unknown class: {class}"))),
     }
-}
-
-const fn class_name(class: RequestedClass) -> &'static str {
-    match class {
-        RequestedClass::Admin => "admin",
-        RequestedClass::Proving => "proving",
-    }
-}
-
-fn known_authenticators(value: &JsValue) -> Result<Vec<KnownAuthenticator>, JsValue> {
-    if !Array::is_array(value) {
-        return Err(invalid_argument("`authenticators` must be an array"));
-    }
-    Array::from(value)
-        .iter()
-        .map(|item| {
-            Ok(KnownAuthenticator {
-                pubkey_id: js::u32_arg(
-                    "pubkeyId",
-                    js::number_field(&item, "pubkeyId")?,
-                )?,
-                name: js::string_field(&item, "name")?,
-            })
-        })
-        .collect()
 }
 
 fn requester_status(status: RequesterStatus) -> Result<JsValue, JsValue> {
@@ -567,15 +542,41 @@ fn registered_record(registered: Registered) -> Result<JsValue, JsValue> {
     js::object(&[
         (
             "authenticator",
-            JsAuthenticator::from(registered.authenticator).into(),
+            JsAuthenticator(registered.authenticator).into(),
         ),
         (
             "vaultBackup",
-            vault_backup.as_deref().map_or(JsValue::UNDEFINED, |vault| {
-                Uint8Array::from(&vault[..]).into()
-            }),
+            vault_backup
+                .as_deref()
+                .map(|vault| Uint8Array::from(vault.as_slice()))
+                .into(),
         ),
     ])
+}
+
+const fn class_name(class: RequestedClass) -> &'static str {
+    match class {
+        RequestedClass::Admin => "admin",
+        RequestedClass::Proving => "proving",
+    }
+}
+
+fn known_authenticators(value: &JsValue) -> Result<Vec<KnownAuthenticator>, JsValue> {
+    if !Array::is_array(value) {
+        return Err(invalid_argument("`authenticators` must be an array"));
+    }
+    Array::from(value)
+        .iter()
+        .map(|item| {
+            Ok(KnownAuthenticator {
+                pubkey_id: js::u32_arg(
+                    "pubkeyId",
+                    js::number_field(&item, "pubkeyId")?,
+                )?,
+                name: js::string_field(&item, "name")?,
+            })
+        })
+        .collect()
 }
 
 fn approval_outcome(outcome: &ApprovalOutcome) -> Result<JsValue, JsValue> {
@@ -585,7 +586,7 @@ fn approval_outcome(outcome: &ApprovalOutcome) -> Result<JsValue, JsValue> {
             pubkey_id,
         } => js::object(&[
             ("state", "registered".into()),
-            ("leafIndex", BigInt::from(*leaf_index).into()),
+            ("leafIndex", (*leaf_index).into()),
             ("pubkeyId", (*pubkey_id).into()),
         ])?,
         ApprovalResult::Failed { reason } => {

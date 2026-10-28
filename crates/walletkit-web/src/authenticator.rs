@@ -94,19 +94,7 @@ impl Default for JsEmbeddedZkArtifacts {
 
 /// The main component with which users interact with the World ID Protocol.
 #[wasm_bindgen(js_name = Authenticator)]
-pub struct JsAuthenticator(Arc<Authenticator>);
-
-impl JsAuthenticator {
-    pub(crate) fn inner(&self) -> Arc<Authenticator> {
-        Arc::clone(&self.0)
-    }
-}
-
-impl From<Arc<Authenticator>> for JsAuthenticator {
-    fn from(authenticator: Arc<Authenticator>) -> Self {
-        Self(authenticator)
-    }
-}
+pub struct JsAuthenticator(pub(crate) Arc<Authenticator>);
 
 #[wasm_bindgen(js_class = Authenticator)]
 impl JsAuthenticator {
