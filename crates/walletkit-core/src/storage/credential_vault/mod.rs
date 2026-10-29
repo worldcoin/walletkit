@@ -14,7 +14,7 @@ use std::path::Path;
 
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{BlobKind, CredentialRecord};
-use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
+use schema::ensure_schema;
 use secrecy::SecretBox;
 use walletkit_db::{blobs, Vault};
 use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value};
@@ -86,13 +86,6 @@ impl CredentialVault {
             )
             .map_err(|err| map_db_err(&err))?;
         match (count, stored) {
-            (0, _) => {
-                tx.execute(
-                    "INSERT INTO vault_meta (schema_version, leaf_index, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?3)",
-                    params![VAULT_SCHEMA_VERSION, leaf_index_i64, now_i64],
-                ).map_err(|err| map_db_err(&err))?;
-            }
             (1, None) => {
                 tx.execute(
                     "UPDATE vault_meta SET leaf_index = ?1, updated_at = ?2",
