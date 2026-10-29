@@ -52,6 +52,13 @@ The tests are in [`web/walletkit/tests`](https://github.com/worldcoin/walletkit/
 - `types/consumer.ts` checks the public TypeScript API at compile time. To check
   that an invalid call doesn't compile, mark it with `// @ts-expect-error`.
 
+The Rust facade also has deterministic WASM tests that run inside a dedicated
+worker in headless Firefox, provided by the Linux `wasm` devshell:
+
+```sh
+nix develop .#wasm --command cargo test --locked --release -p walletkit-web --target wasm32-unknown-unknown --lib
+```
+
 CI also lints the crate and checks the TypeScript formatting. To run the same
 checks, run these commands:
 
