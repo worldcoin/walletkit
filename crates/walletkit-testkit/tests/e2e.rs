@@ -20,6 +20,7 @@ use walletkit_testkit::utils::now_secs;
 use walletkit_testkit::{
     generate_and_verify_test_proof, CredentialType, ProofType, TestEnv,
 };
+use world_id_core::primitives::FieldElement;
 
 // Distinct seeds so the parallel tests drive independent staging identities.
 const FAUX_TEST_SEED: [u8; 32] = [7u8; 32];
@@ -50,7 +51,9 @@ async fn e2e_faux_issuer_proof() {
         &FAUX_TEST_SEED,
         root.path(),
         SIGNAL,
-        ProofType::Uniqueness,
+        ProofType::Uniqueness {
+            action: FieldElement::from(1u64),
+        },
         None,
     )
     .await
@@ -82,7 +85,9 @@ async fn e2e_local_eddsa_proof() {
         &LOCAL_TEST_SEED,
         root.path(),
         SIGNAL,
-        ProofType::Uniqueness,
+        ProofType::Uniqueness {
+            action: FieldElement::from(1u64),
+        },
         None,
     )
     .await

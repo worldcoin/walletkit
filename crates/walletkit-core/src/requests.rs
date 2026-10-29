@@ -136,7 +136,6 @@ mod tests {
             rp_id: RpId::new(1),
             oprf_key_id: OprfKeyId::new(U160::from(1)),
             session_id: SessionRef::None,
-            action: Some(FieldElement::from(1u64)),
             signature: test_signature(),
             nonce: FieldElement::from(2u64),
             requests: vec![RequestItem {
@@ -152,7 +151,10 @@ mod tests {
 
     #[test]
     fn from_json_defaults_missing_proof_type_to_uniqueness() {
-        let core_request = base_core_request(ProofType::Uniqueness);
+        let proof_type = ProofType::Uniqueness {
+            action: FieldElement::from(1u64),
+        };
+        let core_request = base_core_request(proof_type.clone());
         let mut value =
             serde_json::to_value(core_request).expect("request should serialize");
         value
@@ -164,12 +166,15 @@ mod tests {
             serde_json::to_string(&value).expect("request json should serialize");
         let request = ProofRequest::from_json(&json).expect("request should parse");
 
-        assert_eq!(request.0.proof_type, ProofType::Uniqueness);
+        assert_eq!(request.0.proof_type, proof_type);
     }
 
     #[test]
     fn from_json_rejects_invalid_proof_type_fields() {
-        let mut value = serde_json::to_value(base_core_request(ProofType::Uniqueness))
+        let mut value =
+            serde_json::to_value(base_core_request(ProofType::Uniqueness {
+                action: FieldElement::from(1u64),
+            }))
             .expect("request should serialize");
         let object = value.as_object_mut().expect("request should be an object");
         object.insert(

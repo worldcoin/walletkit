@@ -1,7 +1,7 @@
 //! The Requesting Authenticator's side of a registration (WIP-109 §3.8).
 
 use std::{
-    sync::{Arc, Mutex, PoisonError},
+    sync::{Arc, Mutex, PoisonError, RwLock},
     time::Duration,
 };
 
@@ -376,7 +376,11 @@ impl RegistrationRequester {
         )?;
 
         Ok(Registered {
-            authenticator: Arc::new(Authenticator { inner, store }),
+            authenticator: Arc::new(Authenticator {
+                inner,
+                store,
+                nullifier_reuse_whitelist: RwLock::default(),
+            }),
             vault_backup: result.0.vault.as_ref().map(|vault| vault.data.to_vec()),
         })
     }
@@ -415,6 +419,7 @@ fn is_transient(error: &AuthenticatorError) -> bool {
         | AuthenticatorError::AccountDoesNotExist
         | AuthenticatorError::NetworkError(_) => true,
         AuthenticatorError::IndexerError { status, .. }
+        | AuthenticatorError::ServiceUnavailable { status, .. }
         | AuthenticatorError::OhttpRelayError { status, .. } => {
             status.is_server_error()
                 || *status == reqwest::StatusCode::TOO_MANY_REQUESTS
@@ -614,16 +619,27 @@ mod tests {
     #[tokio::test]
     async fn is_transient_includes_retryable_ohttp_relay_and_rpc_transport_errors() {
         assert!(is_transient(&AuthenticatorError::OhttpRelayError {
+            service: "ohttp_gateway".to_string(),
+            relay_url: "https://relay.example".to_string(),
             status: reqwest::StatusCode::TOO_MANY_REQUESTS,
             body: String::new(),
         }));
         assert!(is_transient(&AuthenticatorError::OhttpRelayError {
+            service: "ohttp_gateway".to_string(),
+            relay_url: "https://relay.example".to_string(),
             status: reqwest::StatusCode::SERVICE_UNAVAILABLE,
             body: String::new(),
         }));
         assert!(!is_transient(&AuthenticatorError::OhttpRelayError {
+            service: "ohttp_gateway".to_string(),
+            relay_url: "https://relay.example".to_string(),
             status: reqwest::StatusCode::BAD_REQUEST,
             body: String::new(),
+        }));
+
+        assert!(is_transient(&AuthenticatorError::ServiceUnavailable {
+            service: "indexer".to_string(),
+            status: reqwest::StatusCode::SERVICE_UNAVAILABLE,
         }));
 
         let reqwest_err = reqwest::Client::new()
