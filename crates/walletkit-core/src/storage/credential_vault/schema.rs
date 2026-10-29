@@ -18,6 +18,7 @@ const VAULT_VERSION: i64 = MIGRATIONS.len() as i64;
 
 /// The oldest vault version whose code can use vaults written by this build.
 /// Raise it only with a migration that older code cannot safely ignore.
+/// Builds that predate `vault_version` never read it.
 const MIN_VAULT_VERSION: i64 = 1;
 
 /// Every vault keeps `vault_meta.schema_version` at 1. Builds that predate
@@ -68,19 +69,19 @@ fn migrate(
 ) -> DbResult<()> {
     let tx = conn.transaction_immediate()?;
     // Recheck under the write lock: another opener may have initialized or migrated first.
-    let (version, needs_metadata) = if schema_is_empty(conn)? {
-        (0, true)
+    let version = if schema_is_empty(conn)? {
+        0
     } else if let Some(stored) = read_version(conn)? {
         check_supported(stored, version_count(migrations)?)?;
         validate_schema(conn, stored.version)?;
-        (stored.version, false)
+        stored.version
     } else {
         validate_legacy_schema(conn)?;
-        (1, true)
+        1
     };
     let applied =
         usize::try_from(version).map_err(|_| schema_error("invalid vault version"))?;
-    if applied >= migrations.len() && !needs_metadata {
+    if applied >= migrations.len() {
         return tx.commit();
     }
 
@@ -90,6 +91,14 @@ fn migrate(
     }
     record_version(conn, version_count(migrations)?)?;
     tx.commit()
+}
+
+fn schema_is_empty(conn: &Connection) -> DbResult<bool> {
+    conn.query_row(
+        "SELECT NOT EXISTS(SELECT 1 FROM sqlite_master)",
+        &[],
+        |row| Ok(row.column_i64(0) != 0),
+    )
 }
 
 fn version_count(migrations: &[fn(&Connection) -> DbResult<()>]) -> DbResult<i64> {
@@ -118,26 +127,28 @@ fn read_version(conn: &Connection) -> DbResult<Option<StoredVersion>> {
                 typeof(min_vault_version), schema_version IS 1
          FROM vault_meta",
     )?;
-    let stored = match stmt.step()? {
+    let (stored, valid) = match stmt.step()? {
         StepResult::Done => return Ok(None),
         StepResult::Row(row) => {
-            let valid = row.column_text(1) == "integer"
-                && row.column_text(3) == "integer"
-                && row.column_i64(4) != 0;
             let stored = StoredVersion {
                 version: row.column_i64(0),
                 min_version: row.column_i64(2),
             };
-            (valid && stored.min_version > 0 && stored.min_version <= stored.version)
-                .then_some(stored)
+            let valid = row.column_text(1) == "integer"
+                && row.column_text(3) == "integer"
+                && row.column_i64(4) != 0
+                && stored.min_version > 0
+                && stored.min_version <= stored.version;
+            (stored, valid)
         }
     };
     if matches!(stmt.step()?, StepResult::Row(_)) {
         return Err(schema_error("multiple vault metadata rows"));
     }
-    stored
-        .ok_or_else(|| schema_error("invalid vault version"))
-        .map(Some)
+    if !valid {
+        return Err(schema_error("invalid vault version"));
+    }
+    Ok(Some(stored))
 }
 
 /// Reads a vault without `vault_version`, which needs migration v2.
@@ -145,17 +156,22 @@ fn read_version(conn: &Connection) -> DbResult<Option<StoredVersion>> {
 /// A `schema_version` of 2 with the single-row index was recorded by builds that kept
 /// the version in `schema_version`; v2 restores the legacy metadata layout.
 fn read_legacy_version(conn: &Connection) -> DbResult<Option<StoredVersion>> {
-    let mut stmt =
-        conn.prepare("SELECT schema_version, typeof(schema_version) FROM vault_meta")?;
-    let (version, storage_type) = match stmt.step()? {
+    // One statement, so a concurrent conversion cannot change the index between reads.
+    let mut stmt = conn.prepare(
+        "SELECT typeof(schema_version) = 'integer'
+                AND (schema_version = 1
+                     OR (schema_version = 2 AND EXISTS(
+                         SELECT 1 FROM sqlite_master WHERE type = 'index'
+                         AND tbl_name = 'vault_meta' AND name = 'idx_vault_meta_singleton')))
+         FROM vault_meta",
+    )?;
+    let valid = match stmt.step()? {
         StepResult::Done => return Ok(None),
-        StepResult::Row(row) => (row.column_i64(0), row.column_text(1)),
+        StepResult::Row(row) => row.column_i64(0) != 0,
     };
     if matches!(stmt.step()?, StepResult::Row(_)) {
         return Err(schema_error("multiple vault metadata rows"));
     }
-    let valid = storage_type == "integer"
-        && (version == 1 || (version == 2 && has_singleton_constraint(conn)?));
     if !valid {
         return Err(schema_error("invalid vault version"));
     }
@@ -163,14 +179,6 @@ fn read_legacy_version(conn: &Connection) -> DbResult<Option<StoredVersion>> {
         version: 1,
         min_version: 1,
     }))
-}
-
-fn schema_is_empty(conn: &Connection) -> DbResult<bool> {
-    conn.query_row(
-        "SELECT NOT EXISTS(SELECT 1 FROM sqlite_master)",
-        &[],
-        |row| Ok(row.column_i64(0) != 0),
-    )
 }
 
 /// Validates the tables and metadata layout required by the stored version.
@@ -307,10 +315,16 @@ fn migration_v2(conn: &Connection) -> DbResult<()> {
     }
     conn.execute_batch(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_meta_schema_version
-         ON vault_meta (schema_version);
-         ALTER TABLE vault_meta ADD COLUMN vault_version INTEGER NOT NULL DEFAULT 1;
-         ALTER TABLE vault_meta ADD COLUMN min_vault_version INTEGER NOT NULL DEFAULT 1;",
-    )
+         ON vault_meta (schema_version);",
+    )?;
+    for column in ["vault_version", "min_vault_version"] {
+        if !has_column(conn, column)? {
+            conn.execute_batch(&format!(
+                "ALTER TABLE vault_meta ADD COLUMN {column} INTEGER NOT NULL DEFAULT 1;"
+            ))?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -985,7 +999,7 @@ mod tests {
     }
 
     #[test]
-    fn single_row_index_from_earlier_vault_version_builds_is_replaced() {
+    fn version_kept_in_schema_version_is_converted() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("vault.db");
         let key = SecretBox::init_with(|| [42; 32]);
@@ -1006,5 +1020,36 @@ mod tests {
             vault.init_leaf_index(8, 200),
             Err(StorageError::InvalidLeafIndex { .. })
         ));
+        for provided in [7, 8] {
+            let stored = conn
+                .query_row(PRE_VAULT_VERSION_INIT, params![provided], |row| {
+                    Ok(row.column_i64(0))
+                })
+                .unwrap();
+            assert_eq!(stored, 7);
+        }
+        assert_eq!(metadata(conn), (1, 1, VAULT_VERSION, MIN_VAULT_VERSION));
+    }
+
+    #[test]
+    fn stale_version_with_existing_columns_reapplies_migrations() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("vault.db");
+        let key = SecretBox::init_with(|| [42; 32]);
+        let vault = CredentialVault::new(&path, &key).unwrap();
+        vault.init_leaf_index(7, 100).unwrap();
+        vault
+            .vault
+            .connection()
+            .execute_batch("UPDATE vault_meta SET vault_version = 1")
+            .unwrap();
+        drop(vault);
+
+        let vault = CredentialVault::new(&path, &key).unwrap();
+        assert_eq!(
+            metadata(vault.vault.connection()),
+            (1, 1, VAULT_VERSION, MIN_VAULT_VERSION)
+        );
+        vault.init_leaf_index(7, 200).unwrap();
     }
 }
