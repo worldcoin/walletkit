@@ -426,7 +426,7 @@ mod tests {
     }
 
     #[test]
-    fn v2_metadata_upgrades_without_changing_the_account() {
+    fn v2_vault_upgrades_to_v3_without_changing_the_account() {
         let dir = tempfile::tempdir().unwrap();
         let key = SecretBox::init_with(|| [42; 32]);
         let vault = CredentialVault {
