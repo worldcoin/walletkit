@@ -77,6 +77,7 @@ export async function consumer() {
     );
   const status: RegistrationStatus = await registration.pollStatus();
   const request = await walletkit.ProofRequest.fromJson("{}");
+  await authenticator.setNullifierReuseWhitelist(["rp_000000000000002a"]);
   const response = await authenticator.generateProof(request);
   const responseJson: string = await response.toJson();
   const ownershipProof: Uint8Array = await authenticator.proveCredentialSub(
