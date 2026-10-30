@@ -6,6 +6,7 @@ name: Web package (@worldcoin/walletkit-web)
 #   and check the tarball. Nothing is published.
 # - release (published by release-plz, tag vX.Y.Z): build the same way, stamp the
 #   release version and publish that exact tarball to npm.
+# - workflow_dispatch: build only, or publish an existing release when given its tag.
 #
 # Publishing uses npm trusted publishing (OIDC), so no npm token is stored in the
 # repository. See docs/release.md.
@@ -48,10 +49,15 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Published release tag to publish to npm (leave empty to build only)
+        required: false
+        type: string
 
 concurrency:
   # Never cancel a release run half-way through publishing.
-  group: web-${{ github.event_name }}-${{ github.ref }}
+  group: web-${{ github.event.release.tag_name || inputs.tag || format('{0}-{1}', github.event_name, github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -66,35 +72,43 @@ jobs:
       version: ${{ steps.version.outputs.version }}
 
     steps:
+      - name: Resolve release version
+        id: version
+        if: github.event_name == 'release' || inputs.tag != ''
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tag must be vX.Y.Z or vX.Y.Z-<pre-release>"
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            gh api "repos/$GH_REPO/releases/tags/$TAG" --jq '.draft == false' | grep -qx true || {
+              echo "::error::Could not verify a published GitHub release for $TAG"
+              exit 1
+            }
+          fi
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || '' }}
           persist-credentials: false
-
-      # Only releases carry a version: it comes from the release tag (vX.Y.Z), which
-      # release-plz derives from the workspace version.
-      - name: Resolve release version
-        id: version
-        if: github.event_name == 'release'
-        env:
-          TAG: ${{ github.event.release.tag_name }}
-        run: |
-          set -euo pipefail
-          VERSION="${TAG#v}"
-          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Release tag '$TAG' is not vX.Y.Z"
-            exit 1
-          fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Install Nix
         uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
 
       # TODO: magic-nix-cache is best-effort; builds still work without it.
       - name: Enable Nix cache
+        # zizmor: ignore[cache-poisoning] -- GitHub Actions cache is disabled for all publishing runs.
         uses: DeterminateSystems/magic-nix-cache-action@565684385bcd71bad329742eefe8d12f2e765b39 # v13
         with:
-          use-gha-cache: ${{ github.event_name != 'release' }}
+          use-gha-cache: ${{ github.event_name != 'release' && inputs.tag == '' }}
 
       # The pinned toolchain (Rust, wasm-bindgen CLI, Binaryen, bun, nargo) is the same
       # one the docs use locally, so CI builds what developers build.
@@ -179,7 +193,7 @@ jobs:
   publish:
     name: Publish @worldcoin/walletkit-web to npm
     needs: build
-    if: github.event_name == 'release'
+    if: needs.build.outputs.version != ''
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Same gate as the crates release; it is also the environment named in the npm
@@ -201,6 +215,7 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.22.1
+          package-manager-cache: false
           registry-url: https://registry.npmjs.org
 
       # Re-running a failed release must not fail on, or overwrite, a published version.
@@ -226,4 +241,10 @@ jobs:
           # Pre-releases must not become `latest`.
           TAG=latest
           if [[ "$VERSION" == *-* ]]; then TAG=next; fi
-          npm publish package/*.tgz --provenance --access public --tag "$TAG"
+          shopt -s nullglob
+          packages=(./package/*.tgz)
+          if (( ${#packages[@]} != 1 )); then
+            echo "::error::Expected exactly one package tarball, found ${#packages[@]}"
+            exit 1
+          fi
+          npm publish "${packages[0]}" --provenance --access public --tag "$TAG"
