@@ -8,7 +8,8 @@ use walletkit_sqlite::{
 /// The vault migrations, in order. Append new versions; never change shipped migrations.
 /// `vault_meta.vault_version` counts the applied migrations.
 /// Migrations must not start transactions or modify the shared blob schema.
-const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] = &[migration_v1, migration_v2];
+const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] =
+    &[migration_v1, migration_v2, migration_v3];
 
 #[expect(
     clippy::cast_possible_wrap,
@@ -183,11 +184,21 @@ fn read_legacy_version(conn: &Connection) -> DbResult<Option<StoredVersion>> {
 
 /// Validates the tables and metadata layout required by the stored version.
 fn validate_schema(conn: &Connection, version: i64) -> DbResult<()> {
-    for table in ["vault_meta", "credential_records", "blob_objects"] {
+    let required_tables: &[&str] = if version >= 3 {
+        &[
+            "vault_meta",
+            "credential_records",
+            "blob_objects",
+            "pcp_records",
+        ]
+    } else {
+        &["vault_meta", "credential_records", "blob_objects"]
+    };
+    for table in required_tables {
         let present = conn
             .query_row_optional(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
-                params![table],
+                params![*table],
                 |_| Ok(()),
             )?
             .is_some();
@@ -327,6 +338,21 @@ fn migration_v2(conn: &Connection) -> DbResult<()> {
     Ok(())
 }
 
+/// Version 3: local PCP storage. PCPs are backed up separately under their own
+/// designators, such as `orb_pkg`, so credential backups exclude them.
+fn migration_v3(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS pcp_records (
+            id          TEXT PRIMARY KEY NOT NULL,
+            kind        TEXT NOT NULL CHECK (length(kind) BETWEEN 1 AND 32),
+            created_at  INTEGER NOT NULL CHECK (created_at >= 0),
+            updated_at  INTEGER NOT NULL CHECK (updated_at >= 0),
+            -- Last, so reading metadata does not walk the package's overflow pages.
+            data        BLOB NOT NULL
+        );",
+    )
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
@@ -380,6 +406,47 @@ mod tests {
 
     fn migration_test_local(conn: &Connection) -> DbResult<()> {
         conn.execute_batch("CREATE TABLE local_only (value INTEGER);")
+    }
+
+    #[test]
+    fn pcp_data_is_stored_after_its_metadata() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = SecretBox::init_with(|| [42; 32]);
+        let vault = CredentialVault::new(&dir.path().join("vault.db"), &key).unwrap();
+        let last_column = vault
+            .vault
+            .connection()
+            .query_row(
+                "SELECT name FROM pragma_table_info('pcp_records') ORDER BY cid DESC LIMIT 1",
+                &[],
+                |row| Ok(row.column_text(0)),
+            )
+            .unwrap();
+        assert_eq!(last_column, "data");
+    }
+
+    #[test]
+    fn v2_vault_upgrades_to_v3_without_changing_the_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = SecretBox::init_with(|| [42; 32]);
+        let vault = CredentialVault {
+            vault: Vault::open(&dir.path().join("vault.db"), &key, |conn| {
+                migrate(conn, &[migration_v1, migration_v2])
+            })
+            .unwrap(),
+        };
+        let conn = vault.vault.connection();
+        vault.init_leaf_index(7, 100).unwrap();
+        assert_eq!(version(conn), 2);
+        assert!(conn.prepare("SELECT * FROM pcp_records").is_err());
+        ensure_schema(conn).unwrap();
+        assert_eq!(version(conn), 3);
+        assert!(vault.pcps().list(None).unwrap().is_empty());
+        vault.init_leaf_index(7, 200).unwrap();
+        assert!(matches!(
+            vault.init_leaf_index(8, 300),
+            Err(StorageError::InvalidLeafIndex { .. })
+        ));
     }
 
     #[test]
@@ -649,7 +716,12 @@ mod tests {
 
     #[test]
     fn current_schema_with_missing_tables_fails_without_rebuilding() {
-        for table in ["vault_meta", "credential_records", "blob_objects"] {
+        for table in [
+            "vault_meta",
+            "credential_records",
+            "blob_objects",
+            "pcp_records",
+        ] {
             let dir = tempfile::tempdir().unwrap();
             let key = SecretBox::init_with(|| [42; 32]);
             let vault =

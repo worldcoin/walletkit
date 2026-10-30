@@ -13,8 +13,10 @@
 //! It owns the account key envelope and two databases:
 //!
 //! 1. **Vault database (`account.vault.sqlite`)** — authoritative storage for
-//!    credentials, associated data blobs, issuer subject blinding factors, and the account
-//!    leaf index. Corruption is a hard failure. See [`crate::storage::CredentialVault`].
+//!    credentials, associated data blobs, issuer subject blinding factors, the
+//!    account leaf index, and sealed PCPs. PCPs are excluded from credential
+//!    backups and change notifications. Corruption is a hard failure. See
+//!    [`crate::storage::CredentialVault`].
 //! 2. **Cache database (`account.cache.sqlite`)** — non-authoritative, regenerable
 //!    entries: Merkle inclusion proof cache, per-account session seed, and nullifier
 //!    replay guards. Subject to TTL pruning and can be rebuilt at any time without
@@ -49,6 +51,7 @@ pub mod credential_vault;
 pub mod error;
 pub mod keys;
 pub mod paths;
+pub mod pcp_vault;
 pub mod traits;
 pub mod types;
 
@@ -58,6 +61,7 @@ pub use credential_vault::CredentialVault;
 pub use error::{StorageError, StorageResult};
 pub use keys::StorageKeys;
 pub use paths::StoragePaths;
+pub use pcp_vault::PcpVault;
 pub use traits::{
     ActivityChangedListener, AtomicBlobStore, DeviceKeystore, StorageProvider,
     VaultChangedListener,
@@ -67,6 +71,7 @@ pub use types::{
     ActivityQuery, BlobKind, ContentId, CredentialRecord, Nullifier, ProtocolVersion,
     ReplayGuardKind, ReplayGuardResult, RequestId,
 };
+pub use types::{PcpMetadata, PcpRecord};
 pub use walletkit_db::{Lock as StorageLock, LockGuard as StorageLockGuard};
 
 /// Deletes a closed `SQLite` database and its journal sidecars.

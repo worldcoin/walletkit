@@ -22,6 +22,20 @@ database key in the device keystore; for the types involved, see the
 In the browser, the app supplies the key itself; see
 [Protect the database key](web/package.md#protect-the-database-key).
 
+`CredentialStore::pcp_vault` returns a `PcpVault` that stores sealed Personal
+Custody Packages with `put`, `get`, `list`, and `delete`. Each entry has an opaque
+id and a short kind label chosen by the host, such as the backup designator
+`orb_pkg`; WalletKit interprets neither. An existing id cannot change kind. PCPs
+are excluded from credential vault backups and remain intact during credential
+import or merge. PCP writes do not trigger the credential vault-change listener;
+hosts must schedule their PCP backups separately.
+
+`PcpVault` is available to Rust callers, including on wasm, and through the Swift
+and Kotlin bindings. The browser JavaScript package does not expose it. PCP
+operations require `CredentialStore::init` with the account's leaf index; hosts
+must initialize storage before migrating or restoring PCPs. `destroy_storage`
+permanently destroys PCPs along with the account's credentials.
+
 ## From registration to stored credential
 
 The following diagram shows the calls between the app, WalletKit, and the World ID

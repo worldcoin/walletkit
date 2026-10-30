@@ -414,7 +414,7 @@ impl CredentialStore {
         Ok(added)
     }
 
-    /// Permanently destroys all credential storage data.
+    /// Permanently destroys all credential storage data, including sealed PCPs.
     ///
     /// Intended for use when the user logs out or deletes their account.
     ///
@@ -486,8 +486,9 @@ impl CredentialStore {
         inner.import_vault_from_file(&path)
     }
 
-    /// Registers a listener that is called after every successful vault
-    /// mutation (store, delete, purge).
+    /// Registers a listener for successful credential mutations (store, delete,
+    /// merge). PCP changes do not affect credential backups or notify this
+    /// listener.
     ///
     /// Only one listener can be active at a time — calling this replaces any
     /// previously registered listener. The previous delivery thread shuts down
@@ -657,6 +658,14 @@ impl CredentialStore {
         self.inner
             .lock()
             .map_err(|_| StorageError::Lock("storage mutex poisoned".to_string()))
+    }
+
+    /// Runs `f` on the initialized vault while holding the storage mutex.
+    pub(super) fn with_vault<T>(
+        &self,
+        f: impl FnOnce(&CredentialVault) -> StorageResult<T>,
+    ) -> StorageResult<T> {
+        f(&self.lock_inner()?.state()?.vault)
     }
 
     /// Retrieves a full credential including raw bytes by issuer schema ID.
@@ -1158,6 +1167,63 @@ mod tests {
     use crate::storage::types::{ActivityOutcome, ProtocolVersion};
 
     use std::sync::atomic::{AtomicU32, Ordering};
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn pcp_vault_requires_initialization_and_never_notifies_credential_backup_listener()
+    {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Arc::new(
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(dir.path()))
+                .unwrap(),
+        );
+        let pcps = Arc::clone(&store).pcp_vault();
+        assert!(matches!(
+            pcps.put("package", "orb_pkg", b"sealed", 100),
+            Err(StorageError::NotInitialized)
+        ));
+        assert!(matches!(
+            pcps.get("package"),
+            Err(StorageError::NotInitialized)
+        ));
+        assert!(matches!(pcps.list(None), Err(StorageError::NotInitialized)));
+        assert!(matches!(
+            pcps.delete("package"),
+            Err(StorageError::NotInitialized)
+        ));
+        store.init(42, 100).unwrap();
+        let (tx, rx) = mpsc::sync_channel(1);
+        *store.vault_changed_tx.lock().unwrap() = Some(tx);
+        let before = store.export_vault_for_backup().unwrap();
+        pcps.put("package", "orb_pkg", b"sealed", 100).unwrap();
+        assert!(pcps.get("missing").unwrap().is_none());
+        assert_eq!(pcps.get("package").unwrap().unwrap().data, b"sealed");
+        assert_eq!(pcps.list(Some("orb_pkg".to_owned())).unwrap().len(), 1);
+        assert!(matches!(
+            pcps.put("package", "face_pkg", b"wrong", 100),
+            Err(StorageError::PcpKindMismatch)
+        ));
+        assert_eq!(store.export_vault_for_backup().unwrap(), before);
+        store.import_vault_from_backup(&before).unwrap();
+        assert_eq!(store.merge_vault_from_backup(&before).unwrap(), 0);
+        assert_eq!(pcps.get("package").unwrap().unwrap().data, b"sealed");
+        assert!(pcps.delete("package").unwrap());
+        assert!(!pcps.delete("package").unwrap());
+        assert!(matches!(rx.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        let credential: Credential = world_id_core::Credential::new()
+            .issuer_schema_id(10)
+            .genesis_issued_at(100)
+            .into();
+        store
+            .store_credential(&credential, &FieldElement::from(7_u64), 1000, None, 100)
+            .unwrap();
+        rx.try_recv().unwrap();
+        store.destroy_storage().unwrap();
+        assert!(matches!(
+            pcps.get("package"),
+            Err(StorageError::NotInitialized)
+        ));
+    }
 
     fn supplied_keys(byte: u8) -> Arc<StorageKeys> {
         Arc::new(StorageKeys::from_bytes(vec![byte; 32]).expect("32-byte key"))

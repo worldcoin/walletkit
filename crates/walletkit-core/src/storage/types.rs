@@ -209,3 +209,27 @@ impl ActivityQuery {
         next
     }
 }
+
+/// Sealed PCP bytes stored under a host-chosen id.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PcpRecord {
+    /// Exact identifier supplied by the host.
+    pub id: String,
+    /// Host-defined kind label, such as `orb_pkg`.
+    pub kind: String,
+    /// Opaque sealed package bytes.
+    pub data: Vec<u8>,
+}
+
+/// PCP metadata returned without loading package data.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PcpMetadata {
+    /// Exact identifier supplied by the host.
+    pub id: String,
+    /// Host-defined kind label, such as `orb_pkg`.
+    pub kind: String,
+    /// Creation time in Unix seconds.
+    pub created_at: u64,
+    /// Last update time in Unix seconds.
+    pub updated_at: u64,
+}

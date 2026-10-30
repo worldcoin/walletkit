@@ -6,6 +6,7 @@
 //! [`walletkit_db`].
 
 mod merge;
+mod pcp;
 mod schema;
 #[cfg(test)]
 mod tests;
