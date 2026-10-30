@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0](https://github.com/worldcoin/walletkit/compare/v0.28.0...v0.29.0) - 2026-10-30
+
+### Added
+
+- add a nullifier reuse whitelist for RPs ([#625](https://github.com/worldcoin/walletkit/pull/625))
+- *(web)* generate WIP-103 ownership proofs in the browser ([#629](https://github.com/worldcoin/walletkit/pull/629))
+- *(storage)* add transactional vault schema migrations ([#632](https://github.com/worldcoin/walletkit/pull/632))
+
+### Other
+
+- *(storage)* revert "add transactional vault schema migrations" ([#632](https://github.com/worldcoin/walletkit/pull/632)) ([#639](https://github.com/worldcoin/walletkit/pull/639))
+- *(deps)* [**breaking**] upgrade World ID to 0.18 and Flamingo to 0.10 ([#635](https://github.com/worldcoin/walletkit/pull/635))
+
 ## [0.28.0](https://github.com/worldcoin/walletkit/compare/v0.27.3...v0.28.0) - 2026-10-23
 
 ### Added
