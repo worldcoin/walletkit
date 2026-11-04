@@ -3,7 +3,10 @@ use semaphore_rs_poseidon::poseidon::{hash1, hash2};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroizing;
 
-const MODULUS: U256 = uint!(
+// BN254 scalar-field prime used to reduce derived hashes, matching semaphore-rs
+// 0.6.0's MODULUS in src/field.rs. Kept local to avoid its native prover dependencies
+// on WASM; uint! constructs this fixed 256-bit integer at compile time.
+const BN254_SCALAR_MODULUS: U256 = uint!(
     21888242871839275222246405745257275088548364400416034343698204186575808495617_U256
 );
 
@@ -74,7 +77,7 @@ impl Identity {
         hasher.update(self.hashed_secret_hex.as_bytes());
         hasher.update(suffix);
         let digest = Zeroizing::new(<[u8; 32]>::from(hasher.finalize()));
-        Zeroizing::new(U256::from_be_bytes(*digest) % MODULUS)
+        Zeroizing::new(U256::from_be_bytes(*digest) % BN254_SCALAR_MODULUS)
     }
 }
 
