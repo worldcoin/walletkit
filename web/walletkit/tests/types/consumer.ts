@@ -7,6 +7,7 @@ import type {
   CredentialRecord,
   RegistrationStatus,
   FaceEmbedding,
+  FaceIdentity,
   SelfieEmbeddingResult,
   WalletKit,
 } from "../../dist/index.js";
@@ -14,6 +15,16 @@ import type {
 declare const walletkit: WalletKit;
 
 export async function consumer() {
+  const faceIdentity: FaceIdentity = await walletkit.FaceIdentity.fromSeed(
+    new Uint8Array(32),
+  );
+  const faceCommitment: string = await faceIdentity.commitment();
+  faceIdentity.free();
+  void faceCommitment;
+  // @ts-expect-error face seeds must be bytes
+  await walletkit.FaceIdentity.fromSeed("secret");
+  // @ts-expect-error identity secrets are not exposed
+  await faceIdentity.seed();
   const enrollment: SelfieEmbeddingResult =
     await walletkit.extractSelfieEmbedding("{}", new Uint8Array());
   if (enrollment.status === "success") {

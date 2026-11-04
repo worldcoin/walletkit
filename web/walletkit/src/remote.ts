@@ -92,6 +92,7 @@ export type StorageKeys = RemoteObject<Wasm.StorageKeys>;
 export type StoragePaths = RemoteObject<Wasm.StoragePaths>;
 export type EmbeddedZkArtifacts = RemoteObject<Wasm.EmbeddedZkArtifacts>;
 export type FieldElement = RemoteObject<Wasm.FieldElement>;
+export type FaceIdentity = RemoteObject<Wasm.FaceIdentity>;
 export type Credential = RemoteObject<Wasm.Credential>;
 export type ProofRequest = RemoteObject<Wasm.ProofRequest>;
 export type ProofResponse = RemoteObject<Wasm.ProofResponse>;

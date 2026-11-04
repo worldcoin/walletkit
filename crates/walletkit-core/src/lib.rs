@@ -109,6 +109,9 @@ pub mod flamingo;
 /// Contains error outputs from `WalletKit`
 pub mod error;
 
+/// Face identity commitments compatible with the legacy enrollment contract.
+pub mod face_identity;
+
 /// Contains logging functionality that can be integrated with foreign language bindings.
 pub mod logger;
 

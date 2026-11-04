@@ -5,6 +5,70 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => "initializeWalletKit" in window);
 });
 
+test("face identities match Oxide, reject invalid seeds and respect worker lifetime", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    const seed = new Uint8Array(32).fill(1);
+    const identity = await wallet.FaceIdentity.fromSeed(seed);
+    const commitment = await identity.commitment();
+    const repeated = await identity.commitment();
+    const other = await wallet.FaceIdentity.fromSeed(new Uint8Array(32));
+    const zeroCommitment = await other.commitment();
+    const invalid = [];
+    for (const length of [0, 1, 31, 33, 64]) {
+      invalid.push(
+        await wallet.FaceIdentity.fromSeed(new Uint8Array(length)).then(
+          () => "unexpected success",
+          (error: Error) => ({ name: error.name, message: error.message }),
+        ),
+      );
+    }
+    identity.free();
+    const freed = await identity
+      .commitment()
+      .catch((error: Error) => error.message);
+    await wallet.close();
+    const closed = await other
+      .commitment()
+      .catch((error: Error) => error.message);
+    const reopened = await (window as any).initializeWalletKit();
+    const restored = await reopened.FaceIdentity.fromSeed(seed);
+    const restoredCommitment = await restored.commitment();
+    restored.free();
+    await reopened.close();
+    return {
+      commitment,
+      repeated,
+      zeroCommitment,
+      invalid,
+      freed,
+      closed,
+      restoredCommitment,
+      seedIntact: seed.every((byte) => byte === 1),
+    };
+  });
+  expect(result.commitment).toBe(
+    "0x2d45a99aef68e94a73cc40b05ea26a6ab41c981313b7e997245222abf9ee6f56",
+  );
+  expect(result.zeroCommitment).toBe(
+    "0x026b3875f92d39958477b2c9912e2f497d31f7b2de869359757efbb403d80074",
+  );
+  expect(result.commitment).toMatch(/^0x[0-9a-f]{64}$/);
+  expect(result.repeated).toBe(result.commitment);
+  expect(result.restoredCommitment).toBe(result.commitment);
+  expect(result.seedIntact).toBe(true);
+  for (const error of result.invalid) {
+    expect(error).toEqual({
+      name: "TypeError",
+      message: "face identity seed must contain exactly 32 bytes",
+    });
+  }
+  expect(result.freed).toContain("freed");
+  expect(result.closed).toContain("closed");
+});
+
 test("packaged worker initializes, correlates calls, reports errors and closes", async ({
   page,
 }) => {

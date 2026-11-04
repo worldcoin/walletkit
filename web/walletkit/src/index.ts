@@ -9,6 +9,7 @@ export type {
   CredentialStore,
   EmbeddedZkArtifacts,
   FieldElement,
+  FaceIdentity,
   InitializingAuthenticator,
   ProofRequest,
   ProofResponse,
