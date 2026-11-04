@@ -11,20 +11,45 @@ test("face identities match Oxide, reject invalid seeds and respect worker lifet
   const result = await page.evaluate(async () => {
     const wallet = await (window as any).initializeWalletKit();
     const seed = new Uint8Array(32).fill(1);
-    const identity = await wallet.FaceIdentity.fromSeed(seed);
+    const context = (window as any).IdentityContext.Face;
+    const identity = await wallet.Identity.fromSeed(seed, context);
     const commitment = await identity.commitment();
     const repeated = await identity.commitment();
-    const other = await wallet.FaceIdentity.fromSeed(new Uint8Array(32));
+    const other = await wallet.Identity.fromSeed(new Uint8Array(32), context);
     const zeroCommitment = await other.commitment();
     const invalid = [];
     for (const length of [0, 1, 31, 33, 64]) {
       invalid.push(
-        await wallet.FaceIdentity.fromSeed(new Uint8Array(length)).then(
+        await wallet.Identity.fromSeed(new Uint8Array(length), context).then(
           () => "unexpected success",
           (error: Error) => ({ name: error.name, message: error.message }),
         ),
       );
     }
+    const invalidContexts = [];
+    for (const invalidContext of [
+      undefined,
+      null,
+      "Face",
+      "face",
+      "orb",
+      1,
+      -1,
+      0.5,
+      NaN,
+      {},
+      [],
+    ]) {
+      invalidContexts.push(
+        await wallet.Identity.fromSeed(seed, invalidContext).then(
+          () => "unexpected success",
+          (error: Error) => ({ name: error.name, message: error.message }),
+        ),
+      );
+    }
+    const missingContext = await wallet.Identity.fromSeed(seed).catch(
+      (error: Error) => ({ name: error.name, message: error.message }),
+    );
     identity.free();
     const freed = await identity
       .commitment()
@@ -34,7 +59,7 @@ test("face identities match Oxide, reject invalid seeds and respect worker lifet
       .commitment()
       .catch((error: Error) => error.message);
     const reopened = await (window as any).initializeWalletKit();
-    const restored = await reopened.FaceIdentity.fromSeed(seed);
+    const restored = await reopened.Identity.fromSeed(seed, context);
     const restoredCommitment = await restored.commitment();
     restored.free();
     await reopened.close();
@@ -43,6 +68,8 @@ test("face identities match Oxide, reject invalid seeds and respect worker lifet
       repeated,
       zeroCommitment,
       invalid,
+      invalidContexts,
+      missingContext,
       freed,
       closed,
       restoredCommitment,
@@ -62,7 +89,13 @@ test("face identities match Oxide, reject invalid seeds and respect worker lifet
   for (const error of result.invalid) {
     expect(error).toEqual({
       name: "TypeError",
-      message: "face identity seed must contain exactly 32 bytes",
+      message: "identity seed must contain exactly 32 bytes",
+    });
+  }
+  for (const error of [...result.invalidContexts, result.missingContext]) {
+    expect(error).toEqual({
+      name: "TypeError",
+      message: "context must be IdentityContext.Face",
     });
   }
   expect(result.freed).toContain("freed");

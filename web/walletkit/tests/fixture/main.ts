@@ -1,5 +1,5 @@
-import { initializeWalletKit } from "../../dist/index.js";
-Object.assign(window, { initializeWalletKit });
+import { initializeWalletKit, IdentityContext } from "../../dist/index.js";
+Object.assign(window, { initializeWalletKit, IdentityContext });
 Object.assign(window, {
   storageOperation(secret = 7) {
     const worker = new Worker(new URL("./storage.worker.ts", import.meta.url), {

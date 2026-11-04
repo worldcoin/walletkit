@@ -110,7 +110,7 @@ pub mod flamingo;
 pub mod error;
 
 /// Face identity commitments compatible with the legacy enrollment contract.
-pub mod face_identity;
+pub mod identity;
 
 /// Contains logging functionality that can be integrated with foreign language bindings.
 pub mod logger;

@@ -7,46 +7,62 @@ const MODULUS: U256 = uint!(
     21888242871839275222246405745257275088548364400416034343698204186575808495617_U256
 );
 
-/// A face identity whose secret stays in memory until the identity is dropped.
+/// Domain separation for an identity commitment.
+#[derive(Clone, Copy)]
+pub enum IdentityContext {
+    /// The face enrollment identity domain used by Oxide.
+    Face,
+}
+
+/// An identity whose secret stays in memory until the identity is dropped.
 ///
 /// Derivation matches Oxide's `Identity::new(hex::encode(seed), IdentityContext::Face)`:
 /// the 32-byte seed is encoded as lowercase hex without `0x`, then passed through
 /// Semaphore's SHA-256 identity derivation with the `face_credential` context.
 /// Only the public commitment is exposed; this does not generate ownership proofs.
-pub struct FaceIdentity {
+pub struct Identity {
     hashed_secret_hex: Zeroizing<String>,
+    context: IdentityContext,
 }
 
 /// Invalid input to face identity derivation.
 #[derive(Debug, thiserror::Error)]
-pub enum FaceIdentityError {
+pub enum IdentityError {
     /// The input must contain exactly 32 bytes.
-    #[error("face identity seed must contain exactly 32 bytes")]
+    #[error("identity seed must contain exactly 32 bytes")]
     InvalidSeedLength,
 }
 
-impl FaceIdentity {
+impl Identity {
     /// Derives a face identity and erases the owned input buffer.
     ///
     /// # Errors
-    /// Returns [`FaceIdentityError::InvalidSeedLength`] unless `seed` has 32 bytes.
-    pub fn from_seed(seed: Vec<u8>) -> Result<Self, FaceIdentityError> {
+    /// Returns [`IdentityError::InvalidSeedLength`] unless `seed` has 32 bytes.
+    pub fn from_seed(
+        seed: Vec<u8>,
+        context: IdentityContext,
+    ) -> Result<Self, IdentityError> {
         let seed = Zeroizing::new(seed);
         if seed.len() != 32 {
-            return Err(FaceIdentityError::InvalidSeedLength);
+            return Err(IdentityError::InvalidSeedLength);
         }
         let seed_hex = Zeroizing::new(hex::encode(&*seed));
         let digest =
             Zeroizing::new(<[u8; 32]>::from(Sha256::digest(seed_hex.as_bytes())));
         let hashed_secret_hex = Zeroizing::new(hex::encode(digest.as_slice()));
-        Ok(Self { hashed_secret_hex })
+        Ok(Self {
+            hashed_secret_hex,
+            context,
+        })
     }
 
     /// Returns the public commitment as `0x` followed by 64 lowercase hex digits.
     #[must_use]
     pub fn commitment(&self) -> String {
         let nullifier = self.derive_field(b"identity_nullifier");
-        let trapdoor = self.derive_field(b"face_credential");
+        let trapdoor = match self.context {
+            IdentityContext::Face => self.derive_field(b"face_credential"),
+        };
         let secret_hash = Zeroizing::new(hash2(*nullifier, *trapdoor));
         format!("{:#066x}", hash1(*secret_hash))
     }
@@ -70,17 +86,17 @@ mod tests {
     fn rejects_invalid_seed_lengths() {
         for length in [0, 1, 31, 33, 64] {
             assert!(matches!(
-                FaceIdentity::from_seed(vec![0; length]),
-                Err(FaceIdentityError::InvalidSeedLength)
+                Identity::from_seed(vec![0; length], IdentityContext::Face),
+                Err(IdentityError::InvalidSeedLength)
             ));
         }
     }
 
     #[test]
     fn derivation_is_stable_and_distinct() {
-        let first = FaceIdentity::from_seed(vec![1; 32]).unwrap();
-        let same = FaceIdentity::from_seed(vec![1; 32]).unwrap();
-        let other = FaceIdentity::from_seed(vec![2; 32]).unwrap();
+        let first = Identity::from_seed(vec![1; 32], IdentityContext::Face).unwrap();
+        let same = Identity::from_seed(vec![1; 32], IdentityContext::Face).unwrap();
+        let other = Identity::from_seed(vec![2; 32], IdentityContext::Face).unwrap();
         assert_eq!(first.commitment(), same.commitment());
         assert_ne!(first.commitment(), other.commitment());
         assert_eq!(first.commitment().len(), 66);
@@ -123,8 +139,11 @@ mod tests {
             ),
         ];
         for (seed_hex, expected_face, expected_orb) in vectors {
-            let identity =
-                FaceIdentity::from_seed(hex::decode(seed_hex).unwrap()).unwrap();
+            let identity = Identity::from_seed(
+                hex::decode(seed_hex).unwrap(),
+                IdentityContext::Face,
+            )
+            .unwrap();
             assert_eq!(identity.commitment(), expected_face);
             assert_ne!(identity.commitment(), expected_orb);
         }
@@ -132,7 +151,7 @@ mod tests {
 
     #[cfg(feature = "v3")]
     #[test]
-    fn matches_oxide_face_identity_and_is_separate_from_orb() {
+    fn matches_oxide_identity_and_is_separate_from_orb() {
         for seed in [
             [0; 32],
             [1; 32],
@@ -146,7 +165,9 @@ mod tests {
             );
             let mut encoded = hex::encode(seed).into_bytes();
             let orb = semaphore_rs::identity::Identity::from_secret(&mut encoded, None);
-            let actual = FaceIdentity::from_seed(seed.to_vec()).unwrap().commitment();
+            let actual = Identity::from_seed(seed.to_vec(), IdentityContext::Face)
+                .unwrap()
+                .commitment();
             assert_eq!(actual, format!("{:#066x}", face.commitment()));
             assert_ne!(actual, format!("{:#066x}", orb.commitment()));
         }

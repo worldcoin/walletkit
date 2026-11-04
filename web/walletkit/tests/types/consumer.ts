@@ -2,12 +2,13 @@
 // is derived from the generated declarations, so this guards the derivation: class
 // statics, instance methods, records and free functions must keep their types, and
 // worker internals must stay out of reach.
+import { IdentityContext } from "../../dist/index.js";
 import type {
   Authenticator,
   CredentialRecord,
   RegistrationStatus,
   FaceEmbedding,
-  FaceIdentity,
+  Identity,
   SelfieEmbeddingResult,
   WalletKit,
 } from "../../dist/index.js";
@@ -15,14 +16,19 @@ import type {
 declare const walletkit: WalletKit;
 
 export async function consumer() {
-  const faceIdentity: FaceIdentity = await walletkit.FaceIdentity.fromSeed(
+  const faceIdentity: Identity = await walletkit.Identity.fromSeed(
     new Uint8Array(32),
+    IdentityContext.Face,
   );
   const faceCommitment: string = await faceIdentity.commitment();
   faceIdentity.free();
   void faceCommitment;
   // @ts-expect-error face seeds must be bytes
-  await walletkit.FaceIdentity.fromSeed("secret");
+  await walletkit.Identity.fromSeed("secret", IdentityContext.Face);
+  // @ts-expect-error the context is required
+  await walletkit.Identity.fromSeed(new Uint8Array(32));
+  // @ts-expect-error only supported contexts are accepted
+  await walletkit.Identity.fromSeed(new Uint8Array(32), "orb");
   // @ts-expect-error identity secrets are not exposed
   await faceIdentity.seed();
   const enrollment: SelfieEmbeddingResult =
