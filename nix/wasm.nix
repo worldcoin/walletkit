@@ -27,11 +27,15 @@ pkgs.mkShell {
     pkgs.git
     pkgs.nargo
     pkgs.nodejs
+    pkgs.pkg-config
   ]
   ++ pkgs.lib.optionals firefoxAvailable [
     pkgs.firefox
     pkgs.geckodriver
   ];
+
+  # Host-side proof build scripts link liblzma, even when targeting wasm.
+  buildInputs = [ pkgs.xz ];
 
   # Use unwrapped clang: cc-wrapper injects host hardening flags that are invalid for wasm.
   CC_wasm32_unknown_unknown = "${llvm.clang-unwrapped}/bin/clang";
