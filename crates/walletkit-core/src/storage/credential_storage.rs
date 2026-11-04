@@ -519,6 +519,10 @@ impl CredentialStore {
         clippy::significant_drop_tightening,
         reason = "lock held intentionally for the full operation to prevent concurrent cleanup from deleting in-use temp files"
     )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI passes sequences by value"
+    )]
     pub fn export_vault_for_transfer(
         &self,
         pcp_kinds: Vec<String>,

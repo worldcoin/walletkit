@@ -11,9 +11,11 @@ use walletkit_sqlite::{
 
 /// Rows a merge added to the vault.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub(crate) struct MergeOutcome {
-    pub(crate) credentials: u64,
-    pub(crate) pcps: u64,
+pub struct MergeOutcome {
+    /// Credential versions added.
+    pub credentials: u64,
+    /// Sealed PCPs added.
+    pub pcps: u64,
 }
 
 impl CredentialVault {
