@@ -47,7 +47,9 @@ pub use world_id_core::registration::{
     TransportError, MAX_NAME_LEN, MAX_VAULT_SIZE,
 };
 
-/// The format of the shared vault: a `CredentialStore::export_vault_for_backup` export.
+/// The format of the shared vault: a `CredentialStore::export_vault_for_backup` or
+/// `export_vault_for_transfer` export. The latter adds a `pcp_records` table that a
+/// receiver merging with `merge_vault_from_backup` ignores, so one format covers both.
 const PLAINTEXT_VAULT_FORMAT: &str = "walletkit_plaintext_v1";
 
 /// The message-bridge session lifetime, from which both sides estimate the session expiry

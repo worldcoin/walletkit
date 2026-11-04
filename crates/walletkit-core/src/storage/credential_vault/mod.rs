@@ -399,6 +399,24 @@ impl CredentialVault {
             .map_err(|e| map_db_err(&e))
     }
 
+    /// Exports the vault for an authenticator transfer (WIP-109): the backup tables
+    /// plus the sealed PCPs of `pcp_kinds`.
+    ///
+    /// Backups keep excluding PCPs, which have their own backup path. Same locking
+    /// and cleanup contract as [`Self::export_plaintext`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a kind is invalid or the export fails.
+    pub fn export_plaintext_for_transfer(
+        &self,
+        dest: &Path,
+        pcp_kinds: &[&str],
+    ) -> StorageResult<()> {
+        self.export_plaintext(dest)?;
+        self.pcps().copy_to_plaintext(dest, pcp_kinds)
+    }
+
     /// Imports credentials from a plaintext (unencrypted) vault backup into
     /// an empty vault. Intended for restore on a fresh install.
     ///

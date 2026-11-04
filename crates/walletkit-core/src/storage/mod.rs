@@ -71,7 +71,7 @@ pub use types::{
     ActivityQuery, BlobKind, ContentId, CredentialRecord, Nullifier, ProtocolVersion,
     ReplayGuardKind, ReplayGuardResult, RequestId,
 };
-pub use types::{PcpMetadata, PcpRecord};
+pub use types::{PcpMetadata, PcpRecord, VaultTransferMerge};
 pub use walletkit_db::{Lock as StorageLock, LockGuard as StorageLockGuard};
 
 /// Deletes a closed `SQLite` database and its journal sidecars.

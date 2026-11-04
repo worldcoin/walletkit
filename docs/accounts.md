@@ -30,6 +30,14 @@ are excluded from credential vault backups and remain intact during credential
 import or merge. PCP writes do not trigger the credential vault-change listener;
 hosts must schedule their PCP backups separately.
 
+An authenticator transfer (WIP-109) can carry PCPs: `export_vault_for_transfer`
+takes the kinds to include, since the response is bounded in size and an Orb
+package alone can exceed it, and `merge_vault_from_transfer` adds the transferred
+credentials and any PCP whose id is absent locally, reporting both counts. A local
+PCP is never replaced. `merge_vault_from_backup` ignores the PCPs of such an
+export, so one vault format serves backups and transfers. Only transfer PCPs the
+receiving account can unseal: WalletKit stores them as opaque bytes.
+
 `PcpVault` is available to Rust callers, including on wasm, and through the Swift
 and Kotlin bindings. The browser JavaScript package does not expose it. PCP
 operations require `CredentialStore::init` with the account's leaf index; hosts

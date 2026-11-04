@@ -5,9 +5,12 @@
 
 use super::{map_db_err, to_i64, to_u64, CredentialVault};
 use crate::storage::{PcpMetadata, PcpRecord, StorageError, StorageResult};
+use std::path::Path;
 use walletkit_sqlite::{params, Connection, StepResult, Value};
 
 const MAX_KIND_LEN: usize = 32;
+/// The table a transfer export carries and `merge_plaintext_bytes_for_transfer` reads.
+pub(super) const PCP_TABLE: &str = "pcp_records";
 
 impl CredentialVault {
     pub(crate) const fn pcps(&self) -> PcpTable<'_> {
@@ -103,11 +106,53 @@ impl PcpTable<'_> {
             .map(|count| count != 0)
             .map_err(|err| map_db_err(&err))
     }
+
+    /// Adds the entries of `kinds` to the plaintext export already written at `dest`.
+    ///
+    /// A transfer is bounded in size, so the host names the kinds that fit instead
+    /// of shipping every package. The table is created even when no entry matches.
+    pub(crate) fn copy_to_plaintext(
+        &self,
+        dest: &Path,
+        kinds: &[&str],
+    ) -> StorageResult<()> {
+        for kind in kinds {
+            validate_kind(kind)?;
+        }
+        let attach = format!(
+            "ATTACH DATABASE '{}' AS transfer KEY '';",
+            dest.to_string_lossy().replace('\'', "''")
+        );
+        self.conn
+            .execute_batch(&attach)
+            .map_err(|err| map_db_err(&err))?;
+        let placeholders = (1..=kinds.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let values = kinds
+            .iter()
+            .map(|kind| Value::Text((*kind).to_owned()))
+            .collect::<Vec<_>>();
+        let copied = self.conn.execute(
+            &format!(
+                "CREATE TABLE transfer.{PCP_TABLE} AS
+                 SELECT id, kind, created_at, updated_at, data FROM {PCP_TABLE}
+                 WHERE kind IN ({placeholders})"
+            ),
+            &values,
+        );
+        // Always detach, even if the copy failed.
+        let detached = self.conn.execute_batch("DETACH DATABASE transfer;");
+        copied.map_err(|err| map_db_err(&err))?;
+        detached.map_err(|err| map_db_err(&err))?;
+        Ok(())
+    }
 }
 
 /// Accepts short lowercase labels such as `orb_pkg`, so kinds stay comparable
 /// across hosts and safe to log.
-fn validate_kind(kind: &str) -> StorageResult<()> {
+pub(super) fn validate_kind(kind: &str) -> StorageResult<()> {
     let valid = !kind.is_empty()
         && kind.len() <= MAX_KIND_LEN
         && kind

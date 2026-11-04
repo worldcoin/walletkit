@@ -1,12 +1,20 @@
 //! Additive backup recovery. Row IDs are local database keys, not credential identities.
 //! Absence from a snapshot is not a deletion instruction: preserve receiver-only credentials.
 
+use super::pcp::{validate_kind, PCP_TABLE};
 use super::{map_db_err, CredentialVault, CREDENTIAL_VERSION_ORDER};
 use crate::storage::error::{StorageError, StorageResult};
 use walletkit_db::blobs::compute_content_id;
 use walletkit_sqlite::{
     cipher::ensure_temp_store_memory, params, Connection, StepResult,
 };
+
+/// Rows a merge added to the vault.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct MergeOutcome {
+    pub(crate) credentials: u64,
+    pub(crate) pcps: u64,
+}
 
 impl CredentialVault {
     /// Atomically merges a plaintext backup, returning the number of added records.
@@ -29,18 +37,48 @@ impl CredentialVault {
     /// # Errors
     /// Returns an error for malformed backup contents, unavailable storage, or a failed transaction.
     pub(crate) fn merge_plaintext_bytes(&self, bytes: &[u8]) -> StorageResult<u64> {
+        Ok(self.merge_plaintext(bytes, false)?.credentials)
+    }
+
+    /// Like [`Self::merge_plaintext_bytes`], and also adds the sealed PCPs of a transfer
+    /// export whose ids are absent locally. A local entry is never replaced: it is this
+    /// device's own copy, and a transfer must not rewind it. Exports without a
+    /// `pcp_records` table merge their credentials as before.
+    ///
+    /// # Errors
+    /// Returns an error for malformed contents, unavailable storage, or a failed transaction.
+    pub(crate) fn merge_plaintext_bytes_for_transfer(
+        &self,
+        bytes: &[u8],
+    ) -> StorageResult<MergeOutcome> {
+        self.merge_plaintext(bytes, true)
+    }
+
+    fn merge_plaintext(
+        &self,
+        bytes: &[u8],
+        include_pcps: bool,
+    ) -> StorageResult<MergeOutcome> {
         let incoming =
             Connection::open(":memory:", false).map_err(|e| map_db_err(&e))?;
         ensure_temp_store_memory(&incoming).map_err(|e| map_db_err(&e))?;
         incoming
             .deserialize_readonly("main", bytes)
             .map_err(|e| map_db_err(&e))?;
-        merge_from(self.vault.connection(), &incoming)
+        merge_from(self.vault.connection(), &incoming, include_pcps)
     }
 }
 
-fn merge_from(destination: &Connection, incoming: &Connection) -> StorageResult<u64> {
+fn merge_from(
+    destination: &Connection,
+    incoming: &Connection,
+    include_pcps: bool,
+) -> StorageResult<MergeOutcome> {
     validate_incoming(incoming)?;
+    let merge_pcps = include_pcps && has_pcp_table(incoming)?;
+    if merge_pcps {
+        validate_incoming_pcps(incoming)?;
+    }
     let tx = destination
         .transaction_immediate()
         .map_err(|e| map_db_err(&e))?;
@@ -90,8 +128,78 @@ fn merge_from(destination: &Connection, incoming: &Connection) -> StorageResult<
             added_records += inserted as u64;
         }
     }
+
+    let mut added_pcps = 0;
+    if merge_pcps {
+        let mut pcps = incoming
+            .prepare(&format!(
+                "SELECT id, kind, created_at, updated_at, data FROM {PCP_TABLE} ORDER BY id"
+            ))
+            .map_err(|e| map_db_err(&e))?;
+        while let StepResult::Row(row) = pcps.step().map_err(|e| map_db_err(&e))? {
+            let inserted = tx
+                .execute(
+                    &format!(
+                        "INSERT INTO {PCP_TABLE}(id, kind, created_at, updated_at, data)
+                         VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO NOTHING;"
+                    ),
+                    params![
+                        row.column_text(0),
+                        row.column_text(1),
+                        row.column_i64(2),
+                        row.column_i64(3),
+                        row.column_blob(4)
+                    ],
+                )
+                .map_err(|e| map_db_err(&e))?;
+            added_pcps += inserted as u64;
+        }
+    }
     tx.commit().map_err(|e| map_db_err(&e))?;
-    Ok(added_records)
+    Ok(MergeOutcome {
+        credentials: added_records,
+        pcps: added_pcps,
+    })
+}
+
+fn has_pcp_table(incoming: &Connection) -> StorageResult<bool> {
+    incoming
+        .query_row_optional(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            params![PCP_TABLE],
+            |_| Ok(()),
+        )
+        .map(|row| row.is_some())
+        .map_err(|e| map_db_err(&e))
+}
+
+fn validate_incoming_pcps(incoming: &Connection) -> StorageResult<()> {
+    // Same reasoning as `validate_incoming`: the export carries no constraints. An id
+    // with an embedded NUL would be truncated on read and could shadow another entry.
+    let has_invalid_rows = incoming
+        .query_row(
+            &format!(
+                "SELECT EXISTS(SELECT 1 FROM {PCP_TABLE} WHERE
+                    typeof(id) != 'text' OR length(id) = 0 OR instr(CAST(id AS BLOB), x'00') > 0 OR
+                    typeof(kind) != 'text' OR
+                    typeof(created_at) != 'integer' OR created_at < 0 OR
+                    typeof(updated_at) != 'integer' OR updated_at < 0 OR
+                    typeof(data) != 'blob')"
+            ),
+            &[],
+            |row| Ok(row.column_i64(0) != 0),
+        )
+        .map_err(|e| map_db_err(&e))?;
+    if has_invalid_rows {
+        return Err(invalid_backup());
+    }
+    let mut kinds = incoming
+        .prepare(&format!("SELECT DISTINCT kind FROM {PCP_TABLE}"))
+        .map_err(|e| map_db_err(&e))?;
+    while let StepResult::Row(row) = kinds.step().map_err(|e| map_db_err(&e))? {
+        validate_kind(&row.column_text(0)).map_err(|_| invalid_backup())?;
+    }
+    Ok(())
 }
 
 fn validate_incoming(incoming: &Connection) -> StorageResult<()> {
@@ -635,5 +743,122 @@ mod tests {
             .execute_batch("DROP TRIGGER reject_import")
             .unwrap();
         assert_eq!(f.merge().unwrap(), 1);
+    }
+
+    impl Fixture {
+        fn export_for_transfer(&self, kinds: &[&str]) {
+            self.source
+                .export_plaintext_for_transfer(&self.backup, kinds)
+                .unwrap();
+        }
+
+        fn merge_transfer(&self) -> StorageResult<MergeOutcome> {
+            self.receiver.merge_plaintext_bytes_for_transfer(
+                &std::fs::read(&self.backup).unwrap(),
+            )
+        }
+    }
+
+    fn put_pcp(vault: &CredentialVault, id: &str, kind: &str, bytes: &[u8], now: u64) {
+        vault.pcps().put(id, kind, bytes, now).unwrap();
+    }
+
+    fn pcp_bytes(vault: &CredentialVault, id: &str) -> Option<Vec<u8>> {
+        vault.pcps().get(id).unwrap().map(|record| record.data)
+    }
+
+    #[test]
+    fn transfer_adds_only_the_exported_kinds_and_replays_as_a_no_op() {
+        let f = Fixture::new();
+        store(&f.source, 100, b"remote", 1000);
+        put_pcp(&f.source, "doc/package", "document_pkg", b"sealed-doc", 500);
+        put_pcp(&f.source, "orb/package", "orb_pkg", b"sealed-orb", 600);
+        f.export_for_transfer(&["document_pkg"]);
+
+        assert_eq!(
+            f.merge_transfer().unwrap(),
+            MergeOutcome {
+                credentials: 1,
+                pcps: 1
+            }
+        );
+        assert_eq!(
+            pcp_bytes(&f.receiver, "doc/package").as_deref(),
+            Some(b"sealed-doc".as_slice())
+        );
+        assert_eq!(pcp_bytes(&f.receiver, "orb/package"), None);
+        let listed = f.receiver.pcps().list(Some("document_pkg")).unwrap();
+        assert_eq!((listed[0].created_at, listed[0].updated_at), (500, 500));
+
+        assert_eq!(f.merge_transfer().unwrap(), MergeOutcome::default());
+    }
+
+    #[test]
+    fn transfer_never_replaces_a_local_pcp() {
+        let f = Fixture::new();
+        put_pcp(&f.receiver, "doc/package", "document_pkg", b"local", 700);
+        put_pcp(&f.source, "doc/package", "document_pkg", b"remote", 900);
+        f.export_for_transfer(&["document_pkg"]);
+
+        assert_eq!(f.merge_transfer().unwrap().pcps, 0);
+        assert_eq!(
+            pcp_bytes(&f.receiver, "doc/package").as_deref(),
+            Some(b"local".as_slice())
+        );
+    }
+
+    #[test]
+    fn backup_merge_ignores_pcps_and_backup_exports_carry_none() {
+        let f = Fixture::new();
+        store(&f.source, 100, b"remote", 1000);
+        put_pcp(&f.source, "doc/package", "document_pkg", b"sealed-doc", 500);
+
+        f.export_for_transfer(&["document_pkg"]);
+        assert_eq!(f.merge().unwrap(), 1);
+        assert_eq!(pcp_bytes(&f.receiver, "doc/package"), None);
+
+        f.export();
+        assert_eq!(f.merge_transfer().unwrap(), MergeOutcome::default());
+        assert_eq!(pcp_bytes(&f.receiver, "doc/package"), None);
+    }
+
+    #[test]
+    fn transfer_export_rejects_invalid_kinds() {
+        let f = Fixture::new();
+        assert!(f
+            .source
+            .export_plaintext_for_transfer(&f.backup, &["Orb Pkg"])
+            .is_err());
+    }
+
+    #[test]
+    fn invalid_pcp_rows_roll_back_the_whole_transfer() {
+        let f = Fixture::new();
+        store(&f.source, 100, b"remote", 1000);
+        put_pcp(&f.source, "doc/package", "document_pkg", b"sealed-doc", 500);
+        for corruption in [
+            "UPDATE pcp_records SET kind = 'Not A Kind';",
+            "UPDATE pcp_records SET id = CAST(x'646f6300' AS TEXT);",
+            "UPDATE pcp_records SET data = 'text';",
+            "UPDATE pcp_records SET created_at = -1;",
+        ] {
+            f.export_for_transfer(&["document_pkg"]);
+            Connection::open(&f.backup, false)
+                .unwrap()
+                .execute_batch(corruption)
+                .unwrap();
+            assert!(f.merge_transfer().is_err(), "{corruption}");
+            assert!(f.receiver.list_credentials(None, 1000).unwrap().is_empty());
+            assert_eq!(pcp_bytes(&f.receiver, "doc/package"), None);
+        }
+
+        f.export_for_transfer(&["document_pkg"]);
+        assert_eq!(
+            f.merge_transfer().unwrap(),
+            MergeOutcome {
+                credentials: 1,
+                pcps: 1
+            }
+        );
     }
 }

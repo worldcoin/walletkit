@@ -107,8 +107,9 @@ pub enum RequesterStatus {
 pub struct Registered {
     /// The new authenticator. Its storage is not initialized yet.
     pub authenticator: Arc<Authenticator>,
-    /// The shared `CredentialStore::export_vault_for_backup` output, to import with
-    /// `CredentialStore::merge_vault_from_backup` once storage is initialized.
+    /// The shared `CredentialStore::export_vault_for_backup` or `export_vault_for_transfer`
+    /// output, to import with `CredentialStore::merge_vault_from_transfer` once storage is
+    /// initialized (`merge_vault_from_backup` takes the credentials only).
     pub vault_backup: Option<Vec<u8>>,
 }
 

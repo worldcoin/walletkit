@@ -221,6 +221,15 @@ pub struct PcpRecord {
     pub data: Vec<u8>,
 }
 
+/// Rows added by `CredentialStore::merge_vault_from_transfer`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Record)]
+pub struct VaultTransferMerge {
+    /// Credentials newly added to the vault.
+    pub credentials_added: u64,
+    /// Sealed PCPs newly added to the vault.
+    pub pcps_added: u64,
+}
+
 /// PCP metadata returned without loading package data.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PcpMetadata {

@@ -13,7 +13,10 @@ use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
 use super::traits::{ActivityChangedListener, VaultChangedListener};
 use super::traits::{AtomicBlobStore, DeviceKeystore};
-use super::types::{ActivityEntry, ActivityMetadata, ActivityQuery, CredentialRecord};
+use super::types::{
+    ActivityEntry, ActivityMetadata, ActivityQuery, CredentialRecord,
+    VaultTransferMerge,
+};
 use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, CredentialVault};
 use super::{StorageLock, StorageLockGuard};
@@ -414,6 +417,40 @@ impl CredentialStore {
         Ok(added)
     }
 
+    /// Adds the credentials and sealed PCPs of an authenticator transfer (WIP-109) to an
+    /// initialized vault, atomically and idempotently. Credentials merge as in
+    /// [`Self::merge_vault_from_backup`]; a PCP is added only when its id is absent, so
+    /// this device's own packages are never rewound. PCP additions do not notify the
+    /// vault-changed listener.
+    ///
+    /// The host must verify the registration before calling, and must only transfer PCPs
+    /// the receiving account can unseal.
+    ///
+    /// # Errors
+    /// Returns an error on an invalid export, uninitialized store, or database failure.
+    pub fn merge_vault_from_transfer(
+        &self,
+        transfer_bytes: &[u8],
+    ) -> StorageResult<VaultTransferMerge> {
+        let outcome = {
+            let inner = self.lock_inner()?;
+            let _guard = inner.guard()?;
+            #[cfg(not(target_arch = "wasm32"))]
+            inner.cleanup_stale_backup_files();
+            inner
+                .state()?
+                .vault
+                .merge_plaintext_bytes_for_transfer(transfer_bytes)?
+        };
+        if outcome.credentials != 0 {
+            self.notify_vault_changed();
+        }
+        Ok(VaultTransferMerge {
+            credentials_added: outcome.credentials,
+            pcps_added: outcome.pcps,
+        })
+    }
+
     /// Permanently destroys all credential storage data, including sealed PCPs.
     ///
     /// Intended for use when the user logs out or deletes their account.
@@ -461,6 +498,36 @@ impl CredentialStore {
         let _guard = inner.guard()?;
         inner.cleanup_stale_backup_files();
         let path = inner.export_vault_for_backup_to_file()?;
+        let _cleanup = CleanupFile(path.clone());
+
+        std::fs::read(&path).map_err(|e| {
+            StorageError::VaultDb(format!("failed to read exported vault: {e}"))
+        })
+    }
+
+    /// Exports the vault for an authenticator transfer (WIP-109): everything
+    /// [`Self::export_vault_for_backup`] exports plus the sealed PCPs of `pcp_kinds`.
+    ///
+    /// The transfer response is bounded in size, so the host names the kinds that fit
+    /// (an Orb package alone can exceed the limit). Backups never include PCPs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized, a kind is invalid, or the
+    /// export fails.
+    #[expect(
+        clippy::significant_drop_tightening,
+        reason = "lock held intentionally for the full operation to prevent concurrent cleanup from deleting in-use temp files"
+    )]
+    pub fn export_vault_for_transfer(
+        &self,
+        pcp_kinds: Vec<String>,
+    ) -> StorageResult<Vec<u8>> {
+        let inner = self.lock_inner()?;
+        let _guard = inner.guard()?;
+        inner.cleanup_stale_backup_files();
+        let kinds = pcp_kinds.iter().map(String::as_str).collect::<Vec<_>>();
+        let path = inner.export_vault_for_transfer_to_file(&kinds)?;
         let _cleanup = CleanupFile(path.clone());
 
         std::fs::read(&path).map_err(|e| {
@@ -978,6 +1045,21 @@ impl CredentialStoreInner {
         let state = self.state()?;
         let dest = self.temp_backup_path();
         state.vault.export_plaintext(&dest)?;
+        Ok(dest.to_string_lossy().to_string())
+    }
+
+    /// Same contract as [`Self::export_vault_for_backup_to_file`], with the PCPs of
+    /// `pcp_kinds` included.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn export_vault_for_transfer_to_file(
+        &self,
+        pcp_kinds: &[&str],
+    ) -> StorageResult<String> {
+        let state = self.state()?;
+        let dest = self.temp_backup_path();
+        state
+            .vault
+            .export_plaintext_for_transfer(&dest, pcp_kinds)?;
         Ok(dest.to_string_lossy().to_string())
     }
 
