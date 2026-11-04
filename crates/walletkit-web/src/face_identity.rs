@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::error::invalid_argument;
 
-/// A face identity kept inside the WalletKit worker until `free()` or worker close.
+/// A face identity kept inside the `WalletKit` worker until `free()` or worker close.
 #[wasm_bindgen(js_name = FaceIdentity)]
 pub struct JsFaceIdentity(FaceIdentity);
 
