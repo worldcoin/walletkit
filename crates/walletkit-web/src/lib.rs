@@ -16,6 +16,7 @@
 mod authenticator;
 mod enrollment;
 mod error;
+mod identity;
 mod js;
 mod storage;
 mod values;

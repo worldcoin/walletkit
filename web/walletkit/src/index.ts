@@ -9,6 +9,7 @@ export type {
   CredentialStore,
   EmbeddedZkArtifacts,
   FieldElement,
+  Identity,
   InitializingAuthenticator,
   ProofRequest,
   ProofResponse,
@@ -18,6 +19,7 @@ export type {
   StoragePaths,
   WalletKit,
 } from "./remote";
+export { IdentityContext } from "./generated/walletkit.js";
 // Records are plain data and need no proxy.
 export type {
   ActivityEntry,
