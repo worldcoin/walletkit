@@ -5,6 +5,53 @@ test.beforeEach(async ({ page }) => {
   await page.waitForFunction(() => "initializeWalletKit" in window);
 });
 
+test("key proofs work without registration and restore the same sign-in key", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    try {
+      const challenge = new TextEncoder().encode(
+        JSON.stringify({
+          version: 1,
+          issuer: "https://auth.world.org",
+          ceremony_id: "019af784-3d00-7000-8000-000000000001",
+          nonce: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          expires_at: Math.floor(Date.now() / 1000) + 300,
+        }),
+      );
+      const proof = await wallet.createWorldIdKeyProof(
+        new Uint8Array(32).fill(0x11),
+        challenge,
+        "https://auth.world.org",
+      );
+      const restored = await wallet.createWorldIdKeyProof(
+        new Uint8Array(32).fill(0x11),
+        challenge,
+        "https://auth.world.org",
+      );
+      const error = await wallet
+        .createWorldIdKeyProof(
+          new Uint8Array(32).fill(0x11),
+          challenge,
+          "https://other.example",
+        )
+        .then(
+          () => "unexpected success",
+          (e: Error) => e.message,
+        );
+      return { proof, restored, error };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result.proof.publicKey).toBe(
+    "A66IqHPC21NxH6PvdYOc4CiP0dUZ0YJU-c1P3Wnqc8Vg",
+  );
+  expect(result.restored).toEqual(result.proof);
+  expect(result.error).toContain("InvalidInput");
+});
+
 test("packaged worker initializes, correlates calls, reports errors and closes", async ({
   page,
 }) => {

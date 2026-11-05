@@ -31,6 +31,7 @@ export type {
   GatewayRequestStatus,
   LogLevel,
   RecoveryData,
+  WorldIdKeyProof,
   RecoveryUpdateSignature,
   Region,
   RegistrationStatus,

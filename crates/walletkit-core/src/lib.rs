@@ -139,6 +139,10 @@ pub use user_agent::{UserAgent, UserAgentBuilder};
 /// Proof requests and responses in World ID v4.
 pub mod requests;
 
+/// Possession proofs for a sign-in key derived from the World ID seed.
+pub mod key_proof;
+pub use key_proof::{create_world_id_key_proof, WorldIdKeyProof};
+
 /// Pre-flight check of whether stored credentials can satisfy a [`requests::ProofRequest`].
 pub mod proof_request_credential_constraints_check;
 

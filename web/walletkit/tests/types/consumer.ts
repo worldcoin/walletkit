@@ -9,6 +9,7 @@ import type {
   FaceEmbedding,
   SelfieEmbeddingResult,
   WalletKit,
+  WorldIdKeyProof,
 } from "../../dist/index.js";
 
 declare const walletkit: WalletKit;
@@ -87,6 +88,19 @@ export async function consumer() {
     factor,
   );
   const recovery = await walletkit.recoveryDataFromSeed(new Uint8Array(32));
+  const keyProof: WorldIdKeyProof = await walletkit.createWorldIdKeyProof(
+    new Uint8Array(32),
+    new TextEncoder().encode("{}"),
+    "https://auth.world.org",
+  );
+  const publicKey: string = keyProof.publicKey;
+  const signature: string = keyProof.signature;
+  // @ts-expect-error a World ID seed is bytes, not an encoded private key string
+  await walletkit.createWorldIdKeyProof(
+    "secret",
+    new Uint8Array(),
+    "https://auth.world.org",
+  );
   const address: string = recovery.authenticatorAddress;
   const redacted: string = await walletkit.sanitizeHexSecrets("0x00");
   await walletkit.emitLog("warn", "logging works");

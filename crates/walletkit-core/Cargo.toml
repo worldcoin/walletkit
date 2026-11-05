@@ -29,6 +29,7 @@ futures-util = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
 log = { workspace = true }
+p256-sign-in = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true, features = ["json", "stream"] }
 ruint = { workspace = true, features = ["alloc"] }

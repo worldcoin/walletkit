@@ -25,6 +25,7 @@ use std::sync::Arc;
 use js_sys::BigInt;
 use walletkit_core::{
     authenticator::recovery_data_from_seed,
+    create_world_id_key_proof,
     logger::{emit_log, init_logging, sanitize_hex_secrets, LogLevel},
     proof_request_credential_constraints_check::{
         check_credentials_against_proof_request, CredentialConstraintsCheckResult,
@@ -48,6 +49,11 @@ export interface RecoveryData {
   authenticatorAddress: string;
   authenticatorPubkey: string;
   offchainSignerCommitment: string;
+}
+
+export interface WorldIdKeyProof {
+  publicKey: string;
+  signature: string;
 }
 
 export interface RecoveryUpdateSignature {
@@ -173,6 +179,24 @@ pub fn recovery_data_from_seed_js(seed: Vec<u8>) -> Result<JsValue, JsValue> {
             "offchainSignerCommitment",
             data.offchain_signer_commitment.into(),
         ),
+    ])
+}
+
+/// Signs a key proof without credentials or on-chain registration.
+///
+/// # Errors
+/// Throws a `WalletKitError` for invalid seeds or challenges and signing failures.
+#[wasm_bindgen(js_name = createWorldIdKeyProof, unchecked_return_type = "WorldIdKeyProof")]
+pub fn create_world_id_key_proof_js(
+    seed: Vec<u8>,
+    challenge: Vec<u8>,
+    expected_issuer: String,
+) -> Result<JsValue, JsValue> {
+    let proof =
+        create_world_id_key_proof(seed, challenge, expected_issuer).map_err(to_js)?;
+    js::object(&[
+        ("publicKey", proof.public_key.into()),
+        ("signature", proof.signature.into()),
     ])
 }
 
