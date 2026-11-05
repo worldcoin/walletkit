@@ -95,8 +95,8 @@ export async function consumer() {
   );
   const publicKey: string = keyProof.publicKey;
   const signature: string = keyProof.signature;
-  // @ts-expect-error a World ID seed is bytes, not an encoded private key string
   await walletkit.createWorldIdKeyProof(
+    // @ts-expect-error a World ID seed is bytes, not an encoded private key string
     "secret",
     new Uint8Array(),
     "https://auth.world.org",
