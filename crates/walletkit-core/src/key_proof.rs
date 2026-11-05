@@ -100,9 +100,7 @@ fn create_at(
         && issuer.path() == "/"
         && issuer.query().is_none()
         && issuer.fragment().is_none()
-        && (issuer.scheme() == "https"
-            || (issuer.scheme() == "http"
-                && matches!(issuer.host_str(), Some("127.0.0.1" | "localhost"))));
+        && (issuer.scheme() == "https" || (issuer.scheme() == "http" && matches!(issuer.host_str(), Some("127.0.0.1" | "localhost"))));
     let nonce = URL_SAFE_NO_PAD.decode(&challenge.nonce).map_err(|_| {
         WalletKitError::InvalidInput {
             attribute: "challenge".to_string(),
