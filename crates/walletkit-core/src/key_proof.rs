@@ -255,18 +255,31 @@ mod tests {
     fn rejects_foreign_expired_and_malformed_challenges() {
         let fixture = fixture();
         let seed = hex::decode(&fixture.vectors[0].seed_hex).unwrap();
-        for issuer in [
+        assert!(create_at(
+            &seed,
+            fixture.challenge.as_bytes(),
             "https://foreign.example",
-            "http://auth.world.org",
-            "https://auth.world.org/path",
+            fixture.now,
+        )
+        .is_err());
+        for issuer in ["http://auth.world.org", "https://auth.world.org/path"] {
+            let challenge = fixture.challenge.replace(&fixture.issuer, issuer);
+            assert!(
+                create_at(&seed, challenge.as_bytes(), issuer, fixture.now).is_err()
+            );
+        }
+        for issuer in [
+            "https://auth.world.org",
+            "http://localhost:5174",
+            "http://127.0.0.1:5174",
         ] {
-            assert!(create_at(
-                &seed,
-                fixture.challenge.as_bytes(),
-                issuer,
-                fixture.now
-            )
-            .is_err());
+            let challenge = fixture.challenge.replace(&fixture.issuer, issuer);
+            let proof =
+                create_at(&seed, challenge.as_bytes(), issuer, fixture.now).unwrap();
+            assert_eq!(
+                proof.public_key,
+                "A66IqHPC21NxH6PvdYOc4CiP0dUZ0YJU-c1P3Wnqc8Vg"
+            );
         }
         assert!(create_at(
             &seed,
