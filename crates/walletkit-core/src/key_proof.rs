@@ -89,13 +89,12 @@ pub fn create_world_id_key_proof(
     }
     let loopback = authority
         .and_then(|value| {
-            value.strip_prefix('[').map_or_else(
-                || value.split(':').next(),
-                |ipv6| ipv6.split_once(']').map(|(host, _)| host),
-            )
+            value
+                .parse::<std::net::SocketAddr>()
+                .or_else(|_| format!("{value}:80").parse())
+                .ok()
         })
-        .and_then(|host| host.parse::<std::net::IpAddr>().ok())
-        .is_some_and(|ip| ip.to_canonical().is_loopback());
+        .is_some_and(|address| address.ip().to_canonical().is_loopback());
     if issuer.scheme() != "https" && !(issuer.scheme() == "http" && loopback) {
         return Err(invalid_issuer(
             "issuer must use HTTPS, except for loopback IP development origins",
@@ -255,6 +254,9 @@ mod tests {
             "https://auth.world.org",
             "https://auth.world.org:443",
             "https://auth.local.worldcoin.dev:5174",
+            "http://127.0.0.1",
+            "http://[::1]",
+            "http://127.0.0.1:80",
             "http://127.0.0.1:5174",
             "http://127.0.0.2:5174",
             "http://[::1]:5174",
@@ -275,6 +277,7 @@ mod tests {
         for issuer in [
             "not a URL",
             "http://localhost:5174",
+            "http://127.1",
             "http://127.1:5174",
             "http://2130706433:5174",
             "http://auth.world.org",
