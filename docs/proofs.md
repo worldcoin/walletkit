@@ -64,9 +64,14 @@ Oxide derives it from the restored root with `worldIdV4Key()`.
 
 Obtain user approval first. Read `expected_issuer` from trusted app configuration,
 and pass the exact decoded JSON bytes of `key_proof_request.challenge`; do not
-reserialize them. The function rejects foreign, malformed, or expired challenges.
-Its result contains `public_key` and `signature`, which the app sends in the
-existing encrypted bridge response with `credential_type: "key"`. See the
+reserialize them. The function validates the challenge format and trusted issuer.
+The IdP enforces expiry using its server clock; WalletKit does not read the device
+clock or assume a challenge lifetime. The trusted issuer must be an HTTPS origin
+without a path or trailing slash; HTTP is allowed only for loopback IP origins.
+
+The result fields are `public_key` and `signature` in Rust, and `publicKey` and
+`signature` in Swift/Kotlin. Send them as `public_key` and `signature` in the
+encrypted bridge response with `credential_type: "key"`. See the
 [IdP bridge contract](https://github.com/worldcoin/temporal-apps/blob/main/apps/idpapi/README.md#world-id-key-proof).
 
 The sign-in key is derived with HKDF-SHA-256: the salt is
