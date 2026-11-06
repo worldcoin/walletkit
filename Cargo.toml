@@ -10,6 +10,8 @@ members = [
   "crates/walletkit-web",
   "xtask",
 ]
+# Vendored dependencies are patched in below, not workspace members.
+exclude = ["vendor/ark-ec"]
 resolver = "2"
 
 [workspace.package]
@@ -132,3 +134,9 @@ debug-assertions = false
 
 [profile.dev.package.provekit-prover]
 debug-assertions = false
+
+# TEMPORARY: ark-ec 0.6.0 with arkworks-rs/algebra#1187 backported, so MSMs fall back to the
+# current rayon context instead of panicking where threads cannot be created (wasm32 browsers).
+# Remove with vendor/ark-ec once arkworks publishes a release containing #1187.
+[patch.crates-io]
+ark-ec = { path = "vendor/ark-ec" }

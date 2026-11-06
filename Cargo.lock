@@ -944,8 +944,6 @@ dependencies = [
 [[package]]
 name = "ark-ec"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8352a2b2aedf6ba2cc38f7520fc51191d518dde96175c729af19f2d059f191c4"
 dependencies = [
  "ahash",
  "ark-ff 0.6.0",
@@ -9358,11 +9356,14 @@ dependencies = [
 name = "walletkit-web"
 version = "0.29.0"
 dependencies = [
+ "ark-ec",
  "js-sys",
  "selfie-enrollment-api-types",
  "selfie-enrollment-client",
  "selfie-enrollment-sealed-types",
  "serde_json",
+ "taceo-ark-babyjubjub",
+ "taceo-oprf-core",
  "walletkit-core",
  "wasm-bindgen",
  "wasm-bindgen-futures",
