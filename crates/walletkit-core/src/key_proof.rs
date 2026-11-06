@@ -5,14 +5,12 @@ use hkdf::Hkdf;
 use p256_sign_in::ecdsa::{signature::hazmat::PrehashSigner, SigningKey};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use web_time::{SystemTime, UNIX_EPOCH};
 use zeroize::Zeroizing;
 
 use crate::error::WalletKitError;
 
 const KEY_DOMAIN: &[u8] = b"WORLD-ID/IDP/SIGN-IN-KEY/V1\0";
 const PROOF_DOMAIN: &[u8] = b"WORLD-ID/IDP/KEY-PROOF/V1\0";
-const CLOCK_SKEW_SECONDS: i64 = 30;
 
 /// Public material proving possession of a World ID sign-in key.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -30,7 +28,8 @@ struct Challenge {
     issuer: String,
     ceremony_id: String,
     nonce: String,
-    expires_at: i64,
+    #[serde(rename = "expires_at")]
+    _expires_at: i64,
 }
 
 /// Signs an Auth challenge using a key derived from the 32-byte World ID seed.
@@ -38,13 +37,12 @@ struct Challenge {
 /// Requires user approval, but no Authenticator, credentials, or network calls.
 /// `expected_issuer` must come from trusted app configuration. `challenge` is the
 /// exact decoded JSON byte string from `key_proof_request.challenge`.
-/// Checks the supplied expiry with 30 seconds of clock-skew tolerance; the `IdP`
-/// enforces the exact deadline using its server clock. No maximum lifetime is assumed.
+/// The `IdP` enforces expiry using its server clock.
 /// Devices restored from the same seed share this sign-in key.
 ///
 /// # Errors
-/// Rejects invalid seeds and issuer configuration, and foreign, malformed, or
-/// expired challenges. Clock, derivation, and signing failures exclude secret material.
+/// Rejects invalid seeds, issuer configuration, and foreign or malformed
+/// challenges. Derivation and signing failures exclude secret material.
 #[uniffi::export]
 #[allow(
     clippy::needless_pass_by_value,
@@ -56,24 +54,6 @@ pub fn create_world_id_key_proof(
     expected_issuer: String,
 ) -> Result<WorldIdKeyProof, WalletKitError> {
     let seed = Zeroizing::new(seed);
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| WalletKitError::Generic {
-            error: "clock is before the Unix epoch".to_string(),
-        })?
-        .as_secs();
-    let now = i64::try_from(now).map_err(|_| WalletKitError::Generic {
-        error: "clock exceeds the supported timestamp range".to_string(),
-    })?;
-    create_at(&seed, &challenge, &expected_issuer, now)
-}
-
-fn create_at(
-    seed: &[u8],
-    challenge: &[u8],
-    expected_issuer: &str,
-    now: i64,
-) -> Result<WorldIdKeyProof, WalletKitError> {
     if seed.len() != 32 {
         return Err(WalletKitError::InvalidInput {
             attribute: "seed".to_string(),
@@ -91,7 +71,7 @@ fn create_at(
         attribute: "expected_issuer".to_string(),
         reason: reason.to_string(),
     };
-    let issuer = reqwest::Url::parse(expected_issuer)
+    let issuer = reqwest::Url::parse(&expected_issuer)
         .map_err(|err| invalid_issuer(&format!("invalid issuer URL: {err}")))?;
     let authority = expected_issuer.split_once("://").map(|(_, value)| value);
     if expected_issuer.trim() != expected_issuer
@@ -120,7 +100,7 @@ fn create_at(
             "issuer must use HTTPS, except for loopback IP development origins",
         ));
     }
-    let parsed: Challenge = serde_json::from_slice(challenge).map_err(|err| {
+    let parsed: Challenge = serde_json::from_slice(&challenge).map_err(|err| {
         invalid_challenge(&format!(
             "invalid key proof challenge JSON ({:?} at line {}, column {})",
             err.classify(),
@@ -149,10 +129,7 @@ fn create_at(
     if nonce.len() != 32 {
         return Err(invalid_challenge("key proof nonce must contain 32 bytes"));
     }
-    if parsed.expires_at < now.saturating_sub(CLOCK_SKEW_SECONDS) {
-        return Err(invalid_challenge("key proof challenge has expired"));
-    }
-    let key = derive_sign_in_key(seed)?;
+    let key = derive_sign_in_key(&seed)?;
     let digest = Sha256::new()
         .chain_update(PROOF_DOMAIN)
         .chain_update(challenge)
@@ -200,7 +177,6 @@ mod tests {
 
     #[derive(Deserialize)]
     struct Fixture {
-        now: i64,
         issuer: String,
         challenge: String,
         vectors: Vec<Vector>,
@@ -217,11 +193,10 @@ mod tests {
             .vectors
             .iter()
             .map(|vector| {
-                create_at(
-                    &hex::decode(&vector.seed_hex).unwrap(),
-                    fixture.challenge.as_bytes(),
-                    &fixture.issuer,
-                    fixture.now,
+                create_world_id_key_proof(
+                    hex::decode(&vector.seed_hex).unwrap(),
+                    fixture.challenge.as_bytes().to_vec(),
+                    fixture.issuer.clone(),
                 )
                 .unwrap()
             })
@@ -238,23 +213,19 @@ mod tests {
     }
 
     #[test]
-    fn accepts_expiry_with_clock_skew_without_a_maximum_lifetime() {
+    fn signing_does_not_depend_on_the_device_clock_or_challenge_lifetime() {
         let fixture = fixture();
         let seed = hex::decode(&fixture.vectors[0].seed_hex).unwrap();
-        for expires_at in [
-            1_999_999_970,
-            1_999_999_971,
-            2_000_000_000,
-            2_000_000_001,
-            2_000_003_600,
-            i64::MAX,
-        ] {
+        for expires_at in [1, 2_000_000_330, 2_000_000_331, i64::MAX] {
             let challenge = fixture
                 .challenge
                 .replace("2000000300", &expires_at.to_string());
-            let proof =
-                create_at(&seed, challenge.as_bytes(), &fixture.issuer, fixture.now)
-                    .unwrap();
+            let proof = create_world_id_key_proof(
+                seed.clone(),
+                challenge.as_bytes().to_vec(),
+                fixture.issuer.clone(),
+            )
+            .unwrap();
             assert_eq!(
                 proof.public_key,
                 "A66IqHPC21NxH6PvdYOc4CiP0dUZ0YJU-c1P3Wnqc8Vg"
@@ -273,47 +244,6 @@ mod tests {
                 .finalize();
             key.verify_prehash(&digest, &signature).unwrap();
         }
-    }
-
-    #[test]
-    fn rejects_expiry_outside_the_clock_skew_allowance() {
-        let fixture = fixture();
-        let seed = hex::decode(&fixture.vectors[0].seed_hex).unwrap();
-        for expires_at in [1_999_999_969, 0, -1, i64::MIN] {
-            let challenge = fixture
-                .challenge
-                .replace("2000000300", &expires_at.to_string());
-            assert!(matches!(
-                create_at(&seed, challenge.as_bytes(), &fixture.issuer, fixture.now),
-                Err(WalletKitError::InvalidInput { attribute, reason })
-                    if attribute == "challenge" && reason == "key proof challenge has expired"
-            ));
-        }
-    }
-
-    #[test]
-    fn public_signer_checks_the_current_clock() {
-        let fixture = fixture();
-        let seed = hex::decode(&fixture.vectors[0].seed_hex).unwrap();
-        let future = fixture
-            .challenge
-            .replace("2000000300", &i64::MAX.to_string());
-        let proof = create_world_id_key_proof(
-            seed.clone(),
-            future.into_bytes(),
-            fixture.issuer.clone(),
-        )
-        .unwrap();
-        assert_eq!(
-            proof.public_key,
-            "A66IqHPC21NxH6PvdYOc4CiP0dUZ0YJU-c1P3Wnqc8Vg"
-        );
-        let expired = fixture.challenge.replace("2000000300", "1");
-        assert!(matches!(
-            create_world_id_key_proof(seed, expired.into_bytes(), fixture.issuer),
-            Err(WalletKitError::InvalidInput { attribute, reason })
-                if attribute == "challenge" && reason == "key proof challenge has expired"
-        ));
     }
 
     #[test]

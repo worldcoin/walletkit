@@ -64,11 +64,9 @@ Oxide derives it from the restored root with `worldIdV4Key()`.
 
 Obtain user approval first. Read `expected_issuer` from trusted app configuration,
 and pass the exact decoded JSON bytes of `key_proof_request.challenge`; do not
-reserialize them. The function validates the challenge format, trusted issuer,
-and supplied expiry. WalletKit rejects a challenge when its expiry is more than
-30 seconds behind the device clock, allowing for clock skew without assuming a
-maximum challenge lifetime. The IdP still enforces the exact deadline using its
-server clock. The trusted issuer must be an HTTPS origin
+reserialize them. The function validates the challenge format and trusted issuer.
+The IdP enforces expiry using its server clock; WalletKit does not read the device
+clock or assume a challenge lifetime. The trusted issuer must be an HTTPS origin
 without a path or trailing slash; HTTP is allowed only for loopback IP origins.
 
 The result fields are `public_key` and `signature` in Rust, and `publicKey` and

@@ -26,9 +26,5 @@ class KeyProofTest {
         assertFailsWith<WalletKitException.InvalidInput> {
             createWorldIdKeyProof(ByteArray(32) { 0x11 }, challenge, "https://other.example")
         }
-        val expired = challenge.toString(Charsets.UTF_8).replace(expiresAt.toString(), "1").toByteArray()
-        assertFailsWith<WalletKitException.InvalidInput> {
-            createWorldIdKeyProof(ByteArray(32) { 0x11 }, expired, "https://auth.world.org")
-        }
     }
 }

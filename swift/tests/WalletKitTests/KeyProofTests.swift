@@ -24,12 +24,5 @@ final class KeyProofTests: XCTestCase {
             challenge: challenge,
             expectedIssuer: "https://other.example"
         ))
-        let expired = Data(String(decoding: challenge, as: UTF8.self)
-            .replacingOccurrences(of: String(expiresAt), with: "1").utf8)
-        XCTAssertThrowsError(try createWorldIdKeyProof(
-            seed: Data(repeating: 0x11, count: 32),
-            challenge: expired,
-            expectedIssuer: "https://auth.world.org"
-        ))
     }
 }
