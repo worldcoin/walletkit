@@ -211,6 +211,9 @@ pub async fn verify_proof_onchain(
                     .await
                     .map(|_| ())
             }
+            ProofType::EmbeddingSimilarity(_) => {
+                eyre::bail!("embedding similarity proofs are not verified on-chain")
+            }
         };
 
         results.push(VerifyItemResult {

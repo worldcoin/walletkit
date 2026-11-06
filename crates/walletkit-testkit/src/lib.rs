@@ -183,6 +183,9 @@ pub async fn generate_and_verify_test_proof(
         (ProofType::Session, Some(session_id)) => SessionRef::Existing(session_id),
         (ProofType::Session, None) => SessionRef::Create,
         (ProofType::Uniqueness { .. }, _) => SessionRef::None,
+        (ProofType::EmbeddingSimilarity(_), _) => {
+            eyre::bail!("embedding similarity proofs are not supported")
+        }
     };
     let core_request = build_test_request(
         env,

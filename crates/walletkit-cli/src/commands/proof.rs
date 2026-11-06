@@ -262,6 +262,9 @@ fn run_generate_test_request(
         (ProofType::Uniqueness { .. }, None) => SessionRef::None,
         (ProofType::Session, None) => SessionRef::Create,
         (ProofType::Session, Some(session_id)) => SessionRef::Existing(session_id),
+        (ProofType::EmbeddingSimilarity(_), _) => {
+            eyre::bail!("embedding similarity proofs are not supported");
+        }
     };
     let request = build_test_request(
         &TestEnv::default_staging(),
