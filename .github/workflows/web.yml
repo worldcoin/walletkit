@@ -66,7 +66,10 @@ permissions:
 jobs:
   build:
     name: Build & test @worldcoin/walletkit-web
-    runs-on: ubuntu-latest
+    # TEMPORARY: ubuntu-latest moved to 26.04, which has no system liblzma.so.5. The Nix wasm shell
+    # doesn't provide one, so the world-id-proof build script fails to load. Return to
+    # ubuntu-latest once nix/wasm.nix supplies xz.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     outputs:
       version: ${{ steps.version.outputs.version }}
