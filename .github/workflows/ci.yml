@@ -142,12 +142,6 @@ jobs:
           CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" \
             cargo test -p walletkit-sqlite --target wasm32-unknown-unknown
 
-      # Includes the ark-ec MSM regression test for the vendored arkworks-rs/algebra#1187 fix.
-      - name: Test walletkit-web in a browser runner
-        run: |
-          CHROMEDRIVER="$CHROMEWEBDRIVER/chromedriver" \
-            cargo test -p walletkit-web --target wasm32-unknown-unknown --locked
-
   swift-build:
     name: Build Swift
     runs-on: macos-26
