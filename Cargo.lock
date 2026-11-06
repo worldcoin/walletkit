@@ -9267,6 +9267,7 @@ dependencies = [
  "log",
  "mockito",
  "p256 0.13.2",
+ "p256 0.14.0",
  "rand 0.8.8",
  "regex",
  "reqwest",

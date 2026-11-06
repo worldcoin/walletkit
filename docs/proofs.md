@@ -55,6 +55,39 @@ returns back to the relying party.
 On iOS and Android, use `CachingZkArtifacts` instead of `EmbeddedZkArtifacts` when
 the keys are compressed, so that WalletKit decompresses them only once.
 
+## World ID key proofs for sign-in
+
+`create_world_id_key_proof(seed, challenge, expected_issuer)` signs an Auth bridge
+challenge without an `Authenticator`, credentials, or on-chain registration. Pass
+the same 32-byte World ID seed used to initialize WalletKit. In World ID App,
+Oxide derives it from the restored root with `worldIdV4Key()`.
+
+Obtain user approval first. Read `expected_issuer` from trusted app configuration,
+and pass the exact decoded JSON bytes of `key_proof_request.challenge`; do not
+reserialize them. The function validates the challenge format and trusted issuer.
+The IdP enforces expiry using its server clock; WalletKit does not read the device
+clock or assume a challenge lifetime. The trusted issuer must be an HTTPS origin
+without a path or trailing slash; HTTP is allowed only for loopback IP origins.
+
+The result fields are `public_key` and `signature` in Rust, and `publicKey` and
+`signature` in Swift/Kotlin. Send them as `public_key` and `signature` in the
+encrypted bridge response with `credential_type: "key"`. See the
+[IdP bridge contract](https://github.com/worldcoin/temporal-apps/blob/main/apps/idpapi/README.md#world-id-key-proof).
+
+The sign-in key is derived with HKDF-SHA-256: the salt is
+`WORLD-ID/IDP/SIGN-IN-KEY/V1\0`, the input key material is the World ID seed, and
+the info is a four-byte big-endian counter starting at zero. Expand 32 bytes and
+use the first valid P-256 secret scalar, trying at most 256 counter values.
+The signature is low-S DER ECDSA over
+`SHA256("WORLD-ID/IDP/KEY-PROOF/V1\0" || challenge_bytes)`. The compressed SEC1
+public key and signature use unpadded base64url.
+
+Devices restored from the same seed share this sign-in key. Revoking it disables
+this sign-in method on all of them. This proof establishes key possession; it
+does not certify World ID registration, use of an official app, human
+verification, or a unique device. IdP apps must accept unverified accounts to use
+it without another proof satisfying their verification requirements.
+
 ## Legacy World ID 3.0 proofs
 
 The `v3` feature adds the World ID 3.0 API in the `v3` module. The Swift and

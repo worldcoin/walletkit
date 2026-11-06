@@ -1,0 +1,18 @@
+{
+  "now": 2000000000,
+  "issuer": "https://auth.world.org",
+  "ceremony_id": "019af784-3d00-7000-8000-000000000001",
+  "challenge": "{\"version\":1,\"issuer\":\"https://auth.world.org\",\"ceremony_id\":\"019af784-3d00-7000-8000-000000000001\",\"nonce\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"expires_at\":2000000300}",
+  "vectors": [
+    {
+      "seed_hex": "1111111111111111111111111111111111111111111111111111111111111111",
+      "public_key": "A66IqHPC21NxH6PvdYOc4CiP0dUZ0YJU-c1P3Wnqc8Vg",
+      "signature": "MEQCIHLt1lsDPExtD-b-ZUOwQoLDlPSNZRJt80TQYNBUqA-nAiA2wgeTY2esbHXsNxceE4XAmyu8CgyUzrPtiHrrHmh2gQ"
+    },
+    {
+      "seed_hex": "2222222222222222222222222222222222222222222222222222222222222222",
+      "public_key": "AsPCxP5yJAV6BxLGUfP2zRTsWgZlj9rkCfTB6RPIPYQV",
+      "signature": "MEQCIEmL8QiLSNwWqRf7nzaflQkbgtOqMI19kZZCYunEBtulAiAzd1qJGk6K2C-83F4ai47Y4h9ilKrUtlkItE651p9kIg"
+    }
+  ]
+}

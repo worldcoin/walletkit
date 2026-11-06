@@ -55,6 +55,9 @@ hkdf = "0.12"
 log = "0.4"
 mockito = "1.6"
 p256 = { version = "0.13.2", default-features = false }
+p256-sign-in = { package = "p256", version = "0.14.0", default-features = false, features = [
+  "ecdsa",
+] }
 rand = "0.8.6"
 regex = "1.11"
 reqwest = { version = "0.13", default-features = false }
