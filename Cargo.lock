@@ -8102,7 +8102,7 @@ dependencies = [
 [[package]]
 name = "taceo-ark-algebra"
 version = "0.1.1"
-source = "git+https://github.com/Dzejkop/circom-helpers?rev=ddb22938878a5e18910f370bd12e90bc7cb07abb#ddb22938878a5e18910f370bd12e90bc7cb07abb"
+source = "git+https://github.com/TaceoLabs/circom-helpers?rev=6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9#6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9"
 dependencies = [
  "ark-ec",
  "ark-ff 0.6.0",
@@ -8126,7 +8126,7 @@ dependencies = [
 [[package]]
 name = "taceo-ark-serde-compat"
 version = "0.6.2"
-source = "git+https://github.com/Dzejkop/circom-helpers?rev=ddb22938878a5e18910f370bd12e90bc7cb07abb#ddb22938878a5e18910f370bd12e90bc7cb07abb"
+source = "git+https://github.com/TaceoLabs/circom-helpers?rev=6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9#6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -8140,7 +8140,7 @@ dependencies = [
 [[package]]
 name = "taceo-circom-types"
 version = "0.3.3"
-source = "git+https://github.com/Dzejkop/circom-helpers?rev=ddb22938878a5e18910f370bd12e90bc7cb07abb#ddb22938878a5e18910f370bd12e90bc7cb07abb"
+source = "git+https://github.com/TaceoLabs/circom-helpers?rev=6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9#6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -8181,7 +8181,7 @@ dependencies = [
 [[package]]
 name = "taceo-groth16"
 version = "0.2.2"
-source = "git+https://github.com/Dzejkop/circom-helpers?rev=ddb22938878a5e18910f370bd12e90bc7cb07abb#ddb22938878a5e18910f370bd12e90bc7cb07abb"
+source = "git+https://github.com/TaceoLabs/circom-helpers?rev=6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9#6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9"
 dependencies = [
  "ark-ec",
  "ark-ff 0.6.0",
@@ -8196,7 +8196,7 @@ dependencies = [
 [[package]]
 name = "taceo-groth16-material"
 version = "0.4.3"
-source = "git+https://github.com/Dzejkop/circom-helpers?rev=ddb22938878a5e18910f370bd12e90bc7cb07abb#ddb22938878a5e18910f370bd12e90bc7cb07abb"
+source = "git+https://github.com/TaceoLabs/circom-helpers?rev=6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9#6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9"
 dependencies = [
  "ark-bn254",
  "ark-ff 0.6.0",
@@ -9921,7 +9921,7 @@ dependencies = [
 [[package]]
 name = "world-id-authenticator"
 version = "0.18.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=73b5a34613f64285e4252f776af2b741a8193c31#73b5a34613f64285e4252f776af2b741a8193c31"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4#fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4"
 dependencies = [
  "aes-gcm",
  "alloy",
@@ -9965,7 +9965,7 @@ dependencies = [
 [[package]]
 name = "world-id-core"
 version = "0.18.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=73b5a34613f64285e4252f776af2b741a8193c31#73b5a34613f64285e4252f776af2b741a8193c31"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4#fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -9977,7 +9977,7 @@ dependencies = [
 [[package]]
 name = "world-id-flamingo"
 version = "0.18.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=73b5a34613f64285e4252f776af2b741a8193c31#73b5a34613f64285e4252f776af2b741a8193c31"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4#fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4"
 dependencies = [
  "base64 0.22.1",
  "coset",
@@ -9995,11 +9995,10 @@ dependencies = [
 [[package]]
 name = "world-id-primitives"
 version = "0.18.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=73b5a34613f64285e4252f776af2b741a8193c31#73b5a34613f64285e4252f776af2b741a8193c31"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4#fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4"
 dependencies = [
  "alloy",
  "alloy-primitives",
- "alloy-sol-types",
  "ark-bn254",
  "ark-ff 0.6.0",
  "arrayvec",
@@ -10034,7 +10033,7 @@ dependencies = [
 [[package]]
 name = "world-id-proof"
 version = "0.18.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=73b5a34613f64285e4252f776af2b741a8193c31#73b5a34613f64285e4252f776af2b741a8193c31"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4#fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -10074,7 +10073,7 @@ dependencies = [
 [[package]]
 name = "world-id-registries"
 version = "0.18.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=73b5a34613f64285e4252f776af2b741a8193c31#73b5a34613f64285e4252f776af2b741a8193c31"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4#fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4"
 dependencies = [
  "alloy",
  "anyhow",
