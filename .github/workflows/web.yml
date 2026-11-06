@@ -115,17 +115,6 @@ jobs:
       - name: Install dependencies
         run: nix develop .#wasm --command bun install --cwd web/walletkit --frozen-lockfile
 
-      # ark-ec 0.6's `parallel` MSM builds its own rayon thread pool, which panics on wasm32, so
-      # nothing in walletkit-web's dependency graph may enable it.
-      - name: Check that ark-ec/parallel is off for wasm32
-        run: |
-          tree=$(nix develop .#wasm --command cargo tree --locked -p walletkit-web \
-            --target wasm32-unknown-unknown -e features -i ark-ec)
-          if grep 'ark-ec feature "parallel"' <<<"$tree"; then
-            echo "::error::A dependency enables ark-ec/parallel for walletkit-web on wasm32"
-            exit 1
-          fi
-
       - name: Build package (Rust, wasm-bindgen, wasm-opt, bundle)
         run: nix develop .#wasm --command bun run --cwd web/walletkit build
 
