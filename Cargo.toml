@@ -93,9 +93,13 @@ zeroize = "1"
 zip = { version = "9", default-features = false }
 
 # world-id-protocol crates
-world-id-core = { version = "0.18.0", default-features = false }
-world-id-proof = { version = "0.18.0", default-features = false }
+world-id-core = { version = "0.20.0", default-features = false }
+world-id-proof = { version = "0.20.0", default-features = false }
+# flamingo-verifier 0.10 is built on world-id-flamingo 0.18, so the Flamingo types stay on 0.18
+# until flamingo-verifier moves to 0.20. `flamingo-primitives` is the world-id-primitives version it
+# uses, for the values walletkit passes to it.
 world-id-flamingo = "0.18.0"
+flamingo-primitives = { package = "world-id-primitives", version = "0.18.0" }
 
 # internal
 walletkit-core = { version = "0.29.0", path = "crates/walletkit-core", default-features = false }
@@ -132,13 +136,3 @@ debug-assertions = false
 
 [profile.dev.package.provekit-prover]
 debug-assertions = false
-
-# TEMPORARY: world-id-proof 0.18.0 enables `ark-ec/parallel` through ark-groth16's default features,
-# which panics on wasm32. Pinned to 0.18.0 plus the fix; remove once a release contains it.
-[patch.crates-io]
-world-id-authenticator = { git = "https://github.com/worldcoin/world-id-protocol", rev = "fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4" }
-world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4" }
-world-id-flamingo = { git = "https://github.com/worldcoin/world-id-protocol", rev = "fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4" }
-world-id-primitives = { git = "https://github.com/worldcoin/world-id-protocol", rev = "fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4" }
-world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", rev = "fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4" }
-world-id-registries = { git = "https://github.com/worldcoin/world-id-protocol", rev = "fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4" }

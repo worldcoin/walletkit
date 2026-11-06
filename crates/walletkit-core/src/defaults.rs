@@ -234,6 +234,7 @@ mod tests {
                         url,
                         relay_url,
                         key_config_base64,
+                        ..
                     } => {
                         assert_eq!(url, &indexer_url(*region, env));
                         assert_eq!(relay_url, &ohttp_relay_url(*region, env));
@@ -259,6 +260,7 @@ mod tests {
                         url,
                         relay_url,
                         key_config_base64,
+                        ..
                     } => {
                         assert_eq!(url, &gateway_url(env));
                         assert_eq!(relay_url, &ohttp_relay_url(Region::Us, env));
