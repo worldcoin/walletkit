@@ -2345,7 +2345,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2881,7 +2881,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3075,7 +3075,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4948,7 +4948,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6289,7 +6289,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6786,7 +6786,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6866,7 +6866,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs 1.0.10",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8102,7 +8102,8 @@ dependencies = [
 [[package]]
 name = "taceo-ark-algebra"
 version = "0.1.1"
-source = "git+https://github.com/TaceoLabs/circom-helpers?rev=6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9#6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96b0243d172ecdc7d8626383d4ca5e4a61491b1c55b0206f9d4a213da7c2518f"
 dependencies = [
  "ark-ec",
  "ark-ff 0.6.0",
@@ -8125,8 +8126,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-ark-serde-compat"
-version = "0.6.2"
-source = "git+https://github.com/TaceoLabs/circom-helpers?rev=6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9#6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0d338a8f08216a0982c20bd301f11a4fe620e99e8bdc6b8e8be20ec66eaf158d"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -8139,8 +8141,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-circom-types"
-version = "0.3.3"
-source = "git+https://github.com/TaceoLabs/circom-helpers?rev=6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9#6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "233713446cca1bbfd0af558445c53b235dba8619a0dfcb08af23fbfa9502102b"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -8180,8 +8183,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-groth16"
-version = "0.2.2"
-source = "git+https://github.com/TaceoLabs/circom-helpers?rev=6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9#6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3e8a37f7210dd71e97b37f54b5aacb7a312675c177d65be92c8afbd2d51d9c3"
 dependencies = [
  "ark-ec",
  "ark-ff 0.6.0",
@@ -8195,8 +8199,9 @@ dependencies = [
 
 [[package]]
 name = "taceo-groth16-material"
-version = "0.4.3"
-source = "git+https://github.com/TaceoLabs/circom-helpers?rev=6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9#6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5033433b92f11df31db5d715f7fd51f32cf54bc1ee3f2a4a8c511ebfcb5deeb"
 dependencies = [
  "ark-bn254",
  "ark-ff 0.6.0",
@@ -8347,7 +8352,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9597,7 +9602,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
