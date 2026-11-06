@@ -133,14 +133,9 @@ debug-assertions = false
 [profile.dev.package.provekit-prover]
 debug-assertions = false
 
-# TEMPORARY: unreleased fixes that stop enabling `ark-ec/parallel` on wasm32. world-id-protocol is
-# pinned to 0.18.0 plus the fix. Remove once taceo-groth16 and world-id-proof are released with them.
+# TEMPORARY: world-id-proof 0.18.0 enables `ark-ec/parallel` through ark-groth16's default features,
+# which panics on wasm32. Pinned to 0.18.0 plus the fix; remove once a release contains it.
 [patch.crates-io]
-taceo-ark-algebra = { git = "https://github.com/TaceoLabs/circom-helpers", rev = "6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9" }
-taceo-ark-serde-compat = { git = "https://github.com/TaceoLabs/circom-helpers", rev = "6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9" }
-taceo-circom-types = { git = "https://github.com/TaceoLabs/circom-helpers", rev = "6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9" }
-taceo-groth16 = { git = "https://github.com/TaceoLabs/circom-helpers", rev = "6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9" }
-taceo-groth16-material = { git = "https://github.com/TaceoLabs/circom-helpers", rev = "6415d68e3cf0aa0fd7c578fcc7608e9aaf3751c9" }
 world-id-authenticator = { git = "https://github.com/worldcoin/world-id-protocol", rev = "fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4" }
 world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4" }
 world-id-flamingo = { git = "https://github.com/worldcoin/world-id-protocol", rev = "fc33e4dbfa56990b887b1ce59c48ec5bb5c311c4" }
