@@ -17,6 +17,8 @@ mod authenticator;
 mod enrollment;
 mod error;
 mod js;
+#[cfg(test)]
+mod msm;
 mod storage;
 mod values;
 

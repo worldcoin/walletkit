@@ -31,6 +31,10 @@ serde_json.workspace = true
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
 wasm-bindgen-test.workspace = true
+# Exercise the browser OPRF share combination directly (see `src/msm.rs`).
+ark-babyjubjub = { package = "taceo-ark-babyjubjub", version = "0.6" }
+ark-ec = "0.6"
+taceo-oprf-core = { version = "0.6", default-features = false }
 
 [lints]
 workspace = true
