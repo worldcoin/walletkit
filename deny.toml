@@ -58,4 +58,7 @@ ignore = [
   # alloy's k256 0.13 and through p256 0.13 (attested-request, jose-jwk, world-id-flamingo,
   # world-id-primitives). Remove once no package in Cargo.lock resolves crypto-bigint 0.5.
   { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5 via elliptic-curve 0.13; fix is only in 0.7.6+" },
+  # semaphore-rs-storage 0.6 depends on mmap-rs 0.6, whose nix 0.26 enables pin-utils. Remove once
+  # semaphore-rs moves to mmap-rs 0.7 or later.
+  { id = "RUSTSEC-2026-0441", reason = "unmaintained pin-utils via nix 0.26 / mmap-rs 0.6 / semaphore-rs" },
 ]
