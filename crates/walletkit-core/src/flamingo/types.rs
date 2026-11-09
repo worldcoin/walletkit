@@ -54,8 +54,8 @@ pub struct FlamingoEntry {
 /// A request whose fields passed every WIP-201 bound, ready to be bound to a session's Engine.
 pub(super) struct PreparedRequest {
     pub offer: Vec<EngineConfiguration>,
-    aud: world_id_core::FieldElement,
-    nonce: world_id_core::FieldElement,
+    aud: flamingo_primitives::FieldElement,
+    nonce: flamingo_primitives::FieldElement,
     payload: Payload,
 }
 
@@ -122,8 +122,8 @@ impl FlamingoMatchRequest {
 
         Ok(PreparedRequest {
             offer,
-            aud: self.aud.0,
-            nonce: self.nonce.0,
+            aud: flamingo_field(self.aud.0),
+            nonce: flamingo_field(self.nonce.0),
             payload,
         })
     }
@@ -157,6 +157,14 @@ impl PreparedRequest {
         }
         Ok(request)
     }
+}
+
+/// Converts a `FieldElement` to the world-id-primitives version that flamingo-verifier uses.
+fn flamingo_field(
+    value: world_id_core::FieldElement,
+) -> flamingo_primitives::FieldElement {
+    flamingo_primitives::FieldElement::from_be_bytes(&value.to_be_bytes())
+        .expect("both world-id-primitives versions use the BN254 scalar field")
 }
 
 fn payload_error(_reason: RequestError) -> FlamingoError {

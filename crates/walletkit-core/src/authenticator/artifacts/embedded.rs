@@ -79,8 +79,8 @@ mod tests {
         let prover = artifacts.ownership_prover().unwrap();
         let verifier = artifacts.ownership_verifier().unwrap();
 
-        assert_eq!(prover.r1cs.num_public_inputs, 5);
-        assert_eq!(verifier.r1cs.num_public_inputs, 5);
+        assert_eq!(prover.r1cs.num_public_inputs, 4);
+        assert_eq!(verifier.r1cs.num_public_inputs, 4);
         assert_eq!(prover.r1cs.hash(), verifier.r1cs.hash());
     }
 }

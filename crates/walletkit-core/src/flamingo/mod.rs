@@ -725,7 +725,7 @@ mod tests {
     }
 
     fn verified(debug_report: DebugReport) -> MatchResult {
-        let zero = world_id_core::FieldElement::ZERO;
+        let zero = flamingo_primitives::FieldElement::ZERO;
         MatchResult::Success {
             verified: Box::new(VerifiedMatch {
                 statement: AttestedStatement {
