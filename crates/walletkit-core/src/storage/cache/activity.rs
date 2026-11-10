@@ -77,8 +77,24 @@ pub(super) fn list(
     limit: u32,
     offset: u32,
 ) -> StorageResult<Vec<ActivityEntry>> {
-    let limit_i64 = i64::from(limit);
-    let offset_i64 = i64::from(offset);
+    loop {
+        let (entries, corrupted_entry_ids) = read_page(conn, query, limit, offset)?;
+
+        if corrupted_entry_ids.is_empty() {
+            return Ok(entries);
+        }
+
+        delete(conn, &corrupted_entry_ids)?;
+    }
+}
+
+fn read_page(
+    conn: &Connection,
+    query: &ActivityQuery,
+    limit: u32,
+    offset: u32,
+) -> StorageResult<(Vec<ActivityEntry>, Vec<u64>)> {
+    let window_end = i64::from(offset) + i64::from(limit);
     let issuer_schema_ids = query
         .issuer_schema_ids
         .as_ref()
@@ -92,33 +108,43 @@ pub(super) fn list(
                  WHERE issuer_schema_id IN (SELECT value FROM json_each(?1))
              )
              ORDER BY e.created_at DESC, e.entry_id DESC
-             LIMIT ?2 OFFSET ?3"
+             LIMIT ?2"
         )
     } else {
         format!(
             "{SELECT_ACTIVITY_ENTRIES}
              ORDER BY e.created_at DESC, e.entry_id DESC
-             LIMIT ?1 OFFSET ?2"
+             LIMIT ?1"
         )
     };
 
     let mut entries = Vec::new();
+    let mut corrupted_entry_ids = Vec::new();
+    let mut skipped = 0;
 
     let mut stmt = conn.prepare(&sql).map_err(|err| map_db_err(&err))?;
 
     if let Some(issuer_schema_ids) = issuer_schema_ids {
-        stmt.bind_values(params![issuer_schema_ids, limit_i64, offset_i64])
+        stmt.bind_values(params![issuer_schema_ids, window_end])
             .map_err(|err| map_db_err(&err))?;
     } else {
-        stmt.bind_values(params![limit_i64, offset_i64])
+        stmt.bind_values(params![window_end])
             .map_err(|err| map_db_err(&err))?;
     }
 
     while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
-        entries.push(map_entry(&row)?);
+        match map_entry(&row) {
+            Ok(_) if skipped < offset => skipped += 1,
+            Ok(entry) => entries.push(entry),
+            Err(err) => {
+                let entry_id = to_u64(row.column_i64(0), "entry_id")?;
+                tracing::warn!("dropping corrupted activity entry {entry_id}: {err}");
+                corrupted_entry_ids.push(entry_id);
+            }
+        }
     }
 
-    Ok(entries)
+    Ok((entries, corrupted_entry_ids))
 }
 
 /// Returns aggregate activity metadata.
@@ -604,6 +630,145 @@ mod tests {
         assert_eq!(page1[1].timestamp, Some(1003));
         assert_eq!(page2[0].timestamp, Some(1002));
         assert_eq!(page3[0].timestamp, Some(1000));
+
+        cleanup_cache_files(&path);
+    }
+
+    fn corrupt_outcome(path: &Path, key: &SecretBox<[u8; 32]>, entry_id: u64) {
+        let conn = walletkit_sqlite::cipher::open_encrypted(path, key)
+            .expect("open raw connection");
+
+        conn.execute(
+            "UPDATE activity_entries SET outcome = 'bogus' WHERE entry_id = ?1",
+            params![entry_id.cast_signed()],
+        )
+        .expect("corrupt entry");
+    }
+
+    #[test]
+    fn test_list_activities_drops_corrupted_entries() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Eu8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let first = db
+            .record_activity(&sample_entry(), 1000)
+            .expect("record activity");
+        let corrupted = db
+            .record_activity(&sample_entry(), 1001)
+            .expect("record activity");
+        let last = db
+            .record_activity(&sample_entry(), 1002)
+            .expect("record activity");
+
+        drop(db);
+
+        corrupt_outcome(&path, &key, corrupted);
+
+        let db = CacheDb::new(&path, &key).expect("reopen cache");
+        let entries = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("a corrupted entry must not fail the whole listing");
+
+        let ids: Vec<_> = entries.iter().filter_map(|e| e.id).collect();
+        assert_eq!(ids, vec![last, first]);
+
+        assert_eq!(
+            db.activity_metadata().expect("metadata").total_count,
+            2,
+            "the corrupted entry must be deleted"
+        );
+
+        drop(db);
+
+        let conn = walletkit_sqlite::cipher::open_encrypted(&path, &key)
+            .expect("open raw connection");
+
+        let associations = conn
+            .query_row(
+                "SELECT COUNT(*) FROM activity_issuer_schema_ids WHERE entry_id = ?1",
+                params![corrupted.cast_signed()],
+                |stmt| Ok(stmt.column_i64(0)),
+            )
+            .expect("count associations");
+
+        drop(conn);
+        assert_eq!(associations, 0);
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_list_activities_fills_page_after_dropping_corrupted_entries() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x0Fu8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let mut ids = Vec::new();
+        for i in 0..5u64 {
+            ids.push(
+                db.record_activity(&sample_entry(), 1000 + i)
+                    .expect("record activity"),
+            );
+        }
+
+        drop(db);
+
+        corrupt_outcome(&path, &key, ids[4]);
+        corrupt_outcome(&path, &key, ids[2]);
+
+        let db = CacheDb::new(&path, &key).expect("reopen cache");
+        let page1 = db
+            .list_activities(&ActivityQuery::new(), 2, 0)
+            .expect("list page 1");
+
+        let page2 = db
+            .list_activities(&ActivityQuery::new(), 2, 2)
+            .expect("list page 2");
+
+        let timestamps = |page: &[ActivityEntry]| {
+            page.iter().filter_map(|e| e.timestamp).collect::<Vec<_>>()
+        };
+
+        assert_eq!(timestamps(&page1), vec![1003, 1001]);
+        assert_eq!(timestamps(&page2), vec![1000]);
+
+        cleanup_cache_files(&path);
+    }
+
+    #[test]
+    fn test_list_activities_prunes_corrupted_entries_before_offset() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x10u8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+
+        let mut ids = Vec::new();
+        for i in 0..5u64 {
+            ids.push(
+                db.record_activity(&sample_entry(), 1000 + i)
+                    .expect("record activity"),
+            );
+        }
+
+        drop(db);
+
+        corrupt_outcome(&path, &key, ids[4]);
+
+        let db = CacheDb::new(&path, &key).expect("reopen cache");
+        let page2 = db
+            .list_activities(&ActivityQuery::new(), 2, 2)
+            .expect("list page 2");
+
+        let page1 = db
+            .list_activities(&ActivityQuery::new(), 2, 0)
+            .expect("list page 1");
+
+        let timestamps = |page: &[ActivityEntry]| {
+            page.iter().filter_map(|e| e.timestamp).collect::<Vec<_>>()
+        };
+
+        assert_eq!(timestamps(&page2), vec![1001, 1000]);
+        assert_eq!(timestamps(&page1), vec![1003, 1002]);
 
         cleanup_cache_files(&path);
     }
