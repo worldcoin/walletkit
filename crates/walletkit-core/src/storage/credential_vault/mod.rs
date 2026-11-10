@@ -10,8 +10,10 @@ mod schema;
 #[cfg(test)]
 mod tests;
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::storage::blob_id::BlobId;
 use crate::storage::error::{StorageError, StorageResult};
 use crate::storage::types::{BlobKind, CredentialRecord};
 use schema::{ensure_schema, VAULT_SCHEMA_VERSION};
@@ -284,6 +286,91 @@ impl CredentialVault {
 
         tx.commit().map_err(|err| map_db_err(&err))?;
         Ok(())
+    }
+
+    /// Replaces the set of PCP blob ids linked to a credential.
+    ///
+    /// Duplicates in `blob_ids` are ignored. Links that stay in the set keep
+    /// their original `created_at`. Returns whether the stored set changed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::CredentialIdNotFound`] when the credential does
+    /// not exist, or an error if a query fails.
+    pub fn set_credential_blobs(
+        &self,
+        credential_id: u64,
+        blob_ids: &[BlobId],
+        now: u64,
+    ) -> StorageResult<bool> {
+        let credential_id_i64 = to_i64(credential_id, "credential_id")?;
+        let now_i64 = to_i64(now, "now")?;
+        let wanted: BTreeSet<BlobId> = blob_ids.iter().copied().collect();
+        let conn = self.vault.connection();
+        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
+
+        let exists = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM credential_records WHERE credential_id = ?1)",
+                params![credential_id_i64],
+                |row| Ok(row.column_i64(0) != 0),
+            )
+            .map_err(|err| map_db_err(&err))?;
+        if !exists {
+            return Err(StorageError::CredentialIdNotFound { credential_id });
+        }
+
+        let mut changed = 0;
+        for stale in self.credential_blobs(credential_id)? {
+            if !wanted.contains(&stale) {
+                changed += tx
+                    .execute(
+                        "DELETE FROM credential_blob_refs
+                         WHERE credential_id = ?1 AND blob_id = ?2",
+                        params![credential_id_i64, stale.as_bytes().as_slice()],
+                    )
+                    .map_err(|err| map_db_err(&err))?;
+            }
+        }
+        for blob_id in &wanted {
+            changed += tx
+                .execute(
+                    "INSERT INTO credential_blob_refs (credential_id, blob_id, created_at)
+                     VALUES (?1, ?2, ?3)
+                     ON CONFLICT (credential_id, blob_id) DO NOTHING",
+                    params![credential_id_i64, blob_id.as_bytes().as_slice(), now_i64],
+                )
+                .map_err(|err| map_db_err(&err))?;
+        }
+
+        tx.commit().map_err(|err| map_db_err(&err))?;
+        Ok(changed > 0)
+    }
+
+    /// Returns the PCP blob ids linked to a credential, in byte order.
+    ///
+    /// An unknown credential has no links and returns an empty list.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails or a stored id is malformed.
+    pub fn credential_blobs(&self, credential_id: u64) -> StorageResult<Vec<BlobId>> {
+        let credential_id_i64 = to_i64(credential_id, "credential_id")?;
+        let mut stmt = self
+            .vault
+            .connection()
+            .prepare(
+                "SELECT blob_id FROM credential_blob_refs
+                 WHERE credential_id = ?1 ORDER BY blob_id",
+            )
+            .map_err(|err| map_db_err(&err))?;
+        stmt.bind_values(params![credential_id_i64])
+            .map_err(|err| map_db_err(&err))?;
+        let mut blob_ids = Vec::new();
+        while let StepResult::Row(row) = stmt.step().map_err(|err| map_db_err(&err))? {
+            blob_ids.push(BlobId::from_bytes(row.column_blob(0))?);
+        }
+        Ok(blob_ids)
     }
 
     /// Retrieves the credential bytes and blinding factor by issuer schema ID.

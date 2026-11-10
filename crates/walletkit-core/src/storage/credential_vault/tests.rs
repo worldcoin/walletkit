@@ -1,6 +1,7 @@
 //! Vault database unit tests.
 
 use super::*;
+use crate::storage::blob_id::compute_blob_id;
 use secrecy::SecretBox;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -655,4 +656,199 @@ fn test_vault_corruption_handling() {
     }
     cleanup_vault_files(&path);
     cleanup_lock_file(&lock_path);
+}
+
+fn store_sample_credential(db: &CredentialVault, issuer_schema_id: u64) -> u64 {
+    db.store_credential(
+        issuer_schema_id,
+        sample_blinding_factor(),
+        1,
+        2000,
+        format!("credential-{issuer_schema_id}").into_bytes(),
+        None,
+        1000,
+    )
+    .expect("store credential")
+}
+
+fn count_blob_refs(db: &CredentialVault) -> i64 {
+    db.vault
+        .connection()
+        .query_row("SELECT COUNT(*) FROM credential_blob_refs", &[], |stmt| {
+            Ok(stmt.column_i64(0))
+        })
+        .expect("count blob refs")
+}
+
+#[test]
+fn test_credential_blobs_round_trip_in_byte_order() {
+    let path = temp_vault_path();
+    let key = SecretBox::init_with(|| [0x0Cu8; 32]);
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    let orb = store_sample_credential(&db, 100);
+    let face = store_sample_credential(&db, 200);
+    let orb_pcp = compute_blob_id(b"orb pcp");
+    let orb_pcp_v2 = compute_blob_id(b"orb pcp v2");
+    let face_pcp = compute_blob_id(b"face pcp");
+
+    assert!(db
+        .set_credential_blobs(orb, &[orb_pcp, orb_pcp_v2, orb_pcp], 1000)
+        .expect("link orb"));
+    assert!(db
+        .set_credential_blobs(face, &[face_pcp], 1000)
+        .expect("link face"));
+
+    let mut expected = vec![orb_pcp, orb_pcp_v2];
+    expected.sort();
+    assert_eq!(db.credential_blobs(orb).expect("orb blobs"), expected);
+    assert_eq!(db.credential_blobs(face).expect("face blobs"), [face_pcp]);
+    assert!(db.credential_blobs(999).expect("unknown").is_empty());
+    cleanup_vault_files(&path);
+}
+
+#[test]
+fn test_set_credential_blobs_replaces_the_set() {
+    let path = temp_vault_path();
+    let key = SecretBox::init_with(|| [0x0Du8; 32]);
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    let credential_id = store_sample_credential(&db, 100);
+    let kept = compute_blob_id(b"kept pcp");
+    let dropped = compute_blob_id(b"dropped pcp");
+    let added = compute_blob_id(b"added pcp");
+
+    db.set_credential_blobs(credential_id, &[kept, dropped], 1000)
+        .expect("first link");
+    assert!(!db
+        .set_credential_blobs(credential_id, &[dropped, kept], 2000)
+        .expect("same set"));
+    assert!(db
+        .set_credential_blobs(credential_id, &[kept, added], 3000)
+        .expect("replace"));
+
+    let mut expected = vec![kept, added];
+    expected.sort();
+    assert_eq!(db.credential_blobs(credential_id).expect("blobs"), expected);
+    let kept_created_at = db
+        .vault
+        .connection()
+        .query_row(
+            "SELECT created_at FROM credential_blob_refs WHERE blob_id = ?1",
+            params![kept.as_bytes().as_slice()],
+            |stmt| Ok(stmt.column_i64(0)),
+        )
+        .expect("kept created_at");
+    assert_eq!(kept_created_at, 1000);
+
+    assert!(db
+        .set_credential_blobs(credential_id, &[], 4000)
+        .expect("clear"));
+    assert!(db
+        .credential_blobs(credential_id)
+        .expect("blobs")
+        .is_empty());
+    cleanup_vault_files(&path);
+}
+
+#[test]
+fn test_set_credential_blobs_rejects_unknown_credential() {
+    let path = temp_vault_path();
+    let key = SecretBox::init_with(|| [0x0Eu8; 32]);
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+
+    for blob_ids in [vec![], vec![compute_blob_id(b"orb pcp")]] {
+        let err = db
+            .set_credential_blobs(7, &blob_ids, 1000)
+            .expect_err("unknown credential");
+        assert!(matches!(
+            err,
+            StorageError::CredentialIdNotFound { credential_id: 7 }
+        ));
+    }
+    assert_eq!(count_blob_refs(&db), 0);
+    cleanup_vault_files(&path);
+}
+
+#[test]
+fn test_deleting_a_credential_removes_its_blob_refs() {
+    let path = temp_vault_path();
+    let key = SecretBox::init_with(|| [0x0Fu8; 32]);
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    let deleted = store_sample_credential(&db, 100);
+    let kept = store_sample_credential(&db, 200);
+    let shared_pcp = compute_blob_id(b"shared pcp");
+    db.set_credential_blobs(deleted, &[shared_pcp, compute_blob_id(b"orb pcp")], 1000)
+        .expect("link deleted");
+    db.set_credential_blobs(kept, &[shared_pcp], 1000)
+        .expect("link kept");
+
+    db.delete_credential(deleted).expect("delete credential");
+
+    assert!(db.credential_blobs(deleted).expect("deleted").is_empty());
+    assert_eq!(db.credential_blobs(kept).expect("kept"), [shared_pcp]);
+    assert_eq!(count_blob_refs(&db), 1);
+
+    db.danger_delete_all_credentials().expect("delete all");
+    assert_eq!(count_blob_refs(&db), 0);
+    cleanup_vault_files(&path);
+}
+
+#[test]
+fn test_vault_without_blob_refs_table_gains_it_on_open() {
+    let path = temp_vault_path();
+    let key = SecretBox::init_with(|| [0x10u8; 32]);
+    let credential_id = {
+        let db = CredentialVault::new(&path, &key).expect("create vault");
+        db.init_leaf_index(42, 1000).expect("init leaf index");
+        let credential_id = store_sample_credential(&db, 100);
+        db.vault
+            .connection()
+            .execute_batch("DROP TABLE credential_blob_refs;")
+            .expect("drop table to mimic an older vault");
+        credential_id
+    };
+
+    let db = CredentialVault::new(&path, &key).expect("reopen vault");
+    db.init_leaf_index(42, 2000).expect("leaf index unchanged");
+    let index_count = db
+        .vault
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_schema
+             WHERE type = 'index' AND name = 'idx_credential_blob_refs_blob_id'",
+            &[],
+            |stmt| Ok(stmt.column_i64(0)),
+        )
+        .expect("index lookup");
+    assert_eq!(index_count, 1);
+    let orb_pcp = compute_blob_id(b"orb pcp");
+    db.set_credential_blobs(credential_id, &[orb_pcp], 2000)
+        .expect("link on upgraded vault");
+    assert_eq!(
+        db.credential_blobs(credential_id).expect("blobs"),
+        [orb_pcp]
+    );
+    cleanup_vault_files(&path);
+}
+
+#[test]
+fn test_blob_refs_reject_malformed_ids() {
+    let path = temp_vault_path();
+    let key = SecretBox::init_with(|| [0x12u8; 32]);
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    let credential_id = store_sample_credential(&db, 100);
+
+    for blob_id in [Value::Blob(vec![0; 31]), Value::Text("a".repeat(32))] {
+        db.vault
+            .connection()
+            .execute(
+                "INSERT INTO credential_blob_refs (credential_id, blob_id, created_at)
+                 VALUES (?1, ?2, 1000)",
+                &[
+                    Value::Integer(i64::try_from(credential_id).unwrap()),
+                    blob_id,
+                ],
+            )
+            .expect_err("CHECK constraint");
+    }
+    cleanup_vault_files(&path);
 }

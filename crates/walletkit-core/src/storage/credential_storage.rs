@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use world_id_core::FieldElement as CoreFieldElement;
 
+use super::blob_id::BlobId;
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::paths::StoragePaths;
@@ -289,6 +290,44 @@ impl CredentialStore {
             self.notify_vault_changed();
         }
         result
+    }
+
+    /// Replaces the PCP blob ids linked to a stored credential.
+    ///
+    /// Linking is separate from [`Self::store_credential`]; hosts call this
+    /// after storing a credential and may call it again with the same set.
+    /// Duplicate ids are ignored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the credential ID does not exist or the write fails.
+    pub fn set_credential_blobs(
+        &self,
+        credential_id: u64,
+        blob_ids: Vec<Arc<BlobId>>,
+        now: u64,
+    ) -> StorageResult<()> {
+        let blob_ids: Vec<BlobId> = blob_ids.into_iter().map(|id| *id).collect();
+        self.lock_inner()?
+            .set_credential_blobs(credential_id, &blob_ids, now)?;
+        Ok(())
+    }
+
+    /// Returns the PCP blob ids linked to a credential.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the vault query fails.
+    pub fn credential_blobs(
+        &self,
+        credential_id: u64,
+    ) -> StorageResult<Vec<Arc<BlobId>>> {
+        Ok(self
+            .lock_inner()?
+            .credential_blobs(credential_id)?
+            .into_iter()
+            .map(Arc::new)
+            .collect())
     }
 
     /// **Development only.** Permanently deletes all stored credentials and their
@@ -815,6 +854,23 @@ impl CredentialStoreInner {
             associated_data,
             now,
         )
+    }
+
+    fn set_credential_blobs(
+        &mut self,
+        credential_id: u64,
+        blob_ids: &[BlobId],
+        now: u64,
+    ) -> StorageResult<bool> {
+        let state = self.state_mut()?;
+        state
+            .vault
+            .set_credential_blobs(credential_id, blob_ids, now)
+    }
+
+    fn credential_blobs(&self, credential_id: u64) -> StorageResult<Vec<BlobId>> {
+        let state = self.state()?;
+        state.vault.credential_blobs(credential_id)
     }
 
     fn record_activity(
@@ -1561,6 +1617,38 @@ mod tests {
             .expect("get credential query should succeed");
         assert!(expired.is_none(), "Expired credential should return None");
 
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_credential_blobs_are_linked_through_the_store() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let store =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&root))
+                .expect("create store");
+        store.init(42, 1000).expect("init storage");
+        let credential: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        let credential_id = store
+            .store_credential(&credential, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+        let orb_pcp = crate::storage::blob_id(b"orb pcp");
+
+        store
+            .set_credential_blobs(credential_id, vec![Arc::clone(&orb_pcp)], 1000)
+            .expect("link blobs");
+
+        let linked = store.credential_blobs(credential_id).expect("read links");
+        assert_eq!(linked.len(), 1);
+        assert_eq!(*linked[0], *orb_pcp);
+        assert!(matches!(
+            store.set_credential_blobs(credential_id + 1, vec![orb_pcp], 1000),
+            Err(StorageError::CredentialIdNotFound { .. })
+        ));
         cleanup_test_storage(&root);
     }
 
