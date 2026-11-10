@@ -44,6 +44,8 @@
 //! the `walletkit-db` README.
 
 pub mod blob_id;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod blob_store;
 pub mod cache;
 pub mod credential_storage;
 pub mod credential_vault;
@@ -54,6 +56,8 @@ pub mod traits;
 pub mod types;
 
 pub use blob_id::{blob_id, BlobId};
+#[cfg(not(target_arch = "wasm32"))]
+pub use blob_store::{BlobStore, VerifiedBlobStore};
 pub use cache::CacheDb;
 pub use credential_storage::CredentialStore;
 pub use credential_vault::CredentialVault;
