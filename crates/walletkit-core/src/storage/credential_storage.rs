@@ -296,7 +296,8 @@ impl CredentialStore {
     ///
     /// Linking is separate from [`Self::store_credential`]; hosts call this
     /// after storing a credential and may call it again with the same set.
-    /// Duplicate ids are ignored.
+    /// Duplicate ids are ignored. Links are part of vault backups, so the
+    /// vault-changed listener is notified when the set changes.
     ///
     /// # Errors
     ///
@@ -308,8 +309,12 @@ impl CredentialStore {
         now: u64,
     ) -> StorageResult<()> {
         let blob_ids: Vec<BlobId> = blob_ids.into_iter().map(|id| *id).collect();
-        self.lock_inner()?
-            .set_credential_blobs(credential_id, &blob_ids, now)?;
+        let changed =
+            self.lock_inner()?
+                .set_credential_blobs(credential_id, &blob_ids, now)?;
+        if changed {
+            self.notify_vault_changed();
+        }
         Ok(())
     }
 
@@ -1917,7 +1922,7 @@ mod tests {
             .issuer_schema_id(100u64)
             .genesis_issued_at(1000)
             .into();
-        src_store
+        let credential_id = src_store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
 
@@ -1930,15 +1935,17 @@ mod tests {
         // before this one fails, testing transaction rollback.
         assert_eq!(
             *BACKUP_TABLES.last().unwrap(),
-            "blob_objects",
+            "credential_blob_refs",
             "update this test if BACKUP_TABLES order changes"
         );
         let backup_conn = Connection::open(&corrupt_path, false).expect("open backup");
         backup_conn
             .execute(
-                "INSERT INTO blob_objects (content_id, blob_kind, created_at, bytes)
-                 VALUES (NULL, 1, 2000, X'CAFE')",
-                &[],
+                "INSERT INTO credential_blob_refs (credential_id, blob_id, created_at)
+                 VALUES (?1, X'CAFE', 2000)",
+                &[walletkit_sqlite::Value::Integer(
+                    i64::try_from(credential_id).unwrap(),
+                )],
             )
             .expect("insert corrupt row");
         drop(backup_conn);
@@ -2248,6 +2255,54 @@ mod tests {
 
         wait_for_listener_count(&count, 1);
 
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_vault_changed_listener_notified_only_when_blob_links_change() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let store =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&root))
+                .expect("create store");
+        store.init(42, 1000).expect("init storage");
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        let credential_id = store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+        let (notifications_tx, notifications_rx) = mpsc::channel();
+        store.set_vault_changed_listener(Arc::new(ChannelVaultListener(
+            notifications_tx,
+        )));
+
+        store
+            .set_credential_blobs(
+                credential_id,
+                vec![crate::storage::blob_id(b"orb pcp")],
+                1000,
+            )
+            .expect("link blobs");
+        notifications_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("a changed link set should notify the listener");
+        store
+            .set_credential_blobs(
+                credential_id,
+                vec![crate::storage::blob_id(b"orb pcp")],
+                2000,
+            )
+            .expect("relink the same set");
+
+        drop(store);
+        assert_eq!(
+            notifications_rx.recv_timeout(std::time::Duration::from_secs(1)),
+            Err(mpsc::RecvTimeoutError::Disconnected),
+            "an unchanged link set should not notify the listener"
+        );
         cleanup_test_storage(&root);
     }
 

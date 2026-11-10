@@ -5,7 +5,7 @@ use super::{map_db_err, CredentialVault, CREDENTIAL_VERSION_ORDER};
 use crate::storage::error::{StorageError, StorageResult};
 use walletkit_db::blobs::compute_content_id;
 use walletkit_sqlite::{
-    cipher::ensure_temp_store_memory, params, Connection, StepResult,
+    cipher::ensure_temp_store_memory, params, Connection, StepResult, Transaction,
 };
 
 impl CredentialVault {
@@ -22,6 +22,10 @@ impl CredentialVault {
     /// stay local; database bytes are not a portable identity or convergence test.
     /// Only INSERT is used: no existing credential, timestamp, or blob is updated
     /// or deleted. Invalid snapshots roll back the entire transaction.
+    /// Blob refs follow the credential they belong to: refs of an added credential
+    /// are linked to its new local ID, and refs of a version that already exists
+    /// locally are not copied. Snapshots made before blob refs existed merge
+    /// without them.
     ///
     /// The source is copied into a read-only in-memory database on every platform.
     /// A separate source connection isolates malformed schemas from the vault.
@@ -40,7 +44,8 @@ impl CredentialVault {
 }
 
 fn merge_from(destination: &Connection, incoming: &Connection) -> StorageResult<u64> {
-    validate_incoming(incoming)?;
+    let has_blob_refs = has_table(incoming, "credential_blob_refs")?;
+    validate_incoming(incoming, has_blob_refs)?;
     let tx = destination
         .transaction_immediate()
         .map_err(|e| map_db_err(&e))?;
@@ -67,7 +72,7 @@ fn merge_from(destination: &Connection, incoming: &Connection) -> StorageResult<
     {
         let mut records = incoming.prepare(&format!(
             "SELECT issuer_schema_id, subject_blinding_factor, genesis_issued_at, expires_at,
-                    updated_at, credential_blob_cid, associated_data_cid
+                    updated_at, credential_blob_cid, associated_data_cid, credential_id
              FROM credential_records ORDER BY {CREDENTIAL_VERSION_ORDER}",
         )).map_err(|e| map_db_err(&e))?;
         while let StepResult::Row(row) = records.step().map_err(|e| map_db_err(&e))? {
@@ -76,25 +81,69 @@ fn merge_from(destination: &Connection, incoming: &Connection) -> StorageResult<
             } else {
                 walletkit_sqlite::Value::Blob(row.column_blob(6))
             };
-            let inserted = tx.execute(
+            let inserted_id = tx.query_row_optional(
                 "INSERT INTO credential_records(issuer_schema_id, subject_blinding_factor,
                     genesis_issued_at, expires_at, updated_at, credential_blob_cid, associated_data_cid)
                  SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE NOT EXISTS (
                     SELECT 1 FROM credential_records WHERE issuer_schema_id = ?1
                     AND subject_blinding_factor = ?2 AND genesis_issued_at = ?3 AND expires_at = ?4
                     AND updated_at = ?5
-                    AND credential_blob_cid = ?6 AND associated_data_cid IS ?7)",
+                    AND credential_blob_cid = ?6 AND associated_data_cid IS ?7)
+                 RETURNING credential_id",
                 params![row.column_i64(0), row.column_blob(1), row.column_i64(2), row.column_i64(3),
                         row.column_i64(4), row.column_blob(5), associated_data_cid],
+                |inserted| Ok(inserted.column_i64(0)),
             ).map_err(|e| map_db_err(&e))?;
-            added_records += inserted as u64;
+            let Some(destination_id) = inserted_id else {
+                continue;
+            };
+            added_records += 1;
+            if has_blob_refs {
+                copy_blob_refs(&tx, incoming, row.column_i64(7), destination_id)?;
+            }
         }
     }
     tx.commit().map_err(|e| map_db_err(&e))?;
     Ok(added_records)
 }
 
-fn validate_incoming(incoming: &Connection) -> StorageResult<()> {
+/// Copies the blob refs of the incoming credential `source_id` onto the
+/// destination credential `destination_id`, which merge has just inserted.
+fn copy_blob_refs(
+    tx: &Transaction<'_>,
+    incoming: &Connection,
+    source_id: i64,
+    destination_id: i64,
+) -> StorageResult<()> {
+    let mut refs = incoming
+        .prepare(
+            "SELECT blob_id, created_at FROM credential_blob_refs WHERE credential_id = ?1",
+        )
+        .map_err(|e| map_db_err(&e))?;
+    refs.bind_values(params![source_id])
+        .map_err(|e| map_db_err(&e))?;
+    while let StepResult::Row(row) = refs.step().map_err(|e| map_db_err(&e))? {
+        tx.execute(
+            "INSERT INTO credential_blob_refs(credential_id, blob_id, created_at)
+             VALUES (?1, ?2, ?3) ON CONFLICT(credential_id, blob_id) DO NOTHING",
+            params![destination_id, row.column_blob(0), row.column_i64(1)],
+        )
+        .map_err(|e| map_db_err(&e))?;
+    }
+    Ok(())
+}
+
+fn has_table(incoming: &Connection, table: &str) -> StorageResult<bool> {
+    incoming
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1)",
+            params![table],
+            |row| Ok(row.column_i64(0) != 0),
+        )
+        .map_err(|e| map_db_err(&e))
+}
+
+fn validate_incoming(incoming: &Connection, has_blob_refs: bool) -> StorageResult<()> {
     // Exports made with CREATE TABLE AS have no NOT NULL or type constraints.
     // Validate before using SQLite's permissive getters or writing destination data.
     let has_invalid_rows = incoming.query_row(
@@ -116,6 +165,20 @@ fn validate_incoming(incoming: &Connection) -> StorageResult<()> {
     ).map_err(|e| map_db_err(&e))?;
     if has_invalid_rows {
         return Err(invalid_backup());
+    }
+    if has_blob_refs {
+        let has_invalid_refs = incoming.query_row(
+            "SELECT EXISTS(SELECT 1 FROM credential_blob_refs b WHERE
+                typeof(credential_id) != 'integer' OR
+                NOT EXISTS(SELECT 1 FROM credential_records r WHERE r.credential_id = b.credential_id) OR
+                typeof(blob_id) != 'blob' OR length(blob_id) != 32 OR
+                typeof(created_at) != 'integer' OR created_at < 0)
+             OR EXISTS(SELECT 1 FROM credential_records GROUP BY credential_id HAVING COUNT(*) > 1)",
+            &[], |row| Ok(row.column_i64(0) != 0),
+        ).map_err(|e| map_db_err(&e))?;
+        if has_invalid_refs {
+            return Err(invalid_backup());
+        }
     }
 
     {
@@ -139,8 +202,10 @@ fn invalid_backup() -> StorageError {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use crate::storage::blob_id::{compute_blob_id, BlobId};
     use secrecy::SecretBox;
     use tempfile::TempDir;
+    use test_case::test_case;
 
     struct Fixture {
         _dir: TempDir,
@@ -217,6 +282,103 @@ mod tests {
             ]);
         }
         result
+    }
+
+    fn blob_refs(vault: &CredentialVault, issuer_schema_id: u64) -> Vec<BlobId> {
+        let records = vault
+            .list_credentials(Some(issuer_schema_id), 1000)
+            .unwrap();
+        assert_eq!(records.len(), 1);
+        vault.credential_blobs(records[0].credential_id).unwrap()
+    }
+
+    #[test]
+    fn blob_refs_follow_their_credential_to_its_new_local_id() {
+        let f = Fixture::new();
+        let local = store(&f.receiver, 100, b"local", 1000);
+        let local_pcp = compute_blob_id(b"local pcp");
+        f.receiver
+            .set_credential_blobs(local, &[local_pcp], 1000)
+            .unwrap();
+        let orb = store(&f.source, 200, b"orb", 1000);
+        let face = store(&f.source, 300, b"face", 1000);
+        assert_eq!((orb, face), (local, local + 1));
+        let orb_pcp = compute_blob_id(b"orb pcp");
+        let orb_pcp_v2 = compute_blob_id(b"orb pcp v2");
+        let face_pcp = compute_blob_id(b"face pcp");
+        f.source
+            .set_credential_blobs(orb, &[orb_pcp, orb_pcp_v2], 1000)
+            .unwrap();
+        f.source
+            .set_credential_blobs(face, &[face_pcp], 1000)
+            .unwrap();
+        f.export();
+
+        assert_eq!(f.merge().unwrap(), 2);
+        assert_eq!(f.merge().unwrap(), 0);
+
+        assert_eq!(f.receiver.credential_blobs(local).unwrap(), [local_pcp]);
+        let mut orb_expected = vec![orb_pcp, orb_pcp_v2];
+        orb_expected.sort();
+        assert_eq!(blob_refs(&f.receiver, 200), orb_expected);
+        assert_eq!(blob_refs(&f.receiver, 300), [face_pcp]);
+        let ref_count: i64 = f
+            .receiver
+            .vault
+            .connection()
+            .query_row("SELECT COUNT(*) FROM credential_blob_refs", &[], |r| {
+                Ok(r.column_i64(0))
+            })
+            .unwrap();
+        assert_eq!(ref_count, 4);
+    }
+
+    #[test]
+    fn blob_refs_of_a_version_already_held_locally_are_not_copied() {
+        let f = Fixture::new();
+        store(&f.receiver, 100, b"same", 1000);
+        let source_id = store(&f.source, 100, b"same", 1000);
+        f.source
+            .set_credential_blobs(source_id, &[compute_blob_id(b"orb pcp")], 1000)
+            .unwrap();
+        f.export();
+        assert_eq!(f.merge().unwrap(), 0);
+        assert!(blob_refs(&f.receiver, 100).is_empty());
+    }
+
+    #[test]
+    fn snapshot_without_blob_refs_table_merges() {
+        let f = Fixture::new();
+        store(&f.source, 100, b"remote", 1000);
+        f.export();
+        Connection::open(&f.backup, false)
+            .unwrap()
+            .execute_batch("DROP TABLE credential_blob_refs;")
+            .unwrap();
+        assert_eq!(f.merge().unwrap(), 1);
+        assert!(blob_refs(&f.receiver, 100).is_empty());
+    }
+
+    #[test_case("UPDATE credential_blob_refs SET blob_id = X'CAFE'" ; "short blob id")]
+    #[test_case("UPDATE credential_blob_refs SET blob_id = hex(blob_id)" ; "text blob id")]
+    #[test_case("UPDATE credential_blob_refs SET credential_id = 99" ; "orphan ref")]
+    #[test_case("UPDATE credential_blob_refs SET created_at = -1" ; "negative created_at")]
+    #[test_case("INSERT INTO credential_records SELECT * FROM credential_records" ; "duplicate credential id")]
+    fn malformed_blob_refs_are_rejected(corruption: &str) {
+        let f = Fixture::new();
+        store(&f.receiver, 200, b"local", 1000);
+        let source_id = store(&f.source, 100, b"remote", 1000);
+        f.source
+            .set_credential_blobs(source_id, &[compute_blob_id(b"orb pcp")], 1000)
+            .unwrap();
+        f.export();
+        let before = versions(&f.receiver);
+        Connection::open(&f.backup, false)
+            .unwrap()
+            .execute_batch(corruption)
+            .unwrap();
+        assert!(f.merge().is_err());
+        assert_eq!(versions(&f.receiver), before);
     }
 
     #[test]

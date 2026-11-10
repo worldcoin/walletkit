@@ -28,8 +28,13 @@ use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value}
 /// `init_leaf_index`) with the authoritative `leaf_index` from the
 /// authenticator.
 ///
-/// **Note:** New tables added to the vault schema must be added here too.
-pub(crate) const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
+/// **Note:** New tables added to the vault schema must be added here too, and
+/// to [`OPTIONAL_BACKUP_TABLES`] so backups made before they existed restore.
+pub(crate) const BACKUP_TABLES: &[&str] =
+    &["credential_records", "blob_objects", "credential_blob_refs"];
+
+/// Tables in [`BACKUP_TABLES`] that older backups do not contain.
+const OPTIONAL_BACKUP_TABLES: &[&str] = &["credential_blob_refs"];
 
 // A version's content, never a device-local row ID, breaks equal-timestamp ties.
 // Use the same total order for reads and recovery regardless of insertion order.
@@ -485,8 +490,13 @@ impl CredentialVault {
     /// Returns an error if the import fails.
     pub fn import_plaintext(&self, source: &Path) -> StorageResult<()> {
         let conn = self.vault.connection();
-        cipher::import_plaintext_copy(conn, source, BACKUP_TABLES)
-            .map_err(|e| map_db_err(&e))
+        cipher::import_plaintext_copy(
+            conn,
+            source,
+            BACKUP_TABLES,
+            OPTIONAL_BACKUP_TABLES,
+        )
+        .map_err(|e| map_db_err(&e))
     }
 }
 
