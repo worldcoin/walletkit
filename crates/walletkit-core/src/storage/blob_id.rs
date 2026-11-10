@@ -55,8 +55,12 @@ impl BlobId {
 /// Computes the [`BlobId`] of a plaintext PCP package.
 #[must_use]
 #[uniffi::export]
-pub fn blob_id(plaintext: &[u8]) -> Arc<BlobId> {
-    Arc::new(compute_blob_id(plaintext))
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "an owned buffer maps to ByteArray/Data in the bindings, like BlobId::from_bytes"
+)]
+pub fn blob_id(plaintext: Vec<u8>) -> Arc<BlobId> {
+    Arc::new(compute_blob_id(&plaintext))
 }
 
 pub(crate) fn compute_blob_id(plaintext: &[u8]) -> BlobId {
@@ -74,7 +78,7 @@ mod tests {
     #[test_case(b"", "dbc45c9a56ec1cfe89c45c6bfbc3bffe9d574fcfbdb28f24442b0f6a698f529f" ; "empty")]
     #[test_case(b"hello pcp", "733ae41c33b82d2d18eba3b18f289f649f49a386362441f9bff74c613764b00f" ; "hello pcp")]
     fn blob_id_matches_frozen_vector(plaintext: &[u8], expected: &str) {
-        assert_eq!(blob_id(plaintext).to_hex_string(), expected);
+        assert_eq!(blob_id(plaintext.to_vec()).to_hex_string(), expected);
     }
 
     #[test]
