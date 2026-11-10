@@ -470,8 +470,9 @@ pub fn import_plaintext_copy(
 /// - A table named in `optional_tables` is skipped when the source lacks it,
 ///   so backups made before the table existed still restore.
 /// - `is_valid` runs inside the import transaction after every table is
-///   copied. Returning `false` rolls the whole import back. Use it for
-///   invariants the destination schema does not enforce on copied rows.
+///   copied. Returning `false` rolls the whole import back. The source is
+///   still attached as schema `backup`, so `is_valid` can check the original
+///   rows before the destination's keys and column affinities change them.
 ///
 /// # Errors
 ///

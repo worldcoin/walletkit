@@ -2,7 +2,7 @@
 //! Absence from a snapshot is not a deletion instruction: preserve receiver-only credentials.
 
 use super::{
-    map_db_err, CredentialVault, CREDENTIAL_VERSION_ORDER, HAS_INVALID_BLOB_REFS,
+    has_invalid_blob_refs, map_db_err, CredentialVault, CREDENTIAL_VERSION_ORDER,
 };
 use crate::storage::error::{StorageError, StorageResult};
 use walletkit_db::blobs::compute_content_id;
@@ -226,7 +226,9 @@ fn validate_incoming(incoming: &Connection, has_blob_refs: bool) -> StorageResul
     }
     if has_blob_refs {
         let has_invalid_refs = incoming
-            .query_row(HAS_INVALID_BLOB_REFS, &[], |row| Ok(row.column_i64(0) != 0))
+            .query_row(&has_invalid_blob_refs("main"), &[], |row| {
+                Ok(row.column_i64(0) != 0)
+            })
             .map_err(|e| map_db_err(&e))?;
         if has_invalid_refs {
             return Err(invalid_backup());
@@ -498,6 +500,7 @@ mod tests {
     #[test_case("UPDATE credential_blob_refs SET credential_id = 99" ; "orphan ref")]
     #[test_case("UPDATE credential_blob_refs SET created_at = -1" ; "negative created_at")]
     #[test_case("INSERT INTO credential_records SELECT * FROM credential_records" ; "duplicate credential id")]
+    #[test_case("UPDATE credential_records SET credential_id = NULL" ; "credential without id")]
     fn malformed_blob_refs_are_rejected(corruption: &str) {
         let f = Fixture::new();
         store(&f.receiver, 200, b"local", 1000);

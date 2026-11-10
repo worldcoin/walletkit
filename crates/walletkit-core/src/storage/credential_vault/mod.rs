@@ -40,16 +40,23 @@ pub(crate) const BACKUP_TABLES: &[&str] =
 /// backfill re-derives them.
 const OPTIONAL_BACKUP_TABLES: &[&str] = &["credential_blob_refs"];
 
-/// Selects whether a `credential_blob_refs` row breaks an invariant that
-/// plaintext backup copies do not enforce. Each row needs an integer
-/// `credential_id` naming exactly one credential record, a 32-byte `blob_id`,
-/// and a non-negative integer `created_at`.
-const HAS_INVALID_BLOB_REFS: &str = "SELECT EXISTS(SELECT 1 FROM credential_blob_refs b WHERE
-        typeof(credential_id) != 'integer' OR
-        NOT EXISTS(SELECT 1 FROM credential_records r WHERE r.credential_id = b.credential_id) OR
-        typeof(blob_id) != 'blob' OR length(blob_id) != 32 OR
-        typeof(created_at) != 'integer' OR created_at < 0)
-     OR EXISTS(SELECT 1 FROM credential_records GROUP BY credential_id HAVING COUNT(*) > 1)";
+/// Builds a query selecting whether a `credential_blob_refs` row in the
+/// backup attached as `schema` breaks an invariant that plaintext backup
+/// copies do not enforce. Each row needs an integer `credential_id` naming
+/// exactly one credential record, a 32-byte `blob_id`, and a non-negative
+/// integer `created_at`.
+fn has_invalid_blob_refs(schema: &str) -> String {
+    format!(
+        "SELECT EXISTS(SELECT 1 FROM {schema}.credential_blob_refs b WHERE
+            typeof(credential_id) != 'integer' OR
+            NOT EXISTS(SELECT 1 FROM {schema}.credential_records r
+                       WHERE r.credential_id = b.credential_id) OR
+            typeof(blob_id) != 'blob' OR length(blob_id) != 32 OR
+            typeof(created_at) != 'integer' OR created_at < 0)
+         OR EXISTS(SELECT 1 FROM {schema}.credential_records
+                   GROUP BY credential_id HAVING COUNT(*) > 1)"
+    )
+}
 
 // A version's content, never a device-local row ID, breaks equal-timestamp ties.
 // Use the same total order for reads and recovery regardless of insertion order.
@@ -522,7 +529,7 @@ impl CredentialVault {
     /// Imports credentials from a plaintext (unencrypted) vault backup into
     /// an empty vault. Intended for restore on a fresh install.
     ///
-    /// Blob refs are checked against the same invariants as
+    /// The backup's blob refs are checked against the same invariants as
     /// [`Self::merge_plaintext_bytes`]; an invalid backup imports nothing.
     ///
     /// Callers that need cross-process exclusion must hold
@@ -540,7 +547,16 @@ impl CredentialVault {
             BACKUP_TABLES,
             OPTIONAL_BACKUP_TABLES,
             |tx| {
-                tx.query_row(HAS_INVALID_BLOB_REFS, &[], |row| {
+                let has_blob_refs = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM backup.sqlite_master
+                     WHERE type = 'table' AND name = 'credential_blob_refs')",
+                    &[],
+                    |row| Ok(row.column_i64(0) != 0),
+                )?;
+                if !has_blob_refs {
+                    return Ok(true);
+                }
+                tx.query_row(&has_invalid_blob_refs("backup"), &[], |row| {
                     Ok(row.column_i64(0) == 0)
                 })
             },

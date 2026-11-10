@@ -928,6 +928,7 @@ fn test_plaintext_restore_of_backup_without_blob_refs_table() {
 #[test_case("UPDATE credential_blob_refs SET created_at = -1" ; "negative created_at")]
 #[test_case("UPDATE credential_blob_refs SET blob_id = X'CAFE'" ; "short blob id")]
 #[test_case("UPDATE credential_blob_refs SET credential_id = 99" ; "orphan ref")]
+#[test_case("UPDATE credential_records SET credential_id = NULL" ; "credential without id")]
 fn test_plaintext_restore_rejects_malformed_blob_refs_and_rolls_back(corruption: &str) {
     let source_path = temp_vault_path();
     let restore_path = temp_vault_path();
