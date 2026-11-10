@@ -171,6 +171,7 @@ mod tests {
             assert_eq!(challenge.expires_at, "2030-01-01T00:00:00Z");
             mock.assert_async().await;
         }
+        drop(server);
     }
 
     #[tokio::test]
@@ -205,10 +206,11 @@ mod tests {
             )
             .await
             .unwrap_err();
+
             match error {
                 WalletKitError::ResponseValidation(_) => assert_eq!(status, 201),
                 WalletKitError::NetworkError { status: actual, .. } => {
-                    assert_eq!(actual, Some(u16::try_from(status).unwrap()))
+                    assert_eq!(actual, Some(u16::try_from(status).unwrap()));
                 }
                 other => panic!("unexpected error: {other:?}"),
             }
@@ -216,6 +218,7 @@ mod tests {
             mock.remove_async().await;
         }
         redirect.assert_async().await;
+        drop(server);
     }
 
     struct TestIntegrity;
