@@ -530,7 +530,7 @@ impl CredentialVault {
     /// an empty vault. Intended for restore on a fresh install.
     ///
     /// The backup's blob refs are checked against the same invariants as
-    /// [`Self::merge_plaintext_bytes`]; an invalid backup imports nothing.
+    /// `merge_plaintext_bytes`; an invalid backup imports nothing.
     ///
     /// Callers that need cross-process exclusion must hold
     /// [`crate::storage::StorageLock`] themselves. The caller is also
