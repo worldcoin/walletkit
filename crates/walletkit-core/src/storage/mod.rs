@@ -13,8 +13,8 @@
 //! It owns the account key envelope and two databases:
 //!
 //! 1. **Vault database (`account.vault.sqlite`)** — authoritative storage for
-//!    credentials, associated data blobs, issuer subject blinding factors, and the account
-//!    leaf index. Corruption is a hard failure. See [`crate::storage::CredentialVault`].
+//!    credentials, associated data blobs, issuer subject blinding factors, links from
+//!    credentials to their PCP blob ids, and the account leaf index. Corruption is a hard failure. See [`crate::storage::CredentialVault`].
 //! 2. **Cache database (`account.cache.sqlite`)** — non-authoritative, regenerable
 //!    entries: Merkle inclusion proof cache, per-account session seed, and nullifier
 //!    replay guards. Subject to TTL pruning and can be rebuilt at any time without

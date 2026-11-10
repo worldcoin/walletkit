@@ -5,6 +5,7 @@ use crate::storage::blob_id::compute_blob_id;
 use secrecy::SecretBox;
 use std::fs;
 use std::path::{Path, PathBuf};
+use test_case::test_case;
 use uuid::Uuid;
 
 fn temp_vault_path() -> PathBuf {
@@ -732,8 +733,12 @@ fn test_set_credential_blobs_replaces_the_set() {
         .vault
         .connection()
         .query_row(
-            "SELECT created_at FROM credential_blob_refs WHERE blob_id = ?1",
-            params![kept.as_bytes().as_slice()],
+            "SELECT created_at FROM credential_blob_refs
+             WHERE credential_id = ?1 AND blob_id = ?2",
+            params![
+                i64::try_from(credential_id).unwrap(),
+                kept.as_bytes().as_slice()
+            ],
             |stmt| Ok(stmt.column_i64(0)),
         )
         .expect("kept created_at");
@@ -749,21 +754,21 @@ fn test_set_credential_blobs_replaces_the_set() {
     cleanup_vault_files(&path);
 }
 
-#[test]
-fn test_set_credential_blobs_rejects_unknown_credential() {
+#[test_case(&[] ; "empty set")]
+#[test_case(&[b"orb pcp"] ; "one blob")]
+fn test_set_credential_blobs_rejects_unknown_credential(plaintexts: &[&[u8]]) {
     let path = temp_vault_path();
     let key = SecretBox::init_with(|| [0x0Eu8; 32]);
     let db = CredentialVault::new(&path, &key).expect("create vault");
+    let blob_ids: Vec<BlobId> = plaintexts.iter().map(|p| compute_blob_id(p)).collect();
 
-    for blob_ids in [vec![], vec![compute_blob_id(b"orb pcp")]] {
-        let err = db
-            .set_credential_blobs(7, &blob_ids, 1000)
-            .expect_err("unknown credential");
-        assert!(matches!(
-            err,
-            StorageError::CredentialIdNotFound { credential_id: 7 }
-        ));
-    }
+    let err = db
+        .set_credential_blobs(7, &blob_ids, 1000)
+        .expect_err("unknown credential");
+    assert!(matches!(
+        err,
+        StorageError::CredentialIdNotFound { credential_id: 7 }
+    ));
     assert_eq!(count_blob_refs(&db), 0);
     cleanup_vault_files(&path);
 }
@@ -830,25 +835,24 @@ fn test_vault_without_blob_refs_table_gains_it_on_open() {
     cleanup_vault_files(&path);
 }
 
-#[test]
-fn test_blob_refs_reject_malformed_ids() {
+#[test_case(Value::Blob(vec![0; 31]) ; "short blob")]
+#[test_case(Value::Text("a".repeat(32)) ; "text of 32 chars")]
+fn test_blob_refs_reject_malformed_ids(blob_id: Value) {
     let path = temp_vault_path();
     let key = SecretBox::init_with(|| [0x12u8; 32]);
     let db = CredentialVault::new(&path, &key).expect("create vault");
     let credential_id = store_sample_credential(&db, 100);
 
-    for blob_id in [Value::Blob(vec![0; 31]), Value::Text("a".repeat(32))] {
-        db.vault
-            .connection()
-            .execute(
-                "INSERT INTO credential_blob_refs (credential_id, blob_id, created_at)
-                 VALUES (?1, ?2, 1000)",
-                &[
-                    Value::Integer(i64::try_from(credential_id).unwrap()),
-                    blob_id,
-                ],
-            )
-            .expect_err("CHECK constraint");
-    }
+    db.vault
+        .connection()
+        .execute(
+            "INSERT INTO credential_blob_refs (credential_id, blob_id, created_at)
+             VALUES (?1, ?2, 1000)",
+            &[
+                Value::Integer(i64::try_from(credential_id).unwrap()),
+                blob_id,
+            ],
+        )
+        .expect_err("CHECK constraint");
     cleanup_vault_files(&path);
 }

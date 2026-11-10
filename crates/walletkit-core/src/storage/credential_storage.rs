@@ -252,6 +252,27 @@ impl CredentialStore {
             .map(|(credential, _blinding_factor)| std::sync::Arc::new(credential)))
     }
 
+    /// Retrieves the credential stored under a local credential ID, or `None`
+    /// when no credential has that ID.
+    ///
+    /// Any stored version is returned, including expired and superseded ones,
+    /// so hosts can inspect every ID from [`Self::list_credentials`], for
+    /// example to find the PCPs to link with [`Self::set_credential_blobs`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails or the stored credential cannot be
+    /// deserialized.
+    pub fn fetch_credential_by_id(
+        &self,
+        credential_id: u64,
+    ) -> StorageResult<Option<Arc<Credential>>> {
+        Ok(self
+            .lock_inner()?
+            .fetch_credential_by_id(credential_id)?
+            .map(Arc::new))
+    }
+
     /// Deletes a credential by ID.
     ///
     /// # Errors
@@ -806,11 +827,7 @@ impl CredentialStoreInner {
             .vault
             .fetch_credential_and_blinding_factor(issuer_schema_id, now)?
         {
-            let credential = Credential::from_bytes(credential_bytes).map_err(|e| {
-                StorageError::Serialization(format!(
-                    "Critical. Failed to deserialize credential: {e}"
-                ))
-            })?;
+            let credential = deserialize_credential(credential_bytes)?;
 
             let blinding_factor = CoreFieldElement::from_be_bytes(
                 &blinding_factor_bytes.try_into().map_err(|_| {
@@ -827,6 +844,18 @@ impl CredentialStoreInner {
             return Ok(Some((credential, blinding_factor.into())));
         }
         Ok(None)
+    }
+
+    fn fetch_credential_by_id(
+        &self,
+        credential_id: u64,
+    ) -> StorageResult<Option<Credential>> {
+        let state = self.state()?;
+        state
+            .vault
+            .fetch_credential_by_id(credential_id)?
+            .map(deserialize_credential)
+            .transpose()
     }
 
     fn store_credential(
@@ -1129,6 +1158,14 @@ impl CredentialStoreInner {
 
         Ok(())
     }
+}
+
+fn deserialize_credential(bytes: Vec<u8>) -> StorageResult<Credential> {
+    Credential::from_bytes(bytes).map_err(|e| {
+        StorageError::Serialization(format!(
+            "Critical. Failed to deserialize credential: {e}"
+        ))
+    })
 }
 
 impl CredentialStore {
@@ -1621,6 +1658,71 @@ mod tests {
     }
 
     #[test]
+    fn test_backfill_links_each_credential_version_to_its_own_pcp() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let store =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&root))
+                .expect("create store");
+        store.init(42, 1000).expect("init storage");
+        // (associated data, expires_at, PCP plaintext): two current versions
+        // under one issuer and one expired version.
+        let versions: [(&[u8], u64, &[u8]); 3] = [
+            (b"document one", 9999, b"document pcp one"),
+            (b"document two", 9999, b"document pcp two"),
+            (b"document old", 1500, b"document pcp old"),
+        ];
+        let mut pcp_by_commitment = std::collections::HashMap::new();
+        let mut stored = Vec::new();
+        for (associated_data, expires_at, pcp) in versions {
+            let credential: Credential = CoreCredential::new()
+                .issuer_schema_id(100)
+                .genesis_issued_at(1000)
+                .associated_data_commitment_from_raw_bytes(associated_data)
+                .expect("commitment")
+                .into();
+            pcp_by_commitment
+                .insert(credential.associated_data_commitment().to_hex_string(), pcp);
+            let credential_id = store
+                .store_credential(
+                    &credential,
+                    &FieldElement::from(7u64),
+                    expires_at,
+                    None,
+                    1000,
+                )
+                .expect("store credential");
+            stored.push((credential_id, pcp));
+        }
+
+        for record in store.list_credentials(None, 2000).expect("list") {
+            let credential = store
+                .fetch_credential_by_id(record.credential_id)
+                .expect("fetch by id")
+                .expect("listed credential exists");
+            let pcp = pcp_by_commitment
+                [&credential.associated_data_commitment().to_hex_string()];
+            store
+                .set_credential_blobs(
+                    record.credential_id,
+                    vec![crate::storage::blob_id(pcp.to_vec())],
+                    2000,
+                )
+                .expect("link blobs");
+        }
+
+        assert_eq!(store.list_credentials(None, 2000).expect("list").len(), 3);
+        for (credential_id, pcp) in stored {
+            let linked = store.credential_blobs(credential_id).expect("read links");
+            assert_eq!(linked.len(), 1);
+            assert_eq!(*linked[0], *crate::storage::blob_id(pcp.to_vec()));
+        }
+        assert!(store.fetch_credential_by_id(999).expect("fetch").is_none());
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
     fn test_credential_blobs_are_linked_through_the_store() {
         use world_id_core::Credential as CoreCredential;
 
@@ -1636,7 +1738,7 @@ mod tests {
         let credential_id = store
             .store_credential(&credential, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
-        let orb_pcp = crate::storage::blob_id(b"orb pcp");
+        let orb_pcp = crate::storage::blob_id(b"orb pcp".to_vec());
 
         store
             .set_credential_blobs(credential_id, vec![Arc::clone(&orb_pcp)], 1000)

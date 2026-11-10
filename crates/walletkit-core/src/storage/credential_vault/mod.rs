@@ -418,6 +418,32 @@ impl CredentialVault {
         }
     }
 
+    /// Retrieves the credential bytes stored under a local credential ID.
+    ///
+    /// Unlike [`Self::fetch_credential_and_blinding_factor`], this returns any
+    /// stored version, including expired and superseded ones.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn fetch_credential_by_id(
+        &self,
+        credential_id: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        let credential_id_i64 = to_i64(credential_id, "credential_id")?;
+        self.vault
+            .connection()
+            .query_row_optional(
+                "SELECT blob.bytes
+                 FROM credential_records cr
+                 INNER JOIN blob_objects blob ON cr.credential_blob_cid = blob.content_id
+                 WHERE cr.credential_id = ?1",
+                params![credential_id_i64],
+                |row| Ok(row.column_blob(0)),
+            )
+            .map_err(|err| map_db_err(&err))
+    }
+
     /// **Development only.** Permanently deletes all credentials and their
     /// associated blob data from the vault.
     ///
