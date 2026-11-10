@@ -97,7 +97,8 @@ pub trait StorageProvider: Send + Sync {
 /// callback is delivered on a dedicated background thread to avoid re-entering
 /// the `UniFFI` call stack (see `logger.rs` for rationale).
 ///
-/// This is only called when individual credentials are added or removed.
+/// This is only called when individual credentials are added or removed, or
+/// when a credential's PCP blob links change.
 ///
 /// # Expected usage
 ///
@@ -112,7 +113,7 @@ pub trait StorageProvider: Send + Sync {
 /// will deadlock.
 #[cfg_attr(not(target_arch = "wasm32"), uniffi::export(with_foreign))]
 pub trait VaultChangedListener: Send + Sync {
-    /// Called after a credential is added or removed.
+    /// Called after a credential is added or removed, or its PCP blob links change.
     fn on_vault_changed(&self);
 }
 

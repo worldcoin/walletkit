@@ -923,3 +923,46 @@ fn test_plaintext_restore_of_backup_without_blob_refs_table() {
     cleanup_vault_files(&source_path);
     cleanup_vault_files(&restore_path);
 }
+
+#[test_case("UPDATE credential_blob_refs SET created_at = 'invalid'" ; "text created_at")]
+#[test_case("UPDATE credential_blob_refs SET created_at = -1" ; "negative created_at")]
+#[test_case("UPDATE credential_blob_refs SET blob_id = X'CAFE'" ; "short blob id")]
+#[test_case("UPDATE credential_blob_refs SET credential_id = 99" ; "orphan ref")]
+fn test_plaintext_restore_rejects_malformed_blob_refs_and_rolls_back(corruption: &str) {
+    let source_path = temp_vault_path();
+    let restore_path = temp_vault_path();
+    let export_path = temp_export_path();
+    let key = SecretBox::init_with(|| [0x15u8; 32]);
+    let source = CredentialVault::new(&source_path, &key).expect("create source");
+    let credential_id = store_sample_credential(&source, 100);
+    source
+        .set_credential_blobs(credential_id, &[compute_blob_id(b"orb pcp")], 1000)
+        .expect("link");
+    source.export_plaintext(&export_path).expect("export");
+    walletkit_sqlite::Connection::open(&export_path, false)
+        .expect("open backup")
+        .execute_batch(corruption)
+        .expect("corrupt backup");
+
+    let restored = CredentialVault::new(&restore_path, &key).expect("create restore");
+    restored
+        .import_plaintext(&export_path)
+        .expect_err("malformed blob refs");
+    assert!(restored
+        .list_credentials(None, 1000)
+        .expect("list")
+        .is_empty());
+    assert_eq!(count_blob_refs(&restored), 0);
+
+    source.export_plaintext(&export_path).expect("re-export");
+    restored
+        .import_plaintext(&export_path)
+        .expect("valid retry after rollback");
+    assert_eq!(
+        restored.list_credentials(None, 1000).expect("list").len(),
+        1
+    );
+    let _ = fs::remove_file(&export_path);
+    cleanup_vault_files(&source_path);
+    cleanup_vault_files(&restore_path);
+}
