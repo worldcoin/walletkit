@@ -693,10 +693,10 @@ fn test_credential_blobs_round_trip_in_byte_order() {
     let face_pcp = compute_blob_id(b"face pcp");
 
     assert!(db
-        .set_credential_blobs(orb, &[orb_pcp, orb_pcp_v2, orb_pcp], 1000)
+        .add_credential_blobs(orb, &[orb_pcp, orb_pcp_v2, orb_pcp], 1000)
         .expect("link orb"));
     assert!(db
-        .set_credential_blobs(face, &[face_pcp], 1000)
+        .add_credential_blobs(face, &[face_pcp], 1000)
         .expect("link face"));
 
     let mut expected = vec![orb_pcp, orb_pcp_v2];
@@ -707,63 +707,67 @@ fn test_credential_blobs_round_trip_in_byte_order() {
     cleanup_vault_files(&path);
 }
 
-#[test]
-fn test_set_credential_blobs_replaces_the_set() {
-    let path = temp_vault_path();
-    let key = SecretBox::init_with(|| [0x0Du8; 32]);
-    let db = CredentialVault::new(&path, &key).expect("create vault");
-    let credential_id = store_sample_credential(&db, 100);
-    let kept = compute_blob_id(b"kept pcp");
-    let dropped = compute_blob_id(b"dropped pcp");
-    let added = compute_blob_id(b"added pcp");
-
-    db.set_credential_blobs(credential_id, &[kept, dropped], 1000)
-        .expect("first link");
-    assert!(!db
-        .set_credential_blobs(credential_id, &[dropped, kept], 2000)
-        .expect("same set"));
-    assert!(db
-        .set_credential_blobs(credential_id, &[kept, added], 3000)
-        .expect("replace"));
-
-    let mut expected = vec![kept, added];
-    expected.sort();
-    assert_eq!(db.credential_blobs(credential_id).expect("blobs"), expected);
-    let kept_created_at = db
-        .vault
+fn blob_ref_created_at(
+    db: &CredentialVault,
+    credential_id: u64,
+    blob_id: BlobId,
+) -> i64 {
+    db.vault
         .connection()
         .query_row(
             "SELECT created_at FROM credential_blob_refs
              WHERE credential_id = ?1 AND blob_id = ?2",
             params![
                 i64::try_from(credential_id).unwrap(),
-                kept.as_bytes().as_slice()
+                blob_id.as_bytes().as_slice()
             ],
             |stmt| Ok(stmt.column_i64(0)),
         )
-        .expect("kept created_at");
-    assert_eq!(kept_created_at, 1000);
+        .expect("created_at")
+}
+
+#[test]
+fn test_add_credential_blobs_unions_with_existing_links() {
+    let path = temp_vault_path();
+    let key = SecretBox::init_with(|| [0x0Du8; 32]);
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    let credential_id = store_sample_credential(&db, 100);
+    let merged = compute_blob_id(b"merged pcp");
+    let found = compute_blob_id(b"found pcp");
+    let added = compute_blob_id(b"added pcp");
 
     assert!(db
-        .set_credential_blobs(credential_id, &[], 4000)
-        .expect("clear"));
+        .add_credential_blobs(credential_id, &[merged, found], 1000)
+        .expect("first add"));
+    assert!(!db
+        .add_credential_blobs(credential_id, &[found, merged], 2000)
+        .expect("same ids again"));
+    assert!(!db
+        .add_credential_blobs(credential_id, &[], 2000)
+        .expect("nothing to add"));
     assert!(db
-        .credential_blobs(credential_id)
-        .expect("blobs")
-        .is_empty());
+        .add_credential_blobs(credential_id, &[found, added], 3000)
+        .expect("one new id"));
+
+    let mut expected = vec![merged, found, added];
+    expected.sort();
+    assert_eq!(db.credential_blobs(credential_id).expect("blobs"), expected);
+    assert_eq!(blob_ref_created_at(&db, credential_id, merged), 1000);
+    assert_eq!(blob_ref_created_at(&db, credential_id, found), 1000);
+    assert_eq!(blob_ref_created_at(&db, credential_id, added), 3000);
     cleanup_vault_files(&path);
 }
 
 #[test_case(&[] ; "empty set")]
 #[test_case(&[b"orb pcp"] ; "one blob")]
-fn test_set_credential_blobs_rejects_unknown_credential(plaintexts: &[&[u8]]) {
+fn test_add_credential_blobs_rejects_unknown_credential(plaintexts: &[&[u8]]) {
     let path = temp_vault_path();
     let key = SecretBox::init_with(|| [0x0Eu8; 32]);
     let db = CredentialVault::new(&path, &key).expect("create vault");
     let blob_ids: Vec<BlobId> = plaintexts.iter().map(|p| compute_blob_id(p)).collect();
 
     let err = db
-        .set_credential_blobs(7, &blob_ids, 1000)
+        .add_credential_blobs(7, &blob_ids, 1000)
         .expect_err("unknown credential");
     assert!(matches!(
         err,
@@ -781,9 +785,9 @@ fn test_deleting_a_credential_removes_its_blob_refs() {
     let deleted = store_sample_credential(&db, 100);
     let kept = store_sample_credential(&db, 200);
     let shared_pcp = compute_blob_id(b"shared pcp");
-    db.set_credential_blobs(deleted, &[shared_pcp, compute_blob_id(b"orb pcp")], 1000)
+    db.add_credential_blobs(deleted, &[shared_pcp, compute_blob_id(b"orb pcp")], 1000)
         .expect("link deleted");
-    db.set_credential_blobs(kept, &[shared_pcp], 1000)
+    db.add_credential_blobs(kept, &[shared_pcp], 1000)
         .expect("link kept");
 
     db.delete_credential(deleted).expect("delete credential");
@@ -826,7 +830,7 @@ fn test_vault_without_blob_refs_table_gains_it_on_open() {
         .expect("index lookup");
     assert_eq!(index_count, 1);
     let orb_pcp = compute_blob_id(b"orb pcp");
-    db.set_credential_blobs(credential_id, &[orb_pcp], 2000)
+    db.add_credential_blobs(credential_id, &[orb_pcp], 2000)
         .expect("link on upgraded vault");
     assert_eq!(
         db.credential_blobs(credential_id).expect("blobs"),

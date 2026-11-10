@@ -10,7 +10,6 @@ mod schema;
 #[cfg(test)]
 mod tests;
 
-use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::storage::blob_id::BlobId;
@@ -288,16 +287,17 @@ impl CredentialVault {
         Ok(())
     }
 
-    /// Replaces the set of PCP blob ids linked to a credential.
+    /// Links PCP blob ids to a credential, keeping the links it already has.
     ///
-    /// Duplicates in `blob_ids` are ignored. Links that stay in the set keep
-    /// their original `created_at`. Returns whether the stored set changed.
+    /// Insert-only: ids already linked keep their original `created_at`, and
+    /// duplicates in `blob_ids` are ignored. Links are removed only when the
+    /// credential is deleted. Returns whether any link was added.
     ///
     /// # Errors
     ///
     /// Returns [`StorageError::CredentialIdNotFound`] when the credential does
     /// not exist, or an error if a query fails.
-    pub fn set_credential_blobs(
+    pub fn add_credential_blobs(
         &self,
         credential_id: u64,
         blob_ids: &[BlobId],
@@ -305,7 +305,6 @@ impl CredentialVault {
     ) -> StorageResult<bool> {
         let credential_id_i64 = to_i64(credential_id, "credential_id")?;
         let now_i64 = to_i64(now, "now")?;
-        let wanted: BTreeSet<BlobId> = blob_ids.iter().copied().collect();
         let conn = self.vault.connection();
         let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
 
@@ -320,20 +319,9 @@ impl CredentialVault {
             return Err(StorageError::CredentialIdNotFound { credential_id });
         }
 
-        let mut changed = 0;
-        for stale in self.credential_blobs(credential_id)? {
-            if !wanted.contains(&stale) {
-                changed += tx
-                    .execute(
-                        "DELETE FROM credential_blob_refs
-                         WHERE credential_id = ?1 AND blob_id = ?2",
-                        params![credential_id_i64, stale.as_bytes().as_slice()],
-                    )
-                    .map_err(|err| map_db_err(&err))?;
-            }
-        }
-        for blob_id in &wanted {
-            changed += tx
+        let mut added = 0;
+        for blob_id in blob_ids {
+            added += tx
                 .execute(
                     "INSERT INTO credential_blob_refs (credential_id, blob_id, created_at)
                      VALUES (?1, ?2, ?3)
@@ -344,7 +332,7 @@ impl CredentialVault {
         }
 
         tx.commit().map_err(|err| map_db_err(&err))?;
-        Ok(changed > 0)
+        Ok(added > 0)
     }
 
     /// Returns the PCP blob ids linked to a credential, in byte order.
