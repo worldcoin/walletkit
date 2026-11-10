@@ -47,9 +47,13 @@ impl VerifiedBlobStore {
     /// # Errors
     ///
     /// Returns [`StorageError::BlobStore`] if the host fails, or if the bytes it
-    /// returned do not hash to `id`. The error never contains the bytes.
+    /// returned do not hash to `id`. The error never contains the bytes, the id
+    /// or the host's error.
     pub async fn get(&self, id: &BlobId) -> StorageResult<Option<Vec<u8>>> {
-        let Some(plaintext) = self.inner.get(Arc::new(*id)).await? else {
+        let Some(plaintext) = self.inner.get(Arc::new(*id)).await.map_err(|_| {
+            StorageError::BlobStore("host blob read failed".to_string())
+        })?
+        else {
             return Ok(None);
         };
         if compute_blob_id(&plaintext) != *id {
@@ -66,14 +70,17 @@ impl VerifiedBlobStore {
     ///
     /// Returns [`StorageError::InvalidInput`] without calling the host if
     /// `plaintext` does not hash to `id`, or [`StorageError::BlobStore`] if the
-    /// host fails.
+    /// host fails. The error never contains the bytes, the id or the host's error.
     pub async fn put(&self, id: &BlobId, plaintext: Vec<u8>) -> StorageResult<()> {
         if compute_blob_id(&plaintext) != *id {
             return Err(StorageError::InvalidInput(
                 "blob does not match its id".to_string(),
             ));
         }
-        self.inner.put(Arc::new(*id), plaintext).await
+        self.inner
+            .put(Arc::new(*id), plaintext)
+            .await
+            .map_err(|_| StorageError::BlobStore("host blob write failed".to_string()))
     }
 }
 
@@ -114,6 +121,25 @@ mod tests {
         async fn put(&self, id: Arc<BlobId>, plaintext: Vec<u8>) -> StorageResult<()> {
             self.blobs.lock().unwrap().insert(id.to_bytes(), plaintext);
             Ok(())
+        }
+    }
+
+    struct FailingBlobStore;
+
+    #[async_trait::async_trait]
+    impl BlobStore for FailingBlobStore {
+        async fn get(&self, id: Arc<BlobId>) -> StorageResult<Option<Vec<u8>>> {
+            Err(StorageError::UnexpectedUniFFICallbackError(format!(
+                "lookup failed for {}",
+                id.to_hex_string()
+            )))
+        }
+
+        async fn put(&self, id: Arc<BlobId>, _plaintext: Vec<u8>) -> StorageResult<()> {
+            Err(StorageError::UnexpectedUniFFICallbackError(format!(
+                "write failed for {}",
+                id.to_hex_string()
+            )))
         }
     }
 
@@ -168,5 +194,19 @@ mod tests {
         assert!(matches!(err, StorageError::InvalidInput(_)));
         assert!(!err.to_string().contains("tampered"));
         assert_eq!(inner.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn host_failures_do_not_leak_the_host_error() {
+        let store = VerifiedBlobStore::new(Arc::new(FailingBlobStore));
+        let id = hello_pcp_id();
+
+        let get_err = store.get(&id).await.unwrap_err();
+        let put_err = store.put(&id, b"hello pcp".to_vec()).await.unwrap_err();
+
+        for err in [get_err, put_err] {
+            assert!(matches!(err, StorageError::BlobStore(_)));
+            assert!(!err.to_string().contains(HELLO_PCP_ID));
+        }
     }
 }
