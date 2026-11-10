@@ -356,7 +356,7 @@ mod tests {
         let local = store(&f.receiver, 100, b"local", 1000);
         let local_pcp = compute_blob_id(b"local pcp");
         f.receiver
-            .set_credential_blobs(local, &[local_pcp], 1000)
+            .add_credential_blobs(local, &[local_pcp], 1000)
             .unwrap();
         let orb = store(&f.source, 200, b"orb", 1000);
         let face = store(&f.source, 300, b"face", 1000);
@@ -365,10 +365,10 @@ mod tests {
         let orb_pcp_v2 = compute_blob_id(b"orb pcp v2");
         let face_pcp = compute_blob_id(b"face pcp");
         f.source
-            .set_credential_blobs(orb, &[orb_pcp, orb_pcp_v2], 1000)
+            .add_credential_blobs(orb, &[orb_pcp, orb_pcp_v2], 1000)
             .unwrap();
         f.source
-            .set_credential_blobs(face, &[face_pcp], 1000)
+            .add_credential_blobs(face, &[face_pcp], 1000)
             .unwrap();
         f.export();
 
@@ -415,7 +415,7 @@ mod tests {
         let old_snapshot = std::fs::read(&f.backup).unwrap();
         let orb_pcp = compute_blob_id(b"orb pcp");
         f.source
-            .set_credential_blobs(source_id, &[orb_pcp], 2000)
+            .add_credential_blobs(source_id, &[orb_pcp], 2000)
             .unwrap();
         f.export();
 
@@ -460,10 +460,10 @@ mod tests {
         let shared = compute_blob_id(b"shared pcp");
         let incoming_only = compute_blob_id(b"incoming pcp");
         f.receiver
-            .set_credential_blobs(local_id, &[local_only, shared], 1000)
+            .add_credential_blobs(local_id, &[local_only, shared], 1000)
             .unwrap();
         f.source
-            .set_credential_blobs(source_id, &[shared, incoming_only], 3000)
+            .add_credential_blobs(source_id, &[shared, incoming_only], 3000)
             .unwrap();
         f.export();
 
@@ -506,7 +506,7 @@ mod tests {
         store(&f.receiver, 200, b"local", 1000);
         let source_id = store(&f.source, 100, b"remote", 1000);
         f.source
-            .set_credential_blobs(source_id, &[compute_blob_id(b"orb pcp")], 1000)
+            .add_credential_blobs(source_id, &[compute_blob_id(b"orb pcp")], 1000)
             .unwrap();
         f.export();
         let before = versions(&f.receiver);

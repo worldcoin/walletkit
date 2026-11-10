@@ -257,7 +257,7 @@ impl CredentialStore {
     ///
     /// Any stored version is returned, including expired and superseded ones,
     /// so hosts can inspect every ID from [`Self::list_credentials`], for
-    /// example to find the PCPs to link with [`Self::set_credential_blobs`].
+    /// example to find the PCPs to link with [`Self::add_credential_blobs`].
     ///
     /// # Errors
     ///
@@ -313,30 +313,33 @@ impl CredentialStore {
         result
     }
 
-    /// Replaces the PCP blob ids linked to a stored credential.
+    /// Links PCP blob ids to a stored credential, keeping the links it
+    /// already has.
     ///
     /// Linking is separate from [`Self::store_credential`]; hosts call this
-    /// after storing a credential and may call it again with the same set.
-    /// Duplicate ids are ignored. Links are part of vault backups, so the
-    /// vault-changed listener is notified when the set changes.
+    /// after storing a credential and may call it again at any time. It only
+    /// adds: ids already linked, for example by a backup merge, stay linked and
+    /// keep their original time, and duplicates are ignored. Links are removed
+    /// only with their credential. Returns whether any link was added, in which
+    /// case the vault-changed listener is notified.
     ///
     /// # Errors
     ///
     /// Returns an error if the credential ID does not exist or the write fails.
-    pub fn set_credential_blobs(
+    pub fn add_credential_blobs(
         &self,
         credential_id: u64,
         blob_ids: Vec<Arc<BlobId>>,
         now: u64,
-    ) -> StorageResult<()> {
+    ) -> StorageResult<bool> {
         let blob_ids: Vec<BlobId> = blob_ids.into_iter().map(|id| *id).collect();
-        let changed =
+        let added =
             self.lock_inner()?
-                .set_credential_blobs(credential_id, &blob_ids, now)?;
-        if changed {
+                .add_credential_blobs(credential_id, &blob_ids, now)?;
+        if added {
             self.notify_vault_changed();
         }
-        Ok(())
+        Ok(added)
     }
 
     /// Returns the PCP blob ids linked to a credential.
@@ -555,7 +558,7 @@ impl CredentialStore {
 
     /// Registers a listener that is called after every successful vault
     /// mutation that warrants a new backup: a credential stored, deleted or
-    /// merged, or a change to a credential's PCP blob links.
+    /// merged, or a PCP blob link added.
     ///
     /// Only one listener can be active at a time — calling this replaces any
     /// previously registered listener. The previous delivery thread shuts down
@@ -681,7 +684,7 @@ impl CredentialStore {
     /// No-op on wasm32 where the listener cannot be registered.
     ///
     /// Only call this when vault contents change in a way that warrants a new
-    /// backup (a credential added or removed, or PCP blob links changed). Do
+    /// backup (a credential added or removed, or a PCP blob link added). Do
     /// **not** call it for destructive operations like vault deletion or purge.
     fn notify_vault_changed(&self) {
         #[cfg(not(target_arch = "wasm32"))]
@@ -893,7 +896,7 @@ impl CredentialStoreInner {
         )
     }
 
-    fn set_credential_blobs(
+    fn add_credential_blobs(
         &mut self,
         credential_id: u64,
         blob_ids: &[BlobId],
@@ -902,7 +905,7 @@ impl CredentialStoreInner {
         let state = self.state_mut()?;
         state
             .vault
-            .set_credential_blobs(credential_id, blob_ids, now)
+            .add_credential_blobs(credential_id, blob_ids, now)
     }
 
     fn credential_blobs(&self, credential_id: u64) -> StorageResult<Vec<BlobId>> {
@@ -1712,7 +1715,7 @@ mod tests {
             let pcp = pcp_by_commitment
                 [&credential.associated_data_commitment().to_hex_string()];
             store
-                .set_credential_blobs(
+                .add_credential_blobs(
                     record.credential_id,
                     vec![crate::storage::blob_id(pcp.to_vec())],
                     2000,
@@ -1748,15 +1751,15 @@ mod tests {
             .expect("store credential");
         let orb_pcp = crate::storage::blob_id(b"orb pcp".to_vec());
 
-        store
-            .set_credential_blobs(credential_id, vec![Arc::clone(&orb_pcp)], 1000)
-            .expect("link blobs");
+        assert!(store
+            .add_credential_blobs(credential_id, vec![Arc::clone(&orb_pcp)], 1000)
+            .expect("link blobs"));
 
         let linked = store.credential_blobs(credential_id).expect("read links");
         assert_eq!(linked.len(), 1);
         assert_eq!(*linked[0], *orb_pcp);
         assert!(matches!(
-            store.set_credential_blobs(credential_id + 1, vec![orb_pcp], 1000),
+            store.add_credential_blobs(credential_id + 1, vec![orb_pcp], 1000),
             Err(StorageError::CredentialIdNotFound { .. })
         ));
         cleanup_test_storage(&root);
@@ -1990,7 +1993,7 @@ mod tests {
         );
         let orb_pcp = crate::storage::blob_id(b"orb pcp".to_vec());
         source
-            .set_credential_blobs(source_id, vec![Arc::clone(&orb_pcp)], 2000)
+            .add_credential_blobs(source_id, vec![Arc::clone(&orb_pcp)], 2000)
             .unwrap();
         let linked_backup = source.export_vault_for_backup().unwrap();
         let (notifications_tx, notifications_rx) = mpsc::channel();
@@ -2440,29 +2443,29 @@ mod tests {
             notifications_tx,
         )));
 
-        store
-            .set_credential_blobs(
+        assert!(store
+            .add_credential_blobs(
                 credential_id,
                 vec![crate::storage::blob_id(b"orb pcp".to_vec())],
                 1000,
             )
-            .expect("link blobs");
+            .expect("link blobs"));
         notifications_rx
             .recv_timeout(std::time::Duration::from_secs(1))
-            .expect("a changed link set should notify the listener");
-        store
-            .set_credential_blobs(
+            .expect("an added link should notify the listener");
+        assert!(!store
+            .add_credential_blobs(
                 credential_id,
                 vec![crate::storage::blob_id(b"orb pcp".to_vec())],
                 2000,
             )
-            .expect("relink the same set");
+            .expect("add the same link again"));
 
         drop(store);
         assert_eq!(
             notifications_rx.recv_timeout(std::time::Duration::from_secs(1)),
             Err(mpsc::RecvTimeoutError::Disconnected),
-            "an unchanged link set should not notify the listener"
+            "adding nothing new should not notify the listener"
         );
         cleanup_test_storage(&root);
     }
