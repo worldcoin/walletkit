@@ -9301,7 +9301,6 @@ dependencies = [
  "world-id-flamingo 0.18.0",
  "world-id-primitives 0.18.0",
  "world-id-proof",
- "world-id-registries",
  "zeroize",
 ]
 
