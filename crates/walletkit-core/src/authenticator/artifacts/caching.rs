@@ -10,8 +10,8 @@ use world_id_proof::{
     artifacts::{
         cached::CachedZkArtifactSource, embedded::EmbeddedZkArtifacts, ZkArtifactSource,
     },
-    CircomGroth16Material, CircomGroth16MaterialBuilder, OwnershipProver,
-    OwnershipVerifier, ZkeyError,
+    CircomGroth16Material, CircomGroth16MaterialBuilder, EmbeddingSimilarityProver,
+    EmbeddingSimilarityVerifier, OwnershipProver, OwnershipVerifier, ZkeyError,
 };
 
 use crate::{error::WalletKitError, storage::StoragePaths};
@@ -90,6 +90,18 @@ impl ZkArtifactSource for CachingZkArtifacts {
     fn ownership_verifier(&self) -> Result<OwnershipVerifier, ZkArtifactError> {
         self.0.ownership_verifier()
     }
+
+    fn embedding_similarity_prover(
+        &self,
+    ) -> Result<EmbeddingSimilarityProver, ZkArtifactError> {
+        self.0.embedding_similarity_prover()
+    }
+
+    fn embedding_similarity_verifier(
+        &self,
+    ) -> Result<EmbeddingSimilarityVerifier, ZkArtifactError> {
+        self.0.embedding_similarity_verifier()
+    }
 }
 
 /// An inner implementation layer of the caching zk artifacts source.
@@ -157,6 +169,18 @@ impl ZkArtifactSource for CachingZkArtifactsInner {
 
     fn ownership_verifier(&self) -> Result<OwnershipVerifier, ZkArtifactError> {
         self.inner.ownership_verifier()
+    }
+
+    fn embedding_similarity_prover(
+        &self,
+    ) -> Result<EmbeddingSimilarityProver, ZkArtifactError> {
+        self.inner.embedding_similarity_prover()
+    }
+
+    fn embedding_similarity_verifier(
+        &self,
+    ) -> Result<EmbeddingSimilarityVerifier, ZkArtifactError> {
+        self.inner.embedding_similarity_verifier()
     }
 }
 
