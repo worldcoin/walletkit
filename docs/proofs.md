@@ -55,6 +55,17 @@ returns back to the relying party.
 On iOS and Android, use `CachingZkArtifacts` instead of `EmbeddedZkArtifacts` when
 the keys are compressed, so that WalletKit decompresses them only once.
 
+## Proof of Embedding Similarity requests
+
+`generate_proof` doesn't answer a Proof of Embedding Similarity request
+([WIP-202](https://github.com/worldcoin/world-id-protocol/blob/main/docs/WIPs/wip-202.md)):
+it returns an `InvalidInput` error for `proof_type`. Check `proof_type()` before
+you call it. For an `EmbeddingSimilarity` request, `embedding_similarity()` returns
+the RP's `challenge_hash` and whether it requires an Authenticator Assertion Token.
+The RP signs only the hash, so call `matches_challenge` on the challenge image it
+sends before you use the image. The browser package doesn't expose these methods
+yet.
+
 ## Legacy World ID 3.0 proofs
 
 The `v3` feature adds the World ID 3.0 API in the `v3` module. The Swift and
