@@ -139,6 +139,8 @@ pub use user_agent::{UserAgent, UserAgentBuilder};
 /// Proof requests and responses in World ID v4.
 pub mod requests;
 
+pub mod billing;
+
 /// Pre-flight check of whether stored credentials can satisfy a [`requests::ProofRequest`].
 pub mod proof_request_credential_constraints_check;
 

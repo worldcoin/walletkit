@@ -1,7 +1,10 @@
 //! Shared helpers for cache database operations.
 
 use crate::storage::{
-    cache::schema::{CACHE_KEY_PREFIX_REPLAY_NULLIFIER, CACHE_KEY_PREFIX_SESSION},
+    cache::schema::{
+        CACHE_KEY_PREFIX_BILLING_WITNESS, CACHE_KEY_PREFIX_REPLAY_NULLIFIER,
+        CACHE_KEY_PREFIX_SESSION,
+    },
     error::{StorageError, StorageResult},
 };
 use walletkit_sqlite::{params, Connection, Error as DbError, Transaction};
@@ -209,6 +212,23 @@ fn cache_key_with_prefix(prefix: u8, payload: &[u8]) -> Vec<u8> {
 pub(super) fn session_cache_key(rp_id: u64, oprf_seed: [u8; 32]) -> Vec<u8> {
     let mut key = cache_key_with_prefix(CACHE_KEY_PREFIX_SESSION, &rp_id.to_be_bytes());
     key.extend_from_slice(&oprf_seed);
+    key
+}
+
+/// Builds the cache key for a billing witness: one billing context (chain, Billing Contract, RP
+/// and period) under one RP OPRF key.
+pub(super) fn billing_witness_key(
+    chain_id: [u8; 32],
+    billing_contract: [u8; 20],
+    rp_id: u64,
+    period_start: u64,
+    oprf_key_id: [u8; 20],
+) -> Vec<u8> {
+    let mut key = cache_key_with_prefix(CACHE_KEY_PREFIX_BILLING_WITNESS, &chain_id);
+    key.extend_from_slice(&billing_contract);
+    key.extend_from_slice(&rp_id.to_be_bytes());
+    key.extend_from_slice(&period_start.to_be_bytes());
+    key.extend_from_slice(&oprf_key_id);
     key
 }
 

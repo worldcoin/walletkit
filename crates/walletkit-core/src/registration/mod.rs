@@ -116,7 +116,10 @@ pub enum TransportError {
 
 /// Runs `future` until `deadline`, returning `None` if the deadline passes first. A future whose
 /// deadline has passed is never polled.
-async fn before<F: Future>(deadline: Instant, future: F) -> Option<F::Output> {
+pub(crate) async fn before<F: Future>(
+    deadline: Instant,
+    future: F,
+) -> Option<F::Output> {
     let now = Instant::now();
     if now >= deadline {
         return None;
