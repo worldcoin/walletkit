@@ -20,7 +20,7 @@ use world_id_core::{
 };
 use zeroize::Zeroizing;
 
-use crate::requests::{ProofRequest, ProofResponse};
+use crate::requests::{ProofRequest, ProofRequestType, ProofResponse};
 use crate::storage::CredentialStore;
 use crate::OwnershipProof;
 
@@ -766,12 +766,21 @@ impl Authenticator {
     /// RP is listed via [`Self::set_nullifier_reuse_whitelist`].
     ///
     /// # Errors
-    /// Returns an error if proof generation fails.
+    /// Returns [`WalletKitError::InvalidInput`] for a Proof of Embedding Similarity request, which
+    /// this flow does not prove, and an error if proof generation fails.
     pub async fn generate_proof(
         &self,
         proof_request: &ProofRequest,
         now: Option<u64>,
     ) -> Result<ProofResponse, WalletKitError> {
+        if proof_request.proof_type() == ProofRequestType::EmbeddingSimilarity {
+            return Err(WalletKitError::InvalidInput {
+                attribute: "proof_type".to_string(),
+                reason:
+                    "embedding_similarity requests are not proven by generate_proof"
+                        .to_string(),
+            });
+        }
         let now = resolve_now(now)?;
 
         // Build CredentialInput list from storage
@@ -1418,6 +1427,35 @@ mod tests {
             .set_nullifier_reuse_whitelist(vec![])
             .expect("empty set is valid");
         assert!(!authenticator.allows_nullifier_reuse_for_rp(0x2a));
+
+        drop(server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_generate_proof_rejects_embedding_similarity_requests() {
+        use crate::requests::tests::embedding_similarity_request;
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        let no_more_requests = server
+            .mock("POST", mockito::Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
+
+        let request = embedding_similarity_request(b"challenge", None);
+        let error = authenticator
+            .generate_proof(&request, Some(1_700_000_100))
+            .await
+            .expect_err("embedding similarity requests are not proven here");
+
+        assert!(matches!(
+            error,
+            WalletKitError::InvalidInput { attribute, .. } if attribute == "proof_type"
+        ));
+        no_more_requests.assert_async().await;
 
         drop(server);
         cleanup_test_storage(&root);
