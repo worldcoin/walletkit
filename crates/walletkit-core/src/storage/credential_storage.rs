@@ -2487,7 +2487,7 @@ mod tests {
         assert!(!store
             .add_credential_blobs(
                 credential_id,
-                Arc::new(cred.clone()),
+                Arc::new(cred),
                 vec![crate::storage::blob_id(b"orb pcp".to_vec())],
                 2000,
             )
