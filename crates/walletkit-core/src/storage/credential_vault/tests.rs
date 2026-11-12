@@ -727,6 +727,46 @@ fn blob_ref_created_at(
 }
 
 #[test]
+fn test_add_credential_blobs_reserves_write_before_existence_check() {
+    let path = temp_vault_path();
+    let key = SecretBox::init_with(|| [0x0Du8; 32]);
+    let db = CredentialVault::new(&path, &key).expect("create vault");
+    let credential_id = store_sample_credential(&db, 100);
+    let other = CredentialVault::new(&path, &key).expect("open second connection");
+    db.vault
+        .connection()
+        .execute_batch("PRAGMA busy_timeout = 0")
+        .expect("disable busy wait");
+    let writer = other
+        .vault
+        .connection()
+        .transaction_immediate()
+        .expect("reserve write on second connection");
+    let blob_id = compute_blob_id(b"orb pcp");
+
+    let err = db
+        .add_credential_blobs(credential_id + 1, &[blob_id], 1000)
+        .expect_err("write reservation must precede existence check");
+    assert!(matches!(err, StorageError::VaultDb(_)));
+    drop(writer);
+
+    let err = db
+        .add_credential_blobs(credential_id + 1, &[blob_id], 1000)
+        .expect_err("unknown credential after writer releases reservation");
+    assert!(matches!(err, StorageError::CredentialIdNotFound { .. }));
+    assert!(db
+        .add_credential_blobs(credential_id, &[blob_id], 1000)
+        .expect("add after writer releases reservation"));
+    assert_eq!(
+        db.credential_blobs(credential_id).expect("blobs"),
+        [blob_id]
+    );
+    drop(other);
+    drop(db);
+    cleanup_vault_files(&path);
+}
+
+#[test]
 fn test_add_credential_blobs_unions_with_existing_links() {
     let path = temp_vault_path();
     let key = SecretBox::init_with(|| [0x0Du8; 32]);
