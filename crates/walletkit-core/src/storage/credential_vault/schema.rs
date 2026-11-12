@@ -1,4 +1,5 @@
-//! Credential-vault schema (vault metadata + credential records).
+//! Credential-vault schema (vault metadata, credential records, and their
+//! PCP blob links).
 //!
 //! The shared `blob_objects` table comes from
 //! [`walletkit_db::Blobs::ensure_schema`]; this module owns only the
@@ -52,6 +53,16 @@ pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
 
         CREATE INDEX IF NOT EXISTS idx_cred_by_expiry
         ON credential_records (expires_at);
+
+        CREATE TABLE IF NOT EXISTS credential_blob_refs (
+            credential_id INTEGER NOT NULL REFERENCES credential_records (credential_id) ON DELETE CASCADE,
+            blob_id       BLOB    NOT NULL CHECK (typeof(blob_id) = 'blob' AND length(blob_id) = 32),
+            created_at    INTEGER NOT NULL,
+            PRIMARY KEY (credential_id, blob_id)
+        ) WITHOUT ROWID;
+
+        CREATE INDEX IF NOT EXISTS idx_credential_blob_refs_blob_id
+        ON credential_blob_refs (blob_id);
 ",
     )
 }

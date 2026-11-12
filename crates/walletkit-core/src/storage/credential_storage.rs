@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use world_id_core::FieldElement as CoreFieldElement;
 
+use super::blob_id::BlobId;
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::paths::StoragePaths;
@@ -251,6 +252,27 @@ impl CredentialStore {
             .map(|(credential, _blinding_factor)| std::sync::Arc::new(credential)))
     }
 
+    /// Retrieves the credential stored under a local credential ID, or `None`
+    /// when no credential has that ID.
+    ///
+    /// Any stored version is returned, including expired and superseded ones,
+    /// so hosts can inspect every ID from [`Self::list_credentials`], for
+    /// example to find the PCPs to link with [`Self::add_credential_blobs`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails or the stored credential cannot be
+    /// deserialized.
+    pub fn fetch_credential_by_id(
+        &self,
+        credential_id: u64,
+    ) -> StorageResult<Option<Arc<Credential>>> {
+        Ok(self
+            .lock_inner()?
+            .fetch_credential_by_id(credential_id)?
+            .map(Arc::new))
+    }
+
     /// Deletes a credential by ID.
     ///
     /// # Errors
@@ -289,6 +311,52 @@ impl CredentialStore {
             self.notify_vault_changed();
         }
         result
+    }
+
+    /// Links PCP blob ids to a stored credential, keeping the links it
+    /// already has.
+    ///
+    /// Linking is separate from [`Self::store_credential`]; hosts call this
+    /// after storing a credential and may call it again at any time. It only
+    /// adds: ids already linked, for example by a backup merge, stay linked and
+    /// keep their original time, and duplicates are ignored. Links are removed
+    /// only with their credential. Returns whether any link was added, in which
+    /// case the vault-changed listener is notified.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the credential ID does not exist or the write fails.
+    pub fn add_credential_blobs(
+        &self,
+        credential_id: u64,
+        blob_ids: Vec<Arc<BlobId>>,
+        now: u64,
+    ) -> StorageResult<bool> {
+        let blob_ids: Vec<BlobId> = blob_ids.into_iter().map(|id| *id).collect();
+        let added =
+            self.lock_inner()?
+                .add_credential_blobs(credential_id, &blob_ids, now)?;
+        if added {
+            self.notify_vault_changed();
+        }
+        Ok(added)
+    }
+
+    /// Returns the PCP blob ids linked to a credential.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the vault query fails.
+    pub fn credential_blobs(
+        &self,
+        credential_id: u64,
+    ) -> StorageResult<Vec<Arc<BlobId>>> {
+        Ok(self
+            .lock_inner()?
+            .credential_blobs(credential_id)?
+            .into_iter()
+            .map(Arc::new)
+            .collect())
     }
 
     /// **Development only.** Permanently deletes all stored credentials and their
@@ -487,7 +555,8 @@ impl CredentialStore {
     }
 
     /// Registers a listener that is called after every successful vault
-    /// mutation (store, delete, purge).
+    /// mutation that warrants a new backup: a credential stored, deleted or
+    /// merged, or a PCP blob link added.
     ///
     /// Only one listener can be active at a time — calling this replaces any
     /// previously registered listener. The previous delivery thread shuts down
@@ -613,8 +682,8 @@ impl CredentialStore {
     /// No-op on wasm32 where the listener cannot be registered.
     ///
     /// Only call this when vault contents change in a way that warrants a new
-    /// backup (i.e. credential added or removed). Do **not** call it for
-    /// destructive operations like vault deletion or purge.
+    /// backup (a credential added or removed, or a PCP blob link added). Do
+    /// **not** call it for destructive operations like vault deletion or purge.
     fn notify_vault_changed(&self) {
         #[cfg(not(target_arch = "wasm32"))]
         if let Ok(guard) = self.vault_changed_tx.lock() {
@@ -767,11 +836,7 @@ impl CredentialStoreInner {
             .vault
             .fetch_credential_and_blinding_factor(issuer_schema_id, now)?
         {
-            let credential = Credential::from_bytes(credential_bytes).map_err(|e| {
-                StorageError::Serialization(format!(
-                    "Critical. Failed to deserialize credential: {e}"
-                ))
-            })?;
+            let credential = deserialize_credential(credential_bytes)?;
 
             let blinding_factor = CoreFieldElement::from_be_bytes(
                 &blinding_factor_bytes.try_into().map_err(|_| {
@@ -788,6 +853,18 @@ impl CredentialStoreInner {
             return Ok(Some((credential, blinding_factor.into())));
         }
         Ok(None)
+    }
+
+    fn fetch_credential_by_id(
+        &self,
+        credential_id: u64,
+    ) -> StorageResult<Option<Credential>> {
+        let state = self.state()?;
+        state
+            .vault
+            .fetch_credential_by_id(credential_id)?
+            .map(deserialize_credential)
+            .transpose()
     }
 
     fn store_credential(
@@ -815,6 +892,23 @@ impl CredentialStoreInner {
             associated_data,
             now,
         )
+    }
+
+    fn add_credential_blobs(
+        &mut self,
+        credential_id: u64,
+        blob_ids: &[BlobId],
+        now: u64,
+    ) -> StorageResult<bool> {
+        let state = self.state_mut()?;
+        state
+            .vault
+            .add_credential_blobs(credential_id, blob_ids, now)
+    }
+
+    fn credential_blobs(&self, credential_id: u64) -> StorageResult<Vec<BlobId>> {
+        let state = self.state()?;
+        state.vault.credential_blobs(credential_id)
     }
 
     fn record_activity(
@@ -1073,6 +1167,14 @@ impl CredentialStoreInner {
 
         Ok(())
     }
+}
+
+fn deserialize_credential(bytes: Vec<u8>) -> StorageResult<Credential> {
+    Credential::from_bytes(bytes).map_err(|e| {
+        StorageError::Serialization(format!(
+            "Critical. Failed to deserialize credential: {e}"
+        ))
+    })
 }
 
 impl CredentialStore {
@@ -1561,6 +1663,103 @@ mod tests {
             .expect("get credential query should succeed");
         assert!(expired.is_none(), "Expired credential should return None");
 
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_backfill_links_each_credential_version_to_its_own_pcp() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let store =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&root))
+                .expect("create store");
+        store.init(42, 1000).expect("init storage");
+        // (associated data, expires_at, PCP plaintext): two current versions
+        // under one issuer and one expired version.
+        let versions: [(&[u8], u64, &[u8]); 3] = [
+            (b"document one", 9999, b"document pcp one"),
+            (b"document two", 9999, b"document pcp two"),
+            (b"document old", 1500, b"document pcp old"),
+        ];
+        let mut pcp_by_commitment = std::collections::HashMap::new();
+        let mut stored = Vec::new();
+        for (associated_data, expires_at, pcp) in versions {
+            let credential: Credential = CoreCredential::new()
+                .issuer_schema_id(100)
+                .genesis_issued_at(1000)
+                .associated_data_commitment_from_raw_bytes(associated_data)
+                .expect("commitment")
+                .into();
+            pcp_by_commitment
+                .insert(credential.associated_data_commitment().to_hex_string(), pcp);
+            let credential_id = store
+                .store_credential(
+                    &credential,
+                    &FieldElement::from(7u64),
+                    expires_at,
+                    None,
+                    1000,
+                )
+                .expect("store credential");
+            stored.push((credential_id, pcp));
+        }
+
+        for record in store.list_credentials(None, 2000).expect("list") {
+            let credential = store
+                .fetch_credential_by_id(record.credential_id)
+                .expect("fetch by id")
+                .expect("listed credential exists");
+            let pcp = pcp_by_commitment
+                [&credential.associated_data_commitment().to_hex_string()];
+            store
+                .add_credential_blobs(
+                    record.credential_id,
+                    vec![crate::storage::blob_id(pcp.to_vec())],
+                    2000,
+                )
+                .expect("link blobs");
+        }
+
+        assert_eq!(store.list_credentials(None, 2000).expect("list").len(), 3);
+        for (credential_id, pcp) in stored {
+            let linked = store.credential_blobs(credential_id).expect("read links");
+            assert_eq!(linked.len(), 1);
+            assert_eq!(*linked[0], *crate::storage::blob_id(pcp.to_vec()));
+        }
+        assert!(store.fetch_credential_by_id(999).expect("fetch").is_none());
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_credential_blobs_are_linked_through_the_store() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let store =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&root))
+                .expect("create store");
+        store.init(42, 1000).expect("init storage");
+        let credential: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        let credential_id = store
+            .store_credential(&credential, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+        let orb_pcp = crate::storage::blob_id(b"orb pcp".to_vec());
+
+        assert!(store
+            .add_credential_blobs(credential_id, vec![Arc::clone(&orb_pcp)], 1000)
+            .expect("link blobs"));
+
+        let linked = store.credential_blobs(credential_id).expect("read links");
+        assert_eq!(linked.len(), 1);
+        assert_eq!(*linked[0], *orb_pcp);
+        assert!(matches!(
+            store.add_credential_blobs(credential_id + 1, vec![orb_pcp], 1000),
+            Err(StorageError::CredentialIdNotFound { .. })
+        ));
         cleanup_test_storage(&root);
     }
 
@@ -2160,6 +2359,54 @@ mod tests {
 
         wait_for_listener_count(&count, 1);
 
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn test_vault_changed_listener_notified_only_when_blob_links_change() {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let store =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&root))
+                .expect("create store");
+        store.init(42, 1000).expect("init storage");
+        let cred: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        let credential_id = store
+            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store credential");
+        let (notifications_tx, notifications_rx) = mpsc::channel();
+        store.set_vault_changed_listener(Arc::new(ChannelVaultListener(
+            notifications_tx,
+        )));
+
+        assert!(store
+            .add_credential_blobs(
+                credential_id,
+                vec![crate::storage::blob_id(b"orb pcp".to_vec())],
+                1000,
+            )
+            .expect("link blobs"));
+        notifications_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("an added link should notify the listener");
+        assert!(!store
+            .add_credential_blobs(
+                credential_id,
+                vec![crate::storage::blob_id(b"orb pcp".to_vec())],
+                2000,
+            )
+            .expect("add the same link again"));
+
+        drop(store);
+        assert_eq!(
+            notifications_rx.recv_timeout(std::time::Duration::from_secs(1)),
+            Err(mpsc::RecvTimeoutError::Disconnected),
+            "adding nothing new should not notify the listener"
+        );
         cleanup_test_storage(&root);
     }
 
