@@ -1,5 +1,17 @@
 # WalletKit Agent Guidelines
 
+## You are the owner of this codebase
+
+You are the owner and long-term maintainer of this codebase, and its design is up to you.
+
+- Optimize for the next reader over quick local patches.
+- Read and understand the surrounding code before changing it.
+- Fix root causes instead of papering over symptoms.
+- When you find larger work outside the task's scope, leave a `TODO` and mention it in your summary instead of expanding the change.
+- Do not change existing behavior the task did not ask for; call out any behavior change you make.
+- List every change in your summary, including small ones.
+- Push back when a request is wrong or a better approach exists.
+
 ## Build environment
 
 Dependency and build setup can be complex, especially for cross-compilation. Use the devshells provided by `flake.nix`: `default` for host development, `android` for Android, `wasm` for WebAssembly, and `docs` for the mdBook in `docs/`. From the repository root:
@@ -32,50 +44,36 @@ For changes to the browser package (`crates/walletkit-web` or `web/walletkit`), 
 
 Take care when designing log statements & error types to avoid leaking sensitive user information. Anything crossing the FFI boundary should be carefully inspected for potential leakage of sensitive info.
 
-## Code Style
+## Code style
 
-Take care to ensure the code you submit is readable.
+Write readable, self-explanatory code.
 
 ### Comments
 
-Comments in code—with the exception of doc comments—should be kept to an **absolute minimum**. Comments in code are justified if they explain a tricky concept or warn against making changes to the code in question.
-
-If present - comments in code should only describe the current state of the code. They should never refer to any previous version of the code. And they should never include information provided in the prompt that is not relevant to the reader.
-
-Code comments linking to GitHub issues or documenting workarounds are acceptable, e.g.
+Keep non-doc comments to a minimum. Comment only to explain a tricky concept, warn against a non-obvious change, or mark follow-up work with a `TODO`. Link the issue or PR when one exists:
 
 ```rust
-// TODO: A temporary workaround - remove once https://github.com/org/repo/pull/123 is merged
+// TODO: Temporary workaround, remove once https://github.com/org/repo/pull/123 is merged
 ```
 
-### The Boy Scout Rule
+Describe only the current state of the code. Never refer to previous versions or include prompt context irrelevant to the reader.
 
-Leave the code better than you found it, within the scope of the task.
+### The Boy Scout rule
 
-Improvement often means deletion, not addition. Remove unused code, obsolete workarounds, unnecessary abstractions, misleading or redundant comments, and tests that provide no meaningful protection. Bad code does not need to be preserved merely because it already exists. Verify that apparently unused code has no relevant callers or external contract; when removing a poor implementation, preserve or replace any behavior that is still required. Apply the same judgment to tests: remove noise, not meaningful regression coverage.
+Leave touched code better than you found it, within the scope of the task. Improvement usually means deletion: remove unused code, obsolete workarounds, unnecessary abstractions, misleading or redundant comments, and tests that provide no real protection. Bad code does not deserve to survive just because it exists. Before deleting, verify there are no callers or external contracts, and preserve or replace required behavior and meaningful regression coverage.
 
 ### Stepdown rule
 
-Code should read top to bottom, for example:
+Order definitions so files read top to bottom, with callers before callees:
 
 ```rust
 // BAD
-fn bar() {
-  // ...
-}
-
-fn foo() {
-  bar()
-}
+fn bar() {}
+fn foo() { bar(); }
 
 // GOOD
-fn foo() {
-  bar()
-}
-
-fn bar() {
-  // ...
-}
+fn foo() { bar(); }
+fn bar() {}
 ```
 
 ### Commits

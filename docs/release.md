@@ -75,7 +75,10 @@ version from the workspace `Cargo.toml`.
 
 The `web.yml` workflow builds and tests the package, stamps `X.Y.Z` from the
 release tag into `package.json`, and packs the tarball. The tag must have the form
-`vX.Y.Z` or `vX.Y.Z-<pre-release>`; any other tag fails the build. A second job, in the `production` environment,
+`vX.Y.Z` or `vX.Y.Z-<pre-release>`; any other tag fails the build. A manual
+run without a tag builds and tests without publishing; with a tag, it checks that
+the GitHub release exists and is published, then builds from that tag. A second
+job, in the `production` environment,
 publishes that exact tarball to npm with provenance:
 
 - A version with a pre-release suffix, such as `X.Y.Z-rc.1`, goes to the `next`
@@ -100,9 +103,18 @@ publisher with these values:
 - **Crates.** To publish a version that is merged on `main` but missing from
   crates.io, run `release.yml` manually from the **Actions** tab. A manual run only
   publishes; it doesn't open a release pull request.
-- **Swift, Kotlin, and the browser package.** Rerun the failed jobs of the
-  workflow run that the GitHub release started. The npm job skips a version that is
-  already published.
+- **Swift and Kotlin.** Rerun the failed jobs of the workflow run that the GitHub
+  release started.
+- **Browser package.** Rerun the failed release workflow, or dispatch `web.yml`
+  from `main` with the published release tag to use the current workflow for an
+  older release:
+
+  ```bash
+  gh workflow run web.yml -R worldcoin/walletkit --ref main -f tag=vX.Y.Z
+  ```
+
+  The npm job skips a version that is already published. A run without `tag` only
+  builds and tests the package.
 
 ## Roll back a release
 

@@ -66,7 +66,9 @@ async fn e2e_authenticator_generate_proof() -> Result<()> {
         &UNIQUENESS_TEST_SEED,
         root.path(),
         SIGNAL,
-        ProofType::Uniqueness,
+        ProofType::Uniqueness {
+            action: FieldElement::from(1u64),
+        },
         None,
     )
     .await

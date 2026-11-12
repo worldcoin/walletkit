@@ -179,17 +179,21 @@ pub async fn generate_and_verify_test_proof(
         .wrap_err("credential issuance failed")?
         .credential_id;
 
+    let session_ref = match (&proof_type, session_id) {
+        (ProofType::Session, Some(session_id)) => SessionRef::Existing(session_id),
+        (ProofType::Session, None) => SessionRef::Create,
+        (ProofType::Uniqueness { .. }, _) => SessionRef::None,
+        (ProofType::EmbeddingSimilarity(_), _) => {
+            eyre::bail!("embedding similarity proofs are not supported")
+        }
+    };
     let core_request = build_test_request(
         env,
         issuer_schema_id,
         signal,
         REQUEST_TTL_SECS,
         proof_type,
-        match (proof_type, session_id) {
-            (ProofType::Session, Some(session_id)) => SessionRef::Existing(session_id),
-            (ProofType::Session, None) => SessionRef::Create,
-            (ProofType::Uniqueness, _) => SessionRef::None,
-        },
+        session_ref,
     )
     .wrap_err("failed to build proof request")?;
 

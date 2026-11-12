@@ -37,6 +37,11 @@ pkgs.mkShell {
   CC_wasm32_unknown_unknown = "${llvm.clang-unwrapped}/bin/clang";
   AR_wasm32_unknown_unknown = "${llvm.bintools-unwrapped}/bin/llvm-ar";
 
+  # provekit-common's xz2 links liblzma through lzma-sys, which uses the system library when
+  # pkg-config finds one. Build scripts then fail to load it on runners without liblzma.so.5
+  # (ubuntu-latest 26.04). Always build lzma-sys's bundled copy statically instead.
+  LZMA_API_STATIC = "1";
+
   shellHook = ''
     echo "WalletKit wasm dev shell"
     echo "  target: wasm32-unknown-unknown"

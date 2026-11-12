@@ -21,12 +21,29 @@ import type {
   RegistrationStatus,
   RequestedClass,
   RequesterStatus,
+  FaceEmbedding,
+  SelfieEmbeddingResult,
   WalletKit,
 } from "../../dist/index.js";
 
 declare const walletkit: WalletKit;
 
 export async function consumer() {
+  const enrollment: SelfieEmbeddingResult =
+    await walletkit.extractSelfieEmbedding("{}", new Uint8Array());
+  if (enrollment.status === "success") {
+    const embedding: FaceEmbedding = enrollment.embedding;
+    const vector: string = embedding.embedding;
+    const version: string = embedding.embeddingVersion;
+    const backend: string = embedding.embeddingInferenceBackend;
+    void [vector, version, backend];
+  }
+  // @ts-expect-error image bytes must be a Uint8Array
+  await walletkit.extractSelfieEmbedding("{}", "image");
+  // @ts-expect-error enrollment takes only a policy and image
+  await walletkit.extractSelfieEmbedding("{}", new Uint8Array(), () => ({}));
+  // @ts-expect-error the standalone client export must not leak into this facade
+  void walletkit.extractEmbedding;
   const now = 1n;
   const keys = await walletkit.StorageKeys.fromBytes(new Uint8Array(32));
   const paths = await walletkit.StoragePaths.fromRoot("/walletkit/account");
@@ -75,6 +92,7 @@ export async function consumer() {
     );
   const status: RegistrationStatus = await registration.pollStatus();
   const request = await walletkit.ProofRequest.fromJson("{}");
+  await authenticator.setNullifierReuseWhitelist(["rp_000000000000002a"]);
   const response = await authenticator.generateProof(request);
   const responseJson: string = await response.toJson();
   const restarted: Authenticator =
@@ -135,6 +153,12 @@ export async function consumer() {
   );
   const approval: ApprovalResult = outcome.result;
   const declined: boolean = await checked.reject();
+  const ownershipProof: Uint8Array = await authenticator.proveCredentialSub(
+    factor,
+    factor,
+    factor,
+    factor,
+  );
   const recovery = await walletkit.recoveryDataFromSeed(new Uint8Array(32));
   const address: string = recovery.authenticatorAddress;
   const redacted: string = await walletkit.sanitizeHexSecrets("0x00");
@@ -182,6 +206,7 @@ export async function consumer() {
     activity,
     status,
     responseJson,
+    ownershipProof,
     address,
     redacted,
     stopped,

@@ -859,24 +859,20 @@ mod tests {
     #[test_case(404)]
     #[tokio::test]
     async fn failed_error_body_read_retains_context(status: usize) {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("POST", "/api/v1/recovery-binding")
-            .with_status(status)
-            .with_header("x-request-id", "truncated-request-123")
-            .with_chunked_body(|writer| {
-                writer.write_all(b"incomplete")?;
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::ConnectionReset,
-                    "fixture interrupted body",
-                ))
-            })
-            .create_async()
-            .await;
-        let client = PopBackendClient::new(server.url(), "test-agent".into());
+        let (url, request) = serve_truncated_chunked_body(
+            status,
+            "truncated-request-123",
+            b"incomplete",
+        );
+        let client = PopBackendClient::new(url, "test-agent".into());
         let error = call_recovery_endpoint(&client, "POST", "/api/v1/recovery-binding")
             .await
             .unwrap_err();
+        drop(client);
+        assert!(request
+            .await
+            .unwrap()
+            .starts_with("POST /api/v1/recovery-binding "));
         let displayed = error.to_string();
         for expected in [
             "POST",
@@ -896,8 +892,40 @@ mod tests {
             } => assert_eq!(usize::from(observed), status),
             other => panic!("missing status on body-read failure: {other:?}"),
         }
-        mock.assert_async().await;
-        drop(server);
+    }
+
+    /// Serves one response whose head and partial chunk reach the client before the
+    /// connection closes mid-body. A mockito body error races hyper's flush and can
+    /// drop the connection before the head is sent.
+    fn serve_truncated_chunked_body(
+        status: usize,
+        request_id: &str,
+        partial_body: &'static [u8],
+    ) -> (String, tokio::task::JoinHandle<String>) {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let head = format!(
+            "HTTP/1.1 {status} Fixture\r\nx-request-id: {request_id}\r\n\
+             transfer-encoding: chunked\r\n\r\n{:x}\r\n",
+            partial_body.len()
+        );
+        let request = tokio::task::spawn_blocking(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut byte = [0; 1];
+            while !request.ends_with(b"\r\n\r\n") {
+                stream.read_exact(&mut byte).unwrap();
+                request.push(byte[0]);
+            }
+            stream.write_all(head.as_bytes()).unwrap();
+            stream.write_all(partial_body).unwrap();
+            stream.shutdown(std::net::Shutdown::Write).unwrap();
+            stream.read_to_end(&mut request).unwrap();
+            String::from_utf8_lossy(&request).into_owned()
+        });
+        (url, request)
     }
 
     #[tokio::test]
@@ -953,22 +981,15 @@ mod tests {
     }
     #[tokio::test]
     async fn failed_success_body_read_retains_the_transport_cause() {
-        let mut server = mockito::Server::new_async().await;
-        let mock = server
-            .mock("GET", "/api/v1/challenge")
-            .with_status(200)
-            .with_header("x-request-id", "success-read-request")
-            .with_chunked_body(|writer| {
-                writer.write_all(b"{\"challenge\":")?;
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::ConnectionReset,
-                    "fixture interrupted body",
-                ))
-            })
-            .create_async()
-            .await;
-        let client = PopBackendClient::new(server.url(), "test-agent".into());
+        let (url, request) = serve_truncated_chunked_body(
+            200,
+            "success-read-request",
+            b"{\"challenge\":",
+        );
+        let client = PopBackendClient::new(url, "test-agent".into());
         let error = client.get_challenge().await.unwrap_err();
+        drop(client);
+        assert!(request.await.unwrap().starts_with("GET /api/v1/challenge "));
         let displayed = error.to_string();
         assert!(
             displayed.contains("connection"),
@@ -977,7 +998,5 @@ mod tests {
         assert!(displayed.contains("failed to read response body"));
         assert!(displayed.contains("200"));
         assert!(displayed.contains("success-read-request"));
-        mock.assert_async().await;
-        drop(server);
     }
 }

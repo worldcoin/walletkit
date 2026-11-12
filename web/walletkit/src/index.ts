@@ -49,6 +49,8 @@ export type {
   RegistrationPlan,
   RegistrationStatus,
   RequestedClass,
+  FaceEmbedding,
+  SelfieEmbeddingResult,
 } from "./generated/walletkit.js";
 
 export interface InitializeOptions {

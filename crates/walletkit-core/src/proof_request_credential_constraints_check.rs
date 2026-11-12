@@ -210,13 +210,14 @@ mod tests {
         let core = CoreProofRequest {
             id: "test".to_string(),
             version: RequestVersion::V1,
-            proof_type: ProofType::Uniqueness,
+            proof_type: ProofType::Uniqueness {
+                action: CoreFieldElement::from(1u64),
+            },
             created_at: 0,
             expires_at: u64::MAX,
             rp_id: RpId::new(1),
             oprf_key_id: OprfKeyId::new(U160::from(1u64)),
             session_id: SessionRef::None,
-            action: None,
             signature: Signature::test_signature(),
             nonce: CoreFieldElement::ZERO,
             requests: items,
