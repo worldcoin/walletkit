@@ -8,7 +8,6 @@ mod tfh_nfc;
 #[cfg(not(target_arch = "wasm32"))]
 pub use ownership_proof_challenge::{
     fetch_ownership_proof_challenge, OwnershipProofChallenge,
-    OwnershipProofChallengeType,
 };
 pub use tfh_nfc::TfhNfcIssuer;
 

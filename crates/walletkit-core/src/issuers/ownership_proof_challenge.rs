@@ -10,19 +10,6 @@ use crate::{
     Environment, FieldElement, UserAgentBuilder,
 };
 
-/// The issuer operation authorized by an ownership proof.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Deserialize, strum::Display, uniffi::Enum,
-)]
-#[serde(rename_all = "snake_case")]
-#[strum(serialize_all = "snake_case")]
-pub enum OwnershipProofChallengeType {
-    /// Enroll with an issuer.
-    Enrollment,
-    /// Migrate a TEE device identity.
-    TeediMigration,
-}
-
 /// The challenge returned by the issuer, preserving its wire representation.
 #[derive(Debug, Deserialize, uniffi::Record)]
 pub struct OwnershipProofChallenge {
@@ -31,20 +18,22 @@ pub struct OwnershipProofChallenge {
     /// Validated hex field element; parse with `FieldElement::try_from_hex_string`.
     pub nonce: String,
     /// The operation this challenge authorizes.
-    pub challenge_type: OwnershipProofChallengeType,
+    pub challenge_type: String,
     /// Advisory RFC 3339 expiry supplied by the server.
     pub expires_at: String,
 }
 
 /// Fetches a v4 challenge using a host-provided attestation token and hardware signer.
+///
 /// The provider must be configured for the challenge service's audience.
+/// The host supplies the challenge type; `WalletKit` does not validate its value.
 ///
 /// # Errors
 /// Returns [`WalletKitError`] on signing, network, HTTP, or response-validation failure.
 #[uniffi::export(async_runtime = "tokio")]
 pub async fn fetch_ownership_proof_challenge(
     environment: &Environment,
-    challenge_type: OwnershipProofChallengeType,
+    challenge_type: String,
     integrity_provider: Arc<dyn RequestIntegrityProvider>,
     user_agent_builder: &UserAgentBuilder,
 ) -> Result<OwnershipProofChallenge, WalletKitError> {
@@ -54,7 +43,7 @@ pub async fn fetch_ownership_proof_challenge(
     };
     fetch_challenge(
         base_url,
-        challenge_type,
+        &challenge_type,
         integrity_provider,
         user_agent_builder,
     )
@@ -63,7 +52,7 @@ pub async fn fetch_ownership_proof_challenge(
 
 async fn fetch_challenge(
     base_url: &str,
-    challenge_type: OwnershipProofChallengeType,
+    challenge_type: &str,
     integrity_provider: Arc<dyn RequestIntegrityProvider>,
     user_agent_builder: &UserAgentBuilder,
 ) -> Result<OwnershipProofChallenge, WalletKitError> {
@@ -73,8 +62,15 @@ async fn fetch_challenge(
         .redirect(reqwest::redirect::Policy::none())
         .retry(reqwest::retry::never())
         .build()?;
-    let url = format!("{base_url}/api/v4/zkp/challenge/{challenge_type}");
-    let mut request = client.post(&url).build()?;
+    let mut request = client
+        .post(format!("{base_url}/api/v4/zkp/challenge"))
+        .build()?;
+    request
+        .url_mut()
+        .path_segments_mut()
+        .expect("HTTP URLs support path segments")
+        .push(challenge_type);
+    let url = request.url().to_string();
     let signed = sign_http_request(integrity_provider, &request)
         .await
         .map_err(|error| WalletKitError::Generic {
@@ -104,11 +100,6 @@ async fn fetch_challenge(
         serde_json::from_slice(&response.bytes().await?).map_err(|_| {
             WalletKitError::ResponseValidation("invalid challenge response".into())
         })?;
-    if challenge.challenge_type != challenge_type {
-        return Err(WalletKitError::ResponseValidation(
-            "unexpected challenge type".into(),
-        ));
-    }
     FieldElement::try_from_hex_string(&challenge.nonce).map_err(|_| {
         WalletKitError::ResponseValidation("invalid challenge nonce".into())
     })?;
@@ -134,19 +125,27 @@ mod tests {
     }"#;
 
     #[tokio::test]
-    async fn sends_signed_empty_post_for_each_challenge_type() {
+    async fn sends_signed_empty_post_with_opaque_challenge_types() {
         let mut server = Server::new_async().await;
-        for (kind, wire_name) in [
-            (OwnershipProofChallengeType::Enrollment, "enrollment"),
+        for (kind, path_segment, response_kind) in [
+            ("enrollment", "enrollment", "enrollment"),
+            ("teedi_migration", "teedi_migration", "teedi_migration"),
             (
-                OwnershipProofChallengeType::TeediMigration,
-                "teedi_migration",
+                "future_operation",
+                "future_operation",
+                "unknown_response_type",
             ),
+            (
+                "custom/a?b#c %",
+                "custom%2Fa%3Fb%23c%20%25",
+                "custom/a?b#c %",
+            ),
+            ("", "", ""),
         ] {
             let mock = server
                 .mock(
                     "POST",
-                    format!("/api/v4/zkp/challenge/{wire_name}").as_str(),
+                    format!("/api/v4/zkp/challenge/{path_segment}").as_str(),
                 )
                 .match_body("")
                 .match_header("user-agent", "walletkit-test/1")
@@ -154,7 +153,7 @@ mod tests {
                 .match_header("signature", Matcher::Regex(".+".into()))
                 .match_header("signature-input", Matcher::Regex(".+".into()))
                 .with_status(201)
-                .with_body(RESPONSE.replace("enrollment", wire_name))
+                .with_body(RESPONSE.replace("enrollment", response_kind))
                 .create_async()
                 .await;
             let challenge = fetch_challenge(
@@ -165,7 +164,7 @@ mod tests {
             )
             .await
             .unwrap();
-            assert_eq!(challenge.challenge_type, kind);
+            assert_eq!(challenge.challenge_type, response_kind);
             assert_eq!(challenge.nonce, NONCE);
             assert_eq!(challenge.challenge_id, "opaque-id");
             assert_eq!(challenge.expires_at, "2030-01-01T00:00:00Z");
@@ -185,7 +184,6 @@ mod tests {
         for (status, body) in [
             (201, "{".to_owned()),
             (201, RESPONSE.replace(NONCE, "invalid")),
-            (201, RESPONSE.replace("enrollment", "teedi_migration")),
             (307, String::new()),
             (401, String::new()),
             (503, String::new()),
@@ -200,7 +198,7 @@ mod tests {
                 .await;
             let error = fetch_challenge(
                 &server.url(),
-                OwnershipProofChallengeType::Enrollment,
+                "enrollment",
                 Arc::new(TestIntegrity),
                 &UserAgentBuilder::new(),
             )

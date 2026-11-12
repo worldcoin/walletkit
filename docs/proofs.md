@@ -58,8 +58,10 @@ the keys are compressed, so that WalletKit decompresses them only once.
 ## Issuer ownership proofs (iOS and Android)
 
 With the `issuers` feature, call `issuers::fetch_ownership_proof_challenge` with an
-`Environment`, an `OwnershipProofChallengeType` (`Enrollment` or `TeediMigration`),
-a `RequestIntegrityProvider`, and a `UserAgentBuilder`.
+`Environment`, an explicit challenge type string (such as `"enrollment"` or
+`"teedi_migration"`), a `RequestIntegrityProvider`, and a `UserAgentBuilder`.
+The mobile app supplies the challenge type. WalletKit does not validate the input
+or returned challenge type value.
 
 The host configures the provider for the challenge service's audience and obtains
 the attestation-gateway token. Each prepared `RequestIntegritySession` pairs that
