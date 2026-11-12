@@ -757,7 +757,10 @@ fn test_add_credential_blobs_reserves_write_before_existence_check() {
     assert!(db
         .add_credential_blobs(credential_id, &[blob_id], 1000)
         .expect("add after writer releases reservation"));
-    assert_eq!(db.credential_blobs(credential_id).expect("blobs"), [blob_id]);
+    assert_eq!(
+        db.credential_blobs(credential_id).expect("blobs"),
+        [blob_id]
+    );
     drop(other);
     drop(db);
     cleanup_vault_files(&path);
@@ -970,6 +973,9 @@ fn test_plaintext_restore_of_backup_without_blob_refs_table() {
 #[test_case("UPDATE credential_blob_refs SET blob_id = X'CAFE'" ; "short blob id")]
 #[test_case("UPDATE credential_blob_refs SET credential_id = 99" ; "orphan ref")]
 #[test_case("UPDATE credential_records SET credential_id = NULL" ; "credential without id")]
+#[test_case("UPDATE credential_records SET credential_id = 1.5 WHERE issuer_schema_id = 200" ; "fractional unlinked credential id")]
+#[test_case("UPDATE credential_records SET credential_id = 'invalid' WHERE issuer_schema_id = 200" ; "text unlinked credential id")]
+#[test_case("UPDATE credential_blob_refs SET credential_id = 1.5" ; "fractional ref credential id")]
 fn test_plaintext_restore_rejects_malformed_blob_refs_and_rolls_back(corruption: &str) {
     let source_path = temp_vault_path();
     let restore_path = temp_vault_path();
@@ -977,6 +983,7 @@ fn test_plaintext_restore_rejects_malformed_blob_refs_and_rolls_back(corruption:
     let key = SecretBox::init_with(|| [0x15u8; 32]);
     let source = CredentialVault::new(&source_path, &key).expect("create source");
     let credential_id = store_sample_credential(&source, 100);
+    store_sample_credential(&source, 200);
     source
         .add_credential_blobs(credential_id, &[compute_blob_id(b"orb pcp")], 1000)
         .expect("link");
@@ -1002,7 +1009,7 @@ fn test_plaintext_restore_rejects_malformed_blob_refs_and_rolls_back(corruption:
         .expect("valid retry after rollback");
     assert_eq!(
         restored.list_credentials(None, 1000).expect("list").len(),
-        1
+        2
     );
     let _ = fs::remove_file(&export_path);
     cleanup_vault_files(&source_path);

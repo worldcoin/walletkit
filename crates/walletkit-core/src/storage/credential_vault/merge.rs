@@ -501,10 +501,14 @@ mod tests {
     #[test_case("UPDATE credential_blob_refs SET created_at = -1" ; "negative created_at")]
     #[test_case("INSERT INTO credential_records SELECT * FROM credential_records" ; "duplicate credential id")]
     #[test_case("UPDATE credential_records SET credential_id = NULL" ; "credential without id")]
+    #[test_case("UPDATE credential_records SET credential_id = 1.5 WHERE issuer_schema_id = 300" ; "fractional unlinked credential id")]
+    #[test_case("UPDATE credential_records SET credential_id = 'invalid' WHERE issuer_schema_id = 300" ; "text unlinked credential id")]
+    #[test_case("UPDATE credential_blob_refs SET credential_id = 1.5" ; "fractional ref credential id")]
     fn malformed_blob_refs_are_rejected(corruption: &str) {
         let f = Fixture::new();
         store(&f.receiver, 200, b"local", 1000);
         let source_id = store(&f.source, 100, b"remote", 1000);
+        store(&f.source, 300, b"unlinked", 1000);
         f.source
             .add_credential_blobs(source_id, &[compute_blob_id(b"orb pcp")], 1000)
             .unwrap();

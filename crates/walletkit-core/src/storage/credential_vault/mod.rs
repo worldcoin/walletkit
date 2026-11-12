@@ -43,7 +43,7 @@ const OPTIONAL_BACKUP_TABLES: &[&str] = &["credential_blob_refs"];
 /// backup attached as `schema` breaks an invariant that plaintext backup
 /// copies do not enforce. Each row needs an integer `credential_id` naming
 /// exactly one credential record, a 32-byte `blob_id`, and a non-negative
-/// integer `created_at`.
+/// integer `created_at`. All source credential IDs must be integers.
 fn has_invalid_blob_refs(schema: &str) -> String {
     format!(
         "SELECT EXISTS(SELECT 1 FROM {schema}.credential_blob_refs b WHERE
@@ -52,6 +52,8 @@ fn has_invalid_blob_refs(schema: &str) -> String {
                        WHERE r.credential_id = b.credential_id) OR
             typeof(blob_id) != 'blob' OR length(blob_id) != 32 OR
             typeof(created_at) != 'integer' OR created_at < 0)
+         OR EXISTS(SELECT 1 FROM {schema}.credential_records
+                   WHERE typeof(credential_id) != 'integer')
          OR EXISTS(SELECT 1 FROM {schema}.credential_records
                    GROUP BY credential_id HAVING COUNT(*) > 1)"
     )
