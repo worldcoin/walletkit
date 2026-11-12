@@ -18,7 +18,7 @@ test("an admin authenticator in one browser registers a proving authenticator in
 }) => {
   test.skip(
     process.env.SKIP_STAGING_TESTS === "1",
-    "staging tests are skipped on release",
+    "staging tests are skipped when publishing",
   );
   test.setTimeout(8 * 60_000);
 
