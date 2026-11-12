@@ -4,19 +4,46 @@
 // worker internals must stay out of reach.
 import type {
   ApprovalOutcome,
+  ApprovalResult,
   Authenticator,
+  BridgeClient,
+  CheckedRegistration,
   CredentialRecord,
+  IncomingRegistration,
   KnownAuthenticator,
+  PendingRegistration,
+  Registered,
+  RegistrationError,
+  RegistrationErrorReason,
   RegistrationPlan,
+  RegistrationRequester,
   RegistrationResult,
   RegistrationStatus,
+  RequestedClass,
   RequesterStatus,
+  FaceEmbedding,
+  SelfieEmbeddingResult,
   WalletKit,
 } from "../../dist/index.js";
 
 declare const walletkit: WalletKit;
 
 export async function consumer() {
+  const enrollment: SelfieEmbeddingResult =
+    await walletkit.extractSelfieEmbedding("{}", new Uint8Array());
+  if (enrollment.status === "success") {
+    const embedding: FaceEmbedding = enrollment.embedding;
+    const vector: string = embedding.embedding;
+    const version: string = embedding.embeddingVersion;
+    const backend: string = embedding.embeddingInferenceBackend;
+    void [vector, version, backend];
+  }
+  // @ts-expect-error image bytes must be a Uint8Array
+  await walletkit.extractSelfieEmbedding("{}", "image");
+  // @ts-expect-error enrollment takes only a policy and image
+  await walletkit.extractSelfieEmbedding("{}", new Uint8Array(), () => ({}));
+  // @ts-expect-error the standalone client export must not leak into this facade
+  void walletkit.extractEmbedding;
   const now = 1n;
   const keys = await walletkit.StorageKeys.fromBytes(new Uint8Array(32));
   const paths = await walletkit.StoragePaths.fromRoot("/walletkit/account");
@@ -65,6 +92,7 @@ export async function consumer() {
     );
   const status: RegistrationStatus = await registration.pollStatus();
   const request = await walletkit.ProofRequest.fromJson("{}");
+  await authenticator.setNullifierReuseWhitelist(["rp_000000000000002a"]);
   const response = await authenticator.generateProof(request);
   const responseJson: string = await response.toJson();
   const restarted: Authenticator =
@@ -77,21 +105,28 @@ export async function consumer() {
       artifacts,
       store,
     );
-  const bridge = await walletkit.BridgeClient.new("bridge.example");
-  const requester = await walletkit.RegistrationRequester.start(
-    new Uint8Array(32),
-    "proving",
-    "Chrome on MacBook",
-    bridge,
-  );
+  const bridge: BridgeClient =
+    await walletkit.BridgeClient.new("bridge.example");
+  const requester: RegistrationRequester =
+    await walletkit.RegistrationRequester.start(
+      new Uint8Array(32),
+      "proving",
+      "Chrome on MacBook",
+      bridge,
+    );
   const pairingUri: string | undefined = await requester.pairingUri();
   const requesterStatus: RequesterStatus = await requester.poll();
   let verifiedVault: Uint8Array | undefined;
+  if (requesterStatus.state === "refused") {
+    const error: RegistrationError = requesterStatus.error;
+    const reason: RegistrationErrorReason | undefined = error.reason;
+    void reason;
+  }
   if (requesterStatus.state === "approved") {
     // A Rust object inside a record arrives as a proxy.
     const result: RegistrationResult = requesterStatus.result;
     const others: KnownAuthenticator[] = await result.authenticators();
-    const registered = await requester.verifyWithDefaults(
+    const registered: Registered = await requester.verifyWithDefaults(
       new Uint8Array(32),
       result,
       undefined,
@@ -104,20 +139,26 @@ export async function consumer() {
     verifiedVault = registered.vaultBackup;
     void [others, registeredLeaf];
   }
-  const pending = await walletkit.PendingRegistration.receive(
-    pairingUri ?? "",
-    bridge,
-  );
-  const incoming = await pending.authenticate("ABCDEF");
+  const pending: PendingRegistration =
+    await walletkit.PendingRegistration.receive(pairingUri ?? "", bridge);
+  const incoming: IncomingRegistration = await pending.authenticate("ABCDEF");
+  const requestedClass: RequestedClass = await incoming.class();
   const requestedName: string | undefined = await incoming.name();
-  const checked = await incoming.check(authenticator);
+  const checked: CheckedRegistration = await incoming.check(authenticator);
   const plan: RegistrationPlan = await checked.plan();
   const outcome: ApprovalOutcome = await checked.approve(
     authenticator,
     undefined,
     [{ pubkeyId: 0, name: "iPhone" }],
   );
+  const approval: ApprovalResult = outcome.result;
   const declined: boolean = await checked.reject();
+  const ownershipProof: Uint8Array = await authenticator.proveCredentialSub(
+    factor,
+    factor,
+    factor,
+    factor,
+  );
   const recovery = await walletkit.recoveryDataFromSeed(new Uint8Array(32));
   const address: string = recovery.authenticatorAddress;
   const redacted: string = await walletkit.sanitizeHexSecrets("0x00");
@@ -165,14 +206,17 @@ export async function consumer() {
     activity,
     status,
     responseJson,
+    ownershipProof,
     address,
     redacted,
     stopped,
     restarted,
     verifiedVault,
+    requestedClass,
     requestedName,
     plan,
     outcome,
+    approval,
     declined,
   };
 }

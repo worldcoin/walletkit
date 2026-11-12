@@ -221,16 +221,22 @@ function serialize(error: unknown): {
   name: string;
   message: string;
   code?: string;
+  fields?: Record<string, unknown>;
 } {
   if (!(error instanceof Error))
     return { name: "Error", message: String(error) };
-  const { detail, code } = error as { detail?: unknown; code?: unknown };
+  // The remaining own properties are variant fields set by the Rust module.
+  const { name, detail, code, ...fields } = error as Error & {
+    detail?: unknown;
+    code?: unknown;
+  };
   return {
-    name: error.name,
+    name,
     message:
       typeof detail === "string"
         ? `${error.message} (${detail})`
         : error.message,
     ...(typeof code === "string" && { code }),
+    ...(Object.keys(fields).length > 0 && { fields }),
   };
 }

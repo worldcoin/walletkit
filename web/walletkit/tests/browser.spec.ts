@@ -609,6 +609,180 @@ test("vault backups merge additively, reject invalid data, and survive reopening
   expect(result.reopenedRecords).toEqual(result.mergedRecords);
 });
 
+test("enrollment rejects invalid policy without stopping the wallet worker", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    try {
+      const policy = await wallet
+        .extractSelfieEmbedding("{}", new Uint8Array([1]))
+        .catch((error: Error & { code?: string }) => ({
+          name: error.name,
+          code: error.code,
+        }));
+      return { policy, stopped: wallet.isStopped() };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result.policy).toEqual({
+    name: "SelfieEnrollmentError",
+    code: "Config",
+  });
+  expect(result.stopped).toBe(false);
+});
+
+test("enrollment rejects empty and oversized images before connecting", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    const config = JSON.stringify({
+      endpoint: "wss://enrollment.invalid/v1/embeddings",
+      releases: [
+        { pcr0: "1".repeat(96), pcr1: "2".repeat(96), pcr2: "3".repeat(96) },
+      ],
+    });
+    const errorName = (image: Uint8Array) =>
+      wallet
+        .extractSelfieEmbedding(config, image)
+        .catch((error: Error) => error.name);
+    try {
+      return {
+        empty: await errorName(new Uint8Array(0)),
+        oversized: await errorName(new Uint8Array(8 * 1024 * 1024 + 1)),
+        stopped: wallet.isStopped(),
+      };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result).toEqual({
+    empty: "TypeError",
+    oversized: "TypeError",
+    stopped: false,
+  });
+});
+
+test("enrollment requests an assignment and withholds the image if attestation fails", async ({
+  page,
+}) => {
+  const result = await page.evaluate(() =>
+    (window as any).enrollmentAssignment(),
+  );
+  expect(result.sent).toEqual(["assignment_request"]);
+  expect(result.code).toBe("Attestation");
+  expect(result.closed).toBe(true);
+  expect(result.alive).toBe("alive");
+});
+
+test("two authenticators pair through the bridge and the refusal reaches the requester", async ({
+  page,
+}) => {
+  await stubBridge(page);
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    const failure = (e: Error & { code?: string }) => `${e.name}: ${e.code}`;
+    try {
+      const bridge = await wallet.BridgeClient.withBaseUrl(
+        "bridge.example",
+        "https://bridge.test",
+      );
+      const invalidDomain =
+        await wallet.BridgeClient.new("not a domain").catch(failure);
+      const requester = await wallet.RegistrationRequester.start(
+        new Uint8Array(32).fill(7),
+        "proving",
+        "Chrome on MacBook",
+        bridge,
+      );
+      const uri: string = await requester.pairingUri();
+      const waiting = await requester.poll();
+      // Another bridge is refused before the request is taken, so the host can retry.
+      const otherBridge = await wallet.BridgeClient.withBaseUrl(
+        "other.example",
+        "https://bridge.test",
+      );
+      const notAllowed = await wallet.PendingRegistration.receive(
+        uri,
+        otherBridge,
+      ).catch((e: Error & { code?: string; domain?: string }) => ({
+        code: e.code,
+        domain: e.domain,
+      }));
+      const pending = await wallet.PendingRegistration.receive(uri, bridge);
+      const reused = await wallet.PendingRegistration.receive(
+        uri,
+        bridge,
+      ).catch(failure);
+      const retrieved = await requester.poll();
+      const uriAfterRetrieval = await requester.pairingUri();
+      const code: string = await requester.pairingCode();
+      const malformed = await pending.authenticate("12").catch(failure);
+      const incorrect = await pending
+        .authenticate(code === "AAAAAA" ? "BBBBBB" : "AAAAAA")
+        .catch((e: Error & { code?: string; attemptsRemaining?: number }) => ({
+          code: e.code,
+          attemptsRemaining: e.attemptsRemaining,
+        }));
+      const incoming = await pending.authenticate(code);
+      const requested = {
+        class: await incoming.class(),
+        name: await incoming.name(),
+        timeRemaining: await incoming.timeRemainingSecs(),
+      };
+      const delivered = await incoming.rejectName();
+      const again = await incoming.rejectName().catch(failure);
+      const refused = await requester.poll();
+      const afterRefusal = await requester.poll();
+      return {
+        invalidDomain,
+        uri,
+        waiting,
+        notAllowed,
+        reused,
+        retrieved,
+        uriAfterRetrieval,
+        malformed,
+        incorrect,
+        requested,
+        delivered,
+        again,
+        refused,
+        afterRefusal,
+      };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result.invalidDomain).toBe("BridgeError: InvalidDomain");
+  expect(result.uri).toMatch(/^worldid:\/\/auth\/v1\/register\?/);
+  expect(result.waiting).toEqual({ state: "waiting" });
+  expect(result.notAllowed).toEqual({
+    code: "BridgeNotAllowed",
+    domain: "bridge.example",
+  });
+  expect(result.reused).toBe("ApproverError: Expired");
+  expect(result.retrieved).toEqual({ state: "retrieved" });
+  expect(result.uriAfterRetrieval).toBeUndefined();
+  expect(result.malformed).toBe("ApproverError: MalformedCode");
+  expect(result.incorrect).toEqual({
+    code: "IncorrectCode",
+    attemptsRemaining: 2,
+  });
+  expect(result.requested.class).toBe("proving");
+  expect(result.requested.name).toBe("Chrome on MacBook");
+  expect(result.requested.timeRemaining).toBeGreaterThan(0n);
+  expect(result.delivered).toBe(true);
+  expect(result.again).toBe("ApproverError: AlreadyHandled");
+  expect(result.refused).toMatchObject({
+    state: "refused",
+    error: { reason: "invalid_name", code: "invalid_name" },
+  });
+  expect(result.afterRefusal).toEqual({ state: "expired" });
+});
+
 /** A message-bridge on `https://bridge.test`, with single-use reads like the real one. */
 async function stubBridge(page: import("@playwright/test").Page) {
   type Session =
@@ -659,86 +833,3 @@ async function stubBridge(page: import("@playwright/test").Page) {
     return reply(404);
   });
 }
-
-test("two authenticators pair through the bridge and the refusal reaches the requester", async ({
-  page,
-}) => {
-  await stubBridge(page);
-  const result = await page.evaluate(async () => {
-    const wallet = await (window as any).initializeWalletKit();
-    const failure = (e: Error & { code?: string }) => `${e.name}: ${e.code}`;
-    try {
-      const bridge = await wallet.BridgeClient.withBaseUrl(
-        "bridge.example",
-        "https://bridge.test",
-      );
-      const invalidDomain =
-        await wallet.BridgeClient.new("not a domain").catch(failure);
-      const requester = await wallet.RegistrationRequester.start(
-        new Uint8Array(32).fill(7),
-        "proving",
-        "Chrome on MacBook",
-        bridge,
-      );
-      const uri: string = await requester.pairingUri();
-      const waiting = await requester.poll();
-      const pending = await wallet.PendingRegistration.receive(uri, bridge);
-      const reused = await wallet.PendingRegistration.receive(
-        uri,
-        bridge,
-      ).catch(failure);
-      const retrieved = await requester.poll();
-      const uriAfterRetrieval = await requester.pairingUri();
-      const code: string = await requester.pairingCode();
-      const malformed = await pending.authenticate("12").catch(failure);
-      const incorrect = await pending
-        .authenticate(code === "AAAAAA" ? "BBBBBB" : "AAAAAA")
-        .catch(failure);
-      const incoming = await pending.authenticate(code);
-      const requested = {
-        class: await incoming.class(),
-        name: await incoming.name(),
-        timeRemaining: await incoming.timeRemainingSecs(),
-      };
-      const delivered = await incoming.rejectName();
-      const again = await incoming.rejectName().catch(failure);
-      const refused = await requester.poll();
-      const afterRefusal = await requester.poll();
-      return {
-        invalidDomain,
-        uriPrefix: uri.slice(0, uri.indexOf(":")),
-        waiting,
-        reused,
-        retrieved,
-        uriAfterRetrieval,
-        malformed,
-        incorrect,
-        requested,
-        delivered,
-        again,
-        refused,
-        afterRefusal,
-      };
-    } finally {
-      await wallet.close();
-    }
-  });
-  expect(result.invalidDomain).toBe("BridgeError: InvalidDomain");
-  expect(result.uriPrefix).not.toBe("");
-  expect(result.waiting).toEqual({ state: "waiting" });
-  expect(result.reused).toBe("ApproverError: Expired");
-  expect(result.retrieved).toEqual({ state: "retrieved" });
-  expect(result.uriAfterRetrieval).toBeUndefined();
-  expect(result.malformed).toBe("ApproverError: MalformedCode");
-  expect(result.incorrect).toBe("ApproverError: IncorrectCode");
-  expect(result.requested.class).toBe("proving");
-  expect(result.requested.name).toBe("Chrome on MacBook");
-  expect(result.requested.timeRemaining).toBeGreaterThan(0n);
-  expect(result.delivered).toBe(true);
-  expect(result.again).toBe("ApproverError: AlreadyHandled");
-  expect(result.refused).toMatchObject({
-    state: "refused",
-    error: { reason: "invalid_name", code: "invalid_name" },
-  });
-  expect(result.afterRefusal).toEqual({ state: "expired" });
-});

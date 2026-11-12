@@ -28,8 +28,17 @@ export type Response = { id: number } & (
   | { ok: true; result: unknown }
   | {
       ok: false;
-      /** `fatal`: the module trapped; the worker cannot serve further calls. */
-      error: { name: string; message: string; code?: string; fatal?: boolean };
+      /**
+       * `fields`: variant fields to set on the page's error, such as `domain`.
+       * `fatal`: the module trapped; the worker cannot serve further calls.
+       */
+      error: {
+        name: string;
+        message: string;
+        code?: string;
+        fields?: Record<string, unknown>;
+        fatal?: boolean;
+      };
     }
 );
 

@@ -346,7 +346,12 @@ mod tests {
             matcher.integrity_provider = Some(provider.clone());
             let matcher = matcher.dangerously_skip_measurements().unwrap();
             let result = tokio::time::timeout(Duration::from_secs(5), async {
-                matcher.client().await.unwrap().connect().await
+                matcher
+                    .client()
+                    .await
+                    .unwrap()
+                    .connect(Duration::from_secs(60))
+                    .await
             })
             .await
             .unwrap();

@@ -6,41 +6,13 @@ use message_bridge_client::{
 use reqwest::Url;
 use world_id_core::registration::{BridgeDomain, EncryptedPayload, RequestId};
 
+use super::errors::BridgeError;
+
 /// A client for an allowed bridge deployment, as named in a Pairing URI.
 #[derive(Clone, Debug, uniffi::Object)]
 pub struct BridgeClient {
     client: Client,
     domain: BridgeDomain,
-}
-
-/// Errors from talking to the bridge.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error, uniffi::Error)]
-pub enum BridgeError {
-    /// The bridge domain is not a valid DNS name with a named top-level label.
-    #[error("invalid bridge domain: {0}")]
-    InvalidDomain(String),
-    /// The bridge URL cannot be built.
-    #[error("invalid bridge URL: {0}")]
-    InvalidUrl(String),
-    /// The request failed in transit. The error carries no URL: the bridge routes contain the
-    /// request id, which is the only key to the session.
-    #[error("bridge request failed: {0}")]
-    Transport(String),
-    /// The bridge answered with a status the operation does not expect.
-    #[error("bridge returned unexpected status {status}")]
-    UnexpectedStatus {
-        /// The HTTP status code.
-        status: u16,
-    },
-    /// The bridge returned malformed JSON.
-    #[error("invalid bridge response: {0}")]
-    Json(String),
-    /// The bridge response exceeded the bridge's body limit.
-    #[error("bridge response exceeds the 5 MiB body limit")]
-    TooLarge,
-    /// The operation exhausted its time budget.
-    #[error("bridge operation timed out")]
-    Timeout,
 }
 
 pub(super) type ResponseState = message_bridge_client::ResponseState;
