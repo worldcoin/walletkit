@@ -757,7 +757,10 @@ fn test_add_credential_blobs_reserves_write_before_existence_check() {
     assert!(db
         .add_credential_blobs(credential_id, &[blob_id], 1000)
         .expect("add after writer releases reservation"));
-    assert_eq!(db.credential_blobs(credential_id).expect("blobs"), [blob_id]);
+    assert_eq!(
+        db.credential_blobs(credential_id).expect("blobs"),
+        [blob_id]
+    );
     drop(other);
     drop(db);
     cleanup_vault_files(&path);
