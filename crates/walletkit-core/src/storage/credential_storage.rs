@@ -336,6 +336,10 @@ impl CredentialStore {
     /// [`StorageError::CredentialMismatch`] if the payload changed (retry with a
     /// fresh credential on the next sync), or an error if serialization or the
     /// write fails.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "an owned Arc matches the credential returned by fetch_credential_by_id"
+    )]
     pub fn add_credential_blobs(
         &self,
         credential_id: u64,
