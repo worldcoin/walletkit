@@ -323,19 +323,33 @@ impl CredentialStore {
     /// only with their credential. Returns whether any link was added, in which
     /// case the vault-changed listener is notified.
     ///
+    /// Pass the credential used to derive the PCP match key, from
+    /// [`Self::fetch_credential_by_id`] or [`Self::store_credential`]. Its
+    /// serialized payload is checked inside the linking transaction, preventing
+    /// stale backfill from linking to another credential after deletion and id
+    /// reuse. A re-issued credential with different bytes requires a fresh
+    /// match, even if stored under the same id; record metadata is not compared.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the credential ID does not exist or the write fails.
+    /// Returns [`StorageError::CredentialIdNotFound`] for an unknown id,
+    /// [`StorageError::CredentialMismatch`] if the payload changed (retry with a
+    /// fresh credential on the next sync), or an error if serialization or the
+    /// write fails.
     pub fn add_credential_blobs(
         &self,
         credential_id: u64,
+        credential: Arc<Credential>,
         blob_ids: Vec<Arc<BlobId>>,
         now: u64,
     ) -> StorageResult<bool> {
         let blob_ids: Vec<BlobId> = blob_ids.into_iter().map(|id| *id).collect();
-        let added =
-            self.lock_inner()?
-                .add_credential_blobs(credential_id, &blob_ids, now)?;
+        let added = self.lock_inner()?.add_credential_blobs(
+            credential_id,
+            &credential,
+            &blob_ids,
+            now,
+        )?;
         if added {
             self.notify_vault_changed();
         }
@@ -879,9 +893,7 @@ impl CredentialStoreInner {
     ) -> StorageResult<u64> {
         let issuer_schema_id = credential.issuer_schema_id();
         let genesis_issued_at = credential.genesis_issued_at();
-        let credential_blob = credential
-            .to_bytes()
-            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        let credential_blob = serialize_credential(credential)?;
         let subject_blinding_factor = blinding_factor.to_bytes();
 
         let state = self.state_mut()?;
@@ -899,13 +911,15 @@ impl CredentialStoreInner {
     fn add_credential_blobs(
         &mut self,
         credential_id: u64,
+        credential: &Credential,
         blob_ids: &[BlobId],
         now: u64,
     ) -> StorageResult<bool> {
+        let credential_blob = serialize_credential(credential)?;
         let state = self.state_mut()?;
         state
             .vault
-            .add_credential_blobs(credential_id, blob_ids, now)
+            .add_credential_blobs(credential_id, &credential_blob, blob_ids, now)
     }
 
     fn credential_blobs(&self, credential_id: u64) -> StorageResult<Vec<BlobId>> {
@@ -1171,6 +1185,12 @@ impl CredentialStoreInner {
     }
 }
 
+fn serialize_credential(credential: &Credential) -> StorageResult<Vec<u8>> {
+    credential
+        .to_bytes()
+        .map_err(|e| StorageError::Serialization(e.to_string()))
+}
+
 fn deserialize_credential(bytes: Vec<u8>) -> StorageResult<Credential> {
     Credential::from_bytes(bytes).map_err(|e| {
         StorageError::Serialization(format!(
@@ -1262,6 +1282,7 @@ mod tests {
     use crate::storage::types::{ActivityOutcome, ProtocolVersion};
 
     use std::sync::atomic::{AtomicU32, Ordering};
+    use test_case::test_case;
 
     fn supplied_keys(byte: u8) -> Arc<StorageKeys> {
         Arc::new(StorageKeys::from_bytes(vec![byte; 32]).expect("32-byte key"))
@@ -1717,6 +1738,7 @@ mod tests {
             store
                 .add_credential_blobs(
                     record.credential_id,
+                    credential,
                     vec![crate::storage::blob_id(pcp.to_vec())],
                     2000,
                 )
@@ -1752,16 +1774,80 @@ mod tests {
         let orb_pcp = crate::storage::blob_id(b"orb pcp".to_vec());
 
         assert!(store
-            .add_credential_blobs(credential_id, vec![Arc::clone(&orb_pcp)], 1000)
+            .add_credential_blobs(
+                credential_id,
+                Arc::new(credential.clone()),
+                vec![Arc::clone(&orb_pcp)],
+                1000
+            )
             .expect("link blobs"));
 
         let linked = store.credential_blobs(credential_id).expect("read links");
         assert_eq!(linked.len(), 1);
         assert_eq!(*linked[0], *orb_pcp);
         assert!(matches!(
-            store.add_credential_blobs(credential_id + 1, vec![orb_pcp], 1000),
+            store.add_credential_blobs(
+                credential_id + 1,
+                Arc::new(credential),
+                vec![orb_pcp],
+                1000
+            ),
             Err(StorageError::CredentialIdNotFound { .. })
         ));
+        cleanup_test_storage(&root);
+    }
+
+    #[test_case(false ; "empty links")]
+    #[test_case(true ; "PCP links")]
+    fn test_backfill_rejects_a_deleted_credential_after_id_reuse(with_links: bool) {
+        use world_id_core::Credential as CoreCredential;
+
+        let root = temp_root_path();
+        let store =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&root))
+                .expect("create store");
+        store.init(42, 1000).expect("init storage");
+        let original: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        let id = store
+            .store_credential(&original, &FieldElement::from(7u64), 9999, None, 1000)
+            .expect("store original");
+        let fetched = store
+            .fetch_credential_by_id(id)
+            .expect("fetch")
+            .expect("original exists");
+        store.delete_credential(id).expect("delete original");
+        let replacement: Credential = CoreCredential::new()
+            .issuer_schema_id(200)
+            .genesis_issued_at(2000)
+            .into();
+        let reused_id = store
+            .store_credential(&replacement, &FieldElement::from(8u64), 9999, None, 2000)
+            .expect("store replacement");
+        assert_eq!(reused_id, id);
+        let (notifications_tx, notifications_rx) = mpsc::channel();
+        store.set_vault_changed_listener(Arc::new(ChannelVaultListener(
+            notifications_tx,
+        )));
+        let blob_ids = if with_links {
+            vec![crate::storage::blob_id(b"original pcp".to_vec())]
+        } else {
+            Vec::new()
+        };
+
+        let err = store
+            .add_credential_blobs(id, fetched, blob_ids, 3000)
+            .expect_err("stale credential must not match a reused id");
+        assert!(matches!(err, StorageError::CredentialMismatch));
+        assert_eq!(err.to_string(), "credential does not match stored payload");
+        assert!(store.credential_blobs(reused_id).expect("links").is_empty());
+        drop(store);
+        assert_eq!(
+            notifications_rx.recv_timeout(std::time::Duration::from_secs(1)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        );
         cleanup_test_storage(&root);
     }
 
@@ -1993,7 +2079,12 @@ mod tests {
         );
         let orb_pcp = crate::storage::blob_id(b"orb pcp".to_vec());
         source
-            .add_credential_blobs(source_id, vec![Arc::clone(&orb_pcp)], 2000)
+            .add_credential_blobs(
+                source_id,
+                Arc::new(credential),
+                vec![Arc::clone(&orb_pcp)],
+                2000,
+            )
             .unwrap();
         let linked_backup = source.export_vault_for_backup().unwrap();
         let (notifications_tx, notifications_rx) = mpsc::channel();
@@ -2446,6 +2537,7 @@ mod tests {
         assert!(store
             .add_credential_blobs(
                 credential_id,
+                Arc::new(cred.clone()),
                 vec![crate::storage::blob_id(b"orb pcp".to_vec())],
                 1000,
             )
@@ -2456,6 +2548,7 @@ mod tests {
         assert!(!store
             .add_credential_blobs(
                 credential_id,
+                Arc::new(cred.clone()),
                 vec![crate::storage::blob_id(b"orb pcp".to_vec())],
                 2000,
             )

@@ -322,13 +322,20 @@ impl CredentialVault {
     /// duplicates in `blob_ids` are ignored. Links are removed only when the
     /// credential is deleted. Returns whether any link was added.
     ///
+    /// The serialized credential must match the stored payload. Checking it
+    /// under the write reservation prevents links derived before a deletion
+    /// from being attached to a different credential that reuses the row id.
+    /// Metadata changes do not invalidate the match; payload changes do.
+    ///
     /// # Errors
     ///
-    /// Returns [`StorageError::CredentialIdNotFound`] when the credential does
-    /// not exist, or an error if a query fails.
+    /// Returns [`StorageError::CredentialIdNotFound`] for an unknown id,
+    /// [`StorageError::CredentialMismatch`] for a different payload, or an
+    /// error if a query fails.
     pub fn add_credential_blobs(
         &self,
         credential_id: u64,
+        credential_blob: &[u8],
         blob_ids: &[BlobId],
         now: u64,
     ) -> StorageResult<bool> {
@@ -339,15 +346,18 @@ impl CredentialVault {
             .transaction_immediate()
             .map_err(|err| map_db_err(&err))?;
 
-        let exists = tx
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM credential_records WHERE credential_id = ?1)",
+        let stored_cid = tx
+            .query_row_optional(
+                "SELECT credential_blob_cid FROM credential_records WHERE credential_id = ?1",
                 params![credential_id_i64],
-                |row| Ok(row.column_i64(0) != 0),
+                |row| Ok(row.column_blob(0)),
             )
-            .map_err(|err| map_db_err(&err))?;
-        if !exists {
-            return Err(StorageError::CredentialIdNotFound { credential_id });
+            .map_err(|err| map_db_err(&err))?
+            .ok_or(StorageError::CredentialIdNotFound { credential_id })?;
+        let expected_cid =
+            blobs::compute_content_id(BlobKind::CredentialBlob as u8, credential_blob);
+        if stored_cid != expected_cid {
+            return Err(StorageError::CredentialMismatch);
         }
 
         let mut added = 0;
