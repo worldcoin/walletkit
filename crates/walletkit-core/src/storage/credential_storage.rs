@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use world_id_core::FieldElement as CoreFieldElement;
 
+use super::cache::{BillingWitnessKey, BILLING_WITNESS_LEN};
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::paths::StoragePaths;
@@ -591,8 +592,8 @@ impl CredentialStore {
     ///
     /// # Errors
     ///
-    /// Returns an error if the store is not initialized, `context` has no valid billing period,
-    /// or the insert fails.
+    /// Returns an error if the store is not initialized, `context`'s `period_start` is not the
+    /// start of a billing period, or the insert fails.
     pub fn store_billing_witness(
         &self,
         context: &BillingContext,
@@ -951,17 +952,16 @@ impl CredentialStoreInner {
         witness: &BillingWitness,
         now: u64,
     ) -> StorageResult<()> {
+        if !context.is_canonical() {
+            return Err(StorageError::InvalidInput(format!(
+                "billing period start {} is not the start of a billing period",
+                context.period_start
+            )));
+        }
         let (_, period_end) = billing_period(context.period_start)
             .map_err(|e| StorageError::InvalidInput(e.to_string()))?;
-        let (chain_id, billing_contract, rp_id, period_start, oprf_key_id) =
-            billing_witness_key_parts(context, oprf_key_id);
-        let state = self.state_mut()?;
-        state.cache.billing_witness_put(
-            chain_id,
-            billing_contract,
-            rp_id,
-            period_start,
-            oprf_key_id,
+        self.state_mut()?.cache.billing_witness_put(
+            &BillingWitnessKey::new(context, oprf_key_id),
             &encode_billing_witness(witness),
             now,
             period_end,
@@ -974,19 +974,9 @@ impl CredentialStoreInner {
         oprf_key_id: OprfKeyId,
         now: u64,
     ) -> StorageResult<Option<BillingWitness>> {
-        let (chain_id, billing_contract, rp_id, period_start, oprf_key_id) =
-            billing_witness_key_parts(context, oprf_key_id);
-        let state = self.state()?;
-        state
+        self.state()?
             .cache
-            .billing_witness_get(
-                chain_id,
-                billing_contract,
-                rp_id,
-                period_start,
-                oprf_key_id,
-                now,
-            )?
+            .billing_witness_get(&BillingWitnessKey::new(context, oprf_key_id), now)?
             .map(|bytes| decode_billing_witness(&bytes))
             .transpose()
     }
@@ -996,16 +986,9 @@ impl CredentialStoreInner {
         context: &BillingContext,
         oprf_key_id: OprfKeyId,
     ) -> StorageResult<()> {
-        let (chain_id, billing_contract, rp_id, period_start, oprf_key_id) =
-            billing_witness_key_parts(context, oprf_key_id);
-        let state = self.state_mut()?;
-        state.cache.billing_witness_remove(
-            chain_id,
-            billing_contract,
-            rp_id,
-            period_start,
-            oprf_key_id,
-        )
+        self.state_mut()?
+            .cache
+            .billing_witness_remove(&BillingWitnessKey::new(context, oprf_key_id))
     }
 
     fn merkle_cache_get(
@@ -1267,22 +1250,8 @@ impl CredentialStore {
     }
 }
 
-/// The parts of a billing witness's cache key: one billing context under one RP OPRF key.
-fn billing_witness_key_parts(
-    context: &BillingContext,
-    oprf_key_id: OprfKeyId,
-) -> ([u8; 32], [u8; 20], u64, u64, [u8; 20]) {
-    (
-        context.chain_id.to_be_bytes(),
-        context.billing_contract.into_array(),
-        context.rp_id.into_inner(),
-        context.period_start,
-        oprf_key_id.into_inner().to_be_bytes(),
-    )
-}
-
-fn encode_billing_witness(witness: &BillingWitness) -> [u8; 128] {
-    let mut bytes = [0u8; 128];
+fn encode_billing_witness(witness: &BillingWitness) -> [u8; BILLING_WITNESS_LEN] {
+    let mut bytes = [0u8; BILLING_WITNESS_LEN];
     let fields = [
         witness.billing_action,
         witness.billing_nullifier,
@@ -1295,7 +1264,9 @@ fn encode_billing_witness(witness: &BillingWitness) -> [u8; 128] {
     bytes
 }
 
-fn decode_billing_witness(bytes: &[u8; 128]) -> StorageResult<BillingWitness> {
+fn decode_billing_witness(
+    bytes: &[u8; BILLING_WITNESS_LEN],
+) -> StorageResult<BillingWitness> {
     let (chunks, _) = bytes.as_chunks::<32>();
     let field = |index: usize| {
         CoreFieldElement::from_be_bytes(&chunks[index]).map_err(|e| {
@@ -1526,7 +1497,7 @@ mod tests {
     fn billing_witness_encoding_is_frozen() {
         let bytes = encode_billing_witness(&billing_witness());
 
-        let mut expected = [0u8; 128];
+        let mut expected = [0u8; BILLING_WITNESS_LEN];
         for (index, value) in [1u8, 2, 3, 4].into_iter().enumerate() {
             expected[index * 32 + 31] = value;
         }
@@ -1587,6 +1558,38 @@ mod tests {
                 .expect("get after removal"),
             None
         );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn billing_witnesses_need_a_canonical_period_start() {
+        use alloy_core::primitives::U160;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let mut inner = CredentialStoreInner::new(
+            provider.paths().as_ref().clone(),
+            provider.keystore(),
+            provider.blob_store(),
+        )
+        .expect("create inner");
+        let now = 1_783_446_000;
+        inner.init(42, now).expect("init storage");
+        let (period_start, _) = billing_period(now).expect("billing period");
+        let oprf_key_id = OprfKeyId::new(U160::from(7));
+
+        for period_start in [period_start + 1, 0] {
+            assert!(matches!(
+                inner.store_billing_witness(
+                    &billing_context(period_start),
+                    oprf_key_id,
+                    &billing_witness(),
+                    now,
+                ),
+                Err(StorageError::InvalidInput(_))
+            ));
+        }
 
         cleanup_test_storage(&root);
     }

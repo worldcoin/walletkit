@@ -16,6 +16,8 @@ mod schema;
 mod session;
 mod util;
 
+pub use billing::{BillingWitnessKey, BILLING_WITNESS_LEN};
+
 /// Encrypted cache database wrapper.
 ///
 /// Stores non-authoritative, regenerable data (proof cache, session keys,
@@ -141,7 +143,7 @@ impl CacheDb {
         nullifiers::replay_guard_set(self.vault.connection(), nullifier, now)
     }
 
-    /// Fetches the billing witness cached for one billing context and RP OPRF key.
+    /// Fetches the billing witness cached under `key`.
     ///
     /// Returns `None` when missing or expired.
     ///
@@ -150,75 +152,44 @@ impl CacheDb {
     /// Returns an error if the query fails or the cached bytes are malformed.
     pub fn billing_witness_get(
         &self,
-        chain_id: [u8; 32],
-        billing_contract: [u8; 20],
-        rp_id: u64,
-        period_start: u64,
-        oprf_key_id: [u8; 20],
+        key: &BillingWitnessKey,
         now: u64,
-    ) -> StorageResult<Option<[u8; 128]>> {
-        let key = util::billing_witness_key(
-            chain_id,
-            billing_contract,
-            rp_id,
-            period_start,
-            oprf_key_id,
-        );
-        billing::get(self.vault.connection(), &key, now)
+    ) -> StorageResult<Option<[u8; BILLING_WITNESS_LEN]>> {
+        billing::get(
+            self.vault.connection(),
+            &util::billing_witness_key(key),
+            now,
+        )
     }
 
-    /// Stores the billing witness of one billing context and RP OPRF key until `expires_at`,
-    /// exclusive.
+    /// Stores the billing witness under `key` until `expires_at`, exclusive.
     ///
     /// # Errors
     ///
     /// Returns an error if the insert fails.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the key's parts stay separate so callers cannot mix up their encoding"
-    )]
     pub fn billing_witness_put(
         &self,
-        chain_id: [u8; 32],
-        billing_contract: [u8; 20],
-        rp_id: u64,
-        period_start: u64,
-        oprf_key_id: [u8; 20],
-        witness: &[u8; 128],
+        key: &BillingWitnessKey,
+        witness: &[u8; BILLING_WITNESS_LEN],
         now: u64,
         expires_at: u64,
     ) -> StorageResult<()> {
-        let key = util::billing_witness_key(
-            chain_id,
-            billing_contract,
-            rp_id,
-            period_start,
-            oprf_key_id,
-        );
-        billing::put(self.vault.connection(), &key, witness, now, expires_at)
+        billing::put(
+            self.vault.connection(),
+            &util::billing_witness_key(key),
+            witness,
+            now,
+            expires_at,
+        )
     }
 
-    /// Removes the billing witness of one billing context and RP OPRF key, if any.
+    /// Removes the billing witness cached under `key`, if any.
     ///
     /// # Errors
     ///
     /// Returns an error if the delete fails.
-    pub fn billing_witness_remove(
-        &self,
-        chain_id: [u8; 32],
-        billing_contract: [u8; 20],
-        rp_id: u64,
-        period_start: u64,
-        oprf_key_id: [u8; 20],
-    ) -> StorageResult<()> {
-        let key = util::billing_witness_key(
-            chain_id,
-            billing_contract,
-            rp_id,
-            period_start,
-            oprf_key_id,
-        );
-        billing::remove(self.vault.connection(), &key)
+    pub fn billing_witness_remove(&self, key: &BillingWitnessKey) -> StorageResult<()> {
+        billing::remove(self.vault.connection(), &util::billing_witness_key(key))
     }
 
     /// Records an activity entry.
