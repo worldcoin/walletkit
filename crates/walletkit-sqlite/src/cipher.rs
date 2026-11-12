@@ -45,6 +45,8 @@ use zeroize::Zeroizing;
 
 use super::connection::Connection;
 use super::error::{DbResult, Error};
+use super::transaction::Transaction;
+use crate::params;
 
 const CIPHER_CHACHA20: &str = "chacha20";
 const PLAINTEXT_HEADER_SIZE: i64 = 32;
@@ -443,6 +445,9 @@ pub fn export_plaintext_copy(
 /// See [`export_plaintext_copy`] for why `ATTACH` + SQL is used instead of
 /// the `sqlite3_backup` API.
 ///
+/// Tables are copied in the order of `tables`, and every table must exist in
+/// the source. Tables the source has beyond `tables` are not read.
+///
 /// **Schema migration:** The import uses `SELECT *`, so column changes are
 /// handled automatically as long as both sides share the same schema. If a
 /// caller's schema evolves (e.g. new columns with `NOT NULL` constraints),
@@ -456,6 +461,30 @@ pub fn import_plaintext_copy(
     conn: &Connection,
     source_path: &Path,
     tables: &[&str],
+) -> DbResult<()> {
+    import_plaintext_copy_with(conn, source_path, tables, &[], |_| Ok(true))
+}
+
+/// Like [`import_plaintext_copy`], with two additions for evolving schemas:
+///
+/// - A table named in `optional_tables` is skipped when the source lacks it,
+///   so backups made before the table existed still restore.
+/// - `is_valid` runs inside the import transaction after every table is
+///   copied. Returning `false` rolls the whole import back. The source is
+///   still attached as schema `backup`, so `is_valid` can check the original
+///   rows before the destination's keys and column affinities change them.
+///
+/// # Errors
+///
+/// Returns `Error` if the `ATTACH`, copy, validation query, or `DETACH`
+/// fails, if a required table is missing from the source, or if `is_valid`
+/// returns `false`.
+pub fn import_plaintext_copy_with(
+    conn: &Connection,
+    source_path: &Path,
+    tables: &[&str],
+    optional_tables: &[&str],
+    is_valid: impl FnOnce(&Transaction<'_>) -> DbResult<bool>,
 ) -> DbResult<()> {
     if !source_path.exists() {
         return Err(Error::new(
@@ -493,9 +522,15 @@ pub fn import_plaintext_copy(
         // a retry.
         let tx = conn.transaction()?;
         for table in tables {
+            if optional_tables.contains(table) && !backup_has_table(&tx, table)? {
+                continue;
+            }
             tx.execute_batch(&format!(
                 "INSERT INTO {table} SELECT * FROM backup.{table};"
             ))?;
+        }
+        if !is_valid(&tx)? {
+            return Err(Error::new(-1, "imported rows failed validation"));
         }
         tx.commit()
     })();
@@ -506,6 +541,14 @@ pub fn import_plaintext_copy(
     result?;
     detach_result?;
     Ok(())
+}
+
+fn backup_has_table(tx: &Transaction<'_>, table: &str) -> DbResult<bool> {
+    tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM backup.sqlite_master WHERE type = 'table' AND name = ?1)",
+        params![table],
+        |row| Ok(row.column_i64(0) != 0),
+    )
 }
 
 /// Runs `PRAGMA integrity_check` and returns whether the database is healthy.
@@ -563,14 +606,15 @@ pub(crate) fn open_fully_encrypted(
 mod tests {
     use super::{
         ensure_temp_store_memory, export_plaintext_copy, import_plaintext_copy,
-        integrity_check, is_plaintext_header_probe_error, open_encrypted,
-        open_fully_encrypted, Error, LEGACY_ENCRYPTED_HEADER_FIXTURE,
+        import_plaintext_copy_with, integrity_check, is_plaintext_header_probe_error,
+        open_encrypted, open_fully_encrypted, Error, LEGACY_ENCRYPTED_HEADER_FIXTURE,
         LEGACY_FIXTURE_KEY, SQLITE_CORRUPT, SQLITE_ERROR,
     };
     use crate::params;
     use crate::test_utils::init_sqlite;
-    use crate::Connection;
+    use crate::{Connection, Transaction};
     use secrecy::SecretBox;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn test_temp_store_memory_overrides_file_storage() {
@@ -989,5 +1033,132 @@ mod tests {
             err.to_string().contains("non-empty table"),
             "expected non-empty-table error, got: {err}"
         );
+    }
+
+    /// Exports a plaintext backup holding `widgets` (one row) and, when
+    /// `with_extra`, an `extra` table that the importer does not know.
+    fn export_widgets_backup(
+        dir: &Path,
+        key: &SecretBox<[u8; 32]>,
+        with_extra: bool,
+    ) -> PathBuf {
+        let backup_path = dir.join("backup.plain.sqlite");
+        let conn = open_encrypted(&dir.join("source.sqlite"), key).expect("open src");
+        conn.execute_batch(
+            "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);
+             CREATE TABLE extra (widget_id INTEGER NOT NULL);
+             INSERT INTO widgets (id, val) VALUES (1, 'alpha');
+             INSERT INTO extra (widget_id) VALUES (1);",
+        )
+        .expect("create tables");
+        let tables: &[&str] = if with_extra {
+            &["widgets", "extra"]
+        } else {
+            &["widgets"]
+        };
+        export_plaintext_copy(&conn, &backup_path, tables).expect("export");
+        backup_path
+    }
+
+    fn widget_count(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM widgets", &[], |row| {
+            Ok(row.column_i64(0))
+        })
+        .expect("count")
+    }
+
+    #[test]
+    fn test_cipher_import_ignores_source_tables_it_does_not_name() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let key = SecretBox::init_with(|| [0x33u8; 32]);
+        let backup_path = export_widgets_backup(dir.path(), &key, true);
+
+        let conn = open_encrypted(&dir.path().join("restore.sqlite"), &key)
+            .expect("open restore");
+        conn.execute_batch(
+            "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
+        )
+        .expect("create table");
+        import_plaintext_copy(&conn, &backup_path, &["widgets"]).expect("import");
+        assert_eq!(widget_count(&conn), 1);
+    }
+
+    #[test]
+    fn test_cipher_import_with_skips_only_optional_tables_missing_from_the_source() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let key = SecretBox::init_with(|| [0x34u8; 32]);
+        let backup_path = export_widgets_backup(dir.path(), &key, false);
+        let schema = "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);
+            CREATE TABLE extra (widget_id INTEGER NOT NULL REFERENCES widgets (id));";
+
+        let required = open_encrypted(&dir.path().join("required.sqlite"), &key)
+            .expect("open required");
+        required.execute_batch(schema).expect("create tables");
+        let err = import_plaintext_copy_with(
+            &required,
+            &backup_path,
+            &["widgets", "extra"],
+            &[],
+            |_| Ok(true),
+        )
+        .expect_err("a required table is missing");
+        assert!(
+            err.to_string().contains("extra"),
+            "expected missing-table error, got: {err}"
+        );
+        assert_eq!(widget_count(&required), 0);
+
+        let optional = open_encrypted(&dir.path().join("optional.sqlite"), &key)
+            .expect("open optional");
+        optional.execute_batch(schema).expect("create tables");
+        import_plaintext_copy_with(
+            &optional,
+            &backup_path,
+            &["widgets", "extra"],
+            &["extra"],
+            |_| Ok(true),
+        )
+        .expect("import without the optional table");
+        assert_eq!(widget_count(&optional), 1);
+    }
+
+    #[test]
+    fn test_cipher_import_with_rolls_back_when_validation_fails() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let key = SecretBox::init_with(|| [0x35u8; 32]);
+        let backup_path = export_widgets_backup(dir.path(), &key, false);
+        let conn = open_encrypted(&dir.path().join("restore.sqlite"), &key)
+            .expect("open restore");
+        conn.execute_batch(
+            "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
+        )
+        .expect("create table");
+        let is_valid = |tx: &Transaction<'_>| {
+            tx.query_row(
+                "SELECT NOT EXISTS(SELECT 1 FROM widgets WHERE val = 'alpha')",
+                &[],
+                |row| Ok(row.column_i64(0) != 0),
+            )
+        };
+
+        let err = import_plaintext_copy_with(
+            &conn,
+            &backup_path,
+            &["widgets"],
+            &[],
+            is_valid,
+        )
+        .expect_err("validation rejects the copied row");
+        assert!(err.to_string().contains("validation"), "got: {err}");
+        assert_eq!(widget_count(&conn), 0);
+
+        import_plaintext_copy_with(&conn, &backup_path, &["widgets"], &[], |_| {
+            Ok(true)
+        })
+        .expect("retry after rollback");
+        assert_eq!(widget_count(&conn), 1);
     }
 }
