@@ -44,9 +44,9 @@ clap = "4"
 ctor = "0.2"
 dirs = "6"
 dotenvy = "0.15.7"
-flamingo-verifier-api-types = "0.10.0"
-flamingo-verifier-client = "0.10.0"
-flamingo-verifier-sealed-types = "0.10.0"
+flamingo-verifier-api-types = "0.11.0"
+flamingo-verifier-client = "0.11.0"
+flamingo-verifier-sealed-types = "0.11.0"
 eyre = "0.6"
 futures-util = { version = "0.3", default-features = false }
 getrandom = "0.3"
@@ -93,13 +93,9 @@ zeroize = "1"
 zip = { version = "9", default-features = false }
 
 # world-id-protocol crates
-world-id-core = { version = "0.20.0", default-features = false }
-world-id-proof = { version = "0.20.0", default-features = false }
-# flamingo-verifier 0.10 is built on world-id-flamingo 0.18, so the Flamingo types stay on 0.18
-# until flamingo-verifier moves to 0.20. `flamingo-primitives` is the world-id-primitives version it
-# uses, for the values walletkit passes to it.
-world-id-flamingo = "0.18.0"
-flamingo-primitives = { package = "world-id-primitives", version = "0.18.0" }
+world-id-core = { version = "0.22.0", default-features = false }
+world-id-proof = { version = "0.22.0", default-features = false }
+world-id-flamingo = "0.22.0"
 
 # internal
 walletkit-core = { version = "0.29.0", path = "crates/walletkit-core", default-features = false }
