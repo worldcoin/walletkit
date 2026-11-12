@@ -9926,9 +9926,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-authenticator"
-version = "0.21.0"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd5a663d1c37004acef2c3565d58c8b554c0c9e32f794ba88ea0bc56004e19dc"
+checksum = "438471b3f615497ee0c17c97a466d25dbd41c13bc3dd1c2e5c14bbbd51449c02"
 dependencies = [
  "aes-gcm",
  "alloy",
@@ -9963,8 +9963,8 @@ dependencies = [
  "tokio",
  "webpki-root-certs 1.0.10",
  "webpki-roots 1.0.10",
- "world-id-flamingo 0.21.0",
- "world-id-primitives 0.21.0",
+ "world-id-flamingo 0.22.0",
+ "world-id-primitives 0.22.0",
  "world-id-proof",
  "world-id-registries",
  "zeroize",
@@ -9972,13 +9972,13 @@ dependencies = [
 
 [[package]]
 name = "world-id-core"
-version = "0.21.0"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "370a22e1bba505c721b59b69a47fc804f78e682ae1ab7f2c9530f5938a554e71"
+checksum = "ef47aa7db65850f333872d6187ea9f65a2e16ca20c5bda36c11f88d2f2e56c43"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
- "world-id-primitives 0.21.0",
+ "world-id-primitives 0.22.0",
  "world-id-proof",
  "world-id-registries",
 ]
@@ -10004,9 +10004,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-flamingo"
-version = "0.21.0"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05e1ff8200059966d36c6696d848e057fd30c710c6bb0680e315d670cdddc864"
+checksum = "e497d776c936939426e1c0a063ff4b9dc4ebc88f13f38859e0f028384ff761c9"
 dependencies = [
  "base64 0.22.1",
  "coset",
@@ -10018,7 +10018,7 @@ dependencies = [
  "sha2 0.11.0",
  "taceo-eddsa-babyjubjub",
  "thiserror 2.0.21",
- "world-id-primitives 0.21.0",
+ "world-id-primitives 0.22.0",
 ]
 
 [[package]]
@@ -10062,9 +10062,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-primitives"
-version = "0.21.0"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f5793c02cb204f0efceaaa242b6a72473735fdafb4e6702e0a1d64bb2c3e313"
+checksum = "47fe8ca236ce89e3bb5cf79bff9b7d747fd85e3eed9a2c58d5fa53a9bafa004b"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -10102,9 +10102,9 @@ dependencies = [
 
 [[package]]
 name = "world-id-proof"
-version = "0.21.0"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "effd85c3a2f6ef5c3413cb666ecad9037ec913cede9fbd541b0d831f3deb853d"
+checksum = "a056b5e44a935f4294fb6a00775180a3343ce5f90a4b4fbb2bf91d892ceb3177"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -10136,17 +10136,17 @@ dependencies = [
  "tar",
  "thiserror 2.0.21",
  "tracing",
- "world-id-flamingo 0.21.0",
- "world-id-primitives 0.21.0",
+ "world-id-flamingo 0.22.0",
+ "world-id-primitives 0.22.0",
  "zeroize",
  "zstd",
 ]
 
 [[package]]
 name = "world-id-registries"
-version = "0.21.0"
+version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c99ffb6e501f480c8566b4afe5f772a6f99f00d0db2c24c3750c2522e0a62c6e"
+checksum = "9d3ca226b2979a8cf1e321b5d4ee884708f7d1dce90eac325cc63b8a2b1dda1d"
 dependencies = [
  "alloy",
  "anyhow",
