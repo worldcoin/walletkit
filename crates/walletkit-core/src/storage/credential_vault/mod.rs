@@ -27,8 +27,37 @@ use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value}
 /// `init_leaf_index`) with the authoritative `leaf_index` from the
 /// authenticator.
 ///
-/// **Note:** New tables added to the vault schema must be added here too.
-pub(crate) const BACKUP_TABLES: &[&str] = &["credential_records", "blob_objects"];
+/// **Note:** New tables added to the vault schema must be added here too, and
+/// to [`OPTIONAL_BACKUP_TABLES`] so backups made before they existed restore.
+pub(crate) const BACKUP_TABLES: &[&str] =
+    &["credential_records", "blob_objects", "credential_blob_refs"];
+
+/// Tables in [`BACKUP_TABLES`] that older backups do not contain.
+///
+/// A backup without one of these restores without its rows, so a newer backup
+/// that lost `credential_blob_refs` restores without links; the host link
+/// backfill re-derives them.
+const OPTIONAL_BACKUP_TABLES: &[&str] = &["credential_blob_refs"];
+
+/// Builds a query selecting whether a `credential_blob_refs` row in the
+/// backup attached as `schema` breaks an invariant that plaintext backup
+/// copies do not enforce. Each row needs an integer `credential_id` naming
+/// exactly one credential record, a 32-byte `blob_id`, and a non-negative
+/// integer `created_at`. All source credential IDs must be integers.
+fn has_invalid_blob_refs(schema: &str) -> String {
+    format!(
+        "SELECT EXISTS(SELECT 1 FROM {schema}.credential_blob_refs b WHERE
+            typeof(credential_id) != 'integer' OR
+            NOT EXISTS(SELECT 1 FROM {schema}.credential_records r
+                       WHERE r.credential_id = b.credential_id) OR
+            typeof(blob_id) != 'blob' OR length(blob_id) != 32 OR
+            typeof(created_at) != 'integer' OR created_at < 0)
+         OR EXISTS(SELECT 1 FROM {schema}.credential_records
+                   WHERE typeof(credential_id) != 'integer')
+         OR EXISTS(SELECT 1 FROM {schema}.credential_records
+                   GROUP BY credential_id HAVING COUNT(*) > 1)"
+    )
+}
 
 // A version's content, never a device-local row ID, breaks equal-timestamp ties.
 // Use the same total order for reads and recovery regardless of insertion order.
@@ -502,6 +531,9 @@ impl CredentialVault {
     /// Imports credentials from a plaintext (unencrypted) vault backup into
     /// an empty vault. Intended for restore on a fresh install.
     ///
+    /// The backup's blob refs are checked against the same invariants as
+    /// `merge_plaintext_bytes`; an invalid backup imports nothing.
+    ///
     /// Callers that need cross-process exclusion must hold
     /// [`crate::storage::StorageLock`] themselves. The caller is also
     /// responsible for deleting the source file after the import completes.
@@ -511,8 +543,27 @@ impl CredentialVault {
     /// Returns an error if the import fails.
     pub fn import_plaintext(&self, source: &Path) -> StorageResult<()> {
         let conn = self.vault.connection();
-        cipher::import_plaintext_copy(conn, source, BACKUP_TABLES)
-            .map_err(|e| map_db_err(&e))
+        cipher::import_plaintext_copy_with(
+            conn,
+            source,
+            BACKUP_TABLES,
+            OPTIONAL_BACKUP_TABLES,
+            |tx| {
+                let has_blob_refs = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM backup.sqlite_master
+                     WHERE type = 'table' AND name = 'credential_blob_refs')",
+                    &[],
+                    |row| Ok(row.column_i64(0) != 0),
+                )?;
+                if !has_blob_refs {
+                    return Ok(true);
+                }
+                tx.query_row(&has_invalid_blob_refs("backup"), &[], |row| {
+                    Ok(row.column_i64(0) == 0)
+                })
+            },
+        )
+        .map_err(|e| map_db_err(&e))
     }
 }
 
