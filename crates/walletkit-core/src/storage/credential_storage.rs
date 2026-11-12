@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use world_id_core::FieldElement as CoreFieldElement;
 
+use super::cache::{BillingWitnessKey, BILLING_WITNESS_LEN};
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::paths::StoragePaths;
@@ -18,7 +19,11 @@ use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, CredentialVault};
 use super::{StorageLock, StorageLockGuard};
 use crate::{Credential, FieldElement};
+use world_id_core::primitives::billing::{
+    billing_period, BillingContext, BillingWitness,
+};
 use world_id_core::primitives::merkle::AccountInclusionProof;
+use world_id_core::primitives::OprfKeyId;
 use world_id_core::primitives::TREE_DEPTH;
 
 /// Session seed TTL: ~6 months (182 days).
@@ -582,6 +587,56 @@ impl CredentialStore {
         self.lock_inner()?.get_session_seed(rp_id, oprf_seed, now)
     }
 
+    /// Caches the billing witness of `context` under the RP's OPRF key until the end of the
+    /// context's billing period (WIP-107 §4.6). Nothing is stored once the period has ended.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized, `context`'s `period_start` is not the
+    /// start of a billing period, or the insert fails.
+    pub fn store_billing_witness(
+        &self,
+        context: &BillingContext,
+        oprf_key_id: OprfKeyId,
+        witness: &BillingWitness,
+        now: u64,
+    ) -> StorageResult<()> {
+        self.lock_inner()?
+            .store_billing_witness(context, oprf_key_id, witness, now)
+    }
+
+    /// Retrieves the billing witness cached for `context` under the RP's OPRF key, if its
+    /// billing period has not ended.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized, the query fails or the cached entry is
+    /// malformed.
+    pub fn get_billing_witness(
+        &self,
+        context: &BillingContext,
+        oprf_key_id: OprfKeyId,
+        now: u64,
+    ) -> StorageResult<Option<BillingWitness>> {
+        self.lock_inner()?
+            .get_billing_witness(context, oprf_key_id, now)
+    }
+
+    /// Drops the billing witness cached for `context` under the RP's OPRF key, e.g. once a
+    /// Verifier reports its registration missing (WIP-107 §4.6).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the delete fails.
+    pub fn remove_billing_witness(
+        &self,
+        context: &BillingContext,
+        oprf_key_id: OprfKeyId,
+    ) -> StorageResult<()> {
+        self.lock_inner()?
+            .remove_billing_witness(context, oprf_key_id)
+    }
+
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
     ///
     /// # Errors
@@ -890,6 +945,52 @@ impl CredentialStoreInner {
         Ok(Some(seed))
     }
 
+    fn store_billing_witness(
+        &mut self,
+        context: &BillingContext,
+        oprf_key_id: OprfKeyId,
+        witness: &BillingWitness,
+        now: u64,
+    ) -> StorageResult<()> {
+        if !context.is_canonical() {
+            return Err(StorageError::InvalidInput(format!(
+                "billing period start {} is not the start of a billing period",
+                context.period_start
+            )));
+        }
+        let (_, period_end) = billing_period(context.period_start)
+            .map_err(|e| StorageError::InvalidInput(e.to_string()))?;
+        self.state_mut()?.cache.billing_witness_put(
+            &BillingWitnessKey::new(context, oprf_key_id),
+            &encode_billing_witness(witness),
+            now,
+            period_end,
+        )
+    }
+
+    fn get_billing_witness(
+        &self,
+        context: &BillingContext,
+        oprf_key_id: OprfKeyId,
+        now: u64,
+    ) -> StorageResult<Option<BillingWitness>> {
+        self.state()?
+            .cache
+            .billing_witness_get(&BillingWitnessKey::new(context, oprf_key_id), now)?
+            .map(|bytes| decode_billing_witness(&bytes))
+            .transpose()
+    }
+
+    fn remove_billing_witness(
+        &mut self,
+        context: &BillingContext,
+        oprf_key_id: OprfKeyId,
+    ) -> StorageResult<()> {
+        self.state_mut()?
+            .cache
+            .billing_witness_remove(&BillingWitnessKey::new(context, oprf_key_id))
+    }
+
     fn merkle_cache_get(
         &self,
         valid_until: u64,
@@ -1149,6 +1250,38 @@ impl CredentialStore {
     }
 }
 
+fn encode_billing_witness(witness: &BillingWitness) -> [u8; BILLING_WITNESS_LEN] {
+    let mut bytes = [0u8; BILLING_WITNESS_LEN];
+    let fields = [
+        witness.billing_action,
+        witness.billing_nullifier,
+        witness.billing_oprf_output[0],
+        witness.billing_oprf_output[1],
+    ];
+    for (chunk, field) in bytes.as_chunks_mut::<32>().0.iter_mut().zip(fields) {
+        chunk.copy_from_slice(&field.to_be_bytes());
+    }
+    bytes
+}
+
+fn decode_billing_witness(
+    bytes: &[u8; BILLING_WITNESS_LEN],
+) -> StorageResult<BillingWitness> {
+    let (chunks, _) = bytes.as_chunks::<32>();
+    let field = |index: usize| {
+        CoreFieldElement::from_be_bytes(&chunks[index]).map_err(|e| {
+            StorageError::Serialization(format!(
+                "failed to deserialize billing witness: {e}"
+            ))
+        })
+    };
+    Ok(BillingWitness {
+        billing_action: field(0)?,
+        billing_nullifier: field(1)?,
+        billing_oprf_output: [field(2)?, field(3)?],
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1333,6 +1466,130 @@ mod tests {
             exists_after_grace,
             "Replay guard should exist after grace period (10 minutes)"
         );
+
+        cleanup_test_storage(&root);
+    }
+
+    fn billing_context(period_start: u64) -> BillingContext {
+        use alloy_core::primitives::{Address, U256};
+        use world_id_core::primitives::rp::RpId;
+
+        BillingContext {
+            chain_id: U256::from(480),
+            billing_contract: Address::repeat_byte(0x02),
+            rp_id: RpId::new(42),
+            period_start,
+        }
+    }
+
+    fn billing_witness() -> BillingWitness {
+        BillingWitness {
+            billing_action: CoreFieldElement::from(1u64),
+            billing_nullifier: CoreFieldElement::from(2u64),
+            billing_oprf_output: [
+                CoreFieldElement::from(3u64),
+                CoreFieldElement::from(4u64),
+            ],
+        }
+    }
+
+    #[test]
+    fn billing_witness_encoding_is_frozen() {
+        let bytes = encode_billing_witness(&billing_witness());
+
+        let mut expected = [0u8; BILLING_WITNESS_LEN];
+        for (index, value) in [1u8, 2, 3, 4].into_iter().enumerate() {
+            expected[index * 32 + 31] = value;
+        }
+        assert_eq!(bytes, expected);
+        assert_eq!(
+            decode_billing_witness(&bytes).expect("decode"),
+            billing_witness()
+        );
+    }
+
+    #[test]
+    fn billing_witnesses_last_until_the_period_ends() {
+        use alloy_core::primitives::U160;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let mut inner = CredentialStoreInner::new(
+            provider.paths().as_ref().clone(),
+            provider.keystore(),
+            provider.blob_store(),
+        )
+        .expect("create inner");
+        let now = 1_783_446_000;
+        inner.init(42, now).expect("init storage");
+        let (period_start, period_end) = billing_period(now).expect("billing period");
+        let context = billing_context(period_start);
+        let oprf_key_id = OprfKeyId::new(U160::from(7));
+
+        inner
+            .store_billing_witness(&context, oprf_key_id, &billing_witness(), now)
+            .expect("store");
+
+        assert_eq!(
+            inner
+                .get_billing_witness(&context, oprf_key_id, period_end - 1)
+                .expect("get"),
+            Some(billing_witness())
+        );
+        assert_eq!(
+            inner
+                .get_billing_witness(&context, OprfKeyId::new(U160::from(8)), now)
+                .expect("get under another key"),
+            None
+        );
+        assert_eq!(
+            inner
+                .get_billing_witness(&context, oprf_key_id, period_end)
+                .expect("get after the period"),
+            None
+        );
+
+        inner
+            .remove_billing_witness(&context, oprf_key_id)
+            .expect("remove");
+        assert_eq!(
+            inner
+                .get_billing_witness(&context, oprf_key_id, now)
+                .expect("get after removal"),
+            None
+        );
+
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn billing_witnesses_need_a_canonical_period_start() {
+        use alloy_core::primitives::U160;
+
+        let root = temp_root_path();
+        let provider = InMemoryStorageProvider::new(&root);
+        let mut inner = CredentialStoreInner::new(
+            provider.paths().as_ref().clone(),
+            provider.keystore(),
+            provider.blob_store(),
+        )
+        .expect("create inner");
+        let now = 1_783_446_000;
+        inner.init(42, now).expect("init storage");
+        let (period_start, _) = billing_period(now).expect("billing period");
+        let oprf_key_id = OprfKeyId::new(U160::from(7));
+
+        for period_start in [period_start + 1, 0] {
+            assert!(matches!(
+                inner.store_billing_witness(
+                    &billing_context(period_start),
+                    oprf_key_id,
+                    &billing_witness(),
+                    now,
+                ),
+                Err(StorageError::InvalidInput(_))
+            ));
+        }
 
         cleanup_test_storage(&root);
     }

@@ -8,12 +8,15 @@ use secrecy::SecretBox;
 use walletkit_db::Vault;
 
 mod activity;
+mod billing;
 mod maintenance;
 mod merkle;
 mod nullifiers;
 mod schema;
 mod session;
 mod util;
+
+pub use billing::{BillingWitnessKey, BILLING_WITNESS_LEN};
 
 /// Encrypted cache database wrapper.
 ///
@@ -138,6 +141,55 @@ impl CacheDb {
     /// Returns an error if the query to the cache unexpectedly fails.
     pub fn replay_guard_set(&self, nullifier: [u8; 32], now: u64) -> StorageResult<()> {
         nullifiers::replay_guard_set(self.vault.connection(), nullifier, now)
+    }
+
+    /// Fetches the billing witness cached under `key`.
+    ///
+    /// Returns `None` when missing or expired.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails or the cached bytes are malformed.
+    pub fn billing_witness_get(
+        &self,
+        key: &BillingWitnessKey,
+        now: u64,
+    ) -> StorageResult<Option<[u8; BILLING_WITNESS_LEN]>> {
+        billing::get(
+            self.vault.connection(),
+            &util::billing_witness_key(key),
+            now,
+        )
+    }
+
+    /// Stores the billing witness under `key` until `expires_at`, exclusive.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the insert fails.
+    pub fn billing_witness_put(
+        &self,
+        key: &BillingWitnessKey,
+        witness: &[u8; BILLING_WITNESS_LEN],
+        now: u64,
+        expires_at: u64,
+    ) -> StorageResult<()> {
+        billing::put(
+            self.vault.connection(),
+            &util::billing_witness_key(key),
+            witness,
+            now,
+            expires_at,
+        )
+    }
+
+    /// Removes the billing witness cached under `key`, if any.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the delete fails.
+    pub fn billing_witness_remove(&self, key: &BillingWitnessKey) -> StorageResult<()> {
+        billing::remove(self.vault.connection(), &util::billing_witness_key(key))
     }
 
     /// Records an activity entry.
