@@ -25,7 +25,10 @@ use crate::storage::CredentialStore;
 use crate::OwnershipProof;
 
 pub mod artifacts;
+mod billing;
 mod with_storage;
+
+pub use billing::{BilledRps, BilledRpsSource, BILLED_RPS_MAX_AGE_SECS};
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
