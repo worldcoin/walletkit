@@ -306,7 +306,9 @@ impl CredentialVault {
         let credential_id_i64 = to_i64(credential_id, "credential_id")?;
         let now_i64 = to_i64(now, "now")?;
         let conn = self.vault.connection();
-        let tx = conn.transaction().map_err(|err| map_db_err(&err))?;
+        let tx = conn
+            .transaction_immediate()
+            .map_err(|err| map_db_err(&err))?;
 
         let exists = tx
             .query_row(
