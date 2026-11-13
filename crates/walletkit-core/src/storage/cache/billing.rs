@@ -5,8 +5,7 @@ use world_id_core::primitives::{billing::BillingContext, OprfKeyId};
 
 use crate::storage::{
     cache::util::{
-        cache_entry_times, get_cache_entry, map_db_err, parse_fixed_bytes,
-        prune_expired_entries, upsert_cache_entry,
+        get_cache_entry, map_db_err, parse_fixed_bytes, upsert_cache_entry_until,
     },
     error::StorageResult,
 };
@@ -73,13 +72,7 @@ pub(super) fn put(
     now: u64,
     expires_at: u64,
 ) -> StorageResult<()> {
-    prune_expired_entries(conn, now)?;
-    if expires_at <= now {
-        return Ok(());
-    }
-    // Cache entries stay valid through their `expires_at`; the billing period's end is exclusive.
-    let times = cache_entry_times(now, expires_at - now - 1)?;
-    upsert_cache_entry(conn, key, witness, times)
+    upsert_cache_entry_until(conn, key, witness, now, expires_at)
 }
 
 /// Removes the billing witness cached under `key`, if any.

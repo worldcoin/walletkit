@@ -209,3 +209,131 @@ impl ActivityQuery {
         next
     }
 }
+
+/// The RPs a WIP-107 Billing Contract bills, as the indexer reported them at `block_number`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BilledRpsSnapshot {
+    /// The last block the indexer synced the Billing Contract's events through.
+    pub block_number: u64,
+    /// The timestamp of `block_number`, in Unix seconds.
+    pub synced_at: u64,
+    /// The billed RP ids, ascending and distinct.
+    rp_ids: Vec<u64>,
+}
+
+impl BilledRpsSnapshot {
+    /// A snapshot of `rp_ids`, sorted and deduplicated.
+    #[must_use]
+    pub fn new(block_number: u64, synced_at: u64, mut rp_ids: Vec<u64>) -> Self {
+        rp_ids.sort_unstable();
+        rp_ids.dedup();
+        Self {
+            block_number,
+            synced_at,
+            rp_ids,
+        }
+    }
+
+    /// The billed RP ids, ascending.
+    #[must_use]
+    pub fn rp_ids(&self) -> &[u64] {
+        &self.rp_ids
+    }
+
+    /// Whether the Billing Contract bills `rp_id`.
+    #[must_use]
+    pub fn is_billed(&self, rp_id: u64) -> bool {
+        self.rp_ids.binary_search(&rp_id).is_ok()
+    }
+
+    /// `block_number || synced_at || rp_id*`, each 8 bytes big-endian.
+    pub(crate) fn encode(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(16 + 8 * self.rp_ids.len());
+        bytes.extend_from_slice(&self.block_number.to_be_bytes());
+        bytes.extend_from_slice(&self.synced_at.to_be_bytes());
+        for rp_id in &self.rp_ids {
+            bytes.extend_from_slice(&rp_id.to_be_bytes());
+        }
+        bytes
+    }
+
+    /// Decodes [`Self::encode`]'s bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StorageError::Serialization`] if `bytes` is not a whole number of 8-byte words
+    /// after the two header words, or the RP ids are not ascending and distinct.
+    pub(crate) fn decode(bytes: &[u8]) -> StorageResult<Self> {
+        let malformed = |reason: &str| {
+            StorageError::Serialization(format!(
+                "malformed billed RP snapshot: {reason}"
+            ))
+        };
+        let (words, rest) = bytes.as_chunks::<8>();
+        if !rest.is_empty() {
+            return Err(malformed("length is not a multiple of 8"));
+        }
+        let [block_number, synced_at, rp_ids @ ..] = words else {
+            return Err(malformed("missing block number or sync time"));
+        };
+        let rp_ids: Vec<u64> = rp_ids
+            .iter()
+            .map(|word| u64::from_be_bytes(*word))
+            .collect();
+        if !rp_ids.windows(2).all(|pair| pair[0] < pair[1]) {
+            return Err(malformed("RP ids are not ascending"));
+        }
+        Ok(Self {
+            block_number: u64::from_be_bytes(*block_number),
+            synced_at: u64::from_be_bytes(*synced_at),
+            rp_ids,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BilledRpsSnapshot;
+
+    #[test]
+    fn billed_rps_snapshot_encoding_is_frozen() {
+        let snapshot = BilledRpsSnapshot::new(0x0102, 0x0304, vec![9, 0x2a, 9]);
+        assert_eq!(snapshot.rp_ids(), [9, 0x2a]);
+
+        let mut expected = Vec::new();
+        for word in [0x0102_u64, 0x0304, 9, 0x2a] {
+            expected.extend_from_slice(&word.to_be_bytes());
+        }
+        assert_eq!(snapshot.encode(), expected);
+        assert_eq!(BilledRpsSnapshot::decode(&expected).unwrap(), snapshot);
+    }
+
+    #[test]
+    fn billed_rps_snapshot_lookup() {
+        let snapshot = BilledRpsSnapshot::new(1, 2, vec![42, 7]);
+        assert!(snapshot.is_billed(7));
+        assert!(snapshot.is_billed(42));
+        assert!(!snapshot.is_billed(8));
+        assert!(!BilledRpsSnapshot::new(1, 2, Vec::new()).is_billed(7));
+    }
+
+    #[test]
+    fn malformed_billed_rps_snapshots_are_rejected() {
+        let words = |words: &[u64]| -> Vec<u8> {
+            words.iter().flat_map(|word| word.to_be_bytes()).collect()
+        };
+        for bytes in [
+            Vec::new(),
+            words(&[1]),
+            [words(&[1, 2]), vec![0]].concat(),
+            words(&[1, 2, 9, 9]),
+            words(&[1, 2, 9, 3]),
+        ] {
+            assert!(BilledRpsSnapshot::decode(&bytes).is_err(), "{bytes:?}");
+        }
+        assert_eq!(
+            BilledRpsSnapshot::decode(&words(&[1, 2])).unwrap().rp_ids(),
+            [] as [u64; 0]
+        );
+    }
+}
