@@ -206,6 +206,10 @@ impl RegistrationRequester {
                 let Some(live) = self.take_live_session() else {
                     return Ok(RequesterStatus::Expired);
                 };
+                let sealed = world_id_core::registration::EncryptedPayload {
+                    iv: sealed.iv,
+                    payload: sealed.payload,
+                };
                 live.open(&sealed)
             }
             Some(Err(error)) => {
