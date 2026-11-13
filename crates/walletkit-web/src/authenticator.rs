@@ -5,8 +5,8 @@ use std::{str::FromStr, sync::Arc};
 use js_sys::{BigInt, Promise, Reflect};
 use walletkit_core::{
     authenticator::{
-        artifacts::embedded::EmbeddedZkArtifacts, validate_authenticator_pubkey,
-        GatewayRequestStatus,
+        artifacts::{embedded::EmbeddedZkArtifacts, WalletKitZkArtifactSource},
+        validate_authenticator_pubkey, GatewayRequestStatus,
     },
     Authenticator, Environment, InitializingAuthenticator, Region, RegistrationStatus,
 };
@@ -20,12 +20,12 @@ use crate::{
     values::{JsFieldElement, JsProofRequest, JsProofResponse},
 };
 
-fn parse_environment(environment: &str) -> Result<Environment, JsValue> {
+pub fn parse_environment(environment: &str) -> Result<Environment, JsValue> {
     Environment::from_str(environment)
         .map_err(|_| invalid_argument(&format!("Unknown environment: {environment}")))
 }
 
-fn parse_region(region: Option<String>) -> Result<Option<Region>, JsValue> {
+pub fn parse_region(region: Option<String>) -> Result<Option<Region>, JsValue> {
     region
         .map(|region| {
             Region::from_str(&region)
@@ -80,6 +80,12 @@ impl JsEmbeddedZkArtifacts {
     }
 }
 
+impl JsEmbeddedZkArtifacts {
+    pub(crate) fn source(&self) -> Arc<dyn WalletKitZkArtifactSource> {
+        Arc::clone(&self.0).as_zk_artifact_source()
+    }
+}
+
 impl Default for JsEmbeddedZkArtifacts {
     fn default() -> Self {
         Self::new()
@@ -88,7 +94,7 @@ impl Default for JsEmbeddedZkArtifacts {
 
 /// The main component with which users interact with the World ID Protocol.
 #[wasm_bindgen(js_name = Authenticator)]
-pub struct JsAuthenticator(Arc<Authenticator>);
+pub struct JsAuthenticator(pub(crate) Arc<Authenticator>);
 
 #[wasm_bindgen(js_class = Authenticator)]
 impl JsAuthenticator {
@@ -111,7 +117,7 @@ impl JsAuthenticator {
     ) -> Promise {
         let environment = parse_environment(environment);
         let region = parse_region(region);
-        let artifacts = Arc::clone(&artifacts.0).as_zk_artifact_source();
+        let artifacts = artifacts.source();
         let store = Arc::clone(&store.0);
         // The seed only reaches core's zeroizing guard once validation passed.
         let mut seed = Zeroizing::new(seed);
@@ -148,7 +154,7 @@ impl JsAuthenticator {
     ) -> Promise {
         let environment = parse_environment(environment);
         let region = parse_region(region);
-        let artifacts = Arc::clone(&artifacts.0).as_zk_artifact_source();
+        let artifacts = artifacts.source();
         let store = Arc::clone(&store.0);
         // The seed only reaches core's zeroizing guard once validation passed.
         let mut seed = Zeroizing::new(seed);
@@ -179,12 +185,132 @@ impl JsAuthenticator {
         artifacts: &JsEmbeddedZkArtifacts,
         store: &JsCredentialStore,
     ) -> Promise {
-        let artifacts = Arc::clone(&artifacts.0).as_zk_artifact_source();
+        let artifacts = artifacts.source();
         let store = Arc::clone(&store.0);
         js::promise(async move {
             let authenticator = Authenticator::init(seed, &config, artifacts, store)
                 .await
                 .map_err(to_js)?;
+            Ok(Self(Arc::new(authenticator)).into())
+        })
+    }
+
+    /// Opens the authenticator for `seed` on the account at `leaf_index`, using the environment
+    /// defaults.
+    ///
+    /// A Proving Authenticator has no management key on-chain, so it cannot be found from its
+    /// seed: keep the `leaf_index` it was registered on and open it with this.
+    ///
+    /// # Errors
+    /// Rejects when an argument is invalid, the account does not exist, or the network call fails.
+    #[wasm_bindgen(js_name = initWithLeafIndexAndDefaults, unchecked_return_type = "Promise<Authenticator>")]
+    pub fn init_with_leaf_index_and_defaults(
+        seed: Vec<u8>,
+        leaf_index: BigInt,
+        rpc_url: Option<String>,
+        #[wasm_bindgen(unchecked_param_type = "Environment")] environment: &str,
+        #[wasm_bindgen(unchecked_param_type = "Region | undefined")] region: Option<
+            String,
+        >,
+        artifacts: &JsEmbeddedZkArtifacts,
+        store: &JsCredentialStore,
+    ) -> Promise {
+        let leaf_index = js::u64_arg("leafIndex", leaf_index);
+        let environment = parse_environment(environment);
+        let region = parse_region(region);
+        let artifacts = artifacts.source();
+        let store = Arc::clone(&store.0);
+        // The seed only reaches core's zeroizing guard once validation passed.
+        let mut seed = Zeroizing::new(seed);
+        js::promise(async move {
+            let (leaf_index, environment, region) =
+                (leaf_index?, environment?, region?);
+            let authenticator = Authenticator::init_with_leaf_index_and_defaults(
+                std::mem::take(&mut *seed),
+                leaf_index,
+                rpc_url,
+                &environment,
+                region,
+                artifacts,
+                store,
+            )
+            .await
+            .map_err(to_js)?;
+            Ok(Self(Arc::new(authenticator)).into())
+        })
+    }
+
+    /// Like [`Self::init_with_leaf_index_and_defaults`], routing gateway traffic through OHTTP.
+    ///
+    /// # Errors
+    /// Rejects when an argument is invalid, the account does not exist, or the network call fails.
+    #[wasm_bindgen(js_name = initWithLeafIndexAndOhttpDefaults, unchecked_return_type = "Promise<Authenticator>")]
+    pub fn init_with_leaf_index_and_ohttp_defaults(
+        seed: Vec<u8>,
+        leaf_index: BigInt,
+        rpc_url: Option<String>,
+        #[wasm_bindgen(unchecked_param_type = "Environment")] environment: &str,
+        #[wasm_bindgen(unchecked_param_type = "Region | undefined")] region: Option<
+            String,
+        >,
+        artifacts: &JsEmbeddedZkArtifacts,
+        store: &JsCredentialStore,
+    ) -> Promise {
+        let leaf_index = js::u64_arg("leafIndex", leaf_index);
+        let environment = parse_environment(environment);
+        let region = parse_region(region);
+        let artifacts = artifacts.source();
+        let store = Arc::clone(&store.0);
+        // The seed only reaches core's zeroizing guard once validation passed.
+        let mut seed = Zeroizing::new(seed);
+        js::promise(async move {
+            let (leaf_index, environment, region) =
+                (leaf_index?, environment?, region?);
+            let authenticator = Authenticator::init_with_leaf_index_and_ohttp_defaults(
+                std::mem::take(&mut *seed),
+                leaf_index,
+                rpc_url,
+                &environment,
+                region,
+                artifacts,
+                store,
+            )
+            .await
+            .map_err(to_js)?;
+            Ok(Self(Arc::new(authenticator)).into())
+        })
+    }
+
+    /// Opens the authenticator for `seed` on the account at `leaf_index` with an explicit JSON
+    /// `config`.
+    ///
+    /// # Errors
+    /// Rejects when an argument or the config is invalid, the account does not exist, or the
+    /// network call fails.
+    #[wasm_bindgen(js_name = initWithLeafIndex, unchecked_return_type = "Promise<Authenticator>")]
+    pub fn init_with_leaf_index(
+        seed: Vec<u8>,
+        leaf_index: BigInt,
+        config: String,
+        artifacts: &JsEmbeddedZkArtifacts,
+        store: &JsCredentialStore,
+    ) -> Promise {
+        let leaf_index = js::u64_arg("leafIndex", leaf_index);
+        let artifacts = artifacts.source();
+        let store = Arc::clone(&store.0);
+        // The seed only reaches core's zeroizing guard once validation passed.
+        let mut seed = Zeroizing::new(seed);
+        js::promise(async move {
+            let leaf_index = leaf_index?;
+            let authenticator = Authenticator::init_with_leaf_index(
+                std::mem::take(&mut *seed),
+                leaf_index,
+                &config,
+                artifacts,
+                store,
+            )
+            .await
+            .map_err(to_js)?;
             Ok(Self(Arc::new(authenticator)).into())
         })
     }
