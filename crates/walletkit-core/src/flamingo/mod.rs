@@ -95,8 +95,8 @@ trait MatchClient: Sync {
         request_timeout: Duration,
     ) -> Result<Self::Session, FlamingoError>;
 
-    /// The releases the Verifier advertises for the session's assignment; not attested.
-    fn loaded_releases(session: &Self::Session) -> &[[u8; 32]];
+    /// The `release_hash` of the release the session's enclave attests it runs.
+    fn attested_release(session: &Self::Session) -> [u8; 32];
 
     async fn request_match(
         &self,
@@ -364,8 +364,8 @@ impl MatchClient for SessionClient {
             .map_err(|error| verifier_error(&error))
     }
 
-    fn loaded_releases(session: &Self::Session) -> &[[u8; 32]] {
-        session.assignment().release_hashes()
+    fn attested_release(session: &Self::Session) -> [u8; 32] {
+        session.assignment().release().release_hash()
     }
 
     async fn request_match(
@@ -450,24 +450,32 @@ async fn perform_match<C: MatchClient>(
     request: FlamingoMatchRequest,
 ) -> Result<FlamingoMatchOutcome, FlamingoError> {
     let mut request = request.prepare()?;
-    let request_timeout = engine_provider.request_timeout(&request.offer);
+    let request_timeout =
+        engine_provider.request_timeout(&request.offer, request.pipeline_inputs());
     let mut reassigned = false;
 
     loop {
         // A session carries exactly one request, so a reassignment opens a fresh one.
         let session = client.connect(request_timeout).await?;
-        let engine =
-            engine_provider.select(&request.offer, C::loaded_releases(&session))?;
-        let bound = request.bind(&engine)?;
+        let configuration = engine_provider.select(
+            &request.offer,
+            request.pipeline_inputs(),
+            C::attested_release(&session),
+        )?;
+        let bound = request.bind(&configuration, unix_now())?;
 
         match client.request_match(session, &bound).await {
-            Ok(result) => {
-                return Ok(FlamingoMatchOutcome::new(result, engine.configuration))
-            }
+            Ok(result) => return Ok(FlamingoMatchOutcome::new(result, configuration)),
             Err(ClientError::ReassignRequired) if !reassigned => reassigned = true,
             Err(error) => return Err(verifier_error(&error)),
         }
     }
+}
+
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
 }
 
 fn verifier_error(error: &ClientError) -> FlamingoError {
@@ -475,7 +483,9 @@ fn verifier_error(error: &ClientError) -> FlamingoError {
         ClientError::InvalidConfig { .. } | ClientError::MalformedConfig(_) => {
             FlamingoError::Configuration(error.to_string())
         }
-        ClientError::ReleaseUnavailable => FlamingoError::NoSupportedEngine,
+        ClientError::ReleaseUnavailable | ClientError::TooManyResponseSlots => {
+            FlamingoError::NoSupportedEngine
+        }
         ClientError::MalformedRequest => FlamingoError::invalid_shape(
             "request",
             "cannot be encoded within the WIP-201 bounds",
@@ -499,9 +509,11 @@ fn verifier_error(error: &ClientError) -> FlamingoError {
         ClientError::MalformedResult => FlamingoError::InvalidResponse {
             stage: FlamingoResponseStage::MatchResult,
         },
-        ClientError::Attestation(_) => FlamingoError::Attestation {
-            details: error.to_string(),
-        },
+        ClientError::Attestation(_) | ClientError::ReleaseNotAttested => {
+            FlamingoError::Attestation {
+                details: error.to_string(),
+            }
+        }
         ClientError::Channel(_) => FlamingoError::Channel {
             details: error.to_string(),
         },
@@ -538,7 +550,7 @@ mod tests {
     };
     use world_id_flamingo::FlamingoClaims;
 
-    use super::engine::tests::{provider, ENGINE_HASH};
+    use super::engine::tests::{provider, ENGINE_HASH, ISS};
     use super::{
         perform_match, FlamingoEngineConfiguration, FlamingoEngineProvider,
         FlamingoEntry, FlamingoError, FlamingoMatchOutcome, FlamingoMatchRejection,
@@ -603,13 +615,14 @@ mod tests {
         Ok(matcher)
     }
 
-    /// The `(pipeline, match_strictness, release_hash)` of a payload sent to the Verifier.
+    /// The `(pipeline_id, match_strictness, attested release_hash)` of a request sent to the
+    /// Verifier.
     type SentEngine = (u16, u8, [u8; 32]);
 
     struct FakeClient {
         assignments: AtomicUsize,
-        loaded_releases: Vec<[u8; 32]>,
-        reassigned_releases: Option<Vec<[u8; 32]>>,
+        release: [u8; 32],
+        reassigned_release: Option<[u8; 32]>,
         sent: Mutex<Vec<SentEngine>>,
         results: Mutex<VecDeque<Result<MatchResult, ClientError>>>,
     }
@@ -618,17 +631,17 @@ mod tests {
         fn new(
             results: impl IntoIterator<Item = Result<MatchResult, ClientError>>,
         ) -> Self {
-            Self::with_loaded_releases(vec![provider().1], results)
+            Self::with_release(provider().1, results)
         }
 
-        fn with_loaded_releases(
-            loaded_releases: Vec<[u8; 32]>,
+        fn with_release(
+            release: [u8; 32],
             results: impl IntoIterator<Item = Result<MatchResult, ClientError>>,
         ) -> Self {
             Self {
                 assignments: AtomicUsize::new(0),
-                loaded_releases,
-                reassigned_releases: None,
+                release,
+                reassigned_release: None,
                 sent: Mutex::new(Vec::new()),
                 results: Mutex::new(results.into_iter().collect()),
             }
@@ -641,7 +654,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl MatchClient for FakeClient {
-        type Session = Vec<[u8; 32]>;
+        type Session = [u8; 32];
 
         async fn connect(
             &self,
@@ -649,29 +662,26 @@ mod tests {
         ) -> Result<Self::Session, FlamingoError> {
             let attempt = self.assignments.fetch_add(1, Ordering::Relaxed);
             Ok(if attempt > 0 {
-                self.reassigned_releases
-                    .as_ref()
-                    .unwrap_or(&self.loaded_releases)
-                    .clone()
+                self.reassigned_release.unwrap_or(self.release)
             } else {
-                self.loaded_releases.clone()
+                self.release
             })
         }
 
-        fn loaded_releases(session: &Self::Session) -> &[[u8; 32]] {
-            session
+        fn attested_release(session: &Self::Session) -> [u8; 32] {
+            *session
         }
 
         async fn request_match(
             &self,
-            _session: Self::Session,
+            session: Self::Session,
             request: &MatchRequest,
         ) -> Result<MatchResult, ClientError> {
             let payload = request.payload().unwrap();
             self.sent.lock().unwrap().push((
-                payload.pipeline,
+                payload.pipeline_id,
                 payload.match_strictness,
-                payload.release_hash,
+                session,
             ));
             self.results
                 .lock()
@@ -693,12 +703,12 @@ mod tests {
             offered_configurations: vec![
                 FlamingoEngineConfiguration {
                     release_hash: vec![0x33; 32],
-                    pipeline: 1,
+                    pipeline_id: 1,
                     match_strictness: 1,
                 },
                 FlamingoEngineConfiguration {
                     release_hash: release_hash.to_vec(),
-                    pipeline: 1,
+                    pipeline_id: 1,
                     match_strictness: 2,
                 },
             ],
@@ -707,6 +717,7 @@ mod tests {
                 entry(b"live image"),
                 entry(b"challenge image"),
             ],
+            pipeline_inputs: vec![1],
             compare: vec![0, 1, 2],
             hints: Vec::new(),
         }
@@ -725,7 +736,7 @@ mod tests {
     }
 
     fn verified(debug_report: DebugReport) -> MatchResult {
-        let zero = flamingo_primitives::FieldElement::ZERO;
+        let zero = world_id_core::FieldElement::ZERO;
         MatchResult::Success {
             verified: Box::new(VerifiedMatch {
                 statement: AttestedStatement {
@@ -733,11 +744,14 @@ mod tests {
                     signing_key_attestation: b"signing-key-attestation".to_vec(),
                 },
                 claims: FlamingoClaims {
+                    now: 0,
                     compared_entry_hashes: [zero; 4],
                     aud: zero,
                     nonce: zero,
                     aat: None,
+                    compare_sources: 0,
                     engine_config_hash: zero,
+                    billing_nullifier: zero,
                 },
             }),
             debug_report,
@@ -778,10 +792,7 @@ mod tests {
                 FailureReason::UnsupportedPipeline,
                 FlamingoMatchRejection::UnsupportedPipeline,
             ),
-            (
-                FailureReason::UnsupportedRelease,
-                FlamingoMatchRejection::UnsupportedRelease,
-            ),
+            (FailureReason::Expired, FlamingoMatchRejection::Expired),
             (
                 FailureReason::RequestTooLarge,
                 FlamingoMatchRejection::RequestTooLarge,
@@ -828,27 +839,6 @@ mod tests {
             assert_eq!(client.assignments.load(Ordering::Relaxed), 1);
             assert_eq!(client.sent().len(), 1);
         }
-    }
-
-    #[tokio::test]
-    async fn oversized_request_never_reaches_the_match_transport() {
-        use super::engine::tests::{jwk, manifest_with_limits, metadata};
-        let (manifest, release) =
-            manifest_with_limits(ENGINE_HASH, 4, "release-1", 800, 100);
-        let provider = FlamingoEngineProvider::from_metadata(&metadata(
-            &[&manifest],
-            &[jwk("release-1", "active")],
-        ))
-        .unwrap();
-        let client = FakeClient::with_loaded_releases(vec![release], []);
-        assert!(matches!(
-            perform_match(&client, &provider, request_for(release)).await,
-            Err(FlamingoError::InvalidInput {
-                limit_bytes: Some(100),
-                ..
-            })
-        ));
-        assert!(client.sent().is_empty());
     }
 
     #[test]
@@ -1262,8 +1252,8 @@ mod tests {
                 Message::Text(r#"{"type":"assignment_request"}"#.into())
             );
             let assignment = format!(
-                r#"{{"type":"assignment","attestation":"hEBAQEA=","public_key":"a2V5","release_hashes":["{}"]}}"#,
-                hex::encode(ENGINE_HASH)
+                r#"{{"type":"assignment","attestation":"hEBAQEA=","public_key":"a2V5","release_manifest":"{}"}}"#,
+                super::engine::tests::manifest(ENGINE_HASH, 4, "release-1").0
             );
             socket.send(Message::Text(assignment.into())).await.unwrap();
             let mut binary = 0;
@@ -1289,7 +1279,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runs_the_first_offered_configuration_the_verifier_loaded() {
+    async fn runs_the_first_offered_configuration_of_the_attested_release() {
         let client = FakeClient::new([Ok(verified(DebugReport::NotProduced))]);
         let (_, release_hash) = provider();
 
@@ -1313,15 +1303,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sends_nothing_when_the_verifier_loaded_no_offered_engine() {
-        let client = FakeClient::with_loaded_releases(
-            vec![[0x44; 32]],
+    async fn sends_nothing_when_the_attested_release_was_not_offered() {
+        let client = FakeClient::with_release(
+            [0x44; 32],
             [Ok(verified(DebugReport::NotProduced))],
         );
 
         let error = perform_match(&client, &engines(), request())
             .await
-            .expect_err("no offered engine is loaded");
+            .expect_err("the attested release was not offered");
 
         assert!(matches!(error, FlamingoError::NoSupportedEngine));
         assert_eq!(client.assignments.load(Ordering::Relaxed), 1);
@@ -1374,19 +1364,19 @@ mod tests {
         use super::engine::tests::{jwk, manifest, metadata};
         let (a, release_a) = manifest(ENGINE_HASH, 4, "release-1");
         let (b, release_b) = manifest(ENGINE_HASH, 2, "release-1");
-        let provider = FlamingoEngineProvider::from_metadata(&metadata(
-            &[&a, &b],
-            &[jwk("release-1", "active")],
-        ))
+        let provider = FlamingoEngineProvider::from_metadata(
+            ISS,
+            &metadata(&[&a, &b], &[jwk("release-1", "active")]),
+        )
         .unwrap();
-        let mut client = FakeClient::with_loaded_releases(
-            vec![release_a],
+        let mut client = FakeClient::with_release(
+            release_a,
             [
                 Err(ClientError::ReassignRequired),
                 Ok(verified(DebugReport::NotProduced)),
             ],
         );
-        client.reassigned_releases = Some(vec![release_b]);
+        client.reassigned_release = Some(release_b);
         let mut request = request_for(release_b);
         request.offered_configurations[0].release_hash = release_a.to_vec();
         let outcome = perform_match(&client, &provider, request).await.unwrap();

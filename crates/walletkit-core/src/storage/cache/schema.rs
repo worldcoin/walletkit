@@ -13,10 +13,17 @@
 //! - Merkle Inclusion Proof: `0x01`; at most one entry; value is the proof bytes.
 //! - Session Seeds: `0x02 || rp_id (8-byte big-endian) || oprf_seed`; value is the `session_id_r_seed`.
 //! - Nullifier Replay Guards: `0x03 || nullifier`; value is a presence marker.
+//! - Billing Witnesses: `0x04 || chain_id (32 bytes) || billing_contract (20 bytes) || rp_id
+//!   (8-byte big-endian) || period_start (8-byte big-endian) || oprf_key_id (20 bytes)`; value is
+//!   `billing_action || billing_nullifier || R.x || R.y`, each 32 bytes big-endian.
+//! - Billed RP Snapshots: `0x05 || chain_id (32 bytes) || billing_contract (20 bytes)`; value is
+//!   `block_number || synced_at || rp_id*`, each 8 bytes big-endian, with the RP ids ascending.
 
 pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
 pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
 pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x03;
+pub(super) const CACHE_KEY_PREFIX_BILLING_WITNESS: u8 = 0x04;
+pub(super) const CACHE_KEY_PREFIX_BILLED_RPS: u8 = 0x05;
 
 use walletkit_sqlite::{
     error::{Error, ErrorCode},
