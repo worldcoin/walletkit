@@ -50,10 +50,17 @@ const CIPHER_CHACHA20: &str = "chacha20";
 const PLAINTEXT_HEADER_SIZE: i64 = 32;
 const SQLITE_ERROR: i32 = 1;
 const SQLITE_CORRUPT: i32 = 11;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+const SQLITE_BUSY: i32 = 5;
 const FOREIGN_KEYS_ON: i64 = 1;
 const SYNCHRONOUS_FULL: i64 = 2;
 const SECURE_DELETE_ON: i64 = 1;
 const TEMP_STORE_MEMORY: i64 = 2;
+/// How long a native connection waits for another connection's lock before
+/// failing with `SQLITE_BUSY`. Long enough to ride out a competing write by
+/// the app, an extension, or a backup, short enough to surface a stuck lock.
+#[cfg(not(target_arch = "wasm32"))]
+const BUSY_TIMEOUT_MS: i64 = 5_000;
 
 /// Opens a writable database, applies the encryption key, and configures the connection.
 ///
@@ -77,8 +84,14 @@ pub fn open_encrypted(
     Ok(conn)
 }
 
-/// Configures durable journal settings, foreign keys, and secure deletion.
+/// Configures the busy timeout, durable journal settings, foreign keys, and
+/// secure deletion.
 ///
+/// - Native sets a bounded `busy_timeout` first, so keying, the journal-mode
+///   switch, and every later statement wait for a competing writer instead of
+///   failing immediately. `ATTACH`ed databases share the connection's timeout.
+/// - WASM sets none: it is single-threaded, so a connection that sleeps in the
+///   busy handler would block the very lock holder it waits for.
 /// - Native uses WAL for concurrent readers during writes.
 /// - WASM uses a rollback journal because SAH-pool has no WAL shared-memory
 ///   methods; WAL would require exclusive locking and provide no concurrency.
@@ -91,6 +104,8 @@ fn configure_connection(
     conn: &Connection,
     k_intermediate: &SecretBox<[u8; 32]>,
 ) -> DbResult<()> {
+    #[cfg(not(target_arch = "wasm32"))]
+    ensure_busy_timeout(conn)?;
     ensure_cipher(conn)?;
     encrypt_or_unlock(conn, k_intermediate)?;
 
@@ -302,6 +317,29 @@ fn ensure_journal_mode(conn: &Connection, requested: &str) -> DbResult<()> {
             -1,
             format!(
                 "could not ensure journal mode {requested}: SQLite selected {actual}"
+            ),
+        ))
+    }
+}
+
+/// Makes `SQLite` retry on a locked database for up to [`BUSY_TIMEOUT_MS`].
+///
+/// `SQLite` defaults to no timeout, which fails every contended write with
+/// `database is locked` immediately.
+#[cfg(not(target_arch = "wasm32"))]
+fn ensure_busy_timeout(conn: &Connection) -> DbResult<()> {
+    let actual = conn.query_row(
+        &format!("PRAGMA busy_timeout = {BUSY_TIMEOUT_MS};"),
+        &[],
+        |row| Ok(row.column_i64(0)),
+    )?;
+    if actual == BUSY_TIMEOUT_MS {
+        Ok(())
+    } else {
+        Err(Error::new(
+            -1,
+            format!(
+                "could not ensure PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}: got {actual}"
             ),
         ))
     }
@@ -567,10 +605,14 @@ mod tests {
         open_fully_encrypted, Error, LEGACY_ENCRYPTED_HEADER_FIXTURE,
         LEGACY_FIXTURE_KEY, SQLITE_CORRUPT, SQLITE_ERROR,
     };
+    #[cfg(not(target_arch = "wasm32"))]
+    use super::{BUSY_TIMEOUT_MS, SQLITE_BUSY};
     use crate::params;
     use crate::test_utils::init_sqlite;
     use crate::Connection;
     use secrecy::SecretBox;
+    #[cfg(not(target_arch = "wasm32"))]
+    use std::time::{Duration, Instant};
 
     #[test]
     fn test_temp_store_memory_overrides_file_storage() {
@@ -582,6 +624,67 @@ mod tests {
             .query_row("PRAGMA temp_store;", &[], |row| Ok(row.column_i64(0)))
             .unwrap();
         assert_eq!(temp_store, 2);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_writer_waits_for_busy_timeout() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("busy.sqlite");
+        let key = SecretBox::init_with(|| [0x11u8; 32]);
+        let holder = open_encrypted(&path, &key).expect("open holder");
+        holder
+            .execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY);")
+            .expect("create table");
+        let writer = open_encrypted(&path, &key).expect("open writer");
+        let configured = writer
+            .query_row("PRAGMA busy_timeout;", &[], |row| Ok(row.column_i64(0)))
+            .expect("read busy_timeout");
+        assert_eq!(configured, BUSY_TIMEOUT_MS);
+
+        holder
+            .execute_batch("BEGIN IMMEDIATE;")
+            .expect("hold write lock");
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            holder.execute_batch("COMMIT;").expect("release write lock");
+            holder
+        });
+
+        let started = Instant::now();
+        writer
+            .execute_batch("INSERT INTO t VALUES (1);")
+            .expect("write succeeds once the lock is released");
+        assert!(started.elapsed() >= Duration::from_millis(250));
+        release.join().expect("join releasing thread");
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_writer_fails_when_lock_outlasts_busy_timeout() {
+        init_sqlite();
+        let dir = tempfile::tempdir().expect("create temp dir");
+        let path = dir.path().join("locked.sqlite");
+        let key = SecretBox::init_with(|| [0x22u8; 32]);
+        let holder = open_encrypted(&path, &key).expect("open holder");
+        holder
+            .execute_batch("CREATE TABLE t (id INTEGER PRIMARY KEY);")
+            .expect("create table");
+        let writer = open_encrypted(&path, &key).expect("open writer");
+        writer
+            .execute_batch("PRAGMA busy_timeout = 200;")
+            .expect("shorten busy_timeout");
+
+        holder
+            .execute_batch("BEGIN IMMEDIATE;")
+            .expect("hold write lock");
+        let started = Instant::now();
+        let error = writer
+            .execute_batch("INSERT INTO t VALUES (1);")
+            .expect_err("write must fail while the lock is held");
+        assert_eq!(error.code.0 & 0xff, SQLITE_BUSY);
+        assert!(started.elapsed() >= Duration::from_millis(150));
     }
 
     #[test]
