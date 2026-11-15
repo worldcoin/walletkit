@@ -37,8 +37,8 @@ pub(super) fn record(
         .query_row(
             "INSERT INTO activity_entries (
                 client_id, protocol, created_at,
-                outcome, rp_id, app_identifier, failure_reason
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                outcome, rp_id, app_identifier, failure_reason, challenge_id
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
             RETURNING entry_id",
             params![
                 entry.client_id.as_str(),
@@ -51,6 +51,7 @@ pub(super) fn record(
                     .failure_reason
                     .map(|v| v.to_string())
                     .unwrap_or_default(),
+                entry.challenge_id.clone().map_or(Value::Null, Value::Text),
             ],
             |stmt| Ok(stmt.column_i64(0)),
         )
@@ -181,7 +182,7 @@ const SELECT_ACTIVITY_ENTRIES: &str =
             e.rp_id, e.app_identifier, e.failure_reason,
             (SELECT GROUP_CONCAT(s.issuer_schema_id)
              FROM activity_issuer_schema_ids s
-             WHERE s.entry_id = e.entry_id)
+             WHERE s.entry_id = e.entry_id), e.challenge_id
      FROM activity_entries e";
 
 fn encode_issuer_schema_ids(issuer_schema_ids: &BTreeSet<u64>) -> String {
@@ -252,6 +253,7 @@ fn map_entry(row: &Row<'_, '_>) -> StorageResult<ActivityEntry> {
         app_identifier,
         issuer_schema_ids,
         failure_reason,
+        challenge_id: (!row.is_column_null(9)).then(|| row.column_text(9)),
     })
 }
 
@@ -291,7 +293,51 @@ mod tests {
             issuer_schema_ids: vec![10],
             outcome: ActivityOutcome::Completed,
             failure_reason: None,
+            challenge_id: None,
         }
+    }
+
+    #[test]
+    fn test_challenge_ids_survive_reopen_and_follow_activity_deletion() {
+        let path = temp_cache_path();
+        let key = SecretBox::init_with(|| [0x43u8; 32]);
+        let db = CacheDb::new(&path, &key).expect("create cache");
+        let entry = ActivityEntry {
+            challenge_id: Some("diagnostic-'challenge-α".to_string()),
+            ..sample_entry()
+        };
+        assert!(!format!("{entry:?}").contains("diagnostic-"));
+        let id = db.record_activity(&entry, 1000).expect("record challenge");
+        db.record_activity(&sample_entry(), 1001)
+            .expect("record without challenge");
+        drop(db);
+
+        let db = CacheDb::new(&path, &key).expect("reopen cache");
+        let entries = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("list");
+        assert_eq!(entries[0].challenge_id, None);
+        assert_eq!(entries[1].challenge_id, entry.challenge_id);
+
+        assert_eq!(db.delete_activities(&[id]).expect("delete challenge"), 1);
+        let entries = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].challenge_id, None);
+
+        db.record_activity(&entry, 1002)
+            .expect("record challenge again");
+        assert_eq!(db.clear_activities().expect("clear history"), 2);
+        db.record_activity(&sample_entry(), 1003)
+            .expect("record after clear");
+        let entries = db
+            .list_activities(&ActivityQuery::new(), 10, 0)
+            .expect("list");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].challenge_id, None);
+        drop(db);
+        cleanup_cache_files(&path);
     }
 
     #[test]
