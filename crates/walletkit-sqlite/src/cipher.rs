@@ -434,80 +434,6 @@ pub fn export_plaintext_copy(
     Ok(())
 }
 
-/// Imports data from a plaintext (unencrypted) database into an already-open
-/// encrypted database.
-///
-/// The source database is `ATTACH`ed with an empty key and its contents are
-/// copied into the main (empty) encrypted database.
-///
-/// See [`export_plaintext_copy`] for why `ATTACH` + SQL is used instead of
-/// the `sqlite3_backup` API.
-///
-/// **Schema migration:** The import uses `SELECT *`, so column changes are
-/// handled automatically as long as both sides share the same schema. If a
-/// caller's schema evolves (e.g. new columns with `NOT NULL` constraints),
-/// restoring an older backup into a newer schema will fail. When that happens,
-/// the caller needs version-aware import logic.
-///
-/// # Errors
-///
-/// Returns `Error` if the `ATTACH`, copy, or `DETACH` fails.
-pub fn import_plaintext_copy(
-    conn: &Connection,
-    source_path: &Path,
-    tables: &[&str],
-) -> DbResult<()> {
-    if !source_path.exists() {
-        return Err(Error::new(
-            -1,
-            format!("backup file does not exist: {}", source_path.display()),
-        ));
-    }
-
-    let source_str = source_path.to_string_lossy();
-    let attach_sql = format!(
-        "ATTACH DATABASE '{}' AS backup KEY '';",
-        source_str.replace('\'', "''")
-    );
-    conn.execute_batch(&attach_sql)?;
-
-    // Verify the destination tables are empty before importing. Importing into
-    // a non-empty destination could silently merge data if primary keys don't
-    // collide.
-    let result = (|| {
-        for table in tables {
-            let count: i64 =
-                conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), &[], |row| {
-                    Ok(row.column_i64(0))
-                })?;
-            if count > 0 {
-                return Err(Error::new(
-                    -1,
-                    format!("cannot import into non-empty table: {table}"),
-                ));
-            }
-        }
-
-        // Wrap in a transaction so the restore is atomic — if any INSERT
-        // fails, everything is rolled back and the destination stays empty for
-        // a retry.
-        let tx = conn.transaction()?;
-        for table in tables {
-            tx.execute_batch(&format!(
-                "INSERT INTO {table} SELECT * FROM backup.{table};"
-            ))?;
-        }
-        tx.commit()
-    })();
-
-    // Always detach, even if the import failed.
-    let detach_result = conn.execute_batch("DETACH DATABASE backup;");
-
-    result?;
-    detach_result?;
-    Ok(())
-}
-
 /// Runs `PRAGMA integrity_check` and returns whether the database is healthy.
 ///
 /// # Errors
@@ -562,10 +488,10 @@ pub(crate) fn open_fully_encrypted(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_temp_store_memory, export_plaintext_copy, import_plaintext_copy,
-        integrity_check, is_plaintext_header_probe_error, open_encrypted,
-        open_fully_encrypted, Error, LEGACY_ENCRYPTED_HEADER_FIXTURE,
-        LEGACY_FIXTURE_KEY, SQLITE_CORRUPT, SQLITE_ERROR,
+        ensure_temp_store_memory, export_plaintext_copy, integrity_check,
+        is_plaintext_header_probe_error, open_encrypted, open_fully_encrypted, Error,
+        LEGACY_ENCRYPTED_HEADER_FIXTURE, LEGACY_FIXTURE_KEY, SQLITE_CORRUPT,
+        SQLITE_ERROR,
     };
     use crate::params;
     use crate::test_utils::init_sqlite;
@@ -897,12 +823,11 @@ mod tests {
     }
 
     #[test]
-    fn test_cipher_plaintext_export_import_roundtrip() {
+    fn test_cipher_plaintext_export() {
         init_sqlite();
         let dir = tempfile::tempdir().expect("create temp dir");
         let src_path = dir.path().join("source.sqlite");
         let dest_path = dir.path().join("backup.plain.sqlite");
-        let restore_path = dir.path().join("restore.sqlite");
         let key = SecretBox::init_with(|| [0x11u8; 32]);
 
         {
@@ -926,12 +851,8 @@ mod tests {
         }
 
         {
-            let conn = open_encrypted(&restore_path, &key).expect("open restore");
-            conn.execute_batch(
-                "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
-            )
-            .expect("create table");
-            import_plaintext_copy(&conn, &dest_path, &["widgets"]).expect("import");
+            let conn =
+                Connection::open(&dest_path, true).expect("open plaintext export");
 
             let count: i64 = conn
                 .query_row("SELECT COUNT(*) FROM widgets", &[], |row| {
@@ -947,47 +868,5 @@ mod tests {
                 .expect("query");
             assert_eq!(val, "beta");
         }
-    }
-
-    #[test]
-    fn test_cipher_import_rejects_non_empty_destination() {
-        init_sqlite();
-        let dir = tempfile::tempdir().expect("create temp dir");
-        let src_path = dir.path().join("source.sqlite");
-        let dest_path = dir.path().join("backup.plain.sqlite");
-        let restore_path = dir.path().join("restore.sqlite");
-        let key = SecretBox::init_with(|| [0x22u8; 32]);
-
-        {
-            let conn = open_encrypted(&src_path, &key).expect("open src");
-            conn.execute_batch(
-                "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
-            )
-            .expect("create table");
-            conn.execute(
-                "INSERT INTO widgets (id, val) VALUES (?1, ?2)",
-                params![1_i64, "alpha"],
-            )
-            .expect("insert");
-            export_plaintext_copy(&conn, &dest_path, &["widgets"]).expect("export");
-        }
-
-        let conn = open_encrypted(&restore_path, &key).expect("open restore");
-        conn.execute_batch(
-            "CREATE TABLE widgets (id INTEGER PRIMARY KEY, val TEXT NOT NULL);",
-        )
-        .expect("create table");
-        conn.execute(
-            "INSERT INTO widgets (id, val) VALUES (?1, ?2)",
-            params![99_i64, "preexisting"],
-        )
-        .expect("insert");
-
-        let err = import_plaintext_copy(&conn, &dest_path, &["widgets"])
-            .expect_err("import should refuse non-empty destination");
-        assert!(
-            err.to_string().contains("non-empty table"),
-            "expected non-empty-table error, got: {err}"
-        );
     }
 }

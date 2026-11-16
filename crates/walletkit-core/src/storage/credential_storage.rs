@@ -26,7 +26,7 @@ use world_id_core::primitives::TREE_DEPTH;
 const SESSION_SEED_TTL_SECONDS: u64 = 182 * 86_400;
 
 /// Filename prefix for temporary plaintext vault exports used during
-/// backup export and import. A UUID is appended to avoid collisions.
+/// backup export. A UUID is appended to avoid collisions.
 #[cfg(not(target_arch = "wasm32"))]
 const VAULT_BACKUP_TEMP_PREFIX: &str = "vault_backup_plaintext_";
 
@@ -479,12 +479,14 @@ impl CredentialStore {
 impl CredentialStore {
     /// Adds credentials from a backup to an initialized vault, atomically and idempotently.
     /// Preserves local-only credentials and local record IDs. Returns the number of newly added credentials.
+    /// Also adds the backup's PCP blob links, including to credentials the vault already holds;
+    /// the vault-changed listener is notified when credentials or links were added.
     /// The host must authenticate the backup as belonging to this account before calling.
     ///
     /// # Errors
     /// Returns an error on an invalid backup, uninitialized store, or database failure.
     pub fn merge_vault_from_backup(&self, backup_bytes: &[u8]) -> StorageResult<u64> {
-        let added = {
+        let outcome = {
             let inner = self.lock_inner()?;
             let _guard = inner.guard()?;
             // TODO: Move stale-file cleanup to storage initialization. Merges now
@@ -494,10 +496,10 @@ impl CredentialStore {
             inner.cleanup_stale_backup_files();
             inner.state()?.vault.merge_plaintext_bytes(backup_bytes)?
         };
-        if added != 0 {
+        if outcome.added_records != 0 || outcome.added_blob_refs != 0 {
             self.notify_vault_changed();
         }
-        Ok(added)
+        Ok(outcome.added_records)
     }
 
     /// Permanently destroys all credential storage data.
@@ -558,6 +560,7 @@ impl CredentialStore {
     ///
     /// The store must already be initialized via [`init`](Self::init).
     /// Intended for restore on a fresh install where the vault is empty.
+    /// Validates every row through the merge path and assigns new local credential IDs.
     ///
     /// # Errors
     ///
@@ -566,10 +569,7 @@ impl CredentialStore {
         let inner = self.lock_inner()?;
         let _guard = inner.guard()?;
         inner.cleanup_stale_backup_files();
-        let path = inner.write_temp_backup_file(backup_bytes)?;
-        let _cleanup = CleanupFile(path.clone());
-
-        inner.import_vault_from_file(&path)
+        inner.state()?.vault.restore_plaintext_bytes(backup_bytes)
     }
 
     /// Registers a listener that is called after every successful vault
@@ -1082,33 +1082,6 @@ impl CredentialStoreInner {
         let dest = self.temp_backup_path();
         state.vault.export_plaintext(&dest)?;
         Ok(dest.to_string_lossy().to_string())
-    }
-
-    /// Writes raw bytes to a temporary file in the worldid directory.
-    /// Returns the path. The caller is responsible for cleanup.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn write_temp_backup_file(&self, bytes: &[u8]) -> StorageResult<String> {
-        let dest = self.temp_backup_path();
-        if let Err(e) = std::fs::write(&dest, bytes) {
-            // Best-effort cleanup of any partial write to avoid leaking
-            // plaintext data on disk (e.g. after ENOSPC).
-            let _ = std::fs::remove_file(&dest);
-            return Err(StorageError::VaultDb(format!(
-                "failed to write temp backup file: {e}"
-            )));
-        }
-        Ok(dest.to_string_lossy().to_string())
-    }
-
-    /// Imports from a plaintext vault file on disk.
-    ///
-    /// Caller holds the cross-process lock for the duration of the import so a
-    /// concurrent writer can't interleave with the ATTACH-based copy.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn import_vault_from_file(&self, backup_path: &str) -> StorageResult<()> {
-        let state = self.state()?;
-        let source = std::path::Path::new(backup_path);
-        state.vault.import_plaintext(source)
     }
 
     /// Removes any stale plaintext backup temp files left behind by a
@@ -2054,6 +2027,67 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_notifies_when_only_blob_links_are_added() {
+        use world_id_core::Credential as CoreCredential;
+        let source_root = temp_root_path();
+        let local_root = temp_root_path();
+        let source =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&source_root))
+                .unwrap();
+        let local =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&local_root))
+                .unwrap();
+        source.init(42, 1000).unwrap();
+        local.init(42, 1000).unwrap();
+        let credential: Credential = CoreCredential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        let source_id = source
+            .store_credential(&credential, &FieldElement::from(7u64), 9999, None, 1000)
+            .unwrap();
+        assert_eq!(
+            local
+                .merge_vault_from_backup(&source.export_vault_for_backup().unwrap())
+                .unwrap(),
+            1
+        );
+        let orb_pcp = crate::storage::blob_id(b"orb pcp".to_vec());
+        source
+            .add_credential_blobs(
+                source_id,
+                Arc::new(credential),
+                vec![Arc::clone(&orb_pcp)],
+                2000,
+            )
+            .unwrap();
+        let linked_backup = source.export_vault_for_backup().unwrap();
+        let (notifications_tx, notifications_rx) = mpsc::channel();
+        local.set_vault_changed_listener(Arc::new(ChannelVaultListener(
+            notifications_tx,
+        )));
+
+        assert_eq!(local.merge_vault_from_backup(&linked_backup).unwrap(), 0);
+        notifications_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("a merge that adds links should notify the listener");
+        let local_id = local.list_credentials(None, 1000).unwrap()[0].credential_id;
+        let linked = local.credential_blobs(local_id).unwrap();
+        assert_eq!(linked.len(), 1);
+        assert_eq!(*linked[0], *orb_pcp);
+        assert_eq!(local.merge_vault_from_backup(&linked_backup).unwrap(), 0);
+
+        drop(local);
+        assert_eq!(
+            notifications_rx.recv_timeout(std::time::Duration::from_secs(1)),
+            Err(mpsc::RecvTimeoutError::Disconnected),
+            "a replay that adds nothing should not notify the listener"
+        );
+        cleanup_test_storage(&source_root);
+        cleanup_test_storage(&local_root);
+    }
+
+    #[test]
     fn test_import_vault_backup_into_non_empty_vault_fails() {
         use world_id_core::Credential as CoreCredential;
 
@@ -2103,8 +2137,7 @@ mod tests {
     }
 
     #[test]
-    fn test_import_vault_backup_transaction_atomicity() {
-        use crate::storage::credential_vault::BACKUP_TABLES;
+    fn test_import_vault_backup_rejects_invalid_blob_ref() {
         use walletkit_sqlite::Connection;
         use world_id_core::Credential as CoreCredential;
 
@@ -2118,7 +2151,7 @@ mod tests {
             .issuer_schema_id(100u64)
             .genesis_issued_at(1000)
             .into();
-        src_store
+        let credential_id = src_store
             .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
             .expect("store credential");
 
@@ -2127,19 +2160,14 @@ mod tests {
         let corrupt_path = src_root.join("corrupt_backup.sqlite");
         std::fs::write(&corrupt_path, &bytes).expect("write backup");
 
-        // Corrupt the *last* table in BACKUP_TABLES. Earlier INSERTs succeed
-        // before this one fails, testing transaction rollback.
-        assert_eq!(
-            *BACKUP_TABLES.last().unwrap(),
-            "blob_objects",
-            "update this test if BACKUP_TABLES order changes"
-        );
         let backup_conn = Connection::open(&corrupt_path, false).expect("open backup");
         backup_conn
             .execute(
-                "INSERT INTO blob_objects (content_id, blob_kind, created_at, bytes)
-                 VALUES (NULL, 1, 2000, X'CAFE')",
-                &[],
+                "INSERT INTO credential_blob_refs (credential_id, blob_id, created_at)
+                 VALUES (?1, X'CAFE', 2000)",
+                &[walletkit_sqlite::Value::Integer(
+                    i64::try_from(credential_id).unwrap(),
+                )],
             )
             .expect("insert corrupt row");
         drop(backup_conn);
@@ -2308,9 +2336,20 @@ mod tests {
             .issuer_schema_id(100)
             .genesis_issued_at(1000)
             .into();
-        src_store
-            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+        let id = src_store
+            .store_credential(
+                &cred,
+                &FieldElement::from(7u64),
+                9999,
+                Some(b"associated".to_vec()),
+                1000,
+            )
             .expect("store credential");
+
+        let pcp = crate::storage::blob_id(b"orb pcp".to_vec());
+        src_store
+            .add_credential_blobs(id, Arc::new(cred), vec![Arc::clone(&pcp)], 1000)
+            .unwrap();
 
         let bytes = src_store.export_vault_for_backup().expect("export vault");
         assert!(!bytes.is_empty(), "exported bytes should not be empty");
@@ -2332,6 +2371,11 @@ mod tests {
             .expect("credential should exist");
         assert_eq!(imported_cred.issuer_schema_id(), 100);
         assert_eq!(imported_bf.to_bytes(), FieldElement::from(7u64).to_bytes());
+
+        let restored_id =
+            dst_store.list_credentials(None, 1000).unwrap()[0].credential_id;
+        assert_eq!(*dst_store.credential_blobs(restored_id).unwrap()[0], *pcp);
+        assert_eq!(dst_store.merge_vault_from_backup(&bytes).unwrap(), 0);
 
         cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);
