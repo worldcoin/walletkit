@@ -78,7 +78,7 @@ impl Authenticator {
             }
         }
 
-        let credential = registration_credential(
+        let credential = requested_credential(
             self.stored_credentials(now)?,
             request.requests.first().map(|item| item.issuer_schema_id),
         )?;
@@ -174,11 +174,11 @@ fn candidate_periods(active: ActivePeriods) -> Vec<u64> {
     active.next.into_iter().chain([active.current]).collect()
 }
 
-/// The credential that proves the registration: the one the request asks for. WIP-107 accepts any
-/// valid credential, but the Proof of Embedding Similarity needs this one, and the registration's
+/// The credential a Proof of Embedding Similarity request asks for, which also proves its billing
+/// registration. WIP-107 accepts any valid credential for the registration, but the registration's
 /// `issuerSchemaId` is public, so registering with another one would spend the RP's capacity for a
 /// proof that fails and disclose a credential the RP did not ask about.
-fn registration_credential(
+pub(super) fn requested_credential(
     credentials: Vec<CredentialInput>,
     requested_issuer_schema_id: Option<u64>,
 ) -> Result<CredentialInput, WalletKitError> {
@@ -247,7 +247,7 @@ mod tests {
     };
 
     use super::{
-        candidate_periods, registration_credential, status_outcome, submission_outcome,
+        candidate_periods, requested_credential, status_outcome, submission_outcome,
         Outcome,
     };
     use crate::error::WalletKitError;
@@ -281,7 +281,7 @@ mod tests {
     }
 
     fn chosen(credentials: &[u64], requested: Option<u64>) -> u64 {
-        registration_credential(
+        requested_credential(
             credentials.iter().copied().map(credential).collect(),
             requested,
         )
@@ -299,7 +299,7 @@ mod tests {
             (Vec::new(), Some(1)),
         ] {
             assert!(matches!(
-                registration_credential(
+                requested_credential(
                     credentials.into_iter().map(credential).collect(),
                     requested
                 ),

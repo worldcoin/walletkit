@@ -49,6 +49,24 @@ pub(crate) fn poh_recovery_agent_address(environment: &Environment) -> Address {
     }
 }
 
+/// The WIP-107 Billing Contract proxy address on the staging environment (World Chain Mainnet,
+/// chain 480).
+///
+/// Source: `world-id-protocol` `contracts/deployments/core/billing-staging.json`.
+pub static BILLING_CONTRACT_STAGING: Address =
+    address!("0xCd63C5c054f1B71Ef9eB1604bFefB001FBD00D63");
+
+/// Returns the WIP-107 Billing Contract address for the given environment, or `None` where none
+/// is deployed, so that no RP is billed.
+#[must_use]
+pub const fn billing_contract_address(environment: &Environment) -> Option<Address> {
+    match environment {
+        Environment::Staging => Some(BILLING_CONTRACT_STAGING),
+        // TODO: Pin the production Billing Contract once it is deployed.
+        Environment::Production => None,
+    }
+}
+
 const OPRF_NODE_COUNT: usize = 5;
 
 /// Generates the list of OPRF node URLs for a given region and environment.
