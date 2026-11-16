@@ -26,7 +26,7 @@ use world_id_core::primitives::TREE_DEPTH;
 const SESSION_SEED_TTL_SECONDS: u64 = 182 * 86_400;
 
 /// Filename prefix for temporary plaintext vault exports used during
-/// backup export and import. A UUID is appended to avoid collisions.
+/// backup export. A UUID is appended to avoid collisions.
 #[cfg(not(target_arch = "wasm32"))]
 const VAULT_BACKUP_TEMP_PREFIX: &str = "vault_backup_plaintext_";
 
@@ -560,6 +560,7 @@ impl CredentialStore {
     ///
     /// The store must already be initialized via [`init`](Self::init).
     /// Intended for restore on a fresh install where the vault is empty.
+    /// Validates every row through the merge path and assigns new local credential IDs.
     ///
     /// # Errors
     ///
@@ -568,10 +569,7 @@ impl CredentialStore {
         let inner = self.lock_inner()?;
         let _guard = inner.guard()?;
         inner.cleanup_stale_backup_files();
-        let path = inner.write_temp_backup_file(backup_bytes)?;
-        let _cleanup = CleanupFile(path.clone());
-
-        inner.import_vault_from_file(&path)
+        inner.state()?.vault.restore_plaintext_bytes(backup_bytes)
     }
 
     /// Registers a listener that is called after every successful vault
@@ -1084,33 +1082,6 @@ impl CredentialStoreInner {
         let dest = self.temp_backup_path();
         state.vault.export_plaintext(&dest)?;
         Ok(dest.to_string_lossy().to_string())
-    }
-
-    /// Writes raw bytes to a temporary file in the worldid directory.
-    /// Returns the path. The caller is responsible for cleanup.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn write_temp_backup_file(&self, bytes: &[u8]) -> StorageResult<String> {
-        let dest = self.temp_backup_path();
-        if let Err(e) = std::fs::write(&dest, bytes) {
-            // Best-effort cleanup of any partial write to avoid leaking
-            // plaintext data on disk (e.g. after ENOSPC).
-            let _ = std::fs::remove_file(&dest);
-            return Err(StorageError::VaultDb(format!(
-                "failed to write temp backup file: {e}"
-            )));
-        }
-        Ok(dest.to_string_lossy().to_string())
-    }
-
-    /// Imports from a plaintext vault file on disk.
-    ///
-    /// Caller holds the cross-process lock for the duration of the import so a
-    /// concurrent writer can't interleave with the ATTACH-based copy.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn import_vault_from_file(&self, backup_path: &str) -> StorageResult<()> {
-        let state = self.state()?;
-        let source = std::path::Path::new(backup_path);
-        state.vault.import_plaintext(source)
     }
 
     /// Removes any stale plaintext backup temp files left behind by a
@@ -2166,8 +2137,7 @@ mod tests {
     }
 
     #[test]
-    fn test_import_vault_backup_transaction_atomicity() {
-        use crate::storage::credential_vault::BACKUP_TABLES;
+    fn test_import_vault_backup_rejects_invalid_blob_ref() {
         use walletkit_sqlite::Connection;
         use world_id_core::Credential as CoreCredential;
 
@@ -2190,13 +2160,6 @@ mod tests {
         let corrupt_path = src_root.join("corrupt_backup.sqlite");
         std::fs::write(&corrupt_path, &bytes).expect("write backup");
 
-        // Corrupt the *last* table in BACKUP_TABLES. Earlier INSERTs succeed
-        // before this one fails, testing transaction rollback.
-        assert_eq!(
-            *BACKUP_TABLES.last().unwrap(),
-            "credential_blob_refs",
-            "update this test if BACKUP_TABLES order changes"
-        );
         let backup_conn = Connection::open(&corrupt_path, false).expect("open backup");
         backup_conn
             .execute(
@@ -2373,9 +2336,20 @@ mod tests {
             .issuer_schema_id(100)
             .genesis_issued_at(1000)
             .into();
-        src_store
-            .store_credential(&cred, &FieldElement::from(7u64), 9999, None, 1000)
+        let id = src_store
+            .store_credential(
+                &cred,
+                &FieldElement::from(7u64),
+                9999,
+                Some(b"associated".to_vec()),
+                1000,
+            )
             .expect("store credential");
+
+        let pcp = crate::storage::blob_id(b"orb pcp".to_vec());
+        src_store
+            .add_credential_blobs(id, Arc::new(cred), vec![Arc::clone(&pcp)], 1000)
+            .unwrap();
 
         let bytes = src_store.export_vault_for_backup().expect("export vault");
         assert!(!bytes.is_empty(), "exported bytes should not be empty");
@@ -2397,6 +2371,11 @@ mod tests {
             .expect("credential should exist");
         assert_eq!(imported_cred.issuer_schema_id(), 100);
         assert_eq!(imported_bf.to_bytes(), FieldElement::from(7u64).to_bytes());
+
+        let restored_id =
+            dst_store.list_credentials(None, 1000).unwrap()[0].credential_id;
+        assert_eq!(*dst_store.credential_blobs(restored_id).unwrap()[0], *pcp);
+        assert_eq!(dst_store.merge_vault_from_backup(&bytes).unwrap(), 0);
 
         cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);

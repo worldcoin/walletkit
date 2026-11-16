@@ -955,7 +955,7 @@ fn test_blob_refs_reject_malformed_ids(blob_id: Value) {
 }
 
 #[test]
-fn test_plaintext_restore_keeps_blob_refs() {
+fn test_plaintext_restore_remaps_blob_refs_and_merge_replay_is_noop() {
     let source_path = temp_vault_path();
     let restore_path = temp_vault_path();
     let export_path = temp_export_path();
@@ -963,6 +963,15 @@ fn test_plaintext_restore_keeps_blob_refs() {
     let source = CredentialVault::new(&source_path, &key).expect("create source");
     let orb = store_sample_credential(&source, 100);
     let face = store_sample_credential(&source, 200);
+    source
+        .vault
+        .connection()
+        .execute_batch(
+            "UPDATE credential_records SET credential_id = credential_id + 100",
+        )
+        .unwrap();
+    let orb = orb + 100;
+    let face = face + 100;
     let orb_pcp = compute_blob_id(b"orb pcp");
     let face_pcp = compute_blob_id(b"face pcp");
     source
@@ -974,10 +983,31 @@ fn test_plaintext_restore_keeps_blob_refs() {
     source.export_plaintext(&export_path).expect("export");
 
     let restored = CredentialVault::new(&restore_path, &key).expect("create restore");
-    restored.import_plaintext(&export_path).expect("import");
+    restored
+        .restore_plaintext_bytes(&fs::read(&export_path).unwrap())
+        .expect("import");
 
-    assert_eq!(restored.credential_blobs(orb).expect("orb"), [orb_pcp]);
-    assert_eq!(restored.credential_blobs(face).expect("face"), [face_pcp]);
+    let records = restored.list_credentials(None, 1000).unwrap();
+    for (schema, old_id, pcp) in [(100, orb, orb_pcp), (200, face, face_pcp)] {
+        let id = records
+            .iter()
+            .find(|r| r.issuer_schema_id == schema)
+            .unwrap()
+            .credential_id;
+        assert_ne!(id, old_id);
+        assert_eq!(restored.credential_blobs(id).unwrap(), [pcp]);
+        assert_eq!(
+            restored.fetch_credential_by_id(id).unwrap().unwrap(),
+            format!("credential-{schema}").as_bytes()
+        );
+    }
+    let outcome = restored
+        .merge_plaintext_bytes(&fs::read(&export_path).unwrap())
+        .unwrap();
+    assert_eq!(outcome.added_records, 0);
+    assert_eq!(outcome.added_blob_refs, 0);
+    assert_eq!(restored.list_credentials(None, 1000).unwrap(), records);
+    assert_eq!(count_blob_refs(&restored), 2);
     let _ = fs::remove_file(&export_path);
     cleanup_vault_files(&source_path);
     cleanup_vault_files(&restore_path);
@@ -990,7 +1020,7 @@ fn test_plaintext_restore_of_backup_without_blob_refs_table() {
     let export_path = temp_export_path();
     let key = SecretBox::init_with(|| [0x14u8; 32]);
     let source = CredentialVault::new(&source_path, &key).expect("create source");
-    let credential_id = store_sample_credential(&source, 100);
+    store_sample_credential(&source, 100);
     source.export_plaintext(&export_path).expect("export");
     walletkit_sqlite::Connection::open(&export_path, false)
         .expect("open backup")
@@ -998,12 +1028,15 @@ fn test_plaintext_restore_of_backup_without_blob_refs_table() {
         .expect("drop table to mimic an older backup");
 
     let restored = CredentialVault::new(&restore_path, &key).expect("create restore");
-    restored.import_plaintext(&export_path).expect("import");
+    restored
+        .restore_plaintext_bytes(&fs::read(&export_path).unwrap())
+        .expect("import");
 
     assert_eq!(
         restored.list_credentials(None, 1000).expect("list").len(),
         1
     );
+    let credential_id = restored.list_credentials(None, 1000).unwrap()[0].credential_id;
     assert!(restored
         .credential_blobs(credential_id)
         .expect("blobs")
@@ -1021,6 +1054,9 @@ fn test_plaintext_restore_of_backup_without_blob_refs_table() {
     cleanup_vault_files(&restore_path);
 }
 
+#[test_case("UPDATE blob_objects SET bytes = X'CAFE'" ; "bad blob hash")]
+#[test_case("UPDATE credential_records SET expires_at = -1" ; "negative expiry")]
+#[test_case("DROP TABLE credential_blob_refs; UPDATE credential_records SET credential_id = 1.5" ; "legacy fractional id")]
 #[test_case("UPDATE credential_blob_refs SET created_at = 'invalid'" ; "text created_at")]
 #[test_case("UPDATE credential_blob_refs SET created_at = -1" ; "negative created_at")]
 #[test_case("UPDATE credential_blob_refs SET blob_id = X'CAFE'" ; "short blob id")]
@@ -1029,7 +1065,7 @@ fn test_plaintext_restore_of_backup_without_blob_refs_table() {
 #[test_case("UPDATE credential_records SET credential_id = 1.5 WHERE issuer_schema_id = 200" ; "fractional unlinked credential id")]
 #[test_case("UPDATE credential_records SET credential_id = 'invalid' WHERE issuer_schema_id = 200" ; "text unlinked credential id")]
 #[test_case("UPDATE credential_blob_refs SET credential_id = 1.5" ; "fractional ref credential id")]
-fn test_plaintext_restore_rejects_malformed_blob_refs_and_rolls_back(corruption: &str) {
+fn test_plaintext_restore_rejects_malformed_rows_and_rolls_back(corruption: &str) {
     let source_path = temp_vault_path();
     let restore_path = temp_vault_path();
     let export_path = temp_export_path();
@@ -1053,8 +1089,8 @@ fn test_plaintext_restore_rejects_malformed_blob_refs_and_rolls_back(corruption:
 
     let restored = CredentialVault::new(&restore_path, &key).expect("create restore");
     restored
-        .import_plaintext(&export_path)
-        .expect_err("malformed blob refs");
+        .restore_plaintext_bytes(&fs::read(&export_path).unwrap())
+        .expect_err("malformed backup rows");
     assert!(restored
         .list_credentials(None, 1000)
         .expect("list")
@@ -1063,7 +1099,7 @@ fn test_plaintext_restore_rejects_malformed_blob_refs_and_rolls_back(corruption:
 
     source.export_plaintext(&export_path).expect("re-export");
     restored
-        .import_plaintext(&export_path)
+        .restore_plaintext_bytes(&fs::read(&export_path).unwrap())
         .expect("valid retry after rollback");
     assert_eq!(
         restored.list_credentials(None, 1000).expect("list").len(),

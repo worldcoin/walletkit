@@ -1,9 +1,7 @@
 //! Additive backup recovery. Row IDs are local database keys, not credential identities.
 //! Absence from a snapshot is not a deletion instruction: preserve receiver-only credentials.
 
-use super::{
-    has_invalid_blob_refs, map_db_err, CredentialVault, CREDENTIAL_VERSION_ORDER,
-};
+use super::{map_db_err, CredentialVault, BACKUP_TABLES, CREDENTIAL_VERSION_ORDER};
 use crate::storage::error::{StorageError, StorageResult};
 use walletkit_db::blobs::compute_content_id;
 use walletkit_sqlite::{
@@ -53,25 +51,61 @@ impl CredentialVault {
         &self,
         bytes: &[u8],
     ) -> StorageResult<MergeOutcome> {
+        self.recover_plaintext_bytes(bytes, false)
+    }
+
+    /// Restores a backup only if all destination credential tables are empty.
+    /// The emptiness check and merge share one immediate transaction. Credential IDs
+    /// are local keys and are reassigned; blob refs follow their credential versions.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn restore_plaintext_bytes(&self, bytes: &[u8]) -> StorageResult<()> {
+        self.recover_plaintext_bytes(bytes, true).map(|_| ())
+    }
+
+    fn recover_plaintext_bytes(
+        &self,
+        bytes: &[u8],
+        require_empty: bool,
+    ) -> StorageResult<MergeOutcome> {
         let incoming =
             Connection::open(":memory:", false).map_err(|e| map_db_err(&e))?;
         ensure_temp_store_memory(&incoming).map_err(|e| map_db_err(&e))?;
         incoming
             .deserialize_readonly("main", bytes)
             .map_err(|e| map_db_err(&e))?;
-        merge_from(self.vault.connection(), &incoming)
+        let tx = self
+            .vault
+            .connection()
+            .transaction_immediate()
+            .map_err(|e| map_db_err(&e))?;
+        if require_empty {
+            for table in BACKUP_TABLES {
+                let occupied = tx
+                    .query_row(
+                        &format!("SELECT EXISTS(SELECT 1 FROM {table})"),
+                        &[],
+                        |row| Ok(row.column_i64(0) != 0),
+                    )
+                    .map_err(|e| map_db_err(&e))?;
+                if occupied {
+                    return Err(StorageError::VaultDb(format!(
+                        "cannot import into non-empty table: {table}"
+                    )));
+                }
+            }
+        }
+        let outcome = merge_from(&tx, &incoming)?;
+        tx.commit().map_err(|e| map_db_err(&e))?;
+        Ok(outcome)
     }
 }
 
 fn merge_from(
-    destination: &Connection,
+    tx: &Transaction<'_>,
     incoming: &Connection,
 ) -> StorageResult<MergeOutcome> {
     let has_blob_refs = has_table(incoming, "credential_blob_refs")?;
     validate_incoming(incoming, has_blob_refs)?;
-    let tx = destination
-        .transaction_immediate()
-        .map_err(|e| map_db_err(&e))?;
     {
         let mut blobs = incoming.prepare(
             "SELECT content_id, blob_kind, MIN(created_at), bytes FROM blob_objects GROUP BY content_id",
@@ -133,15 +167,14 @@ fn merge_from(
             }
             let destination_ids = match inserted_id {
                 Some(id) => vec![id],
-                None => same_version_ids(&tx, version)?,
+                None => same_version_ids(tx, version)?,
             };
             for destination_id in destination_ids {
                 outcome.added_blob_refs +=
-                    copy_blob_refs(&tx, incoming, row.column_i64(7), destination_id)?;
+                    copy_blob_refs(tx, incoming, row.column_i64(7), destination_id)?;
             }
         }
     }
-    tx.commit().map_err(|e| map_db_err(&e))?;
     Ok(outcome)
 }
 
@@ -210,6 +243,7 @@ fn validate_incoming(incoming: &Connection, has_blob_refs: bool) -> StorageResul
             typeof(blob_kind) != 'integer' OR blob_kind NOT IN (1, 2) OR
             typeof(created_at) != 'integer' OR created_at < 0 OR typeof(bytes) != 'blob')
          OR EXISTS(SELECT 1 FROM credential_records r WHERE
+            typeof(credential_id) != 'integer' OR
             typeof(issuer_schema_id) != 'integer' OR issuer_schema_id < 0 OR
             typeof(subject_blinding_factor) != 'blob' OR length(subject_blinding_factor) != 32 OR
             typeof(genesis_issued_at) != 'integer' OR genesis_issued_at < 0 OR
@@ -218,7 +252,8 @@ fn validate_incoming(incoming: &Connection, has_blob_refs: bool) -> StorageResul
             typeof(credential_blob_cid) != 'blob' OR
             NOT EXISTS(SELECT 1 FROM blob_objects b WHERE b.content_id = r.credential_blob_cid AND b.blob_kind = 1) OR
             (associated_data_cid IS NOT NULL AND (typeof(associated_data_cid) != 'blob' OR
-             NOT EXISTS(SELECT 1 FROM blob_objects b WHERE b.content_id = r.associated_data_cid AND b.blob_kind = 2))))",
+             NOT EXISTS(SELECT 1 FROM blob_objects b WHERE b.content_id = r.associated_data_cid AND b.blob_kind = 2))))
+         OR EXISTS(SELECT 1 FROM credential_records GROUP BY credential_id HAVING COUNT(*) > 1)",
         &[], |row| Ok(row.column_i64(0) != 0),
     ).map_err(|e| map_db_err(&e))?;
     if has_invalid_rows {
@@ -226,9 +261,16 @@ fn validate_incoming(incoming: &Connection, has_blob_refs: bool) -> StorageResul
     }
     if has_blob_refs {
         let has_invalid_refs = incoming
-            .query_row(&has_invalid_blob_refs("main"), &[], |row| {
-                Ok(row.column_i64(0) != 0)
-            })
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM credential_blob_refs b WHERE
+                typeof(credential_id) != 'integer' OR
+                NOT EXISTS(SELECT 1 FROM credential_records r
+                           WHERE r.credential_id = b.credential_id) OR
+                typeof(blob_id) != 'blob' OR length(blob_id) != 32 OR
+                typeof(created_at) != 'integer' OR created_at < 0)",
+                &[],
+                |row| Ok(row.column_i64(0) != 0),
+            )
             .map_err(|e| map_db_err(&e))?;
         if has_invalid_refs {
             return Err(invalid_backup());
@@ -932,6 +974,114 @@ mod tests {
         assert!(f.receiver.list_credentials(None, 1000).unwrap().is_empty());
         f.export();
         assert_eq!(f.merge().unwrap(), 1);
+    }
+
+    #[test_case(include_bytes!("../../../../../web/walletkit/tests/fixture/public/backups/local-backup.sqlite"), 1 ; "local")]
+    #[test_case(include_bytes!("../../../../../web/walletkit/tests/fixture/public/backups/incoming-backup.sqlite"), 2 ; "incoming")]
+    fn restore_accepts_frozen_backups_without_blob_refs(bytes: &[u8], schema: u64) {
+        let f = Fixture::new();
+        f.receiver.restore_plaintext_bytes(bytes).unwrap();
+        let records = f.receiver.list_credentials(Some(schema), 1000).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(
+            f.receiver
+                .fetch_credential_by_id(records[0].credential_id)
+                .unwrap(),
+            Some(vec![u8::try_from(schema).unwrap()])
+        );
+        assert!(blob_refs(&f.receiver, schema).is_empty());
+        assert_eq!(
+            f.receiver
+                .merge_plaintext_bytes(bytes)
+                .unwrap()
+                .added_records,
+            0
+        );
+    }
+
+    #[test_case("credential_records" ; "credential record")]
+    #[test_case("blob_objects" ; "unreferenced blob")]
+    #[test_case("credential_blob_refs" ; "orphan link")]
+    fn restore_rejects_any_nonempty_credential_table(table: &str) {
+        let f = Fixture::new();
+        let source_id = store(&f.source, 100, b"source", 1000);
+        f.source
+            .add_credential_blobs(
+                source_id,
+                b"source",
+                &[compute_blob_id(b"pcp")],
+                1000,
+            )
+            .unwrap();
+        f.export();
+        let receiver_id = store(&f.receiver, 200, b"receiver", 1000);
+        f.receiver
+            .add_credential_blobs(
+                receiver_id,
+                b"receiver",
+                &[compute_blob_id(b"local pcp")],
+                1000,
+            )
+            .unwrap();
+        let conn = f.receiver.vault.connection();
+        conn.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
+        for other in BACKUP_TABLES {
+            if *other != table {
+                conn.execute_batch(&format!("DELETE FROM {other}")).unwrap();
+            }
+        }
+        conn.execute_batch("PRAGMA foreign_keys = ON").unwrap();
+        let before = conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), &[], |row| {
+                Ok(row.column_i64(0))
+            })
+            .unwrap();
+        assert!(before > 0);
+        let error = f
+            .receiver
+            .restore_plaintext_bytes(&std::fs::read(&f.backup).unwrap())
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("vault db error: cannot import into non-empty table: {table}")
+        );
+        for name in BACKUP_TABLES {
+            let count = conn
+                .query_row(&format!("SELECT COUNT(*) FROM {name}"), &[], |row| {
+                    Ok(row.column_i64(0))
+                })
+                .unwrap();
+            assert_eq!(count, if *name == table { before } else { 0 });
+        }
+    }
+
+    #[test]
+    fn restore_write_failure_rolls_back_all_credential_tables() {
+        let f = Fixture::new();
+        let id = store(&f.source, 100, b"credential", 1000);
+        f.source
+            .add_credential_blobs(id, b"credential", &[compute_blob_id(b"pcp")], 1000)
+            .unwrap();
+        f.export();
+        let conn = f.receiver.vault.connection();
+        conn.execute_batch("CREATE TRIGGER fail_link BEFORE INSERT ON credential_blob_refs BEGIN SELECT RAISE(ABORT, 'link write failed'); END;").unwrap();
+        let bytes = std::fs::read(&f.backup).unwrap();
+        let error = f.receiver.restore_plaintext_bytes(&bytes).unwrap_err();
+        assert!(error.to_string().contains("link write failed"));
+        for table in BACKUP_TABLES {
+            assert_eq!(
+                conn.query_row(
+                    &format!("SELECT COUNT(*) FROM {table}"),
+                    &[],
+                    |row| Ok(row.column_i64(0))
+                )
+                .unwrap(),
+                0
+            );
+        }
+        conn.execute_batch("DROP TRIGGER fail_link").unwrap();
+        f.receiver.restore_plaintext_bytes(&bytes).unwrap();
+        assert_eq!(blob_refs(&f.receiver, 100), [compute_blob_id(b"pcp")]);
     }
 
     #[test]
