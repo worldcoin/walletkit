@@ -147,7 +147,7 @@ pub enum ActivityFailureReason {
 }
 
 /// A single row of credential activity history.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ActivityEntry {
     /// Unique identifier for this entry.
     pub id: Option<u64>,
@@ -168,6 +168,26 @@ pub struct ActivityEntry {
     pub issuer_schema_ids: Vec<u64>,
     /// Present only when `outcome` is `Failed`.
     pub failure_reason: Option<ActivityFailureReason>,
+    /// Optional diagnostic challenge ID. Stored locally with the activity and
+    /// excluded from vault backups. Hosts must keep it out of logs.
+    #[uniffi(default = None)]
+    pub challenge_id: Option<String>,
+}
+
+impl std::fmt::Debug for ActivityEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ActivityEntry")
+            .field("id", &self.id)
+            .field("rp_id", &self.rp_id)
+            .field("app_identifier", &self.app_identifier)
+            .field("client_id", &self.client_id)
+            .field("protocol", &self.protocol)
+            .field("timestamp", &self.timestamp)
+            .field("outcome", &self.outcome)
+            .field("issuer_schema_ids", &self.issuer_schema_ids)
+            .field("failure_reason", &self.failure_reason)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Aggregate counts over credential activity history.

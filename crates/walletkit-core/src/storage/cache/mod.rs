@@ -313,6 +313,7 @@ mod tests {
             issuer_schema_ids: vec![],
             outcome: ActivityOutcome::Completed,
             failure_reason: None,
+            challenge_id: None,
         }
     }
 
@@ -652,9 +653,7 @@ mod tests {
             .expect("read cache schema version");
         drop(conn);
 
-        // Four migrations: cache_entries, activity init, activity rebuild,
-        // issuer-schema association table.
-        assert_eq!(version, 4, "the cache schema registers as version 4");
+        assert_eq!(version, 5, "the cache schema registers as version 5");
 
         let db = CacheDb::new(&path, &key).expect("reopen cache");
         let entries = db

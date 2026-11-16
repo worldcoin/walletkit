@@ -1466,6 +1466,7 @@ mod tests {
             issuer_schema_ids: vec![],
             outcome: ActivityOutcome::Completed,
             failure_reason: None,
+            challenge_id: None,
         }
     }
 
@@ -1896,6 +1897,23 @@ mod tests {
 
         let bytes = src_store.export_vault_for_backup().expect("export vault");
         assert!(!bytes.is_empty());
+
+        src_store
+            .record_activity(
+                &ActivityEntry {
+                    challenge_id: Some("local-diagnostic".to_string()),
+                    ..sample_new_activity_entry()
+                },
+                1000,
+            )
+            .expect("record local challenge");
+        let with_activity = src_store
+            .export_vault_for_backup()
+            .expect("export vault with activity");
+        assert_eq!(
+            bytes, with_activity,
+            "activity diagnostics must not change backup bytes"
+        );
 
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);
