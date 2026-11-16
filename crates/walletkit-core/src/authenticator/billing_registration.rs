@@ -18,7 +18,7 @@ use world_id_core::{
 
 use super::Authenticator;
 use crate::error::WalletKitError;
-use crate::registration::{polling_backoff, sleep};
+use crate::registration::{before, polling_backoff, sleep};
 use crate::requests::{ProofRequest, ProofRequestType};
 
 /// How long to wait for the gateway to finalize a registration on-chain.
@@ -131,28 +131,31 @@ impl Authenticator {
         Err(WalletKitError::BillingCapacityExhausted)
     }
 
-    /// Polls the gateway until it finalizes `request_id`, or reports why it did not.
+    /// Polls the gateway until it finalizes `request_id`, or reports why it did not, within
+    /// [`FINALIZATION_TIMEOUT`]. A poll still in flight at the deadline is abandoned.
     async fn await_finalization(
         &self,
         request_id: &GatewayRequestId,
     ) -> Result<Outcome, WalletKitError> {
         let deadline = Instant::now() + FINALIZATION_TIMEOUT;
+        let timed_out = || WalletKitError::Generic {
+            error: format!(
+                "billing registration {request_id} did not finalize within {}s",
+                FINALIZATION_TIMEOUT.as_secs()
+            ),
+        };
         let mut delays = polling_backoff().build();
         loop {
-            let state = self.inner.poll_status(request_id).await?;
+            let state = before(deadline, self.inner.poll_status(request_id))
+                .await
+                .ok_or_else(timed_out)??;
             if let Some(outcome) = status_outcome(state)? {
                 return Ok(outcome);
             }
             let delay = delays.next().unwrap_or(Duration::from_secs(8));
-            if Instant::now() + delay > deadline {
-                return Err(WalletKitError::Generic {
-                    error: format!(
-                        "billing registration {request_id} did not finalize within {}s",
-                        FINALIZATION_TIMEOUT.as_secs()
-                    ),
-                });
+            if before(deadline, sleep(delay)).await.is_none() {
+                return Err(timed_out());
             }
-            sleep(delay).await;
         }
     }
 }
