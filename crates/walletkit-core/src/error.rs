@@ -187,6 +187,12 @@ pub enum WalletKitError {
     /// The user is not eligible for recovery
     #[error("not_eligible_for_recovery")]
     NotEligibleForRecovery,
+
+    /// The RP has no WIP-107 billing capacity left in any period the World ID could register
+    /// for, so it cannot be billed for a Proof of Embedding Similarity until it buys more.
+    #[error("billing_capacity_exhausted")]
+    BillingCapacityExhausted,
+
     /// An error occurred in the OHTTP privacy layer (relay, encapsulation, or framing).
     #[error("ohttp_error: {error}")]
     OhttpError {
