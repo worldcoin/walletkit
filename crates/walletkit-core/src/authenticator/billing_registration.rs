@@ -38,7 +38,9 @@ impl Authenticator {
     /// # Errors
     ///
     /// - [`WalletKitError::InvalidInput`] if `proof_request` is not a Proof of Embedding Similarity
-    ///   request, or no stored credential can prove the registration.
+    ///   request.
+    /// - [`WalletKitError::UnfulfillableRequest`] if no stored, unexpired credential is the one the
+    ///   request asks for. This is checked before any network call.
     /// - [`WalletKitError::BillingCapacityExhausted`] if no active period has capacity left.
     /// - Other errors if the OPRF Nodes, the proof, the gateway or the cache fail, or the
     ///   registration does not finalize within two minutes.
@@ -84,7 +86,6 @@ impl Authenticator {
             self.fetch_inclusion_proof_with_cache(now).await?;
 
         for (index, scope) in scopes.iter().enumerate() {
-            let is_last = index + 1 == scopes.len();
             // Box::pin keeps this future below clippy::large_futures, as in generate_proof.
             let billing_query = Box::pin(self.inner.generate_billing_nullifier(
                 request,
@@ -116,16 +117,14 @@ impl Authenticator {
                     )?;
                     return Ok(witness);
                 }
-                Outcome::CapacityExhausted if !is_last => {
-                    tracing::warn!(
+                Outcome::CapacityExhausted if index + 1 < scopes.len() => {
+                    tracing::debug!(
                         rp_id = %request.rp_id,
                         period_start = scope.period_start,
                         "the next billing period has no capacity left; registering for the current one"
                     );
                 }
-                Outcome::CapacityExhausted => {
-                    return Err(WalletKitError::BillingCapacityExhausted)
-                }
+                Outcome::CapacityExhausted => {}
             }
         }
         Err(WalletKitError::BillingCapacityExhausted)
@@ -175,26 +174,20 @@ fn candidate_periods(active: ActivePeriods) -> Vec<u64> {
     active.next.into_iter().chain([active.current]).collect()
 }
 
-/// Picks the credential that proves the registration. Any valid credential does, so the one the
-/// request asks for is preferred, and otherwise the first one stored.
+/// The credential that proves the registration: the one the request asks for. WIP-107 accepts any
+/// valid credential, but the Proof of Embedding Similarity needs this one, and the registration's
+/// `issuerSchemaId` is public, so registering with another one would spend the RP's capacity for a
+/// proof that fails and disclose a credential the RP did not ask about.
 fn registration_credential(
     credentials: Vec<CredentialInput>,
     requested_issuer_schema_id: Option<u64>,
 ) -> Result<CredentialInput, WalletKitError> {
-    let index = credentials
-        .iter()
-        .position(|input| {
-            Some(input.credential.issuer_schema_id) == requested_issuer_schema_id
-        })
-        .unwrap_or(0);
     credentials
         .into_iter()
-        .nth(index)
-        .ok_or_else(|| WalletKitError::InvalidInput {
-            attribute: "credentials".to_string(),
-            reason: "billing registration needs a stored, unexpired credential"
-                .to_string(),
+        .find(|input| {
+            Some(input.credential.issuer_schema_id) == requested_issuer_schema_id
         })
+        .ok_or(WalletKitError::UnfulfillableRequest)
 }
 
 /// Reads a rejected submission: the gateway checks registration and simulates it before sending.
@@ -298,14 +291,21 @@ mod tests {
     }
 
     #[test]
-    fn prefers_the_requested_credential_and_needs_one() {
+    fn registers_only_with_the_requested_credential() {
         assert_eq!(chosen(&[1, 2, 3], Some(2)), 2);
-        assert_eq!(chosen(&[1, 2, 3], Some(9)), 1);
-        assert_eq!(chosen(&[1, 2, 3], None), 1);
-        assert!(matches!(
-            registration_credential(Vec::new(), Some(1)),
-            Err(WalletKitError::InvalidInput { .. })
-        ));
+        for (credentials, requested) in [
+            (vec![1, 2, 3], Some(9)),
+            (vec![1, 2, 3], None),
+            (Vec::new(), Some(1)),
+        ] {
+            assert!(matches!(
+                registration_credential(
+                    credentials.into_iter().map(credential).collect(),
+                    requested
+                ),
+                Err(WalletKitError::UnfulfillableRequest)
+            ));
+        }
     }
 
     #[test]
