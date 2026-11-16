@@ -1610,10 +1610,19 @@ mod tests {
         match_strictness: u8,
         images: &EmbeddingSimilarityImages,
     ) -> Result<MatchResult, FlamingoError> {
+        match_embedding_with(client, &engines(), match_strictness, images).await
+    }
+
+    async fn match_embedding_with(
+        client: &FakeClient,
+        engine_provider: &FlamingoEngineProvider,
+        match_strictness: u8,
+        images: &EmbeddingSimilarityImages,
+    ) -> Result<MatchResult, FlamingoError> {
         let proof_request = embedding_similarity_request(b"challenge image", None);
         match_embedding_similarity(
             client,
-            &engines(),
+            engine_provider,
             &EmbeddingSimilarityExchange {
                 proof_request: &proof_request.0,
                 match_strictness,
@@ -1671,6 +1680,28 @@ mod tests {
             ));
             assert!(client.sent().is_empty(), "no entry may be sent");
         }
+    }
+
+    #[tokio::test]
+    async fn embedding_similarity_refuses_a_pipeline_with_too_many_response_slots() {
+        use super::engine::tests::{jwk, manifest, metadata};
+
+        let (manifest, release_hash) = manifest(
+            ENGINE_HASH,
+            super::engine::MAX_RESPONSE_SLOTS + 1,
+            "release-1",
+        );
+        let engine_provider = FlamingoEngineProvider::from_metadata(
+            ISS,
+            &metadata(&[&manifest], &[jwk("release-1", "active")]),
+        )
+        .unwrap();
+        let client = FakeClient::with_release(release_hash, []);
+        assert!(matches!(
+            match_embedding_with(&client, &engine_provider, 2, &images()).await,
+            Err(FlamingoError::NoSupportedEngine)
+        ));
+        assert!(client.sent().is_empty(), "no entry may be sent");
     }
 
     #[tokio::test]
