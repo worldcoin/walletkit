@@ -54,7 +54,7 @@ pub(crate) fn poh_recovery_agent_address(environment: &Environment) -> Address {
 ///
 /// Source: `world-id-protocol` `contracts/deployments/core/billing-staging.json`.
 pub static BILLING_CONTRACT_STAGING: Address =
-    address!("0xCd63C5c054f1B71Ef9eB1604bFefB001FBD00D63");
+    address!("0x7e275a4d03Bc482258E552F2A0af47CE06eD6dE6");
 
 /// Returns the WIP-107 Billing Contract address for the given environment, or `None` where none
 /// is deployed, so that no RP is billed.
