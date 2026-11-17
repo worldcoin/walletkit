@@ -8,6 +8,11 @@ import type {
   RegistrationStatus,
   FaceEmbedding,
   SelfieEmbeddingResult,
+  PoseGuardCapture,
+  PoseGuardCaptures,
+  SelfieCaptureFailure,
+  SelfieEnrollmentBundle,
+  SelfieEnrollmentResult,
   WalletKit,
 } from "../../dist/index.js";
 
@@ -29,6 +34,45 @@ export async function consumer() {
   await walletkit.extractSelfieEmbedding("{}", new Uint8Array(), () => ({}));
   // @ts-expect-error the standalone client export must not leak into this facade
   void walletkit.extractEmbedding;
+  const pose: PoseGuardCapture = {
+    image: new Uint8Array(),
+    targetPitch: 10,
+    targetYaw: -20,
+  };
+  const captures: PoseGuardCaptures = [pose, pose, pose];
+  const enrolled: SelfieEnrollmentResult =
+    await walletkit.enrollSelfieWithPoseGuard(
+      "{}",
+      new Uint8Array(),
+      captures,
+      "0x1f",
+      new Uint8Array(32),
+    );
+  if (enrolled.status === "success") {
+    const bundle: SelfieEnrollmentBundle = enrolled.enrollment;
+    const field: string = bundle.fields[0].value;
+    const attestation: string = bundle.attestationHeader;
+    const pcp: Uint8Array = bundle.encryptedCustody;
+    void [field, attestation, pcp];
+  } else {
+    const failure: SelfieCaptureFailure = enrolled;
+    if (failure.reason === "challenge") {
+      const index: number = failure.index;
+      const reason: string = failure.challengeReason;
+      void [index, reason];
+    }
+  }
+  // @ts-expect-error exactly three pose captures are required
+  const incomplete: PoseGuardCaptures = [pose, pose];
+  const invalidPose: PoseGuardCapture = {
+    // @ts-expect-error pose images must be byte arrays
+    image: "image",
+    targetPitch: 0,
+    targetYaw: 0,
+  };
+  // @ts-expect-error the upstream standalone export must not leak into WalletKit
+  void walletkit.enrollWithPoseGuard;
+  void [incomplete, invalidPose];
   const now = 1n;
   const keys = await walletkit.StorageKeys.fromBytes(new Uint8Array(32));
   const paths = await walletkit.StoragePaths.fromRoot("/walletkit/account");

@@ -1,5 +1,6 @@
 import init, {
   extractSelfieEmbedding,
+  enrollSelfieWithPoseGuard,
   sanitizeHexSecrets,
 } from "../../src/generated/walletkit.js";
 
@@ -54,7 +55,22 @@ self.onmessage = async ({ data }) => {
     };
     let code;
     try {
-      await extractSelfieEmbedding(JSON.stringify(config), new Uint8Array([1]));
+      if (data.poseguard) {
+        const image = new Uint8Array([1]);
+        const pose = { image, targetPitch: 10, targetYaw: -20 };
+        await enrollSelfieWithPoseGuard(
+          JSON.stringify(config),
+          new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+          [pose, pose, pose],
+          "0x1f",
+          new Uint8Array(32).fill(1),
+        );
+      } else {
+        await extractSelfieEmbedding(
+          JSON.stringify(config),
+          new Uint8Array([1]),
+        );
+      }
     } catch (error) {
       code = (error as Error & { code?: string }).code;
     }

@@ -24,7 +24,7 @@ Object.assign(window, {
 });
 
 Object.assign(window, {
-  enrollmentAssignment() {
+  enrollmentAssignment(poseguard = false) {
     const worker = new Worker(
       new URL("./enrollment.worker.ts", import.meta.url),
       { type: "module" },
@@ -45,6 +45,7 @@ Object.assign(window, {
         reject(new Error(event.message));
       };
       worker.postMessage({
+        poseguard,
         wasmUrl: new URL("../../src/generated/walletkit.wasm", import.meta.url)
           .href,
       });

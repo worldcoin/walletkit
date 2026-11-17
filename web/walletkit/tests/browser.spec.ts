@@ -678,3 +678,89 @@ test("enrollment requests an assignment and withholds the image if attestation f
   expect(result.closed).toBe(true);
   expect(result.alive).toBe("alive");
 });
+
+test("PoseGuard enrollment preserves caller buffers and rejects invalid inputs before connecting", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializeWalletKit();
+    const central = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    const pose = {
+      image: new Uint8Array([1, 2, 3]),
+      targetPitch: 10,
+      targetYaw: -20,
+    };
+    const captures = [pose, pose, pose];
+    const key = new Uint8Array(32).fill(1);
+    const config = JSON.stringify({
+      endpoint: "wss://enrollment.invalid/v1/embeddings",
+      releases: [
+        { pcr0: "1".repeat(96), pcr1: "2".repeat(96), pcr2: "3".repeat(96) },
+      ],
+    });
+    const call = (
+      png = central,
+      batch = captures,
+      custody = key,
+      policy = config,
+    ) =>
+      wallet
+        .enrollSelfieWithPoseGuard(policy, png, batch, "0x1f", custody)
+        .catch((error: Error & { code?: string }) => ({
+          name: error.name,
+          code: error.code,
+        }));
+    try {
+      return {
+        policy: await call(central, captures, key, "{}"),
+        invalid: await Promise.all([
+          call(new Uint8Array([1])),
+          call(central, captures.slice(1)),
+          call(central, [...captures, pose]),
+          call(central, [{ ...pose, image: new Uint8Array() }, pose, pose]),
+          call(central, [
+            { ...pose, image: new Uint8Array(8 * 1024 * 1024 + 1) },
+            pose,
+            pose,
+          ]),
+          call(central, [{ ...pose, targetPitch: NaN }, pose, pose]),
+          call(central, [{ ...pose, targetYaw: 36 }, pose, pose]),
+          call(central, captures, new Uint8Array(31)),
+        ]),
+        central: Array.from(central),
+        image: Array.from(pose.image),
+        keyIntact: key.every((byte) => byte === 1),
+        stopped: wallet.isStopped(),
+      };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result.policy).toEqual({
+    name: "SelfieEnrollmentError",
+    code: "Config",
+  });
+  expect(
+    result.invalid.every(
+      (error: { name: string }) => error.name === "TypeError",
+    ),
+  ).toBe(true);
+  expect(result.central).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+  expect(result.image).toEqual([1, 2, 3]);
+  expect(result.keyIntact).toBe(true);
+  expect(result.stopped).toBe(false);
+});
+
+test("PoseGuard enrollment withholds all four images when attestation fails", async ({
+  page,
+}) => {
+  const result = await page.evaluate(() =>
+    (window as any).enrollmentAssignment(true),
+  );
+  expect(result).toEqual({
+    code: "Attestation",
+    sent: ["assignment_request"],
+    closed: true,
+    alive: "alive",
+  });
+});

@@ -1,5 +1,6 @@
 import init, * as wasm from "./generated/walletkit.js";
 import type { Handle, Ref, Request, Response, Target } from "./protocol";
+import { clearBytes } from "./protocol";
 
 const scope = globalThis as unknown as {
   onmessage: ((event: MessageEvent<Request>) => void) | null;
@@ -124,7 +125,7 @@ async function call(target: Target, encodedArgs: unknown[]): Promise<unknown> {
     // wasm-bindgen copies byte arguments into Rust during the call itself, so clear
     // the page's copies (seeds, keys) now: not after a network call settles, which
     // may take long. Also cleared when an argument fails to resolve.
-    for (const arg of encodedArgs) if (arg instanceof Uint8Array) arg.fill(0);
+    clearBytes(encodedArgs);
   }
   return reveal(await result);
 }

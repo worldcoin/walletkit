@@ -32,3 +32,17 @@ export type Response = { id: number } & (
       error: { name: string; message: string; code?: string; fatal?: boolean };
     }
 );
+
+/** @internal Clear transferred bytes after WASM has copied its arguments. */
+export function clearBytes(value: unknown): void {
+  if (value instanceof Uint8Array) value.fill(0);
+  else if (Array.isArray(value)) value.forEach(clearBytes);
+  else if (isRecord(value)) Object.values(value).forEach(clearBytes);
+}
+
+/** @internal Plain records can contain transferred image or key buffers. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== "object") return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}

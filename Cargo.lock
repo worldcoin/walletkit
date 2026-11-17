@@ -7147,8 +7147,7 @@ dependencies = [
 [[package]]
 name = "selfie-enrollment-api-types"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c6ea332fc65db164721dd27ae892349ef832ff2fc41a5ed9e92c90006e0554b"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=1b80b9331876dba8b8bd36154c27011a4feae665#1b80b9331876dba8b8bd36154c27011a4feae665"
 dependencies = [
  "serde",
  "thiserror 2.0.21",
@@ -7157,8 +7156,7 @@ dependencies = [
 [[package]]
 name = "selfie-enrollment-client"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4152e3ea1da84731b3704ba543b3b858f79f9aa3294464856f0345e8d6613d00"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=1b80b9331876dba8b8bd36154c27011a4feae665#1b80b9331876dba8b8bd36154c27011a4feae665"
 dependencies = [
  "base64 0.22.1",
  "futures-channel",
@@ -7188,8 +7186,7 @@ dependencies = [
 [[package]]
 name = "selfie-enrollment-sealed-types"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4a4282abb8fbd92b29709ff01ed3cd11b3daabbbb606220e498698fb1dd1cf1"
+source = "git+https://github.com/worldcoin/biometrics-tee?rev=1b80b9331876dba8b8bd36154c27011a4feae665#1b80b9331876dba8b8bd36154c27011a4feae665"
 dependencies = [
  "ciborium",
  "selfie-enrollment-api-types",

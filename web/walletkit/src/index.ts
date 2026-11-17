@@ -36,6 +36,11 @@ export type {
   RegistrationStatus,
   FaceEmbedding,
   SelfieEmbeddingResult,
+  PoseGuardCapture,
+  PoseGuardCaptures,
+  SelfieCaptureFailure,
+  SelfieEnrollmentBundle,
+  SelfieEnrollmentResult,
 } from "./generated/walletkit.js";
 
 export interface InitializeOptions {
