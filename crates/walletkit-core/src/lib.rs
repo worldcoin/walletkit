@@ -106,6 +106,10 @@ pub enum Region {
 #[cfg(not(target_arch = "wasm32"))]
 pub mod flamingo;
 
+/// Native request-integrity callbacks shared by authenticated services.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod request_integrity;
+
 /// Contains error outputs from `WalletKit`
 pub mod error;
 

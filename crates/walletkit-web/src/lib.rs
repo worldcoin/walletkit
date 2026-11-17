@@ -92,6 +92,8 @@ export interface ActivityEntry {
   rpId: bigint;
   appIdentifier: string;
   clientId: string;
+  /** Local-only diagnostic ID. Excluded from vault backups; keep out of logs. */
+  challengeId?: string;
   /** World ID protocol version. */
   protocol: 3 | 4;
   timestamp?: bigint;

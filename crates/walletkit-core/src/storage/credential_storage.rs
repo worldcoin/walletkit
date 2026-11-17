@@ -14,11 +14,14 @@ use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
 use super::traits::{ActivityChangedListener, VaultChangedListener};
 use super::traits::{AtomicBlobStore, DeviceKeystore};
-use super::types::{ActivityEntry, ActivityMetadata, ActivityQuery, CredentialRecord};
+use super::types::{
+    ActivityEntry, ActivityMetadata, ActivityQuery, BilledRpsSnapshot, CredentialRecord,
+};
 use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, CredentialVault};
 use super::{StorageLock, StorageLockGuard};
 use crate::{Credential, FieldElement};
+use alloy_core::primitives::{Address, U256};
 use world_id_core::primitives::billing::{
     billing_period, BillingContext, BillingWitness,
 };
@@ -635,6 +638,55 @@ impl CredentialStore {
     ) -> StorageResult<()> {
         self.lock_inner()?
             .remove_billing_witness(context, oprf_key_id)
+    }
+
+    /// Caches `snapshot`, the billed RPs of the Billing Contract `billing_contract` on chain
+    /// `chain_id`, until `expires_at`, exclusive, replacing the previous snapshot. Nothing is stored
+    /// once `expires_at` has passed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the insert fails.
+    pub fn store_billed_rps(
+        &self,
+        chain_id: u64,
+        billing_contract: Address,
+        snapshot: &BilledRpsSnapshot,
+        now: u64,
+        expires_at: u64,
+    ) -> StorageResult<()> {
+        self.lock_inner()?.state()?.cache.billed_rps_put(
+            U256::from(chain_id).to_be_bytes(),
+            billing_contract.into_array(),
+            &snapshot.encode(),
+            now,
+            expires_at,
+        )
+    }
+
+    /// Retrieves the billed RP snapshot cached for the Billing Contract `billing_contract` on
+    /// chain `chain_id`, if it has not expired.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized, the query fails or the cached snapshot is
+    /// malformed.
+    pub fn get_billed_rps(
+        &self,
+        chain_id: u64,
+        billing_contract: Address,
+        now: u64,
+    ) -> StorageResult<Option<BilledRpsSnapshot>> {
+        self.lock_inner()?
+            .state()?
+            .cache
+            .billed_rps_get(
+                U256::from(chain_id).to_be_bytes(),
+                billing_contract.into_array(),
+                now,
+            )?
+            .map(|bytes| BilledRpsSnapshot::decode(&bytes))
+            .transpose()
     }
 
     /// Fetches a cached Merkle proof if it remains valid beyond `valid_before`.
@@ -1414,6 +1466,7 @@ mod tests {
             issuer_schema_ids: vec![],
             outcome: ActivityOutcome::Completed,
             failure_reason: None,
+            challenge_id: None,
         }
     }
 
@@ -1844,6 +1897,23 @@ mod tests {
 
         let bytes = src_store.export_vault_for_backup().expect("export vault");
         assert!(!bytes.is_empty());
+
+        src_store
+            .record_activity(
+                &ActivityEntry {
+                    challenge_id: Some("local-diagnostic".to_string()),
+                    ..sample_new_activity_entry()
+                },
+                1000,
+            )
+            .expect("record local challenge");
+        let with_activity = src_store
+            .export_vault_for_backup()
+            .expect("export vault with activity");
+        assert_eq!(
+            bytes, with_activity,
+            "activity diagnostics must not change backup bytes"
+        );
 
         let dst_root = temp_root_path();
         let dst_provider = InMemoryStorageProvider::new(&dst_root);

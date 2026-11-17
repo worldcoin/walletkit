@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0](https://github.com/worldcoin/walletkit/compare/v0.29.0...v0.30.0) - 2026-11-13
+
+### Added
+
+- *(core)* cache the WIP-107 billed RPs ([#670](https://github.com/worldcoin/walletkit/pull/670))
+- *(POP-4515)* Prepare function to fetch WorldID v4.0 proof challenge ([#657](https://github.com/worldcoin/walletkit/pull/657))
+- [**breaking**] upgrade World ID to 0.22 and Flamingo to 0.11 ([#667](https://github.com/worldcoin/walletkit/pull/667))
+- *(core)* cache billing witnesses ([#663](https://github.com/worldcoin/walletkit/pull/663))
+- *(core)* expose Proof of Embedding Similarity requests ([#662](https://github.com/worldcoin/walletkit/pull/662))
+- upgrade World ID to 0.21 ([#661](https://github.com/worldcoin/walletkit/pull/661))
+
+### Fixed
+
+- *(web)* [**breaking**] keep ark-ec/parallel off for wasm32 and upgrade World ID to 0.20 ([#652](https://github.com/worldcoin/walletkit/pull/652))
+
+### Other
+
+- *(core)* make truncated-body fixtures deterministic ([#656](https://github.com/worldcoin/walletkit/pull/656))
+- refresh OHTTP HPKE key configs ([#653](https://github.com/worldcoin/walletkit/pull/653))
+
 ## [0.29.0](https://github.com/worldcoin/walletkit/compare/v0.28.0...v0.29.0) - 2026-10-30
 
 ### Added

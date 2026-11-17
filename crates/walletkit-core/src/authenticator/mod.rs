@@ -25,7 +25,11 @@ use crate::storage::CredentialStore;
 use crate::OwnershipProof;
 
 pub mod artifacts;
+mod billing;
+mod billing_registration;
 mod with_storage;
+
+pub use billing::{BilledRps, BilledRpsSource, BILLED_RPS_MAX_AGE_SECS};
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
@@ -103,6 +107,40 @@ impl Authenticator {
             store,
             nullifier_reuse_whitelist: RwLock::default(),
         })
+    }
+
+    /// Loads every stored credential that has not expired at `now`. A credential that is listed
+    /// but cannot be loaded is skipped.
+    ///
+    /// # Errors
+    /// Returns an error if the credentials cannot be listed.
+    pub(crate) fn stored_credentials(
+        &self,
+        now: u64,
+    ) -> Result<Vec<CredentialInput>, WalletKitError> {
+        Ok(self
+            .store
+            .list_credentials(None, now)?
+            .iter()
+            .filter(|c| !c.is_expired)
+            .filter_map(|cred| {
+                if let Ok(Some((credential, blinding_factor))) =
+                    self.store.get_credential(cred.issuer_schema_id, now)
+                {
+                    Some(CredentialInput {
+                        credential: credential.into(),
+                        blinding_factor: blinding_factor.into(),
+                    })
+                } else {
+                    tracing::warn!(
+                        issuer_schema_id = %cred.issuer_schema_id,
+                        credential_id = %cred.credential_id,
+                        "credential listed but not loadable, skipping"
+                    );
+                    None
+                }
+            })
+            .collect())
     }
 
     /// Like [`Self::prove_credential_sub`], with the current unix time in seconds
@@ -783,33 +821,8 @@ impl Authenticator {
         }
         let now = resolve_now(now)?;
 
-        // Build CredentialInput list from storage
-        // Note: We simply load all non-expired credentials. Filtering for the requested schema IDs is done in `generate_proof`.
-        // We could avoid unnecessary loading by filtering via `world_id_primitives::ProofRequest::credentials_to_prove`. We consider this an
-        // unnecessary optimization for now.
-        let credentials: Vec<_> = self
-            .store
-            .list_credentials(None, now)?
-            .iter()
-            .filter(|c| !c.is_expired)
-            .filter_map(|cred| {
-                if let Ok(Some((credential, blinding_factor))) =
-                    self.store.get_credential(cred.issuer_schema_id, now)
-                {
-                    Some(CredentialInput {
-                        credential: credential.into(),
-                        blinding_factor: blinding_factor.into(),
-                    })
-                } else {
-                    tracing::warn!(
-                        issuer_schema_id = %cred.issuer_schema_id,
-                        credential_id = %cred.credential_id,
-                        "credential listed but not loadable, skipping"
-                    );
-                    None
-                }
-            })
-            .collect();
+        // Filtering for the requested schema IDs is done in `generate_proof`.
+        let credentials = self.stored_credentials(now)?;
 
         let account_inclusion_proof =
             self.fetch_inclusion_proof_with_cache(now).await?;

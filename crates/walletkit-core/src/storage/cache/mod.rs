@@ -8,6 +8,7 @@ use secrecy::SecretBox;
 use walletkit_db::Vault;
 
 mod activity;
+mod billed_rps;
 mod billing;
 mod maintenance;
 mod merkle;
@@ -192,6 +193,49 @@ impl CacheDb {
         billing::remove(self.vault.connection(), &util::billing_witness_key(key))
     }
 
+    /// Fetches the encoded billed RP snapshot cached for one Billing Contract.
+    ///
+    /// Returns `None` when missing or expired.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the query fails.
+    pub fn billed_rps_get(
+        &self,
+        chain_id: [u8; 32],
+        billing_contract: [u8; 20],
+        now: u64,
+    ) -> StorageResult<Option<Vec<u8>>> {
+        billed_rps::get(
+            self.vault.connection(),
+            &util::billed_rps_key(chain_id, billing_contract),
+            now,
+        )
+    }
+
+    /// Stores the encoded billed RP snapshot of one Billing Contract until `expires_at`,
+    /// exclusive, replacing the previous one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the insert fails.
+    pub fn billed_rps_put(
+        &self,
+        chain_id: [u8; 32],
+        billing_contract: [u8; 20],
+        snapshot: &[u8],
+        now: u64,
+        expires_at: u64,
+    ) -> StorageResult<()> {
+        billed_rps::put(
+            self.vault.connection(),
+            &util::billed_rps_key(chain_id, billing_contract),
+            snapshot,
+            now,
+            expires_at,
+        )
+    }
+
     /// Records an activity entry.
     ///
     /// # Errors
@@ -269,6 +313,7 @@ mod tests {
             issuer_schema_ids: vec![],
             outcome: ActivityOutcome::Completed,
             failure_reason: None,
+            challenge_id: None,
         }
     }
 
@@ -608,9 +653,7 @@ mod tests {
             .expect("read cache schema version");
         drop(conn);
 
-        // Four migrations: cache_entries, activity init, activity rebuild,
-        // issuer-schema association table.
-        assert_eq!(version, 4, "the cache schema registers as version 4");
+        assert_eq!(version, 5, "the cache schema registers as version 5");
 
         let db = CacheDb::new(&path, &key).expect("reopen cache");
         let entries = db

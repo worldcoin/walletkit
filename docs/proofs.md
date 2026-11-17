@@ -66,6 +66,30 @@ The RP signs only the hash, so call `matches_challenge` on the challenge image i
 sends before you use the image. The browser package doesn't expose these methods
 yet.
 
+## Issuer ownership proofs (iOS and Android)
+
+With the `issuers` feature, call `issuers::fetch_ownership_proof_challenge` with an
+`Environment`, an explicit challenge type string (such as `"enrollment"` or
+`"teedi_migration"`), a `RequestIntegrityProvider`, and a `UserAgentBuilder`.
+The mobile app supplies the challenge type. WalletKit does not validate the input
+or returned challenge type value.
+
+The host configures the provider for the challenge service's audience and obtains
+the attestation-gateway token. Each prepared `RequestIntegritySession` pairs that
+token with its matching hardware signer. WalletKit constructs and signs the HTTP
+request; private keys stay with the host. The callbacks live in
+`request_integrity` and are also available through `flamingo`.
+
+The result preserves the service's fields: `challenge_id`, hex `nonce`,
+`challenge_type`, and RFC 3339 `expires_at`. Parse the nonce with
+`FieldElement::try_from_hex_string` before passing it to
+`Authenticator::prove_credential_sub`, using the context specified for the issuer
+operation. Retain `challenge_id` for proof submission.
+
+Fetching makes one attempt without redirects, with a 10-second HTTP timeout.
+Signing uses the shared integrity deadline. Failures return `WalletKitError`.
+
+
 ## Legacy World ID 3.0 proofs
 
 The `v3` feature adds the World ID 3.0 API in the `v3` module. The Swift and
