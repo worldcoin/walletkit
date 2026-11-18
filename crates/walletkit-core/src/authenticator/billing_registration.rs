@@ -123,6 +123,7 @@ impl Authenticator {
 
     /// Drops the billing witnesses cached for the RP of `proof_request` in both active periods,
     /// so the next [`Self::ensure_billing_registration`] registers again (WIP-107 §4.6).
+    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn forget_billing_registration(
         &self,
         proof_request: &ProofRequest,
