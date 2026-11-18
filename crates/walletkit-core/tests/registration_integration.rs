@@ -83,7 +83,6 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     let approval = approval.unwrap();
     let registered = registered.unwrap();
     assert!(approval.delivered);
-    assert!(!approval.vault_omitted);
     assert_eq!(
         approval.result,
         ApprovalResult::Registered {

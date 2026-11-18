@@ -442,8 +442,8 @@ impl CheckedRegistration {
     /// Call it only after the user consented and the platform's user verification succeeded,
     /// also for an authenticator that is already registered (WIP-109 §3.7.3). `vault` is the
     /// `CredentialStore::export_vault_for_backup` output, only if the user chose to share it; a
-    /// vault over [`MAX_VAULT_SIZE`] is left out. `authenticators` names the account's other
-    /// authenticators.
+    /// vault over [`MAX_VAULT_SIZE`] is rejected before any insertion. `authenticators` names
+    /// the account's other authenticators.
     ///
     /// Unless the authenticator is already registered, this submits `InsertAuthenticator` and
     /// tracks it until it is final on-chain or definitively failed. An insertion is never
@@ -455,7 +455,8 @@ impl CheckedRegistration {
     ///
     /// Returns [`ApproverError::ApproverMismatch`] if `approver` is not the authenticator that
     /// [`IncomingRegistration::check`] checked, or [`ApproverError::AlreadyHandled`] if the
-    /// registration was already decided.
+    /// registration was already decided. [`ApproverError::VaultTooLarge`] leaves the
+    /// session open: the host may retry with a supported vault or explicitly abort.
     pub async fn approve(
         &self,
         approver: &Authenticator,
@@ -472,17 +473,20 @@ impl CheckedRegistration {
             return Err(ApproverError::ApproverMismatch);
         }
 
-        let channel = take(&self.channel)?;
-        let vault_omitted = vault
+        if vault
             .as_ref()
-            .is_some_and(|data| data.len() > MAX_VAULT_SIZE);
+            .is_some_and(|data| data.len() > MAX_VAULT_SIZE)
+        {
+            return Err(ApproverError::VaultTooLarge);
+        }
+        let channel = take(&self.channel)?;
         let mut result = RegistrationResult {
             leaf_index: self.approver_leaf_index,
             // Every valid slot encodes to the same single CBOR byte, so checking the size with
             // this placeholder holds for the slot that registration assigns.
             pubkey_id: 0,
             authenticators,
-            vault: vault.filter(|_| !vault_omitted).map(|data| Vault {
+            vault: vault.map(|data| Vault {
                 format: PLAINTEXT_VAULT_FORMAT.to_string(),
                 data,
             }),
@@ -516,7 +520,6 @@ impl CheckedRegistration {
                     reason: refusal.reason,
                 },
             },
-            vault_omitted,
             delivered,
         })
     }
@@ -1243,6 +1246,75 @@ mod tests {
 
         // Channel was not consumed by the rejected call, so declining still delivers.
         assert!(checked.reject().await.unwrap());
+    }
+
+    #[test_case(false ; "new insertion")]
+    #[test_case(true ; "already registered")]
+    #[tokio::test]
+    async fn oversized_vault_is_rejected_without_consuming_the_session(
+        already_registered: bool,
+    ) {
+        let (pending, code, _) = make_pending_registration().await;
+        let incoming = pending.authenticate(&code).await.unwrap();
+        let approver = make_test_authenticator([21; 32], 1).await;
+        let mut checked =
+            Arc::try_unwrap(incoming.check(&approver).await.unwrap()).unwrap();
+        assert!(matches!(checked.plan, RegistrationPlan::Insert { .. }));
+        if already_registered {
+            checked.plan = RegistrationPlan::AlreadyRegistered { pubkey_id: 1 };
+        }
+
+        let err = checked
+            .approve(&approver, Some(vec![0x42; MAX_VAULT_SIZE + 1]), Vec::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ApproverError::VaultTooLarge));
+        assert_eq!(
+            err.to_string(),
+            "the vault exceeds the registration size limit"
+        );
+        assert!(checked.abort().await.unwrap());
+        assert!(matches!(
+            checked.abort().await,
+            Err(ApproverError::AlreadyHandled)
+        ));
+    }
+
+    #[test_case(None ; "without vault")]
+    #[test_case(Some(MAX_VAULT_SIZE) ; "exact size limit")]
+    #[tokio::test]
+    async fn supported_vault_sizes_can_be_approved_after_an_oversize_error(
+        size: Option<usize>,
+    ) {
+        let (pending, code, _) = make_pending_registration().await;
+        let incoming = pending.authenticate(&code).await.unwrap();
+        let approver = make_test_authenticator([21; 32], 1).await;
+        let mut checked =
+            Arc::try_unwrap(incoming.check(&approver).await.unwrap()).unwrap();
+        checked.plan = RegistrationPlan::AlreadyRegistered { pubkey_id: 1 };
+        assert!(matches!(
+            checked
+                .approve(&approver, Some(vec![0x42; MAX_VAULT_SIZE + 1]), Vec::new())
+                .await,
+            Err(ApproverError::VaultTooLarge)
+        ));
+
+        let outcome = checked
+            .approve(&approver, size.map(|size| vec![0x42; size]), Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            outcome.result,
+            ApprovalResult::Registered {
+                leaf_index: 1,
+                pubkey_id: 1
+            }
+        );
+        assert!(outcome.delivered);
+        assert!(matches!(
+            checked.abort().await,
+            Err(ApproverError::AlreadyHandled)
+        ));
     }
 
     fn make_account(
