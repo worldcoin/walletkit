@@ -169,19 +169,18 @@ impl Authenticator {
                 FINALIZATION_TIMEOUT.as_secs()
             ),
         };
-        let mut delays = polling_backoff().build();
-        loop {
+        for delay in polling_backoff().build() {
             let state = before(deadline, self.inner.poll_status(request_id))
                 .await
                 .ok_or_else(timed_out)??;
             if let Some(outcome) = status_outcome(state)? {
                 return Ok(outcome);
             }
-            let delay = delays.next().unwrap_or(Duration::from_secs(8));
             if before(deadline, sleep(delay)).await.is_none() {
-                return Err(timed_out());
+                break;
             }
         }
+        Err(timed_out())
     }
 }
 

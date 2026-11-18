@@ -1,6 +1,6 @@
 //! Proves a WIP-202 Proof of Embedding Similarity: billing, the Flamingo exchange and the proof.
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use alloy_core::primitives::Address;
 use backon::BackoffBuilder as _;
@@ -200,9 +200,6 @@ impl Authenticator {
 /// again. Its billing state follows the chain within about a block, so this covers the lag.
 const UNREGISTERED_RETRIES: u32 = 2;
 
-/// The longest wait before resending a request the Verifier rejected as unregistered.
-const MAX_UNREGISTERED_DELAY: Duration = Duration::from_secs(8);
-
 /// What every Flamingo request of one Proof of Embedding Similarity shares.
 struct BilledExchange<'a> {
     proof_request: &'a ProofRequest,
@@ -264,11 +261,14 @@ impl Authenticator {
                         attempt = unregistered,
                         "the Flamingo Verifier has not seen the billing registration yet; resending"
                     );
-                    sleep(delays.next().unwrap_or(MAX_UNREGISTERED_DELAY)).await;
+                    if let Some(delay) = delays.next() {
+                        sleep(delay).await;
+                    }
                 }
                 BillingRecovery::RegisterAgain => {
                     registered_again = true;
                     unregistered = 0;
+                    delays = polling_backoff().build();
                     tracing::warn!(
                         %rp_id,
                         ?reason,
