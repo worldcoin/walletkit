@@ -42,23 +42,26 @@ For changes to the browser package (`crates/walletkit-web` or `web/walletkit`), 
 
 ### World ID protocol compatibility
 
-When changing a `world-id-protocol` dependency, ownership-proof encoding, or
-proving artifacts, check compatibility with `worldcoin/world-id-proof-verification`.
+Check compatibility with `worldcoin/world-id-proof-verification` when changing
+ownership-proof encoding, proving artifacts, or the resolved version or source
+of a `world-id-protocol` or proof-backend dependency. This includes transitive
+and lockfile-only updates such as a change to `provekit-spongefish`.
 
-- Compare the resolved versions and sources of `world-id-proof` and
-  `world-id-primitives` in both `Cargo.lock` files. Check for changes to the
-  ownership circuit, proving and verification artifacts, and proof backend.
-  Use the verifier revision or image deployed to the target environment and
-  include any companion verifier change.
-- Generate and serialize a WIP-103 ownership proof with the proposed WalletKit
-  build using a challenge issued by the verifier under test. Submit it to
-  `POST /api/v4/verify` on a release build of that verifier and assert that it
-  is accepted. Cover the WalletKit and verifier combinations expected to serve
-  traffic during rollout and rollback.
+- Compare the resolved versions and sources of `world-id-proof`,
+  `world-id-primitives`, and their proof-backend dependencies in both
+  `Cargo.lock` files. Check for changes to the ownership circuit and proving
+  and verification artifacts. Use the verifier revision or image deployed to
+  the target environment and include any companion verifier change.
+- For each WalletKit/verifier pairing expected to serve traffic during rollout
+  or rollback, generate and serialize a WIP-103 ownership proof on each supported
+  prover target, including native and browser WebAssembly (`wasm32`). Use a
+  fresh challenge from the verifier under test for each proof. Submit each proof
+  to `POST /api/v4/verify` on a release build of that verifier and assert that
+  it is accepted.
 - Record the verifier commit or image, resolved dependency versions, and test
-  results in the PR. Link any companion PR and document rollout and rollback
-  order if the upgrade needs coordination. A failed or missing check for a
-  supported pairing blocks release.
+  results for each prover target and pairing in the PR. Link any companion PR
+  and document rollout and rollback order if the upgrade needs coordination. A
+  failed or missing check for any supported target and pairing blocks release.
 
 ## Logging & Error handling
 
