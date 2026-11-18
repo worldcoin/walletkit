@@ -31,6 +31,9 @@ relative to its user data directory. WalletKit does not verify the id against
 sealed bytes. Reusing an id replaces its data and kind, preserves its metadata
 and creation time, and increments its revision. Reusing a path moves that alias
 without deleting the previous blob.
+Revisions are opaque: creation draws a random positive 62-bit starting counter
+so deleting and recreating an id does not routinely reuse revisions. Use the
+returned value for CAS; it is not a write count.
 
 `list_blob_paths` uses a literal, case-sensitive prefix; an empty prefix lists
 all paths and a trailing `/` selects a directory. Paths use `/`, normalize `.`

@@ -392,6 +392,8 @@ impl CredentialStore {
     /// The owner supplies the id (for PCPs, the hash of the unsealed archive); this store
     /// does not hash sealed bytes. Upserts preserve metadata and creation time, and
     /// increment the revision returned here. `now` is a Unix timestamp.
+    /// Revisions start at a random positive value on creation, reducing reuse across
+    /// delete/recreate cycles; use the returned revision rather than assuming a write count.
     /// Blobs are local-only: no backup notification, export, merge, or credential GC.
     /// Paths use `/`; redundant separators and `.` are normalized. Absolute paths,
     /// drive prefixes, backslashes, NULs and `..` components are rejected.
@@ -1577,18 +1579,15 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         store.set_vault_changed_listener(Arc::new(ChannelVaultListener(tx)));
         let id = crate::storage::blob_id(b"hello pcp".to_vec());
-        assert_eq!(
-            store
-                .put_blob(
-                    &id,
-                    "oxide.face",
-                    b"sealed PCP",
-                    Some("face_pcp/face.tar.gz".to_owned()),
-                    1000
-                )
-                .unwrap(),
-            1
-        );
+        let initial = store
+            .put_blob(
+                &id,
+                "oxide.face",
+                b"sealed PCP",
+                Some("face_pcp/face.tar.gz".to_owned()),
+                1000,
+            )
+            .unwrap();
         assert_eq!(store.get_blob(&id).unwrap().unwrap().data, b"sealed PCP");
         assert_eq!(
             store
@@ -1612,9 +1611,9 @@ mod tests {
         );
         assert_eq!(
             store
-                .update_blob_metadata(&id, Some(b"enrolled".to_vec()), 1, 1001)
+                .update_blob_metadata(&id, Some(b"enrolled".to_vec()), initial, 1001)
                 .unwrap(),
-            2
+            initial + 1
         );
         assert!(store.delete_blob_path("face_pcp/face.tar.gz").unwrap());
         assert!(store.delete_blob(&id).unwrap());

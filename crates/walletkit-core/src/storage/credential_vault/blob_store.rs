@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use rand::{rngs::OsRng, RngCore};
 use walletkit_sqlite::{params, Row, StepResult, Value};
 
 use super::{map_db_err, to_i64, to_u64, CredentialVault};
@@ -18,6 +19,7 @@ impl CredentialVault {
     ) -> StorageResult<u64> {
         let path = path.map(blob_path).transpose()?;
         let now = to_i64(now, "now")?;
+        let initial_revision = initial_revision()?;
         let tx = self
             .vault
             .connection()
@@ -25,12 +27,12 @@ impl CredentialVault {
             .map_err(|err| map_db_err(&err))?;
         let revision = tx.query_row(
             "INSERT INTO blobs (content_id, kind, data, revision, created_at, updated_at)
-             VALUES (?1, ?2, ?3, 1, ?4, ?4)
+             VALUES (?1, ?2, ?3, ?5, ?4, ?4)
              ON CONFLICT(content_id) DO UPDATE SET
                 kind = excluded.kind, data = excluded.data,
                 revision = blobs.revision + 1, updated_at = excluded.updated_at
              RETURNING revision",
-            params![content_id.as_bytes().as_slice(), kind, data, now],
+            params![content_id.as_bytes().as_slice(), kind, data, now, initial_revision],
             |row| Ok(row.column_i64(0)),
         ).map_err(|err| map_db_err(&err))?;
         if let Some(path) = path {
@@ -118,12 +120,18 @@ impl CredentialVault {
         let expected_revision = to_i64(expected_revision, "expected_revision")?;
         let now = to_i64(now, "now")?;
         let metadata = metadata.map_or(Value::Null, |data| Value::Blob(data.to_vec()));
-        let revision = self.vault.connection().query_row_optional(
+        let tx = self
+            .vault
+            .connection()
+            .transaction_immediate()
+            .map_err(|err| map_db_err(&err))?;
+        let revision = tx.query_row_optional(
             "UPDATE blobs SET metadata = ?1, revision = revision + 1, updated_at = ?2
              WHERE content_id = ?3 AND revision = ?4 RETURNING revision",
             params![metadata, now, content_id.as_bytes().as_slice(), expected_revision],
             |row| Ok(row.column_i64(0)),
         ).map_err(|err| map_db_err(&err))?.ok_or(StorageError::BlobRevisionConflict)?;
+        tx.commit().map_err(|err| map_db_err(&err))?;
         to_u64(revision, "revision")
     }
 
@@ -148,6 +156,16 @@ impl CredentialVault {
             .map_err(|err| map_db_err(&err))?;
         Ok(deleted != 0)
     }
+}
+
+/// Randomize each incarnation's counter, leaving about 2^62 increments before
+/// overflow. Revision equality is an opaque CAS token, not a write count.
+fn initial_revision() -> StorageResult<i64> {
+    let mut bytes = [0; 8];
+    OsRng.try_fill_bytes(&mut bytes).map_err(|_| {
+        StorageError::Crypto("blob revision generation failed".to_owned())
+    })?;
+    Ok((i64::from_be_bytes(bytes) & (i64::MAX >> 1)) + 1)
 }
 
 fn read_blob(row: &Row<'_, '_>) -> StorageResult<StoredBlob> {

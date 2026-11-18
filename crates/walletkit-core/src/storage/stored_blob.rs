@@ -13,7 +13,8 @@ pub struct BlobRecord {
     pub kind: String,
     /// Opaque owner-defined metadata.
     pub metadata: Option<Vec<u8>>,
-    /// Starts at one and increases on each data or metadata write.
+    /// Opaque positive counter, randomly seeded on creation and incremented on each
+    /// data or metadata write. Recreating an id draws a fresh 62-bit seed.
     pub revision: u64,
     /// Unix timestamp of the first write.
     pub created_at: u64,

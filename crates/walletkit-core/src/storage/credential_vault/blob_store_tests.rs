@@ -29,12 +29,9 @@ impl Fixture {
 
     fn put(&self, path: Option<&str>) -> BlobId {
         let id = compute_blob_id(b"hello pcp");
-        assert_eq!(
-            self.db
-                .put_blob(&id, "oxide.face", SEALED, path, 1000)
-                .unwrap(),
-            1
-        );
+        self.db
+            .put_blob(&id, "oxide.face", SEALED, path, 1000)
+            .unwrap();
         id
     }
 }
@@ -43,6 +40,7 @@ impl Fixture {
 fn aliases_move_without_deleting_content_or_other_aliases() {
     let f = Fixture::new();
     let first = f.put(Some(PATH));
+    let initial = f.db.get_blob(&first).unwrap().unwrap().record.revision;
     assert_eq!(
         f.db.put_blob(
             &first,
@@ -52,7 +50,7 @@ fn aliases_move_without_deleting_content_or_other_aliases() {
             1001
         )
         .unwrap(),
-        2
+        initial + 1
     );
     let second = compute_blob_id(b"replacement face pcp");
     f.db.put_blob(&second, "oxide.face", b"new sealed PCP", Some(PATH), 1002)
@@ -90,26 +88,27 @@ fn aliases_move_without_deleting_content_or_other_aliases() {
 fn metadata_cas_observes_writes_from_another_connection() {
     let f = Fixture::new();
     let id = f.put(None);
+    let initial = f.db.get_blob(&id).unwrap().unwrap().record.revision;
     let other =
         CredentialVault::new(&f.dir.path().join("account.vault.sqlite"), &f.key)
             .unwrap();
     assert_eq!(
-        f.db.update_blob_metadata(&id, Some(b"enrolled"), 1, 1001)
+        f.db.update_blob_metadata(&id, Some(b"enrolled"), initial, 1001)
             .unwrap(),
-        2
+        initial + 1
     );
     assert!(matches!(
-        other.update_blob_metadata(&id, Some(b"stale"), 1, 1002),
+        other.update_blob_metadata(&id, Some(b"stale"), initial, 1002),
         Err(StorageError::BlobRevisionConflict)
     ));
     assert_eq!(
         other
             .put_blob(&id, "oxide.face", b"resealed PCP", None, 1003)
             .unwrap(),
-        3
+        initial + 2
     );
     assert!(matches!(
-        f.db.update_blob_metadata(&id, None, 2, 1004),
+        f.db.update_blob_metadata(&id, None, initial + 1, 1004),
         Err(StorageError::BlobRevisionConflict)
     ));
     let stored = f.db.get_blob(&id).unwrap().unwrap();
@@ -121,21 +120,83 @@ fn metadata_cas_observes_writes_from_another_connection() {
             stored.record.created_at,
             stored.record.updated_at
         ),
-        (3, 1000, 1003)
+        (initial + 2, 1000, 1003)
     );
-    assert_eq!(f.db.update_blob_metadata(&id, None, 3, 1004).unwrap(), 4);
+    assert_eq!(
+        f.db.update_blob_metadata(&id, None, initial + 2, 1004)
+            .unwrap(),
+        initial + 3
+    );
     assert_eq!(f.db.get_blob(&id).unwrap().unwrap().record.metadata, None);
     f.db.delete_blob(&id).unwrap();
     assert!(matches!(
-        f.db.update_blob_metadata(&id, None, 4, 1005),
+        f.db.update_blob_metadata(&id, None, initial + 3, 1005),
         Err(StorageError::BlobRevisionConflict)
     ));
+}
+
+#[test]
+fn recreating_a_blob_does_not_restart_the_revision_counter() {
+    let f = Fixture::new();
+    let id = f.put(None);
+    let first = f.db.get_blob(&id).unwrap().unwrap().record.revision;
+    let stale =
+        f.db.update_blob_metadata(&id, Some(b"old enrollment"), first, 1001)
+            .unwrap();
+    let other =
+        CredentialVault::new(&f.dir.path().join("account.vault.sqlite"), &f.key)
+            .unwrap();
+    other.delete_blob(&id).unwrap();
+    let recreated = other
+        .put_blob(&id, "oxide.face", b"resealed PCP", None, 2000)
+        .unwrap();
+    let current = other
+        .update_blob_metadata(&id, Some(b"new enrollment"), recreated, 2001)
+        .unwrap();
+    assert_ne!(current, stale);
+    assert!(matches!(
+        f.db.update_blob_metadata(&id, Some(b"stale enrollment"), stale, 2002),
+        Err(StorageError::BlobRevisionConflict)
+    ));
+    assert_eq!(
+        f.db.get_blob(&id).unwrap().unwrap().record.metadata,
+        Some(b"new enrollment".to_vec())
+    );
+}
+
+#[test]
+fn metadata_commit_failure_is_reported_and_rolled_back() {
+    let f = Fixture::new();
+    let id = f.put(None);
+    let initial = f.db.get_blob(&id).unwrap().unwrap().record.revision;
+    f.db.vault.connection().execute_batch(
+        "CREATE TABLE commit_guard (content_id BLOB REFERENCES blobs(content_id) DEFERRABLE INITIALLY DEFERRED);
+         CREATE TRIGGER fail_metadata_commit AFTER UPDATE OF metadata ON blobs
+         BEGIN INSERT INTO commit_guard VALUES (X'CAFE'); END;"
+    ).unwrap();
+    assert!(matches!(
+        f.db.update_blob_metadata(&id, Some(b"enrolled"), initial, 2000),
+        Err(StorageError::VaultDb(_))
+    ));
+    let stored = f.db.get_blob(&id).unwrap().unwrap();
+    assert_eq!(stored.record.metadata, None);
+    assert_eq!(stored.record.revision, initial);
+    f.db.vault
+        .connection()
+        .execute_batch("DROP TRIGGER fail_metadata_commit")
+        .unwrap();
+    assert_eq!(
+        f.db.update_blob_metadata(&id, Some(b"enrolled"), initial, 2000)
+            .unwrap(),
+        initial + 1
+    );
 }
 
 #[test]
 fn failed_alias_write_rolls_back_blob_upsert() {
     let f = Fixture::new();
     let id = f.put(Some(PATH));
+    let initial = f.db.get_blob(&id).unwrap().unwrap().record.revision;
     f.db.vault.connection().execute_batch(
         "CREATE TRIGGER reject_alias BEFORE INSERT ON blob_paths BEGIN SELECT RAISE(ABORT, 'alias write failed'); END;",
     ).unwrap();
@@ -145,7 +206,7 @@ fn failed_alias_write_rolls_back_blob_upsert() {
         .is_err());
     let stored = f.db.get_blob(&id).unwrap().unwrap();
     assert_eq!(stored.data, SEALED);
-    assert_eq!(stored.record.revision, 1);
+    assert_eq!(stored.record.revision, initial);
     let new_id = compute_blob_id(b"new PCP");
     assert!(f
         .db
@@ -158,6 +219,7 @@ fn failed_alias_write_rolls_back_blob_upsert() {
 fn concurrent_writer_failure_leaves_alias_and_revision_unchanged() {
     let f = Fixture::new();
     let id = f.put(Some(PATH));
+    let initial = f.db.get_blob(&id).unwrap().unwrap().record.revision;
     let other =
         CredentialVault::new(&f.dir.path().join("account.vault.sqlite"), &f.key)
             .unwrap();
@@ -171,12 +233,15 @@ fn concurrent_writer_failure_leaves_alias_and_revision_unchanged() {
         Err(StorageError::VaultDb(_))
     ));
     drop(writer);
-    assert_eq!(f.db.get_blob(&id).unwrap().unwrap().record.revision, 1);
+    assert_eq!(
+        f.db.get_blob(&id).unwrap().unwrap().record.revision,
+        initial
+    );
     assert_eq!(f.db.list_blob_paths("").unwrap(), [PATH]);
     assert_eq!(
         f.db.put_blob(&id, "oxide.face", b"new seal", Some("new.dat"), 2000)
             .unwrap(),
-        2
+        initial + 1
     );
 }
 
@@ -380,19 +445,16 @@ fn released_schema_gains_tables_and_released_initializer_can_reopen_them() {
         7
     };
     let id = compute_blob_id(b"hello pcp");
-    {
+    let initial = {
         let db = CredentialVault::new(&path, &key).unwrap();
         db.init_leaf_index(42, 2000).unwrap();
         assert_eq!(
             db.fetch_credential_by_id(credential_id).unwrap(),
             Some(credential.clone())
         );
-        assert_eq!(
-            db.put_blob(&id, "oxide.face", SEALED, Some(PATH), 2000)
-                .unwrap(),
-            1
-        );
-    }
+        db.put_blob(&id, "oxide.face", SEALED, Some(PATH), 2000)
+            .unwrap()
+    };
     {
         let old = Vault::open(&path, &key, |conn| conn.execute_batch(RELEASED_SCHEMA))
             .unwrap();
@@ -415,7 +477,10 @@ fn released_schema_gains_tables_and_released_initializer_can_reopen_them() {
         reopened.get_blob_by_path(PATH).unwrap().unwrap().data,
         SEALED
     );
-    assert_eq!(reopened.get_blob(&id).unwrap().unwrap().record.revision, 1);
+    assert_eq!(
+        reopened.get_blob(&id).unwrap().unwrap().record.revision,
+        initial
+    );
     assert_eq!(
         reopened.fetch_credential_by_id(credential_id).unwrap(),
         Some(credential)
