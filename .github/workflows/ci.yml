@@ -85,7 +85,7 @@ jobs:
 
   wasm-check:
     name: WASM walletkit-web compile check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Checkout code
@@ -106,25 +106,30 @@ jobs:
 
       - uses: ./.github/actions/prefetch-noir-dependencies
 
-      # clang-18 (LLVM 18) is the minimum version that supports the C23
-      # [[noreturn]] attribute syntax used in sqlite-wasm-rs's wasm-shim.h.
-      # The system clang on Ubuntu (clang-14) predates C23 attribute support
-      # and fails to compile the shim, so we must install a newer toolchain explicitly.
-      - name: Install LLVM toolchain for WASM C build
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y clang-18 llvm-18
-
+      # sqlite-wasm-rs's wasm-shim.h uses C23 [[noreturn]] attribute syntax, which needs
+      # clang 18 or newer. The runner image ships several recent LLVM toolchains; use the
+      # newest one and install clang-18 from apt only if none is present, since the Ubuntu
+      # mirrors are intermittently unreachable from the runners.
       - name: Configure C toolchain for wasm32
         shell: bash
         run: |
           set -euo pipefail
-          echo "CC_wasm32_unknown_unknown=clang-18" >> "$GITHUB_ENV"
-          echo "AR_wasm32_unknown_unknown=llvm-ar-18" >> "$GITHUB_ENV"
-          clang-18 --version | head -n1
-          llvm-ar-18 --version | head -n1
+          version=""
+          for v in 22 21 20 19 18; do
+            if command -v "clang-$v" >/dev/null && command -v "llvm-ar-$v" >/dev/null; then
+              version="$v"
+              break
+            fi
+          done
+          if [ -z "$version" ]; then
+            sudo apt-get -o Acquire::Retries=5 update
+            sudo apt-get -o Acquire::Retries=5 install -y clang-18 llvm-18
+            version=18
+          fi
+          echo "CC_wasm32_unknown_unknown=clang-$version" >> "$GITHUB_ENV"
+          echo "AR_wasm32_unknown_unknown=llvm-ar-$version" >> "$GITHUB_ENV"
+          "clang-$version" --version | head -n1
+          "llvm-ar-$version" --version | head -n1
 
       - name: Run WASM compile check
         run: cargo check -p walletkit-web --target wasm32-unknown-unknown --locked

@@ -85,6 +85,13 @@ impl Environment {
     pub fn world_id_verifier_address(&self) -> String {
         defaults::world_id_verifier_address(self).to_string()
     }
+
+    /// Returns the WIP-107 Billing Contract address for this environment, or `None` where none
+    /// is deployed, so that no RP is billed.
+    #[must_use]
+    pub fn billing_contract_address(&self) -> Option<String> {
+        defaults::billing_contract_address(self).map(|address| address.to_string())
+    }
 }
 
 /// Region for node selection.
@@ -105,6 +112,10 @@ pub enum Region {
 /// Attested Flamingo matching in preparation for zero-knowledge proof generation.
 #[cfg(not(target_arch = "wasm32"))]
 pub mod flamingo;
+
+/// Native request-integrity callbacks shared by authenticated services.
+#[cfg(not(target_arch = "wasm32"))]
+pub mod request_integrity;
 
 /// Contains error outputs from `WalletKit`
 pub mod error;

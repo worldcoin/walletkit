@@ -1,115 +1,19 @@
-//! Native request-integrity callbacks used to authenticate Flamingo connections.
+//! Request-integrity signing for Flamingo WebSocket handshakes.
 
-use std::{
-    sync::{Arc, LazyLock},
-    time::Duration,
-};
+use std::sync::Arc;
 
+use attested_request::{base::CanonicalRequest, sign::SignedHeaders};
 use tokio::sync::Semaphore;
-
-use attested_request::{
-    base::CanonicalRequest,
-    sign::{SignError, SignedHeaders, Signer},
-    Platform,
-};
 use tokio_tungstenite::tungstenite::handshake::client::Request;
 
-/// The platform determines the native signature encoding.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum RequestIntegrityPlatform {
-    /// An App Attest assertion encoded as CBOR.
-    Ios,
-    /// An Android Keystore ECDSA signature encoded as DER.
-    Android,
-}
+use crate::request_integrity::{
+    sign_canonical_request, sign_with_limit, SIGNING_SLOTS,
+};
+pub use crate::request_integrity::{
+    RequestDigestSigner, RequestIntegrityError, RequestIntegrityPlatform,
+    RequestIntegrityProvider, RequestIntegritySession,
+};
 
-/// Request-integrity failures without token, key, or native diagnostic contents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error, uniffi::Error)]
-pub enum RequestIntegrityError {
-    /// The host could not prepare an integrity session.
-    #[error("request integrity is unavailable")]
-    Unavailable,
-    /// The prepared session contains an unusable token.
-    #[error("request integrity session is invalid")]
-    InvalidSession,
-    /// The native signer failed or returned an empty signature.
-    #[error("request integrity signing failed")]
-    SigningFailed,
-    /// A host callback threw an unexpected exception.
-    #[error("request integrity callback failed")]
-    CallbackFailed,
-    /// Preparing or signing exceeded the authentication deadline.
-    #[error("request integrity authentication timed out")]
-    TimedOut,
-}
-
-impl From<uniffi::UnexpectedUniFFICallbackError> for RequestIntegrityError {
-    fn from(_: uniffi::UnexpectedUniFFICallbackError) -> Self {
-        Self::CallbackFailed
-    }
-}
-
-/// Signs a SHA-256 client-data digest with the key certified by the session token.
-///
-/// The host captures the key identifier and audience in this object. `WalletKit` never
-/// receives private-key material. The callback is invoked on a blocking worker.
-/// A running native signing operation cannot be cancelled when authentication times
-/// out; its late result is discarded. At most four native signing calls run process-wide;
-/// a timed-out call retains its slot until the native callback returns.
-#[uniffi::export(with_foreign)]
-pub trait RequestDigestSigner: Send + Sync {
-    /// Signs exactly 32 bytes and returns the platform's native signature encoding.
-    ///
-    /// iOS returns an App Attest assertion; Android returns a DER ECDSA signature.
-    /// The digest must be forwarded unchanged. Android must sign this precomputed hash,
-    /// without hashing it again; iOS passes it directly as App Attest's `clientDataHash`.
-    ///
-    /// # Errors
-    /// Returns [`RequestIntegrityError`] if native signing cannot complete.
-    fn sign_digest(
-        &self,
-        client_data_hash: Vec<u8>,
-    ) -> Result<Vec<u8>, RequestIntegrityError>;
-}
-
-/// A token and the signer pinned to the exact key certified by that token.
-///
-/// The provider must create the pair atomically so a later key rotation cannot mix them.
-/// An already-returned signer must keep using its captured key. The host adapts its native
-/// session to these callbacks without passing private-key material or other SDK callback types.
-#[derive(Clone, uniffi::Record)]
-pub struct RequestIntegritySession {
-    /// A valid integrity token for the host-selected Flamingo audience.
-    pub token: String,
-    /// Encoding expected from the native signer.
-    pub platform: RequestIntegrityPlatform,
-    /// A signer capturing the matching hardware key and native signing context.
-    pub signer: Arc<dyn RequestDigestSigner>,
-}
-
-/// Supplies authentication material before each WebSocket connection or reassignment.
-///
-/// The host owns token acquisition, refresh, audience policy, and hardware-key lifecycle.
-/// It selects the audience when configuring the provider; `WalletKit` does not decode the
-/// token or receive the audience or key identifier. Preparing and signing share a 30-second
-/// deadline in the matcher.
-#[uniffi::export(with_foreign)]
-#[async_trait::async_trait]
-pub trait RequestIntegrityProvider: Send + Sync {
-    /// Returns a usable token and its matching signer, reusing a cached token when valid.
-    ///
-    /// # Errors
-    /// Returns [`RequestIntegrityError`] if an integrity session is unavailable.
-    async fn prepare(&self) -> Result<RequestIntegritySession, RequestIntegrityError>;
-}
-
-const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Bounds native callbacks even when timed-out callers abandon their results.
-static SIGNING_SLOTS: LazyLock<Arc<Semaphore>> =
-    LazyLock::new(|| Arc::new(Semaphore::new(4)));
-
-/// Signs within a shared deadline and the process-wide native callback limit.
 pub(super) async fn sign_request(
     provider: Arc<dyn RequestIntegrityProvider>,
     request: Request,
@@ -117,77 +21,33 @@ pub(super) async fn sign_request(
     sign_request_with_limit(provider, request, SIGNING_SLOTS.clone()).await
 }
 
-/// Accepts an isolated limit so timeout regression tests do not share live signing slots.
 async fn sign_request_with_limit(
     provider: Arc<dyn RequestIntegrityProvider>,
     request: Request,
     slots: Arc<Semaphore>,
 ) -> Result<SignedHeaders, RequestIntegrityError> {
-    tokio::time::timeout(AUTHENTICATION_TIMEOUT, async move {
-        let session = provider.prepare().await?;
-        if session.token.is_empty()
-            || !session
-                .token
-                .bytes()
-                .all(|byte| (0x21..=0x7e).contains(&byte))
-        {
-            return Err(RequestIntegrityError::InvalidSession);
-        }
-
-        let permit = slots
-            .acquire_owned()
-            .await
-            .map_err(|_| RequestIntegrityError::Unavailable)?;
-        tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            let uri = request.uri();
-            let scheme = match uri.scheme_str() {
-                Some("ws" | "http") => "http",
-                Some("wss" | "https") => "https",
-                _ => return Err(RequestIntegrityError::SigningFailed),
-            };
-            let authority = uri
-                .authority()
-                .ok_or(RequestIntegrityError::SigningFailed)?;
-            let canonical = CanonicalRequest::new(
-                request.method().as_str(),
-                scheme,
-                authority.as_str(),
-                uri.path(),
-                uri.query(),
-                b"",
-            )
-            .map_err(|_| RequestIntegrityError::SigningFailed)?;
-            attested_request::sign::sign_request(&canonical, &session.token, &session)
-                .map_err(|error| match error {
-                    SignError::Signer(error) => error,
-                    _ => RequestIntegrityError::SigningFailed,
-                })
-        })
-        .await
-        .map_err(|_| RequestIntegrityError::SigningFailed)?
+    sign_with_limit(provider, slots, move |session| {
+        let uri = request.uri();
+        let scheme = match uri.scheme_str() {
+            Some("ws" | "http") => "http",
+            Some("wss" | "https") => "https",
+            _ => return Err(RequestIntegrityError::SigningFailed),
+        };
+        let authority = uri
+            .authority()
+            .ok_or(RequestIntegrityError::SigningFailed)?;
+        let canonical = CanonicalRequest::new(
+            request.method().as_str(),
+            scheme,
+            authority.as_str(),
+            uri.path(),
+            uri.query(),
+            b"",
+        )
+        .map_err(|_| RequestIntegrityError::SigningFailed)?;
+        sign_canonical_request(&canonical, &session)
     })
     .await
-    .map_err(|_| RequestIntegrityError::TimedOut)?
-}
-
-impl Signer for RequestIntegritySession {
-    type Error = RequestIntegrityError;
-
-    fn platform(&self) -> Platform {
-        match self.platform {
-            RequestIntegrityPlatform::Ios => Platform::Ios,
-            RequestIntegrityPlatform::Android => Platform::Android,
-        }
-    }
-
-    fn sign(&self, client_data_hash: &[u8; 32]) -> Result<Vec<u8>, Self::Error> {
-        let signature = self.signer.sign_digest(client_data_hash.to_vec())?;
-        if signature.is_empty() {
-            return Err(RequestIntegrityError::SigningFailed);
-        }
-        Ok(signature)
-    }
 }
 
 #[cfg(test)]
@@ -197,12 +57,12 @@ mod tests {
             atomic::{AtomicU8, Ordering},
             Condvar, Mutex,
         },
-        time::SystemTime,
+        time::{Duration, SystemTime},
     };
 
     use attested_request::{
         base::CanonicalRequest,
-        sign::SignedHeaders,
+        sign::{SignedHeaders, Signer},
         signature::SignatureParams,
         test_util::{test_key, SoftwareSigner, TestClaims, TestIssuer},
         token::TokenVerifier,
@@ -213,6 +73,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::request_integrity::AUTHENTICATION_TIMEOUT;
 
     const AUDIENCE: &str = "flamingo-verifier";
     const TARGET: &str = "/proxy/a%20b/v1/matches?x=%2F&x=one+two";
@@ -422,6 +283,80 @@ mod tests {
                 assert_eq!(*provider.digests.lock().unwrap(), [digest.to_vec()]);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn software_callbacks_verify_the_final_http_method_url_and_body() {
+        use crate::request_integrity::sign_http_request;
+
+        let body = br#"{"challenge":{"nested":true},"value":"a b"}"#;
+        for platform in [Platform::Ios, Platform::Android] {
+            for (url, scheme, authority) in [
+                (
+                    format!("https://Verifier.Example:443{TARGET}"),
+                    "https",
+                    "verifier.example",
+                ),
+                (
+                    format!("http://Verifier.Example:8080{TARGET}"),
+                    "http",
+                    "verifier.example:8080",
+                ),
+                (format!("https://[::1]:8443{TARGET}"), "https", "[::1]:8443"),
+            ] {
+                let request = reqwest::Client::new()
+                    .post(url)
+                    .body(body.to_vec())
+                    .build()
+                    .unwrap();
+                let provider = Arc::new(RotatingProvider::new(platform));
+                let signed =
+                    sign_http_request(provider.clone(), &request).await.unwrap();
+                let verifier = provider.verifier(scheme, authority);
+                verifier
+                    .verify(&received(&signed, "POST", TARGET), body)
+                    .await
+                    .unwrap();
+                for (method, target, payload) in [
+                    ("GET", TARGET, body.as_slice()),
+                    (
+                        "POST",
+                        "/proxy/a%20b/v1/matches?x=%2f&x=one+two",
+                        body.as_slice(),
+                    ),
+                    ("POST", TARGET, b"changed".as_slice()),
+                ] {
+                    assert_eq!(
+                        verifier
+                            .verify(&received(&signed, method, target), payload)
+                            .await
+                            .unwrap_err()
+                            .reason,
+                        RejectReason::SignatureInvalid,
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_http_streaming_bodies_before_preparing_a_session() {
+        let stream = futures_util::stream::once(async {
+            Ok::<_, std::io::Error>(b"payload".as_slice())
+        });
+        let request = reqwest::Client::new()
+            .post("https://verifier.example/challenge")
+            .body(reqwest::Body::wrap_stream(stream))
+            .build()
+            .unwrap();
+        assert_eq!(
+            crate::request_integrity::sign_http_request(
+                Arc::new(FailingProvider(RequestIntegrityError::Unavailable)),
+                &request,
+            )
+            .await,
+            Err(RequestIntegrityError::SigningFailed),
+        );
     }
 
     #[tokio::test]

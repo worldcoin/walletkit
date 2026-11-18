@@ -1,7 +1,11 @@
 //! Shared helpers for cache database operations.
 
 use crate::storage::{
-    cache::schema::{CACHE_KEY_PREFIX_REPLAY_NULLIFIER, CACHE_KEY_PREFIX_SESSION},
+    cache::billing::BillingWitnessKey,
+    cache::schema::{
+        CACHE_KEY_PREFIX_BILLED_RPS, CACHE_KEY_PREFIX_BILLING_WITNESS,
+        CACHE_KEY_PREFIX_REPLAY_NULLIFIER, CACHE_KEY_PREFIX_SESSION,
+    },
     error::{StorageError, StorageResult},
 };
 use walletkit_sqlite::{params, Connection, Error as DbError, Transaction};
@@ -54,7 +58,8 @@ pub(super) fn cache_entry_times(
     })
 }
 
-/// Removes expired cache entries before inserting new ones.
+/// Removes expired cache entries before inserting new ones. An entry stays valid through its
+/// `expires_at`, as reads treat it.
 ///
 /// # Errors
 ///
@@ -62,7 +67,7 @@ pub(super) fn cache_entry_times(
 pub(super) fn prune_expired_entries(conn: &Connection, now: u64) -> StorageResult<()> {
     let now_i64 = to_i64(now, "now")?;
     conn.execute(
-        "DELETE FROM cache_entries WHERE expires_at <= ?1",
+        "DELETE FROM cache_entries WHERE expires_at < ?1",
         params![now_i64],
     )
     .map_err(|err| map_db_err(&err))?;
@@ -76,7 +81,7 @@ pub(super) fn prune_expired_entries_tx(
 ) -> StorageResult<()> {
     let now_i64 = to_i64(now, "now")?;
     tx.execute(
-        "DELETE FROM cache_entries WHERE expires_at <= ?1",
+        "DELETE FROM cache_entries WHERE expires_at < ?1",
         params![now_i64],
     )
     .map_err(|err| map_db_err(&err))?;
@@ -210,6 +215,50 @@ pub(super) fn session_cache_key(rp_id: u64, oprf_seed: [u8; 32]) -> Vec<u8> {
     let mut key = cache_key_with_prefix(CACHE_KEY_PREFIX_SESSION, &rp_id.to_be_bytes());
     key.extend_from_slice(&oprf_seed);
     key
+}
+
+/// Builds the cache key for a billing witness: one billing context (chain, Billing Contract, RP
+/// and period) under one RP OPRF key.
+pub(super) fn billing_witness_key(key: &BillingWitnessKey) -> Vec<u8> {
+    let mut bytes =
+        cache_key_with_prefix(CACHE_KEY_PREFIX_BILLING_WITNESS, &key.chain_id);
+    bytes.extend_from_slice(&key.billing_contract);
+    bytes.extend_from_slice(&key.rp_id.to_be_bytes());
+    bytes.extend_from_slice(&key.period_start.to_be_bytes());
+    bytes.extend_from_slice(&key.oprf_key_id);
+    bytes
+}
+
+/// Builds the cache key for the billed RP snapshot of one Billing Contract.
+pub(super) fn billed_rps_key(
+    chain_id: [u8; 32],
+    billing_contract: [u8; 20],
+) -> Vec<u8> {
+    let mut bytes = cache_key_with_prefix(CACHE_KEY_PREFIX_BILLED_RPS, &chain_id);
+    bytes.extend_from_slice(&billing_contract);
+    bytes
+}
+
+/// Prunes expired entries, then stores `value` under `key` until `expires_at`, exclusive. Stores
+/// nothing if `expires_at` has passed.
+///
+/// # Errors
+///
+/// Returns an error if pruning or the insert fails.
+pub(super) fn upsert_cache_entry_until(
+    conn: &Connection,
+    key: &[u8],
+    value: &[u8],
+    now: u64,
+    expires_at: u64,
+) -> StorageResult<()> {
+    prune_expired_entries(conn, now)?;
+    if expires_at <= now {
+        return Ok(());
+    }
+    // Cache entries stay valid through their `expires_at`.
+    let times = cache_entry_times(now, expires_at - now - 1)?;
+    upsert_cache_entry(conn, key, value, times)
 }
 
 /// Builds the cache key for a replay-guard nullifier entry.

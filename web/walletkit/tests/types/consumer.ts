@@ -67,6 +67,19 @@ export async function consumer() {
     await walletkit.ActivityQuery.new()
   ).withIssuerSchemaIds([1n, 2n]);
   const activity = await store.listActivities(query, 10, 0);
+  const challengeId: string | undefined = activity[0]?.challengeId;
+  await store.recordActivity(
+    {
+      rpId: 1n,
+      appIdentifier: "app_test",
+      clientId: "session",
+      protocol: 4,
+      outcome: "completed",
+      issuerSchemaIds: [],
+      challengeId,
+    },
+    now,
+  );
   const registration =
     await walletkit.InitializingAuthenticator.registerWithDefaults(
       new Uint8Array(32),
@@ -119,6 +132,7 @@ export async function consumer() {
     expiresAt,
     credentialId,
     activity,
+    challengeId,
     status,
     responseJson,
     ownershipProof,

@@ -116,7 +116,10 @@ pub enum TransportError {
 
 /// Runs `future` until `deadline`, returning `None` if the deadline passes first. A future whose
 /// deadline has passed is never polled.
-async fn before<F: Future>(deadline: Instant, future: F) -> Option<F::Output> {
+pub(crate) async fn before<F: Future>(
+    deadline: Instant,
+    future: F,
+) -> Option<F::Output> {
     let now = Instant::now();
     if now >= deadline {
         return None;
@@ -130,13 +133,13 @@ async fn before<F: Future>(deadline: Instant, future: F) -> Option<F::Output> {
 }
 
 /// Sleeps for `duration`, on native and browser targets alike.
-async fn sleep(duration: Duration) {
+pub(crate) async fn sleep(duration: Duration) {
     backon::DefaultSleeper::default().sleep(duration).await;
 }
 
 /// Delays between polls of an outcome that takes a while: from one second, doubling up to eight,
 /// with jitter. Callers stop at their own deadline.
-fn polling_backoff() -> ExponentialBuilder {
+pub(crate) fn polling_backoff() -> ExponentialBuilder {
     ExponentialBuilder::default()
         .with_min_delay(Duration::from_secs(1))
         .with_max_delay(Duration::from_secs(8))

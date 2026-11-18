@@ -13,10 +13,17 @@
 //! - Merkle Inclusion Proof: `0x01`; at most one entry; value is the proof bytes.
 //! - Session Seeds: `0x02 || rp_id (8-byte big-endian) || oprf_seed`; value is the `session_id_r_seed`.
 //! - Nullifier Replay Guards: `0x03 || nullifier`; value is a presence marker.
+//! - Billing Witnesses: `0x04 || chain_id (32 bytes) || billing_contract (20 bytes) || rp_id
+//!   (8-byte big-endian) || period_start (8-byte big-endian) || oprf_key_id (20 bytes)`; value is
+//!   `billing_action || billing_nullifier || R.x || R.y`, each 32 bytes big-endian.
+//! - Billed RP Snapshots: `0x05 || chain_id (32 bytes) || billing_contract (20 bytes)`; value is
+//!   `block_number || synced_at || rp_id*`, each 8 bytes big-endian, with the RP ids ascending.
 
 pub(super) const CACHE_KEY_PREFIX_MERKLE: u8 = 0x01;
 pub(super) const CACHE_KEY_PREFIX_SESSION: u8 = 0x02;
 pub(super) const CACHE_KEY_PREFIX_REPLAY_NULLIFIER: u8 = 0x03;
+pub(super) const CACHE_KEY_PREFIX_BILLING_WITNESS: u8 = 0x04;
+pub(super) const CACHE_KEY_PREFIX_BILLED_RPS: u8 = 0x05;
 
 use walletkit_sqlite::{
     error::{Error, ErrorCode},
@@ -28,8 +35,13 @@ use walletkit_sqlite::{
 /// A database's schema version is the number of these that have been applied, so
 /// adding a new version means writing a `migration_vN` function and appending it
 /// here — nothing else needs to change.
-const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] =
-    &[migration_v1, migration_v2, migration_v3, migration_v4];
+const MIGRATIONS: &[fn(&Connection) -> DbResult<()>] = &[
+    migration_v1,
+    migration_v2,
+    migration_v3,
+    migration_v4,
+    migration_v5,
+];
 
 #[allow(
     clippy::cast_possible_wrap,
@@ -262,6 +274,23 @@ fn migration_v4(conn: &Connection) -> DbResult<()> {
     tx.commit()
 }
 
+/// Migration 5: stores an optional diagnostic challenge ID on the activity row.
+fn migration_v5(conn: &Connection) -> DbResult<()> {
+    let tx = conn.transaction_immediate()?;
+    let has_column = tx
+        .query_row_optional(
+            "SELECT 1 FROM pragma_table_info('activity_entries')
+             WHERE name = 'challenge_id'",
+            &[],
+            |_| Ok(()),
+        )?
+        .is_some();
+    if !has_column {
+        tx.execute_batch("ALTER TABLE activity_entries ADD COLUMN challenge_id TEXT;")?;
+    }
+    tx.commit()
+}
+
 /// `SQLite` primary result code for corrupt data (`SQLITE_CORRUPT`).
 const SQLITE_CORRUPT: i32 = 11;
 
@@ -290,4 +319,61 @@ fn decode_legacy_issuer_schema_ids(bytes: &[u8]) -> DbResult<Vec<i64>> {
         .iter()
         .map(|chunk| i64::from_be_bytes(*chunk))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::cache::activity;
+    use crate::storage::types::ActivityQuery;
+
+    #[test]
+    fn challenge_id_migration_preserves_v4_history_and_resumes_after_interruption() {
+        let conn = Connection::open(":memory:", false).expect("open database");
+        conn.execute_batch(
+            "CREATE TABLE cache_meta (
+                schema_version INTEGER NOT NULL, created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             INSERT INTO cache_meta VALUES (4, 1000, 1000);
+             CREATE TABLE cache_entries (
+                key_bytes BLOB PRIMARY KEY, value_bytes BLOB NOT NULL,
+                inserted_at INTEGER NOT NULL, expires_at INTEGER NOT NULL
+             );
+             CREATE TABLE activity_entries (
+                entry_id INTEGER PRIMARY KEY, client_id TEXT NOT NULL,
+                protocol INTEGER NOT NULL, created_at INTEGER NOT NULL,
+                outcome TEXT NOT NULL, rp_id INTEGER NOT NULL,
+                app_identifier TEXT NOT NULL, failure_reason TEXT NOT NULL
+             );
+             CREATE TABLE activity_issuer_schema_ids (
+                entry_id INTEGER NOT NULL REFERENCES activity_entries(entry_id) ON DELETE CASCADE,
+                issuer_schema_id INTEGER NOT NULL, PRIMARY KEY (entry_id, issuer_schema_id)
+             );
+             INSERT INTO activity_entries VALUES (7, 'session', 4, 1000, 'completed', 42, 'app_test', '');
+             INSERT INTO activity_issuer_schema_ids VALUES (7, 10);",
+        ).expect("seed frozen v4 schema");
+
+        ensure_schema(&conn).expect("migrate v4");
+        let entries = activity::list(&conn, &ActivityQuery::new(), 10, 0)
+            .expect("read migrated history");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, Some(7));
+        assert_eq!(entries[0].client_id, "session");
+        assert_eq!(entries[0].issuer_schema_ids, vec![10]);
+        assert_eq!(entries[0].challenge_id, None);
+
+        conn.execute_batch(
+            "UPDATE activity_entries SET challenge_id = 'challenge';
+             UPDATE cache_meta SET schema_version = 4;",
+        )
+        .expect("simulate a missing version stamp after adding the column");
+        ensure_schema(&conn).expect("resume migration");
+        ensure_schema(&conn).expect("reopen current schema");
+        let entries =
+            activity::list(&conn, &ActivityQuery::new(), 10, 0).expect("read history");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, Some(7));
+        assert_eq!(entries[0].challenge_id.as_deref(), Some("challenge"));
+    }
 }
