@@ -83,7 +83,6 @@ impl FlamingoEngineProvider {
 
 impl FlamingoEngineProvider {
     /// Bounds an exchange using the latest response slot among trusted, eligible offers.
-    /// The client fixes its timeout when connecting, before the host assigns a release.
     pub(super) fn request_timeout(
         &self,
         offer: &[EngineConfiguration],
@@ -97,8 +96,34 @@ impl FlamingoEngineProvider {
             })
             .max()
             .unwrap_or_default();
-        // Cover the host's five-second margin plus client-to-host transport.
-        Duration::from_millis(latest_slot.saturating_add(10_000).max(60_000))
+        exchange_timeout(latest_slot)
+    }
+
+    /// Bounds a Proof of Embedding Similarity exchange (WIP-202) using the latest response slot
+    /// among the trusted pipelines whose only input is a live frame.
+    pub(super) fn embedding_similarity_timeout(&self) -> Duration {
+        let latest_slot = self
+            .manifests
+            .iter()
+            .flat_map(|manifest| &manifest.payload().pipelines)
+            .filter(|pipeline| {
+                matches!(pipeline.inputs.as_slice(), [input] if input.role == "live_frame")
+                    && pipeline.response_slots.0.len() <= MAX_RESPONSE_SLOTS
+            })
+            .filter_map(|pipeline| pipeline.response_slots.last())
+            .max()
+            .unwrap_or_default();
+        exchange_timeout(latest_slot)
+    }
+
+    /// The verified release manifest with `release_hash`, if this provider signed it.
+    pub(super) fn trusted_release(
+        &self,
+        release_hash: [u8; 32],
+    ) -> Option<&ReleaseManifest> {
+        self.manifests
+            .iter()
+            .find(|manifest| manifest.release_hash() == release_hash)
     }
 
     /// Chooses the first offered configuration of `attested_release` this provider signed.
@@ -134,16 +159,20 @@ impl FlamingoEngineProvider {
         configuration: &EngineConfiguration,
         pipeline_inputs: usize,
     ) -> Option<&Pipeline> {
-        let manifest = self
-            .manifests
-            .iter()
-            .find(|manifest| manifest.release_hash() == configuration.release_hash)?;
+        let manifest = self.trusted_release(configuration.release_hash)?;
         let pipeline = manifest.pipeline(configuration.pipeline_id)?;
         (manifest.has_match_strictness(configuration.match_strictness)
             && pipeline.inputs.len() == pipeline_inputs
             && pipeline.response_slots.0.len() <= MAX_RESPONSE_SLOTS)
             .then_some(pipeline)
     }
+}
+
+/// Bounds an exchange whose latest response slot is `latest_slot` milliseconds. The client fixes
+/// its timeout when connecting, before the host assigns a release.
+fn exchange_timeout(latest_slot: u64) -> Duration {
+    // Cover the host's five-second margin plus client-to-host transport.
+    Duration::from_millis(latest_slot.saturating_add(10_000).max(60_000))
 }
 
 /// A parsed [`FlamingoEngineConfiguration`].
