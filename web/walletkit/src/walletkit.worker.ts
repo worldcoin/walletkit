@@ -1,9 +1,20 @@
 import init, * as wasm from "./generated/walletkit.js";
-import type { Handle, Ref, Request, Response, Target } from "./protocol";
+import type {
+  PoseGuardImages,
+  PoseGuardPrompt,
+} from "./generated/walletkit.js";
+import type {
+  Handle,
+  PoseGuardReply,
+  Ref,
+  Request,
+  Response,
+  Target,
+} from "./protocol";
 import { clearBytes } from "./protocol";
 
 const scope = globalThis as unknown as {
-  onmessage: ((event: MessageEvent<Request>) => void) | null;
+  onmessage: ((event: MessageEvent<Request | PoseGuardReply>) => void) | null;
   postMessage(message: Response): void;
 };
 
@@ -17,6 +28,7 @@ const INTERNAL = new Set([
   "initSync",
   "start",
   "initializePersistentStorage",
+  "runPoseGuardEnrollment",
 ]);
 
 const isClass = (value: unknown): value is RustClass =>
@@ -40,11 +52,43 @@ let initialized = false;
 // A Rust panic traps the module and leaves its memory in an unknown state.
 let crashed: Error | undefined;
 
+interface PoseGuardAttempt {
+  id: number;
+  controller: AbortController;
+  capture?: {
+    resolve(images: PoseGuardImages): void;
+    reject(error: Error): void;
+  };
+  images?: PoseGuardImages;
+}
+
+let poseGuard: PoseGuardAttempt | undefined;
+
 // Run one complete request at a time so awaited operations cannot interleave
 // and race the worker's shared state.
 let queue = Promise.resolve();
 
 scope.onmessage = ({ data }) => {
+  if (data.op === "poseGuardImages" || data.op === "cancelPoseGuard") {
+    handlePoseGuardReply(data);
+    return;
+  }
+  if (data.op === "enrollPoseGuard") {
+    if (poseGuard) {
+      clearBytes(data.custodyPublicKey);
+      scope.postMessage({
+        id: data.id,
+        ok: false,
+        error: {
+          name: "Error",
+          message: "PoseGuard enrollment already in progress",
+        },
+      });
+      return;
+    }
+    // Register before queuing so abort can reach the attempt before it starts.
+    poseGuard = { id: data.id, controller: new AbortController() };
+  }
   queue = queue.then(async () => {
     try {
       // A crashed module can still be closed; the client then terminates the worker.
@@ -61,6 +105,13 @@ scope.onmessage = ({ data }) => {
         ok: false,
         error: { ...serialize(error), ...(crashed && { fatal: true }) },
       });
+    } finally {
+      if (data.op === "enrollPoseGuard") {
+        clearBytes(data.custodyPublicKey);
+        poseGuard?.capture?.reject(new Error("PoseGuard enrollment ended"));
+        clearBytes(poseGuard?.images);
+        poseGuard = undefined;
+      }
     }
   });
 };
@@ -71,11 +122,66 @@ async function perform(request: Request): Promise<unknown> {
       return initialize(request.wasmUrl);
     case "call":
       return call(request.target, request.args);
+    case "enrollPoseGuard":
+      if (!poseGuard || !initialized)
+        throw new Error("WalletKit is not initialized");
+      return enrollPoseGuard(request, poseGuard);
     case "release":
       return release(request.handle);
     case "close":
       return close();
   }
+}
+
+function enrollPoseGuard(
+  request: Extract<Request, { op: "enrollPoseGuard" }>,
+  attempt: PoseGuardAttempt,
+) {
+  const capture = (prompt: PoseGuardPrompt) =>
+    requestPoseGuardCapture(attempt, prompt);
+  try {
+    attempt.controller.signal.throwIfAborted();
+    return wasm.runPoseGuardEnrollment(
+      request.configJson,
+      request.sub,
+      request.custodyPublicKey,
+      capture,
+      attempt.controller.signal,
+    );
+  } finally {
+    clearBytes(request.custodyPublicKey);
+  }
+}
+
+function requestPoseGuardCapture(
+  attempt: PoseGuardAttempt,
+  prompt: PoseGuardPrompt,
+) {
+  attempt.controller.signal.throwIfAborted();
+  return new Promise<PoseGuardImages>((resolve, reject) => {
+    attempt.capture = { resolve, reject };
+    scope.postMessage({
+      id: attempt.id,
+      event: "poseGuardCaptureRequested",
+      prompt,
+    });
+  });
+}
+
+function handlePoseGuardReply(reply: PoseGuardReply) {
+  const attempt = poseGuard?.id === reply.id ? poseGuard : undefined;
+  if (reply.op === "cancelPoseGuard") {
+    attempt?.controller.abort();
+    return;
+  }
+  const capture = attempt?.capture;
+  if (!attempt || !capture || attempt.controller.signal.aborted) {
+    clearBytes(reply.images);
+    return;
+  }
+  attempt.capture = undefined;
+  attempt.images = reply.images;
+  capture.resolve(reply.images);
 }
 
 async function initialize(wasmUrl: string): Promise<void> {

@@ -5,6 +5,11 @@
  * and the page holds opaque `Ref`s. Everything else is plain structured-clone data.
  */
 
+import type {
+  PoseGuardImages,
+  PoseGuardPrompt,
+} from "./generated/walletkit.js";
+
 export type Handle = number;
 
 /** A Rust object owned by the worker. */
@@ -20,8 +25,20 @@ export type Target =
 export type Request = { id: number } & (
   | { op: "initialize"; wasmUrl: string }
   | { op: "call"; target: Target; args: unknown[] }
+  | {
+      op: "enrollPoseGuard";
+      configJson: string;
+      sub: string;
+      custodyPublicKey: Uint8Array;
+    }
   | { op: "release"; handle: Handle }
   | { op: "close" }
+);
+
+/** Continuations for a running enrollment, handled outside the RPC queue. */
+export type PoseGuardReply = { id: number } & (
+  | { op: "poseGuardImages"; images: PoseGuardImages }
+  | { op: "cancelPoseGuard" }
 );
 
 export type Response = { id: number } & (
@@ -31,6 +48,7 @@ export type Response = { id: number } & (
       /** `fatal`: the module trapped; the worker cannot serve further calls. */
       error: { name: string; message: string; code?: string; fatal?: boolean };
     }
+  | { event: "poseGuardCaptureRequested"; prompt: PoseGuardPrompt }
 );
 
 /** @internal Clear transferred bytes after WASM has copied its arguments. */

@@ -1,11 +1,20 @@
 //! Embedding extraction and `PoseGuard` enrollment over the dedicated TEE channel.
-use js_sys::{Array, Promise, Reflect, Uint8Array};
-use selfie_enrollment_api_types::{MAX_IMAGE_BYTES, POSEGUARD_CHALLENGE_COUNT};
-use selfie_enrollment_client::{Config, EnrollmentClient, Error};
+use std::time::Duration;
+
+use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
+use selfie_enrollment_api_types::{
+    MAX_IMAGE_BYTES, POSEGUARD_CHALLENGE_COUNT, POSEGUARD_CHALLENGE_TTL_SECS,
+};
+use selfie_enrollment_client::{
+    Config, EnrollmentClient, Error, PoseGuardImages, PoseGuardPrompt,
+};
 use selfie_enrollment_sealed_types::{
-    ChallengeFailure, EmbeddingResult, EnrollmentResult, Failure, PoseGuardCapture,
+    ChallengeFailure, EmbeddingResult, EnrollmentResult, Failure,
 };
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
+use web_sys::AbortSignal;
+use web_time::Instant;
 use zeroize::Zeroizing;
 
 use crate::{
@@ -23,13 +32,25 @@ export type SelfieCaptureFailure =
   | Exclude<SelfieEmbeddingResult, { status: "success" }>
   | { status: "failed"; reason: "challenge"; index: number; challengeReason: "invalid_image" | "quality_rejected" | "extraction_failed" | "pose_mismatch" | "identity_mismatch" };
 
-export interface PoseGuardCapture {
-  image: Uint8Array;
-  targetPitch: number;
-  targetYaw: number;
+/** Signed angles in degrees in the captured image: negative yaw is left, negative pitch is down. */
+export interface PoseGuardTarget {
+  readonly targetPitch: number;
+  readonly targetYaw: number;
 }
 
-export type PoseGuardCaptures = [PoseGuardCapture, PoseGuardCapture, PoseGuardCapture];
+export interface PoseGuardPrompt {
+  readonly targets: readonly [PoseGuardTarget, PoseGuardTarget, PoseGuardTarget];
+  /** Enclave expiry in Unix seconds. */
+  readonly expiresAt: number;
+  /** Milliseconds remaining when the worker sent this prompt. */
+  readonly captureTimeoutMs: number;
+}
+
+export interface PoseGuardImages {
+  centralPng: Uint8Array;
+  /** One image for each target, in the issued order. */
+  captures: readonly [Uint8Array, Uint8Array, Uint8Array];
+}
 
 export interface SelfieEnrollmentBundle {
   fields: { name: string; value: string }[];
@@ -83,100 +104,137 @@ pub fn extract_selfie_embedding(config_json: String, image: &Uint8Array) -> Prom
     })
 }
 
-/// Submits a central PNG and three pose captures through the attested TEE channel.
+/// Runs one attempt over the attested TEE channel. `capture` is a worker-local
+/// callback that forwards the verified prompt and receives the corresponding images.
 ///
 /// The enclave returns the enrollment fields, Nitro header and PCP encrypted to
 /// `custodyPublicKey`. Retain the PCP before adding the ownership challenge and
 /// proof to the signup-service submission. The custody private key stays with the caller.
 ///
-/// Targets are supplied with the captures; this call neither issues targets nor
-/// binds them to a fresh enclave challenge. Terminate `WalletKit` to cancel.
-///
 /// # Errors
 /// Throws a `TypeError` for an invalid batch, image or custody key. Invalid release
 /// policy, attestation and transport errors reject with `SelfieEnrollmentError`.
 /// Worker rejections return a typed failure, including the rejected capture index.
-#[wasm_bindgen(js_name = enrollSelfieWithPoseGuard, unchecked_return_type = "Promise<SelfieEnrollmentResult>")]
-pub fn enroll_selfie_with_poseguard(
+#[wasm_bindgen(js_name = runPoseGuardEnrollment, unchecked_return_type = "Promise<SelfieEnrollmentResult>")]
+pub fn run_poseguard_enrollment(
     config_json: String,
-    central_png: &Uint8Array,
-    #[wasm_bindgen(unchecked_param_type = "PoseGuardCaptures")] captures: &JsValue,
     sub: String,
     custody_public_key: &Uint8Array,
+    #[wasm_bindgen(
+        unchecked_param_type = "(prompt: PoseGuardPrompt) => Promise<PoseGuardImages>"
+    )]
+    capture: Function,
+    signal: AbortSignal,
 ) -> Promise {
-    // Copy synchronously: the worker clears transferred arguments before polling the future.
-    let input = (|| {
-        let central = owned_image(central_png)?;
-        if !central.starts_with(b"\x89PNG\r\n\x1a\n") {
-            return Err(invalid_argument("`centralPng` must be a PNG"));
-        }
-        let captures = owned_captures(captures)?;
-        if custody_public_key.length() != 32 {
-            return Err(invalid_argument("`custodyPublicKey` must contain 32 bytes"));
-        }
-        let mut key = [0; 32];
-        custody_public_key.copy_to(&mut key);
-        Ok((central, captures, key))
-    })();
-    let (mut central, captures, key) = match input {
-        Ok(input) => input,
-        Err(error) => return Promise::reject(&error),
-    };
+    if custody_public_key.length() != 32 {
+        return Promise::reject(&invalid_argument(
+            "`custodyPublicKey` must contain 32 bytes",
+        ));
+    }
+    let mut key = [0; 32];
+    custody_public_key.copy_to(&mut key);
     js::promise(async move {
         let config: Config =
             serde_json::from_str(&config_json).map_err(|_| to_js(Error::Config))?;
         let client = EnrollmentClient::new(config).map_err(to_js)?;
-        // TODO: Bind submission to enclave-issued challenges when the TEE adds issuance:
-        // https://github.com/worldcoin/biometrics-tee/pull/132
-        let session = client.connect(None).await.map_err(to_js)?;
+        let session = client.connect(Some(signal)).await.map_err(to_js)?;
+        // The TEE client starts this same budget on entering enroll_with_poseguard.
+        let deadline =
+            Instant::now() + Duration::from_secs(POSEGUARD_CHALLENGE_TTL_SECS);
+        let mut capture_error = None;
         let result = session
-            .enroll_with_poseguard(std::mem::take(&mut *central), captures, sub, key)
-            .await
-            .map_err(to_js)?;
+            .enroll_with_poseguard(sub, key, async |prompt| {
+                request_images(&capture, prompt, deadline)
+                    .await
+                    .map_err(|error| {
+                        capture_error = Some(error);
+                        Error::Capture
+                    })
+            })
+            .await;
+        let result =
+            result.map_err(|error| capture_error.unwrap_or_else(|| to_js(error)))?;
         enrollment_to_js(&result)
     })
 }
 
-fn owned_captures(
-    value: &JsValue,
-) -> Result<[PoseGuardCapture; POSEGUARD_CHALLENGE_COUNT], JsValue> {
-    let captures = value
+#[expect(
+    clippy::future_not_send,
+    reason = "the capture promise is worker-local"
+)]
+async fn request_images(
+    capture: &Function,
+    prompt: PoseGuardPrompt,
+    deadline: Instant,
+) -> Result<PoseGuardImages, JsValue> {
+    let remaining = deadline.saturating_duration_since(Instant::now());
+    let pending =
+        capture.call1(&JsValue::UNDEFINED, &prompt_to_js(prompt, remaining)?)?;
+    let images = JsFuture::from(Promise::resolve(&pending)).await?;
+    owned_poseguard_images(&images)
+}
+
+fn prompt_to_js(
+    prompt: PoseGuardPrompt,
+    remaining: Duration,
+) -> Result<JsValue, JsValue> {
+    let targets = prompt
+        .targets
+        .iter()
+        .map(|target| {
+            js::object(&[
+                ("targetPitch", target.target_pitch.into()),
+                ("targetYaw", target.target_yaw.into()),
+            ])
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    #[allow(
+        clippy::cast_precision_loss,
+        reason = "Unix seconds fit within a JS number"
+    )]
+    let expires_at = prompt.expires_at as f64;
+    js::object(&[
+        ("targets", js::array(targets)),
+        ("expiresAt", expires_at.into()),
+        (
+            "captureTimeoutMs",
+            (remaining.as_secs_f64() * 1000.0).floor().into(),
+        ),
+    ])
+}
+
+fn owned_poseguard_images(value: &JsValue) -> Result<PoseGuardImages, JsValue> {
+    if !value.is_object() || value.is_null() {
+        return Err(invalid_argument("Expected PoseGuard images"));
+    }
+    let captures = Reflect::get(value, &"captures".into())?;
+    let captures = captures
         .dyn_ref::<Array>()
         .filter(|captures| captures.length() as usize == POSEGUARD_CHALLENGE_COUNT)
         .ok_or_else(|| {
-            invalid_argument("`captures` must contain exactly three poses")
+            invalid_argument("`captures` must contain exactly three images")
         })?;
-    captures
-        .iter()
-        .map(|capture| {
-            let image = Reflect::get(&capture, &"image".into())?;
-            let image = image.dyn_ref::<Uint8Array>().ok_or_else(|| {
-                invalid_argument("Each capture image must be a Uint8Array")
-            })?;
-            let mut image = owned_image(image)?;
-            let target_pitch = target_angle(&capture, "targetPitch")?;
-            let target_yaw = target_angle(&capture, "targetYaw")?;
-            let capture = PoseGuardCapture {
-                image: std::mem::take(&mut *image),
-                target_pitch,
-                target_yaw,
-            };
-            capture.validate().map_err(|_| {
-                invalid_argument("Pose target angles are outside the supported range")
-            })?;
-            Ok(capture)
-        })
-        .collect::<Result<Vec<_>, JsValue>>()?
-        .try_into()
-        .map_err(|_| invalid_argument("`captures` must contain exactly three poses"))
+    let mut central = take_image(&Reflect::get(value, &"centralPng".into())?)?;
+    if !central.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err(invalid_argument("`centralPng` must be a PNG"));
+    }
+    let mut images = PoseGuardImages {
+        central_png: std::mem::take(&mut *central),
+        captures: Default::default(),
+    };
+    for (slot, image) in images.captures.iter_mut().zip(captures.iter()) {
+        *slot = std::mem::take(&mut *take_image(&image)?);
+    }
+    Ok(images)
 }
 
-fn target_angle(capture: &JsValue, name: &str) -> Result<f32, JsValue> {
-    #[allow(
-        clippy::cast_possible_truncation,
-        reason = "the TEE validates f32 angles, rejecting non-finite and out-of-range values"
-    )]
-    Ok(js::number_field(capture, name)? as f32)
+fn take_image(value: &JsValue) -> Result<Zeroizing<Vec<u8>>, JsValue> {
+    let image = value
+        .dyn_ref::<Uint8Array>()
+        .ok_or_else(|| invalid_argument("Each image must be a Uint8Array"))?;
+    let owned = owned_image(image);
+    image.fill(0, 0, image.length());
+    owned
 }
 
 /// Copies `image` into WASM memory after checking it against the service limit.
@@ -311,30 +369,55 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
-    fn pose_copies_survive_the_worker_clearing_nested_arguments() {
-        let captures = Array::new();
-        for byte in [1_u8, 2, 3] {
-            captures.push(
-                &js::object(&[
-                    ("image", Uint8Array::from([byte].as_slice()).into()),
-                    ("targetPitch", 10.0.into()),
-                    ("targetYaw", (-20.0).into()),
-                ])
-                .unwrap(),
-            );
-        }
-        let owned = owned_captures(captures.as_ref()).unwrap();
-        for capture in captures.iter() {
-            let image = Reflect::get(&capture, &"image".into())
-                .unwrap()
-                .unchecked_into::<Uint8Array>();
-            image.fill(0, 0, image.length());
-        }
-        for (capture, byte) in owned.iter().zip([1_u8, 2, 3]) {
-            assert_eq!(capture.image, [byte]);
-            assert_eq!(capture.target_pitch.to_bits(), 10.0_f32.to_bits());
-            assert_eq!(capture.target_yaw.to_bits(), (-20.0_f32).to_bits());
-        }
+    fn capture_import_copies_images_in_order_and_clears_worker_buffers() {
+        let png = b"\x89PNG\r\n\x1a\n";
+        let central = Uint8Array::from(png.as_slice());
+        let captures = [1_u8, 2, 3].map(|byte| Uint8Array::from([byte].as_slice()));
+        let value = js::object(&[
+            ("centralPng", central.clone().into()),
+            (
+                "captures",
+                js::array(captures.iter().cloned().map(JsValue::from)),
+            ),
+        ])
+        .unwrap();
+        let owned = owned_poseguard_images(&value).unwrap();
+        assert_eq!(owned.central_png, png);
+        assert_eq!(owned.captures, [vec![1], vec![2], vec![3]]);
+        assert_eq!(central.to_vec(), [0; 8]);
+        assert!(captures.iter().all(|capture| capture.to_vec() == [0]));
+    }
+
+    #[wasm_bindgen_test]
+    fn prompt_preserves_signed_angles_and_target_order() {
+        use selfie_enrollment_client::PoseGuardTarget;
+
+        let prompt = PoseGuardPrompt {
+            targets: [(0.0, -31.0), (-17.0, 0.0), (0.0, 34.0)].map(
+                |(target_pitch, target_yaw)| PoseGuardTarget {
+                    target_pitch,
+                    target_yaw,
+                },
+            ),
+            expires_at: 1_800_000_000,
+        };
+        let value = prompt_to_js(prompt, Duration::from_millis(41_000)).unwrap();
+        let json = js_sys::JSON::stringify(&value)
+            .unwrap()
+            .as_string()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+            serde_json::json!({
+                "targets": [
+                    { "targetPitch": 0, "targetYaw": -31 },
+                    { "targetPitch": -17, "targetYaw": 0 },
+                    { "targetPitch": 0, "targetYaw": 34 },
+                ],
+                "expiresAt": 1_800_000_000,
+                "captureTimeoutMs": 41_000,
+            })
+        );
     }
 
     #[wasm_bindgen_test]

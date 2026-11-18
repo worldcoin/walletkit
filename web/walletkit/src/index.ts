@@ -1,6 +1,18 @@
 import { createApi, decode, encode } from "./remote";
-import type { Rpc, WalletKit } from "./remote";
-import type { Handle, Request, Response, Target } from "./protocol";
+import type { PoseGuardCapture, Rpc, WalletKit } from "./remote";
+import { isRecord } from "./protocol";
+import type {
+  Handle,
+  PoseGuardReply,
+  Request,
+  Response,
+  Target,
+} from "./protocol";
+import type {
+  PoseGuardImages,
+  PoseGuardPrompt,
+  SelfieEnrollmentResult,
+} from "./generated/walletkit.js";
 
 export type {
   ActivityQuery,
@@ -10,6 +22,8 @@ export type {
   EmbeddedZkArtifacts,
   FieldElement,
   InitializingAuthenticator,
+  PoseGuardCapture,
+  PoseGuardOptions,
   ProofRequest,
   ProofResponse,
   RemoteClass,
@@ -36,8 +50,9 @@ export type {
   RegistrationStatus,
   FaceEmbedding,
   SelfieEmbeddingResult,
-  PoseGuardCapture,
-  PoseGuardCaptures,
+  PoseGuardImages,
+  PoseGuardPrompt,
+  PoseGuardTarget,
   SelfieCaptureFailure,
   SelfieEnrollmentBundle,
   SelfieEnrollmentResult,
@@ -56,6 +71,14 @@ const CLOSE_TIMEOUT_MS = 5000;
 type Distribute<T> = T extends unknown ? Omit<T, "id"> : never;
 type Message = Distribute<Request>;
 
+interface PoseGuardAttempt {
+  id: number;
+  capture: PoseGuardCapture;
+  controller: AbortController;
+  prompted: boolean;
+  cancellation?: { reason: unknown };
+}
+
 class WorkerClient implements Rpc {
   private nextId = 0;
   private pending = new Map<
@@ -66,6 +89,7 @@ class WorkerClient implements Rpc {
   /** Why the client stopped; any value, since an `AbortSignal` reason can be one. */
   private stopReason: unknown;
   private closing?: Promise<void>;
+  private poseGuard?: PoseGuardAttempt;
 
   /** @internal Use initializeWalletKit(). */
   constructor(private readonly worker: Worker) {
@@ -83,14 +107,21 @@ class WorkerClient implements Rpc {
    * closing or closed.
    */
   send(message: Message, transfer: Transferable[] = []): Promise<unknown> {
+    return this.request({ ...message, id: this.nextId++ }, transfer);
+  }
+
+  private request(
+    message: Request,
+    transfer: Transferable[],
+  ): Promise<unknown> {
     if (this.stopped) return Promise.reject(this.stopReason);
     if (this.closing && message.op !== "close")
       return Promise.reject(new Error("WalletKit is closed"));
-    const id = this.nextId++;
+    const { id } = message;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       try {
-        this.worker.postMessage({ ...message, id } as Request, transfer);
+        this.worker.postMessage(message, transfer);
       } catch (error) {
         this.pending.delete(id);
         reject(error);
@@ -108,12 +139,122 @@ class WorkerClient implements Rpc {
       // Transferred buffers are now detached and empty. Any copy left behind, because
       // encoding failed part-way or nothing was posted, is cleared here instead of
       // waiting for garbage collection.
-      for (const buffer of transfer) {
-        // A detached buffer has length 0, and viewing it would throw.
-        if (buffer.byteLength > 0) new Uint8Array(buffer).fill(0);
-      }
+      clearUnsent(transfer);
     }
     return decode(this, await reply);
+  }
+
+  enrollSelfieWithPoseGuard: WalletKit["enrollSelfieWithPoseGuard"] = async (
+    configJson,
+    sub,
+    custodyPublicKey,
+    capture,
+    { signal } = {},
+  ) => {
+    signal?.throwIfAborted();
+    if (this.poseGuard)
+      throw new Error("PoseGuard enrollment already in progress");
+    if (typeof configJson !== "string" || typeof sub !== "string")
+      throw new TypeError("Expected configJson and sub strings");
+    if (typeof capture !== "function")
+      throw new TypeError("Expected a capture callback");
+    if (
+      !(custodyPublicKey instanceof Uint8Array) ||
+      custodyPublicKey.length !== 32
+    )
+      throw new TypeError("custodyPublicKey must contain 32 bytes");
+
+    const attempt: PoseGuardAttempt = {
+      id: this.nextId++,
+      capture,
+      controller: new AbortController(),
+      prompted: false,
+    };
+    this.poseGuard = attempt;
+    const abort = () => this.cancelPoseGuard(attempt, signal?.reason);
+    signal?.addEventListener("abort", abort, { once: true });
+
+    try {
+      const key = new Uint8Array(custodyPublicKey);
+      let reply: Promise<unknown>;
+      try {
+        reply = this.request(
+          {
+            id: attempt.id,
+            op: "enrollPoseGuard",
+            configJson,
+            sub,
+            custodyPublicKey: key,
+          },
+          [key.buffer],
+        );
+      } finally {
+        clearUnsent([key.buffer]);
+      }
+      const result = (await reply) as SelfieEnrollmentResult;
+      if (attempt.cancellation) throw attempt.cancellation.reason;
+      return result;
+    } catch (error) {
+      const reason = attempt.cancellation ? attempt.cancellation.reason : error;
+      attempt.controller.abort(reason);
+      throw reason;
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      this.poseGuard = undefined;
+    }
+  };
+
+  private async sendPoseGuardImages(
+    attempt: PoseGuardAttempt,
+    prompt: PoseGuardPrompt,
+  ) {
+    const transfer: ArrayBuffer[] = [];
+    try {
+      const images = await attempt.capture(prompt, attempt.controller.signal);
+      if (this.poseGuard !== attempt || attempt.controller.signal.aborted)
+        return;
+      const checked = validatePoseGuardImages(images);
+      const copy = (image: Uint8Array) => {
+        const owned = new Uint8Array(image);
+        transfer.push(owned.buffer);
+        return owned;
+      };
+      const [first, second, third] = checked.captures;
+      this.worker.postMessage(
+        {
+          id: attempt.id,
+          op: "poseGuardImages",
+          images: {
+            centralPng: copy(checked.centralPng),
+            captures: [copy(first), copy(second), copy(third)],
+          },
+        } satisfies PoseGuardReply,
+        transfer,
+      );
+    } catch (error) {
+      this.cancelPoseGuard(attempt, error);
+    } finally {
+      clearUnsent(transfer);
+    }
+  }
+
+  private cancelPoseGuard(attempt: PoseGuardAttempt, reason: unknown) {
+    if (
+      this.poseGuard !== attempt ||
+      attempt.cancellation ||
+      !this.pending.has(attempt.id)
+    )
+      return;
+    attempt.cancellation = { reason };
+    attempt.controller.abort(reason);
+    try {
+      this.worker.postMessage({
+        id: attempt.id,
+        op: "cancelPoseGuard",
+      } satisfies PoseGuardReply);
+    } catch (error) {
+      this.stop(error);
+    }
   }
 
   release(handle: Handle): void {
@@ -128,7 +269,9 @@ class WorkerClient implements Rpc {
    */
   close = (): Promise<void> => {
     if (this.stopped) return Promise.resolve();
-    return (this.closing ??= this.closeWithDeadline());
+    return (this.closing ??= Promise.resolve().then(() =>
+      this.closeWithDeadline(),
+    ));
   };
 
   /** Whether this instance can no longer serve calls: closed, terminated or crashed. */
@@ -145,6 +288,8 @@ class WorkerClient implements Rpc {
   }
 
   private async closeWithDeadline(): Promise<void> {
+    if (this.poseGuard)
+      this.cancelPoseGuard(this.poseGuard, new Error("WalletKit is closing"));
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(
@@ -168,6 +313,18 @@ class WorkerClient implements Rpc {
   private handleResponse(response: Response) {
     const pending = this.pending.get(response.id);
     if (!pending) return;
+    if ("event" in response) {
+      const attempt = this.poseGuard;
+      if (
+        attempt?.id === response.id &&
+        !attempt.prompted &&
+        !attempt.cancellation
+      ) {
+        attempt.prompted = true;
+        void this.sendPoseGuardImages(attempt, response.prompt);
+      }
+      return;
+    }
     this.pending.delete(response.id);
     if (response.ok) pending.resolve(response.result);
     else {
@@ -193,6 +350,36 @@ class WorkerClient implements Rpc {
     for (const pending of this.pending.values()) pending.reject(reason);
     this.pending.clear();
   }
+}
+
+function clearUnsent(transfer: ArrayBuffer[]) {
+  for (const buffer of transfer) {
+    // Buffers already transferred are detached.
+    if (buffer.byteLength > 0) new Uint8Array(buffer).fill(0);
+  }
+}
+
+function validatePoseGuardImages(value: unknown): PoseGuardImages {
+  const { centralPng, captures } = isRecord(value) ? value : {};
+  const validImage = (image: unknown): image is Uint8Array =>
+    image instanceof Uint8Array &&
+    image.length > 0 &&
+    image.length <= 8 * 1024 * 1024;
+  if (
+    !validImage(centralPng) ||
+    ![137, 80, 78, 71, 13, 10, 26, 10].every(
+      (byte, index) => centralPng[index] === byte,
+    )
+  )
+    throw new TypeError("centralPng must be a PNG no larger than 8 MiB");
+  if (!Array.isArray(captures) || captures.length !== 3)
+    throw new TypeError("Expected three PoseGuard capture images");
+  const [first, second, third] = captures;
+  if (!validImage(first) || !validImage(second) || !validImage(third))
+    throw new TypeError(
+      "Each PoseGuard capture must be a nonempty Uint8Array no larger than 8 MiB",
+    );
+  return { centralPng, captures: [first, second, third] };
 }
 
 /**

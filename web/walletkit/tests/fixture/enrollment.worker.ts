@@ -1,6 +1,6 @@
 import init, {
   extractSelfieEmbedding,
-  enrollSelfieWithPoseGuard,
+  runPoseGuardEnrollment,
   sanitizeHexSecrets,
 } from "../../src/generated/walletkit.js";
 
@@ -54,16 +54,18 @@ self.onmessage = async ({ data }) => {
       ],
     };
     let code;
+    let captureCalls = 0;
     try {
       if (data.poseguard) {
-        const image = new Uint8Array([1]);
-        const pose = { image, targetPitch: 10, targetYaw: -20 };
-        await enrollSelfieWithPoseGuard(
+        await runPoseGuardEnrollment(
           JSON.stringify(config),
-          new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
-          [pose, pose, pose],
           "0x1f",
           new Uint8Array(32).fill(1),
+          async () => {
+            captureCalls++;
+            throw new Error("Unverified targets reached the capture callback");
+          },
+          new AbortController().signal,
         );
       } else {
         await extractSelfieEmbedding(
@@ -75,7 +77,13 @@ self.onmessage = async ({ data }) => {
       code = (error as Error & { code?: string }).code;
     }
     self.postMessage({
-      result: { code, sent, closed, alive: sanitizeHexSecrets("alive") },
+      result: {
+        code,
+        sent,
+        closed,
+        captureCalls,
+        alive: sanitizeHexSecrets("alive"),
+      },
     });
   } catch (error) {
     self.postMessage({ error: String(error) });

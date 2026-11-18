@@ -1,5 +1,12 @@
+/// <reference types="vite/client" />
 import { initializeWalletKit } from "../../dist/index.js";
-Object.assign(window, { initializeWalletKit });
+import poseGuardWorkerUrl from "./poseguard.worker.ts?worker&url";
+
+Object.assign(window, {
+  initializeWalletKit,
+  initializePoseGuardTestWallet: () =>
+    initializeWalletKit({ workerUrl: poseGuardWorkerUrl }),
+});
 Object.assign(window, {
   storageOperation(secret = 7) {
     const worker = new Worker(new URL("./storage.worker.ts", import.meta.url), {

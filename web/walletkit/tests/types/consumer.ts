@@ -9,7 +9,10 @@ import type {
   FaceEmbedding,
   SelfieEmbeddingResult,
   PoseGuardCapture,
-  PoseGuardCaptures,
+  PoseGuardImages,
+  PoseGuardOptions,
+  PoseGuardPrompt,
+  PoseGuardTarget,
   SelfieCaptureFailure,
   SelfieEnrollmentBundle,
   SelfieEnrollmentResult,
@@ -34,19 +37,28 @@ export async function consumer() {
   await walletkit.extractSelfieEmbedding("{}", new Uint8Array(), () => ({}));
   // @ts-expect-error the standalone client export must not leak into this facade
   void walletkit.extractEmbedding;
-  const pose: PoseGuardCapture = {
-    image: new Uint8Array(),
-    targetPitch: 10,
-    targetYaw: -20,
+  const image = new Uint8Array();
+  const opts: PoseGuardOptions = { signal: new AbortController().signal };
+  const capture: PoseGuardCapture = async (
+    prompt: PoseGuardPrompt,
+    signal: AbortSignal,
+  ) => {
+    const first: PoseGuardTarget = prompt.targets[0];
+    const pitch: number = first.targetPitch;
+    const yaw: number = first.targetYaw;
+    const expiry: number = prompt.expiresAt;
+    const remaining: number = prompt.captureTimeoutMs;
+    signal.throwIfAborted();
+    void [pitch, yaw, expiry, remaining];
+    return { centralPng: image, captures: [image, image, image] };
   };
-  const captures: PoseGuardCaptures = [pose, pose, pose];
   const enrolled: SelfieEnrollmentResult =
     await walletkit.enrollSelfieWithPoseGuard(
       "{}",
-      new Uint8Array(),
-      captures,
       "0x1f",
       new Uint8Array(32),
+      capture,
+      opts,
     );
   if (enrolled.status === "success") {
     const bundle: SelfieEnrollmentBundle = enrolled.enrollment;
@@ -63,16 +75,20 @@ export async function consumer() {
     }
   }
   // @ts-expect-error exactly three pose captures are required
-  const incomplete: PoseGuardCaptures = [pose, pose];
-  const invalidPose: PoseGuardCapture = {
-    // @ts-expect-error pose images must be byte arrays
-    image: "image",
-    targetPitch: 0,
-    targetYaw: 0,
-  };
-  // @ts-expect-error the upstream standalone export must not leak into WalletKit
+  const incomplete: PoseGuardImages["captures"] = [image, image];
+  // @ts-expect-error pose images must be byte arrays
+  const invalid: PoseGuardImages["captures"] = [image, "image", image];
+  // @ts-expect-error the standalone export stays internal
   void walletkit.enrollWithPoseGuard;
-  void [incomplete, invalidPose];
+  // @ts-expect-error the WASM callback bridge stays internal
+  void walletkit.runPoseGuardEnrollment;
+  // @ts-expect-error the app supplies images through the capture callback
+  await walletkit.enrollSelfieWithPoseGuard("{}", "0x1f", new Uint8Array(32), [
+    image,
+    image,
+    image,
+  ]);
+  void [incomplete, invalid];
   const now = 1n;
   const keys = await walletkit.StorageKeys.fromBytes(new Uint8Array(32));
   const paths = await walletkit.StoragePaths.fromRoot("/walletkit/account");

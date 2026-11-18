@@ -33,7 +33,8 @@ type Internal =
   | "default"
   | "initSync"
   | "start"
-  | "initializePersistentStorage";
+  | "initializePersistentStorage"
+  | "runPoseGuardEnrollment";
 
 type FunctionName = {
   [K in keyof Exports]: K extends ClassName | Internal
@@ -67,12 +68,34 @@ type Remote<T> = T extends RustObject
 /** Arguments sent to the worker: Rust objects are passed as their proxies. */
 type Local<T> = T extends RustObject ? RemoteObject<T> : T;
 
+/** Captures a central PNG and one image per issued target, in target order. */
+export type PoseGuardCapture = (
+  prompt: Wasm.PoseGuardPrompt,
+  signal: AbortSignal,
+) => Promise<Wasm.PoseGuardImages>;
+
+export interface PoseGuardOptions {
+  signal?: AbortSignal;
+}
+
 /** The API of one running worker. */
 export type WalletKit = {
   readonly [K in ClassName]: RemoteClass<Exports[K]>;
 } & {
   readonly [K in FunctionName]: RemoteFunction<Exports[K]>;
 } & {
+  /**
+   * Starts one attested enrollment. Capture runs on the page after targets are
+   * verified. Awaiting another call on this instance from capture would wait
+   * behind the enrollment. The result is a bundle for signup-service submission.
+   */
+  enrollSelfieWithPoseGuard(
+    configJson: string,
+    sub: string,
+    custodyPublicKey: Uint8Array,
+    capture: PoseGuardCapture,
+    options?: PoseGuardOptions,
+  ): Promise<Wasm.SelfieEnrollmentResult>;
   /** Frees every Rust object, then terminates the worker. */
   close(): Promise<void>;
   /** Immediately stops the worker and rejects pending calls. */
@@ -206,7 +229,10 @@ function remoteObject(binding: Binding): object {
 /** @internal Builds the `WalletKit` API on top of a transport. */
 export function createApi(
   rpc: Rpc,
-  lifecycle: Pick<WalletKit, "close" | "terminate" | "isStopped">,
+  pageMethods: Pick<
+    WalletKit,
+    "close" | "terminate" | "isStopped" | "enrollSelfieWithPoseGuard"
+  >,
 ): WalletKit {
   const named = (call: (name: string) => unknown) =>
     new Proxy(Object.create(null), {
@@ -215,9 +241,11 @@ export function createApi(
     });
   const classes = new Map<string, unknown>();
   return named((name) => {
-    if (name === "close") return lifecycle.close;
-    if (name === "terminate") return lifecycle.terminate;
-    if (name === "isStopped") return lifecycle.isStopped;
+    if (name === "close") return pageMethods.close;
+    if (name === "terminate") return pageMethods.terminate;
+    if (name === "isStopped") return pageMethods.isStopped;
+    if (name === "enrollSelfieWithPoseGuard")
+      return pageMethods.enrollSelfieWithPoseGuard;
     // Classes are PascalCase and functions camelCase, as wasm-bindgen exports them.
     if (/^[A-Z]/.test(name)) {
       if (!classes.has(name)) {
