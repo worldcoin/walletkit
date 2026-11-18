@@ -26,10 +26,9 @@ walletkit-core = { workspace = true, features = ["embed-zkeys"] }
 web-sys = { version = "0.3.103", features = ["AbortSignal"] }
 web-time.workspace = true
 zeroize = { workspace = true }
-# TODO: Use published crates after https://github.com/worldcoin/biometrics-tee/pull/134 merges.
-selfie-enrollment-client = { git = "https://github.com/worldcoin/biometrics-tee", rev = "73b9de88596bcce875827a40376e81bf79d0d0fd", default-features = false }
-selfie-enrollment-api-types = { git = "https://github.com/worldcoin/biometrics-tee", rev = "73b9de88596bcce875827a40376e81bf79d0d0fd" }
-selfie-enrollment-sealed-types = { git = "https://github.com/worldcoin/biometrics-tee", rev = "73b9de88596bcce875827a40376e81bf79d0d0fd" }
+selfie-enrollment-client = { version = "=0.2.0", default-features = false }
+selfie-enrollment-api-types = "=0.2.0"
+selfie-enrollment-sealed-types = "=0.2.0"
 serde_json.workspace = true
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
