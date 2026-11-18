@@ -40,6 +40,26 @@ For changes to the browser package (`crates/walletkit-web` or `web/walletkit`), 
 - Preserve the on-disk format: schemas, CBOR layouts, and `compute_content_id` derivations must remain compatible with existing databases. Guard format-sensitive changes with frozen-byte tests next to the code.
 - Never name a UniFFI-exported method `to_string`: its Kotlin binding conflicts with `Any.toString()`. Use a descriptive name such as `to_hex_string`, `to_decimal_string`, or `to_json`.
 
+### World ID protocol compatibility
+
+When changing a `world-id-protocol` dependency, ownership-proof encoding, or
+proving artifacts, check compatibility with `worldcoin/world-id-proof-verification`.
+
+- Compare the resolved versions and sources of `world-id-proof` and
+  `world-id-primitives` in both `Cargo.lock` files. Check for changes to the
+  ownership circuit, proving and verification artifacts, and proof backend.
+  Use the verifier revision or image deployed to the target environment and
+  include any companion verifier change.
+- Generate and serialize a WIP-103 ownership proof with the proposed WalletKit
+  build using a challenge issued by the verifier under test. Submit it to
+  `POST /api/v4/verify` on a release build of that verifier and assert that it
+  is accepted. Cover the WalletKit and verifier combinations expected to serve
+  traffic during rollout and rollback.
+- Record the verifier commit or image, resolved dependency versions, and test
+  results in the PR. Link any companion PR and document rollout and rollback
+  order if the upgrade needs coordination. A failed or missing check for a
+  supported pairing blocks release.
+
 ## Logging & Error handling
 
 Take care when designing log statements & error types to avoid leaking sensitive user information. Anything crossing the FFI boundary should be carefully inspected for potential leakage of sensitive info.
