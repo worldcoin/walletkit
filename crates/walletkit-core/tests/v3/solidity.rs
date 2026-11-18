@@ -11,7 +11,7 @@ use alloy::{
     sol_types::SolValue,
 };
 #[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
-use chrono::{Days, Utc};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
 use walletkit_core::common_apps::AddressBook;
 use walletkit_core::{
@@ -112,7 +112,7 @@ async fn test_address_book_proof_verification_on_chain() {
     // initialize a World ID and generate the relevant proof context
     let world_id = WorldId::new(b"not_a_real_secret".to_vec(), &Environment::Staging);
     let address_to_verify = Address::random();
-    let proof_time: u64 = chrono::Utc::now().timestamp() as u64;
+    let proof_time: u64 = unix_now().as_secs();
 
     let proof_context = AddressBook::new()
         .generate_proof_context(address_to_verify.to_string().as_str(), proof_time)
@@ -148,14 +148,14 @@ async fn test_address_book_proof_verification_on_chain() {
 
     assert!(
         verified_until
-            > U256::from(
-                Utc::now()
-                    // check that it's at least 30 days from now
-                    .checked_add_days(Days::new(30))
-                    .unwrap()
-                    .timestamp()
-            )
+            // check that it's at least 30 days from now
+            > U256::from((unix_now() + Duration::from_secs(30 * 24 * 60 * 60)).as_secs())
     );
+}
+
+#[cfg(all(feature = "legacy-nullifiers", feature = "common-apps"))]
+fn unix_now() -> Duration {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap()
 }
 
 sol!(
