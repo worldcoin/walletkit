@@ -12,11 +12,14 @@ use std::collections::HashSet;
 use std::sync::{Arc, PoisonError, RwLock};
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestId, GatewayRequestState},
-    primitives::{rp::RpId, AuthenticatorPublicKeySet, Config, MAX_AUTHENTICATOR_KEYS},
+    primitives::{
+        rp::RpId, AuthenticatorPublicKeySet, Config, ProofRequest as CoreProofRequest,
+        MAX_AUTHENTICATOR_KEYS,
+    },
     Authenticator as CoreAuthenticator, AuthenticatorError,
     Credential as CoreCredential, CredentialInput, EdDSAPublicKey,
     InitializingAuthenticator as CoreInitializingAuthenticator,
-    OnchainKeyRepresentable, Signer,
+    OnchainKeyRepresentable, ProofResult, Signer,
 };
 use zeroize::Zeroizing;
 
@@ -27,9 +30,13 @@ use crate::OwnershipProof;
 pub mod artifacts;
 mod billing;
 mod billing_registration;
+#[cfg(not(target_arch = "wasm32"))]
+mod embedding_similarity;
 mod with_storage;
 
 pub use billing::{BilledRps, BilledRpsSource, BILLED_RPS_MAX_AGE_SECS};
+#[cfg(not(target_arch = "wasm32"))]
+pub use embedding_similarity::{EmbeddingSimilarityInputs, EmbeddingSimilarityOutcome};
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
@@ -58,6 +65,38 @@ impl Authenticator {
             store,
             nullifier_reuse_whitelist: RwLock::default(),
         })
+    }
+
+    /// The cached `session_id_r_seed` of the existing session `proof_request` names, if any. A
+    /// cache failure is logged and treated as a miss.
+    fn cached_session_seed(
+        &self,
+        proof_request: &CoreProofRequest,
+        now: u64,
+    ) -> Option<world_id_core::FieldElement> {
+        let session_id = proof_request.session_id.existing()?;
+        self.store
+            .get_session_seed(proof_request.rp_id.into_inner(), session_id.oprf_seed, now)
+            .unwrap_or_else(|err| {
+                tracing::warn!(error = %err, "failed to load cached session seed, continuing without");
+                None
+            })
+    }
+
+    /// Caches the `session_id_r_seed` a proof returned. Create-session requests do not carry a
+    /// session ID, so the one in the proof response keys it. A cache failure is logged.
+    fn cache_session_seed(&self, rp_id: u64, result: &ProofResult, now: u64) {
+        let (Some(seed), Some(session_id)) =
+            (result.session_id_r_seed, result.proof_response.session_id)
+        else {
+            return;
+        };
+        if let Err(err) =
+            self.store
+                .store_session_seed(rp_id, session_id.oprf_seed, seed, now)
+        {
+            tracing::error!("error caching session_id_r_seed: {}", err);
+        }
     }
 
     fn check_replay_guard(
@@ -843,23 +882,7 @@ impl Authenticator {
             now,
         )?;
 
-        // Get cached `session_id_r_seed` if session ID is provided in the proof request
-        let session_id_r_seed =
-            proof_request
-                .0
-                .session_id
-                .existing()
-                .and_then(|session_id| match self.store.get_session_seed(
-                    rp_id,
-                    session_id.oprf_seed,
-                    now,
-                ) {
-                    Ok(seed) => seed,
-                    Err(err) => {
-                        tracing::warn!(error = %err, "failed to load cached session seed, continuing without");
-                        None
-                    }
-                });
+        let session_id_r_seed = self.cached_session_seed(&proof_request.0, now);
 
         // Handles credential selection, session resolution, per-credential proofs, response assembly, and validation
         let result = Box::pin(self.inner.generate_proof(
@@ -871,20 +894,7 @@ impl Authenticator {
         ))
         .await?;
 
-        // Cache session seed if returned. Create-session requests do not carry a
-        // session_id, so use the session_id generated in the proof response.
-        if let Some(seed) = result.session_id_r_seed {
-            if let Some(session_id) = result.proof_response.session_id {
-                if let Err(err) = self.store.store_session_seed(
-                    rp_id,
-                    session_id.oprf_seed,
-                    seed,
-                    now,
-                ) {
-                    tracing::error!("error caching session_id_r_seed: {}", err);
-                }
-            }
-        }
+        self.cache_session_seed(rp_id, &result, now);
 
         self.store
             .replay_guard_set(nullifier.verifiable_oprf_output.output.into(), now)?;
