@@ -11,10 +11,11 @@ use super::RequestIntegrityError;
 pub enum FlamingoMatchRejection {
     /// The request broke a WIP-201 bound.
     MalformedInputs,
-    /// The Verifier has not loaded the requested release.
-    UnsupportedRelease,
-    /// The request exceeds the selected pipeline's byte limit.
+    /// The request exceeds the Verifier's request size limit.
     RequestTooLarge,
+    /// The request expired before the Verifier received it, or expires too far ahead of the
+    /// Verifier's clock.
+    Expired,
     /// This audience and nonce have already been used.
     Replayed,
     /// The Engine missed its final response slot; this is an infrastructure failure.
@@ -165,7 +166,7 @@ impl From<FailureReason> for FlamingoMatchRejection {
             FailureReason::RequestTooLarge => Self::RequestTooLarge,
             FailureReason::Replayed => Self::Replayed,
             FailureReason::EngineTimeout => Self::EngineTimeout,
-            FailureReason::UnsupportedRelease => Self::UnsupportedRelease,
+            FailureReason::Expired => Self::Expired,
             FailureReason::UnsupportedPipeline => Self::UnsupportedPipeline,
             FailureReason::UnsupportedMatchStrictness => {
                 Self::UnsupportedMatchStrictness

@@ -321,6 +321,7 @@ test("Rust objects stay in the worker and are used through handles", async ({
       rpId: 1n,
       appIdentifier: "app_test",
       clientId: "client",
+      challengeId: "local-challenge",
       protocol: 4,
       outcome: "completed",
       issuerSchemaIds: [1n, 2n],
@@ -372,6 +373,7 @@ test("Rust objects stay in the worker and are used through handles", async ({
   expect(result.matchedAny).toHaveLength(1);
   expect(result.activities[0]).toMatchObject({
     id: result.activityId,
+    challengeId: "local-challenge",
     appIdentifier: "app_test",
     protocol: 4,
     outcome: "completed",

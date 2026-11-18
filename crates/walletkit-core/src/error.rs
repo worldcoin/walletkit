@@ -187,6 +187,20 @@ pub enum WalletKitError {
     /// The user is not eligible for recovery
     #[error("not_eligible_for_recovery")]
     NotEligibleForRecovery,
+
+    /// The RP has no WIP-107 billing capacity left in any period the World ID could register
+    /// for, so it cannot be billed for a Proof of Embedding Similarity until it buys more.
+    #[error("billing_capacity_exhausted")]
+    BillingCapacityExhausted,
+
+    /// The exchange with the Flamingo Verifier failed.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[error("flamingo_error: {error}")]
+    Flamingo {
+        /// The Flamingo failure.
+        error: crate::flamingo::FlamingoError,
+    },
+
     /// An error occurred in the OHTTP privacy layer (relay, encapsulation, or framing).
     #[error("ohttp_error: {error}")]
     OhttpError {
@@ -205,6 +219,13 @@ impl WalletKitError {
     #[must_use]
     pub fn sanitized_message(&self) -> String {
         crate::logger::sanitize_hex_secrets(self.to_string())
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<crate::flamingo::FlamingoError> for WalletKitError {
+    fn from(error: crate::flamingo::FlamingoError) -> Self {
+        Self::Flamingo { error }
     }
 }
 

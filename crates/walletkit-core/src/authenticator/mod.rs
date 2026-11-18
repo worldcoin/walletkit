@@ -12,20 +12,31 @@ use std::collections::HashSet;
 use std::sync::{Arc, PoisonError, RwLock};
 use world_id_core::{
     api_types::{GatewayErrorCode, GatewayRequestId, GatewayRequestState},
-    primitives::{rp::RpId, AuthenticatorPublicKeySet, Config, MAX_AUTHENTICATOR_KEYS},
+    primitives::{
+        rp::RpId, AuthenticatorPublicKeySet, Config, ProofRequest as CoreProofRequest,
+        MAX_AUTHENTICATOR_KEYS,
+    },
     Authenticator as CoreAuthenticator, AuthenticatorError,
     Credential as CoreCredential, CredentialInput, EdDSAPublicKey,
     InitializingAuthenticator as CoreInitializingAuthenticator,
-    OnchainKeyRepresentable, Signer,
+    OnchainKeyRepresentable, ProofResult, Signer,
 };
 use zeroize::Zeroizing;
 
-use crate::requests::{ProofRequest, ProofResponse};
+use crate::requests::{ProofRequest, ProofRequestType, ProofResponse};
 use crate::storage::CredentialStore;
 use crate::OwnershipProof;
 
 pub mod artifacts;
+mod billing;
+mod billing_registration;
+#[cfg(not(target_arch = "wasm32"))]
+mod embedding_similarity;
 mod with_storage;
+
+pub use billing::{BilledRps, BilledRpsSource, BILLED_RPS_MAX_AGE_SECS};
+#[cfg(not(target_arch = "wasm32"))]
+pub use embedding_similarity::{EmbeddingSimilarityInputs, EmbeddingSimilarityOutcome};
 
 /// The Authenticator is the main component with which users interact with the World ID Protocol.
 #[derive(Debug, uniffi::Object)]
@@ -54,6 +65,38 @@ impl Authenticator {
             store,
             nullifier_reuse_whitelist: RwLock::default(),
         })
+    }
+
+    /// The cached `session_id_r_seed` of the existing session `proof_request` names, if any. A
+    /// cache failure is logged and treated as a miss.
+    fn cached_session_seed(
+        &self,
+        proof_request: &CoreProofRequest,
+        now: u64,
+    ) -> Option<world_id_core::FieldElement> {
+        let session_id = proof_request.session_id.existing()?;
+        self.store
+            .get_session_seed(proof_request.rp_id.into_inner(), session_id.oprf_seed, now)
+            .unwrap_or_else(|err| {
+                tracing::warn!(error = %err, "failed to load cached session seed, continuing without");
+                None
+            })
+    }
+
+    /// Caches the `session_id_r_seed` a proof returned. Create-session requests do not carry a
+    /// session ID, so the one in the proof response keys it. A cache failure is logged.
+    fn cache_session_seed(&self, rp_id: u64, result: &ProofResult, now: u64) {
+        let (Some(seed), Some(session_id)) =
+            (result.session_id_r_seed, result.proof_response.session_id)
+        else {
+            return;
+        };
+        if let Err(err) =
+            self.store
+                .store_session_seed(rp_id, session_id.oprf_seed, seed, now)
+        {
+            tracing::error!("error caching session_id_r_seed: {}", err);
+        }
     }
 
     fn check_replay_guard(
@@ -103,6 +146,40 @@ impl Authenticator {
             store,
             nullifier_reuse_whitelist: RwLock::default(),
         })
+    }
+
+    /// Loads every stored credential that has not expired at `now`. A credential that is listed
+    /// but cannot be loaded is skipped.
+    ///
+    /// # Errors
+    /// Returns an error if the credentials cannot be listed.
+    pub(crate) fn stored_credentials(
+        &self,
+        now: u64,
+    ) -> Result<Vec<CredentialInput>, WalletKitError> {
+        Ok(self
+            .store
+            .list_credentials(None, now)?
+            .iter()
+            .filter(|c| !c.is_expired)
+            .filter_map(|cred| {
+                if let Ok(Some((credential, blinding_factor))) =
+                    self.store.get_credential(cred.issuer_schema_id, now)
+                {
+                    Some(CredentialInput {
+                        credential: credential.into(),
+                        blinding_factor: blinding_factor.into(),
+                    })
+                } else {
+                    tracing::warn!(
+                        issuer_schema_id = %cred.issuer_schema_id,
+                        credential_id = %cred.credential_id,
+                        "credential listed but not loadable, skipping"
+                    );
+                    None
+                }
+            })
+            .collect())
     }
 
     /// Like [`Self::prove_credential_sub`], with the current unix time in seconds
@@ -766,41 +843,25 @@ impl Authenticator {
     /// RP is listed via [`Self::set_nullifier_reuse_whitelist`].
     ///
     /// # Errors
-    /// Returns an error if proof generation fails.
+    /// Returns [`WalletKitError::InvalidInput`] for a Proof of Embedding Similarity request, which
+    /// this flow does not prove, and an error if proof generation fails.
     pub async fn generate_proof(
         &self,
         proof_request: &ProofRequest,
         now: Option<u64>,
     ) -> Result<ProofResponse, WalletKitError> {
+        if proof_request.proof_type() == ProofRequestType::EmbeddingSimilarity {
+            return Err(WalletKitError::InvalidInput {
+                attribute: "proof_type".to_string(),
+                reason:
+                    "embedding_similarity requests are not proven by generate_proof"
+                        .to_string(),
+            });
+        }
         let now = resolve_now(now)?;
 
-        // Build CredentialInput list from storage
-        // Note: We simply load all non-expired credentials. Filtering for the requested schema IDs is done in `generate_proof`.
-        // We could avoid unnecessary loading by filtering via `world_id_primitives::ProofRequest::credentials_to_prove`. We consider this an
-        // unnecessary optimization for now.
-        let credentials: Vec<_> = self
-            .store
-            .list_credentials(None, now)?
-            .iter()
-            .filter(|c| !c.is_expired)
-            .filter_map(|cred| {
-                if let Ok(Some((credential, blinding_factor))) =
-                    self.store.get_credential(cred.issuer_schema_id, now)
-                {
-                    Some(CredentialInput {
-                        credential: credential.into(),
-                        blinding_factor: blinding_factor.into(),
-                    })
-                } else {
-                    tracing::warn!(
-                        issuer_schema_id = %cred.issuer_schema_id,
-                        credential_id = %cred.credential_id,
-                        "credential listed but not loadable, skipping"
-                    );
-                    None
-                }
-            })
-            .collect();
+        // Filtering for the requested schema IDs is done in `generate_proof`.
+        let credentials = self.stored_credentials(now)?;
 
         let account_inclusion_proof =
             self.fetch_inclusion_proof_with_cache(now).await?;
@@ -821,23 +882,7 @@ impl Authenticator {
             now,
         )?;
 
-        // Get cached `session_id_r_seed` if session ID is provided in the proof request
-        let session_id_r_seed =
-            proof_request
-                .0
-                .session_id
-                .existing()
-                .and_then(|session_id| match self.store.get_session_seed(
-                    rp_id,
-                    session_id.oprf_seed,
-                    now,
-                ) {
-                    Ok(seed) => seed,
-                    Err(err) => {
-                        tracing::warn!(error = %err, "failed to load cached session seed, continuing without");
-                        None
-                    }
-                });
+        let session_id_r_seed = self.cached_session_seed(&proof_request.0, now);
 
         // Handles credential selection, session resolution, per-credential proofs, response assembly, and validation
         let result = Box::pin(self.inner.generate_proof(
@@ -849,20 +894,7 @@ impl Authenticator {
         ))
         .await?;
 
-        // Cache session seed if returned. Create-session requests do not carry a
-        // session_id, so use the session_id generated in the proof response.
-        if let Some(seed) = result.session_id_r_seed {
-            if let Some(session_id) = result.proof_response.session_id {
-                if let Err(err) = self.store.store_session_seed(
-                    rp_id,
-                    session_id.oprf_seed,
-                    seed,
-                    now,
-                ) {
-                    tracing::error!("error caching session_id_r_seed: {}", err);
-                }
-            }
-        }
+        self.cache_session_seed(rp_id, &result, now);
 
         self.store
             .replay_guard_set(nullifier.verifiable_oprf_output.output.into(), now)?;
@@ -1418,6 +1450,35 @@ mod tests {
             .set_nullifier_reuse_whitelist(vec![])
             .expect("empty set is valid");
         assert!(!authenticator.allows_nullifier_reuse_for_rp(0x2a));
+
+        drop(server);
+        cleanup_test_storage(&root);
+    }
+
+    #[tokio::test]
+    async fn test_generate_proof_rejects_embedding_similarity_requests() {
+        use crate::requests::tests::embedding_similarity_request;
+        use crate::storage::tests_utils::cleanup_test_storage;
+
+        let mut server = mockito::Server::new_async().await;
+        let (authenticator, root) = test_authenticator(&mut server).await;
+        let no_more_requests = server
+            .mock("POST", mockito::Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
+
+        let request = embedding_similarity_request(b"challenge", None);
+        let error = authenticator
+            .generate_proof(&request, Some(1_700_000_100))
+            .await
+            .expect_err("embedding similarity requests are not proven here");
+
+        assert!(matches!(
+            error,
+            WalletKitError::InvalidInput { attribute, .. } if attribute == "proof_type"
+        ));
+        no_more_requests.assert_async().await;
 
         drop(server);
         cleanup_test_storage(&root);

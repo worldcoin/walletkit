@@ -67,6 +67,18 @@ impl ZkArtifactSource for EmbeddedZkArtifacts {
     ) -> Result<world_id_proof::OwnershipVerifier, ZkArtifactError> {
         self.0.ownership_verifier()
     }
+
+    fn embedding_similarity_prover(
+        &self,
+    ) -> Result<world_id_proof::EmbeddingSimilarityProver, ZkArtifactError> {
+        self.0.embedding_similarity_prover()
+    }
+
+    fn embedding_similarity_verifier(
+        &self,
+    ) -> Result<world_id_proof::EmbeddingSimilarityVerifier, ZkArtifactError> {
+        self.0.embedding_similarity_verifier()
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
