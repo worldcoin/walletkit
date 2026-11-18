@@ -403,7 +403,8 @@ impl CredentialStore {
     /// metadata write, reducing stale metadata CAS matches after deletion/recreation
     /// of identical data. `now` is a Unix timestamp.
     /// Linked blobs participate in export and recovery; putting one notifies the backup
-    /// listener. Unlinked blobs stay local. Credential GC never removes blobs.
+    /// listener when it is new or its kind changes. Unlinked blobs stay local. Credential
+    /// GC never removes blobs.
     /// Legacy paths use `/`; redundant separators and `.` are normalized. Absolute paths,
     /// drive prefixes, backslashes, NULs and `..` components are rejected.
     ///
@@ -420,13 +421,13 @@ impl CredentialStore {
         legacy_path: Option<String>,
         now: u64,
     ) -> StorageResult<Arc<BlobId>> {
-        let (blob_id, linked) = self.lock_inner()?.state()?.vault.put_blob(
+        let (blob_id, export_changed) = self.lock_inner()?.state()?.vault.put_blob(
             kind,
             data,
             legacy_path.as_deref(),
             now,
         )?;
-        if linked {
+        if export_changed {
             self.notify_vault_changed();
         }
         Ok(Arc::new(blob_id))
@@ -754,7 +755,7 @@ impl CredentialStore {
 
     /// Registers a listener that is called after every successful vault
     /// mutation that warrants a new backup: a credential stored, deleted or
-    /// merged, a PCP blob link added, or a linked blob stored.
+    /// merged, a PCP blob link added, or a new linked blob stored.
     ///
     /// Only one listener can be active at a time — calling this replaces any
     /// previously registered listener. The previous delivery thread shuts down
@@ -2395,15 +2396,18 @@ mod tests {
         store
             .put_blob("oxide.face", b"unlinked pcp", None, 1000)
             .unwrap();
-        for now in [1000, 2000] {
+        // A new linked blob or a new kind changes the export; re-putting identical data doesn't.
+        for (kind, now, notifies) in [
+            ("oxide.orb", 1000, true),
+            ("oxide.orb", 2000, false),
+            ("oxide.face", 3000, true),
+        ] {
             assert_eq!(
-                store
-                    .put_blob("oxide.orb", b"linked pcp", None, now)
-                    .unwrap(),
+                store.put_blob(kind, b"linked pcp", None, now).unwrap(),
                 blob
             );
-            rx.recv_timeout(std::time::Duration::from_secs(1))
-                .expect("linked insert and upsert notify");
+            let notified = rx.recv_timeout(std::time::Duration::from_millis(500));
+            assert_eq!(notified.is_ok(), notifies, "{kind} at {now}");
         }
         assert!(store
             .export_vault(None)

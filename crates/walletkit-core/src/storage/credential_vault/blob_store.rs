@@ -28,6 +28,14 @@ impl CredentialVault {
             .connection()
             .transaction_immediate()
             .map_err(|err| map_db_err(&err))?;
+        // Data is content-addressed, so only a new row or a new kind changes an export.
+        let previous_kind = tx
+            .query_row_optional(
+                "SELECT kind FROM blobs WHERE blob_id = ?1",
+                params![blob_id.as_bytes().as_slice()],
+                |row| Ok(row.column_text(0)),
+            )
+            .map_err(|err| map_db_err(&err))?;
         tx.execute(
             "INSERT INTO blobs (blob_id, kind, data, revision, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?5, ?4, ?4)
@@ -51,15 +59,16 @@ impl CredentialVault {
             )
             .map_err(|err| map_db_err(&err))?;
         }
-        let linked = tx
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM credential_blob_refs WHERE blob_id = ?1)",
-                params![blob_id.as_bytes().as_slice()],
-                |row| Ok(row.column_i64(0) != 0),
-            )
-            .map_err(|err| map_db_err(&err))?;
+        let exported_changed = previous_kind.as_deref() != Some(kind)
+            && tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM credential_blob_refs WHERE blob_id = ?1)",
+                    params![blob_id.as_bytes().as_slice()],
+                    |row| Ok(row.column_i64(0) != 0),
+                )
+                .map_err(|err| map_db_err(&err))?;
         tx.commit().map_err(|err| map_db_err(&err))?;
-        Ok((blob_id, linked))
+        Ok((blob_id, exported_changed))
     }
 
     pub(crate) fn get_blob(
