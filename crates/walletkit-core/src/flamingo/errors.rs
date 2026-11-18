@@ -26,10 +26,12 @@ pub enum FlamingoMatchRejection {
     UnsupportedMatchStrictness,
     /// The Authenticator Assertion did not verify.
     AatRejected,
-    /// The RP is billed and the request carried no billing nullifier (WIP-107 §4.7).
+    /// The RP is billed and the request carried no billing nullifier (WIP-107 §4.7). The
+    /// World ID has already registered again and resent, so retrying at once will not help.
     BillingNullifierRequired,
     /// The RP is billed and the Verifier holds no registration of the request's billing nullifier
-    /// in an active period (WIP-107 §4.7).
+    /// in an active period (WIP-107 §4.7). The World ID has already resent and registered again, so
+    /// retrying at once will not help.
     BillingUnregistered,
     /// Exact malformed-input reason and the location/limit supplied by the service.
     InputRejected {

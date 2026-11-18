@@ -231,8 +231,7 @@ impl Authenticator {
     {
         let rp_id = exchange.proof_request.0.rp_id;
         let mut delays = polling_backoff().build();
-        let mut unregistered = 0;
-        let mut registered_again = false;
+        let mut recoveries = BillingRecoveries::default();
         loop {
             let billing_nullifier = billing
                 .as_ref()
@@ -253,12 +252,11 @@ impl Authenticator {
             else {
                 return Ok((matched, billing));
             };
-            match billing_recovery(reason, unregistered, registered_again) {
+            match recoveries.next(reason) {
                 BillingRecovery::Resend => {
-                    unregistered += 1;
                     tracing::warn!(
                         %rp_id,
-                        attempt = unregistered,
+                        attempt = recoveries.unregistered,
                         "the Flamingo Verifier has not seen the billing registration yet; resending"
                     );
                     if let Some(delay) = delays.next() {
@@ -266,8 +264,6 @@ impl Authenticator {
                     }
                 }
                 BillingRecovery::RegisterAgain => {
-                    registered_again = true;
-                    unregistered = 0;
                     delays = polling_backoff().build();
                     tracing::warn!(
                         %rp_id,
@@ -289,7 +285,20 @@ impl Authenticator {
                         .await?,
                     );
                 }
-                BillingRecovery::Stop => return Ok((matched, billing)),
+                BillingRecovery::Stop => {
+                    if matches!(
+                        reason,
+                        FailureReason::BillingNullifierRequired
+                            | FailureReason::BillingUnregistered
+                    ) {
+                        tracing::warn!(
+                            %rp_id,
+                            ?reason,
+                            "the Flamingo Verifier still rejects the billing registration; giving up"
+                        );
+                    }
+                    return Ok((matched, billing));
+                }
             }
         }
     }
@@ -324,24 +333,41 @@ enum BillingRecovery {
     Stop,
 }
 
-/// The recovery from `reason` after `unregistered` resends since the last registration, and whether
-/// the World ID has already registered again in this exchange.
-const fn billing_recovery(
-    reason: &FailureReason,
+/// The billing recoveries one exchange has taken.
+#[derive(Debug, Default)]
+struct BillingRecoveries {
+    /// Resends since the last registration.
     unregistered: u32,
+    /// Whether the World ID has already registered again in this exchange.
     registered_again: bool,
-) -> BillingRecovery {
-    match reason {
-        FailureReason::BillingUnregistered if unregistered < UNREGISTERED_RETRIES => {
-            BillingRecovery::Resend
+}
+
+impl BillingRecoveries {
+    /// The recovery from `reason`, recorded as taken.
+    const fn next(&mut self, reason: &FailureReason) -> BillingRecovery {
+        let recovery = match reason {
+            FailureReason::BillingUnregistered
+                if self.unregistered < UNREGISTERED_RETRIES =>
+            {
+                BillingRecovery::Resend
+            }
+            FailureReason::BillingNullifierRequired
+            | FailureReason::BillingUnregistered
+                if !self.registered_again =>
+            {
+                BillingRecovery::RegisterAgain
+            }
+            _ => BillingRecovery::Stop,
+        };
+        match recovery {
+            BillingRecovery::Resend => self.unregistered += 1,
+            BillingRecovery::RegisterAgain => {
+                self.registered_again = true;
+                self.unregistered = 0;
+            }
+            BillingRecovery::Stop => {}
         }
-        FailureReason::BillingNullifierRequired
-        | FailureReason::BillingUnregistered
-            if !registered_again =>
-        {
-            BillingRecovery::RegisterAgain
-        }
-        _ => BillingRecovery::Stop,
+        recovery
     }
 }
 
@@ -349,25 +375,17 @@ const fn billing_recovery(
 mod tests {
     use flamingo_verifier_sealed_types::{ComparisonRole, FailureReason};
 
-    use super::{billing_recovery, BillingRecovery, UNREGISTERED_RETRIES};
+    use super::{BillingRecoveries, BillingRecovery, UNREGISTERED_RETRIES};
 
     /// Replays the recoveries `match_billed` takes for a Verifier that rejects every request with
     /// `reason`, returning them in order.
     fn recoveries(reason: &FailureReason) -> Vec<BillingRecovery> {
-        let (mut unregistered, mut registered_again) = (0, false);
-        let mut taken = Vec::new();
-        loop {
-            let recovery = billing_recovery(reason, unregistered, registered_again);
-            match recovery {
-                BillingRecovery::Resend => unregistered += 1,
-                BillingRecovery::RegisterAgain => {
-                    registered_again = true;
-                    unregistered = 0;
-                }
-                BillingRecovery::Stop => return taken,
-            }
-            taken.push(recovery);
-        }
+        let mut recoveries = BillingRecoveries::default();
+        std::iter::from_fn(|| match recoveries.next(reason) {
+            BillingRecovery::Stop => None,
+            recovery => Some(recovery),
+        })
+        .collect()
     }
 
     #[test]
