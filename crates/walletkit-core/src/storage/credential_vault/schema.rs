@@ -3,7 +3,7 @@
 //!
 //! The shared `blob_objects` table comes from
 //! [`walletkit_db::Blobs::ensure_schema`]; this module owns only the
-//! credential tables and the local-only owner-addressed blob store.
+//! credential tables and the local-only content-addressed blob store.
 
 use walletkit_sqlite::{Connection, DbResult};
 
@@ -14,7 +14,7 @@ pub(super) const VAULT_SCHEMA_VERSION: i64 = 1;
 /// **Backup sensitivity:** Schema changes here affect plaintext vault
 /// backups.
 /// - Portable credential tables belong in [`super::BACKUP_TABLES`].
-///   Local-only `blobs` and `blob_paths` must stay out of backup and recovery.
+///   Local-only `blobs` and `legacy_blob_paths` must stay out of backup and recovery.
 /// - Column changes (especially new `NOT NULL` columns without defaults) can
 ///   break restoring older backups into a newer schema.
 pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
@@ -66,21 +66,22 @@ pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
         ON credential_blob_refs (blob_id);
 
         CREATE TABLE IF NOT EXISTS blobs (
-            content_id BLOB PRIMARY KEY NOT NULL CHECK (typeof(content_id) = 'blob' AND length(content_id) = 32),
+            blob_id BLOB PRIMARY KEY NOT NULL CHECK (typeof(blob_id) = 'blob' AND length(blob_id) = 32),
             kind TEXT NOT NULL,
-            data BLOB NOT NULL,
             metadata BLOB,
             revision INTEGER NOT NULL CHECK (typeof(revision) = 'integer' AND revision > 0),
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            data BLOB NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS blob_paths (
-            path TEXT PRIMARY KEY NOT NULL,
-            content_id BLOB NOT NULL REFERENCES blobs (content_id) ON DELETE CASCADE
+        -- Maps legacy on-disk PCP paths only; removed once those files are deleted.
+        CREATE TABLE IF NOT EXISTS legacy_blob_paths (
+            legacy_path TEXT PRIMARY KEY NOT NULL,
+            blob_id BLOB NOT NULL REFERENCES blobs (blob_id) ON DELETE CASCADE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_blob_paths_content_id ON blob_paths (content_id);
+        CREATE INDEX IF NOT EXISTS idx_legacy_blob_paths_blob_id ON legacy_blob_paths (blob_id);
 ",
     )
 }

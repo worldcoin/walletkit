@@ -386,16 +386,20 @@ impl CredentialStore {
             .collect())
     }
 
-    /// Stores owner-defined bytes and optionally assigns a relative file alias, atomically.
+    /// Stores a plaintext PCP archive and returns its computed [`BlobId`].
+    /// The blob upsert and optional legacy on-disk PCP path alias are written atomically.
     /// An alias pointing at another blob moves; that blob and its other aliases remain.
+    /// Legacy aliases will be removed once the on-disk files are deleted.
     ///
-    /// The owner supplies the id (for PCPs, the hash of the unsealed archive); this store
-    /// does not hash sealed bytes. Upserts preserve metadata and creation time, and
-    /// increment the revision returned here. `now` is a Unix timestamp.
-    /// Revisions start at a random positive value on creation, reducing reuse across
-    /// delete/recreate cycles; use the returned revision rather than assuming a write count.
+    /// The caller must remove the outer device seal before calling this method.
+    /// The store hashes the exact `data` with [`super::blob_id()`] so its blob id is verified
+    /// on every put. The vault's encryption protects the plaintext at rest.
+    /// Upserts preserve metadata and creation time and increment the revision.
+    /// Revisions start at a random positive value and increment on every put or
+    /// metadata write, reducing stale metadata CAS matches after deletion/recreation
+    /// of identical data. `now` is a Unix timestamp.
     /// Blobs are local-only: no backup notification, export, merge, or credential GC.
-    /// Paths use `/`; redundant separators and `.` are normalized. Absolute paths,
+    /// Legacy paths use `/`; redundant separators and `.` are normalized. Absolute paths,
     /// drive prefixes, backslashes, NULs and `..` components are rejected.
     ///
     /// # Errors
@@ -406,44 +410,52 @@ impl CredentialStore {
     )]
     pub fn put_blob(
         &self,
-        content_id: &BlobId,
         kind: &str,
         data: &[u8],
-        path: Option<String>,
+        legacy_path: Option<String>,
         now: u64,
-    ) -> StorageResult<u64> {
-        self.lock_inner()?.state()?.vault.put_blob(
-            content_id,
-            kind,
-            data,
-            path.as_deref(),
-            now,
-        )
+    ) -> StorageResult<Arc<BlobId>> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .put_blob(kind, data, legacy_path.as_deref(), now)
+            .map(Arc::new)
     }
 
     /// Reads a local blob, including its data, or returns `None` when absent.
     ///
     /// # Errors
     /// Returns an error if the store is uninitialized or the query fails.
-    pub fn get_blob(&self, content_id: &BlobId) -> StorageResult<Option<StoredBlob>> {
-        self.lock_inner()?.state()?.vault.get_blob(content_id)
+    pub fn get_blob(&self, blob_id: &BlobId) -> StorageResult<Option<StoredBlob>> {
+        self.lock_inner()?.state()?.vault.get_blob(blob_id)
     }
 
-    /// Resolves a normalized relative file alias and reads the local blob.
+    /// Resolves a legacy on-disk PCP path alias and reads the local blob.
+    /// Legacy aliases will be removed once the on-disk files are deleted.
     ///
     /// # Errors
     /// Returns an error for an invalid path, uninitialized store, or query failure.
-    pub fn get_blob_by_path(&self, path: &str) -> StorageResult<Option<StoredBlob>> {
-        self.lock_inner()?.state()?.vault.get_blob_by_path(path)
+    pub fn get_blob_by_legacy_path(
+        &self,
+        legacy_path: &str,
+    ) -> StorageResult<Option<StoredBlob>> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .get_blob_by_legacy_path(legacy_path)
     }
 
-    /// Lists aliases in lexical order with a literal, case-sensitive relative prefix.
+    /// Lists legacy on-disk PCP path aliases with a literal, case-sensitive relative prefix.
+    /// Results are in lexical order. Legacy aliases will be removed once the files are deleted.
     /// An empty prefix lists all aliases; a trailing `/` restricts to that directory.
     ///
     /// # Errors
     /// Returns an error for an invalid prefix, uninitialized store, or query failure.
-    pub fn list_blob_paths(&self, prefix: &str) -> StorageResult<Vec<String>> {
-        self.lock_inner()?.state()?.vault.list_blob_paths(prefix)
+    pub fn list_legacy_blob_paths(&self, prefix: &str) -> StorageResult<Vec<String>> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .list_legacy_blob_paths(prefix)
     }
 
     /// Lists blob metadata in id order, optionally filtered by the exact owner tag.
@@ -474,25 +486,29 @@ impl CredentialStore {
     )]
     pub fn update_blob_metadata(
         &self,
-        content_id: &BlobId,
+        blob_id: &BlobId,
         metadata: Option<Vec<u8>>,
         expected_revision: u64,
         now: u64,
     ) -> StorageResult<u64> {
         self.lock_inner()?.state()?.vault.update_blob_metadata(
-            content_id,
+            blob_id,
             metadata.as_deref(),
             expected_revision,
             now,
         )
     }
 
-    /// Removes only the relative alias, returning whether it existed. Keeps the blob.
+    /// Removes only a legacy on-disk PCP path alias, returning whether it existed.
+    /// Keeps the blob. Legacy aliases will be removed once the files are deleted.
     ///
     /// # Errors
     /// Returns an error for an invalid path, uninitialized store, or database failure.
-    pub fn delete_blob_path(&self, path: &str) -> StorageResult<bool> {
-        self.lock_inner()?.state()?.vault.delete_blob_path(path)
+    pub fn delete_legacy_blob_path(&self, legacy_path: &str) -> StorageResult<bool> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .delete_legacy_blob_path(legacy_path)
     }
 
     /// Deletes a local blob and all its aliases, returning whether it existed.
@@ -500,8 +516,8 @@ impl CredentialStore {
     ///
     /// # Errors
     /// Returns an error if the store is uninitialized or the database write fails.
-    pub fn delete_blob(&self, content_id: &BlobId) -> StorageResult<bool> {
-        self.lock_inner()?.state()?.vault.delete_blob(content_id)
+    pub fn delete_blob(&self, blob_id: &BlobId) -> StorageResult<bool> {
+        self.lock_inner()?.state()?.vault.delete_blob(blob_id)
     }
 
     /// **Development only.** Permanently deletes all stored credentials and their
@@ -1578,20 +1594,21 @@ mod tests {
         store.init(42, 1000).unwrap();
         let (tx, rx) = mpsc::channel();
         store.set_vault_changed_listener(Arc::new(ChannelVaultListener(tx)));
-        let id = crate::storage::blob_id(b"hello pcp".to_vec());
-        let initial = store
+        let id = store
             .put_blob(
-                &id,
                 "oxide.face",
-                b"sealed PCP",
+                b"hello pcp",
                 Some("face_pcp/face.tar.gz".to_owned()),
                 1000,
             )
             .unwrap();
-        assert_eq!(store.get_blob(&id).unwrap().unwrap().data, b"sealed PCP");
+        assert_eq!(id, crate::storage::blob_id(b"hello pcp".to_vec()));
+        let stored = store.get_blob(&id).unwrap().unwrap();
+        assert_eq!(stored.data, b"hello pcp");
+        let initial = stored.record.revision;
         assert_eq!(
             store
-                .get_blob_by_path("face_pcp/face.tar.gz")
+                .get_blob_by_legacy_path("face_pcp/face.tar.gz")
                 .unwrap()
                 .unwrap()
                 .record
@@ -1599,7 +1616,7 @@ mod tests {
             "oxide.face"
         );
         assert_eq!(
-            store.list_blob_paths("face_pcp/").unwrap(),
+            store.list_legacy_blob_paths("face_pcp/").unwrap(),
             ["face_pcp/face.tar.gz"]
         );
         assert_eq!(
@@ -1615,7 +1632,9 @@ mod tests {
                 .unwrap(),
             initial + 1
         );
-        assert!(store.delete_blob_path("face_pcp/face.tar.gz").unwrap());
+        assert!(store
+            .delete_legacy_blob_path("face_pcp/face.tar.gz")
+            .unwrap());
         assert!(store.delete_blob(&id).unwrap());
         drop(store);
         assert_eq!(

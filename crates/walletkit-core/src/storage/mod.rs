@@ -14,7 +14,7 @@
 //!
 //! 1. **Vault database (`account.vault.sqlite`)** — authoritative storage for
 //!    credentials, associated data blobs, issuer subject blinding factors, links from
-//!    credentials to their PCP blob ids, local-only owner-addressed blobs and path
+//!    credentials to their PCP blob ids, local-only content-addressed blobs and legacy path
 //!    aliases, and the account leaf index. Local blobs are excluded from export and
 //!    recovery and have an independent lifetime. Corruption is a hard failure.
 //!    See [`crate::storage::CredentialVault`].

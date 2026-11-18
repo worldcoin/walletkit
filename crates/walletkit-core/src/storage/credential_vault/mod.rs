@@ -30,7 +30,7 @@ use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value}
 /// `init_leaf_index`) with the authoritative `leaf_index` from the
 /// authenticator.
 ///
-/// Local-only `blobs` and `blob_paths` are intentionally excluded, including from
+/// Local-only `blobs` and `legacy_blob_paths` are intentionally excluded, including from
 /// merge and restore. Add only portable credential tables here.
 pub(crate) const BACKUP_TABLES: &[&str] =
     &["credential_records", "blob_objects", "credential_blob_refs"];

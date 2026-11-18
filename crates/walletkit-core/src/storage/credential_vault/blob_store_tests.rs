@@ -8,7 +8,7 @@ use walletkit_sqlite::Connection;
 
 const RELEASED_SCHEMA: &str = include_str!("fixtures/vault-v0.30.0.sql");
 
-const SEALED: &[u8] = b"device-sealed hello pcp";
+const PLAINTEXT: &[u8] = b"hello pcp";
 const PATH: &str = "face_pcp/face-pcp-v1.tar.gz";
 
 struct Fixture {
@@ -28,12 +28,23 @@ impl Fixture {
     }
 
     fn put(&self, path: Option<&str>) -> BlobId {
-        let id = compute_blob_id(b"hello pcp");
         self.db
-            .put_blob(&id, "oxide.face", SEALED, path, 1000)
-            .unwrap();
-        id
+            .put_blob("oxide.face", PLAINTEXT, path, 1000)
+            .unwrap()
     }
+}
+
+#[test_case(b"", "dbc45c9a56ec1cfe89c45c6bfbc3bffe9d574fcfbdb28f24442b0f6a698f529f" ; "empty")]
+#[test_case(b"hello pcp", "733ae41c33b82d2d18eba3b18f289f649f49a386362441f9bff74c613764b00f" ; "hello pcp")]
+fn put_computes_the_shared_blob_id_vectors(data: &[u8], expected: &str) {
+    let f = Fixture::new();
+    let id = f.db.put_blob("oxide.face", data, None, 1000).unwrap();
+    assert_eq!(id.to_hex_string(), expected);
+    assert_eq!(id, *crate::storage::blob_id(data.to_vec()));
+    let stored = f.db.get_blob(&id).unwrap().unwrap();
+    assert_eq!(*stored.record.blob_id, id);
+    assert!(stored.record.revision > 0);
+    assert_eq!(stored.data, data);
 }
 
 #[test]
@@ -42,46 +53,47 @@ fn aliases_move_without_deleting_content_or_other_aliases() {
     let first = f.put(Some(PATH));
     let initial = f.db.get_blob(&first).unwrap().unwrap().record.revision;
     assert_eq!(
-        f.db.put_blob(
-            &first,
-            "oxide.face",
-            SEALED,
-            Some("scoped/face.tar.gz"),
-            1001
-        )
-        .unwrap(),
+        f.db.put_blob("oxide.face", PLAINTEXT, Some("scoped/face.tar.gz"), 1001)
+            .unwrap(),
+        first
+    );
+    assert_eq!(f.db.list_blobs(None).unwrap().len(), 1);
+    assert_eq!(
+        f.db.get_blob(&first).unwrap().unwrap().record.revision,
         initial + 1
     );
-    let second = compute_blob_id(b"replacement face pcp");
-    f.db.put_blob(&second, "oxide.face", b"new sealed PCP", Some(PATH), 1002)
-        .unwrap();
+    let second =
+        f.db.put_blob("oxide.face", b"replacement face pcp", Some(PATH), 1002)
+            .unwrap();
+    assert_ne!(first, second);
+    assert_eq!(f.db.list_blobs(None).unwrap().len(), 2);
 
     assert_eq!(
         *f.db
-            .get_blob_by_path(PATH)
+            .get_blob_by_legacy_path(PATH)
             .unwrap()
             .unwrap()
             .record
-            .content_id,
+            .blob_id,
         second
     );
     assert_eq!(
         *f.db
-            .get_blob_by_path("scoped/face.tar.gz")
+            .get_blob_by_legacy_path("scoped/face.tar.gz")
             .unwrap()
             .unwrap()
             .record
-            .content_id,
+            .blob_id,
         first
     );
-    assert_eq!(f.db.get_blob(&first).unwrap().unwrap().data, SEALED);
-    assert!(f.db.delete_blob_path("scoped/face.tar.gz").unwrap());
-    assert!(!f.db.delete_blob_path("scoped/face.tar.gz").unwrap());
+    assert_eq!(f.db.get_blob(&first).unwrap().unwrap().data, PLAINTEXT);
+    assert!(f.db.delete_legacy_blob_path("scoped/face.tar.gz").unwrap());
+    assert!(!f.db.delete_legacy_blob_path("scoped/face.tar.gz").unwrap());
     assert!(f.db.get_blob(&first).unwrap().is_some());
     assert!(f.db.delete_blob(&second).unwrap());
     assert!(!f.db.delete_blob(&second).unwrap());
-    assert!(f.db.get_blob_by_path(PATH).unwrap().is_none());
-    assert!(f.db.list_blob_paths("").unwrap().is_empty());
+    assert!(f.db.get_blob_by_legacy_path(PATH).unwrap().is_none());
+    assert!(f.db.list_legacy_blob_paths("").unwrap().is_empty());
 }
 
 #[test]
@@ -102,17 +114,15 @@ fn metadata_cas_observes_writes_from_another_connection() {
         Err(StorageError::BlobRevisionConflict)
     ));
     assert_eq!(
-        other
-            .put_blob(&id, "oxide.face", b"resealed PCP", None, 1003)
-            .unwrap(),
-        initial + 2
+        other.put_blob("oxide.face", PLAINTEXT, None, 1003).unwrap(),
+        id
     );
     assert!(matches!(
         f.db.update_blob_metadata(&id, None, initial + 1, 1004),
         Err(StorageError::BlobRevisionConflict)
     ));
     let stored = f.db.get_blob(&id).unwrap().unwrap();
-    assert_eq!(stored.data, b"resealed PCP");
+    assert_eq!(stored.data, PLAINTEXT);
     assert_eq!(stored.record.metadata, Some(b"enrolled".to_vec()));
     assert_eq!(
         (
@@ -136,7 +146,7 @@ fn metadata_cas_observes_writes_from_another_connection() {
 }
 
 #[test]
-fn recreating_a_blob_does_not_restart_the_revision_counter() {
+fn recreating_identical_data_rejects_stale_metadata_from_the_previous_incarnation() {
     let f = Fixture::new();
     let id = f.put(None);
     let first = f.db.get_blob(&id).unwrap().unwrap().record.revision;
@@ -147,9 +157,11 @@ fn recreating_a_blob_does_not_restart_the_revision_counter() {
         CredentialVault::new(&f.dir.path().join("account.vault.sqlite"), &f.key)
             .unwrap();
     other.delete_blob(&id).unwrap();
-    let recreated = other
-        .put_blob(&id, "oxide.face", b"resealed PCP", None, 2000)
-        .unwrap();
+    assert_eq!(
+        other.put_blob("oxide.face", PLAINTEXT, None, 2000).unwrap(),
+        id
+    );
+    let recreated = other.get_blob(&id).unwrap().unwrap().record.revision;
     let current = other
         .update_blob_metadata(&id, Some(b"new enrollment"), recreated, 2001)
         .unwrap();
@@ -158,10 +170,9 @@ fn recreating_a_blob_does_not_restart_the_revision_counter() {
         f.db.update_blob_metadata(&id, Some(b"stale enrollment"), stale, 2002),
         Err(StorageError::BlobRevisionConflict)
     ));
-    assert_eq!(
-        f.db.get_blob(&id).unwrap().unwrap().record.metadata,
-        Some(b"new enrollment".to_vec())
-    );
+    let stored = f.db.get_blob(&id).unwrap().unwrap();
+    assert_eq!(stored.data, PLAINTEXT);
+    assert_eq!(stored.record.metadata, Some(b"new enrollment".to_vec()));
 }
 
 #[test]
@@ -170,7 +181,7 @@ fn metadata_commit_failure_is_reported_and_rolled_back() {
     let id = f.put(None);
     let initial = f.db.get_blob(&id).unwrap().unwrap().record.revision;
     f.db.vault.connection().execute_batch(
-        "CREATE TABLE commit_guard (content_id BLOB REFERENCES blobs(content_id) DEFERRABLE INITIALLY DEFERRED);
+        "CREATE TABLE commit_guard (blob_id BLOB REFERENCES blobs(blob_id) DEFERRABLE INITIALLY DEFERRED);
          CREATE TRIGGER fail_metadata_commit AFTER UPDATE OF metadata ON blobs
          BEGIN INSERT INTO commit_guard VALUES (X'CAFE'); END;"
     ).unwrap();
@@ -198,19 +209,19 @@ fn failed_alias_write_rolls_back_blob_upsert() {
     let id = f.put(Some(PATH));
     let initial = f.db.get_blob(&id).unwrap().unwrap().record.revision;
     f.db.vault.connection().execute_batch(
-        "CREATE TRIGGER reject_alias BEFORE INSERT ON blob_paths BEGIN SELECT RAISE(ABORT, 'alias write failed'); END;",
+        "CREATE TRIGGER reject_alias BEFORE INSERT ON legacy_blob_paths BEGIN SELECT RAISE(ABORT, 'alias write failed'); END;",
     ).unwrap();
     assert!(f
         .db
-        .put_blob(&id, "oxide.orb", b"replacement", Some(PATH), 2000)
+        .put_blob("oxide.orb", PLAINTEXT, Some(PATH), 2000)
         .is_err());
     let stored = f.db.get_blob(&id).unwrap().unwrap();
-    assert_eq!(stored.data, SEALED);
+    assert_eq!(stored.data, PLAINTEXT);
     assert_eq!(stored.record.revision, initial);
     let new_id = compute_blob_id(b"new PCP");
     assert!(f
         .db
-        .put_blob(&new_id, "oxide.orb", b"new", Some("new.dat"), 2000)
+        .put_blob("oxide.orb", b"new PCP", Some("new.dat"), 2000)
         .is_err());
     assert!(f.db.get_blob(&new_id).unwrap().is_none());
 }
@@ -229,7 +240,7 @@ fn concurrent_writer_failure_leaves_alias_and_revision_unchanged() {
         .unwrap();
     let writer = other.vault.connection().transaction_immediate().unwrap();
     assert!(matches!(
-        f.db.put_blob(&id, "oxide.face", b"new seal", Some("new.dat"), 2000),
+        f.db.put_blob("oxide.face", PLAINTEXT, Some("new.dat"), 2000),
         Err(StorageError::VaultDb(_))
     ));
     drop(writer);
@@ -237,10 +248,14 @@ fn concurrent_writer_failure_leaves_alias_and_revision_unchanged() {
         f.db.get_blob(&id).unwrap().unwrap().record.revision,
         initial
     );
-    assert_eq!(f.db.list_blob_paths("").unwrap(), [PATH]);
+    assert_eq!(f.db.list_legacy_blob_paths("").unwrap(), [PATH]);
     assert_eq!(
-        f.db.put_blob(&id, "oxide.face", b"new seal", Some("new.dat"), 2000)
+        f.db.put_blob("oxide.face", PLAINTEXT, Some("new.dat"), 2000)
             .unwrap(),
+        id
+    );
+    assert_eq!(
+        f.db.get_blob(&id).unwrap().unwrap().record.revision,
         initial + 1
     );
 }
@@ -249,25 +264,24 @@ fn concurrent_writer_failure_leaves_alias_and_revision_unchanged() {
 fn lists_metadata_and_literal_case_sensitive_prefixes() {
     let f = Fixture::new();
     let id = f.put(Some("pcp/a.dat"));
-    let second = compute_blob_id(b"orb PCP");
-    f.db.put_blob(
-        &second,
-        "oxide.orb",
-        b"sealed orb",
-        Some("pcp%/b.dat"),
-        1001,
-    )
-    .unwrap();
-    f.db.put_blob(&id, "oxide.face", SEALED, Some("PCP/c.dat"), 1002)
+    f.db.put_blob("oxide.orb", b"orb PCP", Some("pcp%/b.dat"), 1001)
         .unwrap();
-    assert_eq!(f.db.list_blob_paths("./pcp//").unwrap(), ["pcp/a.dat"]);
-    assert_eq!(f.db.list_blob_paths("pcp%").unwrap(), ["pcp%/b.dat"]);
-    assert_eq!(f.db.list_blob_paths("pcp_").unwrap(), [] as [&str; 0]);
-    assert_eq!(f.db.list_blob_paths("PCP/").unwrap(), ["PCP/c.dat"]);
+    f.db.put_blob("oxide.face", PLAINTEXT, Some("PCP/c.dat"), 1002)
+        .unwrap();
+    assert_eq!(
+        f.db.list_legacy_blob_paths("./pcp//").unwrap(),
+        ["pcp/a.dat"]
+    );
+    assert_eq!(f.db.list_legacy_blob_paths("pcp%").unwrap(), ["pcp%/b.dat"]);
+    assert_eq!(
+        f.db.list_legacy_blob_paths("pcp_").unwrap(),
+        [] as [&str; 0]
+    );
+    assert_eq!(f.db.list_legacy_blob_paths("PCP/").unwrap(), ["PCP/c.dat"]);
     assert_eq!(f.db.list_blobs(None).unwrap().len(), 2);
     let face = f.db.list_blobs(Some("oxide.face")).unwrap();
     assert_eq!(face.len(), 1);
-    assert_eq!(*face[0].content_id, id);
+    assert_eq!(*face[0].blob_id, id);
     assert!(f.db.list_blobs(Some("oxide.document")).unwrap().is_empty());
 }
 
@@ -282,19 +296,19 @@ fn invalid_paths_are_rejected_at_every_entry_point(path: &str) {
     let f = Fixture::new();
     let id = compute_blob_id(b"hello pcp");
     assert!(matches!(
-        f.db.put_blob(&id, "oxide.face", SEALED, Some(path), 1000),
+        f.db.put_blob("oxide.face", PLAINTEXT, Some(path), 1000),
         Err(StorageError::InvalidInput(_))
     ));
     assert!(matches!(
-        f.db.get_blob_by_path(path),
+        f.db.get_blob_by_legacy_path(path),
         Err(StorageError::InvalidInput(_))
     ));
     assert!(matches!(
-        f.db.delete_blob_path(path),
+        f.db.delete_legacy_blob_path(path),
         Err(StorageError::InvalidInput(_))
     ));
     assert!(matches!(
-        f.db.list_blob_paths(path),
+        f.db.list_legacy_blob_paths(path),
         Err(StorageError::InvalidInput(_))
     ));
     assert!(f.db.get_blob(&id).unwrap().is_none());
@@ -305,35 +319,35 @@ fn invalid_paths_are_rejected_at_every_entry_point(path: &str) {
 #[test_case("././" ; "root")]
 fn root_is_a_listing_prefix_but_not_a_file_alias(path: &str) {
     let f = Fixture::new();
-    let id = f.put(Some(PATH));
+    f.put(Some(PATH));
     assert!(f
         .db
-        .put_blob(&id, "oxide.face", SEALED, Some(path), 2000)
+        .put_blob("oxide.face", PLAINTEXT, Some(path), 2000)
         .is_err());
-    assert!(f.db.get_blob_by_path(path).is_err());
-    assert!(f.db.delete_blob_path(path).is_err());
-    assert_eq!(f.db.list_blob_paths(path).unwrap(), [PATH]);
+    assert!(f.db.get_blob_by_legacy_path(path).is_err());
+    assert!(f.db.delete_legacy_blob_path(path).is_err());
+    assert_eq!(f.db.list_legacy_blob_paths(path).unwrap(), [PATH]);
 }
 
 #[test]
 fn paths_are_normalized_for_put_read_and_delete() {
     let f = Fixture::new();
     let id = f.put(Some("./face_pcp//./face-pcp-v1.tar.gz"));
-    assert_eq!(f.db.list_blob_paths("").unwrap(), [PATH]);
+    assert_eq!(f.db.list_legacy_blob_paths("").unwrap(), [PATH]);
     assert_eq!(
         *f.db
-            .get_blob_by_path("face_pcp/./face-pcp-v1.tar.gz")
+            .get_blob_by_legacy_path("face_pcp/./face-pcp-v1.tar.gz")
             .unwrap()
             .unwrap()
             .record
-            .content_id,
+            .blob_id,
         id
     );
     assert!(f
         .db
-        .delete_blob_path("./face_pcp//face-pcp-v1.tar.gz")
+        .delete_legacy_blob_path("./face_pcp//face-pcp-v1.tar.gz")
         .unwrap());
-    assert!(f.db.get_blob_by_path(PATH).unwrap().is_none());
+    assert!(f.db.get_blob_by_legacy_path(PATH).unwrap().is_none());
 }
 
 #[test_case(Value::Blob(vec![0x42; 31]) ; "short")]
@@ -346,7 +360,7 @@ fn database_rejects_non_blob_or_wrong_length_ids(id: Value) {
         .vault
         .connection()
         .execute(
-            "INSERT INTO blobs VALUES (?1, 'oxide.face', X'1234', NULL, 1, 1000, 1000)",
+            "INSERT INTO blobs (blob_id, kind, data, metadata, revision, created_at, updated_at) VALUES (?1, 'oxide.face', X'1234', NULL, 1, 1000, 1000)",
             &[id],
         )
         .is_err());
@@ -367,7 +381,10 @@ fn credential_deletion_never_collects_local_blobs() {
         .unwrap();
     f.db.delete_credential(credential_id).unwrap();
     f.db.danger_delete_all_credentials().unwrap();
-    assert_eq!(f.db.get_blob_by_path(PATH).unwrap().unwrap().data, SEALED);
+    assert_eq!(
+        f.db.get_blob_by_legacy_path(PATH).unwrap().unwrap().data,
+        PLAINTEXT
+    );
     assert_eq!(f.db.list_blobs(None).unwrap().len(), 1);
 }
 
@@ -381,13 +398,13 @@ fn export_excludes_local_tables_and_recovery_ignores_them(restore: bool) {
     let backup = Connection::open(&export_path, false).unwrap();
     let count = backup
         .query_row(
-            "SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('blobs', 'blob_paths')",
+            "SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('blobs', 'legacy_blob_paths')",
             &[],
             |row| Ok(row.column_i64(0)),
         )
         .unwrap();
     assert_eq!(count, 0);
-    backup.execute_batch("CREATE TABLE blobs (unexpected TEXT); CREATE TABLE blob_paths (unexpected TEXT); INSERT INTO blobs VALUES ('ignored'); INSERT INTO blob_paths VALUES ('ignored');").unwrap();
+    backup.execute_batch("CREATE TABLE blobs (unexpected TEXT); CREATE TABLE legacy_blob_paths (unexpected TEXT); INSERT INTO blobs VALUES ('ignored'); INSERT INTO legacy_blob_paths VALUES ('ignored');").unwrap();
     drop(backup);
     let bytes = std::fs::read(export_path).unwrap();
     if restore {
@@ -395,8 +412,8 @@ fn export_excludes_local_tables_and_recovery_ignores_them(restore: bool) {
     } else {
         f.db.merge_plaintext_bytes(&bytes).unwrap();
     }
-    assert_eq!(f.db.get_blob(&local_id).unwrap().unwrap().data, SEALED);
-    assert_eq!(f.db.list_blob_paths("").unwrap(), [PATH]);
+    assert_eq!(f.db.get_blob(&local_id).unwrap().unwrap().data, PLAINTEXT);
+    assert_eq!(f.db.list_legacy_blob_paths("").unwrap(), [PATH]);
 }
 
 #[test]
@@ -409,14 +426,14 @@ fn revision_overflow_fails_without_changing_data() {
         .unwrap();
     assert!(f
         .db
-        .put_blob(&id, "oxide.face", b"new seal", Some("new.dat"), 2000)
+        .put_blob("oxide.face", PLAINTEXT, Some("new.dat"), 2000)
         .is_err());
     assert!(f
         .db
         .update_blob_metadata(&id, Some(b"new"), i64::MAX as u64, 2000)
         .is_err());
-    assert_eq!(f.db.get_blob(&id).unwrap().unwrap().data, SEALED);
-    assert_eq!(f.db.list_blob_paths("").unwrap(), [PATH]);
+    assert_eq!(f.db.get_blob(&id).unwrap().unwrap().data, PLAINTEXT);
+    assert_eq!(f.db.list_legacy_blob_paths("").unwrap(), [PATH]);
 }
 
 #[test]
@@ -440,7 +457,7 @@ fn released_schema_gains_tables_and_released_initializer_can_reopen_them() {
         let cid = blobs::put(conn, 1, &credential, 1000).unwrap();
         conn.execute("INSERT INTO credential_records VALUES (7, 100, ?1, 1000, 9999, 1000, ?2, NULL)",
             params![vec![7; 32], cid.as_slice()]).unwrap();
-        let tables = conn.query_row("SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('blobs', 'blob_paths')", &[], |row| Ok(row.column_i64(0))).unwrap();
+        let tables = conn.query_row("SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('blobs', 'legacy_blob_paths')", &[], |row| Ok(row.column_i64(0))).unwrap();
         assert_eq!(tables, 0);
         7
     };
@@ -452,8 +469,12 @@ fn released_schema_gains_tables_and_released_initializer_can_reopen_them() {
             db.fetch_credential_by_id(credential_id).unwrap(),
             Some(credential.clone())
         );
-        db.put_blob(&id, "oxide.face", SEALED, Some(PATH), 2000)
-            .unwrap()
+        assert_eq!(
+            db.put_blob("oxide.face", PLAINTEXT, Some(PATH), 2000)
+                .unwrap(),
+            id
+        );
+        db.get_blob(&id).unwrap().unwrap().record.revision
     };
     {
         let old = Vault::open(&path, &key, |conn| conn.execute_batch(RELEASED_SCHEMA))
@@ -474,8 +495,12 @@ fn released_schema_gains_tables_and_released_initializer_can_reopen_them() {
     }
     let reopened = CredentialVault::new(&path, &key).unwrap();
     assert_eq!(
-        reopened.get_blob_by_path(PATH).unwrap().unwrap().data,
-        SEALED
+        reopened
+            .get_blob_by_legacy_path(PATH)
+            .unwrap()
+            .unwrap()
+            .data,
+        PLAINTEXT
     );
     assert_eq!(
         reopened.get_blob(&id).unwrap().unwrap().record.revision,
