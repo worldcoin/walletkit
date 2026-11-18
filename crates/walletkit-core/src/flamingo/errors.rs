@@ -26,6 +26,11 @@ pub enum FlamingoMatchRejection {
     UnsupportedMatchStrictness,
     /// The Authenticator Assertion did not verify.
     AatRejected,
+    /// The RP is billed and the request carried no billing nullifier (WIP-107 §4.7).
+    BillingNullifierRequired,
+    /// The RP is billed and the Verifier holds no registration of the request's billing nullifier
+    /// in an active period (WIP-107 §4.7).
+    BillingUnregistered,
     /// Exact malformed-input reason and the location/limit supplied by the service.
     InputRejected {
         /// Failed constraint.
@@ -172,6 +177,8 @@ impl From<FailureReason> for FlamingoMatchRejection {
                 Self::UnsupportedMatchStrictness
             }
             FailureReason::AatRejected => Self::AatRejected,
+            FailureReason::BillingNullifierRequired => Self::BillingNullifierRequired,
+            FailureReason::BillingUnregistered => Self::BillingUnregistered,
             FailureReason::InputRejected {
                 reason,
                 image,

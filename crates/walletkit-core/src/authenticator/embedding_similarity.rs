@@ -1,9 +1,11 @@
 //! Proves a WIP-202 Proof of Embedding Similarity: billing, the Flamingo exchange and the proof.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use alloy_core::primitives::Address;
+use backon::BackoffBuilder as _;
 use flamingo_verifier_client::VerifiedMatchResult;
+use flamingo_verifier_sealed_types::FailureReason;
 use world_id_core::{
     primitives::billing::BillingWitness, EmbeddingSimilarityImages, FieldElement,
     FlamingoResult,
@@ -12,8 +14,12 @@ use world_id_flamingo::FlamingoToken;
 
 use super::{billing_registration::requested_credential, resolve_now, Authenticator};
 use crate::error::WalletKitError;
-use crate::flamingo::{FlamingoDebugReport, FlamingoMatchRejection, FlamingoMatcher};
+use crate::flamingo::{
+    EmbeddingSimilarityMatch, FlamingoDebugReport, FlamingoMatchRejection,
+    FlamingoMatcher,
+};
 use crate::primitives::ParseFromForeignBinding;
+use crate::registration::{polling_backoff, sleep};
 use crate::requests::{ProofRequest, ProofRequestType, ProofResponse};
 
 /// What the app supplies for a Proof of Embedding Similarity, besides the request.
@@ -120,32 +126,28 @@ impl Authenticator {
             }
             None => None,
         };
-        // TODO: Once the Verifier checks registrations, retry once when it reports a fresh one
-        // missing (its follower lags the chain), and re-register after dropping the cached witness
-        // when it stays missing (a reorg dropped it).
-        let billing_nullifier = billing
-            .as_ref()
-            .map_or(FieldElement::ZERO, |witness| witness.billing_nullifier);
 
         let account_inclusion_proof =
             self.fetch_inclusion_proof_with_cache(now).await?;
-        // A registration can take minutes, so the request's expiry starts from a fresh clock.
-        let match_now = resolve_now(fixed_now)?;
         let images = EmbeddingSimilarityImages {
             credential_image: inputs.credential_image,
             live_capture: inputs.live_capture,
             challenge: inputs.challenge,
         };
-        let (verified, debug_report) = match matcher
-            .match_embedding_similarity(
-                request,
-                match_strictness,
-                &images,
-                billing_nullifier,
-                match_now,
+        let (exchanged, billing) = self
+            .match_billed(
+                &BilledExchange {
+                    proof_request,
+                    matcher,
+                    images: &images,
+                    match_strictness,
+                    billing_contract,
+                    fixed_now,
+                },
+                billing,
             )
-            .await?
-        {
+            .await?;
+        let (verified, debug_report) = match exchanged.result {
             VerifiedMatchResult::Success {
                 verified,
                 debug_report,
@@ -170,6 +172,7 @@ impl Authenticator {
             )?,
             verifier_key: verified.verifier_key,
             signing_key_attestation: verified.statement.signing_key_attestation.into(),
+            nonce_salt: exchanged.nonce_salt,
         };
 
         let session_id_r_seed = self.cached_session_seed(request, now);
@@ -193,7 +196,104 @@ impl Authenticator {
     }
 }
 
+/// How often a Verifier may report a fresh registration missing before the World ID registers
+/// again. Its billing state follows the chain within about a block, so this covers the lag.
+const UNREGISTERED_RETRIES: u32 = 2;
+
+/// The longest wait before resending a request the Verifier rejected as unregistered.
+const MAX_UNREGISTERED_DELAY: Duration = Duration::from_secs(8);
+
+/// What every Flamingo request of one Proof of Embedding Similarity shares.
+struct BilledExchange<'a> {
+    proof_request: &'a ProofRequest,
+    matcher: &'a FlamingoMatcher,
+    images: &'a EmbeddingSimilarityImages,
+    match_strictness: u8,
+    billing_contract: Option<Address>,
+    fixed_now: Option<u64>,
+}
+
 impl Authenticator {
+    /// Runs the Flamingo exchange, recovering from the Verifier's billing rejections
+    /// (WIP-107 §4.6), and returns its last result with the billing witness it carried.
+    ///
+    /// Every request is new, with a fresh `nonce` (WIP-201 §4.6), and the Verifier rejects billing
+    /// before the Engine runs, so a resent request costs no inference:
+    /// - `billing_unregistered`: the Verifier has not seen the registration yet, so the request is
+    ///   resent with backoff, up to [`UNREGISTERED_RETRIES`] times.
+    /// - `billing_nullifier_required`, or a registration that stays missing: the billed-RP
+    ///   snapshot was stale or a reorg dropped the registration, so the World ID registers again,
+    ///   once, and resends.
+    ///
+    /// Any other result, including a failed capture, is returned for the app to handle.
+    async fn match_billed(
+        &self,
+        exchange: &BilledExchange<'_>,
+        mut billing: Option<BillingWitness>,
+    ) -> Result<(EmbeddingSimilarityMatch, Option<BillingWitness>), WalletKitError>
+    {
+        let rp_id = exchange.proof_request.0.rp_id;
+        let mut delays = polling_backoff().build();
+        let mut unregistered = 0;
+        let mut registered_again = false;
+        loop {
+            let billing_nullifier = billing
+                .as_ref()
+                .map_or(FieldElement::ZERO, |witness| witness.billing_nullifier);
+            // A registration can take minutes, so each request's expiry starts from a fresh clock.
+            let matched = exchange
+                .matcher
+                .match_embedding_similarity(
+                    &exchange.proof_request.0,
+                    exchange.match_strictness,
+                    exchange.images,
+                    billing_nullifier,
+                    resolve_now(exchange.fixed_now)?,
+                )
+                .await?;
+            let (VerifiedMatchResult::Failed { reason, .. }, Some(billing_contract)) =
+                (&matched.result, exchange.billing_contract)
+            else {
+                return Ok((matched, billing));
+            };
+            match billing_recovery(reason, unregistered, registered_again) {
+                BillingRecovery::Resend => {
+                    unregistered += 1;
+                    tracing::warn!(
+                        %rp_id,
+                        attempt = unregistered,
+                        "the Flamingo Verifier has not seen the billing registration yet; resending"
+                    );
+                    sleep(delays.next().unwrap_or(MAX_UNREGISTERED_DELAY)).await;
+                }
+                BillingRecovery::RegisterAgain => {
+                    registered_again = true;
+                    unregistered = 0;
+                    tracing::warn!(
+                        %rp_id,
+                        ?reason,
+                        "the Flamingo Verifier rejected the billing registration; registering again"
+                    );
+                    let now = resolve_now(exchange.fixed_now)?;
+                    self.forget_billing_registration(
+                        exchange.proof_request,
+                        billing_contract,
+                        now,
+                    )?;
+                    billing = Some(
+                        self.ensure_billing_registration(
+                            exchange.proof_request,
+                            billing_contract,
+                            now,
+                        )
+                        .await?,
+                    );
+                }
+                BillingRecovery::Stop => return Ok((matched, billing)),
+            }
+        }
+    }
+
     /// The billing witness for the request's RP, registering first if needed, or `None` if
     /// `billing_contract` does not bill the RP.
     async fn billing_witness(
@@ -210,5 +310,95 @@ impl Authenticator {
         self.ensure_billing_registration(proof_request, billing_contract, now)
             .await
             .map(Some)
+    }
+}
+
+/// What to do after the Verifier rejected a request of a billed exchange.
+#[derive(Debug, PartialEq, Eq)]
+enum BillingRecovery {
+    /// Resend after a backoff: the Verifier has not seen a fresh registration yet.
+    Resend,
+    /// Drop the cached witness, register again and resend.
+    RegisterAgain,
+    /// Return the rejection.
+    Stop,
+}
+
+/// The recovery from `reason` after `unregistered` resends since the last registration, and whether
+/// the World ID has already registered again in this exchange.
+const fn billing_recovery(
+    reason: &FailureReason,
+    unregistered: u32,
+    registered_again: bool,
+) -> BillingRecovery {
+    match reason {
+        FailureReason::BillingUnregistered if unregistered < UNREGISTERED_RETRIES => {
+            BillingRecovery::Resend
+        }
+        FailureReason::BillingNullifierRequired
+        | FailureReason::BillingUnregistered
+            if !registered_again =>
+        {
+            BillingRecovery::RegisterAgain
+        }
+        _ => BillingRecovery::Stop,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use flamingo_verifier_sealed_types::{ComparisonRole, FailureReason};
+
+    use super::{billing_recovery, BillingRecovery, UNREGISTERED_RETRIES};
+
+    /// Replays the recoveries `match_billed` takes for a Verifier that rejects every request with
+    /// `reason`, returning them in order.
+    fn recoveries(reason: &FailureReason) -> Vec<BillingRecovery> {
+        let (mut unregistered, mut registered_again) = (0, false);
+        let mut taken = Vec::new();
+        loop {
+            let recovery = billing_recovery(reason, unregistered, registered_again);
+            match recovery {
+                BillingRecovery::Resend => unregistered += 1,
+                BillingRecovery::RegisterAgain => {
+                    registered_again = true;
+                    unregistered = 0;
+                }
+                BillingRecovery::Stop => return taken,
+            }
+            taken.push(recovery);
+        }
+    }
+
+    #[test]
+    fn resends_an_unregistered_request_then_registers_again_once() {
+        use BillingRecovery::{RegisterAgain, Resend};
+
+        assert_eq!(UNREGISTERED_RETRIES, 2);
+        assert_eq!(
+            recoveries(&FailureReason::BillingUnregistered),
+            [Resend, Resend, RegisterAgain, Resend, Resend],
+            "at most six requests, with one registration"
+        );
+    }
+
+    #[test]
+    fn registers_once_when_the_verifier_bills_an_rp_the_snapshot_did_not() {
+        assert_eq!(
+            recoveries(&FailureReason::BillingNullifierRequired),
+            [BillingRecovery::RegisterAgain]
+        );
+    }
+
+    #[test]
+    fn returns_every_other_rejection_to_the_app() {
+        for reason in [
+            FailureReason::MatchBelowThreshold(ComparisonRole::OrbSelfie),
+            FailureReason::Replayed,
+            FailureReason::Expired,
+            FailureReason::Internal,
+        ] {
+            assert!(recoveries(&reason).is_empty(), "{reason:?}");
+        }
     }
 }
