@@ -22,6 +22,29 @@ database key in the device keystore; for the types involved, see the
 In the browser, the app supplies the key itself; see
 [Protect the database key](web/package.md#protect-the-database-key).
 
+### Local blobs
+
+The native `CredentialStore` API also keeps owner-defined bytes in the encrypted
+vault with `put_blob`, `get_blob`, and `get_blob_by_path`. The owner supplies a
+32-byte `BlobId`, an opaque kind (such as `oxide.face`), and optionally a path
+relative to its user data directory. WalletKit does not verify the id against
+sealed bytes. Reusing an id replaces its data and kind, preserves its metadata
+and creation time, and increments its revision. Reusing a path moves that alias
+without deleting the previous blob.
+
+`list_blob_paths` uses a literal, case-sensitive prefix; an empty prefix lists
+all paths and a trailing `/` selects a directory. Paths use `/`, normalize `.`
+and repeated separators, and reject absolute paths, backslashes, drive prefixes,
+NULs and `..` components. `list_blobs` reads metadata without loading blob data.
+`update_blob_metadata` requires the revision read by the caller; a missing blob
+or changed revision returns `StorageError::BlobRevisionConflict`.
+
+These blobs and aliases are local-only. They are excluded from vault export,
+merge and restore, do not schedule credential backups, and outlive credential
+deletion. Owners manage retention with `delete_blob_path` (alias only) and
+`delete_blob` (content and every alias). Removing a blob leaves credential links
+intact. Future transfers must verify the plaintext id after unsealing.
+
 ## From registration to stored credential
 
 The following diagram shows the calls between the app, WalletKit, and the World ID

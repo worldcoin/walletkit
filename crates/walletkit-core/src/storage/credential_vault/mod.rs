@@ -5,6 +5,9 @@
 //! integrity-check machinery and the shared `blob_objects` table come from
 //! [`walletkit_db`].
 
+mod blob_store;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod blob_store_tests;
 mod merge;
 mod schema;
 #[cfg(test)]
@@ -27,7 +30,8 @@ use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value}
 /// `init_leaf_index`) with the authoritative `leaf_index` from the
 /// authenticator.
 ///
-/// **Note:** New tables added to the vault schema must be added here too.
+/// Local-only `blobs` and `blob_paths` are intentionally excluded, including from
+/// merge and restore. Add only portable credential tables here.
 pub(crate) const BACKUP_TABLES: &[&str] =
     &["credential_records", "blob_objects", "credential_blob_refs"];
 

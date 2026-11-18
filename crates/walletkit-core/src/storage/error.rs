@@ -88,6 +88,10 @@ pub enum StorageError {
     #[error("credential does not match stored payload")]
     CredentialMismatch,
 
+    /// The blob is absent or its revision changed before the metadata write.
+    #[error("blob revision conflict")]
+    BlobRevisionConflict,
+
     /// Corrupted cache entry
     #[error("corrupted cache entry at {key_prefix}")]
     CorruptedCacheEntry {
