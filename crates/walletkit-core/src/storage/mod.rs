@@ -14,9 +14,10 @@
 //!
 //! 1. **Vault database (`account.vault.sqlite`)** — authoritative storage for
 //!    credentials, associated data blobs, issuer subject blinding factors, links from
-//!    credentials to their PCP blob ids, local-only content-addressed blobs and legacy path
-//!    aliases, and the account leaf index. Local blobs are excluded from export and
-//!    recovery and have an independent lifetime. Corruption is a hard failure.
+//!    credentials to their PCP blob ids, content-addressed blobs and legacy path
+//!    aliases, and the account leaf index. Linked blobs participate in export and
+//!    recovery; metadata and legacy paths stay local. Blobs have an independent
+//!    lifetime. Corruption is a hard failure.
 //!    See [`crate::storage::CredentialVault`].
 //! 2. **Cache database (`account.cache.sqlite`)** — non-authoritative, regenerable
 //!    entries: Merkle inclusion proof cache, per-account session seed, and nullifier
@@ -64,7 +65,7 @@ pub use credential_vault::CredentialVault;
 pub use error::{StorageError, StorageResult};
 pub use keys::StorageKeys;
 pub use paths::StoragePaths;
-pub use stored_blob::{BlobRecord, StoredBlob};
+pub use stored_blob::{BlobRecord, StoredBlob, VaultExport};
 pub use traits::{
     ActivityChangedListener, AtomicBlobStore, DeviceKeystore, StorageProvider,
     VaultChangedListener,

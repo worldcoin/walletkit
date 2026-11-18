@@ -22,7 +22,7 @@ database key in the device keystore; for the types involved, see the
 In the browser, the app supplies the key itself; see
 [Protect the database key](web/package.md#protect-the-database-key).
 
-### Local blobs
+### PCP blobs
 
 The native `CredentialStore` API keeps plaintext PCP archives in the encrypted
 vault with `put_blob`, `get_blob`, and `get_blob_by_legacy_path`. The outer device
@@ -50,11 +50,36 @@ metadata without loading blob data.
 `update_blob_metadata` requires the revision read by the caller; a missing blob
 or changed revision returns `StorageError::BlobRevisionConflict`.
 
-These blobs and aliases are local-only. They are excluded from vault export,
-merge and restore, do not schedule credential backups, and outlive credential
-deletion. Owners manage retention with `delete_legacy_blob_path` (alias only) and
-`delete_blob` (content and every alias). Removing a blob leaves credential links
-intact.
+Blobs outlive credential deletion. Owners manage retention with
+`delete_legacy_blob_path` (alias only) and `delete_blob` (content and every alias).
+Removing a blob leaves credential links intact. Putting a blob that an existing
+credential link names schedules a backup; putting an unlinked blob does not.
+
+### Vault export and recovery
+
+`export_vault(credential_ids)` returns `VaultExport { bytes, missing_blob_ids }`.
+Use `None` to back up every credential, or `Some(ids)` to transfer a selection.
+An empty selection or unknown credential ids is an error. The deprecated
+`export_vault_for_backup()` wrapper returns `export_vault(None).bytes`.
+
+The plaintext SQLite payload contains the selected credentials, their credential
+and associated-data objects, their PCP links, and the blobs those links name.
+Shared blobs appear once. Each blob carries its content id, kind, data and
+timestamps. Metadata, revisions and legacy paths stay local; unlinked PCPs never
+leave the device. Links whose data is missing still travel and their distinct ids
+are returned in `missing_blob_ids`. Backup can continue while PCP files are backed
+up separately; transfer can copy the missing PCPs first or report an error.
+The caller protects the plaintext bytes and checks `bytes.len()` against its
+backup or transfer size cap.
+
+`import_vault_from_backup` restores into an empty credential vault; existing
+unlinked local blobs do not prevent restore. `merge_vault_from_backup` preserves
+local credentials and remaps incoming links to the destination credential ids.
+Both operations verify incoming blob ids against their data and reject the
+entire transaction on a mismatch. Existing blobs keep their local kind, metadata,
+revision and timestamps. New blobs keep the incoming kind and timestamps, start
+with NULL metadata and receive a fresh revision. Backups without a `blobs` table
+still import, and older importers ignore the extra table.
 
 ## From registration to stored credential
 

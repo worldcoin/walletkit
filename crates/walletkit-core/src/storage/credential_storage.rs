@@ -19,6 +19,8 @@ use super::traits::{AtomicBlobStore, DeviceKeystore};
 use super::types::{
     ActivityEntry, ActivityMetadata, ActivityQuery, BilledRpsSnapshot, CredentialRecord,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use super::VaultExport;
 use super::ACCOUNT_KEYS_FILENAME;
 use super::{CacheDb, CredentialVault};
 use super::{StorageLock, StorageLockGuard};
@@ -48,10 +50,12 @@ struct CleanupFile(String);
 impl Drop for CleanupFile {
     fn drop(&mut self) {
         if let Err(e) = std::fs::remove_file(&self.0) {
-            tracing::error!(
-                "Failed to delete plaintext vault temp file {}: {e}",
-                self.0
-            );
+            if e.kind() != std::io::ErrorKind::NotFound {
+                tracing::error!(
+                    "Failed to delete plaintext vault temp file {}: {e}",
+                    self.0
+                );
+            }
         }
     }
 }
@@ -398,7 +402,8 @@ impl CredentialStore {
     /// Revisions start at a random positive value and increment on every put or
     /// metadata write, reducing stale metadata CAS matches after deletion/recreation
     /// of identical data. `now` is a Unix timestamp.
-    /// Blobs are local-only: no backup notification, export, merge, or credential GC.
+    /// Linked blobs participate in export and recovery; putting one notifies the backup
+    /// listener. Unlinked blobs stay local. Credential GC never removes blobs.
     /// Legacy paths use `/`; redundant separators and `.` are normalized. Absolute paths,
     /// drive prefixes, backslashes, NULs and `..` components are rejected.
     ///
@@ -415,11 +420,16 @@ impl CredentialStore {
         legacy_path: Option<String>,
         now: u64,
     ) -> StorageResult<Arc<BlobId>> {
-        self.lock_inner()?
-            .state()?
-            .vault
-            .put_blob(kind, data, legacy_path.as_deref(), now)
-            .map(Arc::new)
+        let (blob_id, linked) = self.lock_inner()?.state()?.vault.put_blob(
+            kind,
+            data,
+            legacy_path.as_deref(),
+            now,
+        )?;
+        if linked {
+            self.notify_vault_changed();
+        }
+        Ok(Arc::new(blob_id))
     }
 
     /// Reads a local blob, including its data, or returns `None` when absent.
@@ -623,7 +633,7 @@ impl CredentialStore {
     /// Adds credentials from a backup to an initialized vault, atomically and idempotently.
     /// Preserves local-only credentials and local record IDs. Returns the number of newly added credentials.
     /// Also adds the backup's PCP blob links, including to credentials the vault already holds;
-    /// the vault-changed listener is notified when credentials or links were added.
+    /// the vault-changed listener is notified when credentials, links or blobs were added.
     /// The host must authenticate the backup as belonging to this account before calling.
     ///
     /// # Errors
@@ -639,10 +649,10 @@ impl CredentialStore {
             inner.cleanup_stale_backup_files();
             inner.state()?.vault.merge_plaintext_bytes(backup_bytes)?
         };
-        if outcome.added_records != 0 || outcome.added_blob_refs != 0 {
+        if outcome.records != 0 || outcome.blob_refs != 0 || outcome.blobs != 0 {
             self.notify_vault_changed();
         }
-        Ok(outcome.added_records)
+        Ok(outcome.records)
     }
 
     /// Permanently destroys all credential storage data.
@@ -674,29 +684,56 @@ impl CredentialStore {
 #[cfg(not(target_arch = "wasm32"))]
 #[uniffi::export]
 impl CredentialStore {
-    /// Exports the current vault as an in-memory plaintext (unencrypted)
-    /// `SQLite` database for backup.
-    ///
-    /// The host app is responsible for persisting or uploading the returned
-    /// bytes
+    /// Exports credentials and their linked PCP blobs as a plaintext SQLite database.
+    /// `None` selects every credential for backup; `Some(ids)` selects only those
+    /// credentials for transfer. Shared blobs are included once. Metadata and legacy
+    /// paths stay local. Linked blobs absent from this device are reported separately.
+    /// The caller must protect the plaintext bytes and enforce any payload size cap.
     ///
     /// # Errors
-    ///
-    /// Returns an error if the store is not initialized or the export fails.
+    /// Returns an error for an empty selection, unknown ids (listed in the error),
+    /// an uninitialized store, or an export failure.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI optional credential selection"
+    )]
     #[expect(
         clippy::significant_drop_tightening,
-        reason = "lock held intentionally for the full operation to prevent concurrent cleanup from deleting in-use temp files"
+        reason = "lock held for the full operation to prevent concurrent cleanup of in-use temp files"
     )]
-    pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
+    pub fn export_vault(
+        &self,
+        credential_ids: Option<Vec<u64>>,
+    ) -> StorageResult<VaultExport> {
         let inner = self.lock_inner()?;
         let _guard = inner.guard()?;
         inner.cleanup_stale_backup_files();
-        let path = inner.export_vault_for_backup_to_file()?;
-        let _cleanup = CleanupFile(path.clone());
-
-        std::fs::read(&path).map_err(|e| {
+        let path = inner.temp_backup_path();
+        let _cleanup = CleanupFile(path.to_string_lossy().into_owned());
+        let missing_blob_ids = inner
+            .state()?
+            .vault
+            .export_selected_plaintext(&path, credential_ids.as_deref())?
+            .into_iter()
+            .map(Arc::new)
+            .collect();
+        let bytes = std::fs::read(&path).map_err(|e| {
             StorageError::VaultDb(format!("failed to read exported vault: {e}"))
+        })?;
+        Ok(VaultExport {
+            bytes,
+            missing_blob_ids,
         })
+    }
+
+    /// Exports every credential and its linked blobs for backup.
+    ///
+    /// Deprecated: use [`Self::export_vault`] with `None` to also receive missing blob ids.
+    ///
+    /// # Errors
+    /// Returns an error if the store is not initialized or the export fails.
+    pub fn export_vault_for_backup(&self) -> StorageResult<Vec<u8>> {
+        Ok(self.export_vault(None)?.bytes)
     }
 
     /// Imports credentials from an in-memory plaintext vault backup.
@@ -717,7 +754,7 @@ impl CredentialStore {
 
     /// Registers a listener that is called after every successful vault
     /// mutation that warrants a new backup: a credential stored, deleted or
-    /// merged, or a PCP blob link added.
+    /// merged, a PCP blob link added, or a linked blob stored.
     ///
     /// Only one listener can be active at a time — calling this replaces any
     /// previously registered listener. The previous delivery thread shuts down
@@ -1356,20 +1393,6 @@ impl CredentialStoreInner {
         let nullifier = nullifier.to_be_bytes();
         let state = self.state_mut()?;
         state.cache.replay_guard_set(nullifier, now)
-    }
-
-    /// Exports the vault to a temporary plaintext file in the worldid directory.
-    /// Returns the path to the file. The caller is responsible for cleanup.
-    ///
-    /// Caller holds the cross-process lock for the duration of the export so a
-    /// concurrent writer can't interleave between the stale-file cleanup
-    /// and the ATTACH-based plaintext copy.
-    #[cfg(not(target_arch = "wasm32"))]
-    fn export_vault_for_backup_to_file(&self) -> StorageResult<String> {
-        let state = self.state()?;
-        let dest = self.temp_backup_path();
-        state.vault.export_plaintext(&dest)?;
-        Ok(dest.to_string_lossy().to_string())
     }
 
     /// Removes any stale plaintext backup temp files left behind by a
@@ -2330,6 +2353,128 @@ mod tests {
             Err(mpsc::RecvTimeoutError::Disconnected)
         );
         cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn selected_export_wrapper_and_linked_put_notifications() {
+        let root = temp_root_path();
+        let store =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&root))
+                .unwrap();
+        store.init(42, 1000).unwrap();
+        let credential: Credential = world_id_core::Credential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        let id = store
+            .store_credential(&credential, &FieldElement::from(7u64), 9999, None, 1000)
+            .unwrap();
+        let blob = crate::storage::blob_id(b"linked pcp".to_vec());
+        store
+            .add_credential_blobs(
+                id,
+                Arc::new(credential),
+                vec![Arc::clone(&blob)],
+                1000,
+            )
+            .unwrap();
+        let (tx, rx) = mpsc::channel();
+        store.set_vault_changed_listener(Arc::new(ChannelVaultListener(tx)));
+        let export = store.export_vault(Some(vec![id])).unwrap();
+        assert_eq!(export.missing_blob_ids, [Arc::clone(&blob)]);
+        assert_eq!(
+            store.export_vault_for_backup().unwrap(),
+            store.export_vault(None).unwrap().bytes
+        );
+        assert!(store.export_vault(Some(vec![])).is_err());
+        assert!(store
+            .export_vault(Some(vec![999]))
+            .unwrap_err()
+            .to_string()
+            .contains("999"));
+        store
+            .put_blob("oxide.face", b"unlinked pcp", None, 1000)
+            .unwrap();
+        for now in [1000, 2000] {
+            assert_eq!(
+                store
+                    .put_blob("oxide.orb", b"linked pcp", None, now)
+                    .unwrap(),
+                blob
+            );
+            rx.recv_timeout(std::time::Duration::from_secs(1))
+                .expect("linked insert and upsert notify");
+        }
+        assert!(store
+            .export_vault(None)
+            .unwrap()
+            .missing_blob_ids
+            .is_empty());
+        store
+            .put_blob("oxide.face", b"unlinked pcp", None, 2000)
+            .unwrap();
+        assert!(store
+            .put_blob(
+                "oxide.orb",
+                b"linked pcp",
+                Some("../invalid".to_owned()),
+                3000
+            )
+            .is_err());
+        drop(store);
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(1)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        );
+        cleanup_test_storage(&root);
+    }
+
+    #[test]
+    fn merge_notifies_when_only_a_missing_linked_blob_is_added() {
+        let source_root = temp_root_path();
+        let receiver_root = temp_root_path();
+        let source =
+            CredentialStore::from_provider(&InMemoryStorageProvider::new(&source_root))
+                .unwrap();
+        let receiver = CredentialStore::from_provider(&InMemoryStorageProvider::new(
+            &receiver_root,
+        ))
+        .unwrap();
+        source.init(42, 1000).unwrap();
+        receiver.init(42, 1000).unwrap();
+        let credential: Credential = world_id_core::Credential::new()
+            .issuer_schema_id(100)
+            .genesis_issued_at(1000)
+            .into();
+        let id = source
+            .store_credential(&credential, &FieldElement::from(7u64), 9999, None, 1000)
+            .unwrap();
+        source
+            .add_credential_blobs(
+                id,
+                Arc::new(credential),
+                vec![crate::storage::blob_id(b"pcp".to_vec())],
+                1000,
+            )
+            .unwrap();
+        receiver
+            .merge_vault_from_backup(&source.export_vault(None).unwrap().bytes)
+            .unwrap();
+        source.put_blob("oxide.orb", b"pcp", None, 1000).unwrap();
+        let bytes = source.export_vault(None).unwrap().bytes;
+        let (tx, rx) = mpsc::channel();
+        receiver.set_vault_changed_listener(Arc::new(ChannelVaultListener(tx)));
+        assert_eq!(receiver.merge_vault_from_backup(&bytes).unwrap(), 0);
+        rx.recv_timeout(std::time::Duration::from_secs(1))
+            .expect("new blob notifies even without new credentials or links");
+        assert_eq!(receiver.merge_vault_from_backup(&bytes).unwrap(), 0);
+        drop(receiver);
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(1)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        );
+        cleanup_test_storage(&source_root);
+        cleanup_test_storage(&receiver_root);
     }
 
     #[test]

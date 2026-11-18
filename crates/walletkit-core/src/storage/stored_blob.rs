@@ -1,4 +1,4 @@
-//! Content-addressed local blobs, independent of credential lifetime and backups.
+//! Content-addressed blobs with an independent lifetime and link-scoped export.
 
 use std::sync::Arc;
 
@@ -42,5 +42,21 @@ impl std::fmt::Debug for BlobRecord {
 impl std::fmt::Debug for StoredBlob {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("StoredBlob").finish_non_exhaustive()
+    }
+}
+
+/// A plaintext credential export for backup or transfer. Protect `bytes` before
+/// persisting or sending it; payload size limits are the caller's responsibility.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct VaultExport {
+    /// A plaintext SQLite database containing selected credentials and linked blobs.
+    pub bytes: Vec<u8>,
+    /// Distinct linked blob ids absent from the local store, in id order.
+    pub missing_blob_ids: Vec<Arc<BlobId>>,
+}
+
+impl std::fmt::Debug for VaultExport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VaultExport").finish_non_exhaustive()
     }
 }

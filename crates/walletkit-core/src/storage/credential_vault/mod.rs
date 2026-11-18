@@ -8,7 +8,13 @@
 mod blob_store;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod blob_store_tests;
+mod export;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod export_tests;
 mod merge;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "fixtures/merge-v0.30.0.rs"]
+mod released_merge;
 mod schema;
 #[cfg(test)]
 mod tests;
@@ -23,15 +29,10 @@ use secrecy::SecretBox;
 use walletkit_db::{blobs, Vault};
 use walletkit_sqlite::{cipher, params, Error as DbError, Row, StepResult, Value};
 
-/// Tables included in plaintext vault backups, in order.
-///
-/// `vault_meta` is intentionally excluded: on restore, the destination vault
-/// already has its own `vault_meta` (created by `schema::ensure_schema` +
-/// `init_leaf_index`) with the authoritative `leaf_index` from the
-/// authenticator.
-///
-/// Local-only `blobs` and `legacy_blob_paths` are intentionally excluded, including from
-/// merge and restore. Add only portable credential tables here.
+/// Credential tables that must be empty for restore. Keep this list and the
+/// portable-table queries in `export` in sync. Export also carries linked `blobs`
+/// rows, which do not prevent restore; metadata and `legacy_blob_paths` stay local.
+/// `vault_meta` stays local: the authenticator supplies the authoritative leaf index.
 pub(crate) const BACKUP_TABLES: &[&str] =
     &["credential_records", "blob_objects", "credential_blob_refs"];
 
@@ -482,7 +483,8 @@ impl CredentialVault {
         cipher::integrity_check(self.vault.connection()).map_err(|e| map_db_err(&e))
     }
 
-    /// Exports a plaintext (unencrypted) copy of the vault to `dest`.
+    /// Exports all credentials and their linked blobs as plaintext SQLite at `dest`.
+    /// Metadata, revisions, legacy paths and unlinked blobs stay local.
     ///
     /// Callers that need cross-process exclusion (to keep a concurrent
     /// writer from interleaving between stale-file cleanup and the
@@ -494,14 +496,7 @@ impl CredentialVault {
     ///
     /// Returns an error if the export fails.
     pub fn export_plaintext(&self, dest: &Path) -> StorageResult<()> {
-        let conn = self.vault.connection();
-        if dest.exists() {
-            std::fs::remove_file(dest).map_err(|e| {
-                StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
-            })?;
-        }
-        cipher::export_plaintext_copy(conn, dest, BACKUP_TABLES)
-            .map_err(|e| map_db_err(&e))
+        self.export_selected_plaintext(dest, None).map(|_| ())
     }
 }
 
