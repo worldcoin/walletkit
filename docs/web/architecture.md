@@ -43,10 +43,12 @@ module-level function, a static function of a class, or a method of an object
 handle.
 
 Rust objects can't cross `postMessage`, so the worker keeps them in a handle table.
-When a call returns a Rust object, the worker stores it and returns `{ $ref:
-handle }`, and the page wraps the handle in a proxy. When the page passes a proxy
-as an argument, the page sends its handle, and the worker swaps it back for the
-object. Every other value crosses as structured-clone data.
+When a call returns a Rust object, also inside an array or a plain-object record,
+the worker stores it and returns `{ $ref: handle }`, and the page wraps the handle
+in a proxy. When the page passes a proxy as an argument, directly or inside an
+array, the page sends its handle, and the worker swaps it back for the object. No
+argument is a record that holds an object, so the page does not look inside
+records. Every other value crosses as structured-clone data.
 
 An object stays in the worker until one of the following happens:
 
@@ -91,7 +93,9 @@ zeroizing memory until its last owner releases it.
 The facade converts a Rust error into a JavaScript `Error`. The error's `name` is
 the error type, its `code` is the variant, and its `detail` holds the variant's
 fields; the worker appends `detail` to the message before sending it to the page.
-Every message and detail passes through `sanitize_hex_secrets`. Argument
+Fields a host acts on, such as the `domain` of `BridgeNotAllowed`, are also set as
+properties, which the worker forwards and the page copies onto its `Error`. Every
+message and detail passes through `sanitize_hex_secrets`. Argument
 validation throws a `TypeError`.
 
 A Rust panic traps the WASM module and leaves its memory in an unknown state. The
