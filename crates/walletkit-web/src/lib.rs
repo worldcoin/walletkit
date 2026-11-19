@@ -17,6 +17,7 @@ mod authenticator;
 mod enrollment;
 mod error;
 mod js;
+mod records;
 mod storage;
 mod values;
 
@@ -26,97 +27,16 @@ use js_sys::BigInt;
 use walletkit_core::{
     authenticator::recovery_data_from_seed,
     logger::{emit_log, init_logging, sanitize_hex_secrets, LogLevel},
-    proof_request_credential_constraints_check::{
-        check_credentials_against_proof_request, CredentialConstraintsCheckResult,
-    },
+    proof_request_credential_constraints_check::check_credentials_against_proof_request,
 };
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    error::{invalid_argument, to_js},
+    error::to_js,
+    js::{FromJs, ToJs},
     storage::JsCredentialStore,
     values::JsProofRequest,
 };
-
-#[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &str = r#"
-export type Environment = "production" | "staging";
-export type Region = "eu" | "us" | "ap";
-export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
-
-export interface RecoveryData {
-  authenticatorAddress: string;
-  authenticatorPubkey: string;
-  offchainSignerCommitment: string;
-}
-
-export interface RecoveryUpdateSignature {
-  signature: Uint8Array;
-  /** 0x-prefixed, zero-padded 256-bit hex string. */
-  nonce: string;
-}
-
-export type RegistrationStatus =
-  | { state: "queued" | "batching" | "submitted" | "finalized" }
-  | { state: "failed"; error: string; errorCode?: string };
-
-export type GatewayRequestStatus =
-  | { state: "queued" | "batching" }
-  | { state: "submitted" | "finalized"; txHash: string }
-  | { state: "failed"; error: string; errorCode?: string };
-
-export interface CredentialRecord {
-  credentialId: bigint;
-  issuerSchemaId: bigint;
-  genesisIssuedAt: bigint;
-  expiresAt: bigint;
-  isExpired: boolean;
-}
-
-export type ActivityOutcome =
-  | "completed"
-  | "declined"
-  | "cancelled"
-  | "failed"
-  | "incomplete";
-
-export type ActivityFailureReason =
-  | "networkerror"
-  | "timeout"
-  | "deviceauthenticationfailed"
-  | "proofgenerationfailed"
-  | "relyingpartyrejected";
-
-export interface ActivityEntry {
-  id?: bigint;
-  rpId: bigint;
-  appIdentifier: string;
-  clientId: string;
-  /** Local-only diagnostic ID. Excluded from vault backups; keep out of logs. */
-  challengeId?: string;
-  /** World ID protocol version. */
-  protocol: 3 | 4;
-  timestamp?: bigint;
-  outcome: ActivityOutcome;
-  issuerSchemaIds: bigint[];
-  failureReason?: ActivityFailureReason;
-}
-
-export interface ActivityMetadata {
-  totalCount: bigint;
-}
-
-export interface CredentialConstraintsCheckItem {
-  identifier: string;
-  issuerSchemaId: bigint;
-  hasCredential: boolean;
-}
-
-export interface CredentialConstraintsCheckResult {
-  isSatisfied: boolean;
-  checkResults: CredentialConstraintsCheckItem[];
-}
-"#;
 
 /// Forwards Rust panics to the console before the module traps.
 ///
@@ -149,15 +69,7 @@ pub fn emit_log_js(
     #[wasm_bindgen(unchecked_param_type = "LogLevel")] level: &str,
     message: String,
 ) -> Result<(), JsValue> {
-    let level = match level {
-        "trace" => LogLevel::Trace,
-        "debug" => LogLevel::Debug,
-        "info" => LogLevel::Info,
-        "warn" => LogLevel::Warn,
-        "error" => LogLevel::Error,
-        _ => return Err(invalid_argument(&format!("Unknown log level: {level}"))),
-    };
-    emit_log(level, message);
+    emit_log(LogLevel::from_js(level.into(), "log level")?, message);
     Ok(())
 }
 
@@ -167,15 +79,7 @@ pub fn emit_log_js(
 /// Throws a `WalletKitError` when the seed is invalid.
 #[wasm_bindgen(js_name = recoveryDataFromSeed, unchecked_return_type = "RecoveryData")]
 pub fn recovery_data_from_seed_js(seed: Vec<u8>) -> Result<JsValue, JsValue> {
-    let data = recovery_data_from_seed(seed).map_err(to_js)?;
-    js::object(&[
-        ("authenticatorAddress", data.authenticator_address.into()),
-        ("authenticatorPubkey", data.authenticator_pubkey.into()),
-        (
-            "offchainSignerCommitment",
-            data.offchain_signer_commitment.into(),
-        ),
-    ])
+    recovery_data_from_seed(seed).map_err(to_js)?.to_js()
 }
 
 /// Checks whether the stored, unexpired credentials can satisfy `request`.
@@ -190,23 +94,7 @@ pub fn check_credentials_against_proof_request_js(
     now: BigInt,
 ) -> Result<JsValue, JsValue> {
     let now = js::u64_arg("now", now)?;
-    let CredentialConstraintsCheckResult {
-        is_satisfied,
-        check_results,
-    } = check_credentials_against_proof_request(&request.0, &store.0, now)
-        .map_err(to_js)?;
-    let check_results = check_results
-        .iter()
-        .map(|item| {
-            js::object(&[
-                ("identifier", item.identifier.as_str().into()),
-                ("issuerSchemaId", item.issuer_schema_id.into()),
-                ("hasCredential", item.has_credential.into()),
-            ])
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    js::object(&[
-        ("isSatisfied", is_satisfied.into()),
-        ("checkResults", js::array(check_results)),
-    ])
+    check_credentials_against_proof_request(&request.0, &store.0, now)
+        .map_err(to_js)?
+        .to_js()
 }

@@ -9358,11 +9358,13 @@ name = "walletkit-web"
 version = "0.30.0"
 dependencies = [
  "js-sys",
+ "ruint-uniffi",
  "selfie-enrollment-api-types",
  "selfie-enrollment-client",
  "selfie-enrollment-sealed-types",
  "serde_json",
  "walletkit-core",
+ "walletkit-web-macros",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
