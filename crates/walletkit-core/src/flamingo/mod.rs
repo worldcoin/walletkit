@@ -316,7 +316,7 @@ impl FlamingoMatcher {
         images: &EmbeddingSimilarityImages,
         billing_nullifier: world_id_core::FieldElement,
         now: u64,
-    ) -> Result<VerifiedMatchResult, FlamingoError> {
+    ) -> Result<EmbeddingSimilarityMatch, FlamingoError> {
         let engine_provider = self.engine_provider.as_deref().ok_or_else(|| {
             FlamingoError::Configuration(
                 "a trusted Engine Provider must be supplied with with_engine_provider"
@@ -525,11 +525,18 @@ struct EmbeddingSimilarityExchange<'a> {
     now: u64,
 }
 
+/// The Verifier's result for one Proof of Embedding Similarity request.
+pub(crate) struct EmbeddingSimilarityMatch {
+    pub result: VerifiedMatchResult,
+    /// The salt the request's `nonce` was derived with, which the proof needs (WIP-202 §4.4).
+    pub nonce_salt: world_id_core::FieldElement,
+}
+
 async fn match_embedding_similarity<C: MatchClient>(
     client: &C,
     engine_provider: &FlamingoEngineProvider,
     exchange: &EmbeddingSimilarityExchange<'_>,
-) -> Result<VerifiedMatchResult, FlamingoError> {
+) -> Result<EmbeddingSimilarityMatch, FlamingoError> {
     let request_timeout = engine_provider.embedding_similarity_timeout();
     let mut reassigned = false;
 
@@ -539,7 +546,8 @@ async fn match_embedding_similarity<C: MatchClient>(
         let release = engine_provider
             .trusted_release(C::attested_release(&session))
             .ok_or(FlamingoError::NoSupportedEngine)?;
-        let request = world_id_core::flamingo_request(
+        // Each request gets a fresh `nonce`, so the Verifier never sees one twice (WIP-201 §4.6).
+        let attempt = world_id_core::flamingo_request(
             exchange.proof_request,
             release,
             exchange.match_strictness,
@@ -549,8 +557,13 @@ async fn match_embedding_similarity<C: MatchClient>(
         )
         .map_err(embedding_similarity_request_error)?;
 
-        match client.request_match(session, &request).await {
-            Ok(result) => return Ok(result),
+        match client.request_match(session, &attempt.request).await {
+            Ok(result) => {
+                return Ok(EmbeddingSimilarityMatch {
+                    result,
+                    nonce_salt: attempt.nonce_salt,
+                })
+            }
             Err(ClientError::ReassignRequired) if !reassigned => reassigned = true,
             Err(error) => return Err(verifier_error(&error)),
         }
@@ -1610,7 +1623,9 @@ mod tests {
         match_strictness: u8,
         images: &EmbeddingSimilarityImages,
     ) -> Result<MatchResult, FlamingoError> {
-        match_embedding_with(client, &engines(), match_strictness, images).await
+        match_embedding_with(client, &engines(), match_strictness, images)
+            .await
+            .map(|matched| matched.result)
     }
 
     async fn match_embedding_with(
@@ -1618,7 +1633,7 @@ mod tests {
         engine_provider: &FlamingoEngineProvider,
         match_strictness: u8,
         images: &EmbeddingSimilarityImages,
-    ) -> Result<MatchResult, FlamingoError> {
+    ) -> Result<super::EmbeddingSimilarityMatch, FlamingoError> {
         let proof_request = embedding_similarity_request(b"challenge image", None);
         match_embedding_similarity(
             client,
@@ -1638,14 +1653,28 @@ mod tests {
     async fn embedding_similarity_runs_the_attested_trusted_release() {
         let client = FakeClient::new([Ok(verified(DebugReport::NotProduced))]);
 
-        let result = match_embedding(&client, 2, &images()).await.unwrap();
+        let matched = match_embedding_with(&client, &engines(), 2, &images())
+            .await
+            .unwrap();
 
-        assert!(matches!(result, MatchResult::Success { .. }));
+        assert!(matches!(matched.result, MatchResult::Success { .. }));
         assert_eq!(client.sent(), [(1, 2, provider().1)]);
         let requests = client.requests.lock().unwrap().clone();
         let [request] = requests.as_slice() else {
             panic!("expected one request");
         };
+        let rp_nonce = embedding_similarity_request(b"challenge image", None)
+            .0
+            .nonce;
+        assert_eq!(
+            request.nonce,
+            world_id_proof::embedding_similarity_proof::flamingo_nonce(
+                rp_nonce,
+                matched.nonce_salt
+            ),
+            "the Verifier sees only the nonce derived from the RP's and the returned salt"
+        );
+        assert_ne!(request.nonce, rp_nonce);
         assert_eq!(request.billing_nullifier, 11u64.into());
         assert_eq!(request.expires_at, 1_700_000_300);
         let payload = request.payload().unwrap();
@@ -1712,6 +1741,11 @@ mod tests {
         ]);
         assert!(match_embedding(&client, 2, &images()).await.is_ok());
         assert_eq!(client.assignments.load(Ordering::Relaxed), 2);
+        let requests = client.requests.lock().unwrap().clone();
+        let [first, second] = requests.as_slice() else {
+            panic!("expected two requests");
+        };
+        assert_ne!(first.nonce, second.nonce, "each request gets a fresh nonce");
 
         let client = FakeClient::new([
             Err(ClientError::ReassignRequired),

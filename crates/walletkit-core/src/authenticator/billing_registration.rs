@@ -58,16 +58,7 @@ impl Authenticator {
             });
         }
         let request = &proof_request.0;
-        let periods = candidate_periods(active_periods(now)?);
-        let scopes: Vec<BillingContext> = periods
-            .iter()
-            .map(|&period_start| BillingContext {
-                chain_id: U256::from(self.inner.config.chain_id()),
-                billing_contract,
-                rp_id: request.rp_id,
-                period_start,
-            })
-            .collect();
+        let scopes = self.billing_scopes(proof_request, billing_contract, now)?;
 
         for scope in &scopes {
             if let Some(witness) =
@@ -130,6 +121,41 @@ impl Authenticator {
         Err(WalletKitError::BillingCapacityExhausted)
     }
 
+    /// Drops the billing witnesses cached for the RP of `proof_request` in both active periods,
+    /// so the next [`Self::ensure_billing_registration`] registers again (WIP-107 §4.6).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(super) fn forget_billing_registration(
+        &self,
+        proof_request: &ProofRequest,
+        billing_contract: Address,
+        now: u64,
+    ) -> Result<(), WalletKitError> {
+        for scope in self.billing_scopes(proof_request, billing_contract, now)? {
+            self.store
+                .remove_billing_witness(&scope, proof_request.0.oprf_key_id)?;
+        }
+        Ok(())
+    }
+
+    /// The billing contexts of the RP of `proof_request` to register in, in the order of
+    /// [`candidate_periods`].
+    fn billing_scopes(
+        &self,
+        proof_request: &ProofRequest,
+        billing_contract: Address,
+        now: u64,
+    ) -> Result<Vec<BillingContext>, WalletKitError> {
+        Ok(candidate_periods(active_periods(now)?)
+            .into_iter()
+            .map(|period_start| BillingContext {
+                chain_id: U256::from(self.inner.config.chain_id()),
+                billing_contract,
+                rp_id: proof_request.0.rp_id,
+                period_start,
+            })
+            .collect())
+    }
+
     /// Polls the gateway until it finalizes `request_id`, or reports why it did not, within
     /// [`FINALIZATION_TIMEOUT`]. A poll still in flight at the deadline is abandoned.
     async fn await_finalization(
@@ -143,19 +169,18 @@ impl Authenticator {
                 FINALIZATION_TIMEOUT.as_secs()
             ),
         };
-        let mut delays = polling_backoff().build();
-        loop {
+        for delay in polling_backoff().build() {
             let state = before(deadline, self.inner.poll_status(request_id))
                 .await
                 .ok_or_else(timed_out)??;
             if let Some(outcome) = status_outcome(state)? {
                 return Ok(outcome);
             }
-            let delay = delays.next().unwrap_or(Duration::from_secs(8));
             if before(deadline, sleep(delay)).await.is_none() {
-                return Err(timed_out());
+                break;
             }
         }
+        Err(timed_out())
     }
 }
 
@@ -175,9 +200,8 @@ fn candidate_periods(active: ActivePeriods) -> Vec<u64> {
 }
 
 /// The credential a Proof of Embedding Similarity request asks for, which also proves its billing
-/// registration. WIP-107 accepts any valid credential for the registration, but the registration's
-/// `issuerSchemaId` is public, so registering with another one would spend the RP's capacity for a
-/// proof that fails and disclose a credential the RP did not ask about.
+/// registration. The Billing Contract accepts only the `PoH` Credential, which is the one these
+/// requests ask for.
 pub(super) fn requested_credential(
     credentials: Vec<CredentialInput>,
     requested_issuer_schema_id: Option<u64>,

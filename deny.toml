@@ -61,6 +61,7 @@ ignore = [
   # semaphore-rs-storage 0.6 depends on mmap-rs 0.6, whose nix 0.26 enables pin-utils. Remove once
   # semaphore-rs moves to mmap-rs 0.7 or later.
   { id = "RUSTSEC-2026-0441", reason = "unmaintained pin-utils via nix 0.26 / mmap-rs 0.6 / semaphore-rs" },
-  # Remove once ProveKit's Noir dependencies and WalletKit's v3 tests no longer require chrono.
-  { id = "RUSTSEC-2026-0543", reason = "unmaintained chrono required by ProveKit's Noir toolchain and v3 tests; no patched release" },
+  # provekit's Noir toolchain (build-data, provekit_noirc_evaluator) depends on chrono, which has
+  # no maintained release. Reached through world-id-proof. Remove once provekit drops chrono.
+  { id = "RUSTSEC-2026-0543", reason = "unmaintained chrono via provekit / world-id-proof; no replacement release" },
 ]
