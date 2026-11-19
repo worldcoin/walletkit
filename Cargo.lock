@@ -9358,17 +9358,29 @@ name = "walletkit-web"
 version = "0.30.0"
 dependencies = [
  "js-sys",
+ "ruint-uniffi",
  "selfie-enrollment-api-types",
  "selfie-enrollment-client",
  "selfie-enrollment-sealed-types",
  "serde_json",
  "walletkit-core",
+ "walletkit-web-macros",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
  "web-time",
  "zeroize",
+]
+
+[[package]]
+name = "walletkit-web-macros"
+version = "0.30.0"
+dependencies = [
+ "heck",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.118",
 ]
 
 [[package]]
