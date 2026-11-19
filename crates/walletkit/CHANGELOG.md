@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0](https://github.com/worldcoin/walletkit/compare/v0.30.0...v0.31.0) - 2026-11-18
+
+### Added
+
+- *(core)* derive the Flamingo nonce and recover from billing rejections ([#680](https://github.com/worldcoin/walletkit/pull/680))
+- *(core)* prove WIP-202 embedding similarity ([#677](https://github.com/worldcoin/walletkit/pull/677))
+- *(core)* register the World ID for WIP-107 billing ([#674](https://github.com/worldcoin/walletkit/pull/674))
+- *(activity)* [**breaking**] store diagnostic challenge IDs on activity rows ([#671](https://github.com/worldcoin/walletkit/pull/671))
+
+### Fixed
+
+- *(sqlite)* set a bounded busy timeout on native connections ([#668](https://github.com/worldcoin/walletkit/pull/668))
+
+### Other
+
+- *(deny)* clear RUSTSEC-2026-0543 (unmaintained chrono) ([#686](https://github.com/worldcoin/walletkit/pull/686))
+
 ## [0.30.0](https://github.com/worldcoin/walletkit/compare/v0.29.0...v0.30.0) - 2026-11-13
 
 ### Added
