@@ -84,6 +84,10 @@ pub enum StorageError {
         credential_id: u64,
     },
 
+    /// The stored credential payload differs from the one supplied for linking.
+    #[error("credential does not match stored payload")]
+    CredentialMismatch,
+
     /// Corrupted cache entry
     #[error("corrupted cache entry at {key_prefix}")]
     CorruptedCacheEntry {

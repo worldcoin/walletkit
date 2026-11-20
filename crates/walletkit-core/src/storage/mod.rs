@@ -13,8 +13,8 @@
 //! It owns the account key envelope and two databases:
 //!
 //! 1. **Vault database (`account.vault.sqlite`)** — authoritative storage for
-//!    credentials, associated data blobs, issuer subject blinding factors, and the account
-//!    leaf index. Corruption is a hard failure. See [`crate::storage::CredentialVault`].
+//!    credentials, associated data blobs, issuer subject blinding factors, links from
+//!    credentials to their PCP blob ids, and the account leaf index. Corruption is a hard failure. See [`crate::storage::CredentialVault`].
 //! 2. **Cache database (`account.cache.sqlite`)** — non-authoritative, regenerable
 //!    entries: Merkle inclusion proof cache, per-account session seed, and nullifier
 //!    replay guards. Subject to TTL pruning and can be rebuilt at any time without
@@ -43,6 +43,7 @@
 //! Encryption, the sealed-envelope threat model, and integrity checks are covered by
 //! the `walletkit-db` README.
 
+pub mod blob_id;
 pub mod cache;
 pub mod credential_storage;
 pub mod credential_vault;
@@ -52,6 +53,7 @@ pub mod paths;
 pub mod traits;
 pub mod types;
 
+pub use blob_id::{blob_id, BlobId};
 pub use cache::CacheDb;
 pub use credential_storage::CredentialStore;
 pub use credential_vault::CredentialVault;
