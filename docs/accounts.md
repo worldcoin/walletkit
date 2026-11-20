@@ -22,6 +22,17 @@ database key in the device keystore; for the types involved, see the
 In the browser, the app supplies the key itself; see
 [Protect the database key](web/package.md#protect-the-database-key).
 
+## Share a vault with a new authenticator
+
+For WIP-109 registration, pass `CredentialStore::export_vault_for_backup` output to
+`CheckedRegistration::approve` only after the user agrees to share it. A supplied
+vault larger than `registration::MAX_VAULT_SIZE` returns `ApproverError::VaultTooLarge`
+before `InsertAuthenticator` is submitted. The vault is never silently omitted.
+The checked session stays open so the app can handle the error and retry, or call
+`abort` to notify the requesting device. Passing `None` explicitly registers
+without a vault. `ApprovalOutcome` reports the registration result and response
+delivery; it has no `vault_omitted` field.
+
 ## From registration to stored credential
 
 The following diagram shows the calls between the app, WalletKit, and the World ID

@@ -188,6 +188,10 @@ pub enum ApproverError {
     /// [`IncomingRegistration::check`](super::IncomingRegistration::check) checked.
     #[error("the approver does not match the checked account")]
     ApproverMismatch,
+    /// The supplied vault exceeds [`MAX_VAULT_SIZE`](super::MAX_VAULT_SIZE).
+    /// Nothing was submitted or sent; the host may retry or abort the checked session.
+    #[error("the vault exceeds the registration size limit")]
+    VaultTooLarge,
     /// This step was already taken, so the registration has moved on or ended.
     #[error("this registration step was already taken")]
     AlreadyHandled,

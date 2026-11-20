@@ -146,9 +146,6 @@ pub enum RegistrationPlan {
 pub struct ApprovalOutcome {
     /// Whether the authenticator was registered.
     pub result: ApprovalResult,
-    /// Whether the vault was left out because it exceeds [`MAX_VAULT_SIZE`](super::MAX_VAULT_SIZE).
-    /// The host must tell the user that the vault was not shared.
-    pub vault_omitted: bool,
     /// Whether the response was delivered.
     pub delivered: bool,
 }

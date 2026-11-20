@@ -12,6 +12,10 @@
 //! Every outcome is answered to the Requesting Authenticator, which verifies a successful result
 //! with [`RegistrationRequester::verify`].
 //!
+//! [`CheckedRegistration::approve`] returns [`ApproverError::VaultTooLarge`] before
+//! submission when a supplied vault exceeds [`MAX_VAULT_SIZE`]. The session stays open
+//! for an explicit retry or abort; the vault is never silently omitted.
+//!
 //! The wire format and cryptography come from [`world_id_core::registration`].
 //!
 //! # Blocking key derivation
