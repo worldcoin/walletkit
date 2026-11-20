@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.1](https://github.com/worldcoin/walletkit/compare/v0.32.0...v0.32.1) - 2026-11-20
+
+### Fixed
+
+- *(mobile)* embed the WIP-202 prover in Swift and Android releases ([#692](https://github.com/worldcoin/walletkit/pull/692))
+
 ## [0.32.0](https://github.com/worldcoin/walletkit/compare/v0.31.0...v0.32.0) - 2026-11-20
 
 ### Added
