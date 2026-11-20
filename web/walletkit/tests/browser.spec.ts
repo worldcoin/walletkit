@@ -803,6 +803,12 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
     }
 
     try {
+      const invalidContainer = await wallet
+        .enrollSelfieWithPoseGuard("success", "0x1f", key, async () => null)
+        .catch((error: Error) => ({
+          name: error.name,
+          message: error.message,
+        }));
       const batches = [
         { centralPng: new Uint8Array([1]), captures },
         { centralPng, captures: captures.slice(1) },
@@ -847,6 +853,7 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
         }),
       );
       return {
+        invalidContainer,
         invalid,
         sameError,
         aborted,
@@ -859,6 +866,11 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
     }
   });
   expect(result).toEqual({
+    invalidContainer: {
+      name: "TypeError",
+      message:
+        "PoseGuard capture must return a plain object with centralPng and captures",
+    },
     invalid: Array(5).fill("TypeError"),
     sameError: true,
     aborted: { error: { sameReason: true }, stoppedCapture: true },
@@ -867,7 +879,7 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
       stoppedCapture: true,
     },
     recovered: "success",
-    counts: { started: 9, submitted: 1 },
+    counts: { started: 10, submitted: 1 },
   });
 });
 
@@ -955,18 +967,41 @@ test("closing or terminating WalletKit aborts a pending PoseGuard capture", asyn
         )
         .catch((error: Error) => error.message);
       const signal = await captureStarted;
-      await wallet[method]();
+      const [, retryError] = await Promise.all([
+        wallet[method](),
+        wallet
+          .enrollSelfieWithPoseGuard(
+            "success",
+            "0x1f",
+            new Uint8Array(32),
+            async () => {
+              throw new Error("Unexpected capture during shutdown");
+            },
+          )
+          .catch((error: Error) => error.message),
+      ]);
       results.push({
         aborted: signal.aborted,
         stopped: wallet.isStopped(),
         error: await result,
+        retryError,
       });
     }
     return results;
   });
   expect(results).toEqual([
-    { aborted: true, stopped: true, error: "WalletKit is closing" },
-    { aborted: true, stopped: true, error: "WalletKit was terminated" },
+    {
+      aborted: true,
+      stopped: true,
+      error: "WalletKit is closing",
+      retryError: "WalletKit is closed",
+    },
+    {
+      aborted: true,
+      stopped: true,
+      error: "WalletKit was terminated",
+      retryError: "WalletKit was terminated",
+    },
   ]);
 });
 

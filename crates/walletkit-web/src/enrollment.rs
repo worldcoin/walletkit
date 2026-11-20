@@ -22,6 +22,9 @@ use crate::{
     js,
 };
 
+// Matches the private subject limit in GeneratePoseGuardTargetsRequest::validate.
+const MAX_SUB_BYTES: usize = 66;
+
 #[wasm_bindgen(typescript_custom_section)]
 const TS_TYPES: &str = r#"
 export type SelfieEmbeddingResult =
@@ -112,8 +115,8 @@ pub fn extract_selfie_embedding(config_json: String, image: &Uint8Array) -> Prom
 /// proof to the signup-service submission. The custody private key stays with the caller.
 ///
 /// # Errors
-/// Throws a `TypeError` for an invalid batch, image or custody key. Invalid release
-/// policy, attestation and transport errors reject with `SelfieEnrollmentError`.
+/// Throws a `TypeError` for an invalid subject, batch, image or custody key. Invalid
+/// release policy, attestation and transport errors reject with `SelfieEnrollmentError`.
 /// Worker rejections return a typed failure, including the rejected capture index.
 #[wasm_bindgen(js_name = runPoseGuardEnrollment, unchecked_return_type = "Promise<SelfieEnrollmentResult>")]
 pub fn run_poseguard_enrollment(
@@ -130,6 +133,11 @@ pub fn run_poseguard_enrollment(
         return Promise::reject(&invalid_argument(
             "`custodyPublicKey` must contain 32 bytes",
         ));
+    }
+    if sub.is_empty() || sub.len() > MAX_SUB_BYTES {
+        return Promise::reject(&invalid_argument(&format!(
+            "`sub` must contain 1 to {MAX_SUB_BYTES} UTF-8 bytes",
+        )));
     }
     let mut key = [0; 32];
     custody_public_key.copy_to(&mut key);
@@ -386,6 +394,29 @@ mod tests {
         assert_eq!(owned.captures, [vec![1], vec![2], vec![3]]);
         assert_eq!(central.to_vec(), [0; 8]);
         assert!(captures.iter().all(|capture| capture.to_vec() == [0]));
+    }
+
+    #[wasm_bindgen_test]
+    #[expect(clippy::future_not_send, reason = "JavaScript values are worker-local")]
+    async fn poseguard_validates_subject_before_parsing_release_policy() {
+        let key = Uint8Array::new_with_length(32);
+        let capture = Function::new_no_args("throw new Error('Unexpected capture')");
+        for (sub, expected) in [
+            (String::new(), "TypeError"),
+            ("é".repeat(34), "TypeError"),
+            ("é".repeat(33), "SelfieEnrollmentError"),
+        ] {
+            let error = JsFuture::from(run_poseguard_enrollment(
+                String::new(),
+                sub,
+                &key,
+                capture.clone(),
+                AbortSignal::abort(),
+            ))
+            .await
+            .unwrap_err();
+            assert_eq!(js::string_field(&error, "name").unwrap(), expected);
+        }
     }
 
     #[wasm_bindgen_test]

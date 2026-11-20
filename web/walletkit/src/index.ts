@@ -154,6 +154,8 @@ class WorkerClient implements Rpc {
     { signal } = {},
   ) => {
     signal?.throwIfAborted();
+    if (this.stopped) throw this.stopReason;
+    if (this.closing) throw new Error("WalletKit is closed");
     if (this.poseGuard)
       throw new Error("PoseGuard enrollment already in progress");
     if (typeof configJson !== "string" || typeof sub !== "string")
@@ -365,16 +367,21 @@ function clearUnsent(transfer: ArrayBuffer[]) {
 }
 
 function validatePoseGuardImages(value: unknown): PoseGuardImages {
-  const { centralPng, captures } = isRecord(value) ? value : {};
+  if (!isRecord(value))
+    throw new TypeError(
+      "PoseGuard capture must return a plain object with centralPng and captures",
+    );
+  const { centralPng, captures } = value;
+  // Match the MAX_IMAGE_BYTES and PNG signature checks in crates/walletkit-web/src/enrollment.rs.
+  const maxImageBytes = 8 * 1024 * 1024;
+  const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
   const validImage = (image: unknown): image is Uint8Array =>
     image instanceof Uint8Array &&
     image.length > 0 &&
-    image.length <= 8 * 1024 * 1024;
+    image.length <= maxImageBytes;
   if (
     !validImage(centralPng) ||
-    ![137, 80, 78, 71, 13, 10, 26, 10].every(
-      (byte, index) => centralPng[index] === byte,
-    )
+    !pngSignature.every((byte, index) => centralPng[index] === byte)
   )
     throw new TypeError("centralPng must be a PNG no larger than 8 MiB");
   if (!Array.isArray(captures) || captures.length !== 3)
