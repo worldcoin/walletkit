@@ -55,6 +55,8 @@ let crashed: Error | undefined;
 interface PoseGuardAttempt {
   id: number;
   controller: AbortController;
+  custodyPublicKey: Uint8Array;
+  started: boolean;
   capture?: {
     resolve(images: PoseGuardImages): void;
     reject(error: Error): void;
@@ -73,6 +75,7 @@ scope.onmessage = ({ data }) => {
     handlePoseGuardReply(data);
     return;
   }
+  let attempt: PoseGuardAttempt | undefined;
   if (data.op === "enrollPoseGuard") {
     if (poseGuard) {
       clearBytes(data.custodyPublicKey);
@@ -87,12 +90,21 @@ scope.onmessage = ({ data }) => {
       return;
     }
     // Register before queuing so abort can reach the attempt before it starts.
-    poseGuard = { id: data.id, controller: new AbortController() };
+    attempt = {
+      id: data.id,
+      controller: new AbortController(),
+      custodyPublicKey: data.custodyPublicKey,
+      started: false,
+    };
+    poseGuard = attempt;
   }
   queue = queue.then(async () => {
+    // A queued cancellation already replied and may have made room for a retry.
+    if (attempt && poseGuard !== attempt) return;
     try {
       // A crashed module can still be closed; the client then terminates the worker.
       if (crashed && data.op !== "close") throw crashed;
+      if (attempt) attempt.started = true;
       scope.postMessage({ id: data.id, ok: true, result: await perform(data) });
     } catch (error) {
       if (error instanceof WebAssembly.RuntimeError) {
@@ -106,10 +118,10 @@ scope.onmessage = ({ data }) => {
         error: { ...serialize(error), ...(crashed && { fatal: true }) },
       });
     } finally {
-      if (data.op === "enrollPoseGuard") {
-        clearBytes(data.custodyPublicKey);
-        poseGuard?.capture?.reject(new Error("PoseGuard enrollment ended"));
-        clearBytes(poseGuard?.images);
+      if (attempt) {
+        clearBytes(attempt.custodyPublicKey);
+        attempt.capture?.reject(new Error("PoseGuard enrollment ended"));
+        clearBytes(attempt.images);
         poseGuard = undefined;
       }
     }
@@ -171,7 +183,17 @@ function requestPoseGuardCapture(
 function handlePoseGuardReply(reply: PoseGuardReply) {
   const attempt = poseGuard?.id === reply.id ? poseGuard : undefined;
   if (reply.op === "cancelPoseGuard") {
-    attempt?.controller.abort();
+    if (!attempt) return;
+    attempt.controller.abort();
+    if (!attempt.started) {
+      clearBytes(attempt.custodyPublicKey);
+      poseGuard = undefined;
+      scope.postMessage({
+        id: attempt.id,
+        ok: false,
+        error: serialize(attempt.controller.signal.reason),
+      });
+    }
     return;
   }
   const capture = attempt?.capture;

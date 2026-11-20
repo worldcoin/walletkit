@@ -866,6 +866,67 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
   });
 });
 
+test("aborting queued PoseGuard enrollment rejects before the earlier RPC finishes", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializePoseGuardTestWallet();
+    const channel = new BroadcastChannel(crypto.randomUUID());
+    const controller = new AbortController();
+    const reason = new DOMException("Stopped while queued", "AbortError");
+    const key = new Uint8Array(32);
+    try {
+      const started = new Promise<void>((resolve) => {
+        channel.onmessage = ({ data }) => {
+          if (data === "started") resolve();
+        };
+      });
+      const earlier = wallet.holdPoseGuardTestRpc(channel.name);
+      await started;
+
+      const cancelled = wallet
+        .enrollSelfieWithPoseGuard(
+          "success",
+          "0x1f",
+          key,
+          async () => {
+            throw new Error("Cancelled enrollment requested capture");
+          },
+          { signal: controller.signal },
+        )
+        .catch((error: unknown) => error === reason);
+      controller.abort(reason);
+      const sameReason = await cancelled;
+
+      const retry = wallet.enrollSelfieWithPoseGuard(
+        "success",
+        "0x1f",
+        key,
+        async () => ({
+          centralPng: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+          captures: [1, 2, 3].map((byte) => new Uint8Array([byte])),
+        }),
+      );
+      channel.postMessage("release");
+      const [, recovered] = await Promise.all([earlier, retry]);
+      return {
+        sameReason,
+        recovered: recovered.status,
+        counts: await wallet.poseGuardTestCounts(),
+      };
+    } finally {
+      channel.close();
+      wallet.terminate();
+    }
+  });
+  expect(result).toEqual({
+    sameReason: true,
+    recovered: "success",
+    counts: { started: 1, submitted: 1 },
+  });
+});
+
 test("closing or terminating WalletKit aborts a pending PoseGuard capture", async ({
   page,
 }) => {

@@ -14,6 +14,20 @@ export function poseGuardTestCounts() {
   return { started, submitted };
 }
 
+export async function holdPoseGuardTestRpc(channelName: string): Promise<void> {
+  const channel = new BroadcastChannel(channelName);
+  try {
+    await new Promise<void>((resolve) => {
+      channel.onmessage = ({ data }) => {
+        if (data === "release") resolve();
+      };
+      channel.postMessage("started");
+    });
+  } finally {
+    channel.close();
+  }
+}
+
 export async function runPoseGuardEnrollment(
   scenario: string,
   _sub: string,
