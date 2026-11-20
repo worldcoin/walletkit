@@ -4,6 +4,10 @@ on:
   release:
     types: [published]
 
+env:
+  # Cargo features for both mobile releases.
+  WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3,embed-embedding-similarity-prover
+
 jobs:
   pre-release-checks:
     runs-on: ubuntu-latest
@@ -131,8 +135,6 @@ jobs:
             --latest
 
   prepare-kotlin:
-    env:
-      WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3
     name: Prepare Kotlin
     runs-on: arc-public-8xlarge-amd64-runner
     needs: [pre-release-checks]
