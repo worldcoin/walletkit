@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0](https://github.com/worldcoin/walletkit/compare/v0.31.0...v0.32.0) - 2026-11-20
+
+### Added
+
+- *(walletkit-web)* expose PoseGuard selfie enrollment with attested targets and cancellable capture ([#679](https://github.com/worldcoin/walletkit/pull/679))
+
 ## [0.31.0](https://github.com/worldcoin/walletkit/compare/v0.30.0...v0.31.0) - 2026-11-18
 
 ### Added
