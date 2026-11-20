@@ -7,6 +7,8 @@ import type {
   Request,
   Response,
   Target,
+  WorkerEvent,
+  WorkerMessage,
 } from "./protocol";
 import type {
   PoseGuardImages,
@@ -93,8 +95,8 @@ class WorkerClient implements Rpc {
 
   /** @internal Use initializeWalletKit(). */
   constructor(private readonly worker: Worker) {
-    worker.onmessage = ({ data }: MessageEvent<Response>) =>
-      this.handleResponse(data);
+    worker.onmessage = ({ data }: MessageEvent<WorkerMessage>) =>
+      "event" in data ? this.handleEvent(data) : this.handleResponse(data);
     worker.onerror = (event) =>
       this.stop(new Error(event.message || "WalletKit worker failed"));
     worker.onmessageerror = () =>
@@ -310,21 +312,24 @@ class WorkerClient implements Rpc {
     }
   }
 
+  private handleEvent({ id, prompt }: WorkerEvent) {
+    const attempt = this.poseGuard;
+    if (attempt?.id !== id || attempt.cancellation || !this.pending.has(id))
+      return;
+    if (attempt.prompted) {
+      this.cancelPoseGuard(
+        attempt,
+        new Error("Unexpected PoseGuard capture request"),
+      );
+      return;
+    }
+    attempt.prompted = true;
+    void this.sendPoseGuardImages(attempt, prompt);
+  }
+
   private handleResponse(response: Response) {
     const pending = this.pending.get(response.id);
     if (!pending) return;
-    if ("event" in response) {
-      const attempt = this.poseGuard;
-      if (
-        attempt?.id === response.id &&
-        !attempt.prompted &&
-        !attempt.cancellation
-      ) {
-        attempt.prompted = true;
-        void this.sendPoseGuardImages(attempt, response.prompt);
-      }
-      return;
-    }
     this.pending.delete(response.id);
     if (response.ok) pending.resolve(response.result);
     else {

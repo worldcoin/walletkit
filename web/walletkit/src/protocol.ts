@@ -48,8 +48,15 @@ export type Response = { id: number } & (
       /** `fatal`: the module trapped; the worker cannot serve further calls. */
       error: { name: string; message: string; code?: string; fatal?: boolean };
     }
-  | { event: "poseGuardCaptureRequested"; prompt: PoseGuardPrompt }
 );
+
+export type WorkerEvent = {
+  id: number;
+  event: "poseGuardCaptureRequested";
+  prompt: PoseGuardPrompt;
+};
+
+export type WorkerMessage = Response | WorkerEvent;
 
 /** @internal Clear transferred bytes after WASM has copied its arguments. */
 export function clearBytes(value: unknown): void {

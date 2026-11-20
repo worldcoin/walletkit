@@ -776,7 +776,7 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
       }>((resolve) => {
         finish = resolve;
       });
-      const error = await wallet
+      const enrollment = wallet
         .enrollSelfieWithPoseGuard(
           scenario,
           "0x1f",
@@ -793,6 +793,11 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
             ? { sameReason: error === reason }
             : { name: error.name, code: error.code },
         );
+      // This RPC must finish before the callback supplies its late images.
+      const [error] = await Promise.all([
+        enrollment,
+        wallet.poseGuardTestCounts(),
+      ]);
       finish({ centralPng, captures });
       return { error, stoppedCapture: captureSignal?.aborted };
     }

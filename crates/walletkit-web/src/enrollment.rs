@@ -104,8 +104,8 @@ pub fn extract_selfie_embedding(config_json: String, image: &Uint8Array) -> Prom
     })
 }
 
-/// Runs one attempt over the attested TEE channel. `capture` is a worker-local
-/// callback that forwards the verified prompt and receives the corresponding images.
+/// Runs one attempt over the attested TEE channel. The TEE client takes `capture`
+/// as a single-use callback, invoked after verifying the prompt and targets.
 ///
 /// The enclave returns the enrollment fields, Nitro header and PCP encrypted to
 /// `custodyPublicKey`. Retain the PCP before adding the ownership challenge and

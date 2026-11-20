@@ -8,14 +8,14 @@ import type {
   PoseGuardReply,
   Ref,
   Request,
-  Response,
   Target,
+  WorkerMessage,
 } from "./protocol";
 import { clearBytes } from "./protocol";
 
 const scope = globalThis as unknown as {
   onmessage: ((event: MessageEvent<Request | PoseGuardReply>) => void) | null;
-  postMessage(message: Response): void;
+  postMessage(message: WorkerMessage): void;
 };
 
 type RustObject = { free(): void };
@@ -52,7 +52,7 @@ let initialized = false;
 // A Rust panic traps the module and leaves its memory in an unknown state.
 let crashed: Error | undefined;
 
-interface PoseGuardAttempt {
+interface WorkerPoseGuardAttempt {
   id: number;
   controller: AbortController;
   custodyPublicKey: Uint8Array;
@@ -64,7 +64,7 @@ interface PoseGuardAttempt {
   images?: PoseGuardImages;
 }
 
-let poseGuard: PoseGuardAttempt | undefined;
+let poseGuard: WorkerPoseGuardAttempt | undefined;
 
 // Run one complete request at a time so awaited operations cannot interleave
 // and race the worker's shared state.
@@ -75,7 +75,7 @@ scope.onmessage = ({ data }) => {
     handlePoseGuardReply(data);
     return;
   }
-  let attempt: PoseGuardAttempt | undefined;
+  let attempt: WorkerPoseGuardAttempt | undefined;
   if (data.op === "enrollPoseGuard") {
     if (poseGuard) {
       clearBytes(data.custodyPublicKey);
@@ -105,7 +105,8 @@ scope.onmessage = ({ data }) => {
       // A crashed module can still be closed; the client then terminates the worker.
       if (crashed && data.op !== "close") throw crashed;
       if (attempt) attempt.started = true;
-      scope.postMessage({ id: data.id, ok: true, result: await perform(data) });
+      const result = await perform(data, attempt);
+      scope.postMessage({ id: data.id, ok: true, result });
     } catch (error) {
       if (error instanceof WebAssembly.RuntimeError) {
         crashed = new Error(
@@ -120,7 +121,10 @@ scope.onmessage = ({ data }) => {
     } finally {
       if (attempt) {
         clearBytes(attempt.custodyPublicKey);
-        attempt.capture?.reject(new Error("PoseGuard enrollment ended"));
+        rejectPoseGuardCapture(
+          attempt,
+          new Error("PoseGuard enrollment ended"),
+        );
         clearBytes(attempt.images);
         poseGuard = undefined;
       }
@@ -128,16 +132,19 @@ scope.onmessage = ({ data }) => {
   });
 };
 
-async function perform(request: Request): Promise<unknown> {
+async function perform(
+  request: Request,
+  attempt: WorkerPoseGuardAttempt | undefined,
+): Promise<unknown> {
   switch (request.op) {
     case "initialize":
       return initialize(request.wasmUrl);
     case "call":
       return call(request.target, request.args);
     case "enrollPoseGuard":
-      if (!poseGuard || !initialized)
-        throw new Error("WalletKit is not initialized");
-      return enrollPoseGuard(request, poseGuard);
+      if (!attempt) throw new Error("Missing PoseGuard enrollment attempt");
+      if (!initialized) throw new Error("WalletKit is not initialized");
+      return enrollPoseGuard(request, attempt);
     case "release":
       return release(request.handle);
     case "close":
@@ -147,26 +154,22 @@ async function perform(request: Request): Promise<unknown> {
 
 function enrollPoseGuard(
   request: Extract<Request, { op: "enrollPoseGuard" }>,
-  attempt: PoseGuardAttempt,
+  attempt: WorkerPoseGuardAttempt,
 ) {
   const capture = (prompt: PoseGuardPrompt) =>
     requestPoseGuardCapture(attempt, prompt);
-  try {
-    attempt.controller.signal.throwIfAborted();
-    return wasm.runPoseGuardEnrollment(
-      request.configJson,
-      request.sub,
-      request.custodyPublicKey,
-      capture,
-      attempt.controller.signal,
-    );
-  } finally {
-    clearBytes(request.custodyPublicKey);
-  }
+  attempt.controller.signal.throwIfAborted();
+  return wasm.runPoseGuardEnrollment(
+    request.configJson,
+    request.sub,
+    attempt.custodyPublicKey,
+    capture,
+    attempt.controller.signal,
+  );
 }
 
 function requestPoseGuardCapture(
-  attempt: PoseGuardAttempt,
+  attempt: WorkerPoseGuardAttempt,
   prompt: PoseGuardPrompt,
 ) {
   attempt.controller.signal.throwIfAborted();
@@ -184,14 +187,19 @@ function handlePoseGuardReply(reply: PoseGuardReply) {
   const attempt = poseGuard?.id === reply.id ? poseGuard : undefined;
   if (reply.op === "cancelPoseGuard") {
     if (!attempt) return;
-    attempt.controller.abort();
+    const reason = new DOMException(
+      "PoseGuard enrollment was cancelled",
+      "AbortError",
+    );
+    rejectPoseGuardCapture(attempt, reason);
+    attempt.controller.abort(reason);
     if (!attempt.started) {
       clearBytes(attempt.custodyPublicKey);
       poseGuard = undefined;
       scope.postMessage({
         id: attempt.id,
         ok: false,
-        error: serialize(attempt.controller.signal.reason),
+        error: serialize(reason),
       });
     }
     return;
@@ -204,6 +212,15 @@ function handlePoseGuardReply(reply: PoseGuardReply) {
   attempt.capture = undefined;
   attempt.images = reply.images;
   capture.resolve(reply.images);
+}
+
+function rejectPoseGuardCapture(
+  attempt: WorkerPoseGuardAttempt,
+  reason: Error,
+) {
+  const capture = attempt.capture;
+  attempt.capture = undefined;
+  capture?.reject(reason);
 }
 
 async function initialize(wasmUrl: string): Promise<void> {

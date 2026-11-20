@@ -37,32 +37,32 @@ export async function runPoseGuardEnrollment(
 ): Promise<SelfieEnrollmentResult> {
   started++;
   if (key.length !== 32) throw new TypeError("Invalid key");
+  signal.throwIfAborted();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let onAbort!: () => void;
-  const interrupted = new Promise<never>((_, reject) => {
-    onAbort = () => reject(signal.reason);
-    signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    // The worker must settle the capture promise when the attempt is cancelled.
+    let pending = capture({
+      targets: [
+        { targetPitch: 0, targetYaw: -31 },
+        { targetPitch: -17, targetYaw: 0 },
+        { targetPitch: 0, targetYaw: 34 },
+      ],
+      expiresAt: 1_800_000_000,
+      captureTimeoutMs: scenario === "timeout" ? 150 : 41_000,
+    });
     if (scenario === "timeout") {
       const timeout = Object.assign(new Error("Capture expired"), {
         name: "SelfieEnrollmentError",
         code: "Timeout",
       });
-      timer = setTimeout(() => reject(timeout), 150);
+      pending = Promise.race([
+        pending,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(timeout), 150);
+        }),
+      ]);
     }
-  });
-  try {
-    const images = await Promise.race([
-      capture({
-        targets: [
-          { targetPitch: 0, targetYaw: -31 },
-          { targetPitch: -17, targetYaw: 0 },
-          { targetPitch: 0, targetYaw: 34 },
-        ],
-        expiresAt: 1_800_000_000,
-        captureTimeoutMs: scenario === "timeout" ? 150 : 41_000,
-      }),
-      interrupted,
-    ]);
+    const images = await pending;
     submitted++;
     if (
       images.centralPng.length !== 8 ||
@@ -89,7 +89,6 @@ export async function runPoseGuardEnrollment(
       },
     };
   } finally {
-    signal.removeEventListener("abort", onAbort);
     clearTimeout(timer);
   }
 }
