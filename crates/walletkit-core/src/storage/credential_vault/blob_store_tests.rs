@@ -31,6 +31,7 @@ impl Fixture {
         self.db
             .put_blob("oxide.face", PLAINTEXT, path, 1000)
             .unwrap()
+            .0
     }
 }
 
@@ -38,7 +39,8 @@ impl Fixture {
 #[test_case(b"hello pcp", "733ae41c33b82d2d18eba3b18f289f649f49a386362441f9bff74c613764b00f" ; "hello pcp")]
 fn put_computes_the_shared_blob_id_vectors(data: &[u8], expected: &str) {
     let f = Fixture::new();
-    let id = f.db.put_blob("oxide.face", data, None, 1000).unwrap();
+    let (id, linked) = f.db.put_blob("oxide.face", data, None, 1000).unwrap();
+    assert!(!linked);
     assert_eq!(id.to_hex_string(), expected);
     assert_eq!(id, *crate::storage::blob_id(data.to_vec()));
     let stored = f.db.get_blob(&id).unwrap().unwrap();
@@ -54,7 +56,8 @@ fn aliases_move_without_deleting_content_or_other_aliases() {
     let initial = f.db.get_blob(&first).unwrap().unwrap().record.revision;
     assert_eq!(
         f.db.put_blob("oxide.face", PLAINTEXT, Some("scoped/face.tar.gz"), 1001)
-            .unwrap(),
+            .unwrap()
+            .0,
         first
     );
     assert_eq!(f.db.list_blobs(None).unwrap().len(), 1);
@@ -64,7 +67,8 @@ fn aliases_move_without_deleting_content_or_other_aliases() {
     );
     let second =
         f.db.put_blob("oxide.face", b"replacement face pcp", Some(PATH), 1002)
-            .unwrap();
+            .unwrap()
+            .0;
     assert_ne!(first, second);
     assert_eq!(f.db.list_blobs(None).unwrap().len(), 2);
 
@@ -114,7 +118,10 @@ fn metadata_cas_observes_writes_from_another_connection() {
         Err(StorageError::BlobRevisionConflict)
     ));
     assert_eq!(
-        other.put_blob("oxide.face", PLAINTEXT, None, 1003).unwrap(),
+        other
+            .put_blob("oxide.face", PLAINTEXT, None, 1003)
+            .unwrap()
+            .0,
         id
     );
     assert!(matches!(
@@ -158,7 +165,10 @@ fn recreating_identical_data_rejects_stale_metadata_from_the_previous_incarnatio
             .unwrap();
     other.delete_blob(&id).unwrap();
     assert_eq!(
-        other.put_blob("oxide.face", PLAINTEXT, None, 2000).unwrap(),
+        other
+            .put_blob("oxide.face", PLAINTEXT, None, 2000)
+            .unwrap()
+            .0,
         id
     );
     let recreated = other.get_blob(&id).unwrap().unwrap().record.revision;
@@ -251,7 +261,8 @@ fn concurrent_writer_failure_leaves_alias_and_revision_unchanged() {
     assert_eq!(f.db.list_legacy_blob_paths("").unwrap(), [PATH]);
     assert_eq!(
         f.db.put_blob("oxide.face", PLAINTEXT, Some("new.dat"), 2000)
-            .unwrap(),
+            .unwrap()
+            .0,
         id
     );
     assert_eq!(
@@ -390,21 +401,38 @@ fn credential_deletion_never_collects_local_blobs() {
 
 #[test_case(false ; "merge")]
 #[test_case(true ; "restore")]
-fn export_excludes_local_tables_and_recovery_ignores_them(restore: bool) {
+fn export_excludes_unlinked_data_metadata_and_legacy_paths(restore: bool) {
     let f = Fixture::new();
     let local_id = f.put(Some(PATH));
+    let revision = f.db.get_blob(&local_id).unwrap().unwrap().record.revision;
+    f.db.update_blob_metadata(&local_id, Some(b"local metadata"), revision, 2000)
+        .unwrap();
     let export_path = f.dir.path().join("backup.sqlite");
     f.db.export_plaintext(&export_path).unwrap();
     let backup = Connection::open(&export_path, false).unwrap();
-    let count = backup
-        .query_row(
-            "SELECT COUNT(*) FROM sqlite_schema WHERE name IN ('blobs', 'legacy_blob_paths')",
-            &[],
-            |row| Ok(row.column_i64(0)),
-        )
-        .unwrap();
-    assert_eq!(count, 0);
-    backup.execute_batch("CREATE TABLE blobs (unexpected TEXT); CREATE TABLE legacy_blob_paths (unexpected TEXT); INSERT INTO blobs VALUES ('ignored'); INSERT INTO legacy_blob_paths VALUES ('ignored');").unwrap();
+    assert_eq!(
+        backup
+            .query_row("SELECT COUNT(*) FROM blobs", &[], |row| Ok(
+                row.column_i64(0)
+            ))
+            .unwrap(),
+        0
+    );
+    assert_eq!(backup.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('blobs') WHERE name IN ('metadata', 'revision')",
+        &[], |row| Ok(row.column_i64(0)),
+    ).unwrap(), 0);
+    assert_eq!(
+        backup
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE name = 'legacy_blob_paths'",
+                &[],
+                |row| Ok(row.column_i64(0)),
+            )
+            .unwrap(),
+        0
+    );
+    backup.execute_batch("CREATE TABLE legacy_blob_paths (unexpected TEXT); INSERT INTO legacy_blob_paths VALUES ('ignored');").unwrap();
     drop(backup);
     let bytes = std::fs::read(export_path).unwrap();
     if restore {
@@ -412,7 +440,9 @@ fn export_excludes_local_tables_and_recovery_ignores_them(restore: bool) {
     } else {
         f.db.merge_plaintext_bytes(&bytes).unwrap();
     }
-    assert_eq!(f.db.get_blob(&local_id).unwrap().unwrap().data, PLAINTEXT);
+    let stored = f.db.get_blob(&local_id).unwrap().unwrap();
+    assert_eq!(stored.data, PLAINTEXT);
+    assert_eq!(stored.record.metadata, Some(b"local metadata".to_vec()));
     assert_eq!(f.db.list_legacy_blob_paths("").unwrap(), [PATH]);
 }
 
@@ -471,7 +501,8 @@ fn released_schema_gains_tables_and_released_initializer_can_reopen_them() {
         );
         assert_eq!(
             db.put_blob("oxide.face", PLAINTEXT, Some(PATH), 2000)
-                .unwrap(),
+                .unwrap()
+                .0,
             id
         );
         db.get_blob(&id).unwrap().unwrap().record.revision

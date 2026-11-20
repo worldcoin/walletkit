@@ -1,4 +1,4 @@
-//! Local-only blob storage. Neither data nor aliases participate in vault recovery.
+//! Content-addressed blobs. Linked data participates in recovery; legacy aliases stay local.
 
 use std::sync::Arc;
 
@@ -18,7 +18,7 @@ impl CredentialVault {
         data: &[u8],
         legacy_path: Option<&str>,
         now: u64,
-    ) -> StorageResult<BlobId> {
+    ) -> StorageResult<(BlobId, bool)> {
         let legacy_path = legacy_path.map(legacy_blob_path).transpose()?;
         let now = to_i64(now, "now")?;
         let blob_id = compute_blob_id(data);
@@ -27,6 +27,14 @@ impl CredentialVault {
             .vault
             .connection()
             .transaction_immediate()
+            .map_err(|err| map_db_err(&err))?;
+        // Data is content-addressed, so only a new row or a new kind changes an export.
+        let previous_kind = tx
+            .query_row_optional(
+                "SELECT kind FROM blobs WHERE blob_id = ?1",
+                params![blob_id.as_bytes().as_slice()],
+                |row| Ok(row.column_text(0)),
+            )
             .map_err(|err| map_db_err(&err))?;
         tx.execute(
             "INSERT INTO blobs (blob_id, kind, data, revision, created_at, updated_at)
@@ -51,8 +59,16 @@ impl CredentialVault {
             )
             .map_err(|err| map_db_err(&err))?;
         }
+        let exported_changed = previous_kind.as_deref() != Some(kind)
+            && tx
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM credential_blob_refs WHERE blob_id = ?1)",
+                    params![blob_id.as_bytes().as_slice()],
+                    |row| Ok(row.column_i64(0) != 0),
+                )
+                .map_err(|err| map_db_err(&err))?;
         tx.commit().map_err(|err| map_db_err(&err))?;
-        Ok(blob_id)
+        Ok((blob_id, exported_changed))
     }
 
     pub(crate) fn get_blob(
@@ -182,7 +198,7 @@ impl CredentialVault {
 /// Randomize each incarnation's counter, leaving about 2^62 increments before
 /// overflow. Even for identical data, a fresh seed reduces the chance that a
 /// stale metadata CAS matches after a blob is deleted and recreated.
-fn initial_revision() -> StorageResult<i64> {
+pub(super) fn initial_revision() -> StorageResult<i64> {
     let mut bytes = [0; 8];
     OsRng.try_fill_bytes(&mut bytes).map_err(|_| {
         StorageError::Crypto("blob revision generation failed".to_owned())

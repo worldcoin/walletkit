@@ -1,7 +1,11 @@
 //! Additive backup recovery. Row IDs are local database keys, not credential identities.
 //! Absence from a snapshot is not a deletion instruction: preserve receiver-only credentials.
 
-use super::{map_db_err, CredentialVault, BACKUP_TABLES, CREDENTIAL_VERSION_ORDER};
+use super::{
+    blob_store::initial_revision, map_db_err, CredentialVault, BACKUP_TABLES,
+    CREDENTIAL_VERSION_ORDER,
+};
+use crate::storage::blob_id::compute_blob_id;
 use crate::storage::error::{StorageError, StorageResult};
 use walletkit_db::blobs::compute_content_id;
 use walletkit_sqlite::{
@@ -13,9 +17,11 @@ use walletkit_sqlite::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MergeOutcome {
     /// Credential versions the vault did not hold before.
-    pub added_records: u64,
+    pub records: u64,
     /// Blob refs the vault did not hold before, on new or existing credentials.
-    pub added_blob_refs: u64,
+    pub blob_refs: u64,
+    /// Content-addressed PCP blobs the vault did not hold before.
+    pub blobs: u64,
 }
 
 /// Matches a destination credential holding the same version as `?1`–`?7`.
@@ -40,7 +46,8 @@ impl CredentialVault {
     /// Blob refs follow the credential version they belong to and are unioned onto
     /// it, whether merge adds that version or already holds it; refs the vault
     /// already holds keep their `created_at`. Snapshots made before blob refs
-    /// existed merge without them.
+    /// existed merge without them. Linked blobs are optional too: their content ids
+    /// are verified before insertion, metadata starts empty, and existing blobs win.
     ///
     /// The source is copied into a read-only in-memory database on every platform.
     /// A separate source connection isolates malformed schemas from the vault.
@@ -106,6 +113,11 @@ fn merge_from(
 ) -> StorageResult<MergeOutcome> {
     let has_blob_refs = has_table(incoming, "credential_blob_refs")?;
     validate_incoming(incoming, has_blob_refs)?;
+    let blobs = if has_table(incoming, "blobs")? {
+        copy_blobs(tx, incoming)?
+    } else {
+        0
+    };
     {
         let mut blobs = incoming.prepare(
             "SELECT content_id, blob_kind, MIN(created_at), bytes FROM blob_objects GROUP BY content_id",
@@ -126,8 +138,9 @@ fn merge_from(
     }
 
     let mut outcome = MergeOutcome {
-        added_records: 0,
-        added_blob_refs: 0,
+        records: 0,
+        blob_refs: 0,
+        blobs,
     };
     {
         let mut records = incoming.prepare(&format!(
@@ -160,7 +173,7 @@ fn merge_from(
                 |inserted| Ok(inserted.column_i64(0)),
             ).map_err(|e| map_db_err(&e))?;
             if inserted_id.is_some() {
-                outcome.added_records += 1;
+                outcome.records += 1;
             }
             if !has_blob_refs {
                 continue;
@@ -170,12 +183,47 @@ fn merge_from(
                 None => same_version_ids(tx, version)?,
             };
             for destination_id in destination_ids {
-                outcome.added_blob_refs +=
+                outcome.blob_refs +=
                     copy_blob_refs(tx, incoming, row.column_i64(7), destination_id)?;
             }
         }
     }
     Ok(outcome)
+}
+
+fn copy_blobs(tx: &Transaction<'_>, incoming: &Connection) -> StorageResult<u64> {
+    let invalid = incoming
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM blobs WHERE
+             typeof(blob_id) != 'blob' OR length(blob_id) != 32 OR
+             typeof(kind) != 'text' OR typeof(data) != 'blob' OR
+             typeof(created_at) != 'integer' OR created_at < 0 OR
+             typeof(updated_at) != 'integer' OR updated_at < 0)",
+            &[],
+            |row| Ok(row.column_i64(0) != 0),
+        )
+        .map_err(|e| map_db_err(&e))?;
+    if invalid {
+        return Err(invalid_backup());
+    }
+    let mut blobs = incoming.prepare(
+        "SELECT blob_id, kind, data, created_at, updated_at FROM blobs ORDER BY blob_id",
+    ).map_err(|e| map_db_err(&e))?;
+    let mut added = 0;
+    while let StepResult::Row(row) = blobs.step().map_err(|e| map_db_err(&e))? {
+        let data = row.column_blob(2);
+        let blob_id = compute_blob_id(&data);
+        if row.column_blob(0) != blob_id.as_bytes() {
+            return Err(invalid_backup());
+        }
+        added += tx.execute(
+            "INSERT INTO blobs (blob_id, kind, data, revision, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(blob_id) DO NOTHING",
+            params![blob_id.as_bytes().as_slice(), row.column_text(1), data,
+                    initial_revision()?, row.column_i64(3), row.column_i64(4)],
+        ).map_err(|e| map_db_err(&e))? as u64;
+    }
+    Ok(added)
 }
 
 /// Returns the destination credentials holding `version`, bound as `?1`–`?7`.
@@ -334,7 +382,7 @@ mod tests {
         }
 
         fn merge(&self) -> StorageResult<u64> {
-            self.merge_outcome().map(|outcome| outcome.added_records)
+            self.merge_outcome().map(|outcome| outcome.records)
         }
 
         fn merge_outcome(&self) -> StorageResult<MergeOutcome> {
@@ -464,30 +512,34 @@ mod tests {
         assert_eq!(
             f.receiver.merge_plaintext_bytes(&old_snapshot).unwrap(),
             MergeOutcome {
-                added_records: 1,
-                added_blob_refs: 0
+                records: 1,
+                blob_refs: 0,
+                blobs: 0
             }
         );
         assert_eq!(
             f.merge_outcome().unwrap(),
             MergeOutcome {
-                added_records: 0,
-                added_blob_refs: 1
+                records: 0,
+                blob_refs: 1,
+                blobs: 0
             }
         );
         assert_eq!(blob_refs(&f.receiver, 100), [orb_pcp]);
         assert_eq!(
             f.merge_outcome().unwrap(),
             MergeOutcome {
-                added_records: 0,
-                added_blob_refs: 0
+                records: 0,
+                blob_refs: 0,
+                blobs: 0
             }
         );
         assert_eq!(
             f.receiver.merge_plaintext_bytes(&old_snapshot).unwrap(),
             MergeOutcome {
-                added_records: 0,
-                added_blob_refs: 0
+                records: 0,
+                blob_refs: 0,
+                blobs: 0
             }
         );
         assert_eq!(blob_refs(&f.receiver, 100), [orb_pcp]);
@@ -512,8 +564,9 @@ mod tests {
         assert_eq!(
             f.merge_outcome().unwrap(),
             MergeOutcome {
-                added_records: 0,
-                added_blob_refs: 1
+                records: 0,
+                blob_refs: 1,
+                blobs: 0
             }
         );
         let mut expected = vec![local_only, shared, incoming_only];
@@ -521,7 +574,7 @@ mod tests {
         assert_eq!(f.receiver.credential_blobs(local_id).unwrap(), expected);
         assert_eq!(created_at(&f.receiver, local_id, shared), 1000);
         assert_eq!(created_at(&f.receiver, local_id, incoming_only), 3000);
-        assert_eq!(f.merge_outcome().unwrap().added_blob_refs, 0);
+        assert_eq!(f.merge_outcome().unwrap().blob_refs, 0);
     }
 
     #[test]
@@ -593,17 +646,11 @@ mod tests {
         }
 
         assert_eq!(
-            f.receiver
-                .merge_plaintext_bytes(&backup)
-                .unwrap()
-                .added_records,
+            f.receiver.merge_plaintext_bytes(&backup).unwrap().records,
             1
         );
         assert_eq!(
-            f.receiver
-                .merge_plaintext_bytes(&backup)
-                .unwrap()
-                .added_records,
+            f.receiver.merge_plaintext_bytes(&backup).unwrap().records,
             0
         );
     }
@@ -651,7 +698,7 @@ mod tests {
                             &std::fs::read(&snapshots[*index]).unwrap()
                         )
                         .unwrap()
-                        .added_records,
+                        .records,
                     1
                 );
             }
@@ -676,7 +723,7 @@ mod tests {
                             &std::fs::read(&snapshots[*index]).unwrap()
                         )
                         .unwrap()
-                        .added_records,
+                        .records,
                     0
                 );
             }
@@ -784,7 +831,7 @@ mod tests {
             other
                 .merge_plaintext_bytes(&std::fs::read(&f.backup).unwrap())
                 .unwrap()
-                .added_records,
+                .records,
             3
         );
         assert_eq!(versions(&f.receiver), versions(&other));
@@ -990,13 +1037,7 @@ mod tests {
             Some(vec![u8::try_from(schema).unwrap()])
         );
         assert!(blob_refs(&f.receiver, schema).is_empty());
-        assert_eq!(
-            f.receiver
-                .merge_plaintext_bytes(bytes)
-                .unwrap()
-                .added_records,
-            0
-        );
+        assert_eq!(f.receiver.merge_plaintext_bytes(bytes).unwrap().records, 0);
     }
 
     #[test_case("credential_records" ; "credential record")]
@@ -1059,6 +1100,7 @@ mod tests {
     fn restore_write_failure_rolls_back_all_credential_tables() {
         let f = Fixture::new();
         let id = store(&f.source, 100, b"credential", 1000);
+        f.source.put_blob("oxide.orb", b"pcp", None, 1000).unwrap();
         f.source
             .add_credential_blobs(id, b"credential", &[compute_blob_id(b"pcp")], 1000)
             .unwrap();
@@ -1068,7 +1110,7 @@ mod tests {
         let bytes = std::fs::read(&f.backup).unwrap();
         let error = f.receiver.restore_plaintext_bytes(&bytes).unwrap_err();
         assert!(error.to_string().contains("link write failed"));
-        for table in BACKUP_TABLES {
+        for table in BACKUP_TABLES.iter().copied().chain(["blobs"]) {
             assert_eq!(
                 conn.query_row(
                     &format!("SELECT COUNT(*) FROM {table}"),

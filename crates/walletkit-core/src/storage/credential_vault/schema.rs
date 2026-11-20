@@ -3,7 +3,7 @@
 //!
 //! The shared `blob_objects` table comes from
 //! [`walletkit_db::Blobs::ensure_schema`]; this module owns only the
-//! credential tables and the local-only content-addressed blob store.
+//! credential tables and the content-addressed blob store.
 
 use walletkit_sqlite::{Connection, DbResult};
 
@@ -13,8 +13,10 @@ pub(super) const VAULT_SCHEMA_VERSION: i64 = 1;
 ///
 /// **Backup sensitivity:** Schema changes here affect plaintext vault
 /// backups.
-/// - Portable credential tables belong in [`super::BACKUP_TABLES`].
-///   Local-only `blobs` and `legacy_blob_paths` must stay out of backup and recovery.
+/// - Handle portable credential tables in `export` and list them in
+///   [`super::BACKUP_TABLES`] for empty-vault restore. `blobs` is copied separately,
+///   filtered by the exported credential links, without
+///   metadata or revisions. `legacy_blob_paths` never participates in export or recovery.
 /// - Column changes (especially new `NOT NULL` columns without defaults) can
 ///   break restoring older backups into a newer schema.
 pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {

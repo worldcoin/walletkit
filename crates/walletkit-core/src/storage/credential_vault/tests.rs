@@ -1004,8 +1004,8 @@ fn test_plaintext_restore_remaps_blob_refs_and_merge_replay_is_noop() {
     let outcome = restored
         .merge_plaintext_bytes(&fs::read(&export_path).unwrap())
         .unwrap();
-    assert_eq!(outcome.added_records, 0);
-    assert_eq!(outcome.added_blob_refs, 0);
+    assert_eq!(outcome.records, 0);
+    assert_eq!(outcome.blob_refs, 0);
     assert_eq!(restored.list_credentials(None, 1000).unwrap(), records);
     assert_eq!(count_blob_refs(&restored), 2);
     let _ = fs::remove_file(&export_path);
