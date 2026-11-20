@@ -70,6 +70,9 @@ export interface InitializeOptions {
 /** How long `close()` waits for the worker before terminating it. */
 const CLOSE_TIMEOUT_MS = 5000;
 
+// Match MAX_SUB_BYTES in crates/walletkit-web/src/enrollment.rs.
+const MAX_SUB_BYTES = 66;
+
 type Distribute<T> = T extends unknown ? Omit<T, "id"> : never;
 type Message = Distribute<Request>;
 
@@ -160,6 +163,14 @@ class WorkerClient implements Rpc {
       throw new Error("PoseGuard enrollment already in progress");
     if (typeof configJson !== "string" || typeof sub !== "string")
       throw new TypeError("Expected configJson and sub strings");
+    if (
+      sub.length === 0 ||
+      sub.length > MAX_SUB_BYTES ||
+      new TextEncoder().encode(sub).length > MAX_SUB_BYTES
+    )
+      throw new TypeError(
+        `\`sub\` must contain 1 to ${MAX_SUB_BYTES} UTF-8 bytes`,
+      );
     if (typeof capture !== "function")
       throw new TypeError("Expected a capture callback");
     if (

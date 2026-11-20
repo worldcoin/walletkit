@@ -755,7 +755,7 @@ test("PoseGuard relays verified targets and transfers the four images in order",
   });
 });
 
-test("PoseGuard rejects invalid images and releases the attempt on cancellation or timeout", async ({
+test("PoseGuard rejects invalid inputs and releases the attempt on cancellation or timeout", async ({
   page,
 }) => {
   const result = await page.evaluate(async () => {
@@ -806,6 +806,17 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
     }
 
     try {
+      const invalidSubjects = [];
+      for (const sub of ["", "a".repeat(67), "é".repeat(34)]) {
+        invalidSubjects.push(
+          await wallet
+            .enrollSelfieWithPoseGuard("success", sub, key, async () => ({
+              centralPng,
+              captures,
+            }))
+            .catch((error: Error) => error.name),
+        );
+      }
       const invalidContainer = await wallet
         .enrollSelfieWithPoseGuard("success", "0x1f", key, async () => null)
         .catch((error: Error) => ({
@@ -848,7 +859,7 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
       const timedOut = await interrupt("timeout");
       const recovered = await wallet.enrollSelfieWithPoseGuard(
         "success",
-        "0x1f",
+        "é".repeat(33),
         key,
         async () => ({
           centralPng,
@@ -856,6 +867,7 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
         }),
       );
       return {
+        invalidSubjects,
         invalidContainer,
         invalid,
         sameError,
@@ -869,6 +881,7 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
     }
   });
   expect(result).toEqual({
+    invalidSubjects: Array(3).fill("TypeError"),
     invalidContainer: {
       name: "TypeError",
       message:
