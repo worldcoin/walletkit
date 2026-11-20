@@ -1,5 +1,12 @@
+/// <reference types="vite/client" />
 import { initializeWalletKit } from "../../dist/index.js";
-Object.assign(window, { initializeWalletKit });
+import poseGuardWorkerUrl from "./poseguard.worker.ts?worker&url";
+
+Object.assign(window, {
+  initializeWalletKit,
+  initializePoseGuardTestWallet: () =>
+    initializeWalletKit({ workerUrl: poseGuardWorkerUrl }),
+});
 Object.assign(window, {
   storageOperation(secret = 7) {
     const worker = new Worker(new URL("./storage.worker.ts", import.meta.url), {
@@ -24,7 +31,7 @@ Object.assign(window, {
 });
 
 Object.assign(window, {
-  enrollmentAssignment() {
+  enrollmentAssignment(poseguard = false) {
     const worker = new Worker(
       new URL("./enrollment.worker.ts", import.meta.url),
       { type: "module" },
@@ -45,6 +52,7 @@ Object.assign(window, {
         reject(new Error(event.message));
       };
       worker.postMessage({
+        poseguard,
         wasmUrl: new URL("../../src/generated/walletkit.wasm", import.meta.url)
           .href,
       });

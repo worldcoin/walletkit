@@ -317,6 +317,8 @@ test("Rust objects stay in the worker and are used through handles", async ({
     const store = await wallet.CredentialStore.new(paths, keys);
     await store.init(42n, 1000n);
     const credentials = await store.listCredentials(undefined, 1000n);
+    const context: { self?: unknown } = {};
+    context.self = context;
     const entry = {
       rpId: 1n,
       appIdentifier: "app_test",
@@ -325,6 +327,7 @@ test("Rust objects stay in the worker and are used through handles", async ({
       protocol: 4,
       outcome: "completed",
       issuerSchemaIds: [1n, 2n],
+      context,
     };
     const activityId = await store.recordActivity(entry, 1000n);
     const query = await wallet.ActivityQuery.new();
@@ -677,4 +680,358 @@ test("enrollment requests an assignment and withholds the image if attestation f
   expect(result.code).toBe("Attestation");
   expect(result.closed).toBe(true);
   expect(result.alive).toBe("alive");
+});
+
+test("PoseGuard relays verified targets and transfers the four images in order", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializePoseGuardTestWallet();
+    const initial = await wallet.poseGuardTestCounts();
+    const centralPng = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    const backing = new Uint8Array([99, 1, 2, 3, 88]);
+    const captures = [1, 2, 3].map((index) =>
+      backing.subarray(index, index + 1),
+    );
+    const key = new Uint8Array(32).fill(1);
+    const prompts: unknown[] = [];
+    const capture = async (prompt: unknown, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      prompts.push(prompt);
+      return { centralPng, captures };
+    };
+    try {
+      const success = await wallet.enrollSelfieWithPoseGuard(
+        "success",
+        "0x1f",
+        key,
+        capture,
+      );
+      const rejected = await wallet.enrollSelfieWithPoseGuard(
+        "challenge",
+        "0x1f",
+        key,
+        capture,
+      );
+      return {
+        initial,
+        prompts,
+        success: success.status,
+        custody: Array.from(success.enrollment.encryptedCustody),
+        rejected,
+        central: Array.from(centralPng),
+        backing: Array.from(backing),
+        keyIntact: key.every((byte) => byte === 1),
+        counts: await wallet.poseGuardTestCounts(),
+      };
+    } finally {
+      await wallet.close();
+    }
+  });
+  const prompt = {
+    targets: [
+      { targetPitch: 0, targetYaw: -31 },
+      { targetPitch: -17, targetYaw: 0 },
+      { targetPitch: 0, targetYaw: 34 },
+    ],
+    expiresAt: 1_800_000_000,
+    captureTimeoutMs: 41_000,
+  };
+  expect(result).toEqual({
+    initial: { started: 0, submitted: 0 },
+    prompts: [prompt, prompt],
+    success: "success",
+    custody: [1, 2, 3],
+    rejected: {
+      status: "failed",
+      reason: "challenge",
+      index: 1,
+      challengeReason: "pose_mismatch",
+    },
+    central: [137, 80, 78, 71, 13, 10, 26, 10],
+    backing: [99, 1, 2, 3, 88],
+    keyIntact: true,
+    counts: { started: 2, submitted: 2 },
+  });
+});
+
+test("PoseGuard rejects invalid inputs and releases the attempt on cancellation or timeout", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializePoseGuardTestWallet();
+    const centralPng = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    const captures = [1, 2, 3].map((byte) => new Uint8Array([byte]));
+    const key = new Uint8Array(32);
+    const invalid = [];
+
+    async function interrupt(scenario: "abort" | "timeout") {
+      const controller = new AbortController();
+      const reason = new DOMException("Stopped", "AbortError");
+      let captureSignal: AbortSignal | undefined;
+      let finish!: (images: {
+        centralPng: Uint8Array;
+        captures: Uint8Array[];
+      }) => void;
+      const lateImages = new Promise<{
+        centralPng: Uint8Array;
+        captures: Uint8Array[];
+      }>((resolve) => {
+        finish = resolve;
+      });
+      const enrollment = wallet
+        .enrollSelfieWithPoseGuard(
+          scenario,
+          "0x1f",
+          key,
+          (_prompt: unknown, signal: AbortSignal) => {
+            captureSignal = signal;
+            if (scenario === "abort") controller.abort(reason);
+            return lateImages;
+          },
+          { signal: controller.signal },
+        )
+        .catch((error: Error & { code?: string }) =>
+          scenario === "abort"
+            ? { sameReason: error === reason }
+            : { name: error.name, code: error.code },
+        );
+      // This RPC must finish before the callback supplies its late images.
+      const [error] = await Promise.all([
+        enrollment,
+        wallet.poseGuardTestCounts(),
+      ]);
+      finish({ centralPng, captures });
+      return { error, stoppedCapture: captureSignal?.aborted };
+    }
+
+    try {
+      const invalidSubjects = [];
+      for (const sub of ["", "a".repeat(67), "é".repeat(34)]) {
+        invalidSubjects.push(
+          await wallet
+            .enrollSelfieWithPoseGuard("success", sub, key, async () => ({
+              centralPng,
+              captures,
+            }))
+            .catch((error: Error) => error.name),
+        );
+      }
+      const invalidContainer = await wallet
+        .enrollSelfieWithPoseGuard("success", "0x1f", key, async () => null)
+        .catch((error: Error) => ({
+          name: error.name,
+          message: error.message,
+        }));
+      const batches = [
+        { centralPng: new Uint8Array([1]), captures },
+        { centralPng, captures: captures.slice(1) },
+        { centralPng, captures: [...captures, captures[0]] },
+        { centralPng, captures: [new Uint8Array(), captures[1], captures[2]] },
+        {
+          centralPng,
+          captures: [
+            new Uint8Array(8 * 1024 * 1024 + 1),
+            captures[1],
+            captures[2],
+          ],
+        },
+      ];
+      for (const images of batches) {
+        invalid.push(
+          await wallet
+            .enrollSelfieWithPoseGuard(
+              "success",
+              "0x1f",
+              key,
+              async () => images,
+            )
+            .catch((error: Error) => error.name),
+        );
+      }
+      const cameraError = new Error("Camera denied");
+      const sameError = await wallet
+        .enrollSelfieWithPoseGuard("success", "0x1f", key, async () => {
+          throw cameraError;
+        })
+        .catch((error: Error) => error === cameraError);
+      const aborted = await interrupt("abort");
+      const timedOut = await interrupt("timeout");
+      const recovered = await wallet.enrollSelfieWithPoseGuard(
+        "success",
+        "é".repeat(33),
+        key,
+        async () => ({
+          centralPng,
+          captures,
+        }),
+      );
+      return {
+        invalidSubjects,
+        invalidContainer,
+        invalid,
+        sameError,
+        aborted,
+        timedOut,
+        recovered: recovered.status,
+        counts: await wallet.poseGuardTestCounts(),
+      };
+    } finally {
+      await wallet.close();
+    }
+  });
+  expect(result).toEqual({
+    invalidSubjects: Array(3).fill("TypeError"),
+    invalidContainer: {
+      name: "TypeError",
+      message:
+        "PoseGuard capture must return a plain object with centralPng and captures",
+    },
+    invalid: Array(5).fill("TypeError"),
+    sameError: true,
+    aborted: { error: { sameReason: true }, stoppedCapture: true },
+    timedOut: {
+      error: { name: "SelfieEnrollmentError", code: "Timeout" },
+      stoppedCapture: true,
+    },
+    recovered: "success",
+    counts: { started: 10, submitted: 1 },
+  });
+});
+
+test("aborting queued PoseGuard enrollment rejects before the earlier RPC finishes", async ({
+  page,
+}) => {
+  test.setTimeout(10_000);
+  const result = await page.evaluate(async () => {
+    const wallet = await (window as any).initializePoseGuardTestWallet();
+    const channel = new BroadcastChannel(crypto.randomUUID());
+    const controller = new AbortController();
+    const reason = new DOMException("Stopped while queued", "AbortError");
+    const key = new Uint8Array(32);
+    try {
+      const started = new Promise<void>((resolve) => {
+        channel.onmessage = ({ data }) => {
+          if (data === "started") resolve();
+        };
+      });
+      const earlier = wallet.holdPoseGuardTestRpc(channel.name);
+      await started;
+
+      const cancelled = wallet
+        .enrollSelfieWithPoseGuard(
+          "success",
+          "0x1f",
+          key,
+          async () => {
+            throw new Error("Cancelled enrollment requested capture");
+          },
+          { signal: controller.signal },
+        )
+        .catch((error: unknown) => error === reason);
+      controller.abort(reason);
+      const sameReason = await cancelled;
+
+      const retry = wallet.enrollSelfieWithPoseGuard(
+        "success",
+        "0x1f",
+        key,
+        async () => ({
+          centralPng: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+          captures: [1, 2, 3].map((byte) => new Uint8Array([byte])),
+        }),
+      );
+      channel.postMessage("release");
+      const [, recovered] = await Promise.all([earlier, retry]);
+      return {
+        sameReason,
+        recovered: recovered.status,
+        counts: await wallet.poseGuardTestCounts(),
+      };
+    } finally {
+      channel.close();
+      wallet.terminate();
+    }
+  });
+  expect(result).toEqual({
+    sameReason: true,
+    recovered: "success",
+    counts: { started: 1, submitted: 1 },
+  });
+});
+
+test("closing or terminating WalletKit aborts a pending PoseGuard capture", async ({
+  page,
+}) => {
+  const results = await page.evaluate(async () => {
+    const results = [];
+    for (const method of ["close", "terminate"] as const) {
+      const wallet = await (window as any).initializePoseGuardTestWallet();
+      let ready!: (signal: AbortSignal) => void;
+      const captureStarted = new Promise<AbortSignal>((resolve) => {
+        ready = resolve;
+      });
+      const result = wallet
+        .enrollSelfieWithPoseGuard(
+          "success",
+          "0x1f",
+          new Uint8Array(32),
+          (_prompt: unknown, signal: AbortSignal) => {
+            ready(signal);
+            return new Promise(() => {});
+          },
+        )
+        .catch((error: Error) => error.message);
+      const signal = await captureStarted;
+      const [, retryError] = await Promise.all([
+        wallet[method](),
+        wallet
+          .enrollSelfieWithPoseGuard(
+            "success",
+            "0x1f",
+            new Uint8Array(32),
+            async () => {
+              throw new Error("Unexpected capture during shutdown");
+            },
+          )
+          .catch((error: Error) => error.message),
+      ]);
+      results.push({
+        aborted: signal.aborted,
+        stopped: wallet.isStopped(),
+        error: await result,
+        retryError,
+      });
+    }
+    return results;
+  });
+  expect(results).toEqual([
+    {
+      aborted: true,
+      stopped: true,
+      error: "WalletKit is closing",
+      retryError: "WalletKit is closed",
+    },
+    {
+      aborted: true,
+      stopped: true,
+      error: "WalletKit was terminated",
+      retryError: "WalletKit was terminated",
+    },
+  ]);
+});
+
+test("PoseGuard requests no captures when attestation fails", async ({
+  page,
+}) => {
+  const result = await page.evaluate(() =>
+    (window as any).enrollmentAssignment(true),
+  );
+  expect(result).toEqual({
+    code: "Attestation",
+    sent: ["assignment_request"],
+    closed: true,
+    captureCalls: 0,
+    alive: "alive",
+  });
 });

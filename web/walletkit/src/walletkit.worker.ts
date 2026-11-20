@@ -1,9 +1,21 @@
 import init, * as wasm from "./generated/walletkit.js";
-import type { Handle, Ref, Request, Response, Target } from "./protocol";
+import type {
+  PoseGuardImages,
+  PoseGuardPrompt,
+} from "./generated/walletkit.js";
+import type {
+  Handle,
+  PoseGuardReply,
+  Ref,
+  Request,
+  Target,
+  WorkerMessage,
+} from "./protocol";
+import { clearBytes } from "./protocol";
 
 const scope = globalThis as unknown as {
-  onmessage: ((event: MessageEvent<Request>) => void) | null;
-  postMessage(message: Response): void;
+  onmessage: ((event: MessageEvent<Request | PoseGuardReply>) => void) | null;
+  postMessage(message: WorkerMessage): void;
 };
 
 type RustObject = { free(): void };
@@ -16,6 +28,7 @@ const INTERNAL = new Set([
   "initSync",
   "start",
   "initializePersistentStorage",
+  "runPoseGuardEnrollment",
 ]);
 
 const isClass = (value: unknown): value is RustClass =>
@@ -39,16 +52,61 @@ let initialized = false;
 // A Rust panic traps the module and leaves its memory in an unknown state.
 let crashed: Error | undefined;
 
+interface WorkerPoseGuardAttempt {
+  id: number;
+  controller: AbortController;
+  custodyPublicKey: Uint8Array;
+  started: boolean;
+  capture?: {
+    resolve(images: PoseGuardImages): void;
+    reject(error: Error): void;
+  };
+  images?: PoseGuardImages;
+}
+
+let poseGuard: WorkerPoseGuardAttempt | undefined;
+
 // Run one complete request at a time so awaited operations cannot interleave
 // and race the worker's shared state.
 let queue = Promise.resolve();
 
 scope.onmessage = ({ data }) => {
+  if (data.op === "poseGuardImages" || data.op === "cancelPoseGuard") {
+    handlePoseGuardReply(data);
+    return;
+  }
+  let attempt: WorkerPoseGuardAttempt | undefined;
+  if (data.op === "enrollPoseGuard") {
+    if (poseGuard) {
+      clearBytes(data.custodyPublicKey);
+      scope.postMessage({
+        id: data.id,
+        ok: false,
+        error: {
+          name: "Error",
+          message: "PoseGuard enrollment already in progress",
+        },
+      });
+      return;
+    }
+    // Register before queuing so abort can reach the attempt before it starts.
+    attempt = {
+      id: data.id,
+      controller: new AbortController(),
+      custodyPublicKey: data.custodyPublicKey,
+      started: false,
+    };
+    poseGuard = attempt;
+  }
   queue = queue.then(async () => {
+    // A queued cancellation already replied and may have made room for a retry.
+    if (attempt && poseGuard !== attempt) return;
     try {
       // A crashed module can still be closed; the client then terminates the worker.
       if (crashed && data.op !== "close") throw crashed;
-      scope.postMessage({ id: data.id, ok: true, result: await perform(data) });
+      if (attempt) attempt.started = true;
+      const result = await perform(data, attempt);
+      scope.postMessage({ id: data.id, ok: true, result });
     } catch (error) {
       if (error instanceof WebAssembly.RuntimeError) {
         crashed = new Error(
@@ -60,21 +118,109 @@ scope.onmessage = ({ data }) => {
         ok: false,
         error: { ...serialize(error), ...(crashed && { fatal: true }) },
       });
+    } finally {
+      if (attempt) {
+        clearBytes(attempt.custodyPublicKey);
+        rejectPoseGuardCapture(
+          attempt,
+          new Error("PoseGuard enrollment ended"),
+        );
+        clearBytes(attempt.images);
+        poseGuard = undefined;
+      }
     }
   });
 };
 
-async function perform(request: Request): Promise<unknown> {
+async function perform(
+  request: Request,
+  attempt: WorkerPoseGuardAttempt | undefined,
+): Promise<unknown> {
   switch (request.op) {
     case "initialize":
       return initialize(request.wasmUrl);
     case "call":
       return call(request.target, request.args);
+    case "enrollPoseGuard":
+      if (!attempt) throw new Error("Missing PoseGuard enrollment attempt");
+      if (!initialized) throw new Error("WalletKit is not initialized");
+      return enrollPoseGuard(request, attempt);
     case "release":
       return release(request.handle);
     case "close":
       return close();
   }
+}
+
+function enrollPoseGuard(
+  request: Extract<Request, { op: "enrollPoseGuard" }>,
+  attempt: WorkerPoseGuardAttempt,
+) {
+  const capture = (prompt: PoseGuardPrompt) =>
+    requestPoseGuardCapture(attempt, prompt);
+  attempt.controller.signal.throwIfAborted();
+  return wasm.runPoseGuardEnrollment(
+    request.configJson,
+    request.sub,
+    attempt.custodyPublicKey,
+    capture,
+    attempt.controller.signal,
+  );
+}
+
+function requestPoseGuardCapture(
+  attempt: WorkerPoseGuardAttempt,
+  prompt: PoseGuardPrompt,
+) {
+  attempt.controller.signal.throwIfAborted();
+  return new Promise<PoseGuardImages>((resolve, reject) => {
+    attempt.capture = { resolve, reject };
+    scope.postMessage({
+      id: attempt.id,
+      event: "poseGuardCaptureRequested",
+      prompt,
+    });
+  });
+}
+
+function handlePoseGuardReply(reply: PoseGuardReply) {
+  const attempt = poseGuard?.id === reply.id ? poseGuard : undefined;
+  if (reply.op === "cancelPoseGuard") {
+    if (!attempt) return;
+    const reason = new DOMException(
+      "PoseGuard enrollment was cancelled",
+      "AbortError",
+    );
+    rejectPoseGuardCapture(attempt, reason);
+    attempt.controller.abort(reason);
+    if (!attempt.started) {
+      clearBytes(attempt.custodyPublicKey);
+      poseGuard = undefined;
+      scope.postMessage({
+        id: attempt.id,
+        ok: false,
+        error: serialize(reason),
+      });
+    }
+    return;
+  }
+  const capture = attempt?.capture;
+  if (!attempt || !capture || attempt.controller.signal.aborted) {
+    clearBytes(reply.images);
+    return;
+  }
+  attempt.capture = undefined;
+  attempt.images = reply.images;
+  capture.resolve(reply.images);
+}
+
+function rejectPoseGuardCapture(
+  attempt: WorkerPoseGuardAttempt,
+  reason: Error,
+) {
+  const capture = attempt.capture;
+  attempt.capture = undefined;
+  capture?.reject(reason);
 }
 
 async function initialize(wasmUrl: string): Promise<void> {
@@ -124,7 +270,7 @@ async function call(target: Target, encodedArgs: unknown[]): Promise<unknown> {
     // wasm-bindgen copies byte arguments into Rust during the call itself, so clear
     // the page's copies (seeds, keys) now: not after a network call settles, which
     // may take long. Also cleared when an argument fails to resolve.
-    for (const arg of encodedArgs) if (arg instanceof Uint8Array) arg.fill(0);
+    clearBytes(encodedArgs);
   }
   return reveal(await result);
 }
