@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use eyre::{bail, Result, WrapErr as _};
 use xshell::{cmd, Shell};
 
-const DEFAULT_CARGO_FEATURES: &str = "compress-zkeys,embed-zkeys,v3";
+const DEFAULT_CARGO_FEATURES: &str =
+    "compress-zkeys,embed-zkeys,v3,embed-embedding-similarity-prover";
 const FRAMEWORK_NAME: &str = "WalletKit.xcframework";
 const INTERMEDIATE_DIR: &str = "swift/ios_build";
 const PACKAGE_NAME: &str = "walletkit";
