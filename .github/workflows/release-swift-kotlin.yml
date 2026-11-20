@@ -4,11 +4,6 @@ on:
   release:
     types: [published]
 
-env:
-  # The feature flags with which the Android library is built.
-  # Used by both the Kotlin and Swift xtasks.
-  WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3
-
 jobs:
   pre-release-checks:
     runs-on: ubuntu-latest
@@ -136,6 +131,8 @@ jobs:
             --latest
 
   prepare-kotlin:
+    env:
+      WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3
     name: Prepare Kotlin
     runs-on: arc-public-8xlarge-amd64-runner
     needs: [pre-release-checks]
