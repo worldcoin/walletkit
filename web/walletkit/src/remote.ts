@@ -9,7 +9,6 @@
  */
 import type * as Wasm from "./generated/walletkit.js";
 import type { Handle, Ref, Target } from "./protocol";
-import { isRecord } from "./protocol";
 
 type Exports = typeof Wasm;
 type RustObject = { free(): void };
@@ -182,14 +181,6 @@ export function encode(
     const copy = value.slice();
     transfer.push(copy.buffer);
     return copy;
-  }
-  if (isRecord(value)) {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [
-        key,
-        encode(rpc, item, transfer),
-      ]),
-    );
   }
   return value;
 }
