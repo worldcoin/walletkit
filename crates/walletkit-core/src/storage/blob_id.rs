@@ -1,4 +1,4 @@
-//! Content ids that link credentials to their PCP blobs.
+//! Blob ids that link credentials to their PCP archives.
 
 use std::sync::Arc;
 
@@ -8,7 +8,7 @@ use super::error::{StorageError, StorageResult};
 
 const BLOB_ID_TAG: &[u8] = b"worldid:credential-blob:v1";
 
-/// Content id of a credential's PCP (personal custody package).
+/// Blob id of a credential's PCP (personal custody package).
 ///
 /// `SHA-256(b"worldid:credential-blob:v1" || plaintext)`, where `plaintext` is
 /// the PCP package without the host's outer encryption. Hosts compute the same

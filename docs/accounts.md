@@ -22,6 +22,40 @@ database key in the device keystore; for the types involved, see the
 In the browser, the app supplies the key itself; see
 [Protect the database key](web/package.md#protect-the-database-key).
 
+### Local blobs
+
+The native `CredentialStore` API keeps plaintext PCP archives in the encrypted
+vault with `put_blob`, `get_blob`, and `get_blob_by_legacy_path`. The outer device
+seal must be removed before storing an archive and is never stored in the vault.
+Backup-sealed inner members remain unchanged. The vault's encryption protects
+the plaintext at rest.
+
+`put_blob(kind, data, legacy_path, now)` computes and returns the 32-byte `BlobId`
+using `blob_id(data)`: `SHA-256("worldid:credential-blob:v1" || data)`. Content
+addressing is verified on every put. The owner supplies an opaque kind (such as `oxide.face`)
+and optionally a legacy PCP path relative to its user data directory. Identical
+data shares one row; each put updates its kind, preserves metadata and creation
+time, and increments its revision. Reusing a legacy path moves that alias without
+deleting the previous blob. Revisions are opaque counters, randomly seeded on creation
+and incremented on each put or metadata write. Recreating identical data draws
+a fresh 62-bit seed to reduce stale metadata CAS matches across deletion/recreation.
+
+The `legacy_blob_paths` table maps legacy on-disk PCP paths only and will be
+removed once those files are deleted. `get_blob_by_legacy_path` reads through
+these aliases. `list_legacy_blob_paths` uses a literal, case-sensitive prefix;
+an empty prefix lists all legacy paths and a trailing `/` selects a directory.
+Legacy paths use `/`, normalize `.` and repeated separators, and reject absolute
+paths, backslashes, drive prefixes, NULs and `..` components. `list_blobs` reads
+metadata without loading blob data.
+`update_blob_metadata` requires the revision read by the caller; a missing blob
+or changed revision returns `StorageError::BlobRevisionConflict`.
+
+These blobs and aliases are local-only. They are excluded from vault export,
+merge and restore, do not schedule credential backups, and outlive credential
+deletion. Owners manage retention with `delete_legacy_blob_path` (alias only) and
+`delete_blob` (content and every alias). Removing a blob leaves credential links
+intact.
+
 ## From registration to stored credential
 
 The following diagram shows the calls between the app, WalletKit, and the World ID

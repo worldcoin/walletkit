@@ -3,7 +3,7 @@
 //!
 //! The shared `blob_objects` table comes from
 //! [`walletkit_db::Blobs::ensure_schema`]; this module owns only the
-//! credential-specific tables.
+//! credential tables and the local-only content-addressed blob store.
 
 use walletkit_sqlite::{Connection, DbResult};
 
@@ -13,7 +13,8 @@ pub(super) const VAULT_SCHEMA_VERSION: i64 = 1;
 ///
 /// **Backup sensitivity:** Schema changes here affect plaintext vault
 /// backups.
-/// - New tables must be added to [`super::BACKUP_TABLES`].
+/// - Portable credential tables belong in [`super::BACKUP_TABLES`].
+///   Local-only `blobs` and `legacy_blob_paths` must stay out of backup and recovery.
 /// - Column changes (especially new `NOT NULL` columns without defaults) can
 ///   break restoring older backups into a newer schema.
 pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
@@ -63,6 +64,24 @@ pub(super) fn ensure_schema(conn: &Connection) -> DbResult<()> {
 
         CREATE INDEX IF NOT EXISTS idx_credential_blob_refs_blob_id
         ON credential_blob_refs (blob_id);
+
+        CREATE TABLE IF NOT EXISTS blobs (
+            blob_id BLOB PRIMARY KEY NOT NULL CHECK (typeof(blob_id) = 'blob' AND length(blob_id) = 32),
+            kind TEXT NOT NULL,
+            metadata BLOB,
+            revision INTEGER NOT NULL CHECK (typeof(revision) = 'integer' AND revision > 0),
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            data BLOB NOT NULL
+        );
+
+        -- Maps legacy on-disk PCP paths only; removed once those files are deleted.
+        CREATE TABLE IF NOT EXISTS legacy_blob_paths (
+            legacy_path TEXT PRIMARY KEY NOT NULL,
+            blob_id BLOB NOT NULL REFERENCES blobs (blob_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_legacy_blob_paths_blob_id ON legacy_blob_paths (blob_id);
 ",
     )
 }

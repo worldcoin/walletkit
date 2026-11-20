@@ -11,6 +11,7 @@ use super::cache::{BillingWitnessKey, BILLING_WITNESS_LEN};
 use super::error::{StorageError, StorageResult};
 use super::keys::StorageKeys;
 use super::paths::StoragePaths;
+use super::stored_blob::{BlobRecord, StoredBlob};
 use super::traits::StorageProvider;
 #[cfg(not(target_arch = "wasm32"))]
 use super::traits::{ActivityChangedListener, VaultChangedListener};
@@ -383,6 +384,140 @@ impl CredentialStore {
             .into_iter()
             .map(Arc::new)
             .collect())
+    }
+
+    /// Stores a plaintext PCP archive and returns its computed [`BlobId`].
+    /// The blob upsert and optional legacy on-disk PCP path alias are written atomically.
+    /// An alias pointing at another blob moves; that blob and its other aliases remain.
+    /// Legacy aliases will be removed once the on-disk files are deleted.
+    ///
+    /// The caller must remove the outer device seal before calling this method.
+    /// The store hashes the exact `data` with [`super::blob_id()`] so its blob id is verified
+    /// on every put. The vault's encryption protects the plaintext at rest.
+    /// Upserts preserve metadata and creation time and increment the revision.
+    /// Revisions start at a random positive value and increment on every put or
+    /// metadata write, reducing stale metadata CAS matches after deletion/recreation
+    /// of identical data. `now` is a Unix timestamp.
+    /// Blobs are local-only: no backup notification, export, merge, or credential GC.
+    /// Legacy paths use `/`; redundant separators and `.` are normalized. Absolute paths,
+    /// drive prefixes, backslashes, NULs and `..` components are rejected.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid path, uninitialized store, or database failure.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI optional string argument"
+    )]
+    pub fn put_blob(
+        &self,
+        kind: &str,
+        data: &[u8],
+        legacy_path: Option<String>,
+        now: u64,
+    ) -> StorageResult<Arc<BlobId>> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .put_blob(kind, data, legacy_path.as_deref(), now)
+            .map(Arc::new)
+    }
+
+    /// Reads a local blob, including its data, or returns `None` when absent.
+    ///
+    /// # Errors
+    /// Returns an error if the store is uninitialized or the query fails.
+    pub fn get_blob(&self, blob_id: &BlobId) -> StorageResult<Option<StoredBlob>> {
+        self.lock_inner()?.state()?.vault.get_blob(blob_id)
+    }
+
+    /// Resolves a legacy on-disk PCP path alias and reads the local blob.
+    /// Legacy aliases will be removed once the on-disk files are deleted.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid path, uninitialized store, or query failure.
+    pub fn get_blob_by_legacy_path(
+        &self,
+        legacy_path: &str,
+    ) -> StorageResult<Option<StoredBlob>> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .get_blob_by_legacy_path(legacy_path)
+    }
+
+    /// Lists legacy on-disk PCP path aliases with a literal, case-sensitive relative prefix.
+    /// Results are in lexical order. Legacy aliases will be removed once the files are deleted.
+    /// An empty prefix lists all aliases; a trailing `/` restricts to that directory.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid prefix, uninitialized store, or query failure.
+    pub fn list_legacy_blob_paths(&self, prefix: &str) -> StorageResult<Vec<String>> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .list_legacy_blob_paths(prefix)
+    }
+
+    /// Lists blob metadata in id order, optionally filtered by the exact owner tag.
+    /// Does not read blob data.
+    ///
+    /// # Errors
+    /// Returns an error if the store is uninitialized or the query fails.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI optional string argument"
+    )]
+    pub fn list_blobs(&self, kind: Option<String>) -> StorageResult<Vec<BlobRecord>> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .list_blobs(kind.as_deref())
+    }
+
+    /// Replaces opaque metadata only if the revision still matches, returning the new revision.
+    /// `None` clears metadata; `now` is a Unix timestamp. Data and aliases stay unchanged.
+    ///
+    /// # Errors
+    /// Returns [`StorageError::BlobRevisionConflict`] for a missing blob or stale revision,
+    /// or an error for an uninitialized store or database failure.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "UniFFI optional byte-buffer argument"
+    )]
+    pub fn update_blob_metadata(
+        &self,
+        blob_id: &BlobId,
+        metadata: Option<Vec<u8>>,
+        expected_revision: u64,
+        now: u64,
+    ) -> StorageResult<u64> {
+        self.lock_inner()?.state()?.vault.update_blob_metadata(
+            blob_id,
+            metadata.as_deref(),
+            expected_revision,
+            now,
+        )
+    }
+
+    /// Removes only a legacy on-disk PCP path alias, returning whether it existed.
+    /// Keeps the blob. Legacy aliases will be removed once the files are deleted.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid path, uninitialized store, or database failure.
+    pub fn delete_legacy_blob_path(&self, legacy_path: &str) -> StorageResult<bool> {
+        self.lock_inner()?
+            .state()?
+            .vault
+            .delete_legacy_blob_path(legacy_path)
+    }
+
+    /// Deletes a local blob and all its aliases, returning whether it existed.
+    /// Credential links remain; owners decide retention independently of credentials.
+    ///
+    /// # Errors
+    /// Returns an error if the store is uninitialized or the database write fails.
+    pub fn delete_blob(&self, blob_id: &BlobId) -> StorageResult<bool> {
+        self.lock_inner()?.state()?.vault.delete_blob(blob_id)
     }
 
     /// **Development only.** Permanently deletes all stored credentials and their
@@ -1446,6 +1581,67 @@ mod tests {
 
     fn supplied_keys(byte: u8) -> Arc<StorageKeys> {
         Arc::new(StorageKeys::from_bytes(vec![byte; 32]).expect("32-byte key"))
+    }
+
+    #[test]
+    fn local_blob_writes_do_not_schedule_credential_backups() {
+        let root = temp_root_path();
+        let store = CredentialStore::with_keys(
+            StoragePaths::from_root(root.to_string_lossy().into_owned()),
+            supplied_keys(7),
+        )
+        .unwrap();
+        store.init(42, 1000).unwrap();
+        let (tx, rx) = mpsc::channel();
+        store.set_vault_changed_listener(Arc::new(ChannelVaultListener(tx)));
+        let id = store
+            .put_blob(
+                "oxide.face",
+                b"hello pcp",
+                Some("face_pcp/face.tar.gz".to_owned()),
+                1000,
+            )
+            .unwrap();
+        assert_eq!(id, crate::storage::blob_id(b"hello pcp".to_vec()));
+        let stored = store.get_blob(&id).unwrap().unwrap();
+        assert_eq!(stored.data, b"hello pcp");
+        let initial = stored.record.revision;
+        assert_eq!(
+            store
+                .get_blob_by_legacy_path("face_pcp/face.tar.gz")
+                .unwrap()
+                .unwrap()
+                .record
+                .kind,
+            "oxide.face"
+        );
+        assert_eq!(
+            store.list_legacy_blob_paths("face_pcp/").unwrap(),
+            ["face_pcp/face.tar.gz"]
+        );
+        assert_eq!(
+            store
+                .list_blobs(Some("oxide.face".to_owned()))
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            store
+                .update_blob_metadata(&id, Some(b"enrolled".to_vec()), initial, 1001)
+                .unwrap(),
+            initial + 1
+        );
+        assert!(store
+            .delete_legacy_blob_path("face_pcp/face.tar.gz")
+            .unwrap());
+        assert!(store.delete_blob(&id).unwrap());
+        drop(store);
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(1)),
+            Err(mpsc::RecvTimeoutError::Disconnected)
+        );
+        cleanup_test_storage(&root);
     }
 
     #[test]
