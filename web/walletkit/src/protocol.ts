@@ -60,9 +60,23 @@ export type WorkerMessage = Response | WorkerEvent;
 
 /** @internal Clear transferred bytes after WASM has copied its arguments. */
 export function clearBytes(value: unknown): void {
-  if (value instanceof Uint8Array) value.fill(0);
-  else if (Array.isArray(value)) value.forEach(clearBytes);
-  else if (isRecord(value)) Object.values(value).forEach(clearBytes);
+  const pending = [value];
+  // Structured cloning preserves shared references and cycles.
+  const visited = new WeakSet<object>();
+  while (pending.length > 0) {
+    const item = pending.pop();
+    if (typeof item !== "object" || item === null || visited.has(item))
+      continue;
+    visited.add(item);
+
+    if (item instanceof Uint8Array) {
+      item.fill(0);
+    } else if (Array.isArray(item)) {
+      for (const child of item) pending.push(child);
+    } else if (isRecord(item)) {
+      for (const child of Object.values(item)) pending.push(child);
+    }
+  }
 }
 
 /** @internal Plain records can contain transferred image or key buffers. */

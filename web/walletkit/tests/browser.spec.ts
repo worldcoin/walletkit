@@ -317,6 +317,8 @@ test("Rust objects stay in the worker and are used through handles", async ({
     const store = await wallet.CredentialStore.new(paths, keys);
     await store.init(42n, 1000n);
     const credentials = await store.listCredentials(undefined, 1000n);
+    const context: { self?: unknown } = {};
+    context.self = context;
     const entry = {
       rpId: 1n,
       appIdentifier: "app_test",
@@ -325,6 +327,7 @@ test("Rust objects stay in the worker and are used through handles", async ({
       protocol: 4,
       outcome: "completed",
       issuerSchemaIds: [1n, 2n],
+      context,
     };
     const activityId = await store.recordActivity(entry, 1000n);
     const query = await wallet.ActivityQuery.new();
