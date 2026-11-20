@@ -29,10 +29,11 @@ export async function runPoseGuardEnrollment(
     onAbort = () => reject(signal.reason);
     signal.addEventListener("abort", onAbort, { once: true });
     if (scenario === "timeout") {
-      timer = setTimeout(
-        () => reject(new DOMException("Capture expired", "TimeoutError")),
-        150,
-      );
+      const timeout = Object.assign(new Error("Capture expired"), {
+        name: "SelfieEnrollmentError",
+        code: "Timeout",
+      });
+      timer = setTimeout(() => reject(timeout), 150);
     }
   });
   try {

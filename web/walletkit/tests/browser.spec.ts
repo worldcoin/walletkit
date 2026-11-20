@@ -764,6 +764,7 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
 
     async function interrupt(scenario: "abort" | "timeout") {
       const controller = new AbortController();
+      const reason = new DOMException("Stopped", "AbortError");
       let captureSignal: AbortSignal | undefined;
       let finish!: (images: {
         centralPng: Uint8Array;
@@ -782,13 +783,16 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
           key,
           (_prompt: unknown, signal: AbortSignal) => {
             captureSignal = signal;
-            if (scenario === "abort")
-              controller.abort(new DOMException("Stopped", "AbortError"));
+            if (scenario === "abort") controller.abort(reason);
             return lateImages;
           },
           { signal: controller.signal },
         )
-        .catch((error: Error) => error.name);
+        .catch((error: Error & { code?: string }) =>
+          scenario === "abort"
+            ? { sameReason: error === reason }
+            : { name: error.name, code: error.code },
+        );
       finish({ centralPng, captures });
       return { error, stoppedCapture: captureSignal?.aborted };
     }
@@ -852,8 +856,11 @@ test("PoseGuard rejects invalid images and releases the attempt on cancellation 
   expect(result).toEqual({
     invalid: Array(5).fill("TypeError"),
     sameError: true,
-    aborted: { error: "AbortError", stoppedCapture: true },
-    timedOut: { error: "TimeoutError", stoppedCapture: true },
+    aborted: { error: { sameReason: true }, stoppedCapture: true },
+    timedOut: {
+      error: { name: "SelfieEnrollmentError", code: "Timeout" },
+      stoppedCapture: true,
+    },
     recovered: "success",
     counts: { started: 9, submitted: 1 },
   });
