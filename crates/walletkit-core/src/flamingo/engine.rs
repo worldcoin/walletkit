@@ -235,7 +235,7 @@ pub(super) mod tests {
     }
 
     pub fn jwk(kid: &str, status: &str) -> serde_json::Value {
-        let point = signing_key().verifying_key().to_encoded_point(false);
+        let point = signing_key().verifying_key().to_sec1_point(false);
         json!({
             "jwk": {
                 "kty": "EC",
