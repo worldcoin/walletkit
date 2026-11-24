@@ -386,6 +386,42 @@ impl CredentialVault {
             .map_err(|e| map_db_err(&e))
     }
 
+    /// Exports a plaintext (unencrypted) copy of the vault to `dest`, holding only
+    /// the credentials of `issuer_schema_ids` and the blobs they reference.
+    ///
+    /// The locking and cleanup duties of [`Self::export_plaintext`] apply.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if an ID is out of range or the export fails.
+    pub fn export_plaintext_for_issuer_schemas(
+        &self,
+        dest: &Path,
+        issuer_schema_ids: &[u64],
+    ) -> StorageResult<()> {
+        let ids = issuer_schema_ids
+            .iter()
+            .map(|id| to_i64(*id, "issuer_schema_id").map(|id| id.to_string()))
+            .collect::<StorageResult<Vec<_>>>()?
+            .join(", ");
+        let selected =
+            format!("FROM credential_records WHERE issuer_schema_id IN ({ids})");
+        let selections = [
+            ("credential_records", format!("SELECT * {selected}")),
+            (
+                "blob_objects",
+                format!(
+                    "SELECT * FROM blob_objects WHERE content_id IN (
+                        SELECT credential_blob_cid {selected}
+                        UNION SELECT associated_data_cid {selected}
+                    )"
+                ),
+            ),
+        ];
+        cipher::export_plaintext_selection(self.vault.connection(), dest, &selections)
+            .map_err(|e| map_db_err(&e))
+    }
+
     /// Imports credentials from a plaintext (unencrypted) vault backup into
     /// an empty vault. Intended for restore on a fresh install.
     ///

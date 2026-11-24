@@ -430,9 +430,30 @@ pub fn ensure_temp_store_memory(conn: &Connection) -> DbResult<()> {
 
 /// Creates a plaintext (unencrypted) copy of an already-open encrypted database.
 ///
-/// The copy is produced by `ATTACH`-ing a new unencrypted database and copying
-/// the caller-specified tables via `CREATE TABLE ... AS SELECT *`. The
-/// destination file must not already exist.
+/// Copies every row of the caller-specified tables. See
+/// [`export_plaintext_selection`] for how the copy is produced.
+///
+/// # Errors
+///
+/// Returns `Error` if the `ATTACH`, copy, or `DETACH` fails.
+pub fn export_plaintext_copy(
+    conn: &Connection,
+    dest_path: &Path,
+    tables: &[&str],
+) -> DbResult<()> {
+    let selections: Vec<(&str, String)> = tables
+        .iter()
+        .map(|table| (*table, format!("SELECT * FROM {table}")))
+        .collect();
+    export_plaintext_selection(conn, dest_path, &selections)
+}
+
+/// Creates a plaintext (unencrypted) database holding the result of one query
+/// per table of an already-open encrypted database.
+///
+/// The copy is produced by `ATTACH`-ing a new unencrypted database and creating
+/// each `(table, query)` pair via `CREATE TABLE ... AS <query>`. The queries are
+/// trusted SQL, never caller input. The destination file must not already exist.
 ///
 /// We use `ATTACH` + SQL instead of the `sqlite3_backup` API because
 /// `sqlite3mc` requires both source and destination to share the same
@@ -442,10 +463,10 @@ pub fn ensure_temp_store_memory(conn: &Connection) -> DbResult<()> {
 /// # Errors
 ///
 /// Returns `Error` if the `ATTACH`, copy, or `DETACH` fails.
-pub fn export_plaintext_copy(
+pub fn export_plaintext_selection(
     conn: &Connection,
     dest_path: &Path,
-    tables: &[&str],
+    selections: &[(&str, String)],
 ) -> DbResult<()> {
     let dest_str = dest_path.to_string_lossy();
     let attach_sql = format!(
@@ -456,10 +477,8 @@ pub fn export_plaintext_copy(
 
     let result = (|| {
         let tx = conn.transaction()?;
-        for table in tables {
-            tx.execute_batch(&format!(
-                "CREATE TABLE backup.{table} AS SELECT * FROM {table};"
-            ))?;
+        for (table, query) in selections {
+            tx.execute_batch(&format!("CREATE TABLE backup.{table} AS {query};"))?;
         }
         tx.commit()
     })();
