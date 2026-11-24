@@ -41,8 +41,9 @@
 //!   instead of `ToJs` / `FromJs`. The field type stays the Rust type and is still
 //!   checked, so the field also needs `ts`.
 //! - `flatten`: merge the fields of an output-only record or tagged enum into the
-//!   containing object. The macro cannot see the flattened type's fields, so they
-//!   must not reuse the tag or a sibling's name; the later write wins.
+//!   containing object. The macro cannot see the flattened type's fields, so a
+//!   flattened property that reuses the tag or a sibling's name fails the
+//!   conversion at runtime.
 //!
 //! The generated code refers to `crate::js`, so the macro only works inside
 //! `walletkit-web`.

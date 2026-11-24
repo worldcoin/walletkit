@@ -306,6 +306,15 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
+    fn flattened_properties_cannot_be_overwritten() {
+        let object = js_sys::Object::new();
+        js::set(&object, "status", &"inner".into()).unwrap();
+        assert!(js::set_new(&object, "status", &"outer".into()).is_err());
+        assert!(js::set_new(&object, "reason", &"timeout".into()).is_ok());
+        assert_eq!(js::get(&object, "status").unwrap(), "inner");
+    }
+
+    #[wasm_bindgen_test]
     fn tagged_enum_names_its_variant_and_fields() {
         let failed = RegistrationStatus::Failed {
             error: "rejected".into(),

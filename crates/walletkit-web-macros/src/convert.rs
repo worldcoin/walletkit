@@ -58,6 +58,14 @@ fn object_to_js(
     checked: bool,
 ) -> TokenStream {
     let checks = fields.iter().filter(|_| checked).map(schema_check);
+    let flattened = fields.iter().any(|field| field.flatten);
+    // Over a flattened object, a property may already exist; overwriting it would
+    // silently lose a value.
+    let set = if flattened {
+        quote!(crate::js::set_new)
+    } else {
+        quote!(crate::js::set)
+    };
     let object = fields.iter().find(|field| field.flatten).map_or_else(
         || quote!(::js_sys::Object::new()),
         |field| {
@@ -66,7 +74,7 @@ fn object_to_js(
         },
     );
     let tag = tag.map(|(tag, name)| {
-        quote!(crate::js::set(&__object, #tag, &::wasm_bindgen::JsValue::from_str(#name))?;)
+        quote!(#set(&__object, #tag, &::wasm_bindgen::JsValue::from_str(#name))?;)
     });
     let properties = fields.iter().filter(|field| !field.flatten).map(|field| {
         let (ident, js_name) = (&field.ident, &field.js_name);
@@ -74,7 +82,7 @@ fn object_to_js(
             || quote!(crate::js::ToJs::to_js(#ident)?),
             |convert| quote!(#convert(#ident)?),
         );
-        quote!(crate::js::set(&__object, #js_name, &#value)?;)
+        quote!(#set(&__object, #js_name, &#value)?;)
     });
     quote! {
         #(#checks)*

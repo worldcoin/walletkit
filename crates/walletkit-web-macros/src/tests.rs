@@ -171,6 +171,26 @@ fn variants_flattening_the_same_type_share_a_member() {
 }
 
 #[test]
+fn grouping_ignores_field_order_and_keeps_a_readonly_tag() {
+    let ts = typescript(
+        quote!(output, tag = "state", readonly),
+        quote! {
+            enum Status {
+                Open { id: u32, name: String },
+                Paused { name: String, id: u32 },
+            }
+        },
+    );
+    assert_eq!(
+        ts,
+        indoc! {r#"
+            export type Status =
+              | { readonly state: "open" | "paused"; readonly id: number; readonly name: string };
+        "#}
+    );
+}
+
+#[test]
 fn record_with_a_flattened_field_becomes_an_intersection() {
     let ts = typescript(
         quote!(output),

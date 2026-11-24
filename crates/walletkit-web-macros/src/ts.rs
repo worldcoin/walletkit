@@ -31,38 +31,70 @@ pub fn render(model: &JsType) -> syn::Result<String> {
         Shape::Tagged { tag, variants } => {
             // Variants with the same payload share one member, so a value's tag can
             // change between them, e.g. from "queued" to "batching".
-            let mut groups: Vec<(String, Option<String>, Vec<String>)> = Vec::new();
+            let mut groups: Vec<Group> = Vec::new();
             for variant in variants {
                 let (properties, flattened) =
                     properties(&variant.fields, model.readonly)?;
-                let properties: String = properties
-                    .iter()
-                    .map(|(_, property)| format!("; {property}"))
-                    .collect::<Vec<_>>()
-                    .concat();
+                let properties: Vec<String> = properties
+                    .into_iter()
+                    .map(|(_, property)| property)
+                    .collect();
+                let mut key = properties.clone();
+                key.sort();
                 let tag_value = format!("\"{}\"", variant.js_name);
-                match groups.iter_mut().find(|(other, other_flattened, _)| {
-                    *other == properties && *other_flattened == flattened
-                }) {
-                    Some((_, _, tags)) => tags.push(tag_value),
-                    None => groups.push((properties, flattened, vec![tag_value])),
+                match groups
+                    .iter_mut()
+                    .find(|group| group.key == key && group.flattened == flattened)
+                {
+                    Some(group) => group.tags.push(tag_value),
+                    None => groups.push(Group {
+                        key,
+                        properties,
+                        flattened,
+                        tags: vec![tag_value],
+                    }),
                 }
             }
+            let modifier = if model.readonly { "readonly " } else { "" };
             let members: Vec<String> = groups
                 .into_iter()
-                .map(|(properties, flattened, tags)| {
-                    let object =
-                        format!("{{ {tag}: {}{properties} }}", tags.join(" | "));
-                    flattened.map_or_else(
-                        || format!("  | {object}"),
-                        |flattened| format!("  | ({object} & {flattened})"),
-                    )
-                })
+                .map(
+                    |Group {
+                         properties,
+                         flattened,
+                         tags,
+                         ..
+                     }| {
+                        let properties: String = properties
+                            .iter()
+                            .map(|property| format!("; {property}"))
+                            .collect::<Vec<_>>()
+                            .concat();
+                        let object = format!(
+                            "{{ {modifier}{tag}: {}{properties} }}",
+                            tags.join(" | ")
+                        );
+                        flattened.map_or_else(
+                            || format!("  | {object}"),
+                            |flattened| format!("  | ({object} & {flattened})"),
+                        )
+                    },
+                )
                 .collect();
             format!("export type {name} =\n{};", members.join("\n"))
         }
     };
     Ok(format!("\n{}{declaration}\n", doc_comment(&model.docs, "")))
+}
+
+/// Tagged variants rendered as one union member.
+struct Group {
+    /// The sorted properties, so field order does not split a group.
+    key: Vec<String>,
+    /// The properties in the first variant's order.
+    properties: Vec<String>,
+    flattened: Option<String>,
+    tags: Vec<String>,
 }
 
 /// A property declaration and the doc lines above it.

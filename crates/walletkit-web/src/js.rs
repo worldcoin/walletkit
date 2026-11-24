@@ -139,6 +139,14 @@ pub fn set(object: &Object, key: &str, value: &JsValue) -> Result<(), JsValue> {
     Reflect::set(object, &JsValue::from_str(key), value).map(drop)
 }
 
+/// Like [`set`], for an object that must not have `key` yet.
+pub fn set_new(object: &Object, key: &str, value: &JsValue) -> Result<(), JsValue> {
+    if Reflect::has(object, &JsValue::from_str(key))? {
+        return Err(js_sys::Error::new(&format!("`{key}` is set twice")).into());
+    }
+    set(object, key, value)
+}
+
 /// Reads the `key` property of `object`.
 pub fn get(object: &JsValue, key: &str) -> Result<JsValue, JsValue> {
     Reflect::get(object, &JsValue::from_str(key))
