@@ -208,6 +208,74 @@ fn record_with_a_flattened_field_becomes_an_intersection() {
     );
 }
 
+#[test]
+fn names_that_are_not_identifiers_are_quoted() {
+    let ts = typescript(
+        quote!(output, tag = "kind-of"),
+        quote! {
+            enum Label {
+                #[js(rename = "say \"hi\"\\")]
+                Quote { #[js(rename = "display-name")] name: String, plain_name: String },
+            }
+        },
+    );
+    assert_eq!(
+        ts,
+        indoc! {r#"
+            export type Label =
+              | { "kind-of": "say \"hi\"\\"; "display-name": string; plainName: string };
+        "#}
+    );
+
+    let ts = typescript(
+        quote!(input),
+        quote! {
+            enum Mode { #[js(rename = "a\nb")] Split }
+        },
+    );
+    assert_eq!(
+        ts,
+        indoc! {r#"
+            export type Mode =
+              | "a\u000ab";
+        "#}
+    );
+}
+
+#[test]
+fn flattened_unions_are_grouped() {
+    let ts = typescript(
+        quote!(output, tag = "status"),
+        quote! {
+            enum Result {
+                Failed { #[js(flatten, ts = "First | Second")] reason: Failure },
+            }
+        },
+    );
+    assert_eq!(
+        ts,
+        indoc! {r#"
+            export type Result =
+              | ({ status: "failed" } & (First | Second));
+        "#}
+    );
+
+    let ts = typescript(
+        quote!(output),
+        quote! {
+            struct Outcome { attempt: u32, #[js(flatten, ts = "First | Second")] result: Result }
+        },
+    );
+    assert_eq!(
+        ts,
+        indoc! {"
+            export type Outcome = {
+              attempt: number;
+            } & (First | Second);
+        "}
+    );
+}
+
 #[test_case("", "struct A { a: u8 }", "`input`, `output`"; "no direction")]
 #[test_case("output", "enum A { B { c: u8 } }", "needs a `tag`"; "enum fields without a tag")]
 #[test_case(r#"input, tag = "t""#, "enum A { B }", "only `output`"; "tagged input")]

@@ -161,11 +161,18 @@ pub fn expect_object(value: JsValue, name: &str) -> Result<JsValue, JsValue> {
     }
 }
 
-/// Reuses the object that a flattened field converted into.
+/// Reuses the object that a flattened field converted into. It must be a plain
+/// object: `postMessage` drops added properties from arrays and other built-ins.
 pub fn into_object(value: JsValue) -> Result<Object, JsValue> {
-    value
-        .dyn_into()
-        .map_err(|_| Error::new("A flattened field must convert to an object").into())
+    let plain = value.is_object() && {
+        let prototype = Object::get_prototype_of(&value);
+        prototype.is_null() || prototype == Object::get_prototype_of(&Object::new())
+    };
+    if plain {
+        Ok(value.unchecked_into())
+    } else {
+        Err(Error::new("A flattened field must convert to a plain object").into())
+    }
 }
 
 macro_rules! schema_is_self {

@@ -233,6 +233,9 @@ struct PoseGuardTarget {
     target_yaw: f32,
 }
 
+// The `targets` and `captures` tuples below are written out for three images.
+const _: () = assert!(POSEGUARD_CHALLENGE_COUNT == 3);
+
 /// A verified `PoseGuard` prompt, as the page's capture callback receives it.
 #[js_type(output, readonly)]
 pub struct PoseGuardPrompt {
@@ -312,6 +315,18 @@ mod tests {
         assert!(js::set_new(&object, "status", &"outer".into()).is_err());
         assert!(js::set_new(&object, "reason", &"timeout".into()).is_ok());
         assert_eq!(js::get(&object, "status").unwrap(), "inner");
+    }
+
+    #[wasm_bindgen_test]
+    fn only_plain_objects_can_be_flattened() {
+        let no_prototype: js_sys::Object = JsValue::NULL.unchecked_into();
+        assert!(js::into_object(js_sys::Object::new().into()).is_ok());
+        assert!(js::into_object(js_sys::Object::create(&no_prototype).into()).is_ok());
+        assert!(
+            js::into_object(js_sys::Uint8Array::new_with_length(1).into()).is_err()
+        );
+        assert!(js::into_object(js_sys::Array::new().into()).is_err());
+        assert!(js::into_object("reason".into()).is_err());
     }
 
     #[wasm_bindgen_test]

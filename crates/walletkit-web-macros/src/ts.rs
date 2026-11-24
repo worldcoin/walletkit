@@ -1,5 +1,7 @@
 //! Renders the TypeScript declaration of a [`JsType`].
 
+use std::fmt::Write as _;
+
 use syn::{spanned::Spanned, Error, Expr, GenericArgument, PathArguments, Type};
 
 use crate::model::{Field, JsType, Shape};
@@ -18,13 +20,16 @@ pub fn render(model: &JsType) -> syn::Result<String> {
                 .concat();
             flattened.map_or_else(
                 || format!("export interface {name} {{\n{body}}}"),
-                |flattened| format!("export type {name} = {{\n{body}}} & {flattened};"),
+                |flattened| {
+                    let flattened = group(&flattened);
+                    format!("export type {name} = {{\n{body}}} & {flattened};")
+                },
             )
         }
         Shape::Strings(variants) => {
             let members: Vec<String> = variants
                 .iter()
-                .map(|variant| format!("  | \"{}\"", variant.js_name))
+                .map(|variant| format!("  | {}", string_literal(&variant.js_name)))
                 .collect();
             format!("export type {name} =\n{};", members.join("\n"))
         }
@@ -41,7 +46,7 @@ pub fn render(model: &JsType) -> syn::Result<String> {
                     .collect();
                 let mut key = properties.clone();
                 key.sort();
-                let tag_value = format!("\"{}\"", variant.js_name);
+                let tag_value = string_literal(&variant.js_name);
                 match groups
                     .iter_mut()
                     .find(|group| group.key == key && group.flattened == flattened)
@@ -56,6 +61,7 @@ pub fn render(model: &JsType) -> syn::Result<String> {
                 }
             }
             let modifier = if model.readonly { "readonly " } else { "" };
+            let tag = property_name(tag);
             let members: Vec<String> = groups
                 .into_iter()
                 .map(
@@ -76,7 +82,9 @@ pub fn render(model: &JsType) -> syn::Result<String> {
                         );
                         flattened.map_or_else(
                             || format!("  | {object}"),
-                            |flattened| format!("  | ({object} & {flattened})"),
+                            |flattened| {
+                                format!("  | ({object} & {})", group(&flattened))
+                            },
                         )
                     },
                 )
@@ -121,7 +129,7 @@ fn properties(
         let mark = if inner.is_some() { "?" } else { "" };
         properties.push((
             &field.docs[..],
-            format!("{modifier}{}{mark}: {ty}", field.js_name),
+            format!("{modifier}{}{mark}: {ty}", property_name(&field.js_name)),
         ));
     }
     Ok((properties, flattened))
@@ -172,6 +180,53 @@ fn ts_type(ty: &Type, readonly: bool) -> syn::Result<String> {
         }
         _ => Err(unsupported(ty)),
     }
+}
+
+/// A property key: bare when it is an identifier, otherwise a string literal.
+fn property_name(name: &str) -> String {
+    if is_identifier(name) {
+        name.to_owned()
+    } else {
+        string_literal(name)
+    }
+}
+
+/// A flattened type as an intersection operand. `&` binds tighter than `|`, so
+/// anything but a name is wrapped, e.g. `A | B`.
+fn group(ty: &str) -> String {
+    if is_identifier(ty) {
+        ty.to_owned()
+    } else {
+        format!("({ty})")
+    }
+}
+
+fn is_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|first| first.is_ascii_alphabetic() || matches!(first, '_' | '$'))
+        && chars.all(|char| char.is_ascii_alphanumeric() || matches!(char, '_' | '$'))
+}
+
+/// A double-quoted TypeScript string literal.
+fn string_literal(value: &str) -> String {
+    let mut literal = String::from('"');
+    for char in value.chars() {
+        match char {
+            '"' | '\\' => {
+                literal.push('\\');
+                literal.push(char);
+            }
+            char if char.is_control() => {
+                write!(literal, "\\u{:04x}", u32::from(char))
+                    .expect("writing to a String");
+            }
+            char => literal.push(char),
+        }
+    }
+    literal.push('"');
+    literal
 }
 
 fn unsupported(ty: &Type) -> Error {
