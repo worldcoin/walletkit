@@ -68,9 +68,11 @@ functions that only the worker calls. As a result, an export added to the
 
 ## Ordering
 
-The worker runs one request at a time, including the awaited part of asynchronous
-calls. Rust state shared between objects, such as a credential store that an
-authenticator also uses, therefore never sees interleaved operations.
+The worker runs one queued request at a time, including the awaited part of
+asynchronous calls. Rust state shared between objects, such as a credential
+store that an authenticator also uses, therefore never sees interleaved
+operations. PoseGuard capture replies and cancellation bypass the queue so they
+can reach an enrollment while it waits.
 
 The cost is head-of-line blocking: a call that never settles blocks every call
 queued behind it. `close()` sends its request through the same queue and, after
