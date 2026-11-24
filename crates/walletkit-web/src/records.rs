@@ -202,8 +202,9 @@ struct SelfieEnrollmentField {
 
 #[js_type(remote = sealed::EnrollmentBundle, output)]
 struct SelfieEnrollmentBundle {
-    // Inline, as before, so a field stays assignable to `Record<string, string>`.
-    #[js(ts = "{ name: string; value: string }[]")]
+    // An object type, not the interface, so a field stays assignable to
+    // `Record<string, string>`.
+    #[js(ts = "Pick<SelfieEnrollmentField, keyof SelfieEnrollmentField>[]")]
     fields: Vec<SelfieEnrollmentField>,
     attestation_header: String,
     encrypted_custody: Vec<u8>,
@@ -321,6 +322,7 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
+    #[expect(clippy::manual_assert_eq, reason = "`ActivityEntry` has no `Debug`")]
     fn activity_entry_round_trips() {
         let entry = ActivityEntry {
             id: Some(7),

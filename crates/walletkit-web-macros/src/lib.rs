@@ -28,7 +28,7 @@
 //! - `rename_all = "snake_case" | "lowercase"`: how variant names are spelled in
 //!   JavaScript. Defaults to `snake_case`. Fields are always `camelCase`.
 //! - `readonly`: mark every property and array as `readonly` in TypeScript.
-//! - `from_js = path`: convert the whole value with
+//! - `from_js = path`: convert a whole struct with
 //!   `fn(&JsValue, &str) -> Result<T, JsValue>`, for an input whose fields must not
 //!   be converted one by one. A `remote` declaration still checks every field.
 //!
@@ -41,7 +41,8 @@
 //!   instead of `ToJs` / `FromJs`. The field type stays the Rust type and is still
 //!   checked, so the field also needs `ts`.
 //! - `flatten`: merge the fields of an output-only record or tagged enum into the
-//!   containing object.
+//!   containing object. The macro cannot see the flattened type's fields, so they
+//!   must not reuse the tag or a sibling's name; the later write wins.
 //!
 //! The generated code refers to `crate::js`, so the macro only works inside
 //! `walletkit-web`.

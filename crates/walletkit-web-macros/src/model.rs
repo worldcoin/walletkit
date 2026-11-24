@@ -164,6 +164,15 @@ impl JsType {
         if self.from_js.is_some() && !self.input {
             return Err(Error::new(self.ident.span(), "`from_js` needs `input`"));
         }
+        // An enum's generated parser is what checks that it lists every variant.
+        if self.from_js.is_some() && !matches!(self.shape, Shape::Struct(_)) {
+            return Err(Error::new(self.ident.span(), "`from_js` is for structs"));
+        }
+        if let Shape::Strings(variants) | Shape::Tagged { variants, .. } = &self.shape {
+            if variants.is_empty() {
+                return Err(Error::new(self.ident.span(), "an enum needs a variant"));
+            }
+        }
         if self.readonly && matches!(self.shape, Shape::Strings(_)) {
             return Err(Error::new(
                 self.ident.span(),

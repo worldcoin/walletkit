@@ -151,6 +151,26 @@ fn tagged_enum_becomes_a_discriminated_union() {
 }
 
 #[test]
+fn variants_flattening_the_same_type_share_a_member() {
+    let ts = typescript(
+        quote!(output, tag = "status"),
+        quote! {
+            enum Result {
+                Failed { #[js(flatten)] reason: Failure },
+                Rejected { #[js(flatten)] reason: Failure },
+            }
+        },
+    );
+    assert_eq!(
+        ts,
+        indoc! {r#"
+            export type Result =
+              | ({ status: "failed" | "rejected" } & Failure);
+        "#}
+    );
+}
+
+#[test]
 fn record_with_a_flattened_field_becomes_an_intersection() {
     let ts = typescript(
         quote!(output),
@@ -181,6 +201,9 @@ fn record_with_a_flattened_field_becomes_an_intersection() {
 #[test_case(r#"output, rename_all = "lowercase""#, "struct A { b: u8 }", "are for enums"; "rename_all on a struct")]
 #[test_case("output, readonly", "enum A { B }", "no effect on a string union"; "readonly string union")]
 #[test_case("output", "struct A { #[js(to_js = hex)] b: u8 }", "needs `ts`"; "custom conversion without ts")]
+#[test_case("output", r#"enum A { #[js(rename = "b")] A, B }"#, "`b` is already used"; "duplicate variant name")]
+#[test_case("input, from_js = parse", "enum A { B }", "`from_js` is for structs"; "container from_js on an enum")]
+#[test_case("output", "enum A {}", "needs a variant"; "empty enum")]
 #[test_case("output, bogus", "struct A { b: u8 }", "unknown `js_type` option"; "unknown option")]
 fn invalid_declaration_is_rejected(attr: &str, item: &str, message: &str) {
     let error = error(attr.parse().unwrap(), item.parse().unwrap());
