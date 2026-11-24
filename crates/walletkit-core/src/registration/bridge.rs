@@ -11,11 +11,31 @@ use world_id_core::registration::{BridgeDomain, EncryptedPayload, RequestId};
 
 use super::{before, errors::BridgeError, sleep};
 
-/// The message-bridge's body limit, which the largest WIP-109 response fits within.
-const MAX_BODY_SIZE: usize = 5 * 1024 * 1024;
+/// The largest body read from the bridge. The largest WIP-109 response, 15 MiB plus 4 KiB, takes
+/// about 20 MiB once it is sealed, encrypted and carried as base64 in JSON.
+const MAX_BODY_SIZE: usize = 22 * 1024 * 1024;
 
-/// The time budget of one operation, including its retries and reading the response.
-const OPERATION_TIMEOUT: Duration = Duration::from_mins(1);
+/// The time limits of the operations that carry at most a request or a response state.
+const CONTROL_LIMITS: TimeLimits = TimeLimits {
+    request_timeout: Duration::from_secs(30),
+    operation_timeout: Duration::from_mins(1),
+};
+
+/// The time limits of the operations that can carry a full response (`PUT /response/:id` and
+/// `GET /response/:id`), sized for a slow mobile connection.
+const RESPONSE_TRANSFER_LIMITS: TimeLimits = TimeLimits {
+    request_timeout: Duration::from_mins(2),
+    operation_timeout: Duration::from_mins(5),
+};
+
+/// How long a bridge operation may take.
+#[derive(Clone, Copy)]
+struct TimeLimits {
+    /// The timeout of each HTTP request, from sending it to the end of its response body.
+    request_timeout: Duration,
+    /// The time budget of the whole operation, including its retries and reading the response.
+    operation_timeout: Duration,
+}
 
 /// A client for one bridge deployment.
 ///
@@ -117,9 +137,10 @@ impl BridgeClient {
             request,
         };
 
-        bounded(async {
+        let limits = CONTROL_LIMITS;
+        bounded(limits, async {
             let response = self
-                .send(self.http.post(self.url(&["request"])).json(&body))
+                .send(self.http.post(self.url(&["request"])).json(&body), limits)
                 .await?;
 
             match response.status() {
@@ -136,8 +157,11 @@ impl BridgeClient {
         &self,
         request_id: &RequestId,
     ) -> Result<Option<EncryptedPayload>, BridgeError> {
-        self.read(self.url(&["request", &request_id.to_string()]))
-            .await
+        self.read(
+            self.url(&["request", &request_id.to_string()]),
+            CONTROL_LIMITS,
+        )
+        .await
     }
 
     /// Reads the state of the response (`GET /response/:id`), consuming a completed one. Returns
@@ -146,8 +170,11 @@ impl BridgeClient {
         &self,
         request_id: &RequestId,
     ) -> Result<Option<ResponseState>, BridgeError> {
-        self.read(self.url(&["response", &request_id.to_string()]))
-            .await
+        self.read(
+            self.url(&["response", &request_id.to_string()]),
+            RESPONSE_TRANSFER_LIMITS,
+        )
+        .await
     }
 
     /// Stores the encrypted response (`PUT /response/:id`). The bridge answers `201` once it
@@ -161,8 +188,9 @@ impl BridgeClient {
     ) -> Result<(), BridgeError> {
         let url = self.url(&["response", &request_id.to_string()]);
 
-        bounded(async {
-            let reply = self.send(self.http.put(url).json(response)).await?;
+        let limits = RESPONSE_TRANSFER_LIMITS;
+        bounded(limits, async {
+            let reply = self.send(self.http.put(url).json(response), limits).await?;
 
             match reply.status() {
                 StatusCode::CREATED => Ok(()),
@@ -176,9 +204,10 @@ impl BridgeClient {
     async fn read<T: DeserializeOwned>(
         &self,
         url: Url,
+        limits: TimeLimits,
     ) -> Result<Option<T>, BridgeError> {
-        bounded(async {
-            let response = self.send(self.http.get(url)).await?;
+        bounded(limits, async {
+            let response = self.send(self.http.get(url), limits).await?;
 
             match response.status() {
                 StatusCode::OK => read_json(response).await.map(Some),
@@ -190,8 +219,12 @@ impl BridgeClient {
     }
 
     /// Sends `request`, retrying transient failures while honoring `Retry-After`.
-    async fn send(&self, request: RequestBuilder) -> Result<Response, BridgeError> {
-        let request = request.timeout(Duration::from_secs(30)).build()?;
+    async fn send(
+        &self,
+        request: RequestBuilder,
+        limits: TimeLimits,
+    ) -> Result<Response, BridgeError> {
+        let request = request.timeout(limits.request_timeout).build()?;
         let mut delays = retry_backoff().build();
 
         loop {
@@ -256,7 +289,7 @@ fn http_client(base_url: &Url) -> Result<reqwest::Client, BridgeError> {
         let origin = base_url.clone();
         builder
             .connect_timeout(Duration::from_secs(10))
-            .timeout(Duration::from_secs(30))
+            .timeout(CONTROL_LIMITS.request_timeout)
             .redirect(reqwest::redirect::Policy::custom(move |attempt| {
                 if attempt.previous().len() >= 10 {
                     return attempt.error("too many redirects");
@@ -350,11 +383,12 @@ fn parse_http_date(value: &str) -> Option<u64> {
         .checked_add(hour * 3_600 + minute * 60 + second.min(59))
 }
 
-/// Runs a bridge operation within [`OPERATION_TIMEOUT`].
+/// Runs a bridge operation within the operation timeout of `limits`.
 async fn bounded<T>(
+    limits: TimeLimits,
     operation: impl Future<Output = Result<T, BridgeError>>,
 ) -> Result<T, BridgeError> {
-    before(Instant::now() + OPERATION_TIMEOUT, operation)
+    before(Instant::now() + limits.operation_timeout, operation)
         .await
         .unwrap_or(Err(BridgeError::Timeout))
 }
@@ -432,6 +466,48 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err, BridgeError::UnexpectedStatus { status: 409 });
+    }
+
+    #[tokio::test]
+    async fn fetch_response_reads_a_full_response_and_rejects_a_larger_body() {
+        fn completed(payload_len: usize) -> Json<serde_json::Value> {
+            Json(serde_json::json!({
+                "status": "completed",
+                "response": { "iv": "aXY=", "payload": "A".repeat(payload_len) },
+            }))
+        }
+
+        let url = serve(
+            Router::new()
+                .route(
+                    "/response/full",
+                    get(|| async { completed(21 * 1024 * 1024) }),
+                )
+                .route(
+                    "/response/oversized",
+                    get(|| async { completed(MAX_BODY_SIZE) }),
+                ),
+        )
+        .await;
+        let client = BridgeClient::with_base_url("bridge.example", &url).unwrap();
+        let fetch = |id: &'static str| {
+            let client = &client;
+            async move {
+                client
+                    .read::<ResponseState>(
+                        client.url(&["response", id]),
+                        RESPONSE_TRANSFER_LIMITS,
+                    )
+                    .await
+            }
+        };
+
+        assert!(matches!(
+            fetch("full").await,
+            Ok(Some(ResponseState::Completed(sealed)))
+                if sealed.payload.len() == 21 * 1024 * 1024
+        ));
+        assert_eq!(fetch("oversized").await.err(), Some(BridgeError::TooLarge));
     }
 
     #[tokio::test]

@@ -31,8 +31,8 @@ pub enum BridgeError {
     /// The bridge returned malformed JSON.
     #[error("invalid bridge response: {0}")]
     Json(String),
-    /// The bridge response exceeded the bridge's body limit.
-    #[error("bridge response exceeds the 5 MiB body limit")]
+    /// The bridge response exceeded the largest body this client reads.
+    #[error("bridge response exceeds the body size limit")]
     TooLarge,
     /// The operation exhausted its time budget.
     #[error("bridge operation timed out")]
