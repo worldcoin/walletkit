@@ -31,6 +31,7 @@ issuers = ["walletkit-core/issuers"]
 # Embeds zkeys into the binary for `EmbeddedZkArtifacts`.
 # See walletkit-core's `embed-zkeys` feature for details.
 embed-zkeys = ["walletkit-core/embed-zkeys"]
+embed-embedding-similarity-prover = ["walletkit-core/embed-embedding-similarity-prover"]
 
 # v3 features
 v3 = ["walletkit-core/v3"]

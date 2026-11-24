@@ -53,8 +53,9 @@ first version by hand, configure its trusted publisher, and then add it to
 
 The `build-swift` job runs on macOS:
 
-1. Builds the XCFramework with `cargo xtask swift build`, using the features in
-   the workflow's `WALLETKIT_CARGO_FEATURES` variable.
+1. Builds the XCFramework with `cargo xtask swift build`. The shared Swift and
+   Android release feature list includes `embed-embedding-similarity-prover`
+   so both packages can generate a proof after a successful Flamingo match.
 1. Creates a draft release `X.Y.Z` in `worldcoin/walletkit-swift` and uploads the
    zipped XCFramework to it.
 1. Generates `Package.swift` with the asset URL and checksum, commits it with the

@@ -5,9 +5,8 @@ on:
     types: [published]
 
 env:
-  # The feature flags with which the Android library is built.
-  # Used by both the Kotlin and Swift xtasks.
-  WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3
+  # Cargo features for both mobile releases.
+  WALLETKIT_CARGO_FEATURES: compress-zkeys,embed-zkeys,v3,embed-embedding-similarity-prover
 
 jobs:
   pre-release-checks:
