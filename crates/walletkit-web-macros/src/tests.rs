@@ -1,3 +1,4 @@
+use indoc::indoc;
 use quote::quote;
 
 use crate::{model::JsType, ts};
@@ -7,7 +8,9 @@ fn typescript(
     item: proc_macro2::TokenStream,
 ) -> String {
     let item = syn::parse2(item).unwrap();
-    ts::render(&JsType::parse(attr, &item).unwrap()).unwrap()
+    let ts = ts::render(&JsType::parse(attr, &item).unwrap()).unwrap();
+    // Each declaration starts on a new line of the generated `.d.ts`.
+    ts.strip_prefix('\n').unwrap().to_owned()
 }
 
 fn error(attr: proc_macro2::TokenStream, item: proc_macro2::TokenStream) -> String {
@@ -43,25 +46,25 @@ fn record_becomes_an_interface_with_camel_case_properties() {
     );
     assert_eq!(
         ts,
-        r"
-/** A stored entry. */
-export interface Entry {
-  id?: bigint;
-  /**
-   * Local only.
-   *
-   * Keep out of logs.
-   */
-  clientId: string;
-  count: number;
-  done: boolean;
-  payload: Uint8Array;
-  issuerSchemaIds: bigint[];
-  tags: (string | undefined)[];
-  kind: 3 | 4;
-  nested: Other;
-}
-"
+        indoc! {"
+            /** A stored entry. */
+            export interface Entry {
+              id?: bigint;
+              /**
+               * Local only.
+               *
+               * Keep out of logs.
+               */
+              clientId: string;
+              count: number;
+              done: boolean;
+              payload: Uint8Array;
+              issuerSchemaIds: bigint[];
+              tags: (string | undefined)[];
+              kind: 3 | 4;
+              nested: Other;
+            }
+        "}
     );
 }
 
@@ -78,12 +81,12 @@ fn readonly_marks_properties_and_arrays() {
     );
     assert_eq!(
         ts,
-        r"
-export interface Prompt {
-  readonly targets: readonly [Target, Target, Target];
-  readonly ids: readonly bigint[];
-}
-"
+        indoc! {"
+            export interface Prompt {
+              readonly targets: readonly [Target, Target, Target];
+              readonly ids: readonly bigint[];
+            }
+        "}
     );
 }
 
@@ -97,7 +100,11 @@ fn unit_enum_becomes_a_string_union() {
     );
     assert_eq!(
         ts,
-        "\nexport type Reason =\n  | \"networkerror\"\n  | \"timeout\";\n"
+        indoc! {r#"
+            export type Reason =
+              | "networkerror"
+              | "timeout";
+        "#}
     );
 
     let ts = typescript(
@@ -108,7 +115,11 @@ fn unit_enum_becomes_a_string_union() {
     );
     assert_eq!(
         ts,
-        "\nexport type Failure =\n  | \"invalid_image\"\n  | \"other\";\n"
+        indoc! {r#"
+            export type Failure =
+              | "invalid_image"
+              | "other";
+        "#}
     );
 }
 
@@ -126,12 +137,12 @@ fn tagged_enum_becomes_a_discriminated_union() {
     );
     assert_eq!(
         ts,
-        r#"
-export type Status =
-  | { state: "queued" }
-  | { state: "failed"; error: string; errorCode?: string }
-  | ({ state: "rejected" } & Failure);
-"#
+        indoc! {r#"
+            export type Status =
+              | { state: "queued" }
+              | { state: "failed"; error: string; errorCode?: string }
+              | ({ state: "rejected" } & Failure);
+        "#}
     );
 }
 
@@ -145,7 +156,11 @@ fn record_with_a_flattened_field_becomes_an_intersection() {
     );
     assert_eq!(
         ts,
-        "\nexport type Outcome = {\n  attempt: number;\n} & Result;\n"
+        indoc! {"
+            export type Outcome = {
+              attempt: number;
+            } & Result;
+        "}
     );
 }
 
