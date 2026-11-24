@@ -1,36 +1,31 @@
 //! The World ID authenticator and its registration flow.
 
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
-use js_sys::{BigInt, Promise, Reflect};
+use js_sys::{BigInt, Promise};
 use walletkit_core::{
     authenticator::{
         artifacts::embedded::EmbeddedZkArtifacts, validate_authenticator_pubkey,
-        GatewayRequestStatus,
     },
-    Authenticator, Environment, InitializingAuthenticator, Region, RegistrationStatus,
+    Authenticator, Environment, InitializingAuthenticator, Region,
 };
 use wasm_bindgen::prelude::*;
 use zeroize::Zeroizing;
 
 use crate::{
-    error::{invalid_argument, to_js},
-    js,
+    error::to_js,
+    js::{self, FromJs, ToJs},
     storage::JsCredentialStore,
     values::{JsFieldElement, JsProofRequest, JsProofResponse},
 };
 
 fn parse_environment(environment: &str) -> Result<Environment, JsValue> {
-    Environment::from_str(environment)
-        .map_err(|_| invalid_argument(&format!("Unknown environment: {environment}")))
+    Environment::from_js(environment.into(), "environment")
 }
 
 fn parse_region(region: Option<String>) -> Result<Option<Region>, JsValue> {
     region
-        .map(|region| {
-            Region::from_str(&region)
-                .map_err(|_| invalid_argument(&format!("Unknown region: {region}")))
-        })
+        .map(|region| Region::from_js(region.into(), "region"))
         .transpose()
 }
 
@@ -294,17 +289,11 @@ impl JsAuthenticator {
     ) -> Promise {
         let authenticator = Arc::clone(&self.0);
         js::promise(async move {
-            let update = authenticator
+            authenticator
                 .danger_sign_initiate_recovery_agent_update(new_recovery_agent)
                 .await
-                .map_err(to_js)?;
-            js::object(&[
-                (
-                    "signature",
-                    js_sys::Uint8Array::from(update.signature.as_slice()).into(),
-                ),
-                ("nonce", update.nonce.to_padded_hex_string().into()),
-            ])
+                .map_err(to_js)?
+                .to_js()
         })
     }
 
@@ -427,8 +416,11 @@ impl JsAuthenticator {
     pub fn poll_status(&self, request_id: String) -> Promise {
         let authenticator = Arc::clone(&self.0);
         js::promise(async move {
-            let status = authenticator.poll_status(request_id).await.map_err(to_js)?;
-            gateway_request_status(status)
+            authenticator
+                .poll_status(request_id)
+                .await
+                .map_err(to_js)?
+                .to_js()
         })
     }
 
@@ -615,46 +607,8 @@ impl JsInitializingAuthenticator {
     #[wasm_bindgen(js_name = pollStatus, unchecked_return_type = "Promise<RegistrationStatus>")]
     pub fn poll_status(&self) -> Promise {
         let registration = Arc::clone(&self.0);
-        js::promise(async move {
-            registration_status(registration.poll_status().await.map_err(to_js)?)
-        })
-    }
-}
-
-fn status(state: &str, fields: &[(&str, JsValue)]) -> Result<JsValue, JsValue> {
-    let object = js::object(&[("state", state.into())])?;
-    for (key, value) in fields {
-        Reflect::set(&object, &JsValue::from_str(key), value)?;
-    }
-    Ok(object)
-}
-
-fn registration_status(status_: RegistrationStatus) -> Result<JsValue, JsValue> {
-    match status_ {
-        RegistrationStatus::Queued => status("queued", &[]),
-        RegistrationStatus::Batching => status("batching", &[]),
-        RegistrationStatus::Submitted => status("submitted", &[]),
-        RegistrationStatus::Finalized => status("finalized", &[]),
-        RegistrationStatus::Failed { error, error_code } => status(
-            "failed",
-            &[("error", error.into()), ("errorCode", error_code.into())],
-        ),
-    }
-}
-
-fn gateway_request_status(status_: GatewayRequestStatus) -> Result<JsValue, JsValue> {
-    match status_ {
-        GatewayRequestStatus::Queued => status("queued", &[]),
-        GatewayRequestStatus::Batching => status("batching", &[]),
-        GatewayRequestStatus::Submitted { tx_hash } => {
-            status("submitted", &[("txHash", tx_hash.into())])
-        }
-        GatewayRequestStatus::Finalized { tx_hash } => {
-            status("finalized", &[("txHash", tx_hash.into())])
-        }
-        GatewayRequestStatus::Failed { error, error_code } => status(
-            "failed",
-            &[("error", error.into()), ("errorCode", error_code.into())],
-        ),
+        js::promise(
+            async move { registration.poll_status().await.map_err(to_js)?.to_js() },
+        )
     }
 }

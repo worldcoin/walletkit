@@ -1,16 +1,14 @@
 //! Embedding extraction and `PoseGuard` enrollment over the dedicated TEE channel.
 use std::time::Duration;
 
-use js_sys::{Array, Function, Promise, Reflect, Uint8Array};
+use js_sys::{Array, Function, Promise, Uint8Array};
 use selfie_enrollment_api_types::{
     MAX_IMAGE_BYTES, POSEGUARD_CHALLENGE_COUNT, POSEGUARD_CHALLENGE_TTL_SECS,
 };
 use selfie_enrollment_client::{
-    Config, EnrollmentClient, Error, PoseGuardImages, PoseGuardPrompt,
+    self as client, Config, EnrollmentClient, Error, PoseGuardImages,
 };
-use selfie_enrollment_sealed_types::{
-    ChallengeFailure, EmbeddingResult, EnrollmentResult, Failure,
-};
+use selfie_enrollment_sealed_types::{EmbeddingResult, Failure};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::AbortSignal;
@@ -19,59 +17,12 @@ use zeroize::Zeroizing;
 
 use crate::{
     error::{invalid_argument, to_js},
-    js,
+    js::{self, FromJs, ToJs},
+    records::PoseGuardPrompt,
 };
 
 // Matches the private subject limit in GeneratePoseGuardTargetsRequest::validate.
 const MAX_SUB_BYTES: usize = 66;
-
-#[wasm_bindgen(typescript_custom_section)]
-const TS_TYPES: &str = r#"
-export type SelfieEmbeddingResult =
-  | { status: "success"; embedding: FaceEmbedding }
-  | { status: "failed"; reason: "invalid_image" | "quality_rejected" | "extraction_failed" | "invalid_request" };
-
-export type SelfieCaptureFailure =
-  | Exclude<SelfieEmbeddingResult, { status: "success" }>
-  | { status: "failed"; reason: "challenge"; index: number; challengeReason: "invalid_image" | "quality_rejected" | "extraction_failed" | "pose_mismatch" | "identity_mismatch" };
-
-/** Signed angles in degrees in the captured image: negative yaw is left, negative pitch is down. */
-export interface PoseGuardTarget {
-  readonly targetPitch: number;
-  readonly targetYaw: number;
-}
-
-export interface PoseGuardPrompt {
-  readonly targets: readonly [PoseGuardTarget, PoseGuardTarget, PoseGuardTarget];
-  /** Enclave expiry in Unix seconds. */
-  readonly expiresAt: number;
-  /** Milliseconds remaining when the worker sent this prompt. */
-  readonly captureTimeoutMs: number;
-}
-
-export interface PoseGuardImages {
-  centralPng: Uint8Array;
-  /** One image for each target, in the issued order. */
-  captures: readonly [Uint8Array, Uint8Array, Uint8Array];
-}
-
-export interface SelfieEnrollmentBundle {
-  fields: { name: string; value: string }[];
-  attestationHeader: string;
-  encryptedCustody: Uint8Array;
-}
-
-export type SelfieEnrollmentResult =
-  | { status: "success"; enrollment: SelfieEnrollmentBundle }
-  | SelfieCaptureFailure;
-
-export interface FaceEmbedding {
-  embedding: string;
-  embeddingType: string;
-  embeddingVersion: string;
-  embeddingInferenceBackend: string;
-}
-"#;
 
 /// Extracts an embedding after verifying Nitro measurements.
 ///
@@ -162,7 +113,7 @@ pub fn run_poseguard_enrollment(
             .await;
         let result =
             result.map_err(|error| capture_error.unwrap_or_else(|| to_js(error)))?;
-        enrollment_to_js(&result)
+        result.to_js()
     })
 }
 
@@ -172,57 +123,49 @@ pub fn run_poseguard_enrollment(
 )]
 async fn request_images(
     capture: &Function,
-    prompt: PoseGuardPrompt,
+    prompt: client::PoseGuardPrompt,
     deadline: Instant,
 ) -> Result<PoseGuardImages, JsValue> {
     let remaining = deadline.saturating_duration_since(Instant::now());
     let pending =
         capture.call1(&JsValue::UNDEFINED, &prompt_to_js(prompt, remaining)?)?;
     let images = JsFuture::from(Promise::resolve(&pending)).await?;
-    owned_poseguard_images(&images)
+    PoseGuardImages::from_js(images, "images")
 }
 
 fn prompt_to_js(
-    prompt: PoseGuardPrompt,
+    prompt: client::PoseGuardPrompt,
     remaining: Duration,
 ) -> Result<JsValue, JsValue> {
-    let targets = prompt
-        .targets
-        .iter()
-        .map(|target| {
-            js::object(&[
-                ("targetPitch", target.target_pitch.into()),
-                ("targetYaw", target.target_yaw.into()),
-            ])
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     #[allow(
         clippy::cast_precision_loss,
         reason = "Unix seconds fit within a JS number"
     )]
     let expires_at = prompt.expires_at as f64;
-    js::object(&[
-        ("targets", js::array(targets)),
-        ("expiresAt", expires_at.into()),
-        (
-            "captureTimeoutMs",
-            (remaining.as_secs_f64() * 1000.0).floor().into(),
-        ),
-    ])
+    PoseGuardPrompt {
+        targets: prompt.targets,
+        expires_at,
+        capture_timeout_ms: (remaining.as_secs_f64() * 1000.0).floor(),
+    }
+    .to_js()
 }
 
-fn owned_poseguard_images(value: &JsValue) -> Result<PoseGuardImages, JsValue> {
-    if !value.is_object() || value.is_null() {
-        return Err(invalid_argument("Expected PoseGuard images"));
-    }
-    let captures = Reflect::get(value, &"captures".into())?;
+/// Reads [`PoseGuardImages`], clearing the page's copy of each image it reads. Each
+/// image moves into the zeroizing record as soon as it is read, so an invalid later
+/// image also wipes the earlier ones.
+pub fn poseguard_images_from_js(
+    value: &JsValue,
+    name: &str,
+) -> Result<PoseGuardImages, JsValue> {
+    let value = js::expect_object(value.clone(), name)?;
+    let captures = js::get(&value, "captures")?;
     let captures = captures
         .dyn_ref::<Array>()
         .filter(|captures| captures.length() as usize == POSEGUARD_CHALLENGE_COUNT)
         .ok_or_else(|| {
             invalid_argument("`captures` must contain exactly three images")
         })?;
-    let mut central = take_image(&Reflect::get(value, &"centralPng".into())?)?;
+    let mut central = take_image(&js::get(&value, "centralPng")?)?;
     if !central.starts_with(b"\x89PNG\r\n\x1a\n") {
         return Err(invalid_argument("`centralPng` must be a PNG"));
     }
@@ -254,99 +197,24 @@ fn owned_image(image: &Uint8Array) -> Result<Zeroizing<Vec<u8>>, JsValue> {
     Ok(Zeroizing::new(image.to_vec()))
 }
 
+/// Converts an extraction result; a challenge failure is a protocol violation here.
 fn result_to_js(result: &EmbeddingResult) -> Result<JsValue, JsValue> {
-    match result {
-        EmbeddingResult::Success { embedding } => js::object(&[
-            ("status", "success".into()),
-            (
-                "embedding",
-                js::object(&[
-                    ("embedding", embedding.embedding.as_str().into()),
-                    ("embeddingType", embedding.embedding_type.as_str().into()),
-                    (
-                        "embeddingVersion",
-                        embedding.embedding_version.as_str().into(),
-                    ),
-                    (
-                        "embeddingInferenceBackend",
-                        embedding.embedding_inference_backend.as_str().into(),
-                    ),
-                ])?,
-            ),
-        ]),
-        EmbeddingResult::Failed {
-            reason: Failure::Challenge { .. },
-        } => Err(to_js(Error::Protocol)),
-        EmbeddingResult::Failed { reason } => failure_to_js(*reason),
+    if let EmbeddingResult::Failed {
+        reason: Failure::Challenge { .. },
+    } = result
+    {
+        return Err(to_js(Error::Protocol));
     }
-}
-
-fn enrollment_to_js(result: &EnrollmentResult) -> Result<JsValue, JsValue> {
-    match result {
-        EnrollmentResult::Success { enrollment } => {
-            let fields = enrollment
-                .fields
-                .iter()
-                .map(|field| {
-                    js::object(&[
-                        ("name", field.name.as_str().into()),
-                        ("value", field.value.as_str().into()),
-                    ])
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            js::object(&[
-                ("status", "success".into()),
-                (
-                    "enrollment",
-                    js::object(&[
-                        ("fields", js::array(fields)),
-                        (
-                            "attestationHeader",
-                            enrollment.attestation_header.as_str().into(),
-                        ),
-                        (
-                            "encryptedCustody",
-                            Uint8Array::from(enrollment.encrypted_custody.as_slice())
-                                .into(),
-                        ),
-                    ])?,
-                ),
-            ])
-        }
-        EnrollmentResult::Failed { reason } => failure_to_js(*reason),
-    }
-}
-
-fn failure_to_js(failure: Failure) -> Result<JsValue, JsValue> {
-    let reason = match failure {
-        Failure::InvalidImage => "invalid_image",
-        Failure::QualityRejected => "quality_rejected",
-        Failure::ExtractionFailed => "extraction_failed",
-        Failure::InvalidRequest => "invalid_request",
-        Failure::Challenge { index, reason } => {
-            let reason = match reason {
-                ChallengeFailure::InvalidImage => "invalid_image",
-                ChallengeFailure::QualityRejected => "quality_rejected",
-                ChallengeFailure::ExtractionFailed => "extraction_failed",
-                ChallengeFailure::PoseMismatch => "pose_mismatch",
-                ChallengeFailure::IdentityMismatch => "identity_mismatch",
-            };
-            return js::object(&[
-                ("status", "failed".into()),
-                ("reason", "challenge".into()),
-                ("index", index.into()),
-                ("challengeReason", reason.into()),
-            ]);
-        }
-    };
-    js::object(&[("status", "failed".into()), ("reason", reason.into())])
+    result.to_js()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use js_sys::Reflect;
     use selfie_enrollment_sealed_types::{
-        EnrollmentBundle, EnrollmentField, FaceEmbedding, ENROLLMENT_FIELDS,
+        ChallengeFailure, EnrollmentBundle, EnrollmentField, EnrollmentResult,
+        FaceEmbedding, ENROLLMENT_FIELDS,
     };
     use wasm_bindgen_test::wasm_bindgen_test;
 
@@ -368,6 +236,10 @@ mod tests {
         fn message_round_trip(value: JsValue) -> Promise;
     }
 
+    fn string_field(object: &JsValue, key: &str) -> Result<String, JsValue> {
+        String::from_js(js::get(object, key)?, key)
+    }
+
     #[wasm_bindgen_test]
     fn image_copy_survives_the_worker_clearing_its_argument() {
         let image = Uint8Array::from([1, 2, 3].as_slice());
@@ -381,19 +253,58 @@ mod tests {
         let png = b"\x89PNG\r\n\x1a\n";
         let central = Uint8Array::from(png.as_slice());
         let captures = [1_u8, 2, 3].map(|byte| Uint8Array::from([byte].as_slice()));
-        let value = js::object(&[
-            ("centralPng", central.clone().into()),
-            (
-                "captures",
-                js::array(captures.iter().cloned().map(JsValue::from)),
-            ),
-        ])
+        let value = js_sys::Object::new();
+        js::set(&value, "centralPng", &central.clone().into()).unwrap();
+        js::set(
+            &value,
+            "captures",
+            &js::array(captures.iter().cloned().map(JsValue::from)),
+        )
         .unwrap();
-        let owned = owned_poseguard_images(&value).unwrap();
+        let owned = PoseGuardImages::from_js(value.into(), "images").unwrap();
         assert_eq!(owned.central_png, png);
         assert_eq!(owned.captures, [vec![1], vec![2], vec![3]]);
         assert_eq!(central.to_vec(), [0; 8]);
         assert!(captures.iter().all(|capture| capture.to_vec() == [0]));
+    }
+
+    #[wasm_bindgen_test]
+    fn capture_import_rejects_invalid_images() {
+        let image = |byte: u8| JsValue::from(Uint8Array::from([byte].as_slice()));
+        let images = |captures: JsValue| {
+            let value = js_sys::Object::new();
+            let central = Uint8Array::from(b"\x89PNG\r\n\x1a\n".as_slice());
+            js::set(&value, "centralPng", &central.into()).unwrap();
+            js::set(&value, "captures", &captures).unwrap();
+            JsValue::from(value)
+        };
+        for (value, expected) in [
+            (JsValue::NULL, "`images` must be an object"),
+            (
+                images(js::array([image(1), image(2)])),
+                "`captures` must contain exactly three images",
+            ),
+            (
+                images(js::array([image(1), "2".into(), image(3)])),
+                "Each image must be a Uint8Array",
+            ),
+        ] {
+            let Err(error) = PoseGuardImages::from_js(value, "images") else {
+                panic!("expected {expected}");
+            };
+            let error = error.dyn_ref::<js_sys::TypeError>().unwrap();
+            assert_eq!(String::from(error.message()), expected);
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn embedding_failure_flattens_its_reason() {
+        let value = result_to_js(&EmbeddingResult::Failed {
+            reason: Failure::QualityRejected,
+        })
+        .unwrap();
+        assert_eq!(string_field(&value, "status").unwrap(), "failed");
+        assert_eq!(string_field(&value, "reason").unwrap(), "quality_rejected");
     }
 
     #[wasm_bindgen_test]
@@ -415,7 +326,7 @@ mod tests {
             ))
             .await
             .unwrap_err();
-            assert_eq!(js::string_field(&error, "name").unwrap(), expected);
+            assert_eq!(string_field(&error, "name").unwrap(), expected);
         }
     }
 
@@ -423,7 +334,7 @@ mod tests {
     fn prompt_preserves_signed_angles_and_target_order() {
         use selfie_enrollment_client::PoseGuardTarget;
 
-        let prompt = PoseGuardPrompt {
+        let prompt = client::PoseGuardPrompt {
             targets: [(0.0, -31.0), (-17.0, 0.0), (0.0, 34.0)].map(
                 |(target_pitch, target_yaw)| PoseGuardTarget {
                     target_pitch,
@@ -468,15 +379,15 @@ mod tests {
                 encrypted_custody: vec![0, 128, 255],
             },
         };
-        let value = enrollment_to_js(&result).unwrap();
+        let value = result.to_js().unwrap();
         drop(result);
         let cloned = wasm_bindgen_futures::JsFuture::from(message_round_trip(value))
             .await
             .unwrap();
         let bundle = Reflect::get(&cloned, &"enrollment".into()).unwrap();
-        assert_eq!(js::string_field(&cloned, "status").unwrap(), "success");
+        assert_eq!(string_field(&cloned, "status").unwrap(), "success");
         assert_eq!(
-            js::string_field(&bundle, "attestationHeader").unwrap(),
+            string_field(&bundle, "attestationHeader").unwrap(),
             "AAECAw=="
         );
         let pcp = Reflect::get(&bundle, &"encryptedCustody".into())
@@ -490,9 +401,9 @@ mod tests {
             .unwrap();
         assert_eq!(fields.length(), 12);
         for (field, name) in fields.iter().zip(ENROLLMENT_FIELDS) {
-            assert_eq!(js::string_field(&field, "name").unwrap(), name);
+            assert_eq!(string_field(&field, "name").unwrap(), name);
             assert_eq!(
-                js::string_field(&field, "value").unwrap(),
+                string_field(&field, "value").unwrap(),
                 format!("unchanged-{name}")
             );
         }
@@ -505,15 +416,15 @@ mod tests {
             reason: ChallengeFailure::IdentityMismatch,
         };
         let result = EnrollmentResult::Failed { reason };
-        let value = enrollment_to_js(&result).unwrap();
-        assert_eq!(js::string_field(&value, "status").unwrap(), "failed");
-        assert_eq!(js::string_field(&value, "reason").unwrap(), "challenge");
+        let value = result.to_js().unwrap();
+        assert_eq!(string_field(&value, "status").unwrap(), "failed");
+        assert_eq!(string_field(&value, "reason").unwrap(), "challenge");
         assert_eq!(
             Reflect::get(&value, &"index".into()).unwrap(),
             JsValue::from(2_u32)
         );
         assert_eq!(
-            js::string_field(&value, "challengeReason").unwrap(),
+            string_field(&value, "challengeReason").unwrap(),
             "identity_mismatch"
         );
         assert!(result_to_js(&EmbeddingResult::Failed { reason }).is_err());
