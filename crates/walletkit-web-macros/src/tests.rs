@@ -134,6 +134,7 @@ fn tagged_enum_becomes_a_discriminated_union() {
             enum Status {
                 Queued,
                 Failed { error: String, error_code: Option<String> },
+                Batching,
                 Rejected { #[js(flatten)] reason: Failure },
             }
         },
@@ -142,7 +143,7 @@ fn tagged_enum_becomes_a_discriminated_union() {
         ts,
         indoc! {r#"
             export type Status =
-              | { state: "queued" }
+              | { state: "queued" | "batching" }
               | { state: "failed"; error: string; errorCode?: string }
               | ({ state: "rejected" } & Failure);
         "#}
@@ -179,6 +180,7 @@ fn record_with_a_flattened_field_becomes_an_intersection() {
 #[test_case("output", r#"struct A { a_b: u8, #[js(rename = "aB")] c: u8 }"#, "`aB` is already used"; "duplicate field name")]
 #[test_case(r#"output, rename_all = "lowercase""#, "struct A { b: u8 }", "are for enums"; "rename_all on a struct")]
 #[test_case("output, readonly", "enum A { B }", "no effect on a string union"; "readonly string union")]
+#[test_case("output", "struct A { #[js(to_js = hex)] b: u8 }", "needs `ts`"; "custom conversion without ts")]
 #[test_case("output, bogus", "struct A { b: u8 }", "unknown `js_type` option"; "unknown option")]
 fn invalid_declaration_is_rejected(attr: &str, item: &str, message: &str) {
     let error = error(attr.parse().unwrap(), item.parse().unwrap());

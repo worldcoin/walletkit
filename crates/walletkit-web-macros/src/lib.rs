@@ -38,7 +38,8 @@
 //! - `ts = "type"`: the TypeScript type, instead of the one derived from the Rust type.
 //! - `to_js = path` / `from_js = path`: convert the field with
 //!   `fn(&T) -> Result<JsValue, JsValue>` / `fn(&JsValue, &str) -> Result<T, JsValue>`
-//!   instead of `ToJs` / `FromJs`. The schema check is skipped for that direction.
+//!   instead of `ToJs` / `FromJs`. The field type stays the Rust type and is still
+//!   checked, so the field also needs `ts`.
 //! - `flatten`: merge the fields of an output-only record or tagged enum into the
 //!   containing object.
 //!

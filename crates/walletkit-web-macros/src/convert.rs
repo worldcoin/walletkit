@@ -57,10 +57,7 @@ fn object_to_js(
     tag: Option<(&String, &String)>,
     checked: bool,
 ) -> TokenStream {
-    let checks = fields
-        .iter()
-        .filter(|field| checked && field.to_js.is_none())
-        .map(schema_check);
+    let checks = fields.iter().filter(|_| checked).map(schema_check);
     let object = fields.iter().find(|field| field.flatten).map_or_else(
         || quote!(::js_sys::Object::new()),
         |field| {
@@ -113,10 +110,8 @@ pub fn from_js(model: &JsType) -> TokenStream {
                 );
                 quote!(#ident: #value)
             });
-            let checked: Vec<&Field> = fields
-                .iter()
-                .filter(|field| model.remote.is_some() && field.from_js.is_none())
-                .collect();
+            let checked: Vec<&Field> =
+                fields.iter().filter(|_| model.remote.is_some()).collect();
             let bindings = checked.iter().map(|field| &field.ident);
             let checks = checked.iter().copied().map(schema_check);
             quote! {

@@ -29,24 +29,36 @@ pub fn render(model: &JsType) -> syn::Result<String> {
             format!("export type {name} =\n{};", members.join("\n"))
         }
         Shape::Tagged { tag, variants } => {
-            let members = variants
-                .iter()
-                .map(|variant| {
-                    let (properties, flattened) =
-                        properties(&variant.fields, model.readonly)?;
-                    let properties: String = properties
-                        .iter()
-                        .map(|(_, property)| format!("; {property}"))
-                        .collect::<Vec<_>>()
-                        .concat();
+            // Variants with the same payload share one member, so a value's tag can
+            // change between them, e.g. from "queued" to "batching".
+            let mut groups: Vec<(String, Option<String>, Vec<String>)> = Vec::new();
+            for variant in variants {
+                let (properties, flattened) =
+                    properties(&variant.fields, model.readonly)?;
+                let properties: String = properties
+                    .iter()
+                    .map(|(_, property)| format!("; {property}"))
+                    .collect::<Vec<_>>()
+                    .concat();
+                let tag_value = format!("\"{}\"", variant.js_name);
+                match groups.iter_mut().find(|(other, other_flattened, _)| {
+                    *other == properties && *other_flattened == flattened
+                }) {
+                    Some((_, _, tags)) => tags.push(tag_value),
+                    None => groups.push((properties, flattened, vec![tag_value])),
+                }
+            }
+            let members: Vec<String> = groups
+                .into_iter()
+                .map(|(properties, flattened, tags)| {
                     let object =
-                        format!("{{ {tag}: \"{}\"{properties} }}", variant.js_name);
-                    Ok(flattened.map_or_else(
+                        format!("{{ {tag}: {}{properties} }}", tags.join(" | "));
+                    flattened.map_or_else(
                         || format!("  | {object}"),
                         |flattened| format!("  | ({object} & {flattened})"),
-                    ))
+                    )
                 })
-                .collect::<syn::Result<Vec<_>>>()?;
+                .collect();
             format!("export type {name} =\n{};", members.join("\n"))
         }
     };

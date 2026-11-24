@@ -189,6 +189,14 @@ impl JsType {
             }
         };
         for fields in field_groups {
+            if let Some(field) = fields.iter().find(|field| {
+                (field.to_js.is_some() || field.from_js.is_some()) && field.ts.is_none()
+            }) {
+                return Err(Error::new(
+                    field.ident.span(),
+                    "a field with `to_js` or `from_js` needs `ts`",
+                ));
+            }
             let properties = fields.iter().filter(|field| !field.flatten);
             unique_names(properties.map(|f| (&f.js_name, &f.ident)), tag)?;
             if self.from_js.is_some() {

@@ -52,8 +52,8 @@ struct RecoveryData {
 struct RecoveryUpdateSignature {
     signature: Vec<u8>,
     /// 0x-prefixed, zero-padded 256-bit hex string.
-    #[js(to_js = padded_hex)]
-    nonce: String,
+    #[js(ts = "string", to_js = padded_hex)]
+    nonce: Uint256,
 }
 
 #[js_type(remote = walletkit_core::RegistrationStatus, output, tag = "state")]
@@ -202,6 +202,8 @@ struct SelfieEnrollmentField {
 
 #[js_type(remote = sealed::EnrollmentBundle, output)]
 struct SelfieEnrollmentBundle {
+    // Inline, as before, so a field stays assignable to `Record<string, string>`.
+    #[js(ts = "{ name: string; value: string }[]")]
     fields: Vec<SelfieEnrollmentField>,
     attestation_header: String,
     encrypted_custody: Vec<u8>,
@@ -247,6 +249,14 @@ struct PoseGuardImages {
     /// One image for each target, in the issued order.
     #[js(ts = "readonly [Uint8Array, Uint8Array, Uint8Array]")]
     captures: [Vec<u8>; POSEGUARD_CHALLENGE_COUNT],
+}
+
+impl js::JsSchema for Uint256 {
+    type Schema = Self;
+}
+
+impl js::JsSchema for storage::ProtocolVersion {
+    type Schema = Self;
 }
 
 #[allow(clippy::unnecessary_wraps, reason = "the signature `to_js` expects")]

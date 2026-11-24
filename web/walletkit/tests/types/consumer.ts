@@ -5,6 +5,7 @@
 import type {
   Authenticator,
   CredentialRecord,
+  GatewayRequestStatus,
   RegistrationStatus,
   FaceEmbedding,
   SelfieEmbeddingResult,
@@ -74,6 +75,8 @@ export async function consumer() {
     const bundle: SelfieEnrollmentBundle = enrolled.enrollment;
     const enrollmentField: SelfieEnrollmentField = bundle.fields[0];
     const field: string = enrollmentField.value;
+    const fieldMap: Record<string, string> = bundle.fields[0];
+    void fieldMap;
     const attestation: string = bundle.attestationHeader;
     const pcp: Uint8Array = bundle.encryptedCustody;
     void [field, attestation, pcp];
@@ -161,6 +164,14 @@ export async function consumer() {
       undefined,
     );
   const status: RegistrationStatus = await registration.pollStatus();
+  // Variants with the same payload share one member, so the tag can move between them.
+  const pending: RegistrationStatus = { state: "queued" };
+  pending.state = "batching";
+  const mined: GatewayRequestStatus = { state: "submitted", txHash: "0x" };
+  mined.state = "finalized";
+  const rejected: SelfieFailure = { reason: "invalid_image" };
+  rejected.reason = "quality_rejected";
+  void [pending, mined, rejected];
   const request = await walletkit.ProofRequest.fromJson("{}");
   await authenticator.setNullifierReuseWhitelist(["rp_000000000000002a"]);
   const response = await authenticator.generateProof(request);
