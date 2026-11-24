@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.2](https://github.com/worldcoin/walletkit/compare/v0.32.1...v0.32.2) - 2026-11-24
+
+### Other
+
+- *(deps)* consolidate dependency updates ([#694](https://github.com/worldcoin/walletkit/pull/694))
+
 ## [0.32.1](https://github.com/worldcoin/walletkit/compare/v0.32.0...v0.32.1) - 2026-11-20
 
 ### Fixed
