@@ -9946,7 +9946,7 @@ dependencies = [
 [[package]]
 name = "world-id-authenticator"
 version = "0.25.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=c09436bdecbf4d6f6d4c9233c17835718e68632b#c09436bdecbf4d6f6d4c9233c17835718e68632b"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=d1edfd36bf2aca9eef3644cfc6ab073559dbd52c#d1edfd36bf2aca9eef3644cfc6ab073559dbd52c"
 dependencies = [
  "aes-gcm",
  "alloy",
@@ -9991,7 +9991,7 @@ dependencies = [
 [[package]]
 name = "world-id-core"
 version = "0.25.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=c09436bdecbf4d6f6d4c9233c17835718e68632b#c09436bdecbf4d6f6d4c9233c17835718e68632b"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=d1edfd36bf2aca9eef3644cfc6ab073559dbd52c#d1edfd36bf2aca9eef3644cfc6ab073559dbd52c"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -10003,7 +10003,7 @@ dependencies = [
 [[package]]
 name = "world-id-flamingo"
 version = "0.25.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=c09436bdecbf4d6f6d4c9233c17835718e68632b#c09436bdecbf4d6f6d4c9233c17835718e68632b"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=d1edfd36bf2aca9eef3644cfc6ab073559dbd52c#d1edfd36bf2aca9eef3644cfc6ab073559dbd52c"
 dependencies = [
  "base64 0.22.1",
  "coset",
@@ -10021,7 +10021,7 @@ dependencies = [
 [[package]]
 name = "world-id-primitives"
 version = "0.25.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=c09436bdecbf4d6f6d4c9233c17835718e68632b#c09436bdecbf4d6f6d4c9233c17835718e68632b"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=d1edfd36bf2aca9eef3644cfc6ab073559dbd52c#d1edfd36bf2aca9eef3644cfc6ab073559dbd52c"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -10060,7 +10060,7 @@ dependencies = [
 [[package]]
 name = "world-id-proof"
 version = "0.25.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=c09436bdecbf4d6f6d4c9233c17835718e68632b#c09436bdecbf4d6f6d4c9233c17835718e68632b"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=d1edfd36bf2aca9eef3644cfc6ab073559dbd52c#d1edfd36bf2aca9eef3644cfc6ab073559dbd52c"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -10101,7 +10101,7 @@ dependencies = [
 [[package]]
 name = "world-id-registries"
 version = "0.25.0"
-source = "git+https://github.com/worldcoin/world-id-protocol?rev=c09436bdecbf4d6f6d4c9233c17835718e68632b#c09436bdecbf4d6f6d4c9233c17835718e68632b"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=d1edfd36bf2aca9eef3644cfc6ab073559dbd52c#d1edfd36bf2aca9eef3644cfc6ab073559dbd52c"
 dependencies = [
  "alloy",
  "anyhow",
