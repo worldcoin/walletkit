@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use alloy_core::primitives::Address;
 use world_id_core::registration::{
-    KnownAuthenticator, RegistrationErrorReason, RegistrationRequest,
+    Attachment, KnownAuthenticator, RegistrationErrorReason, RegistrationRequest,
     RegistrationResult as CoreRegistrationResult,
 };
+use zeroize::Zeroizing;
 
 use super::errors::RegistrationError;
 use crate::Authenticator;
@@ -68,7 +69,8 @@ impl RegistrationResult {
         self.0.authenticators.clone()
     }
 
-    /// Returns whether the Approving Authenticator included a credential vault backup.
+    /// Returns whether the Approving Authenticator included a vault with the credentials the
+    /// user selected.
     ///
     /// The vault bytes themselves are returned in [`Registered::vault_backup`] only after
     /// [`RegistrationRequester::verify`](super::RegistrationRequester::verify) confirms the
@@ -76,6 +78,85 @@ impl RegistrationResult {
     #[must_use]
     pub const fn has_vault(&self) -> bool {
         self.0.vault.is_some()
+    }
+
+    /// Returns how many attachments the Approving Authenticator included.
+    ///
+    /// The attachments themselves are returned in [`Registered::attachments`], together with
+    /// the vault.
+    #[must_use]
+    pub fn attachment_count(&self) -> u64 {
+        u64::try_from(self.0.attachments.len()).unwrap_or(u64::MAX)
+    }
+}
+
+/// Data that an issuer's code attaches to a transferred credential, e.g. a Personal Custody
+/// Package.
+///
+/// `WalletKit` carries `format` and `data` without interpreting them. The host passes both to
+/// the code of the issuer of `issuer_schema_id`, which must treat received ones as untrusted
+/// input. The data may be biometric: never log it.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct RegistrationAttachment {
+    /// The issuer schema of the credential the attachment belongs to.
+    pub issuer_schema_id: u64,
+    /// The format of `data`, defined by the issuer's code.
+    pub format: String,
+    /// The attachment bytes.
+    pub data: Vec<u8>,
+}
+
+impl std::fmt::Debug for RegistrationAttachment {
+    /// Formats [`RegistrationAttachment`] with the length of `data` instead of its bytes.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RegistrationAttachment")
+            .field("issuer_schema_id", &self.issuer_schema_id)
+            .field("format", &self.format)
+            .field("len", &self.data.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl From<RegistrationAttachment> for Attachment {
+    /// Moves the attachment into its wire form, whose bytes are zeroized on drop.
+    fn from(attachment: RegistrationAttachment) -> Self {
+        Self {
+            issuer_schema_id: attachment.issuer_schema_id,
+            format: attachment.format,
+            data: Zeroizing::new(attachment.data),
+        }
+    }
+}
+
+impl From<&Attachment> for RegistrationAttachment {
+    /// Copies a received attachment out for the host.
+    fn from(attachment: &Attachment) -> Self {
+        Self {
+            issuer_schema_id: attachment.issuer_schema_id,
+            format: attachment.format.clone(),
+            data: attachment.data.to_vec(),
+        }
+    }
+}
+
+/// The credentials the user selected to transfer to the new authenticator, passed to
+/// [`CheckedRegistration::approve`](super::CheckedRegistration::approve).
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct CredentialTransfer {
+    /// The `CredentialStore::export_vault_for_issuer_schemas` output for the issuer schemas the
+    /// user selected.
+    pub vault: Vec<u8>,
+    /// Issuer-specific data for the credentials in `vault`.
+    pub attachments: Vec<RegistrationAttachment>,
+}
+
+impl std::fmt::Debug for CredentialTransfer {
+    /// Formats [`CredentialTransfer`] with the length of `vault` instead of its plaintext bytes.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialTransfer")
+            .field("vault_len", &self.vault.len())
+            .field("attachments", &self.attachments)
+            .finish()
     }
 }
 
@@ -107,13 +188,20 @@ pub enum RequesterStatus {
 pub struct Registered {
     /// The new authenticator. Its storage is not initialized yet.
     pub authenticator: Arc<Authenticator>,
-    /// The shared `CredentialStore::export_vault_for_backup` output, to import with
-    /// `CredentialStore::merge_vault_from_backup` once storage is initialized.
+    /// The `CredentialStore::export_vault_for_issuer_schemas` output for the credentials the
+    /// user selected on the Approving Authenticator, to import with
+    /// `CredentialStore::merge_vault_from_backup` once storage is initialized. `None` if the
+    /// user selected none.
     pub vault_backup: Option<Vec<u8>>,
+    /// Issuer-specific data for the credentials in `vault_backup`, to hand to the code of each
+    /// attachment's issuer as untrusted input. The Approving Authenticator is not bound to the
+    /// issuer schemas this session declared, so the host should warn the user about an
+    /// attachment it does not recognize, and drop it.
+    pub attachments: Vec<RegistrationAttachment>,
 }
 
 impl std::fmt::Debug for Registered {
-    /// Formats [`Registered`] without printing the plaintext `vault_backup` bytes.
+    /// Formats [`Registered`] without printing the plaintext `vault_backup` or attachment bytes.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Registered")
             .field("authenticator", &self.authenticator)
@@ -121,6 +209,7 @@ impl std::fmt::Debug for Registered {
                 "vault_backup",
                 &self.vault_backup.as_ref().map(|_| "<redacted>"),
             )
+            .field("attachments", &self.attachments)
             .finish()
     }
 }

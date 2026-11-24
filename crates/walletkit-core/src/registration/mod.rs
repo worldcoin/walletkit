@@ -12,9 +12,14 @@
 //! Every outcome is answered to the Requesting Authenticator, which verifies a successful result
 //! with [`RegistrationRequester::verify`].
 //!
-//! [`CheckedRegistration::approve`] returns [`ApproverError::VaultTooLarge`] before
-//! submission when a supplied vault exceeds [`MAX_VAULT_SIZE`]. The session stays open
-//! for an explicit retry or abort; the vault is never silently omitted.
+//! The approval carries the credentials the user selected, as a [`CredentialTransfer`]: a vault
+//! exported for the selected issuer schemas, and the issuers' [`RegistrationAttachment`]s, which
+//! `WalletKit` never interprets. The Requesting Authenticator may declare the issuer schemas it
+//! supports; the host should offer only those, and attachments for others are rejected.
+//!
+//! [`CheckedRegistration::approve`] returns [`ApproverError::TransferTooLarge`] or
+//! [`ApproverError::UnsupportedAttachment`] before submission for a transfer that cannot be
+//! sent. The session stays open for an explicit retry or abort; nothing is silently omitted.
 //!
 //! The wire format and cryptography come from [`world_id_core::registration`].
 //!
@@ -42,16 +47,17 @@ pub use bridge::BridgeClient;
 pub use errors::{ApproverError, BridgeError, RegistrationError, RequesterError};
 pub use requester::RegistrationRequester;
 pub use types::{
-    ApprovalOutcome, ApprovalResult, Registered, RegistrationPlan, RegistrationResult,
-    RequestedClass, RequesterStatus,
+    ApprovalOutcome, ApprovalResult, CredentialTransfer, Registered,
+    RegistrationAttachment, RegistrationPlan, RegistrationResult, RequestedClass,
+    RequesterStatus,
 };
 pub use world_id_core::registration::{
     AuthenticatorName, BridgeDomain, KnownAuthenticator, PairingCode, PairingUri,
     RegistrationErrorData, RegistrationErrorReason, RegistrationRequest,
-    TransportError, MAX_NAME_LEN, MAX_VAULT_SIZE,
+    TransportError, MAX_NAME_LEN, MAX_TRANSFER_SIZE,
 };
 
-/// The format of the shared vault: a `CredentialStore::export_vault_for_backup` export.
+/// The format of the shared vault: a `CredentialStore::export_vault_for_issuer_schemas` export.
 const PLAINTEXT_VAULT_FORMAT: &str = "walletkit_plaintext_v1";
 
 /// The message-bridge session lifetime, from which both sides estimate the session expiry

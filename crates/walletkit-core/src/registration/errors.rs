@@ -188,10 +188,21 @@ pub enum ApproverError {
     /// [`IncomingRegistration::check`](super::IncomingRegistration::check) checked.
     #[error("the approver does not match the checked account")]
     ApproverMismatch,
-    /// The supplied vault exceeds [`MAX_VAULT_SIZE`](super::MAX_VAULT_SIZE).
-    /// Nothing was submitted or sent; the host may retry or abort the checked session.
-    #[error("the vault exceeds the registration size limit")]
-    VaultTooLarge,
+    /// The supplied vault and attachments together exceed
+    /// [`MAX_TRANSFER_SIZE`](super::MAX_TRANSFER_SIZE). Nothing was submitted or sent; the host
+    /// may retry with a smaller selection or abort the checked session.
+    #[error("the vault and attachments exceed the registration transfer size limit")]
+    TransferTooLarge,
+    /// A supplied attachment belongs to an issuer schema that the request does not list as
+    /// supported. Nothing was submitted or sent; the host may retry without it or abort the
+    /// checked session.
+    #[error(
+        "the request does not support attachments for issuer schema {issuer_schema_id}"
+    )]
+    UnsupportedAttachment {
+        /// The issuer schema of the offending attachment.
+        issuer_schema_id: u64,
+    },
     /// This step was already taken, so the registration has moved on or ended.
     #[error("this registration step was already taken")]
     AlreadyHandled,

@@ -64,18 +64,25 @@ impl RegistrationRequester {
     /// Starts a session for the authenticator derived from `seed` and publishes its request on
     /// `bridge`, whose domain goes into the Pairing URI.
     ///
+    /// `supported_issuer_schema_ids` declares the issuer schemas whose credentials and
+    /// attachments this authenticator can use, so that the Approving Authenticator offers only
+    /// those. `None` declares nothing.
+    ///
     /// This blocks while it derives the transport key with Argon2id (64 MiB). In a browser, call
     /// it from a Web Worker.
     ///
     /// # Errors
     ///
-    /// Returns an error if the seed or name is invalid, the CSPRNG is unavailable, the request
-    /// cannot be encoded or encrypted, or the bridge does not store it.
+    /// Returns an error if the seed or name is invalid, `supported_issuer_schema_ids` repeats an
+    /// ID ([`RequesterError::Authenticator`] with `InvalidInput`) or does not fit in the
+    /// request, the CSPRNG is unavailable, the request cannot be encoded or encrypted, or the
+    /// bridge does not store it.
     #[uniffi::constructor]
     pub async fn start(
         seed: Vec<u8>,
         class: RequestedClass,
         name: Option<String>,
+        supported_issuer_schema_ids: Option<Vec<u64>>,
         bridge: Arc<BridgeClient>,
     ) -> Result<Self, RequesterError> {
         let seed = Zeroizing::new(seed);
@@ -98,6 +105,7 @@ impl RegistrationRequester {
             (class == RequestedClass::Admin).then(|| signer.onchain_signer_address()),
             response_key.public_key(),
             name,
+            supported_issuer_schema_ids,
             &request_id,
         )
         .map_err(AuthenticatorError::from)?;
@@ -306,7 +314,7 @@ impl RegistrationRequester {
     ///
     /// The indexer must show this session's key at `result.pubkey_id` on `result.leaf_index`,
     /// with the requested class. Until this succeeds the authenticator must not consider itself
-    /// registered. The indexer may lag behind the registry, so this retries for up to a minute.
+    /// registered, and the vault and attachments are not released. The indexer may lag behind the registry, so this retries for up to a minute.
     ///
     /// # Errors
     ///
@@ -382,6 +390,7 @@ impl RegistrationRequester {
                 nullifier_reuse_whitelist: RwLock::default(),
             }),
             vault_backup: result.0.vault.as_ref().map(|vault| vault.data.to_vec()),
+            attachments: result.0.attachments.iter().map(Into::into).collect(),
         })
     }
 
@@ -517,12 +526,17 @@ mod tests {
         api_types::IndexerAuthenticatorsResponse,
         artifacts::dummy::DummyZkArtifactSource,
         primitives::{AuthenticatorPublicKeySet, ServiceEndpoint},
-        registration::{RegistrationResult as CoreRegistrationResult, Vault},
+        registration::{
+            Attachment, RegistrationResult as CoreRegistrationResult, Vault,
+        },
         OnchainKeyRepresentable as _,
     };
 
     use super::*;
-    use crate::storage::tests_utils::{temp_root_path, InMemoryStorageProvider};
+    use crate::{
+        registration::RegistrationAttachment,
+        storage::tests_utils::{temp_root_path, InMemoryStorageProvider},
+    };
 
     async fn serve(app: Router) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -554,6 +568,7 @@ mod tests {
             vec![7u8; 32],
             RequestedClass::Proving,
             None,
+            None,
             bridge,
         )
         .await
@@ -565,6 +580,32 @@ mod tests {
 
         assert_eq!(requester.poll().await.unwrap(), RequesterStatus::Retrieved);
         assert!(requester.pairing_code().is_some());
+    }
+
+    #[tokio::test]
+    async fn start_rejects_repeated_supported_issuer_schema_ids() {
+        let bridge = Arc::new(BridgeClient::new("bridge.example").unwrap());
+
+        let err = RegistrationRequester::start(
+            vec![7u8; 32],
+            RequestedClass::Proving,
+            None,
+            Some(vec![1, 2, 1]),
+            bridge,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(
+            matches!(
+                &err,
+                RequesterError::Authenticator(WalletKitError::InvalidInput {
+                    attribute,
+                    ..
+                }) if attribute == "supported_issuer_schema_ids"
+            ),
+            "{err:?}"
+        );
     }
 
     #[tokio::test]
@@ -595,6 +636,7 @@ mod tests {
             RegistrationRequester::start(
                 vec![9u8; 32],
                 RequestedClass::Proving,
+                None,
                 None,
                 bridge,
             )
@@ -758,6 +800,7 @@ mod tests {
             seed.to_vec(),
             RequestedClass::Proving,
             None,
+            None,
             bridge,
         )
         .await
@@ -785,7 +828,13 @@ mod tests {
                 format: PLAINTEXT_VAULT_FORMAT.to_string(),
                 data: Zeroizing::new(b"secret-vault-bytes".to_vec()),
             }),
+            attachments: vec![Attachment {
+                issuer_schema_id: 7,
+                format: "pcp_v1".to_string(),
+                data: Zeroizing::new(b"secret-attachment-bytes".to_vec()),
+            }],
         });
+        assert_eq!(result.attachment_count(), 1);
         let verify = |s: [u8; 32]| {
             let (config, store, result) = (config.clone(), store.clone(), &result);
             let requester = &requester;
@@ -818,9 +867,18 @@ mod tests {
         let registered = verify(seed).await.unwrap();
         let debug = format!("{registered:?}");
         assert!(debug.contains("<redacted>") && !debug.contains("secret-vault-bytes"));
+        assert!(!debug.contains(&format!("{:?}", b"secret-attachment-bytes")));
         assert_eq!(
             registered.vault_backup.as_deref(),
             Some(b"secret-vault-bytes".as_slice())
+        );
+        assert_eq!(
+            registered.attachments,
+            [RegistrationAttachment {
+                issuer_schema_id: 7,
+                format: "pcp_v1".to_string(),
+                data: b"secret-attachment-bytes".to_vec(),
+            }]
         );
         let _ = std::fs::remove_dir_all(root);
     }

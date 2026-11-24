@@ -103,6 +103,16 @@ walletkit-sqlite = { version = "0.32.2", path = "crates/walletkit-sqlite" }
 # Unpublished test helpers
 walletkit-testkit = { path = "crates/walletkit-testkit" }
 
+# TODO: remove once world-id-protocol#1268 is released
+# (https://github.com/worldcoin/world-id-protocol/pull/1268)
+[patch.crates-io]
+world-id-authenticator = { git = "https://github.com/worldcoin/world-id-protocol", rev = "c09436bdecbf4d6f6d4c9233c17835718e68632b" }
+world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "c09436bdecbf4d6f6d4c9233c17835718e68632b" }
+world-id-flamingo = { git = "https://github.com/worldcoin/world-id-protocol", rev = "c09436bdecbf4d6f6d4c9233c17835718e68632b" }
+world-id-primitives = { git = "https://github.com/worldcoin/world-id-protocol", rev = "c09436bdecbf4d6f6d4c9233c17835718e68632b" }
+world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", rev = "c09436bdecbf4d6f6d4c9233c17835718e68632b" }
+world-id-registries = { git = "https://github.com/worldcoin/world-id-protocol", rev = "c09436bdecbf4d6f6d4c9233c17835718e68632b" }
+
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }

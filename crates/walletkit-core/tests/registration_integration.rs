@@ -23,10 +23,11 @@ use tempfile::TempDir;
 use tokio::sync::oneshot;
 use walletkit_core::{
     registration::{
-        ApprovalOutcome, ApprovalResult, BridgeClient, KnownAuthenticator,
-        PendingRegistration, RegistrationPlan, RegistrationRequester, RequestedClass,
-        RequesterStatus,
+        ApprovalOutcome, ApprovalResult, BridgeClient, CredentialTransfer,
+        KnownAuthenticator, PendingRegistration, RegistrationAttachment,
+        RegistrationPlan, RegistrationRequester, RequestedClass, RequesterStatus,
     },
+    storage::CredentialStore,
     Authenticator, Environment, Region,
 };
 use walletkit_testkit::{init_and_register_account, TestEnv};
@@ -34,6 +35,9 @@ use world_id_core::artifacts::dummy::DummyZkArtifactSource;
 
 /// Staging message-bridge deployment.
 const STAGING_BRIDGE_DOMAIN: &str = "staging-bridge.worldcoin.org";
+
+/// The issuer schema the requesting device declares it supports.
+const SUPPORTED_ISSUER_SCHEMA_ID: u64 = 1;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
@@ -52,7 +56,6 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     )
     .await
     .expect("staging account registration should succeed");
-    let vault = approver_store.export_vault_for_backup().unwrap();
     let leaf_index = approver.leaf_index();
 
     let bridge = Arc::new(BridgeClient::new(STAGING_BRIDGE_DOMAIN).unwrap());
@@ -62,7 +65,7 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     let (code_tx, code_rx) = oneshot::channel();
     let approving = tokio::spawn(approving_device(
         approver,
-        vault,
+        approver_store,
         bridge.clone(),
         uri_rx,
         code_rx,
@@ -107,10 +110,10 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
 }
 
 /// Takes the request from the scanned QR code, checks it with the code the user typed, and
-/// approves it with the vault.
+/// approves it with the credentials of the issuer schemas the requesting device supports.
 async fn approving_device(
     approver: Authenticator,
-    vault: Vec<u8>,
+    store: Arc<CredentialStore>,
     bridge: Arc<BridgeClient>,
     uri: oneshot::Receiver<String>,
     code: oneshot::Receiver<String>,
@@ -127,13 +130,28 @@ async fn approving_device(
         pubkey_id: 0,
         name: "iPhone".to_string(),
     }];
+    let supported = checked.supported_issuer_schema_ids().unwrap();
+    assert_eq!(supported, [SUPPORTED_ISSUER_SCHEMA_ID]);
+    let transfer = CredentialTransfer {
+        vault: store.export_vault_for_issuer_schemas(supported).unwrap(),
+        attachments: vec![attachment()],
+    };
     checked
-        .approve(&approver, Some(vault), others)
+        .approve(&approver, Some(transfer), others)
         .await
         .unwrap()
 }
 
-/// Shows the QR code, then the pairing code, verifies the result and imports the vault.
+fn attachment() -> RegistrationAttachment {
+    RegistrationAttachment {
+        issuer_schema_id: SUPPORTED_ISSUER_SCHEMA_ID,
+        format: "test_v1".to_string(),
+        data: b"issuer-defined bytes".to_vec(),
+    }
+}
+
+/// Shows the QR code, then the pairing code, verifies the result, imports the vault and receives
+/// the attachment.
 async fn requesting_device(
     seed: [u8; 32],
     rpc_url: String,
@@ -145,6 +163,7 @@ async fn requesting_device(
         seed.to_vec(),
         RequestedClass::Proving,
         Some("Chrome on MacBook".to_string()),
+        Some(vec![SUPPORTED_ISSUER_SCHEMA_ID]),
         bridge,
     )
     .await
@@ -163,6 +182,7 @@ async fn requesting_device(
     };
     assert_eq!(result.authenticators()[0].name, "iPhone");
     assert!(result.has_vault());
+    assert_eq!(result.attachment_count(), 1);
     let store = common::create_test_credential_store();
     let registered = requester
         .verify_with_defaults(
@@ -180,6 +200,7 @@ async fn requesting_device(
     store
         .merge_vault_from_backup(&registered.vault_backup.unwrap())
         .unwrap();
+    assert_eq!(registered.attachments, [attachment()]);
     registered.authenticator
 }
 

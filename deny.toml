@@ -4,6 +4,9 @@ all-features = true
 
 [sources]
 unknown-registry = "deny"
+# TODO: remove once world-id-protocol#1268 is released
+# (https://github.com/worldcoin/world-id-protocol/pull/1268)
+allow-git = ["https://github.com/worldcoin/world-id-protocol"]
 
 [bans]
 deny = [
