@@ -364,7 +364,7 @@ mod tests {
             rejected("issuerSchemaIds", JsValue::from(-1)).contains("must be an array")
         );
         assert!(rejected("issuerSchemaIds", js::array([JsValue::from(-1)]))
-            .starts_with("`issuerSchemaIds` must be a bigint"));
+            .starts_with("`issuerSchemaIds[0]` must be a bigint"));
         assert_eq!(
             rejected("clientId", JsValue::NULL),
             "`clientId` must be a string"

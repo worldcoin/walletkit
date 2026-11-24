@@ -1,5 +1,6 @@
 use indoc::indoc;
 use quote::quote;
+use test_case::test_case;
 
 use crate::{model::JsType, ts};
 
@@ -40,6 +41,7 @@ fn record_becomes_an_interface_with_camel_case_properties() {
                 tags: Vec<Option<String>>,
                 #[js(rename = "kind", ts = "3 | 4")]
                 protocol: ProtocolVersion,
+                r#type: String,
                 nested: Other,
             }
         },
@@ -62,6 +64,7 @@ fn record_becomes_an_interface_with_camel_case_properties() {
               issuerSchemaIds: bigint[];
               tags: (string | undefined)[];
               kind: 3 | 4;
+              type: string;
               nested: Other;
             }
         "}
@@ -164,86 +167,20 @@ fn record_with_a_flattened_field_becomes_an_intersection() {
     );
 }
 
-#[test]
-fn invalid_declarations_are_rejected() {
-    assert!(error(
-        quote!(),
-        quote!(
-            struct A {
-                a: u8,
-            }
-        )
-    )
-    .contains("`input`, `output`"));
-    assert!(error(
-        quote!(output),
-        quote!(
-            enum A {
-                B { c: u8 },
-            }
-        )
-    )
-    .contains("needs a `tag`"));
-    assert!(error(
-        quote!(input, tag = "t"),
-        quote!(
-            enum A {
-                B,
-            }
-        )
-    )
-    .contains("only `output`"));
-    assert!(error(
-        quote!(input),
-        quote!(
-            struct A {
-                #[js(flatten)]
-                b: B,
-            }
-        )
-    )
-    .contains("only `output`"));
-    assert!(error(
-        quote!(output),
-        quote!(
-            struct A(u8);
-        )
-    )
-    .contains("tuple fields"));
-    assert!(error(
-        quote!(output),
-        quote!(
-            struct A {
-                b: HashMap<u8, u8>,
-            }
-        )
-    )
-    .contains("no TypeScript mapping"));
-    assert!(error(
-        quote!(output),
-        quote!(
-            struct A {
-                b: [u8; N],
-            }
-        )
-    )
-    .contains("no TypeScript mapping"));
-    assert!(error(
-        quote!(output, from_js = parse),
-        quote!(
-            struct A {
-                b: u8,
-            }
-        )
-    )
-    .contains("`from_js` needs `input`"));
-    assert!(error(
-        quote!(output, bogus),
-        quote!(
-            struct A {
-                b: u8,
-            }
-        )
-    )
-    .contains("unknown `js_type` option"));
+#[test_case("", "struct A { a: u8 }", "`input`, `output`"; "no direction")]
+#[test_case("output", "enum A { B { c: u8 } }", "needs a `tag`"; "enum fields without a tag")]
+#[test_case(r#"input, tag = "t""#, "enum A { B }", "only `output`"; "tagged input")]
+#[test_case("input", "struct A { #[js(flatten)] b: B }", "only `output`"; "flattened input")]
+#[test_case("output", "struct A(u8);", "tuple fields"; "tuple struct")]
+#[test_case("output", "struct A { b: HashMap<u8, u8> }", "no TypeScript mapping"; "unmapped type")]
+#[test_case("output", "struct A { b: [u8; N] }", "no TypeScript mapping"; "array of unknown length")]
+#[test_case("output, from_js = parse", "struct A { b: u8 }", "`from_js` needs `input`"; "container from_js without input")]
+#[test_case(r#"output, tag = "reason""#, "enum A { B { reason: String } }", "`reason` is already used"; "field named like the tag")]
+#[test_case("output", r#"struct A { a_b: u8, #[js(rename = "aB")] c: u8 }"#, "`aB` is already used"; "duplicate field name")]
+#[test_case(r#"output, rename_all = "lowercase""#, "struct A { b: u8 }", "are for enums"; "rename_all on a struct")]
+#[test_case("output, readonly", "enum A { B }", "no effect on a string union"; "readonly string union")]
+#[test_case("output, bogus", "struct A { b: u8 }", "unknown `js_type` option"; "unknown option")]
+fn invalid_declaration_is_rejected(attr: &str, item: &str, message: &str) {
+    let error = error(attr.parse().unwrap(), item.parse().unwrap());
+    assert!(error.contains(message), "{error}");
 }

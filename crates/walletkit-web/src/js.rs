@@ -295,7 +295,8 @@ impl<T: FromJs> FromJs for Vec<T> {
         }
         Array::from(&value)
             .iter()
-            .map(|item| T::from_js(item, name))
+            .enumerate()
+            .map(|(index, item)| T::from_js(item, &format!("{name}[{index}]")))
             .collect()
     }
 }

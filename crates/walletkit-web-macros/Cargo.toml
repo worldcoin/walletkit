@@ -25,6 +25,7 @@ syn = { version = "2", features = ["full"] }
 
 [dev-dependencies]
 indoc = "2"
+test-case.workspace = true
 
 [lints]
 workspace = true

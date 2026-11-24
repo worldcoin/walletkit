@@ -150,9 +150,9 @@ fn prompt_to_js(
     .to_js()
 }
 
-/// Reads [`PoseGuardImages`], clearing the page's copies. Each image moves into the
-/// zeroizing record as soon as it is read, so an invalid later image also wipes the
-/// earlier ones.
+/// Reads [`PoseGuardImages`], clearing the page's copy of each image it reads. Each
+/// image moves into the zeroizing record as soon as it is read, so an invalid later
+/// image also wipes the earlier ones.
 pub fn poseguard_images_from_js(
     value: &JsValue,
     name: &str,
@@ -266,6 +266,45 @@ mod tests {
         assert_eq!(owned.captures, [vec![1], vec![2], vec![3]]);
         assert_eq!(central.to_vec(), [0; 8]);
         assert!(captures.iter().all(|capture| capture.to_vec() == [0]));
+    }
+
+    #[wasm_bindgen_test]
+    fn capture_import_rejects_invalid_images() {
+        let image = |byte: u8| JsValue::from(Uint8Array::from([byte].as_slice()));
+        let images = |captures: JsValue| {
+            let value = js_sys::Object::new();
+            let central = Uint8Array::from(b"\x89PNG\r\n\x1a\n".as_slice());
+            js::set(&value, "centralPng", &central.into()).unwrap();
+            js::set(&value, "captures", &captures).unwrap();
+            JsValue::from(value)
+        };
+        for (value, expected) in [
+            (JsValue::NULL, "`images` must be an object"),
+            (
+                images(js::array([image(1), image(2)])),
+                "`captures` must contain exactly three images",
+            ),
+            (
+                images(js::array([image(1), "2".into(), image(3)])),
+                "Each image must be a Uint8Array",
+            ),
+        ] {
+            let Err(error) = PoseGuardImages::from_js(value, "images") else {
+                panic!("expected {expected}");
+            };
+            let error = error.dyn_ref::<js_sys::TypeError>().unwrap();
+            assert_eq!(String::from(error.message()), expected);
+        }
+    }
+
+    #[wasm_bindgen_test]
+    fn embedding_failure_flattens_its_reason() {
+        let value = result_to_js(&EmbeddingResult::Failed {
+            reason: Failure::QualityRejected,
+        })
+        .unwrap();
+        assert_eq!(string_field(&value, "status").unwrap(), "failed");
+        assert_eq!(string_field(&value, "reason").unwrap(), "quality_rejected");
     }
 
     #[wasm_bindgen_test]

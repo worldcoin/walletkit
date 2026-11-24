@@ -4,8 +4,8 @@ use heck::{ToLowerCamelCase, ToSnakeCase};
 use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use syn::{
-    parse::Parser, spanned::Spanned, Attribute, Data, DataEnum, DeriveInput, Error,
-    Fields, Ident, LitStr, Path, Type,
+    ext::IdentExt, parse::Parser, spanned::Spanned, Attribute, Data, DataEnum,
+    DeriveInput, Error, Fields, Ident, LitStr, Path, Type,
 };
 
 pub struct JsType {
@@ -62,7 +62,7 @@ impl JsType {
         let mut readonly = false;
         let mut from_js = None;
         let mut tag = None;
-        let mut case = Case::Snake;
+        let mut case = None;
         let parser = syn::meta::parser(|meta| {
             if meta.path.is_ident("remote") {
                 remote = Some(meta.value()?.parse()?);
@@ -78,7 +78,7 @@ impl JsType {
                 tag = Some(meta.value()?.parse::<LitStr>()?.value());
             } else if meta.path.is_ident("rename_all") {
                 let rule: LitStr = meta.value()?.parse()?;
-                case = match rule.value().as_str() {
+                case = Some(match rule.value().as_str() {
                     "snake_case" => Case::Snake,
                     "lowercase" => Case::Lower,
                     _ => {
@@ -87,7 +87,7 @@ impl JsType {
                             "expected \"snake_case\" or \"lowercase\"",
                         ))
                     }
-                };
+                });
             } else {
                 return Err(meta.error("unknown `js_type` option"));
             }
@@ -110,13 +110,16 @@ impl JsType {
 
         let shape = match &item.data {
             Data::Struct(data) => {
-                if tag.is_some() {
-                    return Err(Error::new(item.ident.span(), "`tag` is for enums"));
+                if tag.is_some() || case.is_some() {
+                    return Err(Error::new(
+                        item.ident.span(),
+                        "`tag` and `rename_all` are for enums",
+                    ));
                 }
                 Shape::Struct(parse_fields(&data.fields)?)
             }
             Data::Enum(data) => {
-                let variants = parse_variants(data, case)?;
+                let variants = parse_variants(data, case.unwrap_or(Case::Snake))?;
                 if let Some(tag) = tag {
                     Shape::Tagged { tag, variants }
                 } else {
@@ -161,20 +164,33 @@ impl JsType {
         if self.from_js.is_some() && !self.input {
             return Err(Error::new(self.ident.span(), "`from_js` needs `input`"));
         }
+        if self.readonly && matches!(self.shape, Shape::Strings(_)) {
+            return Err(Error::new(
+                self.ident.span(),
+                "`readonly` has no effect on a string union",
+            ));
+        }
         if self.input && matches!(self.shape, Shape::Tagged { .. }) {
             return Err(Error::new(
                 self.ident.span(),
                 "tagged enums support only `output`",
             ));
         }
-        let field_groups: Vec<&[Field]> = match &self.shape {
-            Shape::Struct(fields) => vec![fields],
-            Shape::Strings(_) => vec![],
-            Shape::Tagged { variants, .. } => {
-                variants.iter().map(|variant| &variant.fields[..]).collect()
+        let (field_groups, tag): (Vec<&[Field]>, _) = match &self.shape {
+            Shape::Struct(fields) => (vec![fields], None),
+            Shape::Strings(variants) => {
+                unique_names(variants.iter().map(|v| (&v.js_name, &v.ident)), None)?;
+                (vec![], None)
+            }
+            Shape::Tagged { tag, variants } => {
+                unique_names(variants.iter().map(|v| (&v.js_name, &v.ident)), None)?;
+                let fields = variants.iter().map(|variant| &variant.fields[..]);
+                (fields.collect(), Some(tag.as_str()))
             }
         };
         for fields in field_groups {
+            let properties = fields.iter().filter(|field| !field.flatten);
+            unique_names(properties.map(|f| (&f.js_name, &f.ident)), tag)?;
             if self.from_js.is_some() {
                 if let Some(field) = fields.iter().find(|field| field.from_js.is_some())
                 {
@@ -210,6 +226,24 @@ impl JsType {
     }
 }
 
+/// Rejects a JavaScript name that repeats, or that equals the enum's `tag`.
+fn unique_names<'a>(
+    names: impl Iterator<Item = (&'a String, &'a Ident)>,
+    tag: Option<&str>,
+) -> syn::Result<()> {
+    let mut seen: Vec<&str> = tag.into_iter().collect();
+    for (name, ident) in names {
+        if seen.contains(&name.as_str()) {
+            return Err(Error::new(
+                ident.span(),
+                format!("the JavaScript name `{name}` is already used"),
+            ));
+        }
+        seen.push(name);
+    }
+    Ok(())
+}
+
 impl Case {
     fn apply(self, ident: &str) -> String {
         match self {
@@ -226,7 +260,7 @@ fn parse_variants(data: &DataEnum, case: Case) -> syn::Result<Vec<Variant>> {
             Ok(Variant {
                 ident: variant.ident.clone(),
                 js_name: rename(&variant.attrs)?
-                    .unwrap_or_else(|| case.apply(&variant.ident.to_string())),
+                    .unwrap_or_else(|| case.apply(&variant.ident.unraw().to_string())),
                 fields: parse_fields(&variant.fields)?,
             })
         })
@@ -246,7 +280,7 @@ fn parse_fields(fields: &Fields) -> syn::Result<Vec<Field>> {
             .map(|field| {
                 let ident = field.ident.clone().expect("named field");
                 let mut parsed = Field {
-                    js_name: ident.to_string().to_lower_camel_case(),
+                    js_name: ident.unraw().to_string().to_lower_camel_case(),
                     ident,
                     ty: field.ty.clone(),
                     docs: docs(&field.attrs),

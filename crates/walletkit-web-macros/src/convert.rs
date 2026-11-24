@@ -132,7 +132,10 @@ pub fn from_js(model: &JsType) -> TokenStream {
                 let (ident, js_name) = (&variant.ident, &variant.js_name);
                 quote!(#js_name => Ok(Self::#ident))
             });
+            let idents = variants.iter().map(|variant| &variant.ident);
             quote! {
+                // Fails to compile when the enum gains a variant the declaration lacks.
+                let _ = |__variant: &Self| match __variant { #(Self::#idents)|* => () };
                 let ::core::option::Option::Some(__text) = __value.as_string() else {
                     return Err(crate::js::expected(__name, "a string"));
                 };
