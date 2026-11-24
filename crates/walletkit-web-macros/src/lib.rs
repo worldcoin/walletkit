@@ -28,6 +28,9 @@
 //! - `rename_all = "snake_case" | "lowercase"`: how variant names are spelled in
 //!   JavaScript. Defaults to `snake_case`. Fields are always `camelCase`.
 //! - `readonly`: mark every property and array as `readonly` in TypeScript.
+//! - `from_js = path`: convert the whole value with
+//!   `fn(&JsValue, &str) -> Result<T, JsValue>`, for an input whose fields must not
+//!   be converted one by one. A `remote` declaration still checks every field.
 //!
 //! # Field and variant options, in `#[js(...)]`
 //!

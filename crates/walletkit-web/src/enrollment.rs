@@ -150,28 +150,30 @@ fn prompt_to_js(
     .to_js()
 }
 
-/// Reads `centralPng` of [`PoseGuardImages`], clearing the page's copy.
-pub fn central_png_from_js(value: &JsValue, name: &str) -> Result<Vec<u8>, JsValue> {
-    let mut central = take_image(value)?;
-    if !central.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return Err(invalid_argument(&format!("`{name}` must be a PNG")));
-    }
-    Ok(std::mem::take(&mut *central))
-}
-
-/// Reads `captures` of [`PoseGuardImages`], clearing the page's copies.
-pub fn captures_from_js(
+/// Reads [`PoseGuardImages`], clearing the page's copies. Each image moves into the
+/// zeroizing record as soon as it is read, so an invalid later image also wipes the
+/// earlier ones.
+pub fn poseguard_images_from_js(
     value: &JsValue,
     name: &str,
-) -> Result<[Vec<u8>; POSEGUARD_CHALLENGE_COUNT], JsValue> {
-    let captures = value
+) -> Result<PoseGuardImages, JsValue> {
+    let value = js::expect_object(value.clone(), name)?;
+    let captures = js::get(&value, "captures")?;
+    let captures = captures
         .dyn_ref::<Array>()
         .filter(|captures| captures.length() as usize == POSEGUARD_CHALLENGE_COUNT)
         .ok_or_else(|| {
-            invalid_argument(&format!("`{name}` must contain exactly three images"))
+            invalid_argument("`captures` must contain exactly three images")
         })?;
-    let mut images: [Vec<u8>; POSEGUARD_CHALLENGE_COUNT] = Default::default();
-    for (slot, image) in images.iter_mut().zip(captures.iter()) {
+    let mut central = take_image(&js::get(&value, "centralPng")?)?;
+    if !central.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err(invalid_argument("`centralPng` must be a PNG"));
+    }
+    let mut images = PoseGuardImages {
+        central_png: std::mem::take(&mut *central),
+        captures: Default::default(),
+    };
+    for (slot, image) in images.captures.iter_mut().zip(captures.iter()) {
         *slot = std::mem::take(&mut *take_image(&image)?);
     }
     Ok(images)

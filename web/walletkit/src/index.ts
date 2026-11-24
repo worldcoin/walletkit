@@ -56,8 +56,11 @@ export type {
   PoseGuardPrompt,
   PoseGuardTarget,
   SelfieCaptureFailure,
+  SelfieChallengeFailure,
   SelfieEnrollmentBundle,
+  SelfieEnrollmentField,
   SelfieEnrollmentResult,
+  SelfieFailure,
 } from "./generated/walletkit.js";
 
 export interface InitializeOptions {

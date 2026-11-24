@@ -4,8 +4,8 @@ use heck::{ToLowerCamelCase, ToSnakeCase};
 use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use syn::{
-    parse::Parser, spanned::Spanned, Attribute, Data, DeriveInput, Error, Fields,
-    Ident, LitStr, Path, Type,
+    parse::Parser, spanned::Spanned, Attribute, Data, DataEnum, DeriveInput, Error,
+    Fields, Ident, LitStr, Path, Type,
 };
 
 pub struct JsType {
@@ -14,6 +14,8 @@ pub struct JsType {
     pub input: bool,
     pub output: bool,
     pub readonly: bool,
+    /// Converts the whole value from JavaScript, instead of field by field.
+    pub from_js: Option<Path>,
     pub docs: Vec<String>,
     pub shape: Shape,
 }
@@ -58,6 +60,7 @@ impl JsType {
         let mut input = false;
         let mut output = false;
         let mut readonly = false;
+        let mut from_js = None;
         let mut tag = None;
         let mut case = Case::Snake;
         let parser = syn::meta::parser(|meta| {
@@ -69,6 +72,8 @@ impl JsType {
                 output = true;
             } else if meta.path.is_ident("readonly") {
                 readonly = true;
+            } else if meta.path.is_ident("from_js") {
+                from_js = Some(meta.value()?.parse()?);
             } else if meta.path.is_ident("tag") {
                 tag = Some(meta.value()?.parse::<LitStr>()?.value());
             } else if meta.path.is_ident("rename_all") {
@@ -111,19 +116,7 @@ impl JsType {
                 Shape::Struct(parse_fields(&data.fields)?)
             }
             Data::Enum(data) => {
-                let variants = data
-                    .variants
-                    .iter()
-                    .map(|variant| {
-                        Ok(Variant {
-                            ident: variant.ident.clone(),
-                            js_name: rename(&variant.attrs)?.unwrap_or_else(|| {
-                                case.apply(&variant.ident.to_string())
-                            }),
-                            fields: parse_fields(&variant.fields)?,
-                        })
-                    })
-                    .collect::<syn::Result<Vec<_>>>()?;
+                let variants = parse_variants(data, case)?;
                 if let Some(tag) = tag {
                     Shape::Tagged { tag, variants }
                 } else {
@@ -149,6 +142,7 @@ impl JsType {
             input,
             output,
             readonly,
+            from_js,
             docs: docs(&item.attrs),
             shape,
         };
@@ -164,6 +158,9 @@ impl JsType {
     }
 
     fn validate(&self) -> syn::Result<()> {
+        if self.from_js.is_some() && !self.input {
+            return Err(Error::new(self.ident.span(), "`from_js` needs `input`"));
+        }
         if self.input && matches!(self.shape, Shape::Tagged { .. }) {
             return Err(Error::new(
                 self.ident.span(),
@@ -178,6 +175,15 @@ impl JsType {
             }
         };
         for fields in field_groups {
+            if self.from_js.is_some() {
+                if let Some(field) = fields.iter().find(|field| field.from_js.is_some())
+                {
+                    return Err(Error::new(
+                        field.ident.span(),
+                        "a field `from_js` has no effect with a container `from_js`",
+                    ));
+                }
+            }
             let mut flattened = fields.iter().filter(|field| field.flatten);
             if let Some(field) = flattened.next() {
                 if self.input {
@@ -211,6 +217,20 @@ impl Case {
             Self::Lower => ident.to_lowercase(),
         }
     }
+}
+
+fn parse_variants(data: &DataEnum, case: Case) -> syn::Result<Vec<Variant>> {
+    data.variants
+        .iter()
+        .map(|variant| {
+            Ok(Variant {
+                ident: variant.ident.clone(),
+                js_name: rename(&variant.attrs)?
+                    .unwrap_or_else(|| case.apply(&variant.ident.to_string())),
+                fields: parse_fields(&variant.fields)?,
+            })
+        })
+        .collect()
 }
 
 fn parse_fields(fields: &Fields) -> syn::Result<Vec<Field>> {

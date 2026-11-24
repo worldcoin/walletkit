@@ -229,6 +229,15 @@ fn invalid_declarations_are_rejected() {
     )
     .contains("no TypeScript mapping"));
     assert!(error(
+        quote!(output, from_js = parse),
+        quote!(
+            struct A {
+                b: u8,
+            }
+        )
+    )
+    .contains("`from_js` needs `input`"));
+    assert!(error(
         quote!(output, bogus),
         quote!(
             struct A {

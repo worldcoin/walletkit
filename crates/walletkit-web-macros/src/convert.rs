@@ -90,8 +90,20 @@ fn object_to_js(
 
 pub fn from_js(model: &JsType) -> TokenStream {
     let target = model.target();
-    let body = match &model.shape {
-        Shape::Struct(fields) => {
+    let body = match (&model.from_js, &model.shape) {
+        (Some(convert), Shape::Struct(fields)) if model.remote.is_some() => {
+            // The conversion builds the value itself, so check the whole schema here.
+            let bindings = fields.iter().map(|field| &field.ident);
+            let checks = fields.iter().map(schema_check);
+            quote! {
+                let __result = #convert(&__value, __name)?;
+                let Self { #(#bindings),* } = &__result;
+                #(#checks)*
+                Ok(__result)
+            }
+        }
+        (Some(convert), _) => quote!(#convert(&__value, __name)),
+        (None, Shape::Struct(fields)) => {
             let values = fields.iter().map(|field| {
                 let (ident, js_name) = (&field.ident, &field.js_name);
                 let value = quote!(crate::js::get(&__object, #js_name)?);
@@ -115,7 +127,7 @@ pub fn from_js(model: &JsType) -> TokenStream {
                 Ok(__result)
             }
         }
-        Shape::Strings(variants) => {
+        (None, Shape::Strings(variants)) => {
             let arms = variants.iter().map(|variant| {
                 let (ident, js_name) = (&variant.ident, &variant.js_name);
                 quote!(#js_name => Ok(Self::#ident))
@@ -130,7 +142,7 @@ pub fn from_js(model: &JsType) -> TokenStream {
                 }
             }
         }
-        Shape::Tagged { .. } => unreachable!("rejected during parsing"),
+        (None, Shape::Tagged { .. }) => unreachable!("rejected during parsing"),
     };
     quote! {
         impl crate::js::FromJs for #target {

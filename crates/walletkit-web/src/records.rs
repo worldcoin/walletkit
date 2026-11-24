@@ -17,10 +17,7 @@ use walletkit_core::{
 use walletkit_web_macros::js_type;
 use wasm_bindgen::prelude::*;
 
-use crate::{
-    enrollment::{captures_from_js, central_png_from_js},
-    js,
-};
+use crate::{enrollment::poseguard_images_from_js, js};
 
 #[js_type(remote = walletkit_core::Environment, input)]
 enum Environment {
@@ -244,15 +241,11 @@ pub struct PoseGuardPrompt {
     pub capture_timeout_ms: f64,
 }
 
-#[js_type(remote = client::PoseGuardImages, input, readonly)]
+#[js_type(remote = client::PoseGuardImages, input, from_js = poseguard_images_from_js)]
 struct PoseGuardImages {
-    #[js(from_js = central_png_from_js)]
     central_png: Vec<u8>,
     /// One image for each target, in the issued order.
-    #[js(
-        ts = "readonly [Uint8Array, Uint8Array, Uint8Array]",
-        from_js = captures_from_js
-    )]
+    #[js(ts = "readonly [Uint8Array, Uint8Array, Uint8Array]")]
     captures: [Vec<u8>; POSEGUARD_CHALLENGE_COUNT],
 }
 
