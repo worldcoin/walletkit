@@ -273,6 +273,14 @@ impl IncomingRegistration {
         self.request.supported_issuer_schema_ids.clone()
     }
 
+    /// Returns the attachment kinds the new authenticator declares it can handle, or `None` if
+    /// it declares none. The list is self-reported. Only attachments of these kinds can be
+    /// sent; without a list, none can.
+    #[must_use]
+    pub fn supported_attachment_kinds(&self) -> Option<Vec<String>> {
+        self.request.supported_attachment_kinds.clone()
+    }
+
     /// Returns how many seconds are left until the response is due.
     #[must_use]
     pub fn time_remaining_secs(&self) -> u64 {
@@ -420,6 +428,14 @@ impl CheckedRegistration {
         self.request.supported_issuer_schema_ids.clone()
     }
 
+    /// Returns the attachment kinds the new authenticator declares it can handle, or `None` if
+    /// it declares none. The list is self-reported. Only attachments of these kinds can be
+    /// sent; without a list, none can.
+    #[must_use]
+    pub fn supported_attachment_kinds(&self) -> Option<Vec<String>> {
+        self.request.supported_attachment_kinds.clone()
+    }
+
     /// Returns how the registration will be carried out.
     #[must_use]
     pub const fn plan(&self) -> RegistrationPlan {
@@ -460,15 +476,18 @@ impl CheckedRegistration {
     /// also for an authenticator that is already registered (WIP-109 §3.7.3). `authenticators`
     /// names the account's other authenticators.
     ///
-    /// `transfer` holds the credentials the user selected: the
+    /// `transfer` holds what the user chose to transfer. Its vault is the
     /// `CredentialStore::export_vault_for_issuer_schemas` output for the selected issuer
-    /// schemas, and the attachments that the issuers' code produced for them. `None` means that
-    /// the user selected no credentials, so neither a vault nor attachments are sent.
+    /// schemas, or `None` if the user selected no credentials. Its attachments are data to
+    /// transfer outside the vault, each of a kind in
+    /// [`supported_attachment_kinds`](Self::supported_attachment_kinds). Attachments not tied
+    /// to a credential may be sent without a vault.
     ///
     /// The vault and attachments are opaque here, so the host is responsible for what this
     /// cannot check: that the vault holds only credentials of the issuer schemas in
     /// [`supported_issuer_schema_ids`](Self::supported_issuer_schema_ids), if the request
-    /// declares them, and that every attachment belongs to a credential in the vault.
+    /// declares them, and that an attachment tied to a credential is sent only if that
+    /// credential is in the vault.
     ///
     /// Unless the authenticator is already registered, this submits `InsertAuthenticator` and
     /// tracks it until it is final on-chain or definitively failed. An insertion is never
@@ -484,24 +503,21 @@ impl CheckedRegistration {
     ///
     /// Two errors are returned before anything is submitted or sent, and leave the session
     /// open, so that the host may retry with another selection or explicitly abort:
-    /// [`ApproverError::UnsupportedAttachment`] for an attachment whose issuer schema the
-    /// request does not list as supported, and [`ApproverError::TransferTooLarge`] if the vault
-    /// and attachments together exceed [`MAX_TRANSFER_SIZE`].
+    /// [`ApproverError::UnsupportedAttachment`] for an attachment whose kind the request does
+    /// not list as supported, and [`ApproverError::TransferTooLarge`] if the vault and
+    /// attachments together exceed [`MAX_TRANSFER_SIZE`].
     pub async fn approve(
         &self,
         approver: &Authenticator,
-        transfer: Option<CredentialTransfer>,
+        transfer: CredentialTransfer,
         authenticators: Vec<KnownAuthenticator>,
     ) -> Result<ApprovalOutcome, ApproverError> {
-        let (vault, attachments) = transfer.map_or_else(Default::default, |transfer| {
-            let vault = Vault {
-                format: PLAINTEXT_VAULT_FORMAT.to_string(),
-                data: Zeroizing::new(transfer.vault),
-            };
-            let attachments: Vec<Attachment> =
-                transfer.attachments.into_iter().map(Into::into).collect();
-            (Some(vault), attachments)
+        let vault = transfer.vault.map(|data| Vault {
+            format: PLAINTEXT_VAULT_FORMAT.to_string(),
+            data: Zeroizing::new(data),
         });
+        let attachments: Vec<Attachment> =
+            transfer.attachments.into_iter().map(Into::into).collect();
         let core = &approver.inner;
 
         if core.leaf_index() != self.approver_leaf_index
@@ -573,22 +589,25 @@ impl CheckedRegistration {
         Ok(channel.answer(Err(reason.into_error(None))).await)
     }
 
-    /// Checks that the request supports every attachment and that the transfer fits in a
-    /// response.
+    /// Checks that the request supports the kind of every attachment and that the transfer fits
+    /// in a response.
     fn check_transfer(
         &self,
         vault: Option<&Vault>,
         attachments: &[Attachment],
     ) -> Result<(), ApproverError> {
-        if let Some(supported) = &self.request.supported_issuer_schema_ids {
-            if let Some(unsupported) = attachments
-                .iter()
-                .find(|attachment| !supported.contains(&attachment.issuer_schema_id))
-            {
-                return Err(ApproverError::UnsupportedAttachment {
-                    issuer_schema_id: unsupported.issuer_schema_id,
-                });
-            }
+        let supported = self
+            .request
+            .supported_attachment_kinds
+            .as_deref()
+            .unwrap_or_default();
+        if let Some(unsupported) = attachments
+            .iter()
+            .find(|attachment| !supported.contains(&attachment.kind))
+        {
+            return Err(ApproverError::UnsupportedAttachment {
+                kind: unsupported.kind.clone(),
+            });
         }
 
         let mut sizes = vault
@@ -1168,11 +1187,11 @@ mod tests {
 
     async fn make_pending_registration() -> (Arc<PendingRegistration>, String, [u8; 32])
     {
-        make_pending_registration_supporting(None).await
+        make_pending_registration_handling(Some(vec![KIND.to_string()])).await
     }
 
-    async fn make_pending_registration_supporting(
-        supported_issuer_schema_ids: Option<Vec<u64>>,
+    async fn make_pending_registration_handling(
+        supported_attachment_kinds: Option<Vec<String>>,
     ) -> (Arc<PendingRegistration>, String, [u8; 32]) {
         let requester_seed = [11u8; 32];
         let signer = Signer::from_seed_bytes(&requester_seed).unwrap();
@@ -1186,7 +1205,8 @@ mod tests {
             None,
             response_key.public_key(),
             None,
-            supported_issuer_schema_ids,
+            None,
+            supported_attachment_kinds,
             &request_id,
         )
         .unwrap();
@@ -1317,17 +1337,19 @@ mod tests {
         )
     }
 
-    fn attachment(issuer_schema_id: u64, data: Vec<u8>) -> RegistrationAttachment {
+    /// The attachment kind that test requests declare.
+    const KIND: &str = "pcp_v1";
+
+    fn attachment(kind: &str, data: Vec<u8>) -> RegistrationAttachment {
         RegistrationAttachment {
-            issuer_schema_id,
-            format: "pcp_v1".to_string(),
+            kind: kind.to_string(),
             data,
         }
     }
 
     fn vault_only(vault: Vec<u8>) -> CredentialTransfer {
         CredentialTransfer {
-            vault,
+            vault: Some(vault),
             attachments: Vec::new(),
         }
     }
@@ -1335,8 +1357,8 @@ mod tests {
     /// A transfer of `size` bytes, split between the vault and one attachment.
     fn transfer_of(size: usize) -> CredentialTransfer {
         CredentialTransfer {
-            vault: vec![0x42; size - size / 4],
-            attachments: vec![attachment(7, vec![0x43; size / 4])],
+            vault: Some(vec![0x42; size - size / 4]),
+            attachments: vec![attachment(KIND, vec![0x43; size / 4])],
         }
     }
 
@@ -1436,7 +1458,7 @@ mod tests {
         let checked = incoming.check(&approver_a).await.unwrap();
         assert!(!format!("{checked:?}").contains(&request_id));
         let err = checked
-            .approve(&approver_b, Some(vault_only(vec![1, 2, 3])), Vec::new())
+            .approve(&approver_b, vault_only(vec![1, 2, 3]), Vec::new())
             .await
             .unwrap_err();
         assert!(matches!(err, ApproverError::ApproverMismatch), "{err:?}");
@@ -1468,11 +1490,7 @@ mod tests {
         }
 
         let err = checked
-            .approve(
-                &approver,
-                Some(transfer_of(MAX_TRANSFER_SIZE + 1)),
-                Vec::new(),
-            )
+            .approve(&approver, transfer_of(MAX_TRANSFER_SIZE + 1), Vec::new())
             .await
             .unwrap_err();
         assert!(matches!(err, ApproverError::TransferTooLarge));
@@ -1488,11 +1506,11 @@ mod tests {
         ));
     }
 
-    #[test_case(None ; "without credentials")]
-    #[test_case(Some(transfer_of(MAX_TRANSFER_SIZE)) ; "exact size limit")]
+    #[test_case(CredentialTransfer::default() ; "nothing")]
+    #[test_case(transfer_of(MAX_TRANSFER_SIZE) ; "exact size limit")]
     #[tokio::test]
     async fn supported_transfer_sizes_can_be_approved_after_an_oversize_error(
-        transfer: Option<CredentialTransfer>,
+        transfer: CredentialTransfer,
     ) {
         let (pending, code, _) = make_pending_registration().await;
         let incoming = pending.authenticate(&code).await.unwrap();
@@ -1502,11 +1520,7 @@ mod tests {
         checked.plan = RegistrationPlan::AlreadyRegistered { pubkey_id: 1 };
         assert!(matches!(
             checked
-                .approve(
-                    &approver,
-                    Some(transfer_of(MAX_TRANSFER_SIZE + 1)),
-                    Vec::new()
-                )
+                .approve(&approver, transfer_of(MAX_TRANSFER_SIZE + 1), Vec::new())
                 .await,
             Err(ApproverError::TransferTooLarge)
         ));
@@ -1529,11 +1543,14 @@ mod tests {
         ));
     }
 
+    #[test_case(Some(vec![KIND.to_string()]) ; "kind not in the list")]
+    #[test_case(None ; "no list")]
     #[tokio::test]
-    async fn attachment_for_an_undeclared_issuer_schema_is_rejected_without_consuming_the_session(
+    async fn attachment_of_an_undeclared_kind_is_rejected_without_consuming_the_session(
+        supported_attachment_kinds: Option<Vec<String>>,
     ) {
         let (pending, code, _) =
-            make_pending_registration_supporting(Some(vec![7, 9])).await;
+            make_pending_registration_handling(supported_attachment_kinds).await;
         let incoming = pending.authenticate(&code).await.unwrap();
         let seed = [21; 32];
         let submissions = Arc::new(AtomicUsize::new(0));
@@ -1546,19 +1563,17 @@ mod tests {
         assert!(matches!(checked.plan(), RegistrationPlan::Insert { .. }));
 
         let transfer = CredentialTransfer {
-            vault: vec![1, 2, 3],
-            attachments: vec![attachment(9, vec![4]), attachment(8, vec![5])],
+            vault: Some(vec![1, 2, 3]),
+            attachments: vec![attachment("other_v1", vec![5])],
         };
         let err = checked
-            .approve(&approver, Some(transfer), Vec::new())
+            .approve(&approver, transfer, Vec::new())
             .await
             .unwrap_err();
         assert!(
             matches!(
-                err,
-                ApproverError::UnsupportedAttachment {
-                    issuer_schema_id: 8
-                }
+                &err,
+                ApproverError::UnsupportedAttachment { kind } if kind == "other_v1"
             ),
             "{err:?}"
         );
@@ -1566,9 +1581,12 @@ mod tests {
         assert!(checked.reject().await.unwrap());
     }
 
+    #[test_case(Some(b"selected credentials".to_vec()) ; "with a vault")]
+    #[test_case(None ; "without a vault")]
     #[tokio::test]
-    async fn selected_credentials_and_attachments_reach_the_verified_requester() {
+    async fn transfer_reaches_the_verified_requester(vault: Option<Vec<u8>>) {
         let (approver_seed, requester_seed) = ([23u8; 32], [24u8; 32]);
+        let kinds = vec![KIND.to_string(), "other_v2".to_string()];
         let bridge_url = serve(mock_bridge()).await;
         let bridge = Arc::new(
             BridgeClient::with_base_url("bridge.example", &bridge_url).unwrap(),
@@ -1578,6 +1596,7 @@ mod tests {
             RequestedClass::Proving,
             None,
             Some(vec![7, 9]),
+            Some(kinds.clone()),
             bridge.clone(),
         )
         .await
@@ -1591,6 +1610,7 @@ mod tests {
         let code = requester.pairing_code().unwrap();
         let incoming = pending.authenticate(&code).await.unwrap();
         assert_eq!(incoming.supported_issuer_schema_ids(), Some(vec![7, 9]));
+        assert_eq!(incoming.supported_attachment_kinds(), Some(kinds.clone()));
 
         // The account already holds the requester's key, so approving only sends the result.
         let service_url =
@@ -1602,20 +1622,21 @@ mod tests {
             RegistrationPlan::AlreadyRegistered { pubkey_id: 1 }
         );
         assert_eq!(checked.supported_issuer_schema_ids(), Some(vec![7, 9]));
+        assert_eq!(checked.supported_attachment_kinds(), Some(kinds));
 
         let attachments = vec![
-            attachment(7, b"custody package".to_vec()),
-            attachment(9, Vec::new()),
+            attachment(KIND, b"custody package".to_vec()),
+            attachment("other_v2", Vec::new()),
         ];
         let transfer = CredentialTransfer {
-            vault: b"selected credentials".to_vec(),
+            vault: vault.clone(),
             attachments: attachments.clone(),
         };
         let debug = format!("{transfer:?}");
         assert!(!debug.contains(&format!("{:?}", b"selected credentials")));
         assert!(!debug.contains(&format!("{:?}", b"custody package")));
         let outcome = checked
-            .approve(&approver, Some(transfer), Vec::new())
+            .approve(&approver, transfer, Vec::new())
             .await
             .unwrap();
         assert!(outcome.delivered);
@@ -1624,7 +1645,7 @@ mod tests {
         else {
             panic!("the registration was not approved");
         };
-        assert!(result.has_vault());
+        assert_eq!(result.has_vault(), vault.is_some());
         assert_eq!(result.attachment_count(), 2);
         let registered = requester
             .verify_with_config(
@@ -1636,10 +1657,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert_eq!(
-            registered.vault_backup.as_deref(),
-            Some(b"selected credentials".as_slice())
-        );
+        assert_eq!(registered.vault_backup, vault);
         assert_eq!(registered.attachments, attachments);
     }
 
@@ -1687,6 +1705,7 @@ mod tests {
                 signer.offchain_signer_private_key().expose_secret(),
                 addr,
                 ResponseSecretKey::generate().unwrap().public_key(),
+                None,
                 None,
                 None,
                 &request_id,
@@ -1765,7 +1784,7 @@ mod tests {
 
         let checked = incoming.check(&approver).await.unwrap();
         let outcome = checked
-            .approve(&approver, Some(vault_only(vec![1, 2, 3])), Vec::new())
+            .approve(&approver, vault_only(vec![1, 2, 3]), Vec::new())
             .await
             .unwrap();
         assert_eq!(
@@ -1793,6 +1812,7 @@ mod tests {
             signer.offchain_signer_private_key().expose_secret(),
             None,
             response_pk,
+            None,
             None,
             None,
             &request_id,
@@ -1843,6 +1863,7 @@ mod tests {
             other.offchain_signer_private_key().expose_secret(),
             None,
             ResponseSecretKey::generate().unwrap().public_key(),
+            None,
             None,
             None,
             &request_id,
@@ -1962,7 +1983,7 @@ mod tests {
 
         let checked = incoming.check(&approver).await.unwrap();
         let outcome = checked
-            .approve(&approver, Some(vault_only(vec![1, 2, 3])), Vec::new())
+            .approve(&approver, vault_only(vec![1, 2, 3]), Vec::new())
             .await
             .unwrap();
         assert_eq!(

@@ -193,15 +193,13 @@ pub enum ApproverError {
     /// may retry with a smaller selection or abort the checked session.
     #[error("the vault and attachments exceed the registration transfer size limit")]
     TransferTooLarge,
-    /// A supplied attachment belongs to an issuer schema that the request does not list as
-    /// supported. Nothing was submitted or sent; the host may retry without it or abort the
-    /// checked session.
-    #[error(
-        "the request does not support attachments for issuer schema {issuer_schema_id}"
-    )]
+    /// The kind of a supplied attachment is not in the request's `supported_attachment_kinds`,
+    /// or the request has none. Nothing was submitted or sent; the host may retry without the
+    /// attachment or abort the checked session.
+    #[error("the request does not support attachments of kind {kind}")]
     UnsupportedAttachment {
-        /// The issuer schema of the offending attachment.
-        issuer_schema_id: u64,
+        /// The kind of the offending attachment, as the host supplied it.
+        kind: String,
     },
     /// This step was already taken, so the registration has moved on or ended.
     #[error("this registration step was already taken")]

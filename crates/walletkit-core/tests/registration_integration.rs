@@ -39,6 +39,9 @@ const STAGING_BRIDGE_DOMAIN: &str = "staging-bridge.worldcoin.org";
 /// The issuer schema the requesting device declares it supports.
 const SUPPORTED_ISSUER_SCHEMA_ID: u64 = 1;
 
+/// The attachment kind the requesting device declares it can handle.
+const SUPPORTED_ATTACHMENT_KIND: &str = "walletkit_test_v1";
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -132,21 +135,21 @@ async fn approving_device(
     }];
     let supported = checked.supported_issuer_schema_ids().unwrap();
     assert_eq!(supported, [SUPPORTED_ISSUER_SCHEMA_ID]);
+    assert_eq!(
+        checked.supported_attachment_kinds().unwrap(),
+        [SUPPORTED_ATTACHMENT_KIND]
+    );
     let transfer = CredentialTransfer {
-        vault: store.export_vault_for_issuer_schemas(supported).unwrap(),
+        vault: Some(store.export_vault_for_issuer_schemas(supported).unwrap()),
         attachments: vec![attachment()],
     };
-    checked
-        .approve(&approver, Some(transfer), others)
-        .await
-        .unwrap()
+    checked.approve(&approver, transfer, others).await.unwrap()
 }
 
 fn attachment() -> RegistrationAttachment {
     RegistrationAttachment {
-        issuer_schema_id: SUPPORTED_ISSUER_SCHEMA_ID,
-        format: "test_v1".to_string(),
-        data: b"issuer-defined bytes".to_vec(),
+        kind: SUPPORTED_ATTACHMENT_KIND.to_string(),
+        data: b"opaque bytes".to_vec(),
     }
 }
 
@@ -164,6 +167,7 @@ async fn requesting_device(
         RequestedClass::Proving,
         Some("Chrome on MacBook".to_string()),
         Some(vec![SUPPORTED_ISSUER_SCHEMA_ID]),
+        Some(vec![SUPPORTED_ATTACHMENT_KIND.to_string()]),
         bridge,
     )
     .await

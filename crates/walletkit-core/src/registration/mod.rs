@@ -12,10 +12,11 @@
 //! Every outcome is answered to the Requesting Authenticator, which verifies a successful result
 //! with [`RegistrationRequester::verify`].
 //!
-//! The approval carries the credentials the user selected, as a [`CredentialTransfer`]: a vault
-//! exported for the selected issuer schemas, and the issuers' [`RegistrationAttachment`]s, which
-//! `WalletKit` never interprets. The Requesting Authenticator may declare the issuer schemas it
-//! supports; the host should offer only those, and attachments for others are rejected.
+//! The approval carries what the user chose to transfer, as a [`CredentialTransfer`]: a vault
+//! exported for the selected issuer schemas, and [`RegistrationAttachment`]s, which `WalletKit`
+//! never interprets. The Requesting Authenticator may declare the issuer schemas and the
+//! attachment kinds it supports. The host should offer only credentials of those issuer schemas.
+//! Attachments of other kinds are rejected when approving and ignored when received.
 //!
 //! [`CheckedRegistration::approve`] returns [`ApproverError::TransferTooLarge`] or
 //! [`ApproverError::UnsupportedAttachment`] before submission for a transfer that cannot be

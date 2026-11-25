@@ -64,25 +64,28 @@ impl RegistrationRequester {
     /// Starts a session for the authenticator derived from `seed` and publishes its request on
     /// `bridge`, whose domain goes into the Pairing URI.
     ///
-    /// `supported_issuer_schema_ids` declares the issuer schemas whose credentials and
-    /// attachments this authenticator can use, so that the Approving Authenticator offers only
-    /// those. `None` declares nothing.
+    /// `supported_issuer_schema_ids` declares the issuer schemas whose credentials this
+    /// authenticator can use, so that the Approving Authenticator offers only those.
+    /// `supported_attachment_kinds` declares the attachment kinds it can handle; attachments of
+    /// any other kind are not sent, and ignored if received. `None` declares nothing, so no
+    /// attachments are received.
     ///
     /// This blocks while it derives the transport key with Argon2id (64 MiB). In a browser, call
     /// it from a Web Worker.
     ///
     /// # Errors
     ///
-    /// Returns an error if the seed or name is invalid, `supported_issuer_schema_ids` repeats an
-    /// ID ([`RequesterError::Authenticator`] with `InvalidInput`) or does not fit in the
-    /// request, the CSPRNG is unavailable, the request cannot be encoded or encrypted, or the
-    /// bridge does not store it.
+    /// Returns an error if the seed or name is invalid, `supported_issuer_schema_ids` or
+    /// `supported_attachment_kinds` repeats an entry ([`RequesterError::Authenticator`] with
+    /// `InvalidInput`) or does not fit in the request, the CSPRNG is unavailable, the request
+    /// cannot be encoded or encrypted, or the bridge does not store it.
     #[uniffi::constructor]
     pub async fn start(
         seed: Vec<u8>,
         class: RequestedClass,
         name: Option<String>,
         supported_issuer_schema_ids: Option<Vec<u64>>,
+        supported_attachment_kinds: Option<Vec<String>>,
         bridge: Arc<BridgeClient>,
     ) -> Result<Self, RequesterError> {
         let seed = Zeroizing::new(seed);
@@ -106,6 +109,7 @@ impl RegistrationRequester {
             response_key.public_key(),
             name,
             supported_issuer_schema_ids,
+            supported_attachment_kinds,
             &request_id,
         )
         .map_err(AuthenticatorError::from)?;
@@ -214,7 +218,13 @@ impl RegistrationRequester {
                 let Some(live) = self.take_live_session() else {
                     return Ok(RequesterStatus::Expired);
                 };
-                live.open(&sealed)
+                live.open(
+                    &sealed,
+                    self.request
+                        .supported_attachment_kinds
+                        .as_deref()
+                        .unwrap_or_default(),
+                )
             }
             Some(Err(error)) => {
                 if self.live_session(|_| ()).is_none() {
@@ -466,10 +476,11 @@ impl std::fmt::Debug for Session {
 
 impl Session {
     /// Opens the sealed response and checks that it answers this session's request (WIP-109
-    /// §3.8 step 5).
+    /// §3.8 step 5). Attachments whose kind is not in `supported_attachment_kinds` are ignored.
     fn open(
         &self,
         sealed: &EncryptedPayload,
+        supported_attachment_kinds: &[String],
     ) -> Result<RequesterStatus, RequesterError> {
         let malformed = |problem: &dyn std::fmt::Display| {
             RequesterError::MalformedResponse(problem.to_string())
@@ -483,13 +494,26 @@ impl Session {
 
         let expected_id = self.pairing_secret.request_id().message_id();
         match response {
-            Response::Success { id, result, .. } if id == expected_id => {
+            Response::Success { id, mut result, .. } if id == expected_id => {
                 if result
                     .vault
                     .as_ref()
                     .is_some_and(|vault| vault.format != PLAINTEXT_VAULT_FORMAT)
                 {
                     return Err(malformed(&"unsupported vault format"));
+                }
+
+                let received = result.attachments.len();
+                result.attachments.retain(|attachment| {
+                    supported_attachment_kinds.contains(&attachment.kind)
+                });
+                let ignored = received - result.attachments.len();
+                if ignored > 0 {
+                    tracing::warn!(
+                        request = %log_tag(&self.pairing_secret.request_id()),
+                        ignored,
+                        "ignoring registration attachments of undeclared kinds"
+                    );
                 }
                 Ok(RequesterStatus::Approved {
                     result: Arc::new(RegistrationResult(result)),
@@ -521,13 +545,15 @@ mod tests {
         Json, Router,
     };
     use serde_json::json;
+    use test_case::test_case;
     use tokio::{net::TcpListener, sync::Notify};
     use world_id_core::{
         api_types::IndexerAuthenticatorsResponse,
         artifacts::dummy::DummyZkArtifactSource,
         primitives::{AuthenticatorPublicKeySet, ServiceEndpoint},
         registration::{
-            Attachment, RegistrationResult as CoreRegistrationResult, Vault,
+            Attachment, RegistrationErrorData,
+            RegistrationResult as CoreRegistrationResult, Vault,
         },
         OnchainKeyRepresentable as _,
     };
@@ -569,6 +595,7 @@ mod tests {
             RequestedClass::Proving,
             None,
             None,
+            None,
             bridge,
         )
         .await
@@ -582,15 +609,22 @@ mod tests {
         assert!(requester.pairing_code().is_some());
     }
 
+    #[test_case(Some(vec![1, 2, 1]), None, "supported_issuer_schema_ids" ; "issuer schema ids")]
+    #[test_case(None, Some(vec!["a".to_string(), "a".to_string()]), "supported_attachment_kinds" ; "attachment kinds")]
     #[tokio::test]
-    async fn start_rejects_repeated_supported_issuer_schema_ids() {
+    async fn start_rejects_repeated_declarations(
+        supported_issuer_schema_ids: Option<Vec<u64>>,
+        supported_attachment_kinds: Option<Vec<String>>,
+        invalid: &str,
+    ) {
         let bridge = Arc::new(BridgeClient::new("bridge.example").unwrap());
 
         let err = RegistrationRequester::start(
             vec![7u8; 32],
             RequestedClass::Proving,
             None,
-            Some(vec![1, 2, 1]),
+            supported_issuer_schema_ids,
+            supported_attachment_kinds,
             bridge,
         )
         .await
@@ -602,10 +636,58 @@ mod tests {
                 RequesterError::Authenticator(WalletKitError::InvalidInput {
                     attribute,
                     ..
-                }) if attribute == "supported_issuer_schema_ids"
+                }) if attribute == invalid
             ),
             "{err:?}"
         );
+    }
+
+    #[test_case(&["pcp_v1"], &["pcp_v1"] ; "keeps declared kinds and drops the others")]
+    #[test_case(&[], &[] ; "keeps none when none are declared")]
+    fn open_ignores_attachments_of_undeclared_kinds(declared: &[&str], kept: &[&str]) {
+        let pairing_secret = PairingSecret::generate().unwrap();
+        let code = PairingCode::generate();
+        let session = Session {
+            transport_key: pairing_secret.transport_key(&code).unwrap(),
+            pairing_secret,
+            code,
+            response_key: ResponseSecretKey::generate().unwrap(),
+            retrieved: true,
+            expires_at: Instant::now() + SESSION_TTL,
+        };
+        let attachment = |kind: &str| Attachment {
+            kind: kind.to_string(),
+            data: Zeroizing::new(kind.as_bytes().to_vec()),
+        };
+        let result = CoreRegistrationResult {
+            leaf_index: 7,
+            pubkey_id: 1,
+            authenticators: Vec::new(),
+            vault: None,
+            attachments: vec![attachment("pcp_v1"), attachment("other_v1")],
+        };
+        let response: Response<_, RegistrationErrorData> = Response::success(
+            session.pairing_secret.request_id().message_id(),
+            &result,
+        );
+        let sealed = session
+            .transport_key
+            .encrypt_response(
+                &session.response_key.public_key(),
+                &response.encode().unwrap(),
+            )
+            .unwrap();
+        let declared: Vec<String> = declared.iter().map(ToString::to_string).collect();
+
+        let RequesterStatus::Approved { result } =
+            session.open(&sealed, &declared).unwrap()
+        else {
+            panic!("the response was not opened as approved");
+        };
+
+        let kept: Vec<Attachment> = kept.iter().copied().map(attachment).collect();
+        assert_eq!(result.0.attachments, kept);
+        assert_eq!(result.attachment_count(), kept.len() as u64);
     }
 
     #[tokio::test]
@@ -636,6 +718,7 @@ mod tests {
             RegistrationRequester::start(
                 vec![9u8; 32],
                 RequestedClass::Proving,
+                None,
                 None,
                 None,
                 bridge,
@@ -801,6 +884,7 @@ mod tests {
             RequestedClass::Proving,
             None,
             None,
+            None,
             bridge,
         )
         .await
@@ -829,8 +913,7 @@ mod tests {
                 data: Zeroizing::new(b"secret-vault-bytes".to_vec()),
             }),
             attachments: vec![Attachment {
-                issuer_schema_id: 7,
-                format: "pcp_v1".to_string(),
+                kind: "pcp_v1".to_string(),
                 data: Zeroizing::new(b"secret-attachment-bytes".to_vec()),
             }],
         });
@@ -875,8 +958,7 @@ mod tests {
         assert_eq!(
             registered.attachments,
             [RegistrationAttachment {
-                issuer_schema_id: 7,
-                format: "pcp_v1".to_string(),
+                kind: "pcp_v1".to_string(),
                 data: b"secret-attachment-bytes".to_vec(),
             }]
         );
