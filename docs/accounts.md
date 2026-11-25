@@ -30,50 +30,55 @@ has two parts:
 
 - **The vault.** `CredentialStore::export_vault_for_issuer_schemas` exports the
   credentials of the selected issuer schemas.
-- **Attachments.** Issuer-specific data that belongs to a transferred credential,
-  such as a Personal Custody Package. The code of the credential's issuer produces
-  and consumes an attachment. WalletKit carries its `format` and `data` as opaque
-  bytes and never interprets them.
+- **Attachments.** Data transferred outside the vault, such as a Personal Custody
+  Package. An attachment has a `kind` and `data`. WalletKit carries the data as
+  opaque bytes and never interprets it; the code that handles the kind produces
+  and consumes it. An attachment can be tied to a credential, or to none.
 
-The requesting device declares the issuer schemas it supports in
-`RegistrationRequester::start` (`supported_issuer_schema_ids`). The declaration is
-self-reported and optional.
+The requesting device declares what it supports in `RegistrationRequester::start`:
+the issuer schemas whose credentials it can use (`supported_issuer_schema_ids`)
+and the attachment kinds it can handle (`supported_attachment_kinds`). Both are
+self-reported and optional. A device that declares no attachment kinds receives
+no attachments.
 
 On the approving device:
 
-1. Read `supported_issuer_schema_ids` from `IncomingRegistration` or
-   `CheckedRegistration`. If the list is present, offer the user only credentials
-   of those issuer schemas.
-1. After the user selects and consents, build a `CredentialTransfer` from the
-   `export_vault_for_issuer_schemas` output for the selected issuer schemas and
-   the attachments of those credentials, and pass it to
-   `CheckedRegistration::approve`. Pass `None` if the user selected no
-   credentials; then neither a vault nor attachments are sent.
+1. Read `supported_issuer_schema_ids` and `supported_attachment_kinds` from
+   `IncomingRegistration` or `CheckedRegistration`. If the list of issuer schemas
+   is present, offer the user only credentials of those issuer schemas.
+1. After the user selects and consents, build a `CredentialTransfer` and pass it
+   to `CheckedRegistration::approve`:
+   - `vault` is the `export_vault_for_issuer_schemas` output for the selected
+     issuer schemas, or `None` if the user selected no credentials.
+   - `attachments` holds only attachments of a supported kind. Include an
+     attachment tied to a credential only if the user selected that credential.
+     Attachments tied to no credential can be sent without a vault.
 
-WalletKit doesn't parse the vault. The app is responsible for exporting only
-supported issuer schemas, and for attaching only data that belongs to a
-credential in the vault.
+WalletKit doesn't parse the vault and doesn't know which attachment kinds are
+tied to a credential. The app is responsible for exporting only supported issuer
+schemas, and for sending a credential's attachments only together with that
+credential.
 
 `approve` checks the transfer before it submits `InsertAuthenticator`:
 
+- `ApproverError::UnsupportedAttachment`: the kind of an attachment isn't in the
+  request's `supported_attachment_kinds`, or the request declares none.
 - `ApproverError::TransferTooLarge`: the vault and all attachment data together
   exceed `registration::MAX_TRANSFER_SIZE` (15 MiB).
-- `ApproverError::UnsupportedAttachment`: an attachment belongs to an issuer
-  schema that the request doesn't list as supported.
 
 After either error, nothing was submitted or sent, and the checked session stays
-open. The app can call `approve` again with another selection, or call `abort` to
+open. The app can call `approve` again with another transfer, or call `abort` to
 notify the requesting device. Nothing is ever silently omitted from a transfer.
 
 On the requesting device, `RegistrationRequester::verify` returns the transfer
 only after it confirmed the registration on-chain:
 
-1. Import `Registered::vault_backup` with
+1. Import `Registered::vault_backup`, if present, with
    `CredentialStore::merge_vault_from_backup` once storage is initialized.
-1. Hand each of `Registered::attachments` to the code of the issuer of its
-   `issuer_schema_id`, which must treat it as untrusted input. If the app doesn't
-   recognize an attachment's issuer schema or format, warn the user that this
-   data wasn't transferred, and discard it.
+1. Hand each of `Registered::attachments` to the code that handles its `kind`,
+   which must treat the data as untrusted input. WalletKit ignores received
+   attachments of a kind the device didn't declare, so only declared kinds
+   arrive here.
 
 A full transfer takes several minutes on a slow connection: the bridge client
 allows up to five minutes for sending or receiving a response.
