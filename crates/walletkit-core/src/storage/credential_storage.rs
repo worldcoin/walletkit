@@ -1991,6 +1991,7 @@ mod tests {
             (200, 2000, Some(SELECTED_DATA)),
             (200, 2500, None),
             (300, 3000, Some(UNSELECTED_DATA)),
+            (400, 4000, Some(SELECTED_DATA)),
         ] {
             let credential: Credential = CoreCredential::new()
                 .issuer_schema_id(issuer_schema_id)
@@ -2035,6 +2036,13 @@ mod tests {
         assert!(contains(&selected, SELECTED_DATA));
         assert!(!contains(&selected, UNSELECTED_DATA));
 
+        let sharing = src_store
+            .export_vault_for_issuer_schemas(vec![400])
+            .expect("export a credential that shares its associated data");
+        assert_eq!(issuer_schemas_merged_from(&sharing), [400]);
+        assert!(contains(&sharing, SELECTED_DATA));
+        assert!(!contains(&sharing, UNSELECTED_DATA));
+
         let none = src_store
             .export_vault_for_issuer_schemas(Vec::new())
             .expect("export nothing");
@@ -2043,7 +2051,7 @@ mod tests {
 
         let all = src_store.export_vault_for_backup().expect("export vault");
         assert!(contains(&all, UNSELECTED_DATA));
-        assert_eq!(src_store.list_credentials(None, 1000).unwrap().len(), 4);
+        assert_eq!(src_store.list_credentials(None, 1000).unwrap().len(), 5);
 
         cleanup_test_storage(&src_root);
     }
