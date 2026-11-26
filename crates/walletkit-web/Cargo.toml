@@ -30,6 +30,8 @@ selfie-enrollment-client = { version = "0.2.0", default-features = false }
 selfie-enrollment-api-types = "0.2.0"
 selfie-enrollment-sealed-types = "0.2.0"
 serde_json.workspace = true
+ruint-uniffi.workspace = true
+walletkit-web-macros = { path = "../walletkit-web-macros" }
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
 wasm-bindgen-test.workspace = true

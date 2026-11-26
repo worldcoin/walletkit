@@ -5,6 +5,7 @@
 import type {
   Authenticator,
   CredentialRecord,
+  GatewayRequestStatus,
   RegistrationStatus,
   FaceEmbedding,
   SelfieEmbeddingResult,
@@ -14,8 +15,11 @@ import type {
   PoseGuardPrompt,
   PoseGuardTarget,
   SelfieCaptureFailure,
+  SelfieChallengeFailure,
   SelfieEnrollmentBundle,
+  SelfieEnrollmentField,
   SelfieEnrollmentResult,
+  SelfieFailure,
   WalletKit,
 } from "../../dist/index.js";
 
@@ -50,7 +54,14 @@ export async function consumer() {
     const remaining: number = prompt.captureTimeoutMs;
     signal.throwIfAborted();
     void [pitch, yaw, expiry, remaining];
-    return { centralPng: image, captures: [image, image, image] };
+    const images: PoseGuardImages = {
+      centralPng: image,
+      captures: [image, image, image],
+    };
+    // Only the capture tuple is readonly; the page may replace either image set.
+    images.centralPng = image;
+    images.captures = [image, image, image];
+    return images;
   };
   const enrolled: SelfieEnrollmentResult =
     await walletkit.enrollSelfieWithPoseGuard(
@@ -62,16 +73,20 @@ export async function consumer() {
     );
   if (enrolled.status === "success") {
     const bundle: SelfieEnrollmentBundle = enrolled.enrollment;
-    const field: string = bundle.fields[0].value;
+    const enrollmentField: SelfieEnrollmentField = bundle.fields[0];
+    const field: string = enrollmentField.value;
+    const fieldMap: Record<string, string> = bundle.fields[0];
+    void fieldMap;
     const attestation: string = bundle.attestationHeader;
     const pcp: Uint8Array = bundle.encryptedCustody;
     void [field, attestation, pcp];
   } else {
     const failure: SelfieCaptureFailure = enrolled;
-    if (failure.reason === "challenge") {
-      const index: number = failure.index;
-      const reason: string = failure.challengeReason;
-      void [index, reason];
+    const reason: SelfieFailure = failure;
+    if (reason.reason === "challenge") {
+      const index: number = reason.index;
+      const challengeReason: SelfieChallengeFailure = reason.challengeReason;
+      void [index, challengeReason];
     }
   }
   // @ts-expect-error exactly three pose captures are required
@@ -149,6 +164,14 @@ export async function consumer() {
       undefined,
     );
   const status: RegistrationStatus = await registration.pollStatus();
+  // Variants with the same payload share one member, so the tag can move between them.
+  const pending: RegistrationStatus = { state: "queued" };
+  pending.state = "batching";
+  const mined: GatewayRequestStatus = { state: "submitted", txHash: "0x" };
+  mined.state = "finalized";
+  const rejected: SelfieFailure = { reason: "invalid_image" };
+  rejected.reason = "quality_rejected";
+  void [pending, mined, rejected];
   const request = await walletkit.ProofRequest.fromJson("{}");
   await authenticator.setNullifierReuseWhitelist(["rp_000000000000002a"]);
   const response = await authenticator.generateProof(request);
