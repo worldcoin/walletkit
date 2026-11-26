@@ -517,7 +517,8 @@ impl CheckedRegistration {
     /// open, so that the host may retry with another selection or explicitly abort:
     /// [`ApproverError::UnsupportedAttachment`] for an attachment whose kind the request does
     /// not list as supported, and [`ApproverError::TransferTooLarge`] if the vault and
-    /// attachments together exceed [`MAX_TRANSFER_SIZE`].
+    /// attachments together exceed [`MAX_TRANSFER_SIZE`] or the whole response, with the
+    /// authenticator names and attachment kinds, exceeds the response limit.
     pub async fn approve(
         &self,
         approver: &Authenticator,
@@ -539,8 +540,7 @@ impl CheckedRegistration {
             return Err(ApproverError::ApproverMismatch);
         }
 
-        self.check_transfer(vault.as_ref(), &attachments)?;
-        let channel = take(&self.channel)?;
+        self.check_attachment_kinds(&attachments)?;
         let mut result = RegistrationResult {
             leaf_index: self.approver_leaf_index,
             // Every valid slot encodes to the same single CBOR byte, so checking the size with
@@ -550,8 +550,10 @@ impl CheckedRegistration {
             vault,
             attachments,
         };
+        self.check_response_size(&result)?;
+        let channel = take(&self.channel)?;
 
-        let registered = self.register(approver, &channel, &result).await;
+        let registered = self.register(approver, &channel).await;
         let delivered = match &registered {
             Ok(pubkey_id) => {
                 result.pubkey_id = *pubkey_id;
@@ -601,34 +603,52 @@ impl CheckedRegistration {
         Ok(channel.answer(Err(reason.into_error(None))).await)
     }
 
-    /// Checks that the request supports the kind of every attachment and that the transfer fits
-    /// in a response.
-    fn check_transfer(
+    /// Checks that the request lists the kind of every attachment as supported.
+    fn check_attachment_kinds(
         &self,
-        vault: Option<&Vault>,
         attachments: &[Attachment],
     ) -> Result<(), ApproverError> {
         let supported = self.request.supported_attachment_kinds.as_ref();
-        if let Some(unsupported) = attachments.iter().find(|attachment| {
-            !supported.is_some_and(|kinds| kinds.contains(&attachment.kind))
-        }) {
-            return Err(ApproverError::UnsupportedAttachment {
-                kind: unsupported.kind.clone(),
-            });
-        }
+        attachments
+            .iter()
+            .find(|attachment| {
+                !supported.is_some_and(|kinds| kinds.contains(&attachment.kind))
+            })
+            .map_or(Ok(()), |unsupported| {
+                Err(ApproverError::UnsupportedAttachment {
+                    kind: unsupported.kind.clone(),
+                })
+            })
+    }
 
-        let mut sizes = vault
-            .map(|vault| vault.data.len())
-            .into_iter()
-            .chain(attachments.iter().map(|attachment| attachment.data.len()));
-        let fits = sizes
-            .try_fold(0_usize, usize::checked_add)
-            .is_some_and(|size| size <= MAX_TRANSFER_SIZE);
-        if !fits {
-            return Err(ApproverError::TransferTooLarge);
+    /// Checks that `result` fits in a response: its vault and attachments within
+    /// [`MAX_TRANSFER_SIZE`], and the whole encoded response within the response limit.
+    ///
+    /// Checked before submitting, so that an oversized response cannot leave a registered
+    /// authenticator that never learns its result.
+    fn check_response_size(
+        &self,
+        result: &RegistrationResult,
+    ) -> Result<(), ApproverError> {
+        let message_id = self
+            .channel
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .ok_or(ApproverError::AlreadyHandled)?
+            .request_id
+            .message_id();
+        let response: Response<_, RegistrationErrorData> =
+            Response::success(message_id, result);
+        let fits = response
+            .encode()
+            .map(Zeroizing::new)
+            .is_ok_and(|encoded| encoded.len() <= MAX_RESPONSE_SIZE);
+        if fits {
+            Ok(())
+        } else {
+            Err(ApproverError::TransferTooLarge)
         }
-
-        Ok(())
     }
 
     /// Registers the authenticator as planned and returns its slot.
@@ -636,21 +656,7 @@ impl CheckedRegistration {
         &self,
         approver: &Authenticator,
         channel: &ResponseChannel,
-        result: &RegistrationResult,
     ) -> Result<u32, Refusal> {
-        // Checked before submitting, so that an oversized response cannot leave a registered
-        // authenticator that never learns its result.
-        let response: Response<_, RegistrationErrorData> =
-            Response::success(channel.request_id.message_id(), result);
-        if !response
-            .encode()
-            .map(Zeroizing::new)
-            .is_ok_and(|encoded| encoded.len() <= MAX_RESPONSE_SIZE)
-        {
-            return Err(Refusal::from(RegistrationErrorReason::InternalError)
-                .with_detail("the approval exceeds the response size limit"));
-        }
-
         match self.plan {
             RegistrationPlan::AlreadyRegistered { pubkey_id } => Ok(pubkey_id),
             RegistrationPlan::Insert { .. }
@@ -1473,11 +1479,14 @@ mod tests {
         assert!(checked.reject().await.unwrap());
     }
 
-    #[test_case(false ; "new insertion")]
-    #[test_case(true ; "already registered")]
+    #[test_case(false, transfer_of(MAX_TRANSFER_SIZE + 1), Vec::new() ; "new insertion")]
+    #[test_case(true, transfer_of(MAX_TRANSFER_SIZE + 1), Vec::new() ; "already registered")]
+    #[test_case(false, transfer_of(MAX_TRANSFER_SIZE), long_names() ; "response over its limit")]
     #[tokio::test]
     async fn oversized_transfer_is_rejected_without_consuming_the_session(
         already_registered: bool,
+        transfer: CredentialTransfer,
+        authenticators: Vec<KnownAuthenticator>,
     ) {
         let (pending, code, _) = make_pending_registration().await;
         let incoming = pending.authenticate(&code).await.unwrap();
@@ -1496,7 +1505,7 @@ mod tests {
         }
 
         let err = checked
-            .approve(&approver, transfer_of(MAX_TRANSFER_SIZE + 1), Vec::new())
+            .approve(&approver, transfer, authenticators)
             .await
             .unwrap_err();
         assert!(matches!(err, ApproverError::TransferTooLarge));
@@ -1510,6 +1519,14 @@ mod tests {
             checked.abort().await,
             Err(ApproverError::AlreadyHandled)
         ));
+    }
+
+    /// Authenticator names that take more than the 4 KiB a response has beyond its transfer.
+    fn long_names() -> Vec<KnownAuthenticator> {
+        vec![KnownAuthenticator {
+            pubkey_id: 0,
+            name: "n".repeat(8 * 1024),
+        }]
     }
 
     #[test_case(CredentialTransfer::default() ; "nothing")]
