@@ -83,7 +83,14 @@ function, do the following:
    - Hold the core object in an `Arc`, so that asynchronous methods can return a
      `'static` future.
    - Take a `u64` as a `BigInt` and validate it with `js::u64_arg`.
-   - Return records as plain objects built with `js::object`.
+   - Return records as plain objects with `ToJs`, and read record arguments with
+     `FromJs`. Declare each record or enum once, with `#[js_type]`, in
+     [`records.rs`](https://github.com/worldcoin/walletkit/blob/main/crates/walletkit-web/src/records.rs).
+     The attribute generates the TypeScript type and both conversions. For a
+     `walletkit-core` type, set `remote` and list every field of the core type;
+     the compiler rejects a declaration that misses a field or declares a field
+     with the wrong type. Take the argument as a `JsValue` with
+     `unchecked_param_type`, and name the return type with `unchecked_return_type`.
    - Return a `Promise` from asynchronous methods with `js::promise`.
    - Convert errors with `error::to_js`, and reject invalid arguments with
      `error::invalid_argument`, which throws a `TypeError`.

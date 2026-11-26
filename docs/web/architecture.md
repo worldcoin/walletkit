@@ -29,6 +29,9 @@ In order from the app down:
 1. **`walletkit-web` crate.** A `wasm-bindgen` facade over `walletkit-core`, with
    one wrapper class for each UniFFI object that the browser supports. Wrappers
    keep the names and arguments of the Swift and Kotlin bindings, in `camelCase`.
+   Records and enums cross as plain data. Each is declared once with the
+   `#[js_type]` attribute from `crates/walletkit-web-macros`, which generates its
+   TypeScript type and its conversions to and from JavaScript.
 1. **`walletkit-core`.** The same Rust code that the Swift and Kotlin bindings use,
    built for `wasm32-unknown-unknown`.
 

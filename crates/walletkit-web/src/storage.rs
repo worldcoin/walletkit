@@ -1,18 +1,17 @@
 //! Encrypted credential storage, backed by the browser's OPFS pool.
 
-use std::{str::FromStr, sync::Arc};
+use std::sync::Arc;
 
 use js_sys::BigInt;
 use walletkit_core::storage::{
-    initialize_persistent_storage, ActivityEntry, ActivityFailureReason,
-    ActivityOutcome, ActivityQuery, CredentialRecord, CredentialStore, ProtocolVersion,
+    initialize_persistent_storage, ActivityEntry, ActivityQuery, CredentialStore,
     StorageKeys, StoragePaths,
 };
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    error::{invalid_argument, to_js},
-    js,
+    error::to_js,
+    js::{self, FromJs, ToJs},
     values::{JsCredential, JsFieldElement},
 };
 
@@ -222,15 +221,10 @@ impl JsCredentialStore {
         let issuer_schema_id =
             js::optional_u64_arg("issuerSchemaId", issuer_schema_id)?;
         let now = js::u64_arg("now", now)?;
-        let records = self
-            .0
+        self.0
             .list_credentials(issuer_schema_id, now)
-            .map_err(to_js)?;
-        let records = records
-            .iter()
-            .map(credential_record)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(js::array(records))
+            .map_err(to_js)?
+            .to_js()
     }
 
     /// # Errors
@@ -297,12 +291,12 @@ impl JsCredentialStore {
     #[wasm_bindgen(js_name = recordActivity)]
     pub fn record_activity(
         &self,
-        #[wasm_bindgen(unchecked_param_type = "ActivityEntry")] entry: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "ActivityEntry")] entry: JsValue,
         now: BigInt,
     ) -> Result<u64, JsValue> {
         let now = js::u64_arg("now", now)?;
         self.0
-            .record_activity(&parse_activity_entry(entry)?, now)
+            .record_activity(&ActivityEntry::from_js(entry, "entry")?, now)
             .map_err(to_js)
     }
 
@@ -317,23 +311,17 @@ impl JsCredentialStore {
     ) -> Result<JsValue, JsValue> {
         let (limit, offset) =
             (js::u32_arg("limit", limit)?, js::u32_arg("offset", offset)?);
-        let entries = self
-            .0
+        self.0
             .list_activities(&query.0, limit, offset)
-            .map_err(to_js)?;
-        let entries = entries
-            .iter()
-            .map(activity_entry)
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(js::array(entries))
+            .map_err(to_js)?
+            .to_js()
     }
 
     /// # Errors
     /// Throws a `StorageError` when the activity log cannot be read.
     #[wasm_bindgen(js_name = activityMetadata, unchecked_return_type = "ActivityMetadata")]
     pub fn activity_metadata(&self) -> Result<JsValue, JsValue> {
-        let metadata = self.0.activity_metadata().map_err(to_js)?;
-        js::object(&[("totalCount", metadata.total_count.into())])
+        self.0.activity_metadata().map_err(to_js)?.to_js()
     }
 
     /// Deletes the given activity entries and returns how many were removed.
@@ -364,68 +352,4 @@ impl JsCredentialStore {
     pub fn destroy_storage(&self) -> Result<(), JsValue> {
         self.0.destroy_storage().map_err(to_js)
     }
-}
-
-fn credential_record(record: &CredentialRecord) -> Result<JsValue, JsValue> {
-    js::object(&[
-        ("credentialId", record.credential_id.into()),
-        ("issuerSchemaId", record.issuer_schema_id.into()),
-        ("genesisIssuedAt", record.genesis_issued_at.into()),
-        ("expiresAt", record.expires_at.into()),
-        ("isExpired", record.is_expired.into()),
-    ])
-}
-
-fn activity_entry(entry: &ActivityEntry) -> Result<JsValue, JsValue> {
-    js::object(&[
-        ("id", entry.id.into()),
-        ("rpId", entry.rp_id.into()),
-        ("appIdentifier", entry.app_identifier.as_str().into()),
-        ("clientId", entry.client_id.as_str().into()),
-        ("challengeId", entry.challenge_id.as_deref().into()),
-        ("protocol", f64::from(entry.protocol as u8).into()),
-        ("timestamp", entry.timestamp.into()),
-        ("outcome", entry.outcome.to_string().into()),
-        (
-            "issuerSchemaIds",
-            js::array(entry.issuer_schema_ids.iter().map(|id| (*id).into())),
-        ),
-        (
-            "failureReason",
-            entry
-                .failure_reason
-                .map_or(JsValue::UNDEFINED, |reason| reason.to_string().into()),
-        ),
-    ])
-}
-
-fn parse_activity_entry(entry: &JsValue) -> Result<ActivityEntry, JsValue> {
-    let protocol = match js::number_field(entry, "protocol")? {
-        3.0 => ProtocolVersion::V3,
-        4.0 => ProtocolVersion::V4,
-        _ => return Err(invalid_argument("`protocol` must be 3 or 4")),
-    };
-    let outcome = js::string_field(entry, "outcome")?;
-    let outcome = ActivityOutcome::from_str(&outcome)
-        .map_err(|_| invalid_argument(&format!("Unknown outcome: {outcome}")))?;
-    let failure_reason = js::optional_string_field(entry, "failureReason")?
-        .map(|reason| {
-            ActivityFailureReason::from_str(&reason).map_err(|_| {
-                invalid_argument(&format!("Unknown failureReason: {reason}"))
-            })
-        })
-        .transpose()?;
-
-    Ok(ActivityEntry {
-        id: js::optional_u64_field(entry, "id")?,
-        rp_id: js::u64_field(entry, "rpId")?,
-        app_identifier: js::string_field(entry, "appIdentifier")?,
-        client_id: js::string_field(entry, "clientId")?,
-        challenge_id: js::optional_string_field(entry, "challengeId")?,
-        protocol,
-        timestamp: js::optional_u64_field(entry, "timestamp")?,
-        outcome,
-        issuer_schema_ids: js::u64_array_field(entry, "issuerSchemaIds")?,
-        failure_reason,
-    })
 }

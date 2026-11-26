@@ -8,6 +8,7 @@ members = [
   "crates/walletkit-cli",
   "crates/walletkit-testkit",
   "crates/walletkit-web",
+  "crates/walletkit-web-macros",
   "xtask",
 ]
 resolver = "2"
