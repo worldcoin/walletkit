@@ -376,13 +376,8 @@ impl CredentialVault {
     ///
     /// Returns an error if the export fails.
     pub fn export_plaintext(&self, dest: &Path) -> StorageResult<()> {
-        let conn = self.vault.connection();
-        if dest.exists() {
-            std::fs::remove_file(dest).map_err(|e| {
-                StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
-            })?;
-        }
-        cipher::export_plaintext_copy(conn, dest, BACKUP_TABLES)
+        remove_stale_export(dest)?;
+        cipher::export_plaintext_copy(self.vault.connection(), dest, BACKUP_TABLES)
             .map_err(|e| map_db_err(&e))
     }
 
@@ -420,6 +415,7 @@ impl CredentialVault {
                 ),
             ),
         ];
+        remove_stale_export(dest)?;
         cipher::export_plaintext_selection(self.vault.connection(), dest, &selections)
             .map_err(|e| map_db_err(&e))
     }
@@ -439,6 +435,16 @@ impl CredentialVault {
         cipher::import_plaintext_copy(conn, source, BACKUP_TABLES)
             .map_err(|e| map_db_err(&e))
     }
+}
+
+/// Removes a file left at `dest` by an earlier export, which the export cannot overwrite.
+fn remove_stale_export(dest: &Path) -> StorageResult<()> {
+    if dest.exists() {
+        std::fs::remove_file(dest).map_err(|e| {
+            StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
+        })?;
+    }
+    Ok(())
 }
 
 fn map_record(row: &Row<'_, '_>) -> StorageResult<CredentialRecord> {
