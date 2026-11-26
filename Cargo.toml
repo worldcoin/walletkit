@@ -107,12 +107,12 @@ walletkit-testkit = { path = "crates/walletkit-testkit" }
 # TODO: remove once world-id-protocol#1268 is released
 # (https://github.com/worldcoin/world-id-protocol/pull/1268)
 [patch.crates-io]
-world-id-authenticator = { git = "https://github.com/worldcoin/world-id-protocol", rev = "7e701202950338b5dbcb9df723bd4bf2090bca8d" }
-world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "7e701202950338b5dbcb9df723bd4bf2090bca8d" }
-world-id-flamingo = { git = "https://github.com/worldcoin/world-id-protocol", rev = "7e701202950338b5dbcb9df723bd4bf2090bca8d" }
-world-id-primitives = { git = "https://github.com/worldcoin/world-id-protocol", rev = "7e701202950338b5dbcb9df723bd4bf2090bca8d" }
-world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", rev = "7e701202950338b5dbcb9df723bd4bf2090bca8d" }
-world-id-registries = { git = "https://github.com/worldcoin/world-id-protocol", rev = "7e701202950338b5dbcb9df723bd4bf2090bca8d" }
+world-id-authenticator = { git = "https://github.com/worldcoin/world-id-protocol", rev = "3fb49205bd05349634a3a1a6a8fcf4deedaf34d2" }
+world-id-core = { git = "https://github.com/worldcoin/world-id-protocol", rev = "3fb49205bd05349634a3a1a6a8fcf4deedaf34d2" }
+world-id-flamingo = { git = "https://github.com/worldcoin/world-id-protocol", rev = "3fb49205bd05349634a3a1a6a8fcf4deedaf34d2" }
+world-id-primitives = { git = "https://github.com/worldcoin/world-id-protocol", rev = "3fb49205bd05349634a3a1a6a8fcf4deedaf34d2" }
+world-id-proof = { git = "https://github.com/worldcoin/world-id-protocol", rev = "3fb49205bd05349634a3a1a6a8fcf4deedaf34d2" }
+world-id-registries = { git = "https://github.com/worldcoin/world-id-protocol", rev = "3fb49205bd05349634a3a1a6a8fcf4deedaf34d2" }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }

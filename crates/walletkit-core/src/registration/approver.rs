@@ -270,7 +270,10 @@ impl IncomingRegistration {
     /// credentials of these issuer schemas to transfer.
     #[must_use]
     pub fn supported_issuer_schema_ids(&self) -> Option<Vec<u64>> {
-        self.request.supported_issuer_schema_ids.clone()
+        self.request
+            .supported_issuer_schema_ids
+            .as_ref()
+            .map(|ids| ids.iter().copied().collect())
     }
 
     /// Returns the attachment kinds the new authenticator declares it can handle, or `None` if
@@ -278,7 +281,10 @@ impl IncomingRegistration {
     /// sent; without a list, none can.
     #[must_use]
     pub fn supported_attachment_kinds(&self) -> Option<Vec<String>> {
-        self.request.supported_attachment_kinds.clone()
+        self.request
+            .supported_attachment_kinds
+            .as_ref()
+            .map(|kinds| kinds.iter().cloned().collect())
     }
 
     /// Returns how many seconds are left until the response is due.
@@ -425,7 +431,10 @@ impl CheckedRegistration {
     /// credentials of these issuer schemas to transfer.
     #[must_use]
     pub fn supported_issuer_schema_ids(&self) -> Option<Vec<u64>> {
-        self.request.supported_issuer_schema_ids.clone()
+        self.request
+            .supported_issuer_schema_ids
+            .as_ref()
+            .map(|ids| ids.iter().copied().collect())
     }
 
     /// Returns the attachment kinds the new authenticator declares it can handle, or `None` if
@@ -433,7 +442,10 @@ impl CheckedRegistration {
     /// sent; without a list, none can.
     #[must_use]
     pub fn supported_attachment_kinds(&self) -> Option<Vec<String>> {
-        self.request.supported_attachment_kinds.clone()
+        self.request
+            .supported_attachment_kinds
+            .as_ref()
+            .map(|kinds| kinds.iter().cloned().collect())
     }
 
     /// Returns how the registration will be carried out.
@@ -596,15 +608,10 @@ impl CheckedRegistration {
         vault: Option<&Vault>,
         attachments: &[Attachment],
     ) -> Result<(), ApproverError> {
-        let supported = self
-            .request
-            .supported_attachment_kinds
-            .as_deref()
-            .unwrap_or_default();
-        if let Some(unsupported) = attachments
-            .iter()
-            .find(|attachment| !supported.contains(&attachment.kind))
-        {
+        let supported = self.request.supported_attachment_kinds.as_ref();
+        if let Some(unsupported) = attachments.iter().find(|attachment| {
+            !supported.is_some_and(|kinds| kinds.contains(&attachment.kind))
+        }) {
             return Err(ApproverError::UnsupportedAttachment {
                 kind: unsupported.kind.clone(),
             });
@@ -910,11 +917,10 @@ fn parse_request(
     let invalid_params = |problem: &dyn Display| {
         invalid(RegistrationErrorReason::InvalidParams, problem)
     };
-    let params = envelope
-        .params
-        .as_ref()
-        .ok_or_else(|| invalid_params(&"missing params"))?;
-    let request = RegistrationRequest::from_params(params)
+    if envelope.params.is_none() {
+        return Err(invalid_params(&"missing params"));
+    }
+    let request = RegistrationRequest::decode(plaintext)
         .map_err(|error| invalid_params(&error))?;
     let digest = request
         .digest(request_id)
@@ -1206,7 +1212,7 @@ mod tests {
             response_key.public_key(),
             None,
             None,
-            supported_attachment_kinds,
+            supported_attachment_kinds.map(|kinds| kinds.into_iter().collect()),
             &request_id,
         )
         .unwrap();
@@ -1586,7 +1592,7 @@ mod tests {
     #[tokio::test]
     async fn transfer_reaches_the_verified_requester(vault: Option<Vec<u8>>) {
         let (approver_seed, requester_seed) = ([23u8; 32], [24u8; 32]);
-        let kinds = vec![KIND.to_string(), "other_v2".to_string()];
+        let kinds = vec!["other_v2".to_string(), KIND.to_string()];
         let bridge_url = serve(mock_bridge()).await;
         let bridge = Arc::new(
             BridgeClient::with_base_url("bridge.example", &bridge_url).unwrap(),
@@ -1871,6 +1877,45 @@ mod tests {
         .unwrap();
         let err = parse_request(&valid_bytes, &request_id, &other_digest).unwrap_err();
         assert_eq!(err.reason, RegistrationErrorReason::InvalidParams);
+        assert!(err.reply.is_some());
+    }
+
+    #[test]
+    fn parse_request_rejects_a_bignum_issuer_schema_id() {
+        use world_id_core::primitives::authenticator_message::Value as Cbor;
+
+        let signer = Signer::from_seed_bytes(&[71u8; 32]).unwrap();
+        let request_id = PairingSecret::generate().unwrap().request_id();
+        let (request, digest) = RegistrationRequest::new_signed(
+            signer.offchain_signer_private_key().expose_secret(),
+            None,
+            ResponseSecretKey::generate().unwrap().public_key(),
+            None,
+            Some([1].into()),
+            None,
+            &request_id,
+        )
+        .unwrap();
+        let Cbor::Map(mut params) = Cbor::serialized(&request).unwrap() else {
+            unreachable!("params serialize as a map")
+        };
+        let ids = params
+            .iter_mut()
+            .find(|(key, _)| key.as_text() == Some("supported_issuer_schema_ids"))
+            .map(|(_, ids)| ids)
+            .unwrap();
+        *ids = Cbor::Array(vec![Cbor::Tag(2, Box::new(Cbor::Bytes(vec![1])))]);
+        let message = Request::new(
+            Some(request_id.message_id()),
+            REGISTER_METHOD,
+            Some(Cbor::Map(params)),
+        );
+
+        let err = parse_request(&message.encode().unwrap(), &request_id, &digest)
+            .unwrap_err();
+
+        assert_eq!(err.reason, RegistrationErrorReason::InvalidParams);
+        assert!(err.problem.contains("unsigned integer"), "{}", err.problem);
         assert!(err.reply.is_some());
     }
 

@@ -1,6 +1,7 @@
 //! The Requesting Authenticator's side of a registration (WIP-109 §3.8).
 
 use std::{
+    collections::BTreeSet,
     sync::{Arc, Mutex, PoisonError, RwLock},
     time::Duration,
 };
@@ -75,10 +76,10 @@ impl RegistrationRequester {
     ///
     /// # Errors
     ///
-    /// Returns an error if the seed or name is invalid, `supported_issuer_schema_ids` or
-    /// `supported_attachment_kinds` repeats an entry ([`RequesterError::Authenticator`] with
-    /// `InvalidInput`) or does not fit in the request, the CSPRNG is unavailable, the request
-    /// cannot be encoded or encrypted, or the bridge does not store it.
+    /// Returns an error if the seed or name is invalid, the declared issuer schemas and
+    /// attachment kinds do not fit in the request, the CSPRNG is unavailable, the request cannot
+    /// be encoded or encrypted, or the bridge does not store it. Repeated entries in
+    /// `supported_issuer_schema_ids` or `supported_attachment_kinds` are sent once.
     #[uniffi::constructor]
     pub async fn start(
         seed: Vec<u8>,
@@ -108,8 +109,8 @@ impl RegistrationRequester {
             (class == RequestedClass::Admin).then(|| signer.onchain_signer_address()),
             response_key.public_key(),
             name,
-            supported_issuer_schema_ids,
-            supported_attachment_kinds,
+            supported_issuer_schema_ids.map(BTreeSet::from_iter),
+            supported_attachment_kinds.map(BTreeSet::from_iter),
             &request_id,
         )
         .map_err(AuthenticatorError::from)?;
@@ -218,13 +219,7 @@ impl RegistrationRequester {
                 let Some(live) = self.take_live_session() else {
                     return Ok(RequesterStatus::Expired);
                 };
-                live.open(
-                    &sealed,
-                    self.request
-                        .supported_attachment_kinds
-                        .as_deref()
-                        .unwrap_or_default(),
-                )
+                live.open(&sealed, self.request.supported_attachment_kinds.as_ref())
             }
             Some(Err(error)) => {
                 if self.live_session(|_| ()).is_none() {
@@ -480,7 +475,7 @@ impl Session {
     fn open(
         &self,
         sealed: &EncryptedPayload,
-        supported_attachment_kinds: &[String],
+        supported_attachment_kinds: Option<&BTreeSet<String>>,
     ) -> Result<RequesterStatus, RequesterError> {
         let malformed = |problem: &dyn std::fmt::Display| {
             RequesterError::MalformedResponse(problem.to_string())
@@ -505,7 +500,8 @@ impl Session {
 
                 let received = result.attachments.len();
                 result.attachments.retain(|attachment| {
-                    supported_attachment_kinds.contains(&attachment.kind)
+                    supported_attachment_kinds
+                        .is_some_and(|kinds| kinds.contains(&attachment.kind))
                 });
                 let ignored = received - result.attachments.len();
                 if ignored > 0 {
@@ -609,39 +605,6 @@ mod tests {
         assert!(requester.pairing_code().is_some());
     }
 
-    #[test_case(Some(vec![1, 2, 1]), None, "supported_issuer_schema_ids" ; "issuer schema ids")]
-    #[test_case(None, Some(vec!["a".to_string(), "a".to_string()]), "supported_attachment_kinds" ; "attachment kinds")]
-    #[tokio::test]
-    async fn start_rejects_repeated_declarations(
-        supported_issuer_schema_ids: Option<Vec<u64>>,
-        supported_attachment_kinds: Option<Vec<String>>,
-        invalid: &str,
-    ) {
-        let bridge = Arc::new(BridgeClient::new("bridge.example").unwrap());
-
-        let err = RegistrationRequester::start(
-            vec![7u8; 32],
-            RequestedClass::Proving,
-            None,
-            supported_issuer_schema_ids,
-            supported_attachment_kinds,
-            bridge,
-        )
-        .await
-        .unwrap_err();
-
-        assert!(
-            matches!(
-                &err,
-                RequesterError::Authenticator(WalletKitError::InvalidInput {
-                    attribute,
-                    ..
-                }) if attribute == invalid
-            ),
-            "{err:?}"
-        );
-    }
-
     #[test_case(&["pcp_v1"], &["pcp_v1"] ; "keeps declared kinds and drops the others")]
     #[test_case(&[], &[] ; "keeps none when none are declared")]
     fn open_ignores_attachments_of_undeclared_kinds(declared: &[&str], kept: &[&str]) {
@@ -677,10 +640,11 @@ mod tests {
                 &response.encode().unwrap(),
             )
             .unwrap();
-        let declared: Vec<String> = declared.iter().map(ToString::to_string).collect();
+        let declared: BTreeSet<String> =
+            declared.iter().map(ToString::to_string).collect();
 
         let RequesterStatus::Approved { result } =
-            session.open(&sealed, &declared).unwrap()
+            session.open(&sealed, Some(&declared)).unwrap()
         else {
             panic!("the response was not opened as approved");
         };
