@@ -518,7 +518,9 @@ impl CheckedRegistration {
     /// [`ApproverError::UnsupportedAttachment`] for an attachment whose kind the request does
     /// not list as supported, and [`ApproverError::TransferTooLarge`] if the vault and
     /// attachments together exceed [`MAX_TRANSFER_SIZE`] or the whole response, with the
-    /// authenticator names and attachment kinds, exceeds the response limit.
+    /// authenticator names and attachment kinds, exceeds the response limit. A response that
+    /// cannot be encoded for another reason returns [`ApproverError::InvalidResponse`], with
+    /// the session left open as well.
     pub async fn approve(
         &self,
         approver: &Authenticator,
@@ -638,17 +640,30 @@ impl CheckedRegistration {
             .ok_or(ApproverError::AlreadyHandled)?
             .request_id
             .message_id();
+        let vault = result.vault.iter().map(|vault| vault.data.len());
+        let attachments = result
+            .attachments
+            .iter()
+            .map(|attachment| attachment.data.len());
+        let transfer_fits = vault
+            .chain(attachments)
+            .try_fold(0_usize, usize::checked_add)
+            .is_some_and(|size| size <= MAX_TRANSFER_SIZE);
+        if !transfer_fits {
+            return Err(ApproverError::TransferTooLarge);
+        }
+
         let response: Response<_, RegistrationErrorData> =
             Response::success(message_id, result);
-        let fits = response
-            .encode()
-            .map(Zeroizing::new)
-            .is_ok_and(|encoded| encoded.len() <= MAX_RESPONSE_SIZE);
-        if fits {
-            Ok(())
-        } else {
-            Err(ApproverError::TransferTooLarge)
+        let encoded = response.encode().map(Zeroizing::new).map_err(|error| {
+            ApproverError::InvalidResponse {
+                problem: error.to_string(),
+            }
+        })?;
+        if encoded.len() > MAX_RESPONSE_SIZE {
+            return Err(ApproverError::TransferTooLarge);
         }
+        Ok(())
     }
 
     /// Registers the authenticator as planned and returns its slot.
@@ -1519,6 +1534,36 @@ mod tests {
             checked.abort().await,
             Err(ApproverError::AlreadyHandled)
         ));
+    }
+
+    #[tokio::test]
+    async fn unencodable_response_is_rejected_without_consuming_the_session() {
+        let (pending, code, _) = make_pending_registration().await;
+        let incoming = pending.authenticate(&code).await.unwrap();
+        let seed = [21; 32];
+        let submissions = Arc::new(AtomicUsize::new(0));
+        let service_url = serve(
+            account_indexer(&[seed]).merge(insertions_counted_by(submissions.clone())),
+        )
+        .await;
+        let approver = make_authenticator_at_url(seed, 1, &service_url).await;
+        let checked = incoming.check(&approver).await.unwrap();
+        let out_of_range = vec![KnownAuthenticator {
+            pubkey_id: u32::MAX,
+            name: "phone".to_string(),
+        }];
+
+        let err = checked
+            .approve(&approver, CredentialTransfer::default(), out_of_range)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&err, ApproverError::InvalidResponse { problem } if problem.contains("pubkey_id out of range")),
+            "{err:?}"
+        );
+        assert_eq!(submissions.load(Ordering::SeqCst), 0);
+        assert!(checked.abort().await.unwrap());
     }
 
     /// Authenticator names that take more than the 4 KiB a response has beyond its transfer.

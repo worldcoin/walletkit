@@ -201,6 +201,14 @@ pub enum ApproverError {
         /// The kind of the offending attachment, as the host supplied it.
         kind: String,
     },
+    /// The response cannot be encoded for a reason other than its size, e.g. a known
+    /// authenticator's `pubkey_id` is out of range. Nothing was submitted or sent; the host may
+    /// retry with corrected input or abort the checked session.
+    #[error("the registration response cannot be encoded: {problem}")]
+    InvalidResponse {
+        /// What is wrong with the response.
+        problem: String,
+    },
     /// This step was already taken, so the registration has moved on or ended.
     #[error("this registration step was already taken")]
     AlreadyHandled,
