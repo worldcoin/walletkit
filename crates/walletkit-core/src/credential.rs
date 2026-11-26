@@ -34,6 +34,17 @@ impl Credential {
         Ok(Self(credential))
     }
 
+    /// Serializes the credential to a JSON byte blob for storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization fails.
+    pub fn to_bytes(&self) -> Result<Vec<u8>, WalletKitError> {
+        serde_json::to_vec(&self.0).map_err(|e| WalletKitError::SerializationError {
+            error: format!("Failed to serialize credential: {e}"),
+        })
+    }
+
     /// Returns the credential's `sub` field element.
     #[must_use]
     pub fn sub(&self) -> FieldElement {
@@ -88,17 +99,6 @@ impl Credential {
 }
 
 impl Credential {
-    /// Serializes the credential to a JSON byte blob for storage.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if serialization fails.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, WalletKitError> {
-        serde_json::to_vec(&self.0).map_err(|e| WalletKitError::SerializationError {
-            error: format!("Failed to serialize credential: {e}"),
-        })
-    }
-
     /// Returns the credential's `genesis_issued_at` timestamp.
     #[must_use]
     pub const fn genesis_issued_at(&self) -> u64 {
