@@ -4,9 +4,10 @@ use std::sync::Arc;
 
 use alloy_core::primitives::Address;
 use world_id_core::registration::{
-    KnownAuthenticator, RegistrationErrorReason, RegistrationRequest,
+    Attachment, KnownAuthenticator, RegistrationErrorReason, RegistrationRequest,
     RegistrationResult as CoreRegistrationResult,
 };
+use zeroize::Zeroizing;
 
 use super::errors::RegistrationError;
 use crate::Authenticator;
@@ -68,7 +69,8 @@ impl RegistrationResult {
         self.0.authenticators.clone()
     }
 
-    /// Returns whether the Approving Authenticator included a credential vault backup.
+    /// Returns whether the Approving Authenticator included a vault with the credentials the
+    /// user selected.
     ///
     /// The vault bytes themselves are returned in [`Registered::vault_backup`] only after
     /// [`RegistrationRequester::verify`](super::RegistrationRequester::verify) confirms the
@@ -76,6 +78,81 @@ impl RegistrationResult {
     #[must_use]
     pub const fn has_vault(&self) -> bool {
         self.0.vault.is_some()
+    }
+
+    /// Returns how many attachments [`Registered::attachments`] will hold: those the Approving
+    /// Authenticator included whose kind this session declared. Attachments of other kinds were
+    /// ignored and are not counted.
+    #[must_use]
+    pub fn attachment_count(&self) -> u64 {
+        u64::try_from(self.0.attachments.len()).unwrap_or(u64::MAX)
+    }
+}
+
+/// Data transferred to the new authenticator outside the vault, e.g. a Personal Custody
+/// Package.
+///
+/// `WalletKit` carries `data` without interpreting it. The host passes it to the code that
+/// handles `kind`, which must treat received data as untrusted input. The data may be
+/// biometric: never log it.
+#[derive(Clone, PartialEq, Eq, uniffi::Record)]
+pub struct RegistrationAttachment {
+    /// The kind of attachment, which decides how `data` is handled.
+    pub kind: String,
+    /// The attachment bytes.
+    pub data: Vec<u8>,
+}
+
+impl std::fmt::Debug for RegistrationAttachment {
+    /// Formats [`RegistrationAttachment`] with the length of `data` instead of its bytes.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RegistrationAttachment")
+            .field("kind", &self.kind)
+            .field("len", &self.data.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl From<RegistrationAttachment> for Attachment {
+    /// Moves the attachment into its wire form, whose bytes are zeroized on drop.
+    fn from(attachment: RegistrationAttachment) -> Self {
+        Self {
+            kind: attachment.kind,
+            data: Zeroizing::new(attachment.data),
+        }
+    }
+}
+
+impl From<&Attachment> for RegistrationAttachment {
+    /// Copies a received attachment out for the host.
+    fn from(attachment: &Attachment) -> Self {
+        Self {
+            kind: attachment.kind.clone(),
+            data: attachment.data.to_vec(),
+        }
+    }
+}
+
+/// What the user chose to transfer to the new authenticator, passed to
+/// [`CheckedRegistration::approve`](super::CheckedRegistration::approve). The default transfers
+/// nothing.
+#[derive(Clone, Default, PartialEq, Eq, uniffi::Record)]
+pub struct CredentialTransfer {
+    /// The `CredentialStore::export_vault_for_issuer_schemas` output for the issuer schemas the
+    /// user selected, or `None` if the user selected no credentials.
+    pub vault: Option<Vec<u8>>,
+    /// Data to transfer outside the vault. An attachment tied to a credential belongs here only
+    /// if that credential is in `vault`; one tied to no credential may be sent without a vault.
+    pub attachments: Vec<RegistrationAttachment>,
+}
+
+impl std::fmt::Debug for CredentialTransfer {
+    /// Formats [`CredentialTransfer`] with the length of `vault` instead of its plaintext bytes.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialTransfer")
+            .field("vault_len", &self.vault.as_ref().map(Vec::len))
+            .field("attachments", &self.attachments)
+            .finish()
     }
 }
 
@@ -107,13 +184,19 @@ pub enum RequesterStatus {
 pub struct Registered {
     /// The new authenticator. Its storage is not initialized yet.
     pub authenticator: Arc<Authenticator>,
-    /// The shared `CredentialStore::export_vault_for_backup` output, to import with
-    /// `CredentialStore::merge_vault_from_backup` once storage is initialized.
+    /// The `CredentialStore::export_vault_for_issuer_schemas` output for the credentials the
+    /// user selected on the Approving Authenticator, to import with
+    /// `CredentialStore::merge_vault_from_backup` once storage is initialized. `None` if the
+    /// user selected none.
     pub vault_backup: Option<Vec<u8>>,
+    /// The received attachments whose kind this session declared in
+    /// `supported_attachment_kinds`, to hand to the code that handles each kind as untrusted
+    /// input. Attachments of other kinds were ignored. They may be present without a vault.
+    pub attachments: Vec<RegistrationAttachment>,
 }
 
 impl std::fmt::Debug for Registered {
-    /// Formats [`Registered`] without printing the plaintext `vault_backup` bytes.
+    /// Formats [`Registered`] without printing the plaintext `vault_backup` or attachment bytes.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Registered")
             .field("authenticator", &self.authenticator)
@@ -121,6 +204,7 @@ impl std::fmt::Debug for Registered {
                 "vault_backup",
                 &self.vault_backup.as_ref().map(|_| "<redacted>"),
             )
+            .field("attachments", &self.attachments)
             .finish()
     }
 }
@@ -146,9 +230,6 @@ pub enum RegistrationPlan {
 pub struct ApprovalOutcome {
     /// Whether the authenticator was registered.
     pub result: ApprovalResult,
-    /// Whether the vault was left out because it exceeds [`MAX_VAULT_SIZE`](super::MAX_VAULT_SIZE).
-    /// The host must tell the user that the vault was not shared.
-    pub vault_omitted: bool,
     /// Whether the response was delivered.
     pub delivered: bool,
 }

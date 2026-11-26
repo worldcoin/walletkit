@@ -9969,8 +9969,7 @@ dependencies = [
 [[package]]
 name = "world-id-authenticator"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fdfa757c5770fad015442fb548205cddbc44e347cda538c39482d72edb2efd9"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=3fb49205bd05349634a3a1a6a8fcf4deedaf34d2#3fb49205bd05349634a3a1a6a8fcf4deedaf34d2"
 dependencies = [
  "aes-gcm",
  "alloy",
@@ -10015,8 +10014,7 @@ dependencies = [
 [[package]]
 name = "world-id-core"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e311d8d1c57097e82df60736eef14b4d4e5c78c99954941f890b242935fa201"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=3fb49205bd05349634a3a1a6a8fcf4deedaf34d2#3fb49205bd05349634a3a1a6a8fcf4deedaf34d2"
 dependencies = [
  "taceo-eddsa-babyjubjub",
  "world-id-authenticator",
@@ -10028,8 +10026,7 @@ dependencies = [
 [[package]]
 name = "world-id-flamingo"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8f3482849aa4ab8e6728366b16591af965b07ffaa61b27fc082e74a2045d66a"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=3fb49205bd05349634a3a1a6a8fcf4deedaf34d2#3fb49205bd05349634a3a1a6a8fcf4deedaf34d2"
 dependencies = [
  "base64 0.22.1",
  "coset",
@@ -10047,8 +10044,7 @@ dependencies = [
 [[package]]
 name = "world-id-primitives"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e312b40c415f16e4802db3fe203f5097b9ce1e46b68d7c712901b4392573ab57"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=3fb49205bd05349634a3a1a6a8fcf4deedaf34d2#3fb49205bd05349634a3a1a6a8fcf4deedaf34d2"
 dependencies = [
  "alloy",
  "alloy-primitives",
@@ -10087,8 +10083,7 @@ dependencies = [
 [[package]]
 name = "world-id-proof"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07713e21292f8fe6e9c1658d75bca21885e0e8120c22b12acfd56c74dfce4861"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=3fb49205bd05349634a3a1a6a8fcf4deedaf34d2#3fb49205bd05349634a3a1a6a8fcf4deedaf34d2"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -10129,8 +10124,7 @@ dependencies = [
 [[package]]
 name = "world-id-registries"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "abe0cea63b2fa06e41523396934e6dcbd40d9fcb88c4017215c477a8fef25589"
+source = "git+https://github.com/worldcoin/world-id-protocol?rev=3fb49205bd05349634a3a1a6a8fcf4deedaf34d2#3fb49205bd05349634a3a1a6a8fcf4deedaf34d2"
 dependencies = [
  "alloy",
  "anyhow",

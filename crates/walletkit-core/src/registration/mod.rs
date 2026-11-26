@@ -12,6 +12,16 @@
 //! Every outcome is answered to the Requesting Authenticator, which verifies a successful result
 //! with [`RegistrationRequester::verify`].
 //!
+//! The approval carries what the user chose to transfer, as a [`CredentialTransfer`]: a vault
+//! exported for the selected issuer schemas, and [`RegistrationAttachment`]s, which `WalletKit`
+//! never interprets. The Requesting Authenticator may declare the issuer schemas and the
+//! attachment kinds it supports. The host should offer only credentials of those issuer schemas.
+//! Attachments of other kinds are rejected when approving and ignored when received.
+//!
+//! [`CheckedRegistration::approve`] returns [`ApproverError::TransferTooLarge`] or
+//! [`ApproverError::UnsupportedAttachment`] before submission for a transfer that cannot be
+//! sent. The session stays open for an explicit retry or abort; nothing is silently omitted.
+//!
 //! The wire format and cryptography come from [`world_id_core::registration`].
 //!
 //! # Blocking key derivation
@@ -38,21 +48,32 @@ pub use bridge::BridgeClient;
 pub use errors::{ApproverError, BridgeError, RegistrationError, RequesterError};
 pub use requester::RegistrationRequester;
 pub use types::{
-    ApprovalOutcome, ApprovalResult, Registered, RegistrationPlan, RegistrationResult,
-    RequestedClass, RequesterStatus,
+    ApprovalOutcome, ApprovalResult, CredentialTransfer, Registered,
+    RegistrationAttachment, RegistrationPlan, RegistrationResult, RequestedClass,
+    RequesterStatus,
 };
 pub use world_id_core::registration::{
     AuthenticatorName, BridgeDomain, KnownAuthenticator, PairingCode, PairingUri,
     RegistrationErrorData, RegistrationErrorReason, RegistrationRequest,
-    TransportError, MAX_NAME_LEN, MAX_VAULT_SIZE,
+    TransportError, MAX_NAME_LEN, MAX_TRANSFER_SIZE,
 };
 
-/// The format of the shared vault: a `CredentialStore::export_vault_for_backup` export.
+/// The format of the shared vault: a `CredentialStore::export_vault_for_issuer_schemas` export.
 const PLAINTEXT_VAULT_FORMAT: &str = "walletkit_plaintext_v1";
 
 /// The message-bridge session lifetime, from which both sides estimate the session expiry
 /// (WIP-109 §3.5).
 const SESSION_TTL: Duration = Duration::from_mins(15);
+
+/// Returns the largest transfer of a registration in bytes ([`MAX_TRANSFER_SIZE`]).
+///
+/// The vault and every attachment count together. `CheckedRegistration::approve` refuses a
+/// larger transfer with `ApproverError::TransferTooLarge`.
+#[uniffi::export]
+#[must_use]
+pub const fn registration_max_transfer_size() -> u64 {
+    MAX_TRANSFER_SIZE as u64
+}
 
 /// The name of one of the account's other authenticators.
 #[uniffi::remote(Record)]

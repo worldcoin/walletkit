@@ -5,7 +5,8 @@
 //! 1. [`PendingRegistration::receive`] takes the encrypted request before code entry.
 //! 2. [`PendingRegistration::authenticate`] decrypts and validates it with the entered code.
 //! 3. [`IncomingRegistration::check`] reads the account state and plans the registration.
-//! 4. After the consent screen and the platform's user verification, the host calls
+//! 4. After the consent screen, where the user selects the credentials to transfer, and the
+//!    platform's user verification, the host calls
 //!    [`CheckedRegistration::approve`], or declines with [`CheckedRegistration::reject`] or
 //!    [`CheckedRegistration::abort`].
 //!
@@ -32,10 +33,10 @@ use world_id_core::{
         },
     },
     registration::{
-        EncryptedPayload, KnownAuthenticator, PairingCode, PairingUri,
+        Attachment, EncryptedPayload, KnownAuthenticator, PairingCode, PairingUri,
         RegistrationDigest, RegistrationErrorData, RegistrationErrorReason,
         RegistrationRequest, RegistrationResult, RequestId, ResponsePublicKey,
-        TransportError, TransportKey, Vault, MAX_VAULT_SIZE, REGISTER_METHOD,
+        TransportError, TransportKey, Vault, MAX_TRANSFER_SIZE, REGISTER_METHOD,
     },
     AccountAuthenticators, AuthenticatorError,
 };
@@ -48,7 +49,7 @@ use super::{
     log_tag, polling_backoff, sleep,
     types::{
         onchain_address, requested_name, ApprovalOutcome, ApprovalResult,
-        RegistrationPlan, RequestedClass,
+        CredentialTransfer, RegistrationPlan, RequestedClass,
     },
     PLAINTEXT_VAULT_FORMAT, SESSION_TTL,
 };
@@ -57,8 +58,8 @@ use crate::Authenticator;
 /// The largest encoded request (WIP-109 §3.5).
 const MAX_REQUEST_SIZE: usize = 4 * 1024;
 
-/// The largest encoded response: a full vault plus 4 KiB for the other fields (WIP-109 §3.5).
-const MAX_RESPONSE_SIZE: usize = MAX_VAULT_SIZE + 4 * 1024;
+/// The largest encoded response: a full transfer plus 4 KiB for the other fields (WIP-109 §3.5).
+const MAX_RESPONSE_SIZE: usize = MAX_TRANSFER_SIZE + 4 * 1024;
 
 /// How many times the user may enter the pairing code (WIP-109 §3.7.1 step 3).
 const MAX_CODE_ATTEMPTS: u8 = 3;
@@ -264,6 +265,28 @@ impl IncomingRegistration {
         requested_name(&self.request)
     }
 
+    /// Returns the issuer schemas the new authenticator declares it supports, or `None` if it
+    /// declares none. The list is self-reported. If it is present, offer the user only
+    /// credentials of these issuer schemas to transfer.
+    #[must_use]
+    pub fn supported_issuer_schema_ids(&self) -> Option<Vec<u64>> {
+        self.request
+            .supported_issuer_schema_ids
+            .as_ref()
+            .map(|ids| ids.iter().copied().collect())
+    }
+
+    /// Returns the attachment kinds the new authenticator declares it can handle, or `None` if
+    /// it declares none. The list is self-reported. Only attachments of these kinds can be
+    /// sent; without a list, none can.
+    #[must_use]
+    pub fn supported_attachment_kinds(&self) -> Option<Vec<String>> {
+        self.request
+            .supported_attachment_kinds
+            .as_ref()
+            .map(|kinds| kinds.iter().cloned().collect())
+    }
+
     /// Returns how many seconds are left until the response is due.
     #[must_use]
     pub fn time_remaining_secs(&self) -> u64 {
@@ -403,6 +426,28 @@ impl CheckedRegistration {
         requested_name(&self.request)
     }
 
+    /// Returns the issuer schemas the new authenticator declares it supports, or `None` if it
+    /// declares none. The list is self-reported. If it is present, offer the user only
+    /// credentials of these issuer schemas to transfer.
+    #[must_use]
+    pub fn supported_issuer_schema_ids(&self) -> Option<Vec<u64>> {
+        self.request
+            .supported_issuer_schema_ids
+            .as_ref()
+            .map(|ids| ids.iter().copied().collect())
+    }
+
+    /// Returns the attachment kinds the new authenticator declares it can handle, or `None` if
+    /// it declares none. The list is self-reported. Only attachments of these kinds can be
+    /// sent; without a list, none can.
+    #[must_use]
+    pub fn supported_attachment_kinds(&self) -> Option<Vec<String>> {
+        self.request
+            .supported_attachment_kinds
+            .as_ref()
+            .map(|kinds| kinds.iter().cloned().collect())
+    }
+
     /// Returns how the registration will be carried out.
     #[must_use]
     pub const fn plan(&self) -> RegistrationPlan {
@@ -440,10 +485,21 @@ impl CheckedRegistration {
     /// Carries out the registration and sends the response (WIP-109 §3.7.4 and §3.7.5).
     ///
     /// Call it only after the user consented and the platform's user verification succeeded,
-    /// also for an authenticator that is already registered (WIP-109 §3.7.3). `vault` is the
-    /// `CredentialStore::export_vault_for_backup` output, only if the user chose to share it; a
-    /// vault over [`MAX_VAULT_SIZE`] is left out. `authenticators` names the account's other
-    /// authenticators.
+    /// also for an authenticator that is already registered (WIP-109 §3.7.3). `authenticators`
+    /// names the account's other authenticators.
+    ///
+    /// `transfer` holds what the user chose to transfer. Its vault is the
+    /// `CredentialStore::export_vault_for_issuer_schemas` output for the selected issuer
+    /// schemas, or `None` if the user selected no credentials. Its attachments are data to
+    /// transfer outside the vault, each of a kind in
+    /// [`supported_attachment_kinds`](Self::supported_attachment_kinds). Attachments not tied
+    /// to a credential may be sent without a vault.
+    ///
+    /// The vault and attachments are opaque here, so the host is responsible for what this
+    /// cannot check: that the vault holds only credentials of the issuer schemas in
+    /// [`supported_issuer_schema_ids`](Self::supported_issuer_schema_ids), if the request
+    /// declares them, and that an attachment tied to a credential is sent only if that
+    /// credential is in the vault.
     ///
     /// Unless the authenticator is already registered, this submits `InsertAuthenticator` and
     /// tracks it until it is final on-chain or definitively failed. An insertion is never
@@ -456,13 +512,27 @@ impl CheckedRegistration {
     /// Returns [`ApproverError::ApproverMismatch`] if `approver` is not the authenticator that
     /// [`IncomingRegistration::check`] checked, or [`ApproverError::AlreadyHandled`] if the
     /// registration was already decided.
+    ///
+    /// Two errors are returned before anything is submitted or sent, and leave the session
+    /// open, so that the host may retry with another selection or explicitly abort:
+    /// [`ApproverError::UnsupportedAttachment`] for an attachment whose kind the request does
+    /// not list as supported, and [`ApproverError::TransferTooLarge`] if the vault and
+    /// attachments together exceed [`MAX_TRANSFER_SIZE`] or the whole response, with the
+    /// authenticator names and attachment kinds, exceeds the response limit. A response that
+    /// cannot be encoded for another reason returns [`ApproverError::InvalidResponse`], with
+    /// the session left open as well.
     pub async fn approve(
         &self,
         approver: &Authenticator,
-        vault: Option<Vec<u8>>,
+        transfer: CredentialTransfer,
         authenticators: Vec<KnownAuthenticator>,
     ) -> Result<ApprovalOutcome, ApproverError> {
-        let vault = vault.map(Zeroizing::new);
+        let vault = transfer.vault.map(|data| Vault {
+            format: PLAINTEXT_VAULT_FORMAT.to_string(),
+            data: Zeroizing::new(data),
+        });
+        let attachments: Vec<Attachment> =
+            transfer.attachments.into_iter().map(Into::into).collect();
         let core = &approver.inner;
 
         if core.leaf_index() != self.approver_leaf_index
@@ -472,23 +542,20 @@ impl CheckedRegistration {
             return Err(ApproverError::ApproverMismatch);
         }
 
-        let channel = take(&self.channel)?;
-        let vault_omitted = vault
-            .as_ref()
-            .is_some_and(|data| data.len() > MAX_VAULT_SIZE);
+        self.check_attachment_kinds(&attachments)?;
         let mut result = RegistrationResult {
             leaf_index: self.approver_leaf_index,
             // Every valid slot encodes to the same single CBOR byte, so checking the size with
             // this placeholder holds for the slot that registration assigns.
             pubkey_id: 0,
             authenticators,
-            vault: vault.filter(|_| !vault_omitted).map(|data| Vault {
-                format: PLAINTEXT_VAULT_FORMAT.to_string(),
-                data,
-            }),
+            vault,
+            attachments,
         };
+        self.check_response_size(&result)?;
+        let channel = take(&self.channel)?;
 
-        let registered = self.register(approver, &channel, &result).await;
+        let registered = self.register(approver, &channel).await;
         let delivered = match &registered {
             Ok(pubkey_id) => {
                 result.pubkey_id = *pubkey_id;
@@ -516,7 +583,6 @@ impl CheckedRegistration {
                     reason: refusal.reason,
                 },
             },
-            vault_omitted,
             delivered,
         })
     }
@@ -539,26 +605,73 @@ impl CheckedRegistration {
         Ok(channel.answer(Err(reason.into_error(None))).await)
     }
 
+    /// Checks that the request lists the kind of every attachment as supported.
+    fn check_attachment_kinds(
+        &self,
+        attachments: &[Attachment],
+    ) -> Result<(), ApproverError> {
+        let supported = self.request.supported_attachment_kinds.as_ref();
+        attachments
+            .iter()
+            .find(|attachment| {
+                !supported.is_some_and(|kinds| kinds.contains(&attachment.kind))
+            })
+            .map_or(Ok(()), |unsupported| {
+                Err(ApproverError::UnsupportedAttachment {
+                    kind: unsupported.kind.clone(),
+                })
+            })
+    }
+
+    /// Checks that `result` fits in a response: its vault and attachments within
+    /// [`MAX_TRANSFER_SIZE`], and the whole encoded response within the response limit.
+    ///
+    /// Checked before submitting, so that an oversized response cannot leave a registered
+    /// authenticator that never learns its result.
+    fn check_response_size(
+        &self,
+        result: &RegistrationResult,
+    ) -> Result<(), ApproverError> {
+        let message_id = self
+            .channel
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .ok_or(ApproverError::AlreadyHandled)?
+            .request_id
+            .message_id();
+        let vault = result.vault.iter().map(|vault| vault.data.len());
+        let attachments = result
+            .attachments
+            .iter()
+            .map(|attachment| attachment.data.len());
+        let transfer_fits = vault
+            .chain(attachments)
+            .try_fold(0_usize, usize::checked_add)
+            .is_some_and(|size| size <= MAX_TRANSFER_SIZE);
+        if !transfer_fits {
+            return Err(ApproverError::TransferTooLarge);
+        }
+
+        let response: Response<_, RegistrationErrorData> =
+            Response::success(message_id, result);
+        let encoded = response.encode().map(Zeroizing::new).map_err(|error| {
+            ApproverError::InvalidResponse {
+                problem: error.to_string(),
+            }
+        })?;
+        if encoded.len() > MAX_RESPONSE_SIZE {
+            return Err(ApproverError::TransferTooLarge);
+        }
+        Ok(())
+    }
+
     /// Registers the authenticator as planned and returns its slot.
     async fn register(
         &self,
         approver: &Authenticator,
         channel: &ResponseChannel,
-        result: &RegistrationResult,
     ) -> Result<u32, Refusal> {
-        // Checked before submitting, so that an oversized response cannot leave a registered
-        // authenticator that never learns its result.
-        let response: Response<_, RegistrationErrorData> =
-            Response::success(channel.request_id.message_id(), result);
-        if !response
-            .encode()
-            .map(Zeroizing::new)
-            .is_ok_and(|encoded| encoded.len() <= MAX_RESPONSE_SIZE)
-        {
-            return Err(Refusal::from(RegistrationErrorReason::InternalError)
-                .with_detail("the approval exceeds the response size limit"));
-        }
-
         match self.plan {
             RegistrationPlan::AlreadyRegistered { pubkey_id } => Ok(pubkey_id),
             RegistrationPlan::Insert { .. }
@@ -825,11 +938,10 @@ fn parse_request(
     let invalid_params = |problem: &dyn Display| {
         invalid(RegistrationErrorReason::InvalidParams, problem)
     };
-    let params = envelope
-        .params
-        .as_ref()
-        .ok_or_else(|| invalid_params(&"missing params"))?;
-    let request = RegistrationRequest::from_params(params)
+    if envelope.params.is_none() {
+        return Err(invalid_params(&"missing params"));
+    }
+    let request = RegistrationRequest::decode(plaintext)
         .map_err(|error| invalid_params(&error))?;
     let digest = request
         .digest(request_id)
@@ -1049,13 +1161,16 @@ fn secs_until(deadline: Instant) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use axum::{
+        extract::State,
         http::StatusCode,
         routing::{get, post, put},
         Json, Router,
     };
     use secrecy::ExposeSecret as _;
-    use serde_json::Value;
+    use serde_json::{json, Value};
     use test_case::test_case;
     use tokio::net::TcpListener;
     use world_id_core::{
@@ -1067,9 +1182,14 @@ mod tests {
     };
 
     use super::*;
-    use crate::storage::{
-        tests_utils::{temp_root_path, InMemoryStorageProvider},
-        CredentialStore,
+    use crate::{
+        registration::{
+            RegistrationAttachment, RegistrationRequester, RequesterStatus,
+        },
+        storage::{
+            tests_utils::{temp_root_path, InMemoryStorageProvider},
+            CredentialStore,
+        },
     };
 
     #[test_case(Some(&GatewayErrorCode::TransactionReverted), true => RegistrationErrorReason::OperationFailed; "a revert is definitive")]
@@ -1094,6 +1214,12 @@ mod tests {
 
     async fn make_pending_registration() -> (Arc<PendingRegistration>, String, [u8; 32])
     {
+        make_pending_registration_handling(Some(vec![KIND.to_string()])).await
+    }
+
+    async fn make_pending_registration_handling(
+        supported_attachment_kinds: Option<Vec<String>>,
+    ) -> (Arc<PendingRegistration>, String, [u8; 32]) {
         let requester_seed = [11u8; 32];
         let signer = Signer::from_seed_bytes(&requester_seed).unwrap();
         let pairing_secret = PairingSecret::generate().unwrap();
@@ -1106,6 +1232,8 @@ mod tests {
             None,
             response_key.public_key(),
             None,
+            None,
+            supported_attachment_kinds.map(|kinds| kinds.into_iter().collect()),
             &request_id,
         )
         .unwrap();
@@ -1142,60 +1270,181 @@ mod tests {
         (Arc::new(pending), code.as_str().to_string(), requester_seed)
     }
 
-    async fn make_authenticator_at_url(
-        seed: [u8; 32],
-        leaf_index: u64,
-        service_url: String,
-    ) -> Authenticator {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let config = Config::new(
+    fn test_config(service_url: &str) -> Config {
+        Config::new(
             None,
             480,
             Address::with_last_byte(1),
-            ServiceEndpoint::direct(service_url.clone()),
-            ServiceEndpoint::direct(service_url),
+            ServiceEndpoint::direct(service_url.to_string()),
+            ServiceEndpoint::direct(service_url.to_string()),
             Vec::new(),
             0,
         )
-        .unwrap();
+        .unwrap()
+    }
+
+    fn test_store() -> Arc<CredentialStore> {
         let root = temp_root_path();
         let provider = InMemoryStorageProvider::new(&root);
         let store = Arc::new(CredentialStore::from_provider(&provider).unwrap());
-        let authenticator = Authenticator::init_with_leaf_index_and_config(
+        let _ = std::fs::remove_dir_all(root);
+        store
+    }
+
+    async fn make_authenticator_at_url(
+        seed: [u8; 32],
+        leaf_index: u64,
+        service_url: &str,
+    ) -> Authenticator {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        Authenticator::init_with_leaf_index_and_config(
             &seed,
             leaf_index,
-            config,
+            test_config(service_url),
             Arc::new(DummyZkArtifactSource),
-            store,
+            test_store(),
         )
         .await
+        .unwrap()
+    }
+
+    /// An indexer for an account whose slots hold the authenticators derived from `seeds`: an
+    /// Admin Authenticator first, then Proving Authenticators.
+    fn account_indexer(seeds: &[[u8; 32]]) -> Router {
+        let signers: Vec<Signer> = seeds
+            .iter()
+            .map(|seed| Signer::from_seed_bytes(seed).unwrap())
+            .collect();
+        let pubkeys: Vec<_> =
+            signers.iter().map(Signer::offchain_signer_pubkey).collect();
+        let account = serde_json::to_value(IndexerAuthenticatorsResponse {
+            authenticator_pubkeys: pubkeys
+                .iter()
+                .map(|pubkey| Some(pubkey.to_ethereum_representation().unwrap()))
+                .collect(),
+            authenticator_addresses: std::iter::once(
+                signers[0].onchain_signer_address(),
+            )
+            .chain(std::iter::repeat(Address::ZERO))
+            .take(signers.len())
+            .map(Some)
+            .collect(),
+            offchain_signer_commitment: AuthenticatorPublicKeySet::new(pubkeys)
+                .unwrap()
+                .leaf_hash()
+                .into(),
+            recovery_counter: 0,
+        })
         .unwrap();
-        let _ = std::fs::remove_dir_all(root);
-        authenticator
+
+        Router::new().route(
+            "/authenticators",
+            post(move || {
+                let account = account.clone();
+                async move { Json(account) }
+            }),
+        )
     }
 
     async fn make_test_authenticator(seed: [u8; 32], leaf_index: u64) -> Authenticator {
-        let signer = Signer::from_seed_bytes(&seed).unwrap();
-        let pubkey = signer.offchain_signer_pubkey();
-        let encoded = pubkey.to_ethereum_representation().unwrap();
-        let commitment = AuthenticatorPublicKeySet::new(vec![pubkey])
-            .unwrap()
-            .leaf_hash()
-            .into();
-        let address = signer.onchain_signer_address();
-        let indexer_url = serve(Router::new().route(
-            "/authenticators",
-            post(move || async move {
-                Json(IndexerAuthenticatorsResponse {
-                    authenticator_pubkeys: vec![Some(encoded)],
-                    authenticator_addresses: vec![Some(address)],
-                    offchain_signer_commitment: commitment,
-                    recovery_counter: 0,
-                })
+        let indexer_url = serve(account_indexer(&[seed])).await;
+        make_authenticator_at_url(seed, leaf_index, &indexer_url).await
+    }
+
+    fn insertions_counted_by(submissions: Arc<AtomicUsize>) -> Router {
+        Router::new().route(
+            "/insert-authenticator",
+            post(move || {
+                let submissions = submissions.clone();
+                async move {
+                    submissions.fetch_add(1, Ordering::SeqCst);
+                    StatusCode::SERVICE_UNAVAILABLE
+                }
             }),
-        ))
-        .await;
-        make_authenticator_at_url(seed, leaf_index, indexer_url).await
+        )
+    }
+
+    /// The attachment kind that test requests declare.
+    const KIND: &str = "pcp_v1";
+
+    fn attachment(kind: &str, data: Vec<u8>) -> RegistrationAttachment {
+        RegistrationAttachment {
+            kind: kind.to_string(),
+            data,
+        }
+    }
+
+    fn vault_only(vault: Vec<u8>) -> CredentialTransfer {
+        CredentialTransfer {
+            vault: Some(vault),
+            attachments: Vec::new(),
+        }
+    }
+
+    /// A transfer of `size` bytes, split between the vault and one attachment.
+    fn transfer_of(size: usize) -> CredentialTransfer {
+        CredentialTransfer {
+            vault: Some(vec![0x42; size - size / 4]),
+            attachments: vec![attachment(KIND, vec![0x43; size / 4])],
+        }
+    }
+
+    #[derive(Default)]
+    struct BridgeSession {
+        request: Option<Value>,
+        taken: bool,
+        response: Option<Value>,
+    }
+
+    /// A message-bridge that holds one session.
+    fn mock_bridge() -> Router {
+        type Session = State<Arc<Mutex<BridgeSession>>>;
+
+        Router::new()
+            .route(
+                "/request",
+                post(
+                    |State(session): Session, Json(mut body): Json<Value>| async move {
+                        body.as_object_mut().unwrap().remove("request_id");
+                        session.lock().unwrap().request = Some(body);
+                        StatusCode::OK
+                    },
+                ),
+            )
+            .route(
+                "/request/{id}",
+                get(|State(session): Session| async move {
+                    let mut session = session.lock().unwrap();
+                    session.taken = true;
+                    session
+                        .request
+                        .take()
+                        .map(Json)
+                        .ok_or(StatusCode::NOT_FOUND)
+                }),
+            )
+            .route(
+                "/response/{id}",
+                put(
+                    |State(session): Session, Json(body): Json<Value>| async move {
+                        session.lock().unwrap().response = Some(body);
+                        StatusCode::CREATED
+                    },
+                )
+                .get(|State(session): Session| async move {
+                    let mut session = session.lock().unwrap();
+                    Json(match session.response.take() {
+                        Some(response) => {
+                            json!({ "status": "completed", "response": response })
+                        }
+                        None if session.taken => {
+                            json!({ "status": "retrieved", "response": null })
+                        }
+                        None => json!({ "status": "initialized", "response": null }),
+                    })
+                }),
+            )
+            .with_state(Arc::default())
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1236,13 +1485,248 @@ mod tests {
         let checked = incoming.check(&approver_a).await.unwrap();
         assert!(!format!("{checked:?}").contains(&request_id));
         let err = checked
-            .approve(&approver_b, Some(vec![1, 2, 3]), Vec::new())
+            .approve(&approver_b, vault_only(vec![1, 2, 3]), Vec::new())
             .await
             .unwrap_err();
         assert!(matches!(err, ApproverError::ApproverMismatch), "{err:?}");
 
         // Channel was not consumed by the rejected call, so declining still delivers.
         assert!(checked.reject().await.unwrap());
+    }
+
+    #[test_case(false, transfer_of(MAX_TRANSFER_SIZE + 1), Vec::new() ; "new insertion")]
+    #[test_case(true, transfer_of(MAX_TRANSFER_SIZE + 1), Vec::new() ; "already registered")]
+    #[test_case(false, transfer_of(MAX_TRANSFER_SIZE), long_names() ; "response over its limit")]
+    #[tokio::test]
+    async fn oversized_transfer_is_rejected_without_consuming_the_session(
+        already_registered: bool,
+        transfer: CredentialTransfer,
+        authenticators: Vec<KnownAuthenticator>,
+    ) {
+        let (pending, code, _) = make_pending_registration().await;
+        let incoming = pending.authenticate(&code).await.unwrap();
+        let seed = [21; 32];
+        let submissions = Arc::new(AtomicUsize::new(0));
+        let service_url = serve(
+            account_indexer(&[seed]).merge(insertions_counted_by(submissions.clone())),
+        )
+        .await;
+        let approver = make_authenticator_at_url(seed, 1, &service_url).await;
+        let mut checked =
+            Arc::try_unwrap(incoming.check(&approver).await.unwrap()).unwrap();
+        assert!(matches!(checked.plan, RegistrationPlan::Insert { .. }));
+        if already_registered {
+            checked.plan = RegistrationPlan::AlreadyRegistered { pubkey_id: 1 };
+        }
+
+        let err = checked
+            .approve(&approver, transfer, authenticators)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ApproverError::TransferTooLarge));
+        assert_eq!(
+            err.to_string(),
+            "the vault and attachments exceed the registration transfer size limit"
+        );
+        assert_eq!(submissions.load(Ordering::SeqCst), 0);
+        assert!(checked.abort().await.unwrap());
+        assert!(matches!(
+            checked.abort().await,
+            Err(ApproverError::AlreadyHandled)
+        ));
+    }
+
+    #[tokio::test]
+    async fn unencodable_response_is_rejected_without_consuming_the_session() {
+        let (pending, code, _) = make_pending_registration().await;
+        let incoming = pending.authenticate(&code).await.unwrap();
+        let seed = [21; 32];
+        let submissions = Arc::new(AtomicUsize::new(0));
+        let service_url = serve(
+            account_indexer(&[seed]).merge(insertions_counted_by(submissions.clone())),
+        )
+        .await;
+        let approver = make_authenticator_at_url(seed, 1, &service_url).await;
+        let checked = incoming.check(&approver).await.unwrap();
+        let out_of_range = vec![KnownAuthenticator {
+            pubkey_id: u32::MAX,
+            name: "phone".to_string(),
+        }];
+
+        let err = checked
+            .approve(&approver, CredentialTransfer::default(), out_of_range)
+            .await
+            .unwrap_err();
+
+        assert!(
+            matches!(&err, ApproverError::InvalidResponse { problem } if problem.contains("pubkey_id out of range")),
+            "{err:?}"
+        );
+        assert_eq!(submissions.load(Ordering::SeqCst), 0);
+        assert!(checked.abort().await.unwrap());
+    }
+
+    /// Authenticator names that take more than the 4 KiB a response has beyond its transfer.
+    fn long_names() -> Vec<KnownAuthenticator> {
+        vec![KnownAuthenticator {
+            pubkey_id: 0,
+            name: "n".repeat(8 * 1024),
+        }]
+    }
+
+    #[test_case(CredentialTransfer::default() ; "nothing")]
+    #[test_case(transfer_of(MAX_TRANSFER_SIZE) ; "exact size limit")]
+    #[tokio::test]
+    async fn supported_transfer_sizes_can_be_approved_after_an_oversize_error(
+        transfer: CredentialTransfer,
+    ) {
+        let (pending, code, _) = make_pending_registration().await;
+        let incoming = pending.authenticate(&code).await.unwrap();
+        let approver = make_test_authenticator([21; 32], 1).await;
+        let mut checked =
+            Arc::try_unwrap(incoming.check(&approver).await.unwrap()).unwrap();
+        checked.plan = RegistrationPlan::AlreadyRegistered { pubkey_id: 1 };
+        assert!(matches!(
+            checked
+                .approve(&approver, transfer_of(MAX_TRANSFER_SIZE + 1), Vec::new())
+                .await,
+            Err(ApproverError::TransferTooLarge)
+        ));
+
+        let outcome = checked
+            .approve(&approver, transfer, Vec::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            outcome.result,
+            ApprovalResult::Registered {
+                leaf_index: 1,
+                pubkey_id: 1
+            }
+        );
+        assert!(outcome.delivered);
+        assert!(matches!(
+            checked.abort().await,
+            Err(ApproverError::AlreadyHandled)
+        ));
+    }
+
+    #[test_case(Some(vec![KIND.to_string()]) ; "kind not in the list")]
+    #[test_case(None ; "no list")]
+    #[tokio::test]
+    async fn attachment_of_an_undeclared_kind_is_rejected_without_consuming_the_session(
+        supported_attachment_kinds: Option<Vec<String>>,
+    ) {
+        let (pending, code, _) =
+            make_pending_registration_handling(supported_attachment_kinds).await;
+        let incoming = pending.authenticate(&code).await.unwrap();
+        let seed = [21; 32];
+        let submissions = Arc::new(AtomicUsize::new(0));
+        let service_url = serve(
+            account_indexer(&[seed]).merge(insertions_counted_by(submissions.clone())),
+        )
+        .await;
+        let approver = make_authenticator_at_url(seed, 1, &service_url).await;
+        let checked = incoming.check(&approver).await.unwrap();
+        assert!(matches!(checked.plan(), RegistrationPlan::Insert { .. }));
+
+        let transfer = CredentialTransfer {
+            vault: Some(vec![1, 2, 3]),
+            attachments: vec![attachment("other_v1", vec![5])],
+        };
+        let err = checked
+            .approve(&approver, transfer, Vec::new())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                ApproverError::UnsupportedAttachment { kind } if kind == "other_v1"
+            ),
+            "{err:?}"
+        );
+        assert_eq!(submissions.load(Ordering::SeqCst), 0);
+        assert!(checked.reject().await.unwrap());
+    }
+
+    #[test_case(Some(b"selected credentials".to_vec()) ; "with a vault")]
+    #[test_case(None ; "without a vault")]
+    #[tokio::test]
+    async fn transfer_reaches_the_verified_requester(vault: Option<Vec<u8>>) {
+        let (approver_seed, requester_seed) = ([23u8; 32], [24u8; 32]);
+        let kinds = vec!["other_v2".to_string(), KIND.to_string()];
+        let bridge_url = serve(mock_bridge()).await;
+        let bridge = Arc::new(
+            BridgeClient::with_base_url("bridge.example", &bridge_url).unwrap(),
+        );
+        let requester = RegistrationRequester::start(
+            requester_seed.to_vec(),
+            RequestedClass::Proving,
+            None,
+            Some(vec![7, 9]),
+            Some(kinds.clone()),
+            bridge.clone(),
+        )
+        .await
+        .unwrap();
+
+        let uri = requester.pairing_uri().unwrap();
+        let pending = PendingRegistration::receive(&uri, vec![bridge])
+            .await
+            .unwrap();
+        assert_eq!(requester.poll().await.unwrap(), RequesterStatus::Retrieved);
+        let code = requester.pairing_code().unwrap();
+        let incoming = pending.authenticate(&code).await.unwrap();
+        assert_eq!(incoming.supported_issuer_schema_ids(), Some(vec![7, 9]));
+        assert_eq!(incoming.supported_attachment_kinds(), Some(kinds.clone()));
+
+        // The account already holds the requester's key, so approving only sends the result.
+        let service_url =
+            serve(account_indexer(&[approver_seed, requester_seed])).await;
+        let approver = make_authenticator_at_url(approver_seed, 1, &service_url).await;
+        let checked = incoming.check(&approver).await.unwrap();
+        assert_eq!(
+            checked.plan(),
+            RegistrationPlan::AlreadyRegistered { pubkey_id: 1 }
+        );
+        assert_eq!(checked.supported_issuer_schema_ids(), Some(vec![7, 9]));
+        assert_eq!(checked.supported_attachment_kinds(), Some(kinds));
+
+        let attachments = vec![
+            attachment(KIND, b"custody package".to_vec()),
+            attachment("other_v2", Vec::new()),
+        ];
+        let transfer = CredentialTransfer {
+            vault: vault.clone(),
+            attachments: attachments.clone(),
+        };
+        let debug = format!("{transfer:?}");
+        assert!(!debug.contains(&format!("{:?}", b"selected credentials")));
+        assert!(!debug.contains(&format!("{:?}", b"custody package")));
+        let outcome = checked
+            .approve(&approver, transfer, Vec::new())
+            .await
+            .unwrap();
+        assert!(outcome.delivered);
+
+        let RequesterStatus::Approved { result } = requester.poll().await.unwrap()
+        else {
+            panic!("the registration was not approved");
+        };
+        assert_eq!(result.has_vault(), vault.is_some());
+        assert_eq!(result.attachment_count(), 2);
+        let registered = requester
+            .verify_with_config(
+                &requester_seed,
+                &result,
+                test_config(&service_url),
+                Arc::new(DummyZkArtifactSource),
+                test_store(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(registered.vault_backup, vault);
+        assert_eq!(registered.attachments, attachments);
     }
 
     fn make_account(
@@ -1289,6 +1773,8 @@ mod tests {
                 signer.offchain_signer_private_key().expose_secret(),
                 addr,
                 ResponseSecretKey::generate().unwrap().public_key(),
+                None,
+                None,
                 None,
                 &request_id,
             )
@@ -1352,79 +1838,25 @@ mod tests {
         let incoming = pending.authenticate(&code).await.unwrap();
 
         let seed = [61u8; 32];
-        let signer = Signer::from_seed_bytes(&seed).unwrap();
-        let pubkey = signer.offchain_signer_pubkey();
-        let encoded = pubkey.to_ethereum_representation().unwrap();
-        let commitment = AuthenticatorPublicKeySet::new(vec![pubkey])
-            .unwrap()
-            .leaf_hash()
-            .into();
-        let address = signer.onchain_signer_address();
-        let submissions = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let submissions_clone = submissions.clone();
+        let submissions = Arc::new(AtomicUsize::new(0));
         let service_url = serve(
-            Router::new()
-                .route(
-                    "/authenticators",
-                    post(move || async move {
-                        Json(IndexerAuthenticatorsResponse {
-                            authenticator_pubkeys: vec![Some(encoded)],
-                            authenticator_addresses: vec![Some(address)],
-                            offchain_signer_commitment: commitment,
-                            recovery_counter: 0,
-                        })
-                    }),
-                )
+            account_indexer(&[seed])
                 .route(
                     "/signature-nonce",
-                    post(|| async {
-                        Json(serde_json::json!({ "signature_nonce": "0x0" }))
-                    }),
+                    post(|| async { Json(json!({ "signature_nonce": "0x0" })) }),
                 )
-                .route(
-                    "/insert-authenticator",
-                    post(move || {
-                        let submissions = submissions_clone.clone();
-                        async move {
-                            submissions
-                                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                            StatusCode::SERVICE_UNAVAILABLE
-                        }
-                    }),
-                ),
+                .merge(insertions_counted_by(submissions.clone())),
         )
         .await;
-        let config = Config::new(
-            None,
-            480,
-            Address::with_last_byte(1),
-            ServiceEndpoint::direct(service_url.clone()),
-            ServiceEndpoint::direct(service_url),
-            Vec::new(),
-            0,
-        )
-        .unwrap();
-        let root = temp_root_path();
-        let provider = InMemoryStorageProvider::new(&root);
-        let store = Arc::new(CredentialStore::from_provider(&provider).unwrap());
-        let approver = Authenticator::init_with_leaf_index_and_config(
-            &seed,
-            1,
-            config,
-            Arc::new(DummyZkArtifactSource),
-            store,
-        )
-        .await
-        .unwrap();
-        let _ = std::fs::remove_dir_all(root);
+        let approver = make_authenticator_at_url(seed, 1, &service_url).await;
 
         let checked = incoming.check(&approver).await.unwrap();
         let outcome = checked
-            .approve(&approver, Some(vec![1, 2, 3]), Vec::new())
+            .approve(&approver, vault_only(vec![1, 2, 3]), Vec::new())
             .await
             .unwrap();
         assert_eq!(
-            submissions.load(std::sync::atomic::Ordering::SeqCst),
+            submissions.load(Ordering::SeqCst),
             1,
             "an ambiguous submission must never be retried"
         );
@@ -1448,6 +1880,8 @@ mod tests {
             signer.offchain_signer_private_key().expose_secret(),
             None,
             response_pk,
+            None,
+            None,
             None,
             &request_id,
         )
@@ -1498,6 +1932,8 @@ mod tests {
             None,
             ResponseSecretKey::generate().unwrap().public_key(),
             None,
+            None,
+            None,
             &request_id,
         )
         .unwrap();
@@ -1506,11 +1942,49 @@ mod tests {
         assert!(err.reply.is_some());
     }
 
+    #[test]
+    fn parse_request_rejects_a_bignum_issuer_schema_id() {
+        use world_id_core::primitives::authenticator_message::Value as Cbor;
+
+        let signer = Signer::from_seed_bytes(&[71u8; 32]).unwrap();
+        let request_id = PairingSecret::generate().unwrap().request_id();
+        let (request, digest) = RegistrationRequest::new_signed(
+            signer.offchain_signer_private_key().expose_secret(),
+            None,
+            ResponseSecretKey::generate().unwrap().public_key(),
+            None,
+            Some([1].into()),
+            None,
+            &request_id,
+        )
+        .unwrap();
+        let Cbor::Map(mut params) = Cbor::serialized(&request).unwrap() else {
+            unreachable!("params serialize as a map")
+        };
+        let ids = params
+            .iter_mut()
+            .find(|(key, _)| key.as_text() == Some("supported_issuer_schema_ids"))
+            .map(|(_, ids)| ids)
+            .unwrap();
+        *ids = Cbor::Array(vec![Cbor::Tag(2, Box::new(Cbor::Bytes(vec![1])))]);
+        let message = Request::new(
+            Some(request_id.message_id()),
+            REGISTER_METHOD,
+            Some(Cbor::Map(params)),
+        );
+
+        let err = parse_request(&message.encode().unwrap(), &request_id, &digest)
+            .unwrap_err();
+
+        assert_eq!(err.reason, RegistrationErrorReason::InvalidParams);
+        assert!(err.problem.contains("unsigned integer"), "{}", err.problem);
+        assert!(err.reply.is_some());
+    }
+
     async fn lagging_insert_service(
         seed: [u8; 32],
         requester_seed: [u8; 32],
     ) -> String {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use world_id_core::api_types::{
             GatewayRequestId, GatewayRequestKind, GatewayStatusResponse,
         };
@@ -1612,11 +2086,11 @@ mod tests {
         let incoming = pending.authenticate(&code).await.unwrap();
         let seed = [62u8; 32];
         let service_url = lagging_insert_service(seed, requester_seed).await;
-        let approver = make_authenticator_at_url(seed, 1, service_url).await;
+        let approver = make_authenticator_at_url(seed, 1, &service_url).await;
 
         let checked = incoming.check(&approver).await.unwrap();
         let outcome = checked
-            .approve(&approver, Some(vec![1, 2, 3]), Vec::new())
+            .approve(&approver, vault_only(vec![1, 2, 3]), Vec::new())
             .await
             .unwrap();
         assert_eq!(

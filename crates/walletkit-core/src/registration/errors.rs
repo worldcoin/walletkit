@@ -31,8 +31,8 @@ pub enum BridgeError {
     /// The bridge returned malformed JSON.
     #[error("invalid bridge response: {0}")]
     Json(String),
-    /// The bridge response exceeded the bridge's body limit.
-    #[error("bridge response exceeds the 5 MiB body limit")]
+    /// The bridge response exceeded the largest body this client reads.
+    #[error("bridge response exceeds the body size limit")]
     TooLarge,
     /// The operation exhausted its time budget.
     #[error("bridge operation timed out")]
@@ -188,6 +188,27 @@ pub enum ApproverError {
     /// [`IncomingRegistration::check`](super::IncomingRegistration::check) checked.
     #[error("the approver does not match the checked account")]
     ApproverMismatch,
+    /// The supplied vault and attachments together exceed
+    /// [`MAX_TRANSFER_SIZE`](super::MAX_TRANSFER_SIZE). Nothing was submitted or sent; the host
+    /// may retry with a smaller selection or abort the checked session.
+    #[error("the vault and attachments exceed the registration transfer size limit")]
+    TransferTooLarge,
+    /// The kind of a supplied attachment is not in the request's `supported_attachment_kinds`,
+    /// or the request has none. Nothing was submitted or sent; the host may retry without the
+    /// attachment or abort the checked session.
+    #[error("the request does not support attachments of kind {kind}")]
+    UnsupportedAttachment {
+        /// The kind of the offending attachment, as the host supplied it.
+        kind: String,
+    },
+    /// The response cannot be encoded for a reason other than its size, e.g. a known
+    /// authenticator's `pubkey_id` is out of range. Nothing was submitted or sent; the host may
+    /// retry with corrected input or abort the checked session.
+    #[error("the registration response cannot be encoded: {problem}")]
+    InvalidResponse {
+        /// What is wrong with the response.
+        problem: String,
+    },
     /// This step was already taken, so the registration has moved on or ended.
     #[error("this registration step was already taken")]
     AlreadyHandled,

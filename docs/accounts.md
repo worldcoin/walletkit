@@ -22,6 +22,68 @@ database key in the device keystore; for the types involved, see the
 In the browser, the app supplies the key itself; see
 [Protect the database key](web/package.md#protect-the-database-key).
 
+## Transfer credentials to a new authenticator
+
+In a WIP-109 registration, the approving device transfers credentials to the new
+authenticator, per issuer schema. It shows the user which credentials will be
+transferred and may let the user change the selection. The transfer has two
+parts:
+
+- **The vault.** `CredentialStore::export_vault_for_issuer_schemas` exports the
+  credentials of the selected issuer schemas.
+- **Attachments.** Data transferred outside the vault, such as a Personal Custody
+  Package. An attachment has a `kind` and `data`. WalletKit carries the data as
+  opaque bytes and never interprets it; the code that handles the kind produces
+  and consumes it. An attachment can be tied to a credential, or to none.
+
+The requesting device declares what it supports in `RegistrationRequester::start`:
+the issuer schemas whose credentials it can use (`supported_issuer_schema_ids`)
+and the attachment kinds it can handle (`supported_attachment_kinds`). Both are
+self-reported and optional. A device that declares no attachment kinds receives
+no attachments.
+
+On the approving device:
+
+1. Read `supported_issuer_schema_ids` and `supported_attachment_kinds` from
+   `IncomingRegistration` or `CheckedRegistration`. If the list of issuer schemas
+   is present, transfer only credentials of those issuer schemas.
+1. After the user consents, build a `CredentialTransfer` and pass it
+   to `CheckedRegistration::approve`:
+   - `vault` is the `export_vault_for_issuer_schemas` output for the selected
+     issuer schemas, or `None` if no credentials are transferred.
+   - `attachments` holds only attachments of a supported kind. Include an
+     attachment tied to a credential only if that credential is transferred.
+     Attachments tied to no credential can be sent without a vault.
+
+WalletKit doesn't parse the vault and doesn't know which attachment kinds are
+tied to a credential. The app is responsible for exporting only supported issuer
+schemas, and for sending a credential's attachments only together with that
+credential.
+
+`approve` checks the transfer before it submits `InsertAuthenticator`:
+
+- `ApproverError::UnsupportedAttachment`: the kind of an attachment isn't in the
+  request's `supported_attachment_kinds`, or the request declares none.
+- `ApproverError::TransferTooLarge`: the vault and all attachment data together
+  exceed `registration::MAX_TRANSFER_SIZE` (15 MiB).
+
+After either error, nothing was submitted or sent, and the checked session stays
+open. The app can call `approve` again with another transfer, or call `abort` to
+notify the requesting device. Nothing is ever silently omitted from a transfer.
+
+On the requesting device, `RegistrationRequester::verify` returns the transfer
+only after it confirmed the registration on-chain:
+
+1. Import `Registered::vault_backup`, if present, with
+   `CredentialStore::merge_vault_from_backup` once storage is initialized.
+1. Hand each of `Registered::attachments` to the code that handles its `kind`,
+   which must treat the data as untrusted input. WalletKit ignores received
+   attachments of a kind the device didn't declare, so only declared kinds
+   arrive here.
+
+A full transfer takes several minutes on a slow connection: the bridge client
+allows up to five minutes for sending or receiving a response.
+
 ## From registration to stored credential
 
 The following diagram shows the calls between the app, WalletKit, and the World ID
