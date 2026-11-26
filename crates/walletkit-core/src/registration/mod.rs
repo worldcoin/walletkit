@@ -65,6 +65,16 @@ const PLAINTEXT_VAULT_FORMAT: &str = "walletkit_plaintext_v1";
 /// (WIP-109 §3.5).
 const SESSION_TTL: Duration = Duration::from_mins(15);
 
+/// Returns the largest transfer of a registration in bytes ([`MAX_TRANSFER_SIZE`]).
+///
+/// The vault and every attachment count together. `CheckedRegistration::approve` refuses a
+/// larger transfer with `ApproverError::TransferTooLarge`.
+#[uniffi::export]
+#[must_use]
+pub const fn registration_max_transfer_size() -> u64 {
+    MAX_TRANSFER_SIZE as u64
+}
+
 /// The name of one of the account's other authenticators.
 #[uniffi::remote(Record)]
 pub struct KnownAuthenticator {

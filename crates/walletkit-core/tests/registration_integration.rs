@@ -28,16 +28,23 @@ use walletkit_core::{
         RegistrationPlan, RegistrationRequester, RequestedClass, RequesterStatus,
     },
     storage::CredentialStore,
-    Authenticator, Environment, Region,
+    Authenticator, Credential, Environment, Region,
 };
 use walletkit_testkit::{init_and_register_account, TestEnv};
-use world_id_core::artifacts::dummy::DummyZkArtifactSource;
+use world_id_core::{
+    artifacts::dummy::DummyZkArtifactSource, Credential as CoreCredential,
+    FieldElement as CoreFieldElement,
+};
 
 /// Staging message-bridge deployment.
 const STAGING_BRIDGE_DOMAIN: &str = "staging-bridge.worldcoin.org";
 
 /// The issuer schema the requesting device declares it supports.
 const SUPPORTED_ISSUER_SCHEMA_ID: u64 = 1;
+
+/// An issuer schema the approving device holds a credential of, which the requesting device does
+/// not support.
+const UNSUPPORTED_ISSUER_SCHEMA_ID: u64 = 2;
 
 /// The attachment kind the requesting device declares it can handle.
 const SUPPORTED_ATTACHMENT_KIND: &str = "walletkit_test_v1";
@@ -60,6 +67,21 @@ async fn a_proving_authenticator_registers_through_an_admin_authenticator() {
     .await
     .expect("staging account registration should succeed");
     let leaf_index = approver.leaf_index();
+    for issuer_schema_id in [SUPPORTED_ISSUER_SCHEMA_ID, UNSUPPORTED_ISSUER_SCHEMA_ID] {
+        let credential: Credential = CoreCredential::new()
+            .issuer_schema_id(issuer_schema_id)
+            .genesis_issued_at(now())
+            .into();
+        approver_store
+            .store_credential(
+                &credential,
+                &CoreFieldElement::from(7u64).into(),
+                now() + 3600,
+                None,
+                now(),
+            )
+            .unwrap();
+    }
 
     let bridge = Arc::new(BridgeClient::new(STAGING_BRIDGE_DOMAIN).unwrap());
 
@@ -204,6 +226,13 @@ async fn requesting_device(
     store
         .merge_vault_from_backup(&registered.vault_backup.unwrap())
         .unwrap();
+    let transferred: Vec<u64> = store
+        .list_credentials(None, now())
+        .unwrap()
+        .iter()
+        .map(|record| record.issuer_schema_id)
+        .collect();
+    assert_eq!(transferred, [SUPPORTED_ISSUER_SCHEMA_ID]);
     assert_eq!(registered.attachments, [attachment()]);
     registered.authenticator
 }
