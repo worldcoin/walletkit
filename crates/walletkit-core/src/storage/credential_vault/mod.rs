@@ -393,16 +393,18 @@ impl CredentialVault {
     ///
     /// # Errors
     ///
-    /// Returns an error if an ID is out of range or the export fails.
+    /// Returns an error if the export fails.
     pub fn export_plaintext_for_issuer_schemas(
         &self,
         dest: &Path,
         issuer_schema_ids: &[u64],
     ) -> StorageResult<()> {
+        // An ID above `i64::MAX` cannot be stored, so no credential has it.
         let ids = issuer_schema_ids
             .iter()
-            .map(|id| to_i64(*id, "issuer_schema_id").map(|id| id.to_string()))
-            .collect::<StorageResult<Vec<_>>>()?
+            .filter_map(|id| i64::try_from(*id).ok())
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
             .join(", ");
         let selected =
             format!("FROM credential_records WHERE issuer_schema_id IN ({ids})");

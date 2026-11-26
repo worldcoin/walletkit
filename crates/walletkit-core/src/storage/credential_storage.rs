@@ -2030,7 +2030,7 @@ mod tests {
         };
 
         let selected = src_store
-            .export_vault_for_issuer_schemas(vec![200, 100, 999])
+            .export_vault_for_issuer_schemas(vec![200, 100, 999, u64::MAX])
             .expect("export selection");
         assert_eq!(issuer_schemas_merged_from(&selected), [100, 200, 200]);
         assert!(contains(&selected, SELECTED_DATA));
