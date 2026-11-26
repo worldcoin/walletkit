@@ -24,9 +24,10 @@ In the browser, the app supplies the key itself; see
 
 ## Transfer credentials to a new authenticator
 
-In a WIP-109 registration, the user selects on the approving device which
-credentials to transfer to the new authenticator, per issuer schema. The transfer
-has two parts:
+In a WIP-109 registration, the approving device transfers credentials to the new
+authenticator, per issuer schema. It shows the user which credentials will be
+transferred and may let the user change the selection. The transfer has two
+parts:
 
 - **The vault.** `CredentialStore::export_vault_for_issuer_schemas` exports the
   credentials of the selected issuer schemas.
@@ -45,13 +46,13 @@ On the approving device:
 
 1. Read `supported_issuer_schema_ids` and `supported_attachment_kinds` from
    `IncomingRegistration` or `CheckedRegistration`. If the list of issuer schemas
-   is present, offer the user only credentials of those issuer schemas.
-1. After the user selects and consents, build a `CredentialTransfer` and pass it
+   is present, transfer only credentials of those issuer schemas.
+1. After the user consents, build a `CredentialTransfer` and pass it
    to `CheckedRegistration::approve`:
    - `vault` is the `export_vault_for_issuer_schemas` output for the selected
-     issuer schemas, or `None` if the user selected no credentials.
+     issuer schemas, or `None` if no credentials are transferred.
    - `attachments` holds only attachments of a supported kind. Include an
-     attachment tied to a credential only if the user selected that credential.
+     attachment tied to a credential only if that credential is transferred.
      Attachments tied to no credential can be sent without a vault.
 
 WalletKit doesn't parse the vault and doesn't know which attachment kinds are
