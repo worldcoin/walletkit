@@ -9034,7 +9034,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "uniffi",
 ]
@@ -9238,7 +9238,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "uniffi",
  "walletkit-core",
@@ -9246,7 +9246,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-cli"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "alloy-core",
  "base64 0.22.1",
@@ -9270,7 +9270,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-core"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -9332,7 +9332,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-db"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "ciborium",
  "getrandom 0.3.4",
@@ -9348,7 +9348,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-sqlite"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "cc",
  "hex",
@@ -9364,7 +9364,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-testkit"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "alloy",
  "alloy-core",
@@ -9383,7 +9383,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-web"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "js-sys",
  "ruint-uniffi",
@@ -9403,7 +9403,7 @@ dependencies = [
 
 [[package]]
 name = "walletkit-web-macros"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "heck",
  "indoc",
@@ -10215,7 +10215,7 @@ checksum = "32ac00cd3f8ec9c1d33fb3e7958a82df6989c42d747bd326c822b1d625283547"
 
 [[package]]
 name = "xtask"
-version = "0.32.2"
+version = "0.32.3"
 dependencies = [
  "clap",
  "eyre",
