@@ -476,6 +476,44 @@ impl CredentialStore {
         })
     }
 
+    /// Exports the credentials of `issuer_schema_ids` as an in-memory plaintext
+    /// (unencrypted) `SQLite` database, in the format of
+    /// [`export_vault_for_backup`](Self::export_vault_for_backup). Every version of
+    /// a selected credential is included; an ID without credentials adds nothing.
+    ///
+    /// Intended for transferring the credentials a user selected to another
+    /// authenticator of the same account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the store is not initialized or the export fails.
+    #[expect(
+        clippy::significant_drop_tightening,
+        reason = "lock held intentionally for the full operation to prevent concurrent cleanup from deleting in-use temp files"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "uniffi exports take sequences by value"
+    )]
+    pub fn export_vault_for_issuer_schemas(
+        &self,
+        issuer_schema_ids: Vec<u64>,
+    ) -> StorageResult<Vec<u8>> {
+        let inner = self.lock_inner()?;
+        let _guard = inner.guard()?;
+        inner.cleanup_stale_backup_files();
+        let path = inner.temp_backup_path();
+        let _cleanup = CleanupFile(path.to_string_lossy().to_string());
+        inner
+            .state()?
+            .vault
+            .export_plaintext_for_issuer_schemas(&path, &issuer_schema_ids)?;
+
+        std::fs::read(&path).map_err(|e| {
+            StorageError::VaultDb(format!("failed to read exported vault: {e}"))
+        })
+    }
+
     /// Imports credentials from an in-memory plaintext vault backup.
     ///
     /// The store must already be initialized via [`init`](Self::init).
@@ -1934,6 +1972,88 @@ mod tests {
 
         cleanup_test_storage(&src_root);
         cleanup_test_storage(&dst_root);
+    }
+
+    #[test]
+    fn test_export_for_issuer_schemas_holds_only_the_selected_credentials() {
+        use world_id_core::Credential as CoreCredential;
+
+        const UNSELECTED_DATA: &[u8] = b"associated-data-of-the-unselected-credential";
+        const SELECTED_DATA: &[u8] = b"associated-data-of-the-selected-credential";
+
+        let src_root = temp_root_path();
+        let src_provider = InMemoryStorageProvider::new(&src_root);
+        let src_store =
+            CredentialStore::from_provider(&src_provider).expect("create src store");
+        src_store.init(42, 1000).expect("init src storage");
+        for (issuer_schema_id, genesis_issued_at, data) in [
+            (100, 1000, None),
+            (200, 2000, Some(SELECTED_DATA)),
+            (200, 2500, None),
+            (300, 3000, Some(UNSELECTED_DATA)),
+            (400, 4000, Some(SELECTED_DATA)),
+        ] {
+            let credential: Credential = CoreCredential::new()
+                .issuer_schema_id(issuer_schema_id)
+                .genesis_issued_at(genesis_issued_at)
+                .into();
+            src_store
+                .store_credential(
+                    &credential,
+                    &FieldElement::from(7u64),
+                    9999,
+                    data.map(<[u8]>::to_vec),
+                    genesis_issued_at,
+                )
+                .expect("store credential");
+        }
+
+        let contains = |bytes: &[u8], needle: &[u8]| {
+            bytes.windows(needle.len()).any(|window| window == needle)
+        };
+        let issuer_schemas_merged_from = |bytes: &[u8]| {
+            let dst_root = temp_root_path();
+            let dst_provider = InMemoryStorageProvider::new(&dst_root);
+            let dst_store = CredentialStore::from_provider(&dst_provider)
+                .expect("create dst store");
+            dst_store.init(42, 1000).expect("init dst storage");
+            dst_store.merge_vault_from_backup(bytes).expect("merge");
+            let mut issuer_schema_ids: Vec<u64> = dst_store
+                .list_credentials(None, 1000)
+                .unwrap()
+                .iter()
+                .map(|record| record.issuer_schema_id)
+                .collect();
+            issuer_schema_ids.sort_unstable();
+            cleanup_test_storage(&dst_root);
+            issuer_schema_ids
+        };
+
+        let selected = src_store
+            .export_vault_for_issuer_schemas(vec![200, 100, 999, u64::MAX])
+            .expect("export selection");
+        assert_eq!(issuer_schemas_merged_from(&selected), [100, 200, 200]);
+        assert!(contains(&selected, SELECTED_DATA));
+        assert!(!contains(&selected, UNSELECTED_DATA));
+
+        let sharing = src_store
+            .export_vault_for_issuer_schemas(vec![400])
+            .expect("export a credential that shares its associated data");
+        assert_eq!(issuer_schemas_merged_from(&sharing), [400]);
+        assert!(contains(&sharing, SELECTED_DATA));
+        assert!(!contains(&sharing, UNSELECTED_DATA));
+
+        let none = src_store
+            .export_vault_for_issuer_schemas(Vec::new())
+            .expect("export nothing");
+        assert!(issuer_schemas_merged_from(&none).is_empty());
+        assert!(!contains(&none, SELECTED_DATA));
+
+        let all = src_store.export_vault_for_backup().expect("export vault");
+        assert!(contains(&all, UNSELECTED_DATA));
+        assert_eq!(src_store.list_credentials(None, 1000).unwrap().len(), 5);
+
+        cleanup_test_storage(&src_root);
     }
 
     #[test]

@@ -376,13 +376,47 @@ impl CredentialVault {
     ///
     /// Returns an error if the export fails.
     pub fn export_plaintext(&self, dest: &Path) -> StorageResult<()> {
-        let conn = self.vault.connection();
-        if dest.exists() {
-            std::fs::remove_file(dest).map_err(|e| {
-                StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
-            })?;
-        }
-        cipher::export_plaintext_copy(conn, dest, BACKUP_TABLES)
+        remove_stale_export(dest)?;
+        cipher::export_plaintext_copy(self.vault.connection(), dest, BACKUP_TABLES)
+            .map_err(|e| map_db_err(&e))
+    }
+
+    /// Exports a plaintext (unencrypted) copy of the vault to `dest`, holding only
+    /// the credentials of `issuer_schema_ids` and the blobs they reference.
+    ///
+    /// The locking and cleanup duties of [`Self::export_plaintext`] apply.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the export fails.
+    pub fn export_plaintext_for_issuer_schemas(
+        &self,
+        dest: &Path,
+        issuer_schema_ids: &[u64],
+    ) -> StorageResult<()> {
+        // An ID above `i64::MAX` cannot be stored, so no credential has it.
+        let ids = issuer_schema_ids
+            .iter()
+            .filter_map(|id| i64::try_from(*id).ok())
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let selected =
+            format!("FROM credential_records WHERE issuer_schema_id IN ({ids})");
+        let selections = [
+            ("credential_records", format!("SELECT * {selected}")),
+            (
+                "blob_objects",
+                format!(
+                    "SELECT * FROM blob_objects WHERE content_id IN (
+                        SELECT credential_blob_cid {selected}
+                        UNION SELECT associated_data_cid {selected}
+                    )"
+                ),
+            ),
+        ];
+        remove_stale_export(dest)?;
+        cipher::export_plaintext_selection(self.vault.connection(), dest, &selections)
             .map_err(|e| map_db_err(&e))
     }
 
@@ -401,6 +435,16 @@ impl CredentialVault {
         cipher::import_plaintext_copy(conn, source, BACKUP_TABLES)
             .map_err(|e| map_db_err(&e))
     }
+}
+
+/// Removes a file left at `dest` by an earlier export, which the export cannot overwrite.
+fn remove_stale_export(dest: &Path) -> StorageResult<()> {
+    if dest.exists() {
+        std::fs::remove_file(dest).map_err(|e| {
+            StorageError::VaultDb(format!("failed to remove stale backup: {e}"))
+        })?;
+    }
+    Ok(())
 }
 
 fn map_record(row: &Row<'_, '_>) -> StorageResult<CredentialRecord> {
